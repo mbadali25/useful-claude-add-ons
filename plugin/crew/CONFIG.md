@@ -144,8 +144,33 @@ the heal path creates nothing there again.
 The writers never follow it: `crew_platform` (heal and `platform-sync`),
 `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
 keep their own-path behaviour, and the heal path creates nothing in a worktree
-that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
-routed yet and read only the worktree's own file.
+that inherits a config, or in one where git could not tell.
+
+**The shell and PowerShell resolvers (crew 1.0.330, T-0096).** `crew_repo_config_dir` in
+`hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
+or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
+body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
+`auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
+holds both to `crew_common.repo_config_dir` case by case and the copies
+byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
+`realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
+ancestor `Get-Item` cannot read (likely a UNC share's root) in either path the
+PowerShell resolver compares reads `unknown`, never `main`. It pins
+`[Console]::OutputEncoding` to UTF-8 around its git call, so a non-ASCII path
+survives a console on the OEM code page. In the cloud guard's bash fallback a
+missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
+`crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
+in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
+veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
+`context-watch` in both flavours, whose writes stay in the worktree and whose
+inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
+names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
+`.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
+resolve one). Still
+own-file only: the verify gate, the scope and completion wrappers, and
+`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
+lane's own `emergency.standDown` while the bash verify gate and
+`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -162,11 +187,28 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
-leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
-For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
+leaves. `leaf_paths(default_config())` yields **138**, so **57** are repo-only.
+For all 138, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
-on T-0061's branch after merging main 34d9f267; the repo-only
+on batch-6-build after merging T-0050: T-0050 made the five personal
+`autopilot` keys global, moving 76 / 138 / 62 to 81 / 138 / 57; on T-0050's own
+branch after merging main ce235468 it measured 79 / 132 / 53, and 77 / 129 / 52
+before that merge. 76 / 138 / 62 was measured
+on T-0074's branch after merging main 8c0843ca; the repo-only
+`autopilot.maxAutoReplans` is the one T-0074 added. The generated tables in
+§10 and §11 state the current 81 / 138 / 57. This paragraph said 75 / 136 / 61
+until then, behind main's 76 / 137 / 61 after T-0017 added
+`context.autoClear.wrapUp` to both layers. 75 / 136 / 61 was measured
+on T-0053's branch after merging main 86d96fa1; the repo-only
+`autopilot.sleep.schedule`, `.approval` and `.questions` are the three T-0053
+added.
+75 / 133 / 58 on T-0066's branch after merging main e9364a70, which changed no
+config key; `git.forbiddenTrailers` is the key T-0066 added to both layers.
+74 / 132 / 58 on main after T-0013 added
+`resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` to both layers, while
+this paragraph still said 72 / 130. 72 / 130 / 58 on T-0061's branch after merging
+main 34d9f267; the repo-only
 `tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
 until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
 `autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
@@ -685,7 +727,8 @@ two layers wins instead** (§15, §16, §17). For the first eight "narrower"
 means a smaller capability, with one of the eight (`guards.roleWrites`)
 narrower meaning something slightly different again — see §18; for
 `change.requireForProduction` the narrower value is `true`, so a repo may
-turn that one **on** and never off — §17.
+turn that one **on** and never off — §17. The five personal `autopilot` keys
+combine per key by their own rule — §20a.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` except where the generated table prints two.
@@ -698,7 +741,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-76 of 134 keys are settable in the machine-global file (generated; 58 are repo-only, section 11).
+83 of 140 keys are settable in the machine-global file (generated; 57 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -736,6 +779,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
 | `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.wrapUp` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |
 | `resume.typeDelaySeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `2` |
 | `resume.readyTimeoutSeconds` | both | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `hooks/scripts/crew_autocycle.py`) | `15` |
@@ -780,6 +824,12 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `change.sdpTemplate` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change Management Request"` |
 | `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
 | `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
+| `git.forbiddenTrailers` | both | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `hooks/scripts/crew_trailers.py`) | `[]` |
+| `autopilot.mode` | both, stricter wins | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
+| `autopilot.maxPhases` | both, stricter wins | positive integer (checked in `hooks/scripts/crew_autopilot.py`); personal: the smaller wins | `12` |
+| `autopilot.deploy` | both, stricter wins | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | `"none"` |
+| `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
+| `autopilot.questions` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
 <!-- generated:config-keys-global end -->
 
@@ -815,7 +865,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-58 of 134 keys are repo-only (generated; 76 are global-settable, section 10).
+57 of 140 keys are repo-only (generated; 83 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -874,11 +924,10 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `environments.nonProd` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
 | `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
 | `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
-| `autopilot.mode` | repo | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`) | `"off"` |
-| `autopilot.maxPhases` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `12` |
-| `autopilot.deploy` | repo | `none` \| `nonprod` \| `all` | `"none"` |
-| `autopilot.approval` | repo | `human` \| `self` \| `risk` | `"risk"` |
-| `autopilot.questions` | repo | `human` \| `self` \| `risk` | `"risk"` |
+| `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
+| `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -1067,11 +1116,11 @@ for.
 | Value | What it does | Where it can run |
 |---|---|---|
 | `"auto"` *(default)* | Picks per platform, below. | everywhere |
-| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
-| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"tmux"` | Types into the `$TMUX_PANE` whose pid is this session's own process or an ancestor of it (T-0016, below). Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
+| `"xdotool"` | Types into the one X11 window owned by an ancestor of this session's own process and hosting no other terminal (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor of this session's own process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -1082,6 +1131,145 @@ Bash alike — and absent inside WSL, which has its own init); else refused
 (`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
 a window this hook found itself is a risk `auto` does not get to accept on
 your behalf. Request `sendkeys` by name to opt in to it.
+
+### Which terminal: this session's own process (T-0016)
+
+A `claude -p` child started from a session's Bash tool inherits `$TMUX`, and
+its parent's pane and window are ancestors of its hook, so a target found
+from the hook alone typed `/clear` into the **parent**. Both flavours
+(`crew_autocycle.session_owner`/`classify`/`prove_target`, and the same
+rules natively in `auto-clear.ps1`) now bind first, after the handoff checks
+and the method, before the sent-marker claim:
+
+1. **Owner.** The nearest ancestor of the hook named by a Claude Code session
+   record, `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`, whose
+   `sessionId` is the payload's and whose `procStart` is that process's start
+   time (`/proc/<pid>/stat` field 22) wherever one can be read. No
+   environment variable counts: `CLAUDE_PID` and `CLAUDE_CODE_ENTRYPOINT` are
+   copied into every child.
+2. **Class.** `terminal` needs kind `interactive`, an entrypoint on the
+   measured allowlist (`cli`), and a controlling terminal (`tty_nr` non-zero;
+   native Windows has none to read, so there it rests on kind and entrypoint).
+   `headless` needs positive evidence: an `sdk*` entrypoint (`claude -p` is
+   `sdk-cli`, with or without a pty around it), a kind other than
+   `interactive`, or `tty_nr` 0. Anything else — no record, another session's
+   record, an unreadable one, a start-time mismatch, an entrypoint nobody
+   measured (e.g. `remote_mobile`) — is `unknown`, and unknown is never called
+   headless.
+3. **What each class gets.** `headless`, whatever the method (`notify`
+   included): method `notify-headless` — nothing typed, one `systemMessage` naming the handoff
+   and its `resume:` line and saying the process that started this session
+   must start a new one, claimed like `notify` (once per session) and logged
+   in full (a `-p` parent may never show the message). `unknown`: `notify`
+   is unchanged, `auto` falls back to plain `notify` (logged), an explicit
+   typing method refuses with the reason. `terminal`: `notify` unchanged;
+   tmux, xdotool and sendkeys are proven from the owner.
+4. **Target, from the owner.** tmux: the pane's pid is the owner or an
+   ancestor of it, and every process from the owner up to the pane is on the
+   owner's tty or on none — a pane reached through a process on another tty
+   is someone else's terminal (an interactive child on its own pty under its
+   parent's pane, whose parent's record is in another config dir and whose
+   name is not `claude`, is caught only by this), and a tty that cannot be
+   read refuses. xdotool/sendkeys: the window is owned by a strict ancestor
+   (never the claude process itself). The walk refuses when it passes
+   through another Claude Code process or another live session record (a
+   child under its parent's pane or window), or when the chain could not be
+   read to the end (a parent that cannot be read, a loop, more than 16
+   processes). xdotool also refuses a window whose owner hosts another
+   terminal — any descendant outside the owner's own subtree on another
+   `tty_nr`, another live session, or a process scan that fails — because
+   one terminal server owns one X window for many tabs and a sibling can be
+   invisible to a record scan (`tmux attach`, ssh, another config dir, a
+   plain shell). `sendkeys` refuses a window whose owner is also above
+   another live session; Windows Terminal's one-tab rule (above) still
+   applies. A window found by `windowTitle` alone, or one with no owning
+   process (pid ≤ 1), refuses whenever another live session record exists. A
+   record whose process is gone or whose start time names a reused pid is
+   not live (Claude Code leaves records behind when a session is killed); a
+   LIVE process whose record cannot be read means no other session can be
+   ruled out, and every check that needs that refuses. "Another Claude Code
+   process" is a live record, a process named `claude`, or one named like a
+   version (`2.1.289`: a native install runs from
+   `~/.local/share/claude/versions/<x.y.z>`); the names are a heuristic that
+   only makes the walk fail closed sooner — `node` and other names are not
+   recognised, which is why the records and the tty rule carry the proof.
+
+The chain end to end: T-0017 wrap-up → T-0016 target proof → clear → T-0006
+`decide` → T-0013 typing (which takes the same binding, below).
+
+**Test stubs are inert in production.** `CREW_AUTOCLEAR_PROC_STUB` (the
+whole process table) and `CREW_AUTOCLEAR_WINDOW_STUB` (the window list) are
+read only while `CREW_AUTOCLEAR_INHIBIT` is set, in both flavours: a repo's
+`.claude/settings.json` env reaches every hook, and with the inhibit set no
+keystroke is ever sent. `CREW_AUTOCLEAR_INHIBIT=spawn` (`auto-clear.sh`
+only, for the suite's spawn tests) still builds and spawns the detached
+sender, which stops after its sleep, before any keystroke.
+
+**Stated limits.** Measured on Linux only (Claude Code 2.1.289,
+`plugin/crew/docs/session-record-spike.md`). On native Windows `entrypoint`
+is unmeasured and there is no tty: a value outside the allowlist is unknown,
+and a record is bound by pid and session id with `procStart` unchecked; with
+no tty, a parent session above a console window is told apart only by its
+record and its process name, so one in another config dir under an
+unrecognised name is not seen there (Windows Terminal's one-tab rule and the
+title-fallback refusals still apply). A parent that has exited ends the walk
+on Windows; one that exists but cannot be read (`Get-Process` denied, or no
+parent id) refuses. On
+macOS (no `/proc`), parent and tty come from `ps -o ppid=,tty=,comm=` and
+`procStart` is unchecked, so a pid reused within a record's life is not
+caught there.
+
+**A shared tty proves nothing.** The tty rule tells two sessions apart only
+when they sit on different ttys. A process on the session's own tty (its
+shell, or a parent session started in the same terminal) counts as the
+session's own, and xdotool's shared-window scan reads it the same way. A
+parent session on the same tty is caught only by its live record or its
+process name (`claude`, or a version number); one in another config dir
+under an unrecognised name (`node`) is not seen. Two sessions on one tty
+share one terminal, so a keystroke reaches whichever of them is reading it.
+
+### `wrapUp` — auto wrap-up before the clear (T-0017)
+
+Off by default. Armed only when the machine file says exactly
+`"context.autoClear": {"wrapUp": true}`, `enabled` is armed and the session is
+inside `onlyRepos`/`onlySessions`; a repo `false` vetoes it, a repo `true`
+alone arms nothing (`crew_autocycle.wrapup_armed`). Unarmed, every output is
+byte-identical to before.
+
+Armed, context-watch's warning **is** the wrap-up procedure and supersedes both
+of `autoWrapUp`'s messages (that key keeps its meaning: the wording of the
+unarmed warning, default `true`). The procedure: start no new step; the step is
+the active ticket's plan step in flight, or the tracked diff with no ticket;
+run its `Test:` command and commit only if it passes; if it cannot pass, do not
+commit and write `resume: none` with the reason under **Verify first**; run
+`/crew:handoff --wrap-up`; end the turn. `/crew:handoff --wrap-up` is the one
+wrap-up path — `/crew:autopilot`'s context-watch step runs it too.
+
+Auto-clear then clears only when, beside the existing handoff checks, all four
+hold (`crew_autocycle.wrapup_check`, run before the method, the T-0016 binding
+and the sent-marker claim):
+
+1. the handoff's `head:` is HEAD (a handoff written before the commit fails);
+2. its `branch:` is the checked-out branch;
+3. no tracked file is modified (`git status --porcelain --untracked-files=no`;
+   untracked files and the handoff file itself do not count);
+4. its `resume:` line parses under T-0006's grammar, or is `resume: none`.
+
+Anything that cannot be told — git failing, T-0006's `crew_resume` missing, an
+unreadable handoff — refuses. `auto-clear.sh --force` / `auto-clear.ps1 -Force`
+skip this check along with the handoff checks; they are for testing by hand
+only — `hooks.json` and context-watch never pass them, and no config key can. A refusal is logged, shown to you as a
+`systemMessage` (`crew wrap-up: not clearing - <reason>`), and fed back to the
+model **once**, at the session's next ordinary Stop (claimed with
+`.crew/.wrapup-escalated-<session>`, reset at SessionStart and on re-arm);
+a `stop_hook_active` Stop never blocks.
+
+**Stated limits.** No hook commits, stages or reverts anything: the model
+commits and crew checks the result. Crew checks that a commit happened, not
+that the step's test passed — verify-gate stands down on the forced
+continuation the commit is made on. On native Windows the check needs a
+python (`Resolve-CrewPython`): without one, context-watch.ps1 sends today's
+message and auto-clear.ps1 refuses the clear.
 
 ### What the widening costs
 
@@ -1192,7 +1380,7 @@ line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
 `handoff-author.json` that could not be read; no record of which session wrote
-this handoff; the handoff changed since its author session wrote it; the
+this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
 identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
 is not the shape `record_run` writes, or whose directory cannot be searched
@@ -1237,7 +1425,10 @@ while the directory is still writable, an old `manual` record lives for up to
 (the `precompact-*.json` sweep can fail with no key to mark). Two sessions
 writing the handoff in the same instant can attribute it to the wrong one;
 the record hashes the bytes it reads under a lock, which narrows the window
-but does not close it.
+but does not close it. And when `crew_resume.py` can neither unlink nor blank
+a stale `handoff-author.json` nor write its `.stuck` marker while `os.access`
+still reports it writable (EIO, ENOSPC, an immutable attribute, a Windows file
+held open), the stale author record is trusted.
 
 **Unchanged, and reported to the owner:** a malformed repo file still vetoes
 nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
@@ -1284,7 +1475,11 @@ Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
 that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
 X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
 one; `auto` on native Windows is `notify`, which types, claims and records
-nothing. Then the per-handoff marker
+nothing; then, for a typing method, T-0016's binding (§14): a headless or
+unknown session refuses ("auto-resume types only into this session's own
+terminal: ..."), and the pane or window is proven from the session's own
+process. A record's `sessionId` follows `/clear` (measured), so the new
+session's SessionStart binds. Then the per-handoff marker
 `<git-common-dir>/crew/resume-typed-<handoff sha256[:16]>` is claimed with
 `O_EXCL`/`CreateNew` (taken: refuse), then `crew_resume.py record` runs
 (failed: refuse, nothing typed), then the detached sender starts. tmux:
@@ -1653,15 +1848,18 @@ nobody does and denied under `block`; a live one-shot marker for that exact
 text still lets it through under `ask`/`allow`. Nothing else below is
 consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
 terraform line is asked about, not allowed; unattended, it is refused — which
-includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
-message that quotes the word terraform. Plain lines are read exactly as
-before.
+includes `terraform apply "p.tfplan"`. A read-only subcommand (`terraform plan
+2>$null`, `terraform workspace select "staging"`) and a line that only
+mentions terraform (a commit message quoting it) are not gated for their
+quoting (below). Plain lines are read exactly as before.
 
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
-`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
-delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy` (and
+terragrunt's `destroy-all`, `stack run destroy`, `graph destroy`, and `exec --
+terraform destroy`), `workspace delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
 whose sidecar lists none, `workspace new`, `select -or-create`. Everything
-else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+else is `unknown` — an apply with no saved plan, any terragrunt apply
+(`apply-all`, `stack run apply` and `graph apply` included), a plan
 with no sidecar, a stale one (the plan's sha256 changed), a malformed or
 unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
 saved-plan apply that is **not the only command** in the invocation. The plan
@@ -1722,12 +1920,31 @@ subcommand are skipped as terraform and terragrunt read them (`terragrunt
 --working-dir infra destroy` is a destroy).
 
 **What the guard does not catch.** It catches terraform, terragrunt and tofu
-written directly: bare or path-qualified, behind the listed wrappers, inside
+written directly: bare or path-qualified, behind the listed wrappers
+(`aws-vault exec`, `unbuffer` and `sem` among them; an option a listed
+`xargs`, `parallel`, `sem`, `aws-vault` or `unbuffer` does not know makes the
+line `could-not-tell`, and so does a `workspace select` that `xargs` or
+`parallel` may append `-or-create` to), inside
 `bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
-PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+PowerShell's `&`, `.`, `terraform.exe`, `Start-Process` and `Invoke-Expression`
+(a script that is not a literal string, or a parameter crew does not know,
+is `could-not-tell`). On a PowerShell line, **every mention of terraform,
+tofu or terragrunt must be accounted for** (any case, a word or a path's last
+part, `.exe` and backtick spellings included), or the line is
+`could-not-tell`: the command word of a command the guard judged (after an
+optional `$x =` and a `&`/`.` with a plain name), a literal script given to
+`Invoke-Expression`, or, when nothing on the line can run a value made at run
+time (a launcher, an eval, an alias definition, `return`/`throw`/`exit`, or a
+command word that is not a plain name), a literal argument of a plainly named
+command or a string that is only printed or assigned. So `git commit -m
+"terraform destroy"` and `Write-Output ("terraform" + " destroy")` are data,
+while `return terraform destroy`, `$t="terraform"; Start-Process $t destroy`
+and `[Diagnostics.Process]::Start("terraform","destroy")` are not. A group or
+an array among terraform's own arguments is `could-not-tell` too.
+`terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
--e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+-e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
 and scripts. The real boundary is the credentials an unattended run holds,
@@ -1765,6 +1982,13 @@ read from the session's project directory even when the deploy runs from a
 linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
+
+A `.crew/verify.json` environment's `github` entry is not config, and no key
+here reads it (crew-verification skill, section 4). `crew_ghdeploy.py check`
+applies promote-gate's own rule (L-1503): it refuses a map either gate
+refuses and prints, under each dispatch, `gated-as:` - every environment
+whose `deploy` matches it under either gate, whose requirements all apply. A test
+table runs both real gates beside it on the same maps and commands.
 
 ### The ratchet is one table, not five copies
 
@@ -2605,6 +2829,18 @@ read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
 
+**A rule passes only on a completion record (T-0082), not a config key.** Each
+rule's wrapper writes the rule's exit status to a temp record file after the
+rule ends. The rule passes only when the wrapper ended 0 and the record exists
+and says 0. A rule killed or signalled (record above 128), a wrapper that
+ended before writing (killed, or never started on `.ps1`), or a record that is
+missing or unreadable is FAILED as "could not tell": `VERIFY FAILED` plus
+`verify-gate: COULD NOT TELL (<reason>)`, status `unknown` in the command log,
+counted in a summary line, and neither marker advances. Exit 77 is still SKIP
+and a plain non-zero still a plain failure. The gate still has no per-rule
+deadline: a hung rule is waited for. See `docs/guides/crew/src/troubleshooting.md`
+("Verify gate says COULD NOT TELL") for each reason.
+
 **Limitation (1.0): the gate does not reap background processes a rule
 leaves behind; a rule must not background work — a rule that does can keep
 running (and writing) after the gate returns.** Per-rule process-group
@@ -2627,25 +2863,121 @@ lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
-that ticket is approved under `autopilot.approval` like any other. Its block is **repo only**: absent from `default_global_config()`, so
-`filter_global` prunes it from the machine file. Whether one checkout may be
-driven is a fact about that checkout.
+that ticket is approved under `autopilot.approval` like any other.
+Since T-0050 every key in its block is **personal**: settable in the machine
+file as the owner's default for every repo, combined per key with the repo's
+value by the rule in §20a (the stricter of the layers that set it wins). The
+`/crew:init` template no longer spells the block.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
-| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
-| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
+| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. A machine value is the default where the repo is silent (§20a). |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` or machine-global file that exists but is not a readable JSON object, or an `autopilot` value in either that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. Since T-0050 the machine file counts too: `read_global_config` collapses a corrupt one to `{}`, which would turn a global `human` into the default `risk`, so `crew_autopilot._unreadable_machine_autopilot` reads it raw first. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
+| `autopilot.maxAutoReplans` | `0` | `crew_autopilot.auto_replan_policy` (T-0074): how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for the owner again; `0` is off | Anything but a non-negative integer (`true`, `"2"`, `2.5`, `-1`, `null`) reads as `0`, with a warning naming the value; an unreadable config or non-object block reads as `0`. The limit is `5`: a larger value reads as `5`, with a warning. |
+| `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
+| `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
+| `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
-line, `approval` and `questions` on its second, and all five with `--json`.
+no word. `settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans`
+on its first text line, the effective `approval` and `questions` on its second, and
+`sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
+questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
+`until=<HH:MM>` for a manual state); `--json` adds `day` (the two day values)
+and `sleep`.
+
+**Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
+every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
+exclusive, and a start later than the end crosses midnight (`22:00-07:00` is
+asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
+or `autopilot.sleep.questions` replaces the day value, so an unattended run
+keeps going where the day setting would stop. The window is re-resolved from
+the clock on every policy read, never cached, so a run that crosses 07:00 is
+back on the day values at its next decision. A window can be as long as
+23h59 (`00:00-23:59`; only start equal to end is refused), and a night
+override looser than the day value applies for the whole of it. Anything that
+cannot be told — a malformed schedule, `autopilot.sleep` that is not an
+object, a clock or resolver that fails — is `unknown`, with a warning naming
+the key: per key, the **stricter** of the day value and a valid night
+override applies (`human` over `risk` over `self`), so could-not-tell never
+loosens a policy and never drops a tightening the owner set (review round 1,
+owner decision taken on the recommendation). Each override is read on its
+own, and its value rendered bounded in a warning: one that cannot be read at
+all counts as `human`, and the other key keeps its own. An `autopilot.sleep`
+that is not an object has no night value to read, so both keys read as
+`human` (review round 2, owner decision taken on the recommendation). An
+override that is readable but not a policy (`"always"`, `true`, `"Human"`)
+counts as `human` too, asleep and under `unknown`, rather than keeping the day
+value (landing decision, consistent with review round 2's). `settings`' third line ends with `applied=<keys|->` under `unknown`. A key under `autopilot.sleep` this version does not have
+(`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
+version" and has no effect. An override can lower authority as well as raise
+it. Everything else still binds asleep: `scope.allowCliApproval` exactly
+`true`, autopilot armed, a readable ledger, every stop. While asleep the
+reason of a policy a night override set, and `approve`'s line, end with
+`(asleep <window>; day value <day>)`; `approve` makes one decision and its
+receipt, its line and `crew_ticket.approve`'s re-check all use it, so a
+window edge between the reads cannot split them. **A receipt written asleep stops standing when the window ends**
+wherever the day value would not have approved it: `crew_ticket.accepted`
+re-asks the policy, so in the morning the ticket reads unaccepted until the
+owner types `/crew:approve <id>`; the work done overnight stays. In the same
+way a `taken:` line written asleep makes `questions-check` say `valid=0` by
+day when the day policy stops. The clock is local time as each process sees
+it, so it follows that process's `TZ`: `approve` and `questions-check` run in
+the model's shell environment, and a different `TZ` there moves the window.
+crew adds no variable or flag of its own that moves the clock. Not in this version: a sleep log, a
+`deploy` override (sleep leaves `deploy_allowed` unchanged), and a
+machine-global `autopilot.sleep`.
+
+**Manual sleep and wake (L-0652).** `/crew:autopilot sleep` runs
+`crew_autopilot.py sleep --root . [--by <text>]` and `/crew:autopilot wake`
+runs `crew_autopilot.py wake --root .`. Both keep one file,
+`<git-common-dir>/crew/autopilot-sleep.json` (`{"state", "by", "at",
+"until"}`, UTC-aware ISO times compared in UTC, written to a temp file and
+moved into place with `os.replace`), shared by every worktree of the
+repository and never read from a worktree or `.work/`. It is read only when
+`lstat` says it is a regular file, opened without following a symlink or
+blocking on a FIFO, re-checked with `fstat`, and read up to 64 KiB; anything
+else is `unknown` (each layer has its own test). `sleep` checks the record it
+is about to write with the same reader and refuses rather than report a sleep
+the reader would distrust; an `until` at a wall-clock time a spring-forward
+skips resolves forward to the next valid instant.
+**Until L-1504, a manual sleep only tightens** (owner decision 2026-10-04,
+review B1 of #427): the session can run `crew_autopilot.py sleep` itself
+(`scope_guard.py` lets it through and `--by` is free text), so outside the
+scheduled window a manual `asleep` applies a night value only where it is
+stricter than the day value, per key, like could-not-tell; inside the window
+the schedule's own night values stand. L-1504 (harness-only) makes the
+approval hook accept only the owner's typed `/crew:autopilot sleep`, and
+loosening is unlocked after it lands. A valid record beats the schedule until its `until`,
+then the schedule decides again. `sleep` sets `asleep` until the end of the
+current window if inside one, else the end of the next window, or for 12 hours
+with no schedule; it exits 2 with `refused: ...` and writes nothing unless
+`scope.allowCliApproval` is exactly `true`, autopilot is armed, the config and
+its `autopilot.sleep` can be read, and the window is open or at least one
+`autopilot.sleep` override is stricter than its day value (else it would
+change nothing). `wake` never
+refuses: inside the window it sets `awake` until the window's end (it never
+extends past it); outside, it removes the record and says when the schedule
+resumes, or that whether it is asleep cannot be told; with nothing to undo it
+prints `already awake`. Fail closed: a record that is unreadable, not an
+object, missing a field, with a `state` other than `asleep`/`awake`, an `at`
+or `until` that is not a UTC-aware ISO time (an old naive record included), an `at` in the future, or an `until`
+more than 24 wall-clock hours (or, as a backstop, 25 real hours, one cycle
+across a fall-back) after `at` is `unknown` with a warning naming the file —
+per key the stricter of the day value and the night override, never "not
+set", so a planted file cannot loosen anything. An expired record is ignored with a warning. A manual `asleep` is
+honoured only while `scope.allowCliApproval` is exactly `true` at read time
+too (turning it off ends the sleep; until then it reads `unknown`). A manual
+`awake` while the window is open keeps any night value stricter than the day
+value, so `wake` never loosens a tightening. A policy reason a manual sleep
+set ends with `(asleep by hand until <HH:MM>; day value <day>)`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
@@ -2679,14 +3011,39 @@ ticket at a time: a group approval and its `/crew:approve --confirm` stay the
 owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
 group's hashes.
 
-**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
-only when `autopilot.approval` allows it (a ticket `assign` mints is written by
+**Auto-reject and replan (T-0074).** With `autopilot.maxAutoReplans` at 1 or
+more, autopilot armed, and `approval_policy` allowing the successor plan (so
+under `risk` only a `risk: low` ticket, which leaves guard and
+production-authority tickets to the owner), a final review round that is
+FINDINGS with at least one BLOCK and no round left is no longer a stop. `next`
+answers `auto-replan` with `crew_autopilot.py auto-reject --root . --ticket <id>`,
+which moves the ledger REVIEWED -> NEEDS_REPLAN through `review_ledger.reject`
+under the fixed name `autopilot (policy: autopilot.maxAutoReplans)` and prints
+every BLOCK and FIX line; `next` then names `/crew:plan` for a successor plan
+that quotes each of them, the approve phase approves it under
+`autopilot.approval`, and review starts again with fresh rounds. It refuses,
+writing nothing, on an INCOMPLETE round, a same-family or unknown reviewer
+(`review_ledger`'s own family rule), counts and finding lines that disagree, a
+round still left, or anything it cannot tell. The cap counts every successor
+plan on the ledger, owner-approved ones included, and is at most `5` (a larger
+value reads as `5`, with a warning); at the cap `next` stops with phase
+`auto-replan-cap`, naming the cap and each successor plan. The non-stop
+`replan` after a reject asks again whether the rejected round is the current
+plan's and still passes the round checks above, so the reject name typed by
+hand with `review_ledger.py --reject --by` gives the owner's stop, as before.
+A BLOCK is never accepted by autopilot at any setting. The recommended value
+when you turn it on is `2`.
+
+**The writers.** `crew_autopilot.py` is read-only except `approve` and
+`auto-reject`, and L-0652's `sleep` and `wake`, which write or remove only
+`<git-common-dir>/crew/autopilot-sleep.json`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+`auto-reject` writes only the review ledger, REVIEWED -> NEEDS_REPLAN.
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
 T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
@@ -2756,10 +3113,86 @@ still decide.
 
 ---
 
-## 21. `route` — plain-text lifecycle routing, off until `true`
+## 20a. Personal keys and the per-key ratchet (T-0050)
+
+`crew_guards.PERSONAL_KEYS` (re-exported by `crew_state`) names the keys the
+owner sets once, in `~/.claude/crew/config.json`, as a default for every repo:
+
+| Key | Kind | Order, strictest first |
+|---|---|---|
+| `autopilot.mode` | tiers | `off`, `plan` |
+| `autopilot.maxPhases` | int-min | a smaller positive int is stricter |
+| `autopilot.deploy` | tiers | `none`, `nonprod`, `all` |
+| `autopilot.approval` | tiers | `human`, `risk`, `self` |
+| `autopilot.questions` | tiers | `human`, `risk`, `self` |
+
+The rule, `crew_guards.effective_personal`, applied by `resolve_config` after
+its merge (so every reader, `crew_autopilot.settings` included, sees it):
+
+- A layer **sets** a key when its value is neither absent nor `null`. A silent
+  layer imposes nothing: a global `self` over a repo that says nothing is
+  `self`. This is where it differs from the ratchet (§16), whose absent value
+  is the floor and could never carry a personal default.
+- Both set it: the **stricter** wins, the repo's value on a tie, and
+  `--explain` names the layer `held down by`. An unrecognised value ranks
+  below the floor, wins, and is returned raw; the reader reads it as its floor
+  with a warning. int-min ignores an invalid layer when the other is valid.
+- No key is in both `PERSONAL_KEYS` and `RATCHETED_KEYS`. Every
+  `crew_state.AUTOPILOT_DEFAULTS` key is a row or is listed in
+  `REPO_ONLY_AUTOPILOT`, and a test fails until a new key picks one.
+  `autopilot.maxAutoReplans` (T-0074) and the `autopilot.sleep` block (T-0053)
+  are `REPO_ONLY_AUTOPILOT`: they read from `.crew/config.json` alone, and the
+  machine file's copy is pruned.
+- `scope.allowCliApproval` is **not** personal yet: its reader,
+  `crew_ticket.cli_approval_allowed`, reads the repo file only and is review
+  harness, so its row lands in a harness-only change. So a global
+  `approval: self` still needs the repo's own `allowCliApproval: true`.
+
+Neither template spells a personal key (`template_config()`,
+`global_template_config()`), and `heal_config` writes the template, so a
+default never shadows the owner's choice. A repo file written before T-0050
+spells `autopilot.mode: "off"`, the strictest tier: `--explain --all` reports
+each such key as a `shadow:` and `--unset <path> --repo --apply` removes it.
+Nothing removes one automatically, because a deliberate repo value looks the
+same.
+
+## 20b. Backups, the profile and rebuild (T-0050)
+
+**Backups.** Every crew writer of either config file calls
+`crew_backup.backup(path)` immediately before it replaces the file:
+`write_global_config`, `write_repo_config` (so every `--set`/`--unset` and the
+menu's Save), the rebuild and restore below, the menu's restore,
+`heal_config`, platform-sync's `apply_changes`, the autoclear setup's repo
+writes and `crew_upgrade`. The raw bytes, corrupt ones included, go to
+`~/.claude/crew/backups/global/<stamp>.json` or
+`backups/repo/<dir>-<sha256(realpath)[:10]>/<stamp>.json` (a `source` file
+names the path), 0600 files in 0700 directories, the newest 20 per file kept.
+A stamp is UTC `YYYYMMDDTHHMMSSZ`, `-2`, `-3` on a same-second collision. **A
+failed backup refuses the write and leaves the file untouched** (exit 4 from
+the CLI). `CREW_BACKUP_DIR` overrides the root; the test suite sets it. A hand
+edit is not backed up.
+
+**The profile.** `~/.claude/crew/profile.json`, and a copy at
+`<memory.vaultPath>/crew/profile.json` when the global `memory.vaultPath`
+names an existing directory. It holds, per layer, every leaf that differs from
+that layer's template (never `schema` or `platform.*`; unknown keys kept),
+repos keyed by normalised `origin` URL or `path:<main worktree>`. Refreshed by
+`--set`/`--unset --apply` and the menu's Save, captured by
+`--save-profile --apply`; never written by heal, platform-sync, upgrade, the
+autoclear setup, a rebuild or a restore.
+
+**Rebuild and restore.** `--rebuild --repo|--global` writes the template plus
+the profile's values (a readable repo file's `platform` block is kept). Both
+copies readable and different: the newer `saved_at`, named in the dry run. One
+unreadable: the other, said so. Present but unreadable with no readable
+other: exit 3, could not tell. None: refused without `--no-profile`.
+`--restore <stamp>` backs up the current file, then writes the stamped bytes;
+an unknown stamp exits 2. Both are dry runs until `--apply`.
+
+## 21. `route` — plain-text command routing, off until `true`
 
 `route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
-lifecycle command. When it is on, crew's UserPromptSubmit context hook
+lifecycle command or, since 1.0.345, a `/crew:autopilot` subcommand. When it is on, crew's UserPromptSubmit context hook
 (`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
 the answer is `none`, puts one line FIRST in the turn's context: the
 `/crew:<command> <ticket>` whose procedure Claude should run through the Skill
@@ -2767,6 +3200,9 @@ tool, or a request to ask the user which ticket. The hook runs nothing and
 blocks nothing; the command's own checks still decide. The table of phrases,
 the three outcomes and what never routes are in the plugin README's
 "Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+Since 1.0.345 (T-0057) the table also names five `/crew:autopilot` phrases
+(status, assign, goal, goal resume, focus); this same key arms them, and one
+whose subcommand has not landed gets a line that runs nothing.
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
@@ -2791,3 +3227,59 @@ to `/crew:approve`, a `continue` whose next step is approval asks instead, and
 `--harness codex` no line is emitted, because the Skill tool it names does not
 exist there. With `memory.inject: false` the hook emits nothing, route line
 included.
+
+---
+
+## 22. `git.forbiddenTrailers` — commit trailers the owner forbids
+
+`git.forbiddenTrailers` (T-0066, since 1.0.328) is a list of commit trailer
+tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
+crew's sessions make. crew takes no side on attribution: the owner's own
+instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a
+harness reminder asking for one does not override them. This key states the
+owner's answer mechanically. The list is the switch: `[]`, the default in both
+layers, means nothing is forbidden.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `git.forbiddenTrailers` | `[]` | `crew_trailers.forbidden` | A value that is not a list of tokens (letters, digits and `-`, no `:`), a `git` that is not an object, or a config file `crew_config.layer_state` calls corrupt is **unknown**, never `[]`: `/crew:done` prints `trailers: unknown - <why>`. |
+
+**Union, not precedence.** Both layers are read raw and their lists are
+combined, case-insensitively and without duplicates. A repo can add a token and
+can never remove the machine owner's: a cloned repo carrying `[]` must not
+silently disarm the owner, which ordinary precedence would let it do (the same
+reason §15's ratchet exists). The repo layer is the `.crew/config.json` in force:
+a linked worktree with none of its own reads the main checkout's, and when that
+cannot be told, the list is unknown.
+
+**What reads it.** `/crew:done` runs
+`crew_trailers.py --check --root . --ticket <id>` over the ticket's own commits
+(`git log --first-parent <scope base>..HEAD`) and prints
+`trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per
+offending commit, or `trailers: unknown - <why>` (no base, git failed, config
+unreadable, or any unexpected error, printed as `<Type>: <message>`), exiting
+0 / 1 / 2. `--first-parent` is a deliberate refinement of the spec's literal
+`<scope base>..HEAD`: a ticket branch merges origin/main, and the plain range
+would then report every commit that merge brought in (other people's, many
+carrying the trailer). Following first parents keeps the ticket's own commits,
+including a merge commit made on the ticket branch, and leaves out what it
+merged in. The limit: a ticket commit that reaches HEAD only as a merge's second
+parent (a side branch merged in with `--no-ff`) is not read; crew never makes
+that shape, so check such a branch by hand. It is a report: it never refuses done and crew never rewrites the
+commits, because a rewrite is the owner's decision and stales the review
+receipt. A line derived from a fallback scope base says so.
+
+**The textual rule.** A message matches when it contains
+`<Token>` followed by optional spaces and `:` or `=`, case-insensitively (git
+treats trailer keys that way). So prose saying "no Co-Authored-By trailers"
+passes, and prose "Co-Authored-By: lines" is matched — conservative on purpose.
+
+**Refusing at commit time** is the scope guard's half of T-0066. It touches
+review/gate harness paths (`HARNESS` in `scripts/check-tooling-pr.py`), so it
+lands in its own change; until then this key is reported, not enforced.
+
+**Setting it machine-wide:**
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_config.py --set 'git.forbiddenTrailers=["Co-Authored-By"]' --apply
+```

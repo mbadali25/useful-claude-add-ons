@@ -105,6 +105,47 @@ def test_armed_matching_prompt_puts_the_route_line_first(tmp_path, flavour):
     assert _context(out) == ROUTE + "\n" + before
 
 
+# T-0057: `/crew:autopilot status` runs on main, so its row routes.
+STATUS_ROUTE = ("crew route: the user's prompt asks for autopilot-status. Run the /crew:autopilot "
+                "procedure: invoke the Skill tool with skill crew:autopilot, args status. Its own "
+                "checks still decide; if the user plainly meant something else, ask.")
+
+
+@needs_bash
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_armed_autopilot_status_puts_the_route_line_first(tmp_path, flavour):
+    root = _repo(tmp_path, armed=True)
+
+    out = _context(_run(flavour, tmp_path, root, _raw(root, "autopilot status")))
+
+    assert out.split("\n")[0] == STATUS_ROUTE
+
+
+@needs_bash
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_armed_reserved_autopilot_phrase_asks_softly(tmp_path, flavour):
+    """`assign` is not in crew_autopilot.AVAILABLE on main: the line runs
+    nothing and leaves the prompt to be answered as written."""
+    root = _repo(tmp_path, armed=True)
+
+    out = _context(_run(flavour, tmp_path, root, _raw(root, "take care of the login audit")))
+    first = out.split("\n")[0]
+
+    assert (first.startswith("crew route: "), "arrives with" in first,
+            first.endswith("otherwise answer the prompt as written."), "which ticket" in out) == \
+        (True, True, True, False)
+
+
+@needs_bash
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_unarmed_autopilot_phrase_has_no_route_line(tmp_path, flavour):
+    root = _repo(tmp_path)
+
+    out = _run(flavour, tmp_path, root, _raw(root, "autopilot status"))
+
+    assert "crew route" not in out
+
+
 @needs_bash
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_unarmed_output_is_byte_identical_to_before(tmp_path, flavour):

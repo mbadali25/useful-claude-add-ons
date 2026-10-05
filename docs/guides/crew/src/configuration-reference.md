@@ -10,11 +10,11 @@ crew reads two JSON files:
 
 - `~/.claude/crew/config.json` - the **machine-global** file. Your personal
   defaults for every repo on this machine: providers and models, notifications,
-  auto-clear, the guards.
+  auto-clear, the guards, how far autopilot may go.
 - `.crew/config.json` - the **repo** file. Facts about one checkout: the
-  tracker, the board, scope enforcement, autopilot, production declarations.
+  tracker, the board, scope enforcement, production declarations.
 
-The repo file wins over the machine file, which wins over crew's defaults. Three
+The repo file wins over the machine file, which wins over crew's defaults. Four
 exceptions, each named in the Layer column below:
 
 - A **repo-only** key in the machine file takes effect nowhere. It is pruned on
@@ -25,10 +25,16 @@ exceptions, each named in the Layer column below:
   machine allows.
 - A **machine-armed** key (`resume.auto`, `context.autoClear.enabled`) can be
   turned on only in the machine file. A repo can only switch it off.
+- A **personal** key (the five `autopilot.*` keys) resolves per key to the
+  stricter of the layers that set it; a layer that says nothing imposes
+  nothing. A machine value is your default for every repo, which a repo may
+  narrow and never widen.
 
 A `null` in the repo file over a machine value inherits the machine value. The
-`/crew:init` template writes every key, which would otherwise shadow your
-machine defaults.
+`/crew:init` template writes every key except the personal ones, so it does not
+shadow your machine defaults for those; a repo `/crew:init` set up before that
+still spells `autopilot.mode: "off"`, which holds a machine `plan` down until
+you remove it (`--explain --all` names it as a `shadow:`).
 
 ## Seeing what is in force
 
@@ -39,17 +45,31 @@ machine defaults.
   out-of-range values, and marks a widening with `!`.
 - From a shell:
   `python3 plugin/crew/hooks/scripts/crew_config.py --explain` is the same
-  table, and `--models` is the per-role provider table.
+  table, `--explain --all` adds every repo-only key and names each shadowing
+  repo value, and `--models` is the per-role provider table.
+
+## Backups and rebuilding a lost config
+
+Every write a crew script makes to either file first copies the old bytes to
+`~/.claude/crew/backups/` (the newest 20 per file kept) and is refused when
+that copy fails; a hand edit is not backed up. `crew_config.py --backups`
+lists the machine file's (add `--repo` for the repo file's) and
+`--restore <stamp> --apply` puts one back. Your non-default values are kept in
+`~/.claude/crew/profile.json` (and in your vault when `memory.vaultPath` is
+set), so `--rebuild --repo` or `--rebuild --global` regenerates a lost or
+corrupt file from the template plus that profile, as a dry run until
+`--apply`.
 
 ## Common setups
 
 - **Personal defaults once, for every repo.** Put providers, models,
-  `notify.*` and the guards in `~/.claude/crew/config.json`. Leave repo files
-  to repo facts.
-- **Self-approval under autopilot.** In the repo file, set
-  `scope.allowCliApproval: true` and `autopilot.mode: "plan"`, then choose
-  `autopilot.approval` (`human`, `self` or `risk`). Review acceptance and
-  production deploys still stop for you.
+  `notify.*`, the guards and the `autopilot.*` keys in
+  `~/.claude/crew/config.json`. Leave repo files to repo facts.
+- **Self-approval under autopilot.** Set `autopilot.mode: "plan"` and choose
+  `autopilot.approval` (`human`, `self` or `risk`) in either file, and set
+  `scope.allowCliApproval: true` in the repo file, which is the only file
+  that key is read from. Review acceptance and production deploys still stop
+  for you.
 - **Notifications.** In the machine file, set `notify.provider` and the
   environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
   secret stays in your environment, never in the file. Those two are
@@ -63,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**134 keys**: 76 settable in the machine-global file, 58 repo-only.
+**140 keys**: 83 settable in the machine-global file, 57 repo-only.
 
 Columns:
 
@@ -78,6 +98,7 @@ Columns:
 - **both**: either file may set it; the repo value wins over the machine one.
 - **both, ratchet**: either file may set it, and the NARROWER of the two wins (`crew_guards.RATCHETED_KEYS`). A repo can tighten what the machine allows, never loosen it.
 - **both, widening warned**: either file may set it and the repo wins, but a write that widens it is flagged (`crew_config._RATCHETED`).
+- **both, stricter wins**: a personal key (`crew_guards.PERSONAL_KEYS`): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or `null`) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.
 - **machine-arms**: only the global file can turn it on (exactly `true`); a repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`).
 - **machine-only**: read from the global file alone; a repo's own value is never consulted.
 
@@ -154,11 +175,11 @@ Columns:
 | `obsidian.vaultPath` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Vault holding the board; falls back to `memory.vaultPath` and must hold `.obsidian/`. |
 | `obsidian.boardDir` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Board folder inside the vault (relative, no `..`). |
 | `obsidian.board` | repo | `"Board.md"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects file name) | 0.11.0 or earlier | Board file name. |
-| `obsidian.columns.backlog` | repo | `"Backlog"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for backlog tickets. |
+| `obsidian.columns.backlog` | repo | `"Backlog"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for backlog tickets (`direction`, `ready`, `needs-owner`). |
 | `obsidian.columns.ready` | repo | `"Ready"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for ready tickets. |
 | `obsidian.columns.inProgress` | repo | `"In Progress"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in progress. |
 | `obsidian.columns.review` | repo | `"Review"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in review. |
-| `obsidian.columns.done` | repo | `"Done"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for done tickets. |
+| `obsidian.columns.done` | repo | `"Done"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for closed tickets (`done`, `cancelled`, `superseded`; each checked). |
 
 ### `memory`
 
@@ -189,6 +210,7 @@ Columns:
 | `context.autoClear.unsafeFocus` | repo | `false` | not validated - read by `plugin/crew/hooks/scripts/auto-clear.sh` (expects boolean) | 0.19.11 | Consent to `wtype` typing into whatever has focus. No longer read: `auto-clear.sh` refuses `wtype` whatever this says. |
 | `context.autoClear.onlyRepos` | machine-only | `null` | list of absolute repo paths, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | Narrowing only, machine file only: null narrows nothing, a list arms only those repos, `[]` or a non-list arms nothing. |
 | `context.autoClear.onlySessions` | machine-only | `null` | list of session ids, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | As `onlyRepos`, for session ids; with both set, both must match. |
+| `context.autoClear.wrapUp` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.334 | Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly `true`), only where `enabled` is armed; a repo `false` vetoes it. |
 | `context.autoWrapUp` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.19.10 | Ask for a wrap-up when the budget runs low. |
 | `context.autoResume` | repo | `true` | not validated - read by `plugin/crew/commands/migrate.md` (expects boolean) | 0.19.10 | Retired: read by nothing since 1.0.0; kept so `/crew:migrate` carries it. |
 | `context.staleHandoff.maxAgeHours` | repo | `72` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.16.33 | A handoff older than this is archived. |
@@ -336,6 +358,12 @@ Columns:
 | `change.jiraIssueType` | both | `"Change"` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string) | 0.19.31 | Jira issue type for a change request. |
 | `change.category` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Change category. |
 
+### `git`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `git.forbiddenTrailers` | both | `[]` | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `plugin/crew/hooks/scripts/crew_trailers.py`) | 1.0.328 | Commit trailer tokens the owner forbids, reported by `/crew:done`. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22). |
+
 ### `scope`
 
 | Setting | Layer | Default | Values | Since | Summary |
@@ -347,11 +375,15 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `autopilot.mode` | repo | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
-| `autopilot.maxPhases` | repo | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
-| `autopilot.deploy` | repo | `"none"` | `none` \| `nonprod` \| `all` | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
-| `autopilot.approval` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
-| `autopilot.questions` | repo | `"risk"` | `human` \| `self` \| `risk` | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
+| `autopilot.maxPhases` | both, stricter wins | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: the smaller wins | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
+| `autopilot.deploy` | both, stricter wins | `"none"` | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
+| `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
+| `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
+| `autopilot.maxAutoReplans` | repo | `0` | non-negative integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.339 | Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning. |
+| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
+| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 
 ### `tickets`
 
@@ -392,12 +424,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 | `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
 | `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
 
-### T-0017
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `context.autoClear.wrapUp` | new key | machine-arms | null |  | Machine opt-in for the automatic wrap-up; only exactly `true` arms it. |
-
 ### T-0029
 
 | Setting | Change | Layer | Default | Values | Summary |
@@ -416,5 +442,4 @@ Keys from approved tickets that have not landed. Each moves into the table above
 
 | Setting | Change | Layer | Default | Values | Summary |
 |---|---|---|---|---|---|
-| `autopilot.mode` | changes layer | both, stricter wins | off |  | The personal autopilot keys become settable in the global file; the stricter layer wins. |
-| `scope.allowCliApproval` | changes layer | both, stricter wins | false |  | Becomes settable in the global file; the stricter layer wins. |
+| `scope.allowCliApproval` | changes layer | both, stricter wins | false |  | Becomes settable in the global file, the stricter layer winning, once its reader (`crew_ticket.cli_approval_allowed`) reads the global layer in a harness-only follow-up to T-0050. |

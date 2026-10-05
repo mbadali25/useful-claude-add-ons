@@ -157,11 +157,14 @@ To install it:
 `config.json` — this JSON is a COPY, kept here for a human reading the skill.
 It is not the source of truth: `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json`
 is, and that file is generated from `hooks/scripts/crew_config.py`'s
-`default_config()`, which in turn pulls the `pm` and `graph` blocks straight
-from `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` rather than
-duplicating them a third time. A committed test asserts the template equals
-`default_config()`'s output byte-for-byte, so this file drifting from either
-one fails CI instead of shipping quietly. Copy the template, not this prose,
+`template_config()`: `default_config()`, which in turn pulls the `pm` and
+`graph` blocks straight from `crew_state.PM_DEFAULTS` and
+`crew_upgrade.GRAPH_BLOCK` rather than duplicating them a third time, minus the
+personal `autopilot` keys. Those are the owner's to set once in
+`~/.claude/crew/config.json` (`/crew:config`); a new repo that spelled them
+would hold the owner's choice down. A committed test asserts the template
+equals `template_config()`'s output byte-for-byte, so this file drifting from
+either one fails CI instead of shipping quietly. Copy the template, not this prose,
 when actually creating `config.json`.
 
 `/crew:init` writes this file; it never writes the optional machine-global
@@ -208,7 +211,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
   "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800 } },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
+  "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": null, "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["blocker", "deploy", "question"], "realertHours": 6, "questionTypes": null },
@@ -228,8 +231,9 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "environments": { "nonProd": [], "prodUnattended": false },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
+  "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk" },
+  "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null } },
   "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }

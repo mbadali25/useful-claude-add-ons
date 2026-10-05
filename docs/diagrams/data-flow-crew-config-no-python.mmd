@@ -1,6 +1,7 @@
 %% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh
-%% Purpose: What role-write-guard.sh does when it cannot find python: it cannot read guards.roleWrites, so it always blocks a restricted role.
+%% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/cloud-guard.sh
+%% Re-drawn for T-0096 on 2026-10-04: the cloud guard's fallback (CG1-CG3), read at T-0096-build.
+%% Purpose: What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %%  6. role-write-guard.sh's no-python fallback (:301-346) is a NEW, narrower
 %%     contract, not the old policy-reading fallback (removed): without a
@@ -16,6 +17,13 @@
 %% Note NP3: Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback
 %%    could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says
 %%    :339-345
+%% Note CG1: crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or
+%%    cloud_guard.py exits non-zero (cloud-guard.sh:55-78)
+%% Note CG2: _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is
+%%    crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's.
+%%    Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir.
+%% Note CG3: source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse).
+%%    Otherwise exit 0, unjudged.
 flowchart LR
 
     subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
@@ -24,4 +32,12 @@ flowchart LR
         NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>guards.roleWrites at all"]
         NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
         NP1 --> NP2 --> NP3
+    end
+
+    subgraph CloudNoPython["cloud-guard's fallback - reads the resolved repo file (T-0096)"]
+        direction TB
+        CG1["no usable python,<br/>or cloud_guard.py failed"]
+        CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
+        CG1 --> CG2 --> CG3
     end

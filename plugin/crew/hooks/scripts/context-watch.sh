@@ -58,6 +58,7 @@ session_markers() {
   SESSION_KEY="${key:-nosession}"
   MARKER=".crew/.handoff-requested-${SESSION_KEY}"
   SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"
+  ESCALATED=".crew/.wrapup-escalated-${SESSION_KEY}"  # T-0017
 }
 SESSION_ID=""
 SESSION_RE='"session_id"[[:space:]]*:[[:space:]]*"([^"]*)"'
@@ -171,7 +172,15 @@ fi
 # -- still requires a fully initialised crew repo. Unchanged from before F4:
 # a `.crew/` directory with no config.json gets no warnings and writes no
 # marker, exactly as a repo that never ran `/crew:init` always has.
-[ -f .crew/config.json ] || exit 0
+# L-0680: "config.json" is the resolved one (crew_repo_config_dir, T-0096): a
+# linked worktree with none of its own reads the main checkout's, own files win
+# whole, `unknown` reads only the own .crew/. The marker stays in this .crew/.
+# CFG_SHOWN is the name a message gives it: `.crew/config.json` when it is
+# this checkout's own, the main checkout's full path when it is inherited.
+crew_repo_config_dir .
+CREW_CFG="$CREW_CFG_DIR/config.json"
+CFG_SHOWN="${CREW_CFG#./}"
+[ -f "$CREW_CFG" ] || exit 0
 
 # Loop safety, layer 2: once per session per threshold crossing ($MARKER,
 # keyed above), cleared by handoff-read.sh at this session's next
@@ -247,14 +256,17 @@ if [ -z "$PY" ]; then
       }
       print out
     }
-  ' .crew/config.json 2>/dev/null)
+  ' "$CREW_CFG" 2>/dev/null)
   if printf '%s' "$CTX_BLOCK" | grep -q '"enabled"[[:space:]]*:[[:space:]]*false'; then
     exit 0
   fi
   # handoffPath cannot be read precisely without python (see CTX_BLOCK's own
   # approximation above), so the message names WHERE to look rather than
   # hard-coding the shipped default as if it were certainly correct.
-  HANDOFF_NOTE="the configured handoff path (context.handoffPath in .crew/config.json; .work/HANDOFF.md if unset)"
+  HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}; .work/HANDOFF.md if unset)"
+  # Inherited: say the path is taken inside this checkout, so an absolute or
+  # `..` value in the main checkout's file is not read as "write there".
+  [ "$CREW_CFG_SOURCE" = main ] && HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}, inside this checkout only; .work/HANDOFF.md if it is unset or leaves this checkout)"
   # NOT `$MARKER` -- see the header comment above this branch. Nothing is
   # claimed here; `stop_hook_active`, checked first at the top of this
   # script, is what bounds the retry Claude Code triggers after this exit 2.
@@ -299,8 +311,10 @@ STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 # once-per-session gate for this hook, reset by handoff-read.sh at the next
 # SessionStart -- that stays.
 
-CFG=$("$PY" - << 'PY' 2>/dev/null
+CFG=$("$PY" - "$CREW_CFG" "$(dirname "$0")" << 'PY' 2>/dev/null
 import json
+import os
+import sys
 # An unparseable file (json.load raises) is treated as "no context settings",
 # same as always -- the file's presence is already proven by bash above, and
 # a fully broken file is caught by the outer try/except exactly as before.
@@ -310,7 +324,7 @@ import json
 # interpreter one, so it must not be reported as "python is broken".
 MALFORMED = "MALFORMED_CONFIG_CONTEXT_BLOCK"
 try:
-    raw = json.load(open(".crew/config.json"))
+    raw = json.load(open(sys.argv[1]))
 except Exception:
     raw = {}
 c = raw.get("context", {}) if isinstance(raw, dict) else {}
@@ -328,11 +342,29 @@ else:
     # threshold below.
     try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
     except (TypeError, ValueError): reserve = 100_000
-    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve)
+    # The handoff path the message names, kept inside this checkout by the
+    # Python readers' own rule (crew_state.handoff_path): a value that leaves
+    # it -- absolute, `..`, a symlink out; in a linked worktree, the main
+    # checkout's file (L-0680) -- is the default, and the 7th field says so.
+    handoff, escaped = ".work/HANDOFF.md", "ok"
+    try:
+        sys.path.insert(0, sys.argv[2])
+        from crew_state import handoff_path
+        root = os.path.realpath(os.getcwd())
+        got = handoff_path(root, raw)
+        v = c.get("handoffPath")
+        if isinstance(v, str) and v and os.path.realpath(os.path.join(root, v)) != got:
+            escaped = "escaped"
+        elif got == root or os.path.isdir(got) or (isinstance(v, str) and v.endswith(("/", os.sep))):
+            got = os.path.join(root, ".work/HANDOFF.md")  # a directory cannot hold the note
+        handoff = os.path.relpath(got, root).replace(os.sep, "/")
+    except Exception:
+        pass
+    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
 PY
 )
 if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then
-  echo "crew context-watch: .crew/config.json's \"context\" value is malformed (not an object, e.g. null) - context warnings are OFF until it is fixed" >&2
+  echo "crew context-watch: ${CFG_SHOWN}'s \"context\" value is malformed (not an object, e.g. null) - context warnings are OFF until it is fixed" >&2
   exit 0
 fi
 # By this point `.crew/config.json` is KNOWN to exist and parse as an object
@@ -347,7 +379,7 @@ if [ -z "$CFG" ]; then
   echo "crew context-watch: python resolved but produced no config read (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
   exit 0
 fi
-read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
+read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE HANDOFF_ESCAPED <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
 # Read the ACTUAL window occupancy, not a guess at it.
@@ -515,8 +547,22 @@ if [ -f "$MARKER" ]; then
     # A measured reading back under the threshold means the window shrank
     # (a compaction) since the wrap-up: that crossing is over, so re-arm for
     # the next one. Measured only -- an estimate must not re-arm a nag.
-    rm -f "$MARKER" "$SENT_MARKER"
+    rm -f "$MARKER" "$SENT_MARKER" "$ESCALATED"
     exit 0
+  fi
+  # T-0017: an armed wrap-up whose results are not on disk is fed back to
+  # the model ONCE -- this is never the stop_hook_active turn (that exits
+  # far above), so it always follows a human turn and adds no loop. The
+  # noclobber claim makes exactly one flavour escalate when both run, and a
+  # session whose clear was already sent is not nagged about it.
+  if [ ! -f "$SENT_MARKER" ] &&
+     [ "$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-armed --root "$PWD" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
+    WRAP_WHY=$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-check --root "$PWD" 2>/dev/null | tr -d '\r')
+    if [ "$WRAP_WHY" != "ok" ] && ( set -o noclobber; : > "$ESCALATED" ) 2>/dev/null; then
+      printf 'crew wrap-up incomplete: %s. Fix exactly that, run /crew:handoff --wrap-up again, end the turn.\n' \
+        "${WRAP_WHY:-the wrap-up check gave no answer}" >&2
+      exit 2
+    fi
   fi
   # This crossing was already asked about. Never block twice for it; the
   # handoff may have been written since, which is all auto-clear wants to
@@ -539,10 +585,10 @@ MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sy
 # Report the absolute numbers, not only the percentage. A budgetTokens that does
 # not match the model in use is otherwise invisible - it just makes the gate
 # fire early forever, and a warning that is always on is one nobody reads.
-BUDGET_NOTE=" Set context.budgetTokens in .crew/config.json to pin it."
+BUDGET_NOTE=" Set context.budgetTokens in ${CFG_SHOWN} to pin it."
 case "$HOW" in
   configured+observed)
-    BUDGET_NOTE=" context.budgetTokens in .crew/config.json says a smaller window,
+    BUDGET_NOTE=" context.budgetTokens in ${CFG_SHOWN} says a smaller window,
 but this session has already held more than that - and observed usage cannot
 exceed the real window, so the larger figure wins. That pin is stale; set it to
 null to let crew work the window out from the model." ;;
@@ -552,7 +598,7 @@ already held more than that - and observed usage cannot exceed the real window,
 so the larger figure wins. A 1M variant reports its base model id, which is why
 the id alone is not trusted. Pin it with context.budgetTokens if you prefer." ;;
   configured)
-    BUDGET_NOTE=" That came from .crew/config.json. Remove it to let crew work the
+    BUDGET_NOTE=" That came from ${CFG_SHOWN}. Remove it to let crew work the
 window out from the model and this session's own usage." ;;
 esac
 
@@ -562,6 +608,13 @@ if [ "$SOURCE" = "estimated" ]; then
 This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction."
 fi
+LEFT_NOTE=""
+if [ "$HANDOFF_ESCAPED" = "escaped" ]; then
+  LEFT_NOTE="
+context.handoffPath in ${CFG_SHOWN} leaves this checkout, so the handoff goes
+to ${HANDOFF} here instead."
+fi
+NOTE="${NOTE}${LEFT_NOTE}"
 
 # Name the rule that fired. A percentage alone cannot explain why an 800k
 # reading on a 1M window said nothing and 900k did.
@@ -574,12 +627,21 @@ last ${RESERVE_H} tokens (context.reserveTokens), so a large window is not cut
 short by a percentage tuned for a small one."
 fi
 
+# T-0017: armed, the warning IS the wrap-up procedure, and supersedes both
+# messages below. Unarmed (or any error), crew_autocycle prints nothing and
+# today's message goes out unchanged.
+WRAP_MSG=$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-message --root "$PWD" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
+if [ -n "$WRAP_MSG" ]; then
+  printf '%s\n' "$WRAP_MSG" >&2
+  exit 2
+fi
+
 if [ "$AUTO_WRAP_UP" = "true" ]; then
 cat >&2 << MSG
 You are at roughly ${PCT_H}% of the context budget. Reach a stopping point
 now: finish or safely abandon the change in flight, write ${HANDOFF} per the
 crew-context skill, update the ticket, then tell the user the session is
-ready to clear. Do not start new work.
+ready to clear. Do not start new work.${LEFT_NOTE}
 MSG
 else
 cat >&2 << MSG
