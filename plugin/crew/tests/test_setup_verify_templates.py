@@ -273,3 +273,10 @@ def test_diagram_case_rejects_env_without_a_value(tmp_path):
                           capture_output=True, text=True, timeout=10, check=False)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "--env needs a value" in proc.stdout
+
+
+def test_diagram_case_fails_on_no_sources_even_without_mmdc(tmp_path):
+    repo, env = _repo(tmp_path, sources=(), fake=False)
+    proc = _case(repo, env, PATH=_path_without_mmdc(tmp_path))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "no .mmd files" in proc.stdout

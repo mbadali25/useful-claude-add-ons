@@ -25,16 +25,18 @@ done
 
 DIR="${DIAGRAMS_DIR:-docs/diagrams}"
 
-if ! command -v mmdc >/dev/null 2>&1; then
-  echo "SKIP diagrams-render: mmdc not found - install it with: npm install -g @mermaid-js/mermaid-cli" >&2
-  exit 77
-fi
-
 shopt -s nullglob
 SRCS=("$DIR"/*.mmd)
 if [ ${#SRCS[@]} -eq 0 ]; then
   echo "FAIL no .mmd files in $DIR"
   exit 1
+fi
+
+# Sources first: no sources is a FAIL even without mmdc, never a SKIP that
+# would let a wrong DIAGRAMS_DIR or deleted diagrams pass.
+if ! command -v mmdc >/dev/null 2>&1; then
+  echo "SKIP diagrams-render: mmdc not found - install it with: npm install -g @mermaid-js/mermaid-cli" >&2
+  exit 77
 fi
 
 WORK="$(mktemp -d)" || { echo "FAIL cannot create a temp directory"; exit 1; }
