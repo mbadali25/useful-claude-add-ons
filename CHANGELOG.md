@@ -32,8 +32,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   value now shows the widening warning.
 - **crew `crew_config_menu.py` (T-0103).** `delete-repo --apply` tells where the file is after an OS
   error: before the move it exits 2 naming what failed, without "could not be moved to a backup";
-  from the move on it exits 1 and names the backup (or both paths when it cannot tell). A failed move
-  back names where the changed file is.
+  from the move on it exits 1 and names where the file is (both paths when it cannot tell), or 2 when
+  the file is back at its path. A failed move back names where the changed file is.
 - **crew `crew_config.py`.** A repo `null` on a ratcheted key (`pm.authority` and the other
   `_RATCHETED` keys) is ranked by the machine value it inherits, so a widening is marked and its note
   describes that value.

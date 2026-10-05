@@ -1904,6 +1904,33 @@ def test_delete_backup_name_taken_and_config_gone_is_not_called_the_original(
     assert _bytes(_backup_path(root)) == foreign
 
 
+def test_delete_error_after_a_completed_move_back_says_back_in_place(
+        tmp_path, capsys, monkeypatch):
+    """The file changed, the move back renamed it home, and only the final
+    directory fsync failed: exit 2, the file is back, nothing deleted."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    changed = b'{"tracker": "sdp"}\n'
+    _write_config(root, changed)
+    real_fsync = crew_config_files._fsync_dir  # pylint: disable=protected-access
+    calls = []
+
+    def _fsync(path):
+        calls.append(path)
+        if len(calls) == 2:          # the move back's fsync
+            raise OSError(errno.EIO, "I/O error")
+        return real_fsync(path)
+    monkeypatch.setattr(crew_config_files, "_fsync_dir", _fsync)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "back in place" in err
+    assert _bytes(_config(root)) == changed
+    assert not os.path.lexists(_backup_path(root))
+
+
 def test_delete_lock_failure_is_not_reported_as_a_backup_failure(tmp_path, capsys,
                                                                  monkeypatch):
     root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
