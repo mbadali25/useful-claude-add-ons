@@ -802,3 +802,161 @@ def test_an_untracked_merged_in_executable_is_counted_when_git_add_records_it_64
     done = _check(root)
 
     assert (done.returncode, "other/new.py" in done.stdout) == (1, True)
+# --- T-0068: crew's own bookkeeping is never out of Touch -------------------------
+#
+# TheSelectSource's shape: `.gitignore` does not ignore `.crew/`, so the scope
+# base, the gate's records and the metrics rows are untracked, non-ignored
+# changes the audit used to list (TSS-510).
+
+def _tss_repo(tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    (root / ".gitignore").write_text(".work/\n", encoding="utf-8")
+    git(root, "add", ".gitignore", ".crew/config.json")
+    git(root, "commit", "-qm", "crew config tracked, .crew not ignored")
+    return root
+
+
+def _with_bookkeeping(root):
+    paths = crew_fixtures.write_bookkeeping(root)
+    git(root, "add", "-f", ".crew/metrics.jsonl")
+    git(root, "commit", "-qm", "metrics committed after the base")
+    return paths
+
+
+def test_bookkeeping_is_never_out_of_touch(tmp_path):
+    """Must-allow: every bookkeeping file untracked, one committed, the
+    ticket approved -- the audit passes."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    _with_bookkeeping(root)
+
+    assert completion_audit.audit(str(root), "T-1") == (True, [])
+
+
+def test_an_out_of_touch_file_beside_bookkeeping_still_fails(tmp_path):
+    """Must-block: a real out-of-Touch file and crew's verify map, changed
+    beside the bookkeeping, are named -- and no bookkeeping path is."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    paths = _with_bookkeeping(root)
+    (root / "lib").mkdir()
+    (root / "lib" / "b.py").write_text("y = 1\n", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text("{}\n", encoding="utf-8")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    text = "\n".join(lines)
+    assert not ok
+    assert "lib/b.py" in text and ".crew/verify.json" in text
+    assert "2 changed path(s)" in text
+    assert not [p for p in paths if p in text.split()]
+
+
+def test_unapproved_touch_still_fails_but_lists_no_bookkeeping(tmp_path):
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 3\n", encoding="utf-8")
+    paths = _with_bookkeeping(root)
+    spec = root / ".work" / "tickets" / "T-1" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("`src/**`", "`**`"),
+                    encoding="utf-8")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    text = "\n".join(lines)
+    assert not ok and "not approved" in text and "src/app.py" in text
+    assert not [p for p in paths if p in text.split()]
+
+
+def test_a_guard_log_row_never_deadlocks_the_audit(tmp_path):
+    """Must-allow (round-2 review of 1292b863): `scope_guard._log` appends
+    `.crew/guard.log` on every decision, so after any refusal it is an
+    untracked, non-ignored path in a TSS-shaped repository -- the TSS-510
+    deadlock again, unless the audit leaves it out as bookkeeping."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    scope_guard._log(str(root), "block", "block", "T-1", "lib/b.py",  # pylint: disable=protected-access
+                     "outside T-1's spec ## Touch")
+
+    assert (root / ".crew" / "guard.log").read_text(encoding="utf-8").count("\n") == 1
+    assert completion_audit.audit(str(root), "T-1") == (True, [])
+
+
+# --- T-0068: --classify, the verify gate's .ps1 flavour's one classifier -----------
+
+def _classify(root, text):
+    return subprocess.run([sys.executable, _AUDIT, "--classify", "--root", str(root)],
+                          input=text, capture_output=True, text=True, check=False)
+
+
+def test_classify_names_each_kind(repo):
+    """One `<kind>\\t<path>` line per input line, in input order; a path
+    holding a tab is `other`, never dropped."""
+    lines = ["src/a.py", ".crew/.scope-base", ".crew/codemap/crew.md", "docs/diagrams/x.mmd",
+             ".crew/verify.json", "sub/.crew/.scope-base", "a\tb.py", ".crew/metrics.md",
+             ".crew/guard.log", ".crew/incident.json"]
+
+    done = _classify(repo, "\n".join(lines) + "\n")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split("\n")[:-1] == [
+        "other\tsrc/a.py", "bookkeeping\t.crew/.scope-base", "artifact\t.crew/codemap/crew.md",
+        "artifact\tdocs/diagrams/x.mmd", "other\t.crew/verify.json",
+        "other\tsub/.crew/.scope-base", "other\ta\tb.py", "bookkeeping\t.crew/metrics.md",
+        "bookkeeping\t.crew/guard.log", "other\t.crew/incident.json"]
+
+
+def test_classify_reads_crlf_input(repo):
+    """PowerShell pipes `\\r\\n` to a native command on Windows."""
+    done = _classify(repo, ".crew/.scope-base\r\nsrc/a.py\r\n")
+
+    assert done.stdout == "bookkeeping\t.crew/.scope-base\nother\tsrc/a.py\n", done.stderr
+
+
+def test_classify_without_refresh_check_calls_nothing_an_artifact(repo, monkeypatch, capsys):
+    """Could not tell is its own state: when the refresh-artifact list cannot
+    be read, nothing is an artifact (fails toward unmapped, never toward
+    mapped), and stderr says why."""
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+
+    def broken(_root):
+        raise OSError("unreadable")
+    monkeypatch.setattr(crew_refresh_check, "refresh_artifact_paths", broken)
+
+    kinds = completion_audit.classify_paths(str(repo), [".crew/codemap/x.md",
+                                                        ".crew/.scope-base"])
+
+    assert kinds == ["other", "bookkeeping"]
+    assert "could not tell" in capsys.readouterr().err
+
+
+def test_ticket_is_still_required_without_classify(repo):
+    done = subprocess.run([sys.executable, _AUDIT, "--check", "--root", str(repo)],
+                          capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL)
+
+    assert done.returncode == 2 and "--ticket" in done.stderr
+
+
+@pytest.mark.parametrize("rel", [".crew/incident.json", ".crew/tfplan/x.json",
+                                 ".crew/handoffs/x.md", ".crew/.deploy-in-flight"])
+def test_a_committed_crew_trust_input_is_out_of_touch(tmp_path, rel):
+    """Must-block (review of 514ca132, FIX 3): a ticket that commits one of
+    the files crew READS as a trust input is judged like any file -- outside
+    Touch it fails the audit, by name."""
+    root = _tss_repo(tmp_path)
+    ready(root)
+    (root / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    target = root.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"deletes": []}\n', encoding="utf-8")
+    git(root, "add", "-f", rel)
+    git(root, "commit", "-qm", "commits a crew trust input")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert not ok and rel in "\n".join(lines), lines

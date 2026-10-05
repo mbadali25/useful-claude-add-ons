@@ -1218,6 +1218,62 @@ function Get-CrewIdentityText([string]$Identity) {
   return $Identity
 }
 
+# T-0068, the twin of verify-gate.sh's: crew's own bookkeeping
+# (`crew_ticket.CREW_BOOKKEEPING_PATHS`: this gate's records, the scope base,
+# the metrics files) leaves the changed list, and a refresh artifact
+# (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`) still runs any rule naming it
+# but is never unmapped. The judgement is `completion_audit.py --classify`,
+# the function the .sh imports, so the pair cannot drift. One line comes back
+# per path, in order; a line that does not echo its path exactly, a short
+# answer, a non-zero exit or no python leaves EVERY path `other` -- unmapped,
+# never mapped -- and says so.
+$crewArtifacts = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$crewBookkeeping = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$changed = @($changed | Where-Object { $_ })
+try {
+  $classPy = Resolve-CrewPython
+  $classScript = Join-Path $PSScriptRoot 'completion_audit.py'
+  $classWhy = $null
+  if ($changed.Count -eq 0) {
+    $classWhy = $null
+  } elseif (-not $classPy) {
+    $classWhy = 'no python'
+  } elseif (-not (Test-Path $classScript)) {
+    $classWhy = "completion_audit.py not found at $classScript"
+  } else {
+    $classOut = @($changed -join "`n" | & $classPy $classScript --classify --root $PWD.Path)
+    if ($LASTEXITCODE -ne 0 -or $classOut.Count -ne $changed.Count) {
+      $classWhy = "the classifier exited $LASTEXITCODE with $($classOut.Count) of $($changed.Count) lines"
+    } else {
+      $kinds = @{}
+      for ($i = 0; $i -lt $changed.Count; $i++) {
+        $line = [string]$classOut[$i]
+        $tab = $line.IndexOf("`t", [System.StringComparison]::Ordinal)
+        if ($tab -le 0 -or -not ($line.Substring($tab + 1) -ceq [string]$changed[$i])) {
+          $classWhy = "the classifier's line $($i + 1) does not name its path"
+          break
+        }
+        $kinds[$i] = $line.Substring(0, $tab)
+      }
+      if (-not $classWhy) {
+        for ($i = 0; $i -lt $changed.Count; $i++) {
+          if ($kinds[$i] -ceq 'bookkeeping') { [void]$crewBookkeeping.Add([string]$changed[$i]) }
+          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewArtifacts.Add([string]$changed[$i]) }
+        }
+      }
+    }
+  }
+  if ($classWhy) {
+    [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($classWhy) - every changed path is judged")
+  }
+} catch {
+  $crewArtifacts.Clear()
+  $crewBookkeeping.Clear()
+  [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($_) - every changed path is judged")
+}
+$global:LASTEXITCODE = 0
+$changed = @($changed | Where-Object { -not $crewBookkeeping.Contains([string]$_) })
+
 foreach ($f in $changed) {
   $hit = $false
   $ri = -1
@@ -1298,7 +1354,7 @@ foreach ($f in $changed) {
       }
     }
   }
-  if (-not $hit) { [void]$unmapped.Add($f) }
+  if (-not $hit -and -not $crewArtifacts.Contains([string]$f)) { [void]$unmapped.Add($f) }
 }
 foreach ($ri in $ruleOrder) {
   if (-not $stopExcluded.ContainsKey($ri) -and -not $ruleSecs.ContainsKey($ri)) {

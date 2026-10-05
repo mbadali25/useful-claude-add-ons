@@ -553,4 +553,116 @@ SCOPE_MUTATIONS = (
         ("tests/test_scope_base_branch.py::"
          "test_an_orphan_branch_with_the_key_could_not_tell"),
     ),
+    # --- T-0068: crew's own bookkeeping ---------------------------------------------
+    ("the audit judges bookkeeping", AUDIT,
+     '_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
+     '_ONLY = ["--", ".", ":(exclude).work"]\n',
+     _CA + "test_bookkeeping_is_never_out_of_touch"),
+    ("the unapproved audit lists bookkeeping", AUDIT,
+     '_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
+     '_ONLY = ["--", ".", ":(exclude).work"]\n',
+     _CA + "test_unapproved_touch_still_fails_but_lists_no_bookkeeping"),
+    ("the audit drops every .crew path", AUDIT,
+     '_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
+     '_ONLY = ["--", ".", ":(exclude).work", ":(exclude).crew"]\n',
+     _CA + "test_an_out_of_touch_file_beside_bookkeeping_still_fails"),
+    ("bookkeeping is judged against Touch", GUARD,
+     '    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n'
+     '        return True, "crew bookkeeping"\n',
+     "",
+     _SG + "test_an_edit_to_bookkeeping_is_allowed_outside_touch[.crew/metrics.md-approved]"),
+    ("bookkeeping is refused without an approval", GUARD,
+     '    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n'
+     '        return True, "crew bookkeeping"\n',
+     "",
+     _SG + "test_an_edit_to_bookkeeping_is_allowed_outside_touch[.crew/metrics.md-no-approval]"),
+    ("the scope base is writable as bookkeeping", GUARD,
+     "        if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):\n"
+     "            return True\n"
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel):\n",
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel) \\\n"
+     "                and os.path.normcase(rel) != os.path.normcase(SCOPE_BASE):\n",
+     _SG + "test_scope_base_stays_refused_though_it_is_bookkeeping[Edit-block]"),
+    ("one side of a link decides", GUARD,
+     "    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n",
+     "    if real_rel is not None and any(crew_ticket.is_crew_write_allowed(r) for r in checks):\n",
+     _SG + "test_one_side_of_a_link_being_bookkeeping_does_not_decide"),
+    ("a bookkeeping name linked out of the worktree is bookkeeping", GUARD,
+     "    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n",
+     "    if all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n",
+     _SG + "test_a_bookkeeping_name_linked_outside_the_worktree_is_not_bookkeeping"),
+    # --- review of 514ca132: two lists, not one ---------------------------------------
+    # FIX 1: rule 5a opens the whole bookkeeping list again, or a trust input
+    # crew READS (a tfplan summary, an incident, the deploy marker) is put on
+    # the write-allowed list.
+    ("rule 5a opens every bookkeeping path", GUARD,
+     "    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):\n",
+     "    if real_rel is not None and all(crew_ticket.is_crew_bookkeeping(r) or "
+     "crew_ticket.is_crew_state(r) for r in checks):\n",
+     _SG + "test_a_trust_input_crew_writes_is_judged_against_touch[.crew/tfplan/x.json-approved]"),
+    ("a tfplan summary is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/tfplan/**",\n)\n',
+     _SG + "test_a_trust_input_crew_writes_is_judged_against_touch[.crew/tfplan/x.json-no-approval]"),
+    ("the incident file is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/incident.json",\n)\n',
+     _SG + "test_a_trust_input_crew_writes_is_judged_against_touch[.crew/incident.json-approved]"),
+    ("the deploy marker is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/.deploy-in-flight",\n)\n',
+     _SG + "test_a_trust_input_crew_writes_is_judged_against_touch[.crew/.deploy-in-flight-approved]"),
+    # FIX 2: the gate's records, out of review, become Write/Edit-able --
+    # rule 2 stops refusing them, or they join the write-allowed list.
+    ("rule 2 stops refusing the gate's records", GUARD,
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel):\n"
+     "            return True\n",
+     "",
+     _SG + "test_the_gates_records_are_refused_even_inside_touch[.crew/.verify-gate.record.json-Write]"),
+    ("rule 2 stops refusing the gate's marker with no ticket", GUARD,
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel):\n"
+     "            return True\n",
+     "",
+     _SG + "test_the_gates_marker_is_refused_with_no_ticket_in_every_mode[report]"),
+    ("the gate's fingerprint is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/.verify-gate.*",\n)\n',
+     _SG + "test_the_gates_records_are_refused_even_inside_touch[.crew/.verify-gate.fingerprint-Edit]"),
+    ("the gate's marker is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/.verify-verified-at",\n)\n',
+     _SG + "test_the_gates_records_are_refused_even_inside_touch[.crew/.verify-verified-at-Write]"),
+    # Round-2 review of 1292b863: guard.log, appended on every scope decision,
+    # goes back to judged state (the TSS-510 deadlock after any refusal) or
+    # becomes Write/Edit-able while out of the audit (a forged or erased row).
+    ("guard.log deadlocks the audit again", TICKET,
+     '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+     "",
+     _CA + "test_a_guard_log_row_never_deadlocks_the_audit"),
+    ("guard.log is judged state, editable in report mode", TICKET,
+     '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+     "",
+     _SG + "test_a_log_left_out_of_the_audit_is_refused_to_write"
+     "[.crew/guard.log-Write-report-approved]"),
+    ("guard.log is write-allowed", TICKET,
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n)\n',
+     'CREW_WRITE_ALLOWED_PATHS = (\n    ".crew/metrics.md",\n    ".crew/guard.log",\n)\n',
+     _SG + "test_a_log_left_out_of_the_audit_is_refused_to_write"
+     "[.crew/guard.log-Edit-block-approved]"),
+    # FIX 3: a trust input crew writes is left out of the audit again.
+    ("the audit drops a committed incident file", TICKET,
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+     '    ".crew/incident.json",\n',
+     _CA + "test_a_committed_crew_trust_input_is_out_of_touch[.crew/incident.json]"),
+    ("the audit drops a committed tfplan summary", TICKET,
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+     '    ".crew/tfplan/**",\n',
+     _CA + "test_a_committed_crew_trust_input_is_out_of_touch[.crew/tfplan/x.json]"),
+    ("the audit drops a committed handoff", TICKET,
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+     '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+     '    ".crew/handoffs/**",\n',
+     _CA + "test_a_committed_crew_trust_input_is_out_of_touch[.crew/handoffs/x.md]"),
 )
