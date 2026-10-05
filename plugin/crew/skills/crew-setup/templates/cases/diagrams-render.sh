@@ -52,7 +52,10 @@ winpath() {
 }
 PCFG_ARG="$(winpath "$PCFG")"
 
-PASS=0; FAIL=0
+# PASS lines as it goes; every FAIL block after the count line, so a runner
+# that keeps only the last lines of the output still shows a failure's cause.
+PASS=0; FAIL=0; FAILS="$WORK/failures"
+: > "$FAILS"
 for src in "${SRCS[@]}"; do
   name="$(basename "$src" .mmd)"
   out="$WORK/$name.svg"
@@ -62,15 +65,18 @@ for src in "${SRCS[@]}"; do
   if [ "$rc" -eq 0 ] && [ -s "$out" ]; then
     echo "PASS $name"; PASS=$((PASS+1))
   else
-    if [ "$rc" -eq 0 ]; then
-      echo "FAIL $name (mmdc exited 0 and wrote nothing)"
-    else
-      echo "FAIL $name (mmdc exit $rc)"
-    fi
-    [ -z "$log" ] || printf '%s\n' "$log" | tail -n 5 | sed 's/^/    /'
+    {
+      if [ "$rc" -eq 0 ]; then
+        echo "FAIL $name (mmdc exited 0 and wrote nothing)"
+      else
+        echo "FAIL $name (mmdc exit $rc)"
+      fi
+      [ -z "$log" ] || printf '%s\n' "$log" | tail -n 5 | sed 's/^/    /'
+    } >> "$FAILS"
     FAIL=$((FAIL+1))
   fi
 done
 
 echo "diagrams-render: $PASS passed, $FAIL failed in $DIR"
+cat "$FAILS"
 [ "$FAIL" -eq 0 ] || exit 1

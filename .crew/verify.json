@@ -292,7 +292,7 @@
       "seconds": 10,
       "run": ["python3 -m pytest plugin/crew/tests/test_setup_verify_templates.py -q -p no:randomly"],
       "reach": "local",
-      "why": "T-0502: crew-setup's _verify runners show a failing check's output tail and report exit 77 as SKIP, and the ready diagram case passes the --no-sandbox puppeteer config so it renders as root. Every test copies the templates into tmp_path and uses a fake mmdc first on PATH; real mmdc and Chromium are never run. Timed 2026-10-05 on the 4-CPU Linux container under the shared lock: 14 tests in 0.33-0.41s (pytest start-up on top), declared 10. Sabotage-proven: the case without -p, the runner discarding output, and exit 77 falling through to FAIL each turn a named test red. reach: local - throwaway repos under tmp_path and a fake mmdc; no network." },
+      "why": "T-0502: crew-setup's _verify runners show a failing check's output tail and report exit 77 as SKIP, and the ready diagram case passes the --no-sandbox puppeteer config so it renders as root. Every test copies the templates into tmp_path and uses a fake mmdc first on PATH; real mmdc and Chromium are never run. Timed 2026-10-05 on the 4-CPU Linux container under the shared lock: 14 tests in 0.33-0.41s, 17 after review round 1 in 0.61s (pytest start-up on top), declared 10. Sabotage-proven: the case without -p, the runner discarding output, and exit 77 falling through to FAIL each turn a named test red. reach: local - throwaway repos under tmp_path and a fake mmdc; no network." },
 
     { "paths": ["scripts/check-crew-docs.py", "scripts/_test/crew-docs.py"],
       "seconds": 15,

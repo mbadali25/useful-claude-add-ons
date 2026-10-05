@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -40,7 +41,11 @@ while [ $# -gt 0 ]; do
 done
 printf '%s\\n' "${args[*]}" >> "$MMDC_LOG"
 [ -n "$cfg" ] && cat "$cfg" > "$MMDC_LOG.cfg"
-case "${FAKE_MODE:-ok}" in
+mode="${FAKE_MODE:-ok}"
+if [ -n "${FAKE_FAIL_ON:-}" ]; then
+  case "${args[*]}" in *"$FAKE_FAIL_ON"*) mode=root ;; *) mode=ok ;; esac
+fi
+case "$mode" in
   ok) echo "<svg/>" > "$out" ;;
   empty) : ;;
   root) echo "Generating single mermaid chart"
@@ -236,3 +241,27 @@ def test_templates_are_lf_and_parse():
         proc = subprocess.run([_BASH, "-n", path.replace("\\", "/")], capture_output=True,
                               text=True, timeout=30, check=False)
         assert proc.returncode == 0, proc.stderr
+
+
+def test_run_all_shows_an_early_diagram_failure_after_later_passes(tmp_path):
+    """The first source fails and five later ones render: run-all.sh keeps only
+    the last lines, and they must still carry mmdc's error."""
+    repo, env = _repo(tmp_path, sources=("a-broken", "b1", "b2", "b3", "b4", "b5"))
+    shutil.copy(CASE, repo / "_verify" / "cases" / "diagrams-render.sh")
+    proc = _run(["_verify/run-all.sh"], repo, env, FAKE_FAIL_ON="a-broken")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert ROOT_ERROR in proc.stdout, proc.stdout
+
+
+@pytest.mark.parametrize("runner", ["run-all", "smoke"])
+def test_a_background_child_does_not_hold_the_runner_open(tmp_path, runner):
+    repo, env = _repo(tmp_path)
+    if runner == "run-all":
+        _add_case(repo, "spawns", "sleep 5 &\nexit 0\n")
+    else:
+        _smoke_with(repo, 'check "spawns" sh -c "sleep 5 & exit 0"')
+    start = time.monotonic()
+    proc = _run([f"_verify/{runner}.sh"], repo, env)
+    took = time.monotonic() - start
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert took < 4, f"{runner}.sh took {took:.1f}s: it waited for the check's background child"
