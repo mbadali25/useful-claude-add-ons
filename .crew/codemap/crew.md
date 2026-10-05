@@ -1505,6 +1505,21 @@ Obsidian vault). A CLI the commands call, not a hook.
   refused with nothing written (`move`, `:1481`). `STATUS_ORDER` (`:91`) is
   read by `_backwards` (`:654`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
+- DERIVED (L-0530; measured on this tree, anchors not moved): a word outside
+  the table is named, never mapped. `RETIRED_STATUSES`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:119`: approved -> spec,
+  merged -> done, closed -> done, new -> direction, parked -> needs-owner)
+  feeds `_crew_word_hint` (`plugin/crew/hooks/scripts/crew_tracker.py:133`),
+  a text-only `; the crew word is <w>` appended to `move`'s `maps to no lane`
+  refusal (`plugin/crew/hooks/scripts/crew_tracker.py:1604`) and to
+  `_backwards`' unknown-current refusal. `_obsidian_read`
+  (`plugin/crew/hooks/scripts/crew_tracker.py:1534`) reports an INDEX status
+  outside `LANE_FOR_STATUS` as `disagree: "could not tell"` with the note
+  `INDEX status <s> is not a status crew knows (<KNOWN_STATUSES>)`, and a
+  missing INDEX status as `could not tell` too; only a known status can
+  disagree. JUDGEMENT: `land-blocked` has no row on purpose (no owner
+  decision maps it); `test_status_vocabulary.py` holds the table disjoint
+  from `LANE_FOR_STATUS`.
 - DERIVED (T-0037; measured on this tree, anchors not moved):
   the ticket status vocabulary's one owner is this table. `OWNER_STATUSES`
   (`plugin/crew/hooks/scripts/crew_tracker.py:101`, `needs-owner`: open,

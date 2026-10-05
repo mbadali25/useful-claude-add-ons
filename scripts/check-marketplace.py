@@ -15,10 +15,18 @@ bug that survives review.
 
 Run it with no arguments from anywhere in the repo. Exit status is 0 when clean, 1 when
 anything is wrong.
+
+``--pending-bump`` (L-0511, REPO-03) is for a build branch, which carries no version bump
+until land: a version-drift finding prints as ``pending at land: ...`` and does not fail.
+Only that one check changes; every other check fails exactly as without the flag. It is
+ignored, with a ``note:`` line, when the checked-out branch is ``main``. CI passes it on a
+draft pull request only, so a ready pull request and every push to ``main`` run the full
+check and a content change with no bump still cannot merge.
 """
 
 from __future__ import annotations
 
+import argparse
 import glob
 import json
 import os
@@ -1793,15 +1801,47 @@ def check_hook_commands(entries, fail):
                         )
 
 
-def main() -> int:
+def pending_bump_applies(requested: bool) -> bool:
+    """Whether --pending-bump takes effect: asked for, and the checked-out branch
+    is not `main`. A detached HEAD (a CI merge ref) is not `main`."""
+    if not requested:
+        return False
+    if git("symbolic-ref", "--quiet", "--short", "HEAD") == "main":
+        print("  note: --pending-bump is ignored on branch main - version drift fails here")
+        return False
+    return True
+
+
+def report(skills: int, plugins: int, problems: list[str], pending: list[str]) -> int:
+    """Print the summary; exit 1 on any problem. A pending-at-land line never fails."""
+    print(f"marketplace: {skills} skills, {plugins} plugins")
+    for line in pending:
+        print(f"pending at land: {line}")
+    if problems:
+        print(f"\n{len(problems)} problem(s):")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+    print("all checks passed")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     """Run every check and report."""
+    parser = argparse.ArgumentParser(description="Check the marketplace is consistent.")
+    parser.add_argument("--pending-bump", action="store_true",
+                        help="report version drift as pending at land (a build branch, REPO-03); "
+                             "ignored on branch main")
+    args = parser.parse_args(argv)
     problems: list[str] = []
+    pending: list[str] = []
     entries = load_entries()
     disk = on_disk()
 
     def fail(message: str) -> None:
         problems.append(message)
 
+    drift = pending.append if pending_bump_applies(args.pending_bump) else fail
     check_registration(entries, disk, fail)
     check_skill_manifests(entries, fail)
     check_plugin_manifests(entries, fail)
@@ -1813,7 +1853,7 @@ def main() -> int:
     check_docs(entries, fail)
     check_hook_commands(entries, fail)
     check_command_backtick_spans(fail)
-    check_versions(entries, fail)
+    check_versions(entries, drift)
     check_self_claims(entries, fail)
     check_config_reference(fail)
     check_description_claims(entries, fail)
@@ -1824,14 +1864,7 @@ def main() -> int:
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills
-    print(f"marketplace: {skills} skills, {plugins} plugins")
-    if problems:
-        print(f"\n{len(problems)} problem(s):")
-        for problem in problems:
-            print(f"  - {problem}")
-        return 1
-    print("all checks passed")
-    return 0
+    return report(skills, plugins, problems, pending)
 
 
 if __name__ == "__main__":
