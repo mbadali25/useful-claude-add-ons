@@ -2906,7 +2906,7 @@ def findings_target(root, ticket):
     touch = (approval.get("touch") or []) if approval.get("status") == "approved" else []
     if crew_ticket.in_touch(FINDINGS_TODO, touch):
         return {"path": FINDINGS_TODO, "reason": f"{ticket}'s approved Touch covers TODO.md"}
-    return {"path": f".work/tickets/{ticket}/{FINDINGS_FILE}",
+    return {"path": _rel(top, os.path.join(crew_common.tickets_root(top), ticket, FINDINGS_FILE)),
             "reason": f"TODO.md is not in {ticket}'s approved Touch, and {FINDINGS_WHY}"}
 
 

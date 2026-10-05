@@ -744,7 +744,7 @@ def _written_for(top, child_id, parent, child):
 def _orphans(top, parent):
     """`{number: id}` for tickets apply minted for this parent (provenance
     plus an INDEX row) -- whether or not their ids reached split.md."""
-    tickets = os.path.join(top, ".work", "tickets")
+    tickets = crew_common.tickets_root(top)
     try:
         names = sorted(os.listdir(tickets))
     except OSError:

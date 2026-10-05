@@ -79,7 +79,7 @@ ALLOWLIST = (
      "gate": "plugin/crew/hooks/scripts/crew_shell.py:776", "gate_text": "if not on_windows():"},
     {"file": "plugin/crew/hooks/scripts/webtest_guard.py", "function": "check_visual", "tool": "npx",
      "reason": "Linux only: check_visual returns before npx off Linux (then off the pinned Playwright container)",
-     "gate": "plugin/crew/hooks/scripts/webtest_guard.py:658",
+     "gate": "plugin/crew/hooks/scripts/webtest_guard.py:673",
      "gate_text": 'if not sys.platform.startswith("linux"):'},
     {"file": "plugin/obsidian-vault/hooks/scripts/vault_garden.py", "function": "commit_owned",
      "tool": "git", "reason": "L-1509"},
