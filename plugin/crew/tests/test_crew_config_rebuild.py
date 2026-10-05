@@ -364,7 +364,9 @@ def test_corrupt_repo_rebuilt_from_profile(tmp_path, home, capsys):
     assert code == 0, err
     expected = crew_config.template_config()
     expected["tracker"] = "jira"
-    expected["autopilot"] = {"mode": "plan"}
+    # The template keeps the repo-only autopilot keys (`maxAutoReplans`,
+    # `sleep`); the profile's personal `mode` joins them.
+    expected.setdefault("autopilot", {})["mode"] = "plan"
     assert _json(_config(root)) == expected
     newest = crew_backup.list_backups(_config(root))[0]
     assert crew_backup.read_backup(_config(root), newest) == b"{ corrupt"
