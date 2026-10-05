@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T16:19Z
+Last updated: 2026-10-05T16:25Z
 
 ## >>> RESUME HERE
 
@@ -93,6 +93,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T16:25Z H1 built (T-0098 bundle, L-0605, L-0526, L-0608, T-0068, L-0681, L-0690 CLEAN; L-0540 blocked on unpublished seed). Lander landing H1 -> main as crew 1.1.3 (one global version counter). C-0038..C-0040 minted.
 - 2026-10-05T16:19Z G2 coordinator reviews: T-0070 CLEAN, T-0044 CLEAN; T-0058/T-0059 slices code 3 BLOCK + 1 FIX (fail-open allowed-base decisions) -> sent to G2 builder (max 3 rounds).
 - 2026-10-05T16:15Z G2 built (8 tickets; T-0049 superseded by #513; head 7ece4366, placeholder 1.1.2). Capped: T-0070, T-0044, T-0058, T-0059 -> 4 coordinator reviews running. C-0035 (per-slice ledger budget; T-0059 stops after slice 1 without it), C-0036, C-0037 minted. G6 unblocks when G2 lands.
 - 2026-10-05T16:14Z #541 G1 CI red (Linux 3.12): onboard refresh path lost 'Then run step 6.'; sabotage anchor 'migrate stages with a truncating open' lost in crew_migrate.py (harness can't change in a release lane -> restore anchor in feature code). Sent to G1 lander.
