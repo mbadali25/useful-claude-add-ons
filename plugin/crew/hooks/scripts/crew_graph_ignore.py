@@ -401,14 +401,18 @@ def _matches(paths, patterns, git, fold_case=False):
 
 def _ignore_lines(root):
     """Every line as git splits it (on LF, a trailing CR dropped), blank ones
-    kept, so a line's index is its line number less one."""
+    kept, so a line's index is its line number less one. A line starting
+    with a backslash is read as blank: git un-escapes `\\!secret.pem` to the
+    literal `!secret.pem`, but graphify keeps the backslash and matches
+    nothing, so git's verdict there would overstate what graphify skips."""
     text = _read(root, IGNORE_FILE)
     if not text:
         return []
     lines = text.split("\n")
     if lines[-1] == "":
         lines.pop()
-    return [line[:-1] if line.endswith("\r") else line for line in lines]
+    lines = [line[:-1] if line.endswith("\r") else line for line in lines]
+    return ["" if line.startswith("\\") else line for line in lines]
 
 
 def coverage(root, git="git"):

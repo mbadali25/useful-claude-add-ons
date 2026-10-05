@@ -75,6 +75,16 @@ def test_uncovered_denylisted_file_is_named(tmp_path, capsys):
     assert (code, "config/env.php" in out) == (1, True), out
 
 
+def test_a_backslash_escaped_line_does_not_count_as_covering(tmp_path, capsys):
+    """Review round 3: git reads `\\!secret.pem` as the literal `!secret.pem`;
+    graphify keeps the backslash and still reads the file."""
+    root = _repo(tmp_path, {"!secret.pem": "KEY\n", ".graphifyignore": "\\!secret.pem\n"})
+
+    code, out = _check(root, capsys)
+
+    assert (code, "!secret.pem" in out) == (1, True), out
+
+
 def test_covered_denylisted_file_passes(tmp_path, capsys):
     root = _denylisted_config(tmp_path)
     assert _main(root, "--write") == 0
