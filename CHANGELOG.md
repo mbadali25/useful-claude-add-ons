@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
+
+- **Summary.** CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
+- **What.** In `.github/workflows/pytest-crew.yml` the `test` job's default set runs
+  `-n 16 --dist worksteal` instead of `-n auto` (which is 4 workers on the self-hosted pool, the
+  runners' PYTEST_XDIST_AUTO_NUM_WORKERS), still followed by the `-m wallclock` set serially. On
+  every event but a pull request the three Python legs run one at a time (`max-parallel` 1), so a
+  main push no longer puts three Python legs on the one 16-vCPU host. The ubuntu `crew-shell-matrix`
+  leg runs `-n 8`. The Windows jobs keep `-n auto`. Required check names are unchanged.
+- **Measured.** Serial benchmark, 5 runs per setting (runs 37058615163, 37080675891): default set
+  p50 260 s at 4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal; beside the slow-set
+  chain 221 s at 8/worksteal, 197 s at 12, 135 s at 16. Slow set p50 154 s at 4, 92 s at 8;
+  worksteal no better there. On the real workflow (PR runs interleaved before/after, identical
+  collections): time to `test (3.12)` p50 420 s / p90 464 s before -> p50 292 s / p90 307 s after.
+  Measured on L-0590's own branch before it was ported onto release/1.2.0; not re-measured since.
+- **Dropped.** Running the wallclock set as its own parallel job was dropped by the owner after
+  review (one failure in 36 legs beside the default set's workers). A pip/uv cache: `Install
+  pytest` already takes 0-2 s on the pool.
+- `scripts/gate-runner.py`'s CI drift strings follow the two changed commands; `AGENTS.md` and the
+  verification-harness code map say the same.
+
 ### Changed — `crew` 1.1.6: Complete archive and ticket ids beyond T- (L-0509)
 
 - **Summary.** Every crew reader now finds a ticket whether it is live or archived in

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
-- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
+- **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
+- **crew 1.1.6**: Complete archive and ticket ids beyond T-. Every crew reader now finds a ticket whether it is live or archived in `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

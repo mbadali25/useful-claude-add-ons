@@ -731,8 +731,13 @@ on `make up` and unsets it on `make down`.
 Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint with one worker per
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
-suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
+suites with xdist and `-m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
+The worker count is `-n 16 --dist worksteal` in the `test` job and `-n 8` in the ubuntu slow leg
+since L-0590 (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AUTO_NUM_WORKERS);
+the Windows jobs keep `-n auto`. The `test` job's `max-parallel` is 3 on a pull request and 1 on
+every other event, so a main push runs one Python leg at a time on the self-hosted host; the
+required `test (3.11|3.12|3.13)` checks are that job's legs, as before.
 
 ## Entry points
 
