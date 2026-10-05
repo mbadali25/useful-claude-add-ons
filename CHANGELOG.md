@@ -9,7 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — `crew`: `/crew:autopilot focus`, an explicit scope lock on one ticket (T-0020)
+### crew — batch 7: T-0020, T-0011, T-0063
+
+- **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
+  until you release it, autopilot can push, open and (only when every required check allows) merge a
+  ticket's pull request after `/crew:done`, and in a worktree it reads the ticket's INDEX row from the
+  main checkout and commits refreshed artifacts itself.
+
+#### Added — `crew`: `/crew:autopilot focus`, an explicit scope lock on one ticket (T-0020)
 
 - **Summary.** `/crew:autopilot focus <id>` locks autopilot onto one ticket until you type `focus off`; an active ticket on its own is never treated as a focus, so plain-text requests get the same answer they get without focus.
 - **Why.** The owner's standing ask: roles "drifting into unrelated rabbit holes". Focus locks
@@ -61,21 +68,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the writers), `plugin/PLUGINS.md`, the user guide, the crew code map, the generated rules, and
   `.crew/verify.json`'s autopilot rule.
 
-### Added — `crew`: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
+#### Added — `crew`: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
 
+- **Summary.** With autopilot armed, a ticket `/crew:done` closed is pushed and gets its pull request;
+  under `autopilot.ship: merge` (the default) autopilot also merges it with a merge commit once every
+  required check passes, and it stops instead whenever anything it rests on cannot be read.
 - New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
   phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
   and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
-  110-line budget (110).
+  117-line budget (117 with T-0020's and T-0063's lines).
 - New repo-only keys in the `autopilot` block: `ship` (`merge` default, or `pr`; anything else
   reads as `pr` with a warning), `knownFailures` (`[]`; check names matched exactly) and
-  `ciTimeoutMinutes` (`60`). The repo config leaf count goes from 132 to 135; `crew-setup`'s
+  `ciTimeoutMinutes` (`60`), all three in `crew_state.REPO_ONLY_AUTOPILOT` (T-0050: never set in the
+  machine-global file). The repo config leaf count goes from 138 to 141; `crew-setup`'s
   inline copy, the config template and `test_crew_autopilot.py`'s pinned block carry them.
 - The three keys move from `crew_keys.COMING` into `KEY_META` (T-0048's one row per config
   leaf): `autopilot.ship` references `crew_autopilot.SHIP_POLICIES`, the other two are code-branch
   rows run through `crew_autopilot.settings` in `test_crew_keys.py`. The configuration reference
-  and `CONFIG.md`'s generated section 10/11 tables are regenerated (74 global-settable, 61
-  repo-only, 135 leaves), and the full guide describes shipping as landed.
+  and `CONFIG.md`'s generated section 10/11 tables are regenerated (81 global-settable, 60
+  repo-only, 141 leaves), and the full guide describes shipping as landed.
 - `next` on a done ticket reads the branch's PR with `gh pr view <branch> --json
   number,state,url,headRefOid,id`. MERGED reads `closed`, and so does an open PR under `ship: pr`
   ("PR #n open, merge by hand"). A detached HEAD, a gh failure, an answer that is not a PR state,
@@ -104,15 +115,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   round is `claude` or has no `model_family`. Codex, the only cross-family reviewer here, was out
   until 2026-10-01; while it is unavailable every `high`-risk ticket stops at `ship: merge` with
   its PR open.
-- New `tests/test_crew_autopilot_ship.py` (146 cases, gh and push stubbed) and a `.crew/verify.json`
+- Batch 7: `ship_decision` and the gh/git adapter (everything that reads no review ledger) live in the
+  new `hooks/scripts/crew_ship.py`, because T-0020, T-0011 and T-0063 together took
+  `crew_autopilot.py` past pylint's 3400-line cap; `gh` and the push run the path
+  `crew_common.require_tool` finds (L-1508), and a tool not on PATH stops like one that cannot start.
+- New `tests/test_crew_autopilot_ship.py` (154 cases, gh and push stubbed) and a `.crew/verify.json`
   rule for it. Every refusing branch was sabotaged by hand (70 mutations, all red). The matching
   `SHIP_MUTATIONS` in `sabotage_autopilot.py` are left for a harness-only change (T-0087); this
   release changes no harness file.
 - Carries review round 2's six findings on the branch (4 BLOCK, 2 FIX): the field count, HEAD taken
   after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
   tree, and the dequeue.
-### Changed — `crew`: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+#### Changed — `crew`: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
 
+- **Summary.** In a lane worktree autopilot finds the ticket's INDEX row in the main checkout, and the
+  refresh check now says `fresh-uncommitted` when every artifact is current but a refreshed file is not
+  committed, which autopilot commits for you and `/crew:done` refuses.
 - `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
   (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
   `--json` names the file that answered as `index_source`. Rows in both checkouts whose status
