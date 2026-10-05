@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:20 UTC
+Last updated: 2026-10-05 00:21 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:21: Owner: new cloud tickets are C-NNNN starting C-0001 (L-1500..L-1518 keep their IDs).
 - 00:20: Batch PR #498 merge review: 1 FIX (#364's /crew:split PLUGINS.md row dropped), 2 NIT; #416 _route change PASS (270 line-break probes none), #420 live sleep/wake PASS. Coordinator fixed FIX + stale comment/README line, version re-set last -> 48700b59 (route suites 518 passed). CI re-running; merge when green.
 - 00:20: L-1518 PR #499 opened at c726f8a1 (README 916->426 lines, What's new generated from CHANGELOG), CI pending
 - 00:15: Batch PR #498 at d2432c3b, CI green, crew 1.0.345: lands #364 T-0052, #416 T-0057, #420 L-0662. Left out: #366 (also stacked on unmerged #353 T-0011), #407 (own CI red: nesting-depth tests interpreter-dependent; reverted out; sent back for fixed depth bound). Merge-resolution review spawned (T-0057 _route change, L-0662 live sleep/wake).
