@@ -19,8 +19,8 @@ same artifact.
 ## `--dry-run`
 
 Print the exact sequence you would run, in order, with the commands resolved
-from config. Run nothing. This is the safe way to check a new `environments`
-block before trusting it.
+from config (a `github` environment: `crew_ghdeploy.py check`'s output). Run
+nothing. This is the safe way to check a new `environments` block first.
 
 ## The sequence
 
@@ -66,10 +66,10 @@ with the error text verbatim.
   being discarded and get that agreed. Do not call a difference roll-forward
   because the source is the branch you were told to deploy.
 
-**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop.
+**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop. A
+`github` environment runs the five steps in the skill's `github-deploy.md`.
 
 Then assert on what actually happened, not on the wrapper:
-
 - **Check the job, not the run.** A pipeline whose deploy step is conditional
   (path filters, `if:` guards, a changed-files check) reports a green *run*
   while having deployed nothing. Read the status of the deploy job itself and

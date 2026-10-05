@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: `crew_ghdeploy.py record` and the `/crew:promote` github sequence (L-0647)
+
+- **Summary.** `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`: a detail line with
+  no pipe character, and on anything but pass the previous all-pass sha, the last 40 lines of the
+  failed-step log (colour codes removed, every pipe shown as a slash, lines clipped to 300) and a
+  `not-run` row. Nothing it writes can be read as a pass row: a forged all-pass row in a log is
+  recorded and `requires` is still unmet, checked against the real promote gates. The file is
+  rebuilt whole through a temp file and `os.replace`.
+- **The sequence.** `/crew:promote` gate 2 runs prepare, the dispatch, identify, watch and record
+  for a `github` environment, and `--dry-run` prints `check`'s output; the steps, each exit code
+  and what is hook-enforced versus prose are in the crew-verification skill's new
+  `github-deploy.md`. No automatic rollback: the record names the previous good sha and a person
+  chooses. The troubleshooting guide gains "The run could not be identified".
+
 ### Added — `crew` 1.1.4: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job (L-0646)
 
 - **Summary.** `watch` follows the identified run with `gh run watch` in slices that fit the Bash

@@ -521,7 +521,20 @@ state file and printed as the last line:
   at the deadline (it is named and left running); no run id in the state file
   is could-not-tell (exit 3).
 It never cancels, re-runs or approves a run: its only `gh` calls are `run
-watch` and `run view`. **Not built yet:** recording the result.
+watch` and `run view`.
+
+**`record` (L-0647)** - `crew_ghdeploy.py record --root . --env <name>
+[--index N]` - rebuilds `.work/PROMOTIONS.md` whole (temp file, `os.replace`)
+with one detail line that holds no pipe character, so no gate reads it as a
+row:
+`- deploy <env> <sha40> github <workflow>@<ref> run <id|none>
+<pass|FAIL|unknown|could-not-tell> <url|-> at <UTC> - <reason>`. On anything
+but pass it adds the previous all-pass sha, the last 40 lines of the
+failed-step log (pipes shown as `/`) and a `| ... | not-run | not-run |
+not-run | <actor> |` row, which records the deploy and never satisfies
+`requires`. A run with no verdict is exit 3, nothing written. **The sequence
+of the five steps, each exit code and what to do on it, and what is
+hook-enforced versus prose, is in `github-deploy.md`.**
 
 ### The promotion record
 

@@ -4,6 +4,7 @@
     python3 crew_ghdeploy.py prepare --root DIR --env NAME [--index N]
     python3 crew_ghdeploy.py identify --root DIR --env NAME [--index N]
     python3 crew_ghdeploy.py watch    --root DIR --env NAME [--index N] [--slice-seconds S]
+    python3 crew_ghdeploy.py record   --root DIR --env NAME [--index N]
 
 T-0045 slice 1. An environment in `.crew/verify.json` may carry a `github`
 entry -- one object or a list of them -- that describes a
@@ -996,6 +997,105 @@ def watch(root, env, index, slice_seconds=SLICE_SECONDS):
     return EXIT[verdict], lines + [f"result={verdict} run={run_id} reason={reason}"]
 
 
+# --- record (L-0647) -------------------------------------------------------
+#
+# `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`, the whole
+# file rebuilt in memory and written through a temp file and `os.replace`. It
+# always appends one detail line, which holds NO PIPE CHARACTER, so the gates
+# (`passed()` in promote-gate, the Stop check in verify-gate) never read it as
+# a row:
+#   - deploy <env> <sha40> github <workflow>@<ref> run <id|none>
+#     <pass|FAIL|unknown|could-not-tell> <url|-> at <UTC> - <reason>
+# On anything but pass it also appends the previous all-pass sha for the
+# environment, the last 40 lines of `gh run view <id> --log-failed` (ANSI
+# stripped, every pipe shown as a slash, each line clipped to 300 characters,
+# indented) and the row `| <UTC> | <env> | <sha40> | not-run | not-run |
+# not-run | <actor> |`, which records the deploy and is never a pass. On pass
+# the table row is promote's, after gates 3 to 5. No rollback, no re-dispatch,
+# no cancel: a person chooses. A state file with a run id and no verdict is
+# could-not-tell (exit 3) and writes nothing.
+
+PROMOTIONS = os.path.join(".work", "PROMOTIONS.md")
+HEADER = ("| when (UTC) | env | sha | smoke | regression | verify | by |\n"
+          "|---|---|---|---|---|---|---|\n")
+EXCERPT_LINES = 40
+EXCERPT_WIDTH = 300
+OUTCOME = {"pass": "pass", "fail": "FAIL", "unknown": "unknown"}
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_]")
+
+
+def _clean(text):
+    """One line with no pipe and no control character."""
+    text = _ANSI.sub("", str(text)).replace("|", "/")
+    return "".join(c if ord(c) >= 32 and c not in "\x7f\u2028\u2029" else " " for c in text)
+
+
+def excerpt(root, run_id):
+    """The last 40 lines of the run's failed-step log, cleaned, indented."""
+    code, out = _run_gh(["run", "view", str(run_id), "--log-failed"], root)
+    if code != 0:
+        return ["    (the failed-step log could not be read)"]
+    lines = out.replace("\r", "").splitlines()[-EXCERPT_LINES:]
+    return ["    " + _clean(line)[:EXCERPT_WIDTH] for line in lines]
+
+
+def previous_good(text, env):
+    """The sha of the LAST all-pass row for `env` in PROMOTIONS.md text,
+    read as promote-gate's `passed()` reads a row; None when there is none."""
+    good = None
+    for line in text.splitlines():
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 6 and cells[1] == env \
+                and all(c.lower() == "pass" for c in cells[3:6]):
+            good = cells[2]
+    return good
+
+
+def record(root, env, index):
+    """Lines to print for `record`; rewrites PROMOTIONS.md whole."""
+    state = read_state(root, env, index)
+    run_id = state.get("runId")
+    has_run = isinstance(run_id, int) and not isinstance(run_id, bool)
+    if has_run and state.get("verdict") not in OUTCOME:
+        raise CouldNotTell("record-without-verdict", "the state file names a run but holds "
+                                                     "no verdict; run watch first")
+    outcome = OUTCOME[state["verdict"]] if has_run else "could-not-tell"
+    reason = state.get("verdictReason") if has_run else "identify could not name the run"
+    url = state.get("runUrl") if has_run and state.get("runUrl") else "-"
+    when = time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(_clock()))
+    path = os.path.join(root, PROMOTIONS)
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            old = fh.read()
+    except FileNotFoundError:
+        old = HEADER
+    except OSError as exc:
+        raise CouldNotTell("promotions-unreadable", f"{path}: {exc}") from exc
+    add = [_clean(f"- deploy {env} {state.get('sha')} github {state['workflow']}@"
+                  f"{state['ref']} run {run_id if has_run else 'none'} {outcome} {url} "
+                  f"at {when} - {reason}")]
+    if outcome != "pass":
+        add.append(_clean(f"  previous all-pass sha for {env}: "
+                          f"{previous_good(old, env) or 'none'}"))
+        if has_run:
+            add += ["  failed-step log, last 40 lines:"] + excerpt(root, run_id)
+        add.append(f"| {when} | {_clean(env)} | {_clean(state.get('sha'))} | not-run | "
+                   f"not-run | not-run | {_clean(state['actor'])} |")
+    text = old + ("" if not old or old.endswith("\n") else "\n") + "\n".join(add) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, path)  # the whole file, never a partial one
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return add[:1] + [f"result=recorded outcome={outcome}"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_ghdeploy.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1015,6 +1115,10 @@ def main(argv=None):
     cmd.add_argument("--env", required=True)
     cmd.add_argument("--index", type=int, default=0)
     cmd.add_argument("--slice-seconds", type=int, default=SLICE_SECONDS)
+    cmd = sub.add_parser("record", help="write the outcome into .work/PROMOTIONS.md (L-0647)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
     args = parser.parse_args(argv)
     # A name or key in a message may hold any character, and a Windows
     # console or pipe is cp1252: an unencodable one must not turn a verdict
@@ -1027,6 +1131,8 @@ def main(argv=None):
             lines = prepare(root, args.env, args.index)
         elif args.command == "identify":
             lines = identify(root, args.env, args.index)
+        elif args.command == "record":
+            lines = record(root, args.env, args.index)
         elif args.command == "watch":
             if not 1 <= args.slice_seconds <= SLICE_MAX:
                 raise Refused("slice-seconds-range", f"--slice-seconds must be 1 to {SLICE_MAX}, "

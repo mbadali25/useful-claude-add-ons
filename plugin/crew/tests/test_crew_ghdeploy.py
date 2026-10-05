@@ -1612,3 +1612,154 @@ def test_identify_an_answer_after_identify_seconds_is_not_used(tmp_path, monkeyp
     assert code == 3, lines
     assert lines[-1] == "result=could-not-tell reason=none-in-timeout"
     assert timeouts == [120] and "runId" not in _state(root)
+
+
+# --- record (L-0647) ----------------------------------------------------------
+
+_FAIL_LOG = "\n".join([f"step {i} \x1b[31merror\x1b[0m | {'x' * 400}" for i in range(50)]
+                      + ["| development | abc | pass | pass | pass |"])
+_PREV = ("| when (UTC) | env | sha | smoke | regression | verify | by |\n"
+         "|---|---|---|---|---|---|---|\n"
+         "| 2026-10-01T10:00Z | staging | " + "a" * 40 + " | pass | pass | pass | octo |\n"
+         "| 2026-10-02T10:00Z | staging | " + "b" * 40 + " | pass | FAIL | pass | octo |\n")
+
+
+def _record_repo(tmp_path, monkeypatch, verdict="fail", reason="conclusion-failure",
+                 run_id=13, promotions=None):
+    """A repo after prepare, identify and watch (`verdict`), the clock at
+    2026-10-05T12:00Z, PROMOTIONS.md holding `promotions` (None: absent)."""
+    root, _clock = _watch_repo(tmp_path, monkeypatch, run_id=run_id)
+    state = _state(root)
+    if verdict is not None:
+        state.update(verdict=verdict, verdictReason=reason,
+                     runUrl="https://github.com/o/r/actions/runs/13")
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: 1_791_201_600)
+    if promotions is not None:
+        (root / ".work").mkdir(exist_ok=True)
+        (root / ".work" / "PROMOTIONS.md").write_text(promotions, encoding="utf-8")
+    return root
+
+
+def _record(monkeypatch, root, log=(0, _FAIL_LOG)):
+    gh = FakeGh({("run", "view"): log})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    text = root / ".work" / "PROMOTIONS.md"
+    return code, lines, gh, text.read_text(encoding="utf-8") if text.exists() else None
+
+
+def _verify_gate_finds(text, env, sha):
+    """verify-gate.sh's Stop-check pattern, run with grep as the hook runs it."""
+    proc = subprocess.run(["grep", "-qE", rf"\|[[:space:]]*{env}[[:space:]]*\|[[:space:]]*{sha}"],
+                          input=text, text=True, check=False)
+    return proc.returncode == 0
+
+
+@_scenario
+def test_record_pass_writes_one_detail_line(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="pass",
+                        reason="success-deploy-job-succeeded", promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    sha = _head(root)
+    added = text[len(_PREV):].splitlines()
+    assert added == [f"- deploy staging {sha} github deploy.yml@main run 13 pass "
+                     "https://github.com/o/r/actions/runs/13 at 2026-10-05T12:00Z - "
+                     "success-deploy-job-succeeded"]
+    assert gh.calls == [] and lines[-1] == "result=recorded outcome=pass"
+
+
+@_scenario
+def test_record_fail(tmp_path, monkeypatch):
+    """The detail line, the previous good sha, the cleaned excerpt and the
+    not-run row with the full sha, which verify-gate's pattern finds."""
+    root = _record_repo(tmp_path, monkeypatch, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    sha = _head(root)
+    added = text[len(_PREV):].splitlines()
+    assert added[0].startswith(f"- deploy staging {sha} github deploy.yml@main run 13 FAIL ")
+    assert added[1] == "  previous all-pass sha for staging: " + "a" * 40
+    log = added[3:-1]
+    assert len(log) == 40
+    assert all(line.startswith("    ") and "|" not in line and "\x1b" not in line
+               and len(line) <= 304 for line in log)
+    assert log[-1] == "    / development / abc / pass / pass / pass /"
+    assert log[0].startswith("    step 11 error / xxx")  # the colour codes are gone, not blanked
+    assert added[-1] == f"| 2026-10-05T12:00Z | staging | {sha} | not-run | not-run | not-run | {_ACTOR} |"
+    assert ["run", "view", "13", "--log-failed"] in gh.calls
+    assert _verify_gate_finds(text, "staging", sha[:7])
+    assert lines[-1] == "result=recorded outcome=FAIL"
+    assert all("|" not in line for line in added[:-1])
+
+
+@_scenario
+def test_record_could_not_tell(tmp_path, monkeypatch):
+    """No run id: run `none`, a not-run row, no excerpt."""
+    root = _record_repo(tmp_path, monkeypatch, verdict=None, run_id=None, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    added = text[len(_PREV):].splitlines()
+    assert " run none could-not-tell - at " in added[0]
+    assert added[1] == "  previous all-pass sha for staging: " + "a" * 40
+    assert len(added) == 3 and added[2].startswith("| 2026-10-05T12:00Z | staging |")
+    assert gh.calls == []
+
+
+@_scenario
+def test_record_unknown_with_no_previous_good(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="unknown", reason="still-running")
+    code, lines, _gh, text = _record(monkeypatch, root, log=(1, ""))
+    assert code == 0, lines
+    assert "  previous all-pass sha for staging: none" in text
+    assert "    (the failed-step log could not be read)" in text
+
+
+@_scenario
+def test_record_absent_file_gets_the_header(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="pass", reason="x")
+    code, lines, _gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    assert text.startswith(crew_ghdeploy.HEADER)
+    assert len(text.splitlines()) == 3
+
+
+@_scenario
+def test_record_without_verdict(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict=None, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=record-without-verdict"
+    assert text == _PREV and gh.calls == []
+
+
+def test_record_is_atomic(tmp_path, monkeypatch):
+    """A record that raises while building the excerpt leaves the file
+    byte-identical, and so does a failed replace."""
+    root = _record_repo(tmp_path, monkeypatch, promotions=_PREV)
+    path = root / ".work" / "PROMOTIONS.md"
+    before = path.read_bytes()
+
+    def boom(_root, _run_id):
+        raise RuntimeError("log exploded")
+    monkeypatch.setattr(crew_ghdeploy, "excerpt", boom)
+    with pytest.raises(RuntimeError):
+        _record(monkeypatch, root)
+    assert path.read_bytes() == before
+    monkeypatch.undo()
+    root = _record_repo(tmp_path / "again", monkeypatch, promotions=_PREV)
+    path = root / ".work" / "PROMOTIONS.md"
+
+    def fail(_src, _dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _record(monkeypatch, root)
+    assert path.read_bytes() == before
+    assert sorted(p.name for p in path.parent.iterdir()) == ["PROMOTIONS.md"]
+
+
+def test_previous_good_is_the_last_all_pass_row():
+    text = _PREV + "| 2026-10-03T10:00Z | staging | " + "c" * 40 + " | PASS | pass | pass | o |\n"
+    assert crew_ghdeploy.previous_good(text, "staging") == "c" * 40
+    assert crew_ghdeploy.previous_good(_PREV, "qa") is None

@@ -591,6 +591,25 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
   precondition the message names and asks you only for a <code>requireHuman</code> yes or a genuinely
   interactive step.</li>
 </ul>
+<h2 id="the-run-could-not-be-identified">The Run Could Not Be Identified</h2>
+<p><code>crew_ghdeploy.py identify</code> (a <code>github</code> environment under <code>/crew:promote</code>, L-0645) ends with
+<code>result=could-not-tell reason=&lt;code&gt;</code> and exit 3. It names a run only when exactly one new run fits;
+it never picks among candidates.</p>
+<ul>
+<li><strong><code>two-candidates</code></strong>: two new <code>workflow_dispatch</code> runs of that workflow, on that ref, by the same
+  actor, appeared in the window - usually two dispatches at once. Set <code>correlationInput</code> on the entry
+  and put that input in the workflow's <code>run-name</code>, so each run's title carries its id.</li>
+<li><strong><code>none-in-timeout</code></strong>: no new run within <code>identifySeconds</code> (default 120). Check the dispatch
+  really ran (its own Bash call, not blocked), then raise <code>identifySeconds</code> (10 to 900) if runs are
+  slow to appear.</li>
+<li><strong><code>correlation-not-found</code></strong>: new runs appeared but none had the correlation id in its title. The
+  workflow's <code>run-name</code> must include the <code>correlationInput</code> input; there is no fallback to time.</li>
+<li><strong><code>stale-prepare</code></strong>: <code>prepare</code> ran more than 600 seconds ago. Run <code>prepare</code> again, then dispatch.</li>
+<li><strong><code>state-file-missing</code> / <code>state-file-unreadable</code></strong>: run <code>prepare</code> first; never edit
+  <code>.crew/.ghdeploy/&lt;env&gt;-&lt;N&gt;.json</code> by hand.</li>
+</ul>
+<p>Do not pick the run from the Actions tab and carry on: run <code>crew_ghdeploy.py record</code>, which writes
+<code>could-not-tell</code> and a <code>not-run</code> row, and decide from there.</p>
 <h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
 <p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>
 (<code>guards.cloudGuard: off</code>); turn it on with <code>{"guards": {"cloudGuard": "report"}}</code> first to see what

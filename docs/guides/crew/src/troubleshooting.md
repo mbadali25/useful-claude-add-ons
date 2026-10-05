@@ -430,6 +430,27 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
   precondition the message names and asks you only for a `requireHuman` yes or a genuinely
   interactive step.
 
+## The run could not be identified
+
+`crew_ghdeploy.py identify` (a `github` environment under `/crew:promote`, L-0645) ends with
+`result=could-not-tell reason=<code>` and exit 3. It names a run only when exactly one new run fits;
+it never picks among candidates.
+
+- **`two-candidates`**: two new `workflow_dispatch` runs of that workflow, on that ref, by the same
+  actor, appeared in the window - usually two dispatches at once. Set `correlationInput` on the entry
+  and put that input in the workflow's `run-name`, so each run's title carries its id.
+- **`none-in-timeout`**: no new run within `identifySeconds` (default 120). Check the dispatch
+  really ran (its own Bash call, not blocked), then raise `identifySeconds` (10 to 900) if runs are
+  slow to appear.
+- **`correlation-not-found`**: new runs appeared but none had the correlation id in its title. The
+  workflow's `run-name` must include the `correlationInput` input; there is no fallback to time.
+- **`stale-prepare`**: `prepare` ran more than 600 seconds ago. Run `prepare` again, then dispatch.
+- **`state-file-missing` / `state-file-unreadable`**: run `prepare` first; never edit
+  `.crew/.ghdeploy/<env>-<N>.json` by hand.
+
+Do not pick the run from the Actions tab and carry on: run `crew_ghdeploy.py record`, which writes
+`could-not-tell` and a `not-run` row, and decide from there.
+
 ## Cloud guard false positives
 
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
