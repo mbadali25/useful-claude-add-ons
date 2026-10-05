@@ -576,6 +576,50 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## An agent named in verify.json is not installed
+
+`.crew/verify.json` travels with the repo; the agents its rules name do not. A rule asking for an
+agent this machine lacks reviews less, and nothing in the output says so.
+
+- **Symptom:** `/crew:status` prints `agents   MISSING <name> (verify.json rule: <paths>)`, or
+  `/crew:review` reports a requested agent as a gap.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/verify_agents.py" --root . --check
+  ```
+  Exit 1 lists each missing name with its rule's paths. Exit 2 (`unknown`) means a plugin registry,
+  a settings file or `verify.json` itself would not parse, so it could not tell; it never reads that
+  as installed. Managed-policy agents and `--agents` agents are not checked.
+  **Fix:** install the plugin or agent, enable the plugin (`enabledPlugins`; a narrower settings
+  scope's `false` wins), or change the rule to an agent this machine has.
+
+## The temp directory fills with crew files
+
+Earlier crew releases' test suites and auto-clear sender could leave files in the
+system temp directory: `crew-completion-audit.*` markers, `tmp.*` auto-clear sender scripts
+(`tmux send-keys ...` / `xdotool ...` followed by `rm -f -- <itself>`) and `tmp.*` fixture
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
+guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
+`TMPDIR`, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
+makes.
+
+- **Symptom:** `df -i /tmp` near 100%, or hooks failing on `mktemp`.
+  **Check** (read-only):
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  ls -d crew-completion-audit.* 2>/dev/null | wc -l
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | wc -l
+  ```
+  **Fix (an owner action; crew itself never runs it):** with no crew session or test run active,
+  remove what the check counted:
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | xargs -r rm -f --
+  ```
+  Old shell-suite fixture directories are ordinary `tmp.*` directories (a `.crew/` and a
+  `.git/` inside); read each before removing it.
+
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires

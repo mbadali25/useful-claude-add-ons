@@ -156,8 +156,8 @@ repository. This command never writes the global file.
 
 ## 5. Report — do not resolve
 
-`crew_upgrade.py` writes `.crew/codemap/UPGRADE.md` itself; read it back and
-surface it, do not re-derive it by hand:
+`crew_upgrade.py` puts this run on top of `.crew/codemap/UPGRADE.md` (earlier runs stay below a marker
+line, newest first, never rewritten); read the top run back and surface it, do not re-derive it by hand:
 
 - **Contradictions** — a path the codemap claims that the graph's derived
   facts did not corroborate. These stay in the codemap untouched. Report each

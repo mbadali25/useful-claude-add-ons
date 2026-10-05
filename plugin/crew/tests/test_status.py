@@ -383,3 +383,57 @@ def test_status_unchanged_without_new_words(tmp_path):
 
     assert _tickets_with(tmp_path, rows) == [
         "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]
+
+
+# --- T-0065 item 3: the agents line --------------------------------------------
+
+
+def _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}'):
+    """A fake `~/.claude` with no agents of its own, so nothing real is read."""
+    config = tmp_path / "home" / ".claude"
+    (config / "plugins").mkdir(parents=True)
+    (config / "plugins" / "installed_plugins.json").write_text(registry, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+
+def _verify_names(root, *agents):
+    rules = [{"paths": ["**/*.php"], "run": ["true"], "agents": list(agents)}]
+    (root / ".crew" / "verify.json").write_text(json.dumps({"rules": rules}), encoding="utf-8")
+
+
+def test_status_flags_uncovered_verify_agent(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "php-developer")
+
+    lines = crew_status.collect(str(root))
+
+    agents = [line for line in lines if line.startswith("agents   ")]
+    assert agents == ["agents   MISSING php-developer (verify.json rule: **/*.php)"]
+
+
+@pytest.mark.parametrize("case", ["ok", "unknown"])
+def test_status_agents_ok_and_unknown(tmp_path, monkeypatch, case):
+    _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}' if case == "ok" else "{not json")
+    root = make_repo(tmp_path)
+    _verify_names(root, "security" if case == "ok" else "voltagent:security-auditor")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    if case == "ok":
+        assert agents == ["agents   ok (1 named)"]
+    else:
+        assert len(agents) == 1 and agents[0].startswith("agents   unknown - ")
+        assert "installed_plugins.json" in agents[0]
+
+
+def test_status_shows_at_most_three_missing_agents(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "a1", "a2", "a3", "a4", "a5")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    assert len(agents) == 1
+    assert agents[0].startswith("agents   MISSING a1, a2, a3 (+2 more)")

@@ -1149,6 +1149,13 @@ def _config_lines(notes):
 
 # Marks a human has put on a contradiction line. Anything carrying one is
 # carried forward verbatim rather than regenerated -- see `_carried_conflicts`.
+# T-0065 (item 8): every run puts its report on top of UPGRADE.md and keeps
+# the earlier file, byte for byte, below this line. Newest on top keeps
+# `/crew:upgrade`'s "opens with" and `_carried_conflicts`'s first
+# `## Contradictions` section true without either being rewritten.
+UPGRADE_HISTORY_MARKER = ("<!-- crew_upgrade: earlier runs below, newest first; "
+                          "nothing below this line is rewritten -->")
+
 _ANNOTATED = ("RESOLVED", "WONTFIX", "VERIFIED", "~~", "FALSE POSITIVE")
 
 
@@ -1180,6 +1187,11 @@ def _carried_conflicts(root, conflicts):
     if body:
         inside = False
         for line in body.splitlines():
+            # T-0065: earlier runs are kept below the marker. Only the newest
+            # run is read; an annotation on an older run stays in that run's
+            # history and is not carried into the new one.
+            if line.strip() == UPGRADE_HISTORY_MARKER:
+                break
             if line.startswith("## Contradictions"):
                 inside = True
                 continue
@@ -1294,6 +1306,36 @@ def _report(status, head, results, notes, root):
     return "\n".join(lines) + "\n"
 
 
+def _write_upgrade_report(path, report):
+    """Put `report` on top of `path`, keeping the earlier file below the marker.
+
+    T-0065 (item 8): this used to `open(path, "w")` and write the report
+    alone, so `--force` erased every earlier run, an unverified contradictions
+    list included. The old bytes are read first and kept verbatim (binary, so
+    not even a line ending is touched); the whole new file is built in memory,
+    written to a pid-named sibling and renamed over the target, so an
+    interruption leaves the old file or the new one, never half of either.
+    The new report is LF-only on every platform."""
+    try:
+        with open(path, "rb") as handle:
+            old = handle.read()
+    except FileNotFoundError:
+        old = b""
+    data = report.encode("utf-8")
+    if old:
+        data += b"\n" + UPGRADE_HISTORY_MARKER.encode("utf-8") + b"\n\n" + old
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
 def run(root, derived, force=False):
     """Upgrade the repo at `root`. `derived` maps subsystem -> graph sections."""
     cfg_path = os.path.join(root, ".crew", "config.json")
@@ -1401,9 +1443,7 @@ def run(root, derived, force=False):
               else "upgraded")
     report = _report(status, head, results, notes, root)
     if os.path.isdir(mapdir):
-        with open(os.path.join(mapdir, "UPGRADE.md"), "w",
-                  encoding="utf-8") as handle:
-            handle.write(report)
+        _write_upgrade_report(os.path.join(mapdir, "UPGRADE.md"), report)
 
     return {
         "status": status,

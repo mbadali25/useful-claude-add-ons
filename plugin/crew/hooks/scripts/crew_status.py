@@ -5,6 +5,9 @@
 Replaces what `/crew:pm`, `/crew:roster` and `/crew:scale` reported, and does
 none of what they did: no dispatch, no config edit, no file written anywhere.
 Every section is a fact read from disk or git, or it says it could not tell.
+The `agents` line runs `verify_agents.check`: the agents `.crew/verify.json`
+names that are not installed on this machine, or `unknown` when a registry or
+settings file will not parse.
 
 `--memory` adds the context hook's own numbers by running `crew_context.py
 --stats --root <root>` from this directory when that script exists, and says
@@ -35,6 +38,7 @@ import crew_migrate  # noqa: E402
 import crew_shell  # noqa: E402
 import crew_tracker  # noqa: E402
 import review_ledger  # noqa: E402
+import verify_agents  # noqa: E402
 import verify_record  # noqa: E402
 from crew_common import read_text  # noqa: E402
 
@@ -177,6 +181,27 @@ def _verify_line(root):
     return "verify   " + (", ".join(f"{v} {k}" for k, v in sorted(counts.items())) or "no rules recorded")
 
 
+def _agents_line(root):
+    """Agents `.crew/verify.json` names that are not installed here (T-0065).
+    Reads no installation state when no agent is named."""
+    result = verify_agents.check(root)
+    if result["status"] == "ok":
+        return f"agents   ok ({result['named']} named)" if result["named"] else "agents   none named"
+    if result["status"] == "unknown":
+        return f"agents   unknown - {result['unknown'][0]['reason']}"
+    missing = list(result["missing"].items())
+    line = "agents   MISSING " + ", ".join(name for name, _ in missing[:3])
+    if len(missing) > 3:
+        line += f" (+{len(missing) - 3} more) - verify_agents.py --check lists their rules"
+    elif len(missing) == 1:
+        line += f" (verify.json rule: {', '.join(missing[0][1]) or 'no paths'})"
+    else:
+        line += " - verify_agents.py --check lists their rules"
+    if result["unknown"]:
+        line += f"; {len(result['unknown'])} unknown"
+    return line
+
+
 def _codemap_line(root, cfg):
     if not os.path.isdir(os.path.join(root, ".crew", "codemap")):
         return "codemap  none - /crew:onboard writes one"
@@ -257,6 +282,9 @@ def collect(root, memory=False):
     shell = crew_shell.status_line(root)
     if shell:
         lines.append(shell)
+    # After the shell line, which test_status_shell_line_on_windows pins
+    # directly below verify.
+    lines.append(_agents_line(root))
     lines.append(_codemap_line(root, cfg))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))

@@ -1282,7 +1282,7 @@ absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure
 times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
 never zero. `status_line` (`:923`) reads config and the cache only, and
-`plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
+`plugin/crew/hooks/scripts/crew_status.py:276` calls it and appends it after the `verify` line (the `agents` line, T-0065, follows it). Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
 `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) shipped with T-0040 up to
 its landing bump, then split out to follow-up ticket W-0115 per rule 36
@@ -1462,7 +1462,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   INDEX `needs-owner` row as phase `needs-owner`
   (`plugin/crew/hooks/scripts/crew_autopilot.py:454`), waiting on `owner`
   (`WAITING`, `plugin/crew/hooks/scripts/crew_autopilot.py:1378`).
-  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
+  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:109`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a
   `cancelled`/`superseded`/`needs-owner` header edit stales an approval.
@@ -1548,7 +1548,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:67`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:75`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -2046,7 +2046,7 @@ citations taken with `grep -n` there.
 - DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:133`
   and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:503`, `:517`, `:548`,
-  `plugin/crew/hooks/scripts/crew_state.py:2198`, `plugin/crew/hooks/scripts/crew_status.py:52`,
+  `plugin/crew/hooks/scripts/crew_state.py:2198`, `plugin/crew/hooks/scripts/crew_status.py:56`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
   `plugin/crew/hooks/scripts/crew_trailers.py:337` (imported lazily, as that module does),
   `plugin/crew/hooks/scripts/event_claim.py:100`, `plugin/crew/hooks/scripts/crew_autocycle.py:849`
@@ -2146,6 +2146,39 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
 - JUDGEMENT: no state file is the design; a re-run is a no-op because converted rows are
   pointers on the next read. Nothing calls either subcommand but the `crew-memory` skill.
 
+## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
+
+- DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every
+  agent a `.crew/verify.json` rule names (`named`, `:85`) against `installed` (`:173`): crew's
+  `ROLE_TIERS` and `agents/`, user and project agents, and each plugin in
+  `installed_plugins.json` that `plugin_enabled` (`:150`) finds enabled, narrowest settings scope
+  first. A source that will not parse makes the names it could have supplied `unknown`, never
+  installed; `main` (`:272`) exits 0 ok, 1 missing, 2 unknown. `crew_status._agents_line`
+  (`plugin/crew/hooks/scripts/crew_status.py:184`) is the `agents` status line, appended after the
+  shell line (`:287`). Tests: `plugin/crew/tests/test_verify_agents.py`,
+  `plugin/crew/tests/test_status.py`.
+- DERIVED: `provider_probe.probe` (`plugin/crew/hooks/scripts/provider_probe.py:47`) builds its
+  call with `review_run.command_for` (`:52`) and runs it with `review_run.launch(cmd, root, ...)`
+  (`:53`), so `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory. Tests:
+  `plugin/crew/tests/test_provider_probe.py`. No hook, `/crew:status` or `/crew:review` runs it.
+- DERIVED: `crew_upgrade._write_upgrade_report`
+  (`plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:1309`) puts the new report on top of
+  `UPGRADE.md` and the earlier bytes below `UPGRADE_HISTORY_MARKER` (`:1156`), via a pid-named
+  sibling and `os.replace`; `_carried_conflicts` stops at the marker (`:1193`). Tests:
+  `plugin/crew/tests/test_upgrade.py` (`test_force_keeps_earlier_upgrade_reports` and neighbours).
+- DERIVED: temp hygiene. The auto-clear sender's first command unlinks it
+  (`plugin/crew/hooks/scripts/auto-clear.sh:364`; the last-line `rm` at `:384` is the Git Bash
+  fallback). `plugin/crew/hooks/scripts/_test/run-tests.sh:39-41` keeps every fixture on
+  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:123`
+  (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
+  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1282`). Tests:
+  `plugin/crew/tests/test_tmp_hygiene.py`.
+- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:921`)
+  is still removed only on the straight-line path (`:1613`), so a gate killed mid-run leaks it;
+  `RULE_OUT_FILE` has since joined the gate's cleanup registry (`:1842-1849`). verify-gate.sh is a
+  harness path (`scripts/check-tooling-pr.py`), so registering `CHANGED_FILE` is T-0065's harness
+  follow-up, landing alone.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:1034` — `TRIGGERS`, a 15-entry
@@ -2232,7 +2265,7 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   `_main_checkout` itself still reads as "own" for the repo config; `crew_state.read_metrics` (`plugin/crew/hooks/scripts/crew_state.py:313`)
   turns a problem into the verdict `could not tell: <why>` with `rate` None, `crew_standards.metric`
   (`plugin/crew/hooks/scripts/crew_standards.py:840`) exits 1 before any read or `--record`
-  write, and `crew_status._metrics_line` (`plugin/crew/hooks/scripts/crew_status.py:197`) prints
+  write, and `crew_status._metrics_line` (`plugin/crew/hooks/scripts/crew_status.py:222`) prints
   `metrics  could not tell (...)` and names a lane's own `metrics.jsonl`/`metrics.md` as not
   counted (`crew_common.stranded_metrics_copies`, `crew_common.py:247`). None falls back to the
   worktree's own copy. `review_metrics.metrics_path` still joins the path itself (one AST-allowed
@@ -2375,7 +2408,7 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   (`_boundary`, `:288`), `_charged` (`:302`) is spent minus refunded, and
   `reserve` tests `_charged` against `BUDGET`. `summary` (`:923`, `load = _load` at
   `:920`) is the dict `status` returns and the one `crew_status._review_lines`
-  renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
+  renders (`plugin/crew/hooks/scripts/crew_status.py:144`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:749`,
   `_toward_review` `:765`), and `next_phase`'s no-progress stop (`:814`) lets that
   rerun through even when `/crew:review` was the command just run (review round 1).
@@ -2388,7 +2421,7 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:212`) and `crew_status._verify_line`
-  (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
+  (`plugin/crew/hooks/scripts/crew_status.py:159`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
   Codex stream), built and machine-locally replayed by
@@ -4511,3 +4544,5 @@ The coordinator re-allocated T-0063's crew version to 1.0.201 after the merge. T
 The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carries the main-checkout could-not-tell into the stop; `_folder_elsewhere` shell-quotes its `cp -r`). The version sentence above, the T-0063 autopilot paragraph and the `fresh` means committed bullet now name 1.0.213, with the manifests, `plugin/PLUGINS.md`, the CHANGELOG heading, four mentions in `plugin/crew/README.md` and the troubleshooting guide's source and HTML. JUDGEMENT: the fix commit moved lines in `plugin/crew/hooks/scripts/crew_autopilot.py` below `:352`, so its citations there (e.g. `_folder_elsewhere` `:362`) are not re-derived by this note; the anchor stays `5bd4fae2`, and a refresh re-checks them.
 
 **Re-anchored `5bd4fae2` -> `309575c2` on 2026-10-03 (T-0063 review fixes, crew 1.0.213).** `git diff --name-only 5bd4fae2 309575c2 -- plugin/crew/hooks/scripts/` returns only `crew_autopilot.py`; its 56 body citations into code the fix moved were re-mapped by a `difflib` line map from `6c6517a8` to `309575c2` (every mapped line text-identical at both ends) and, where the cited line itself changed, re-read with `grep -n` per symbol (`_main_folder`'s callers `:544`/`:852`, `_folder_elsewhere` `:365`). Two were wrong before this pass and were re-derived by symbol: `sys.dont_write_bytecode` under `__main__` is `:166-168` (was `:149-151`) and `main` registers `deploy-allowed` at `:1856` (was `:1683`). The `folder-elsewhere` sentence gains the could-not-tell stop and the quoted `cp -r`. Provenance sections were left as written.
+
+**T-0065 citations, 2026-10-04 (T-0065-build at `cd25d088`, on a merge of origin/main `f7ab26b9`); anchor NOT moved.** The section "TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)" and the four `crew_status.py` citations corrected for its five added lines (`:226` -> `:251`, `:140` -> `:144`, `:155` -> `:159`, `:67` -> `:71`) were read at `cd25d088`. The file's `anchor:` stays `42effe14`: main changed many files this map cites after that commit, and none of those claims was re-derived for this note, so moving the anchor would claim a check that was not made. Ported onto release/1.2.0 (crew 1.0.351) on 2026-10-05: the section's citations and this map's `crew_status.py` body citations were re-derived by symbol against the merged files; the verify-gate JUDGEMENT now records that `RULE_OUT_FILE` joined the cleanup registry on main.

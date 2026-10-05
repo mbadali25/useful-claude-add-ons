@@ -733,6 +733,45 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
+<h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
+<p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an
+agent this machine lacks reviews less, and nothing in the output says so.</p>
+<ul>
+<li><strong>Symptom:</strong> <code>/crew:status</code> prints <code>agents   MISSING &lt;name&gt; (verify.json rule: &lt;paths&gt;)</code>, or
+  <code>/crew:review</code> reports a requested agent as a gap.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/verify_agents.py&quot; --root . --check
+</code></pre>
+<p>Exit 1 lists each missing name with its rule's paths. Exit 2 (<code>unknown</code>) means a plugin registry,
+  a settings file or <code>verify.json</code> itself would not parse, so it could not tell; it never reads that
+  as installed. Managed-policy agents and <code>--agents</code> agents are not checked.
+  <strong>Fix:</strong> install the plugin or agent, enable the plugin (<code>enabledPlugins</code>; a narrower settings
+  scope's <code>false</code> wins), or change the rule to an agent this machine has.</p>
+<h2 id="the-temp-directory-fills-with-crew-files">The Temp Directory Fills with Crew Files</h2>
+<p>Earlier crew releases' test suites and auto-clear sender could leave files in the
+system temp directory: <code>crew-completion-audit.*</code> markers, <code>tmp.*</code> auto-clear sender scripts
+(<code>tmux send-keys ...</code> / <code>xdotool ...</code> followed by <code>rm -f -- &lt;itself&gt;</code>) and <code>tmp.*</code> fixture
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
+guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
+<code>TMPDIR</code>, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
+makes.</p>
+<ul>
+<li><strong>Symptom:</strong> <code>df -i /tmp</code> near 100%, or hooks failing on <code>mktemp</code>.
+  <strong>Check</strong> (read-only):</li>
+</ul>
+<pre><code class="language-bash">cd &quot;${TMPDIR:-/tmp}&quot;
+ls -d crew-completion-audit.* 2&gt;/dev/null | wc -l
+grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | wc -l
+</code></pre>
+<p><strong>Fix (an owner action; crew itself never runs it):</strong> with no crew session or test run active,
+  remove what the check counted:</p>
+<pre><code class="language-bash">cd &quot;${TMPDIR:-/tmp}&quot;
+find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
+grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | xargs -r rm -f --
+</code></pre>
+<p>Old shell-suite fixture directories are ordinary <code>tmp.*</code> directories (a <code>.crew/</code> and a
+  <code>.git/</code> inside); read each before removing it.</p>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
 but returns immediately without judging anything; "off" for <code>verifyGate</code> means the

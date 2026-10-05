@@ -9,6 +9,54 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.1.6: verify.json agents checked early, a provider probe from the repo root, UPGRADE.md history kept, crew's temp files cleaned (T-0065)
+
+- **Summary.** `/crew:status` now names agents your verify map needs that are not installed, a provider
+  probe tests Codex from the repo root, `/crew:upgrade --force` keeps earlier UPGRADE.md runs, and
+  crew's own tests and hooks stop leaving files in your temp directory.
+
+TheSelectSource (crew 1.0.41) reported four gaps; these are crew's halves of them.
+
+- **Agents a verify.json rule names that are not installed (item 3).** New
+  `hooks/scripts/verify_agents.py --root . --check` resolves every named agent against crew's
+  roles and agents, user and project agents, and the agents of every plugin the settings scopes
+  enable (narrowest scope first). Exit 1 lists each missing name with its rule's paths; an
+  unparseable plugin registry, settings scope or verify.json makes the names it could have
+  supplied `unknown` (exit 2), never installed. `/crew:status` shows it as an `agents` line and
+  `/crew:verify` step 8 reports it. Managed-policy and `--agents` agents are not checked.
+- **A real provider call from the repo root (item 10).** New `hooks/scripts/provider_probe.py codex
+  --root .` builds the call with `review_run.command_for` and runs it with `review_run.launch`, so
+  `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory and Codex's "Not inside a
+  trusted directory" cannot happen. An incomplete event stream or a 120 s timeout is `FAILED`
+  (exit 1), a missing CLI exit 2. `/crew:model`, the providers skill and `providers.sh` name it
+  instead of a hand-typed `codex exec`.
+- **`/crew:upgrade --force` keeps `UPGRADE.md`'s history (item 8).** Each run puts its report on
+  top and keeps the earlier file byte for byte below one marker line, newest first; an unverified
+  contradictions list is no longer erased. Only the newest run's annotated contradictions are
+  carried. The write is a pid-named sibling plus `os.replace`, LF-only. The config backup stays
+  T-0050's.
+- **Crew's own temp files (item 7, crew's part).** Measured on the host TSS shares: 2,999 `tmp.*`
+  entries (913 auto-clear sender scripts, 824 `run-tests.sh` fixtures, ...) and 7,798
+  `crew-completion-audit.*` markers in `/tmp`, exhausting its inodes, after which the guard and
+  the Stop verify-gate failed closed. None were git-archive exports. Now every crew pytest test
+  runs with its own `TMPDIR`/`TEMP`/`TMP` (conftest, carried by `shim_env`), the auto-clear sender
+  unlinks itself before it sleeps (so a SIGKILLed sender leaves nothing), and `run-tests.sh`
+  removes every fixture it makes behind one EXIT trap (121 passed before and after; 6 leftovers
+  before, 0 after). The leftover sender scripts came from a test whose `bash` shim reads the
+  sender and never runs it. Existing leftovers are not deleted: the troubleshooting guide names
+  the patterns and the owner-run cleanup.
+- Tests: `test_verify_agents.py` (17), `test_provider_probe.py` (8), `test_tmp_hygiene.py` (6),
+  4 in `test_status.py`, 5 in `test_upgrade.py`. Three `.crew/verify.json` rules.
+
+**Harness follow-ups (T-0087 tooling-PR rule; each lands alone):** register `verify-gate.sh`'s
+`CHANGED_FILE` with its cleanup registry (`RULE_OUT_FILE` is registered on main already), with
+`test_verify_gate_temp_files_removed_on_term[rule|matcher]` and the clean-run neighbour; the
+sabotage registrations for this ticket's mutations in `sabotage_review.py`,
+`sabotage_autocycle.py` and `sabotage_migrate.py` (each was run by hand here and went red); and
+`commands/review.md` naming `verify_agents.py` (step 3) and `provider_probe.py` (step 1).
+**Not crew's:** item 7's heredoc/`python -c`/xargs refusals are TSS's own secrets guard; the
+`gizmoduck-out` / `security-scan-report.md` fixtures need a gizmoduck ticket.
+
 ### Added — `crew` 1.1.6: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
 
 - **Summary.** `/crew:reference --integrations` now writes a reference of every outbound call your repo makes,
