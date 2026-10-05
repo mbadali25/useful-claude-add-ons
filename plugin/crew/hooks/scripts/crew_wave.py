@@ -888,10 +888,20 @@ def collect(root, slug):
     started = record["lanes"] if ok else None
     marks = (record.get("receipts") or {}) if ok else {}
     ids = [row["id"] for row in data["tickets"]]
-    # A lane that was started stays in the report even if the set file was rewritten without it.
-    ids += [t for t in (started or []) if isinstance(t, str) and t not in ids]
+    problems = []
+    # A lane that was started stays in the report even if the set file was rewritten without it;
+    # an entry that is not a ticket id is a problem, never read (a path like `../x`).
+    for entry in started or []:
+        if entry in ids:
+            continue
+        try:
+            crew_ticket.check_ticket(entry if isinstance(entry, str) else "")
+        except crew_ticket.TicketError:
+            problems.append(f"start.json lists {entry!r}, which is not a ticket id; not read")
+            continue
+        ids.append(entry)
     lanes = [_lane_row(top, slug, ticket, started, marks) for ticket in ids]
-    questions, problems = [], []
+    questions = []
     for lane in lanes:
         if lane["state"] != "question":
             continue
