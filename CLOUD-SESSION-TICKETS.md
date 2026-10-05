@@ -53,7 +53,11 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0005 | From #501 review (pre-existing): suites run by NO gated workflow: plugin/localgpu/{cli,mcp}/_test, plugin/rule-of-two/scripts/_test, skills/github/scripts/_test, skills/work-log-reporter/scripts/_test. Wire them into CI (and the selector map). | none yet | after #501 |
 
-Next free untracked ID: **C-0006** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0006 | Owner 2026-10-05: at the end of this push, bump crew to 1.1.0 (minor) and rename the guide files from crew-1.0-guide.* accordingly (guide build, links, claims). Lands as its own PR after the last batch. | none yet | last |
+
+| C-0007 | From #357 review (pre-existing): a repo whose path ends in a space can't use autopilot focus: crew_ticket.toplevel/_git returns the path without its trailing space, so focus_path is None ("no git common dir"). Root-cause in crew_ticket._git; check every toplevel consumer. | none yet | after batch 7 |
+
+Next free untracked ID: **C-0008** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
@@ -228,6 +232,10 @@ Held for your go: L-0674 (#404).
 - T-0020 #357: **explicit focus only** — focus is on only after `/crew:autopilot focus <id>`; an active-ticket pointer is not focus. Main's plain-text routing wins. Rework for batch 7.
 - Batch 6 ships with 4 (#500, #348, #338, #361); T-0020 held out.
 - T-0020: plain-text "focus on T-1" turning focus on counts as EXPLICIT (owner confirmed 2026-10-05), same as "heading to bed" -> sleep. Keep the routing row.
+- Notes: write after every action, but PUSH every ~30 min and at each merge (note.sh commits locally; `note.sh --push`; auto-push if last push >30 min).
+- Windows-red review-clean PRs (#341 #342 #344 #346 #362 #363 #395): merge main into each and re-run Windows AFTER batch 7.
+- crew 1.1.0 at the END of this push, plus a guide-rename PR (ticket C-0006).
+- C-0002..C-0005 (and C-0007) after batch 7.
 - C-0001 (per-component CI skip) is TOP PRIORITY.
 - #499 README: show 2 newest updates + changelog link (shipped).
 

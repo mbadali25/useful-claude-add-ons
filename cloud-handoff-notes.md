@@ -16,7 +16,8 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - **Batches of 5-6** (raised 2026-10-04 evening).
 - **Version: ONE bump per batch via a single BATCH PR** (owner 2026-10-04 23:1x): merge the batch's PR branches into `batch-<n>-build`, reset versions to main's, one version commit last, merge only the batch PR. See `procedures/LANDPREP.md` "Batch PR". Harness PRs still alone. #394 (628f1360, 1.0.344) lands alone as already prepped.
 - **Pre-flight:** a PR joins a batch only after its own head is green on Windows (dispatch pytest-crew.yml on its branch if it has no run; max 3 at a time).
-- Notes after every action; present decisions with a recommendation and tables (owner has ADHD: concise).
+- Notes WRITTEN after every action, PUSHED every ~30 min and at each merge (owner 2026-10-05; `note.sh` commits, `note.sh --push` pushes). Present decisions with a recommendation and tables (owner has ADHD: concise).
+- Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last.
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
 main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
@@ -24,8 +25,8 @@ main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | review 1 BLOCK (combined pytest = one session; subset hides cross-suite breaks) + 2 FIX (lint config files; unpinned !cancelled()) -> builder fixing | re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | 38bd282e: F1 (removal commands), F2 (crew_config_files.Lock), N1, N2 fixed + main 47f71e93 merged; full crew 12074 passed; Windows partly green | re-check 0 BLOCK 1 FIX (remedy command wrong for whitespace-run/control-char/curly-quote paths) + stale-lock NIT -> builder fixing | re-check, batch 7 |
-| Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
+| T-0020 #357 | `T-0020-build` 857188a6 | review-clean (final re-check 0/0, 16 hostile paths); 38bd282e all Windows green; 857188a6 CI running | batch 7 member |
+| Batch 7 | `batch-7-build` (builder started 04:45) | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
 | Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
 | Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
 | Blocked | #365 T-0058 (needs #354 T-0012, not review-clean); #345 (needs red #344) | | |
@@ -47,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:38 UTC
+Last updated: 2026-10-05 03:39 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:50: CORRECTION: the 04:00 owner-decision edits (C-0006 row, decision lines, RESUME rule line) never applied (a failed stamp write short-circuited the && chain). Re-applied and verified now; C-0007 added; next free C-0008.
 - 04:45: #357 final re-check 0 BLOCK 0 FIX. Batch 7 builder started: #357, #353, #368, + #366 if its Windows pre-flight (dispatched now on T-0059-build) is green. Carry #357 NIT (C1/bidi into _UNSAFE_PATH). Minted C-0007 (trailing-space repo path breaks focus via crew_ticket.toplevel).
 - 04:35: #357 re-check 0 BLOCK 1 FIX: _focus_remedy printed via _one_line collapses whitespace after quoting (wrong file for 'two  spaces', tab, newline; PS curly quotes). Fix: command only when paste-safe else json path. Lock (F2) verified: race keeps both entries. verify-gate red only on check-marketplace bump (log checked).
 - 04:20: #357 at 38bd282e with F1/F2/N1/N2 + main merge; sabotage: no lock -> 3 red, focus-off-offer -> 12 red. Focused re-check started (stale-lock + hostile-path checks). Subscribed to #357.
