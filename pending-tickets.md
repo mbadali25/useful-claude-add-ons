@@ -97,6 +97,8 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0026 | Remove the `/crew:upgrade` stub (T-0038's spec defers it) | G1 report | T-0038 on main | needs ticket |
 | C-0027 | `apply_delete`: a failed open of the moved backup reads as "changed since the preview" (`crew_config_files.read_restorable` maps an `os.open` error to `Unreadable('notregular')`); exits 2, nothing lost | G3b report | none | needs ticket |
 | C-0028 | Sabotage entries for T-0103's identity checks and T-0106's scan refusals (harness) | G3b report | G3b on main | H2 lane (or L-0682) |
+| C-0029 | wave: a fix-and-rereview lane changes crew content after its version-bump commit, so the version-drift gate fails | G0 report | none | needs ticket |
+| C-0030 | coord: holder identity on platforms without a process start time (measure on macOS and Windows) | G0 report | none | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
