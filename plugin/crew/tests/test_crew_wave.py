@@ -543,7 +543,13 @@ def _lane(root, ticket, slug="s"):
 
 
 def _set_lane(root, ticket, **fields):
+    """Rewrite a lane file; a state only lane-init reaches gets lane-init's branch
+    and a worktree when the test names none."""
     lane, _ = _lane(root, ticket)
+    if fields.get("state") in crew_wave.SET_UP:
+        fields.setdefault("branch", crew_wave.branch_for(ticket))
+        if lane.get("worktree") is None:
+            fields.setdefault("worktree", str(root / ".claude" / "worktrees" / ticket))
     lane.update(fields)
     crew_wave.write_lane(str(root), "s", ticket, lane)
 
@@ -811,6 +817,7 @@ def test_a_set_file_id_with_a_trailing_newline_is_refused_not_printed(tmp_path):
 
 def test_relaunch_skips_terminal_lanes(tmp_path):
     root = _started(tmp_path)
+    _set_lane(root, "T-1", state="running")
     crew_wave.lane_done(str(root), "s", "T-1", "clean", "done checks passed")
 
     out = _cli("start", "--root", root, "--set", "s").stdout
@@ -989,6 +996,7 @@ def test_lane_done_refuses_state_outside_the_four(tmp_path, state):
 @pytest.mark.parametrize("state", ["clean", "findings", "question", "failed"])
 def test_lane_done_writes_the_state(tmp_path, state):
     root = _started(tmp_path)
+    _set_lane(root, "T-1", state="running")
 
     done = _cli("lane-done", "--main", root, "--set", "s", "--ticket", "T-1", "--state", state,
                 "--reason", "why")
@@ -1036,18 +1044,20 @@ def test_collect_corrupt_lane_file_reads_unknown(tmp_path, text):
 
 @pytest.mark.parametrize("drop, value", [("set", None), ("ticket", None), ("version", None),
                                          ("set", "other"), ("ticket", "T-2"), ("version", 116),
-                                         ("worktree", 7)],
+                                         ("worktree", 7), ("base", None), ("base", ""),
+                                         ("branch", None), ("branch", ""), ("worktree", "null")],
                          ids=["no-set", "no-ticket", "no-version", "other-set", "other-ticket",
-                              "number-version", "number-worktree"])
+                              "number-version", "number-worktree", "no-base", "empty-base",
+                              "no-branch", "empty-branch", "null-worktree-not-removed"])
 def test_collect_incomplete_clean_lane_file_reads_unknown(tmp_path, drop, value):
     # Group review r3 (rush g0): `{"state": "clean"}` alone was collected as a clean lane.
     root = _started(tmp_path)
     lane, _ = _lane(root, "T-1")
-    lane["state"] = "clean"
+    lane.update(state="clean", worktree="/w", branch="T-1-wave")
     if value is None:
         del lane[drop]
     else:
-        lane[drop] = value
+        lane[drop] = None if value == "null" else value
     _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", json.dumps(lane))
 
     got = _collect(root)
@@ -1055,11 +1065,40 @@ def test_collect_incomplete_clean_lane_file_reads_unknown(tmp_path, drop, value)
     assert (_state_of(got, "T-1")["state"], [t for t, _ in got["land"]]) == ("unknown", [])
 
 
-def test_collect_complete_clean_lane_file_reads_clean(tmp_path):
+@pytest.mark.parametrize("fields", [{"worktree": "/w"}, {"worktree": None, "removed": True}],
+                         ids=["worktree", "removed"])
+def test_collect_complete_clean_lane_file_reads_clean(tmp_path, fields):
     root = _started(tmp_path)
-    _set_lane(root, "T-1", state="clean")
+    _set_lane(root, "T-1", state="clean", branch="T-1-wave", **fields)
 
     assert _state_of(_collect(root), "T-1")["state"] == "clean"
+
+
+def test_a_pending_lane_file_with_no_base_is_corrupt(tmp_path):
+    # Group review r6: lane-init read lane["base"] from a pending file that had none.
+    root = _started(tmp_path)
+    lane, _ = _lane(root, "T-1")
+    del lane["base"]
+    _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", json.dumps(lane))
+
+    assert _lane(root, "T-1") == (None, "corrupt")
+
+
+@pytest.mark.parametrize("state", ["clean", "findings", "question"])
+def test_lane_done_refuses_a_set_up_state_for_a_lane_lane_init_never_set_up(tmp_path, state):
+    root = _started(tmp_path)
+
+    done = _cli("lane-done", "--main", root, "--set", "s", "--ticket", "T-1", "--state", state,
+                "--reason", "why")
+
+    assert (done.returncode, _lane(root, "T-1")[0]["state"]) == (1, "pending")
+
+
+def test_a_failed_lane_needs_no_branch(tmp_path):
+    root = _started(tmp_path)
+    crew_wave.lane_done(str(root), "s", "T-1", "failed", "lane-init refused")
+
+    assert _state_of(_collect(root), "T-1")["state"] == "failed"
 
 
 def test_collect_unknown_when_the_wave_was_never_started(tmp_path):

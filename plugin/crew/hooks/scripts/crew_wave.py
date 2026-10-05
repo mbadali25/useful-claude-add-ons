@@ -499,12 +499,27 @@ def read_lane(root, slug, ticket):
     return (data, "ok") if _lane_shape_ok(data, slug, ticket) else (None, "corrupt")
 
 
+# States only a lane that lane-init set up can reach honestly: it recorded the branch and
+# the worktree (cleanup later drops the worktree and marks it removed). `failed` is exempt:
+# a lane whose lane-init refused reports failed from where it stands.
+SET_UP = ("running", "clean", "findings", "question")
+
+
 def _lane_shape_ok(data, slug, ticket):
+    """The fields `start` and `lane-init` write (group review r3 and r6, rush g0: a lane file
+    missing them was collected as clean)."""
     if not isinstance(data, dict) or data.get("state") not in LIVE + STATES:
         return False
     if data.get("set") != slug or data.get("ticket") != ticket:
         return False
-    return isinstance(data.get("version"), str) and isinstance(data.get("worktree"), (str, type(None)))
+    if not (isinstance(data.get("version"), str) and isinstance(data.get("base"), str) and data["base"]):
+        return False
+    if not isinstance(data.get("worktree"), (str, type(None))):
+        return False
+    if data["state"] not in SET_UP:
+        return True
+    placed = isinstance(data["worktree"], str) or data.get("removed") is True
+    return isinstance(data.get("branch"), str) and bool(data["branch"]) and placed
 
 
 def write_lane(root, slug, ticket, lane):
@@ -856,6 +871,9 @@ def lane_done(main, slug, ticket, state, reason):
     lane, got = read_lane(top, slug, ticket)
     if got != "ok":
         raise WaveError(f"{ticket}'s lane file is {got}; nothing written")
+    if state in SET_UP and not lane.get("branch"):
+        raise WaveError(f"{ticket}'s lane was never set up by lane-init, so it can only end "
+                        "--state failed; nothing written")
     write_lane(top, slug, ticket, dict(lane, state=state, reason=reason or "", step="done"))
 
 
