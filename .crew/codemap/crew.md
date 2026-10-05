@@ -1558,15 +1558,15 @@ Obsidian vault). A CLI the commands call, not a hook.
   the wrong vault refuses), and `_held_check` (`:1163`) re-stats the
   directory's device and file id at the same three points. A platform with
   neither (`_WIN_PIN` `:330` false) refuses the write.
-  T-0081 (lines at `1241c515`): `_vault_paths` also
+  T-0081 (lines at `43cb9c8b`): `_vault_paths` also
   records `<label>DirIds` (`:1048`), each real component's `(st_dev, st_ino)`
   from `os.lstat`, or None, built by `_component_ids` (`:1092`) over the same
   `_components`. Both walks match each component through `_match_component`
-  (`:1130`; `_open_pinned` `:1209`, `_hold_dirs` `:1172`): a different identity
-  is ESTALE (`_moved`'s "changed after the vault checks"); a None, an inode of
-  0 on either side (`_could_not_tell` `:1108`, also run on the POSIX vault) or
-  a list that does not line up (`_recorded_ids` `:1120`) is EIO "could not
-  tell", naming the directory. `_pinned_check` gains it through its re-walk;
+  (`:1131`; `_open_pinned` `:1210`, `_hold_dirs` `:1173`): a different identity
+  is ESTALE (`_moved`'s "changed after the vault checks"); a None, an inode or
+  file id of 0 on either side (`_could_not_tell` `:1108`, also run on the POSIX
+  vault) or a list that does not line up (`_recorded_ids` `:1121`) is EIO
+  "could not tell", naming the directory. `_pinned_check` gains it through its re-walk;
   its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
   `repo-id:` (`_NOTE_REPO_ID` `:1279`, trailing `\r` excluded so a CRLF note
