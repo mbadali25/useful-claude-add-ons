@@ -905,11 +905,11 @@ def check_receipt(root, ticket, base_sha=None):
     if current != receipt["bundle_sha256"]:
         stale = (f"receipt is stale: round {receipt.get('round')} accepted bundle "
                  f"{receipt['bundle_sha256'][:12]}, the tree now builds "
-                 f"{(current or 'nothing')[:12]}; the change was edited after review"
-                 f"{_merged_note(merged, stale=True)}")
+                 f"{(current or 'nothing')[:12]}; the change was edited after review")
         kept, why, detail = review_delta.judge(root, ticket, receipt, latest, base_sha)
         if not kept:
-            return False, f"{stale}; delta gate: {why}"
+            # The merged-main note stays last (T-0100: "; fork: could not tell" ends it).
+            return False, f"{stale}; delta gate: {why}{_merged_note(merged, stale=True)}"
         names = ", ".join(detail["anchor_only"] + detail["exempt"]) or "none"
         return True, (f"receipt kept by delta gate: round {receipt.get('round')} "
                       f"{receipt.get('kind')}, reviewed head {detail['head'][:12]}, base "

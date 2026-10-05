@@ -484,8 +484,8 @@ REVIEW_FIX_MUTATIONS = (
     (
         "a stale receipt hides a could-not-tell merge of main",
         REVIEW_LEDGER,
-        '                 f"{_merged_note(merged, stale=True)}")\n',
-        '                 "")\n',
+        '            return False, f"{stale}; delta gate: {why}{_merged_note(merged, stale=True)}"\n',
+        '            return False, f"{stale}; delta gate: {why}"\n',
         "tests/test_review_receipt.py::test_check_receipt_stale_message_says_could_not_tell",
     ),
     # T-0100 review round 1: every merged-main bundle and receipt check gets a

@@ -55,6 +55,7 @@ import shutil
 import subprocess
 import tempfile
 
+import crew_common
 import crew_freshness
 import review_patch
 
@@ -112,8 +113,9 @@ def _git(root, args, env=None):
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
-    try:
-        done = subprocess.run(["git", "-C", root] + list(args), capture_output=True,
+    try:  # never a bare `git` (L-0574 class a): the one the user's shell runs
+        git = crew_common.require_tool("git")
+        done = subprocess.run([git, "-C", root] + list(args), capture_output=True,
                               timeout=review_patch.GIT_TIMEOUT, env=full_env, check=False,
                               stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:

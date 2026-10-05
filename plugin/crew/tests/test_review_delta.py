@@ -133,8 +133,15 @@ def _main(world, files, message="main moved"):
     return _commit(world.repo, files, message)
 
 
-def _catch_up(world):
+def _catch_up(world, bookkeeping=True):
+    """Merge main into the lane. Since T-0100 a catch-up ALONE keeps the fast
+    path (main's identical paths leave the bundle), so by default the
+    CHANGELOG line a lane always adds at land follows it: the bundle moves by
+    one exempt path, and the delta gate is what judges."""
     git(world.lane, "merge", "--no-edit", "-q", "main")
+    if bookkeeping:
+        log = (world.lane / "CHANGELOG.md").read_text(encoding="utf-8") + "\n- caught up\n"
+        _commit(world.lane, {"CHANGELOG.md": log}, "changelog after the catch-up")
 
 
 def _check(world):
@@ -180,6 +187,19 @@ def _bump_plugin(world, text):
 
 
 # ---------------------------------------------------------------- must keep
+
+def test_a_disjoint_catch_up_alone_keeps_the_fast_path_since_t0100(world):
+    """T-0100 (on main before this port): the rebuilt bundle leaves out the
+    paths identical to merged main, so the delta gate is not even asked."""
+    _review(world)
+    _main(world, {"lib.py": "def lib():\n    return 2\n"})
+    _catch_up(world, bookkeeping=False)
+
+    code, out = _check(world)
+
+    assert (code, "receipt current" in out, "identical to merged main left out" in out,
+            "delta gate" in out) == (0, True, True, False), out
+
 
 def test_catch_up_merge_disjoint_from_the_ticket_keeps_the_receipt(world):
     _review(world)
