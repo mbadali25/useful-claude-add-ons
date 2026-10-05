@@ -37,7 +37,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not yet.** Nothing dispatches, identifies, watches or records a run
   (L-0644 to L-0647); promote-gate does not read the entry (L-0648); autopilot
   does not deploy (L-0649).
-- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 295 cases. An
+- **Tests.** `plugin/crew/tests/test_crew_ghdeploy.py`, 297 cases. An
   agreement table (L-1503's 26 maps from test_promote_gate_literal_match.py
   plus 9: 35 maps, 95 commands) feeds every command to the real
   `promote-gate.sh`, the real `promote-gate.ps1` and `simulate_gate`, and 31
@@ -47,7 +47,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   the ConvertFrom-Json date-time port pinned; the `.ps1` halves but one
   smoke map each are `slow`. A
   `[!-[]` deploy (a range pwsh's `-like` threw on) is literal text and
-  accepted (#407 round-4 FIX). The 85
+  accepted (#407 round-4 FIX). Messages naming a non-ASCII key survive a
+  cp1252 stdout. The 86
   mutations in `plugin/crew/tests/ghdeploy_mutations.py` each turn their
   named case red; they are unwired until L-0650 (tooling only).
 
