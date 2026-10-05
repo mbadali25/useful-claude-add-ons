@@ -23,7 +23,8 @@ from the ticket's INDEX status cell first, then its spec header.
 
 An unknown never collapses into the safe value: a dependency whose state
 cannot be read is `unknown` (and blocks), `blocked` is None when the
-`depends-on:` line cannot be read, and `needs_replan` is None, with a
+`depends-on:` line cannot be read (no spec, or an unreadable one), `gate` is
+`unknown` when INDEX.md cannot be read, and `needs_replan` is None, with a
 `problems` entry, when the ledger cannot be read -- never False.
 
 `done` counts as closed (approved 2026-09-26), like `merged`. Order for one
@@ -195,12 +196,17 @@ def view(top, ticket):
     if spec_why:
         problems.append(spec_why)
     gate, source = None, None
-    if found and cell in GATING_STATUSES:
+    if why:
+        # INDEX outranks the header, so an unreadable INDEX leaves the gate unknown.
+        gate = "unknown"
+    elif found and cell in GATING_STATUSES:
         gate, source = cell, "index"
     elif text is not None and _header_status(text) in GATING_STATUSES:
         gate, source = _header_status(text), "header"
-    ids, problem = (None, f"depends-on: {CANNOT_TELL}, {spec_why}") if spec_why else \
-        parse_depends_on(text)
+    if text is None:
+        ids, problem = None, f"depends-on: {CANNOT_TELL}, " + (spec_why or f"{ticket} has no spec.md")
+    else:
+        ids, problem = parse_depends_on(text)
     if problem:
         problems.append(problem)
     dependencies = [{"id": dep, "state": state, "reason": reason}

@@ -149,6 +149,22 @@ def test_unreadable_spec_is_unknown_not_unblocked(tmp_path):
     assert got["blocked"] is None
 
 
+def test_missing_spec_is_unknown_not_unblocked(tmp_path):
+    root = _repo(tmp_path)
+    got = _view(root)
+    assert (got["blocked"], got["depends_on"]) == (None, None)
+    assert any("no spec.md" in p for p in got["problems"])
+
+
+def test_unreadable_index_leaves_the_gate_unknown(tmp_path):
+    root = _repo(tmp_path)
+    (root / ".work" / "INDEX.md").unlink()
+    (root / ".work" / "INDEX.md").mkdir()
+    _spec(root, T, header="status: cancelled   risk: low")
+    got = _view(root)
+    assert (got["gate"], got["gate_source"]) == ("unknown", None)
+
+
 # --- must-allow --------------------------------------------------------------
 
 def test_all_dependencies_closed_is_not_blocked(tmp_path):
