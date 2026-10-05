@@ -2668,7 +2668,7 @@ def test_read_retired_status_names_the_crew_word(tmp_path):
     assert (obsidian["state"], obsidian["lane"], obsidian["disagree"], obsidian["reason"]) == (
         "read", "Done", "could not tell",
         f"INDEX status merged is not a status crew knows ({KNOWN_LIST}); the crew word is done")
-    assert "expects None" not in done.stdout + done.stderr
+    assert " expects " not in done.stdout + done.stderr
 
 
 def test_read_unknown_status_has_no_hint(tmp_path):
