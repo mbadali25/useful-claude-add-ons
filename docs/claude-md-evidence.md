@@ -164,10 +164,10 @@ sha you measured at.
   or gone (`OverlayNotFound`) by then, or when any theme file has become
   valid JSON of the wrong shape (`AttributeError`, `TypeError` or
   `ValueError`, by shape). Any other theme file made unparsable or removed
-  does not raise: `list_themes()` skips it. The raise is inside the `with` opened at `:204`, so `index.html`
-  is left at zero bytes (measured: 10988 bytes to 0, with `professional.json`
-  removed). Those are the cases that were run, not a complete list. The
-  ninth is the one to re-check first:
+  does not raise: `list_themes()` skips it. The raise is inside the `with`
+  opened at `:204`, so `index.html` is left at zero bytes (measured: 10988
+  bytes to 0, with `professional.json` removed). Those are the cases that
+  were run, not a complete list. The ninth is the one to re-check first:
   `plugin/gizmoduck/scripts/routine.py:508` calls `json.dumps` once per finding
   inside the `with` opened at `:506`, so a value `json` cannot encode (a
   `Path`, a `set`) raises there. On the first finding that leaves
