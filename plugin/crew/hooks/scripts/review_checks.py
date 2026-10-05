@@ -569,6 +569,7 @@ _WINDOWS = os.name == "nt"
 _CREATE_SUSPENDED = 0x00000004
 _KILL_ON_JOB_CLOSE = 0x00002000
 _EXTENDED_LIMIT_INFORMATION = 9
+_BASIC_ACCOUNTING_INFORMATION = 1
 
 
 class WindowsJob:
@@ -593,6 +594,9 @@ class WindowsJob:
                                                 wintypes.DWORD]
         k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
         k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        k32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                  ctypes.c_void_p, wintypes.DWORD,
+                                                  ctypes.c_void_p]
         k32.CloseHandle.argtypes = [wintypes.HANDLE]
         self._ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
         self._k32 = k32
@@ -636,6 +640,28 @@ class WindowsJob:
 
     def terminate(self):
         self._k32.TerminateJobObject(self._handle, 1)
+
+    def active_processes(self):
+        """How many processes are in the job now (L-0527 group review: Kimi
+        waits for its job to empty); OSError when Windows will not say."""
+        ctypes = self._ctypes
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        class _Accounting(ctypes.Structure):  # JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+            _fields_ = [("TotalUserTime", ctypes.c_int64),
+                        ("TotalKernelTime", ctypes.c_int64),
+                        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+                        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+                        ("TotalPageFaultCount", wintypes.DWORD),
+                        ("TotalProcesses", wintypes.DWORD),
+                        ("ActiveProcesses", wintypes.DWORD),
+                        ("TotalTerminatedProcesses", wintypes.DWORD)]
+        info = _Accounting()
+        if not self._handle or not self._k32.QueryInformationJobObject(
+                self._handle, _BASIC_ACCOUNTING_INFORMATION, ctypes.byref(info),
+                ctypes.sizeof(info), None):
+            raise OSError(ctypes.get_last_error(), "QueryInformationJobObject failed")
+        return info.ActiveProcesses
 
     def close(self):
         if self._handle:

@@ -250,6 +250,12 @@ KIMI_TREE_UNKNOWN = ("kimi: the working tree could not be fingerprinted, so a wr
                      "reviewer cannot be ruled out")
 KIMI_SURVIVOR_UNKNOWN = ("kimi: a process the reviewer left running could not be stopped, so "
                          "a write after the check cannot be ruled out")
+# Whether `stop_survivors` can probe a process group (POSIX). On Windows what
+# Kimi left running is ended through its job object instead (`_end_job`), and
+# a launch with no job there is could-not-tell (group review of L-0527).
+KIMI_SURVIVORS_SEEN = os.name != "nt"
+# The record `_launch` appends to `started` once it has ended a job.
+_JOB_ENDED = "job-ended"
 # What `reviewer_changes` sets aside when it is IGNORED both before and after:
 # paths something other than the reviewer writes mid-review AND that no check
 # crew runs reads back. Fixed on purpose -- never read from config the reviewer
@@ -925,7 +931,31 @@ def _launch(job, cmd, root, timeout, env=None, started=None):  # pylint: disable
                 f"{timeout}s timeout and is still holding the output pipe "
                 "open; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
+    if job is not None and started is not None:
+        started.append(_end_job(job))
     return stdout, stderr, proc.returncode, False
+
+
+def _end_job(job):
+    """After a leader exited normally on Windows, for a caller that watches
+    survivors (Kimi passes `started`): end what is still in the job and wait
+    for it to empty, as `stop_survivors` does for a POSIX group (group review
+    of L-0527: kill_on_close is off, so a child left running could write after
+    the "after" fingerprint). (_JOB_ENDED, killed, unknown_reason); a job
+    that cannot be asked, or does not empty within POST_KILL_TIMEOUT, is
+    could-not-tell."""
+    try:
+        if not job.active_processes():
+            return _JOB_ENDED, False, None
+        job.terminate()
+        deadline = time.monotonic() + POST_KILL_TIMEOUT
+        while job.active_processes():
+            if time.monotonic() >= deadline:
+                return _JOB_ENDED, True, KIMI_SURVIVOR_UNKNOWN
+            time.sleep(0.05)
+    except OSError:
+        return _JOB_ENDED, False, KIMI_SURVIVOR_UNKNOWN
+    return _JOB_ENDED, True, None
 
 
 def _group_alive(pgid):
@@ -964,9 +994,20 @@ def stop_survivors(started):
     has just found a live member: while a group has members its id is not
     handed to a new process, so the bare number still names this group --
     the hazard `launch`'s timeout path guards against is a group that has
-    already emptied. NOT SEEN: a descendant that left the group (`setsid`),
-    and anything on Windows, where no group is probed at all."""
-    if not started or os.name == "nt" or not _group_alive(started[0]):
+    already emptied. NOT SEEN: a descendant that left the group (`setsid`).
+
+    Windows (group review of L-0527): no group is probed; `_launch` already
+    ended the provider's job and recorded the answer in `started`. With no
+    such record -- no job could be made -- nothing can tell whether a
+    descendant is still running, so that is could-not-tell."""
+    if not started:
+        return False, None
+    ended = [entry for entry in started if isinstance(entry, tuple) and entry[0] == _JOB_ENDED]
+    if ended:
+        return ended[-1][1], ended[-1][2]
+    if not KIMI_SURVIVORS_SEEN:
+        return False, KIMI_SURVIVOR_UNKNOWN  # no job ended, no group to probe
+    if not _group_alive(started[0]):
         return False, None
     try:
         os.killpg(started[0], signal.SIGKILL)
@@ -1232,9 +1273,15 @@ def _probe_kimi(args, before):
     if mid is None:
         # Round 3 NIT: this used to fall through as "clean" and reserve, so
         # the round was spent as INCOMPLETE when nothing had been launched.
-        return EXIT_USAGE, (f"kimi probe: unknown - the tree could not be fingerprinted "
-                            f"after the probe: {'; '.join(problems) or 'no reason given'} "
-                            f"(the probe answered: {answer})")
+        # Group review (L-0527): could-not-tell is not "Kimi unavailable" --
+        # exit 2 walked on to the next provider with the old bundle while the
+        # probe may have changed the tree (made a file unreadable), so it
+        # stops exactly as a change does.
+        return EXIT_PROBE_CHANGED, (f"kimi probe: unknown - the tree could not be "
+                                    f"fingerprinted after the probe: "
+                                    f"{'; '.join(problems) or 'no reason given'} (the probe "
+                                    f"answered: {answer}); stop and check the tree, do not "
+                                    "walk to the next provider")
     if before is not None:
         changed, _set_aside = reviewer_changes(before, mid, args.graph_out)
         if changed:

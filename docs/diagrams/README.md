@@ -1137,17 +1137,19 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph review["/crew:review - two rounds per ticket"]
+        kp0{"kimi only (L-0527):<br/>status, fingerprint,<br/>probe ok?"}
+        kp0 -- "probe changed the tree or<br/>could not check it: exit 8,<br/>stop, no fallback :451" --> kx0["stop and report<br/>the named paths"]
+        kp0 -- "ok; or not ok: exit 2,<br/>no round spent, the next<br/>provider's preflight :450" --> pf0
         pf0{"preflight (#264):<br/>receipt, gate, budget?"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
-        pf0 -- "gate not passed or unknown:<br/>exit 9, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
-        vg0 --> to_im5
+        pf0 -- "gate not passed or unknown:<br/>exit 9, no round spent,<br/>self-check not asked<br/>review.md:449" --> fx0
         pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
-        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 9, no round spent<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
+        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 9, no round spent<br/>review.md:449" --> fx0["run the verify gate, or fix<br/>the finding or the tool,<br/>then review again"]
         fx0 --> to_im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
         pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
-        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :451"]
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Kimi / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :431"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
         rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
         rv2 -- "FINDINGS (stray prose<br/>ignored and named)" --> rv3{"final round,<br/>0 BLOCK?"}
@@ -1166,7 +1168,8 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:672, :846 |
+| `kp0` | --provider kimi only (L-0527): ledger status, the "before" fingerprint, then kimi_probe BEFORE preflight and reserve; what Kimi leaves running is ended first review.md:240, :431-432, :450-451 |
+| `pf0` | preflight (#264), first for every other provider: a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:672, :846 |
 | `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :731 |
 | `rv0` | self-check stamped for this bundle and standards set? review_run.py standards_gate |
 | `rv1` | on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests |
@@ -1179,7 +1182,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-review.mmd`
 - **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`
-- **Readability:** PASS: 14 nodes, no crossings, nothing drawn through a node
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle spec plan
 

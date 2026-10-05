@@ -7,6 +7,7 @@ THAT repo's git-common-dir. Nothing here calls the real Kimi CLI.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -167,8 +168,12 @@ def test_kimi_prompt_argument_is_byte_identical_to_codex(repo, tmp_path, size):
 
     _run(repo, tmp_path, FAKE_KIMI_DUMP=str(dump))
     argv = json.loads(dump.read_text(encoding="utf-8").splitlines()[-1])["argv"]
+    # Codex's argument for the binary Kimi resolved to: on Windows the fake is
+    # `kimi.cmd`, a batch shim, and both providers get the file pointer there
+    # (CI on #540), exactly as a real npm-installed `codex.cmd` would.
+    exe = shutil.which("kimi", path=str(tmp_path / "bin"))
     codex = review_run.command_for("codex", "codex", str(repo),
-                                   review_run.prompt_argument(str(scratch / "prompt.txt")),
+                                   review_run.prompt_argument(str(scratch / "prompt.txt"), exe),
                                    "", "")
 
     assert argv[argv.index("-p") + 1] == codex[-1]
@@ -968,9 +973,12 @@ def test_run_kimi_unfingerprintable_tree_after_the_probe_spends_no_round(repo, t
                             "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
     err = capsys.readouterr().err
 
-    assert (code, (work / "review.json").exists()) == (2, False)
+    # Must-block (group review of L-0527): could-not-tell stops like a change
+    # (exit 8); exit 2 would walk on to the next provider with the old bundle.
+    assert (code, (work / "review.json").exists()) == (review_run.EXIT_PROBE_CHANGED, False)
     assert rl.status(str(repo), "T1")["rounds"] == []
     assert "could not be fingerprinted after the probe" in err
+    assert "do not walk to the next provider" in err
 
 
 # --- round 3 NIT review_run.py:643: a process the reviewer left running ------------
@@ -1039,12 +1047,11 @@ def test_group_alive_ignores_a_zombie_and_sees_a_live_member():
         dead.wait()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="no process group is probed on Windows")
 def test_stop_survivors_that_will_not_die_is_could_not_tell(monkeypatch):
     monkeypatch.setattr(review_run, "_group_alive", lambda _pgid: True)
     monkeypatch.setattr(review_run.os, "killpg", lambda *_a: None)
     monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 0.2)
-    if os.name == "nt":
-        pytest.skip("no process group is probed on Windows")
 
     assert review_run.stop_survivors([12345]) == (True, review_run.KIMI_SURVIVOR_UNKNOWN)
 
@@ -1291,10 +1298,8 @@ def test_run_kimi_a_chmod_under_filemode_false_is_incomplete(repo, tmp_path):
 # FIX 6 (review_run.py:629): a PermissionError from killpg is could-not-tell.
 
 
+@pytest.mark.skipif(os.name == "nt", reason="no process group is probed on Windows")
 def test_stop_survivors_a_kill_refused_with_permission_error_is_could_not_tell(monkeypatch):
-    if os.name == "nt":
-        pytest.skip("no process group is probed on Windows")
-
     def refuse(*_a):
         raise PermissionError("not ours")
 
@@ -1304,10 +1309,8 @@ def test_stop_survivors_a_kill_refused_with_permission_error_is_could_not_tell(m
     assert review_run.stop_survivors([12345]) == (False, review_run.KIMI_SURVIVOR_UNKNOWN)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="no process group is probed on Windows")
 def test_stop_survivors_a_group_already_gone_is_nothing_left_running(monkeypatch):
-    if os.name == "nt":
-        pytest.skip("no process group is probed on Windows")
-
     def gone(*_a):
         raise ProcessLookupError
 
@@ -1508,3 +1511,86 @@ def test_run_kimi_an_incident_skip_logged_by_crews_gates_is_not_the_reviewers(re
     assert (result.returncode, review["verdict"],
             os.path.exists(repo / crew_incident.SKIP_LOG_PATH)) == (0, "CLEAN", True), (
         result.stdout + result.stderr)
+
+
+# --- group review of L-0527: what Kimi leaves running on Windows ----------------------
+
+def test_stop_survivors_without_a_survivor_check_is_could_not_tell(monkeypatch):
+    """Must-block: where no group can be probed (Windows) and no job was
+    ended, "nothing left running" cannot be told; never (False, None)."""
+    monkeypatch.setattr(review_run, "KIMI_SURVIVORS_SEEN", False)
+    monkeypatch.setattr(review_run, "_group_alive", lambda _pgid: False)
+
+    assert review_run.stop_survivors([12345]) == (False, review_run.KIMI_SURVIVOR_UNKNOWN)
+
+
+def test_stop_survivors_answers_what_the_ended_job_recorded(monkeypatch):
+    monkeypatch.setattr(review_run, "KIMI_SURVIVORS_SEEN", False)
+    record = (review_run._JOB_ENDED, True, None)  # pylint: disable=protected-access
+
+    assert review_run.stop_survivors([12345, record]) == (True, None)
+
+
+class _SurvivorJob:
+    """A job whose `alive` processes stay until `terminate` (or never)."""
+
+    def __init__(self, alive, dies=True, broken=False):
+        self.alive, self.dies, self.broken, self.calls = alive, dies, broken, []
+
+    def active_processes(self):
+        if self.broken:
+            raise OSError(5, "denied")
+        return self.alive
+
+    def terminate(self):
+        self.calls.append("terminate")
+        if self.dies:
+            self.alive = 0
+
+
+@pytest.mark.parametrize("job, expected, calls", [
+    (_SurvivorJob(0), (False, None), []),
+    (_SurvivorJob(2), (True, None), ["terminate"]),
+    (_SurvivorJob(1, dies=False), (True, review_run.KIMI_SURVIVOR_UNKNOWN), ["terminate"]),
+    (_SurvivorJob(1, broken=True), (False, review_run.KIMI_SURVIVOR_UNKNOWN), []),
+], ids=["empty", "ended", "will-not-empty", "cannot-ask"])
+def test_end_job_ends_what_kimi_left_and_waits_for_the_job_to_empty(monkeypatch, job, expected,
+                                                                  calls):
+    """Must-block: a child left running after Kimi exits is ended before the
+    "after" fingerprint, and a job that will not empty or cannot be asked is
+    could-not-tell; must-allow: an empty job is nothing left running."""
+    monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 0.2)
+
+    ended = review_run._end_job(job)  # pylint: disable=protected-access
+
+    assert (ended[1:], job.calls) == (expected, calls)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_launch_with_a_job_ends_it_for_a_caller_watching_survivors(tmp_path, monkeypatch):
+    """The Windows launch path records the ended job in `started`, so
+    `stop_survivors` answers from it; a caller passing no `started` (every
+    other provider) leaves its job alone."""
+    jobs = []
+
+    class _Job(_SurvivorJob):
+        def adopt(self, _proc):
+            self.calls.append("adopt")
+
+        def close(self):
+            self.calls.append("close")
+
+    def new_job(kill_on_close):
+        jobs.append(_Job(1))
+        return jobs[-1]
+
+    monkeypatch.setattr(review_run.review_checks, "_WINDOWS", True)
+    monkeypatch.setattr(review_run.review_checks, "new_job", new_job)
+    monkeypatch.setattr(review_run, "_launch_flags", lambda j: {"start_new_session": True})
+    started = []
+
+    review_run.launch([sys.executable, "-c", "pass"], str(tmp_path), 30, started=started)
+    review_run.launch([sys.executable, "-c", "pass"], str(tmp_path), 30)
+
+    assert (review_run.stop_survivors(started), jobs[0].calls, jobs[1].calls) == (
+        (True, None), ["adopt", "terminate", "close"], ["adopt", "close"])
