@@ -17,19 +17,20 @@
 %%     refreshes; :68-76 the forbidden-trailer report (never refuses); :78-84 all
 %%     pass -> spec.md `status: done`, keeping the approval (:80-81), then
 %%     crew_tracker.py move --to done (:82); :89 crew_metrics record;
-%%     :96-99 the report, ending with **Not verified:** (T-0041).
+%%     :96-98 the report, ending with **Not verified:** (T-0041).
 %%   Re-read at 69de978c (T-0041): every done.md citation in this file re-derived
 %%     with grep -n; the f808e5f0 positions below check 2 were already behind the
 %%     file before T-0041, which added step 5 (:86-89) and moved the train by four.
 %%   Batch 6 merge with main (T-0066's trailer report at done.md:68-76): every
-%%     done.md citation above and in the nodes re-taken by grep -n on the merged tree.
+%%     done.md citation above and in the nodes re-taken by grep -n on the merged tree,
+%%     after step 5 and the landing paragraph were re-wrapped to keep done.md at 120 lines.
 %% --
 %% Note dn3: (refresh artifacts: re-anchor or regeneration the change reaches)
 %% Note dn4: first a report, never a check (T-0066, done.md:68-76): crew_trailers.py --check lists
 %%    git.forbiddenTrailers over the ticket's own commits (git log --first-parent) as clean / FINDING /
 %%    unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md
 %%    'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record,
-%%    then the report with its Not verified list (T-0041, done.md:96-99)
+%%    then the report with its Not verified list (T-0041, done.md:96-98)
 %% Note ln1: crew_train.py check-land: holds the train, merge-tree clean, base unmoved in
 %%    Touch, receipt + gate
 %% Note ln2: --merge --match-head-commit sha
@@ -39,13 +40,13 @@ flowchart TB
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-99"]
+        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:101-104"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:106-112"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :112-113"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:114-118" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:111-115" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
