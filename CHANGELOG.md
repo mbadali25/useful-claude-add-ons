@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew, gizmoduck, localgpu — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
+### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
 
 - **Summary.** Six changes in one update: `/crew:migrate` carries your `autopilot` settings over
   instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one,

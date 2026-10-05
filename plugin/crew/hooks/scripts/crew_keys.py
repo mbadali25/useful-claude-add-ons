@@ -318,14 +318,14 @@ KEY_META = {
                                 "notice"),
     "notify.realertHours": _row("The same event + ticket + reason is sent once per this "
                                 "many hours; a question pings once per waiting "
-                                "episode.", "type", since="1.0.378",
+                                "episode.", "type", since="1.0.350",
                                 source=_S + "crew_notify.py",
                                 type_="number of hours; negative or non-number reads as "
                                       "the default"),
     "notify.questionTypes": _row("The Claude Code `notification_type` values that count as "
                                  "a question; null uses the built-in five "
                                  "(`crew_notify.QUESTION_TYPES`).", "type",
-                                 since="1.0.378", source=_S + "crew_notify.py",
+                                 since="1.0.350", source=_S + "crew_notify.py",
                                  type_="list of notification_type strings, or null; a "
                                        "non-list reads as null and a non-string entry "
                                        "is dropped"),
