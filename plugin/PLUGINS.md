@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.1.1<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.2<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -71,15 +71,19 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the g
 
 `crew-graph` (below) wraps the third-party `graphify` CLI to build a code
 graph at `graph.out` (default `graphify-out/graph.json`, configurable in
-`.crew/config.json`), and `/crew:upgrade` (next) uses it to bring an older
-setup forward. Neither is a hook — nothing here runs on its own — but both assume
+`.crew/config.json`), and `/crew:onboard --refresh` uses it to bring the code
+map's graph facts forward. Neither is a hook — nothing here runs on its own — but both assume
 `graphify` is on `PATH`, which is a **separate, off-by-default install**:
 menu item 22 (`uv tool install graphifyy` — the PyPI package is `graphifyy`,
 double-y; the CLI it installs is `graphify`). A keyless build needs both
 `--no-viz` and `--code-only`: without `--code-only`, `graphify` errors on any
-repository containing docs, rather than skipping them. Exporting the graph
+repository containing docs, rather than skipping them. Before any build,
+`crew_graph_ignore.py --check` confirms graphify will read no
+secrets-denylisted file: `.gitignore` does not stop graphify reading a tracked
+file, so the root `.graphifyignore` must exclude every one, and `--write` adds
+what is missing. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
-the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
+the user in `.crew/config.json`; no crew command ever sets that flag itself.
 
 ### The emergency lane
 
@@ -143,7 +147,7 @@ to CI or to branch protection.
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
-| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback |
+| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback; a pre-0.20 config is upgraded first, in the same run |
 | `/crew:model` | Show or change which model backs each crew role, and probe that it actually answers |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync a ticket between an Obsidian Kanban board and the local cache |
 | `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
@@ -158,7 +162,7 @@ to CI or to branch protection.
 | `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
 | `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
-| `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
+| `/crew:upgrade` | Removed - use /crew:migrate, which upgrades a pre-0.20 config itself |
 | `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
 | `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
 | `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
@@ -208,7 +212,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first; migrates a memory folder and restores a pointer (`crew_memory.py`) |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
-| `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
+| `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:onboard --refresh` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
 | `crew-debugging` | Root cause before any fix — reproduce, check recent changes, gather evidence from the code map and verification map, one hypothesis tested minimally. Backs `/crew:debug` |
 | `crew-brainstorm` | Turn a request into an approved direction before it becomes a spec — one question per message, options with the recommendation first. Backs `/crew:brainstorm`; adapted from `superpowers` (MIT, `NOTICE.md`) |
