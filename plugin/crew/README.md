@@ -1125,7 +1125,7 @@ Windows PowerShell 5.1 cannot resolve one as `realpath` does, so any symlink or
 junction on the way counts as leaving, even one that points back inside. What they write (transcripts, markers, the
 handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
 directory there before it measures. The review/gate harness reads it too (crew
-1.1.4, L-0681): the verify gate in both flavours (`verifyGate`,
+1.1.8, L-0681): the verify gate in both flavours (`verifyGate`,
 `verify.stopBudgetSeconds` and, in `verify-gate.ps1`, `emergency.standDown`),
 `review_gate.py` (in step with the gate: both read one file), the gate's
 fingerprint (the first gate run in each inheriting lane after the upgrade
