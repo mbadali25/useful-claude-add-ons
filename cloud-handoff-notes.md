@@ -106,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:02: note.sh: stamp file via git rev-parse --git-dir (worktree .git is a file).
 - 04:00: owner approved all 3: notes push every ~30 min + at merges (note.sh changed), Windows-red sweep after batch 7, crew 1.1.0 + guide rename last (C-0006 minted).
 - 03:50: owner confirmed: plain-text 'focus on T-1' turning focus on counts as explicit (T-0020 N3). Row stays.
 - 03:45: #357 re-review 0 BLOCK 2 FIX: F1 unknown marker gives no removal command and points to focus off which refuses; F2 concurrent focus loses an entry and the guard fails open (re-read insufficient, lock required). No-marker behaviour byte-identical to main (34 inputs); full crew suite 11664 passed. Sent fixes + main merge to builder. N3 (plain-text 'focus on T-1' writes marker) kept, owner informed.
