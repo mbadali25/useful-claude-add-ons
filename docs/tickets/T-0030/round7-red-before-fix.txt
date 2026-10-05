@@ -1,0 +1,44 @@
+               total        used        free      shared  buff/cache   available
+Mem:              22           8           0           0          14          14
+remote = PosixPath('/root/crew-tmp/t-0030/pytest-of-root/pytest-1436/test_a_tilde_origin_is_one_cla0/remote.git')
+
+    def test_a_tilde_origin_is_one_claim_from_every_worktree(capsys, monkeypatch, tmp_path, wt, wt_b, remote):
+        home = tmp_path / "home"
+        target = _bare(home / "coord.git")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        key = _key_or_skip(target, tmp_path)[0]
+        listed = subprocess.run(["git", "ls-remote", "~/coord.git"], cwd=wt, capture_output=True, text=True,
+                                check=False, stdin=subprocess.DEVNULL)
+        for root in (wt, wt_b):
+            _set_origin(root, "~/coord.git")
+            _coord(root, remote)
+        _session(monkeypatch, "sess-1")
+        first = _run_coord(capsys, wt)
+        _session(monkeypatch, "sess-2")
+    
+        code, out = _run_coord(capsys, wt_b)
+    
+        assert listed.returncode == 0, listed.stderr
+>       assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
+E       AssertionError: ("unknown - cannot derive this repository's key: origin's URL has the shape /<name>/<name>/<name>/<name>/<name>/<name>...me>/<name>/<name>, and a part of it is not letters, digits, '.', '_', '-' (at most 64); nothing was read or written
+E         ")
+E       assert (3 == 0)
+
+plugin/crew/tests/test_crew_coord.py:2742: AssertionError
+=========================== short test summary info ============================
+FAILED plugin/crew/tests/test_crew_coord.py::test_every_local_repository_git_opens_has_a_key[non-bare]
+FAILED plugin/crew/tests/test_crew_coord.py::test_every_local_repository_git_opens_has_a_key[dot-git]
+FAILED plugin/crew/tests/test_crew_coord.py::test_every_local_repository_git_opens_has_a_key[linked-worktree]
+FAILED plugin/crew/tests/test_crew_coord.py::test_every_local_repository_git_opens_has_a_key[dot-directory]
+FAILED plugin/crew/tests/test_crew_coord.py::test_every_local_repository_git_opens_has_a_key[space]
+FAILED plugin/crew/tests/test_crew_coord.py::test_a_clone_of_a_non_bare_local_repository_can_claim
+FAILED plugin/crew/tests/test_crew_coord.py::test_two_spellings_of_one_non_bare_origin_are_one_claim
+FAILED plugin/crew/tests/test_crew_coord.py::test_a_local_segment_that_is_not_utf8_is_could_not_tell[replaced]
+FAILED plugin/crew/tests/test_crew_coord.py::test_a_local_segment_that_is_not_utf8_is_could_not_tell[surrogate]
+FAILED plugin/crew/tests/test_crew_coord.py::test_two_case_spellings_on_a_case_insensitive_volume_are_one_claim
+FAILED plugin/crew/tests/test_crew_coord.py::test_an_unlistable_directory_where_case_does_not_matter_is_could_not_tell
+FAILED plugin/crew/tests/test_crew_coord.py::test_a_tilde_origin_is_one_claim_from_every_worktree
+12 failed, 3 passed, 273 deselected in 1.61s
+
+[exited with code 0]

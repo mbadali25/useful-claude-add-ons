@@ -37,6 +37,8 @@ Print its lines as they are, then stop: read-only (`-B`: no bytecode), armed or 
 
 ## 2. Arm, then pick the ticket
 
+First, when `.crew/config.json` has a `coord` block (T-0030): `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_coord.py status` - print every `yours from a previous session` line with its recommended action, and stop if any; never `recover` or `--break` here.
+
 ```bash
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # ticket= empty
@@ -57,8 +59,7 @@ Then `claim` (T-0049): `claimed` or `refreshed` goes on; `refused:` (held by ano
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 
 ```bash
-python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
-  --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
 ```
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
@@ -97,9 +98,7 @@ policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-rep
 `max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`. This procedure: `review-verdict`, `failed-done-check`,
 `failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
-- `offboard-role` - offboarding a role, or removing one from the roster.
-- `delete-map` - deleting a codemap file or a diagram.
-- `rewrite-metrics` - rewriting .crew/metrics.md.
+`offboard-role` (offboarding or removing a role), `delete-map` (a codemap file or a diagram), `rewrite-metrics` (.crew/metrics.md), and
 - `git-destruction` - force-push, branch delete, history rewrite, or rm of a tracked file.
 - `clear-inflight` - clearing another runner's in-flight marker (a stop names the owner's `clear`).
 

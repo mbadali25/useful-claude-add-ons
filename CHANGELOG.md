@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
+
+- **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
+  git branch so two of them never work the same ticket.
+- **Added.** `plugin/crew/hooks/scripts/crew_coord.py`: `claim`, `heartbeat`, `release`, `done`,
+  `release --break --by <name>` (the owner only), `recover` and `status` on the branch
+  `crew-coord/<channel>` of a shared remote (`coord.channel` / `coord.remote` in `.crew/config.json`).
+  Each claim is `claims/<repo>__<id>.json` plus one line in `log.jsonl`, written with git plumbing
+  on the freshly fetched tip and pushed with a plain push, never a force push; a rejected push
+  re-fetches and retries at most three times, then reads `unknown - could not push`. A claim whose
+  heartbeat is older than 30 minutes reads `owner unknown`, never free. A detached heartbeat
+  process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
+  claim after the session id changes only on the same machine and worktree, with the local identity
+  file naming the old holder and its process provably gone; anything else is presented for the owner.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured.
+  The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
+- **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
+  are review harness and land separately (T-0087).
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
