@@ -67,9 +67,14 @@ WHATS_NEW_COUNT = 2
 # One line per entry, so a fallback first sentence is cut to this many characters.
 SENTENCE_LIMIT = 240
 
-ENTRY_HEADING = re.compile(
-    r"^### (?:Added|Changed|Fixed|Removed|Deprecated|Security)\b\s*(?:[\u2014\u2013-]\s*)?(.*)$"
-)
+# Every "### " heading under a release is an entry; the Keep-a-Changelog kind
+# word is optional, so a heading in any other shape still renders rather than
+# being skipped in silence. "#### " headings are a batch entry's parts.
+KIND = r"(?:(?:Added|Changed|Fixed|Removed|Deprecated|Security)\b\s*(?:[\u2014\u2013-]\s*)?)?"
+ENTRY_HEADING = re.compile(r"^### " + KIND + r"(.*)$")
+PART_HEADING = re.compile(r"^#### " + KIND + r"(.*)$")
+# "crew 1.0.345 — batch 5: T-0052, T-0057": the subject is what precedes the dash.
+BATCH_SUBJECT = re.compile(r"^(.*?)\s+[\u2014\u2013]\s+")
 # A trailing "(T-0037, PR A)" or "(L-1518)": a ticket reference means nothing to
 # a reader deciding whether to update.
 TICKET_SUFFIX = re.compile(r"\s*\([^()]*\b[A-Z]+-\d+\b[^()]*\)\s*$")
@@ -169,15 +174,19 @@ def splice(text: str, marker: str, body: str, where: str) -> str:
     return text[: start + len(begin)] + f"\n\n{body}\n\n" + text[stop:]
 
 
-def changelog_entries(text: str, limit: int = WHATS_NEW_COUNT) -> list[tuple[str, list[str]]]:
-    """Return the newest ``limit`` entries as (heading text, bullet texts).
+def changelog_entries(
+    text: str, limit: int = WHATS_NEW_COUNT
+) -> list[tuple[str, list[str], list[str]]]:
+    """Return the newest ``limit`` entries as (heading text, bullet texts, part titles).
 
-    An entry is a ``### Added|Changed|Fixed|...`` heading below the first
-    ``## [`` release heading. Its bullets are the top-level ``- `` items up to
-    the next heading, each with its continuation lines joined by spaces. Fenced
-    code is skipped so a ``###`` inside an example is not an entry.
+    An entry is any ``###`` heading below a ``## [`` release heading. Its bullets
+    are the top-level ``- `` items up to the next heading, each with its
+    continuation lines joined by spaces. Its parts are the titles of the ``####``
+    headings under it (a batch PR's per-ticket entries). Fenced code is skipped
+    so a ``###`` inside an example is not an entry.
     """
-    entries: list[tuple[str, list[str]]] = []
+    entries: list[tuple[str, list[str], list[str]]] = []
+    parts: list[str] | None = None
     in_release = False
     fenced = False
     current: list[str] | None = None
@@ -190,16 +199,21 @@ def changelog_entries(text: str, limit: int = WHATS_NEW_COUNT) -> list[tuple[str
             continue
         if line.startswith("## "):
             in_release = line.startswith("## [")
-            current = None
+            current = parts = None
             continue
         if line.startswith("#"):
             current = None
+            part = PART_HEADING.match(line) if in_release else None
+            if part and parts is not None:
+                parts.append(part.group(1).strip())
+                continue
             match = ENTRY_HEADING.match(line) if in_release else None
+            parts = None
             if match:
                 if len(entries) == limit:
                     break
-                current = []
-                entries.append((match.group(1).strip() or line[4:].strip(), current))
+                current, parts = [], []
+                entries.append((match.group(1).strip() or line[4:].strip(), current, parts))
             continue
         if current is None:
             continue
@@ -253,8 +267,23 @@ def summary(bullets: list[str]) -> str:
     return shorten(first_sentence(first))
 
 
-def entry_line(heading: str, bullets: list[str]) -> str:
-    """``- **<subject> <version>**: <Title>. <sentence>`` -- one line per entry."""
+def part_title(heading: str) -> str:
+    """A batch part's title without its ticket reference or its ``subject:`` prefix."""
+    subject, _, title = TICKET_SUFFIX.sub("", heading).partition(": ")
+    return (title or subject).strip().rstrip(".")
+
+
+def entry_line(heading: str, bullets: list[str], parts: list[str] | None = None) -> str:
+    """``- **<subject> <version>**: <Title>. <sentence>`` -- one line per entry.
+
+    A batch entry (``####`` parts, no bullets of its own) lists its parts'
+    titles instead: ``- **crew 1.0.345**: <part>; <part>.``
+    """
+    batch = BATCH_SUBJECT.match(heading)
+    if parts and not bullets and batch:
+        subject = batch.group(1).replace("`", "").strip()
+        listed = shorten("; ".join(part_title(part) for part in parts))
+        return f"- **{subject}**: {listed[:1].upper() + listed[1:]}."
     subject, _, title = TICKET_SUFFIX.sub("", heading).partition(": ")
     if not title:
         subject, title = "", subject
@@ -271,7 +300,7 @@ def render_whats_new(changelog: str) -> str:
     entries = changelog_entries(changelog)
     if not entries:
         fail(f"{CHANGELOG} has no '### Added/Changed/Fixed ...' entry under a '## [' heading")
-    lines = [entry_line(heading, bullets) for heading, bullets in entries]
+    lines = [entry_line(heading, bullets, parts) for heading, bullets, parts in entries]
     return "\n".join(lines) + f"\n\nFull history: [{CHANGELOG}]({CHANGELOG})."
 
 

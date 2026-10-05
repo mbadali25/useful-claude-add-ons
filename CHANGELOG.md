@@ -17,7 +17,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   block (`<!-- BEGIN CHANGELOG.md -->`) from the newest two `###` entries under a
   `## [` heading: `<subject> <version>`, the title without its ticket reference, and
   the entry's `**Summary.**` bullet, else the first sentence of its first bullet (cut
-  to 240 characters), else nothing. `--check` exits 1 when the block differs from that
+  to 240 characters), else nothing. Any `###` heading counts, kind word or not; a
+  batch entry (`####` parts, no bullets of its own) lists its parts' titles. `--check` exits 1 when the block differs from that
   render. The three root-README sections "What's new in the plugins", "... in the
   skills" and "... in the MCP servers" are gone; README.md went from 916 to 426 lines.
 - **UPDATE.md stays.** `plugin/UPDATE.md`, `skills/UPDATE.md` and
@@ -27,7 +28,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `scripts/_test/sync-updates.py` (new): a block that does not match the
   newest two entries fails `--check`, a fresh render passes, and a changelog with one
   entry, an entry with no `**Summary.**` bullet and an entry with no bullet at all each
-  render as specified. Wired into `marketplace.yml`, `scripts/gate-runner.py` and
+  render as specified, a batch entry lists its parts, and a heading without a kind word
+  is not skipped. Wired into `marketplace.yml`, `scripts/gate-runner.py` and
   `.crew/verify.json`.
 
 ### crew 1.0.345 — batch 5: T-0052, T-0057, L-0662

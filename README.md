@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **repository**: The README shows the two latest updates and links to the changelog. The README's "What's new" is now two lines, the newest two changelog entries, and a link to the changelog, instead of about 500 lines of update history.
-- **crew 1.0.344**: Ticket statuses `needs-owner`, `cancelled` and `superseded`, read the same by every reader and tracker. A ticket can now be marked `needs-owner`, `cancelled` or `superseded`, and the session brief, `/crew:status`, autopilot and the Obsidian board all treat a cancelled or superseded ticket as closed.
+- **crew 1.0.345**: Plain-text rows for autopilot wave, split, sleep and wake; plain-text routing for the autopilot commands the router knows; one split rulebook (`crew_split.py`) behind `/crew:split` in every tracker.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

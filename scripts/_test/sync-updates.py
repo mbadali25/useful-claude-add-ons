@@ -227,6 +227,37 @@ def case_root_readme_no_longer_mirrors_update_md(tmp):
     assert "Nothing new in" not in read(tmp, "README.md") and "A new thing" not in read(tmp, "README.md")
 
 
+BATCH = """### crew 1.0.345 — batch 5: T-0052, T-0057
+
+#### Added — `crew`: plain-text rows for wave and split (L-0662)
+
+- **What changed.** Rows were added.
+
+#### Fixed — `crew`: one split rulebook (T-0052, 1 of 3)
+
+- **What changed.** One rulebook.
+"""
+
+ODD_SHAPE = """### widget 2.1.0 — a heading without a kind word
+
+- **Summary.** Still listed.
+"""
+
+
+def case_batch_entry_lists_its_parts(tmp):
+    build(tmp, changelog(BATCH, ENTRY_A))
+    assert run(tmp).returncode == 0
+    assert block(tmp) == ["- **crew 1.0.345**: Plain-text rows for wave and split; one split rulebook.",
+                          LINE_A, FULL], block(tmp)
+
+
+def case_heading_without_kind_word_is_not_skipped(tmp):
+    build(tmp, changelog(ODD_SHAPE, ENTRY_A))
+    assert run(tmp).returncode == 0
+    assert block(tmp) == ["- Widget 2.1.0 — a heading without a kind word. Still listed.",
+                          LINE_A, FULL], block(tmp)
+
+
 CASES = [
     ("must-allow: a fresh render passes --check", case_fresh_render_passes),
     ("must-block: a block left on older entries fails --check and is not written",
@@ -239,6 +270,9 @@ CASES = [
     ("edge: no bullet at all renders the heading alone", case_no_bullet),
     ("edge: a long first sentence is cut at a space outside code", case_long_sentence_is_cut_outside_code),
     ("edge: an older release's entry fills the second line", case_older_release_fills_in),
+    ("must-allow: a batch entry lists its #### parts", case_batch_entry_lists_its_parts),
+    ("must-block: a ### heading without a kind word is still an entry, not skipped",
+     case_heading_without_kind_word_is_not_skipped),
     ("structural: a changelog with no entry exits 2", case_no_entries_is_structural),
     ("structural: a root README without the markers exits 2", case_missing_markers_is_structural),
     ("the root README carries no UPDATE.md mirror", case_root_readme_no_longer_mirrors_update_md),
