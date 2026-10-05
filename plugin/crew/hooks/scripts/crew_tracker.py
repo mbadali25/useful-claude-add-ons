@@ -1155,7 +1155,7 @@ def _hold_dirs(paths, label):
         parts = _components(paths, label)
         ids = _recorded_ids(paths, label, parts)
         path = paths["vault"]
-        for index, part in enumerate([None] + _components(paths, label)):
+        for index, part in enumerate([None] + parts):
             if part is not None:
                 path = os.path.join(path, part)
             held.append(_win_open_dir(path))
