@@ -85,6 +85,17 @@ def test_a_backslash_escaped_line_does_not_count_as_covering(tmp_path, capsys):
     assert (code, "!secret.pem" in out) == (1, True), out
 
 
+def test_a_backslash_inside_a_line_does_not_count_as_covering(tmp_path, capsys):
+    """Review round 4: git reads `secret\\ name.py` as `secret name.py`;
+    graphify keeps the backslash."""
+    root = _repo(tmp_path, {"secret name.py": "PW = 1\n", ".claude/secrets-denylist": "secret name.py\n",
+                            ".graphifyignore": "secret\\ name.py\n"})
+
+    code, out = _check(root, capsys)
+
+    assert (code, "secret name.py" in out) == (1, True), out
+
+
 def test_covered_denylisted_file_passes(tmp_path, capsys):
     root = _denylisted_config(tmp_path)
     assert _main(root, "--write") == 0
