@@ -108,7 +108,9 @@ def named(root):
         if not isinstance(agents, list) or not all(
                 isinstance(name, str) and name.strip() for name in agents):
             return {}, f"{path}: rule {number}'s `agents` is not a list of names"
-        paths = [str(p) for p in rule.get("paths") or [] if isinstance(p, str)]
+        paths = rule.get("paths", [])
+        if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+            return {}, f"{path}: rule {number}'s `paths` is not a list of globs"
         for name in agents:
             bucket = out.setdefault(name.strip(), [])
             bucket.extend(p for p in paths if p not in bucket)

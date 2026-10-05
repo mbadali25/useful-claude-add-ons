@@ -1,7 +1,11 @@
 """Tests for codemap/graph reconciliation and the v1 -> v2 upgrade."""
 import json
+import os
 import pathlib
+import stat
 import subprocess
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -1493,6 +1497,19 @@ def test_force_keeps_earlier_upgrade_reports(tmp_path):
                          + after_one)
     assert after_two.count(MARKER.encode()) == 2
     assert after_two.count(b"NOTE-T0065") == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_a_rerun_keeps_the_report_file_mode(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    os.chmod(_upgrade_md(root), 0o600)
+
+    crew_upgrade.run(str(root), {}, force=True)
+
+    assert stat.S_IMODE(os.stat(_upgrade_md(root)).st_mode) == 0o600
 
 
 def test_first_upgrade_has_no_marker(tmp_path):

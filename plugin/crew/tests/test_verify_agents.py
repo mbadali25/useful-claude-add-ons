@@ -138,7 +138,9 @@ def test_unknowns_never_read_as_installed(tmp_path, home, capsys, source):
                                   '["php-developer"]', '{"rules": "php-developer"}',
                                   '{"rules": [{"agents": "php-developer"}]}',
                                   '{"rules": [{"agents": ["php-developer", 7]}]}',
-                                  '{"rules": ["php-developer"]}'])
+                                  '{"rules": ["php-developer"]}',
+                                  '{"rules": [{"agents": ["php-developer"], "paths": 7}]}',
+                                  '{"rules": [{"agents": ["php-developer"], "paths": "src"}]}'])
 def test_a_verify_map_whose_shape_cannot_be_read_is_unknown(tmp_path, home, capsys, data):
     _home(home)
     root = _repo(tmp_path, ["php-developer"])

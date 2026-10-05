@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -1315,12 +1316,15 @@ def _write_upgrade_report(path, report):
     not even a line ending is touched); the whole new file is built in memory,
     written to a pid-named sibling and renamed over the target, so an
     interruption leaves the old file or the new one, never half of either.
-    The new report is LF-only on every platform."""
+    The new report is LF-only on every platform, and keeps the earlier
+    file's permission bits (review: the sibling would otherwise carry the
+    umask's, widening a 0600 report on rerun)."""
     try:
         with open(path, "rb") as handle:
             old = handle.read()
+            mode = os.stat(handle.fileno()).st_mode
     except FileNotFoundError:
-        old = b""
+        old, mode = b"", None
     data = report.encode("utf-8")
     if old:
         data += b"\n" + UPGRADE_HISTORY_MARKER.encode("utf-8") + b"\n\n" + old
@@ -1330,6 +1334,8 @@ def _write_upgrade_report(path, report):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        if mode is not None:
+            os.chmod(tmp_path, stat.S_IMODE(mode))
         os.replace(tmp_path, path)
     finally:
         if os.path.exists(tmp_path):
