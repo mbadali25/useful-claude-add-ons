@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+### crew 1.1.6 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
   in its own isolated worktree, with every lane's questions and results reported in one batch.
@@ -29,7 +29,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
   the lane prompt keeps a lane from accepting a review or admin-merging.
 
-### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
+### crew 1.1.6 — T-0030: cross-session claims on a git-backed channel
 
 - **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
   git branch so two of them never work the same ticket.

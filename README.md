@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.9 — T-0029**: `/crew:autopilot wave` runs an approved ticket set as parallel lanes. A set of tickets the owner designed and approved together can now run at once, each in its own isolated worktree, with every lane's questions and results reported in one batch.
-- **crew 1.1.9 — T-0030**: Cross-session claims on a git-backed channel. Several crew sessions, on one machine or many, can now claim tickets on a shared git branch so two of them never work the same ticket.
+- **crew 1.1.6 — T-0029**: `/crew:autopilot wave` runs an approved ticket set as parallel lanes. A set of tickets the owner designed and approved together can now run at once, each in its own isolated worktree, with every lane's questions and results reported in one batch.
+- **crew 1.1.6 — T-0030**: Cross-session claims on a git-backed channel. Several crew sessions, on one machine or many, can now claim tickets on a shared git branch so two of them never work the same ticket.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
