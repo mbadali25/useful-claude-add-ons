@@ -22,7 +22,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 main = 8479a837 (#496 L-1508 PR B merged), crew 1.0.347.
 | Item | Where | State | Next |
 |---|---|---|---|
-| C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
+| C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | adversarial fail-open review running; land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
 | Batch 6 | `batch-6-build` (builder) | 4 members: #500 T-0045, #348 T-0041, #338 L-0582, #361 T-0050 (owner: ship 4; T-0020 held out), crew 1.0.348 | merge-resolution review running; CI 6+3; merge |
 | T-0020 #357 | `T-0020-build` | owner: EXPLICIT focus only (pointer != focus); builder reworking + merging main | re-review, Windows pre-flight, batch 7 |
@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 02:07 UTC
+Last updated: 2026-10-05 02:20 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 02:50: C-0001 built: draft #501 c2a133b7, CI green. Fail-open review started; subscribed. Minted C-0004 (Windows decide skips on scripts/** though crew reads scripts/).
 - 02:40: batch 6 builder stopped on T-0020: its focus_guard (pointer=focus) refuses assign/goal/wave/split that main's router sends (55 route tests red). Owner: explicit focus only; ship batch 6 with 4. Builder finishing batch 6 at 1.0.348; merge-resolution review started; T-0020 rework builder started.
 - 02:25: MERGED #496 L-1508 PR B -> 8479a837 (crew 1.0.347), CI 29/29; ALONGSIDE README.md change sabotage-verified by coordinator (19/20 without, 20/20 with). Batch 6 builder told: version 1.0.348.
 - 01:52: L-1508 PR B #496 green at f5f3789a (crew 1.0.347, README in ALONGSIDE, main 2828acef merged); ready to land
