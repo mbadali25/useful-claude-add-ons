@@ -295,6 +295,13 @@ def case_empty_and_deep_part_headings(tmp):
     assert block(tmp)[0] == "- **crew 1.0.346**: Added; two; after deep.", block(tmp)
 
 
+def case_batch_mode_word_is_not_a_batch(tmp):
+    build(tmp, changelog("### Fixed \u2014 `crew` 1.0.3: batch-mode retries\n\n- **Summary.** S.\n\n"
+                         "#### Notes\n\n- n\n", ENTRY_A))
+    assert run(tmp).returncode == 0
+    assert block(tmp)[0] == "- **crew 1.0.3**: Batch-mode retries. S.", block(tmp)
+
+
 CASES = [
     ("must-allow: a fresh render passes --check", case_fresh_render_passes),
     ("must-block: a block left on older entries fails --check and is not written",
@@ -316,6 +323,8 @@ CASES = [
     ("edge: a cut part list ends in one ellipsis, not four dots", case_long_part_list_ends_in_one_ellipsis),
     ("edge: an empty #### keeps its kind word and a ##### drops no later part",
      case_empty_and_deep_part_headings),
+    ("must-block: a normal entry saying \"batch-mode\" keeps its normal line",
+     case_batch_mode_word_is_not_a_batch),
     ("structural: a changelog with no entry exits 2", case_no_entries_is_structural),
     ("structural: a root README without the markers exits 2", case_missing_markers_is_structural),
     ("the root README carries no UPDATE.md mirror", case_root_readme_no_longer_mirrors_update_md),

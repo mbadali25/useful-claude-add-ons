@@ -76,7 +76,7 @@ PART_HEADING = re.compile(r"^#### " + KIND + r"(.*)$")
 # "crew 1.0.345 — batch 5: T-0052, T-0057" (any dash, or none): the subject is
 # what precedes the dash or the colon, without a trailing "batch <n>".
 BATCH_SUBJECT = re.compile(r"^(.*?)(?:\s+[\u2014\u2013-]\s+|:\s|$)")
-BATCH_WORD = re.compile(r"\bbatch\b", re.IGNORECASE)
+BATCH_WORD = re.compile(r"\bbatch\s+\d+\b", re.IGNORECASE)
 BATCH_NUMBER = re.compile(r"\s+batch\s+\d+\s*$", re.IGNORECASE)
 # A trailing "(T-0037, PR A)" or "(L-1518)": a ticket reference means nothing to
 # a reader deciding whether to update.
@@ -293,7 +293,7 @@ def entry_line(heading: str, bullets: list[str], parts: list[str] | None = None)
     """``- **<subject> <version>**: <Title>. <sentence>`` -- one line per entry.
 
     A batch entry (``####`` parts, and either no bullets of its own or
-    "batch" in its heading) shows its ``**Summary.**`` bullet if it has one,
+    "batch <n>" in its heading) shows its ``**Summary.**`` bullet if it has one,
     else its parts' titles: ``- **crew 1.0.345**: <part>; <part>.``
     """
     if parts and (not bullets or BATCH_WORD.search(heading)):
