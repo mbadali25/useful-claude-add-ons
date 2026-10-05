@@ -2972,7 +2972,7 @@ def test_the_default_port_spelled_or_not_is_one_key(spellings):
     assert len({crew_coord.owner_name(url) for url in spellings}) == 1
 
 
-@pytest.mark.parametrize("port", ["0", "70000", "9" * 5000])
+@pytest.mark.parametrize("port", ["0", "70000", "9" * 5000, "abc", "２２"])
 def test_a_port_that_is_not_a_tcp_port_is_could_not_tell(port):
     # Codex review of the owner-decision fixes (rush g0): a 4,301-digit port raised ValueError.
     key, why = crew_coord.owner_name(f"ssh://git@example.test:{port}/team/repo.git")

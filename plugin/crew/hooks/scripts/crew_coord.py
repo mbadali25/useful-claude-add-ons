@@ -966,7 +966,7 @@ def owner_name(url):
         parts = [_key_part(p) for p in ["dev.azure.com"] + names]
     elif host:
         name, _, port = host.partition(":")  # a non-default port, kept by _split_url
-        if port and not (len(port) <= 5 and 1 <= int(port) <= 65535):
+        if port and not (port.isascii() and port.isdigit() and len(port) <= 5 and 1 <= int(port) <= 65535):
             return None, (f"origin's URL has the shape {_url_shape(name, segments)}, and its port is not a "
                           "TCP port (1-65535)")
         if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in [name] + segments):
