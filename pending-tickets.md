@@ -33,7 +33,7 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
 | 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
 | 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
-| 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511, L-0530 | next free | waiting on PRs |
+| 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | built; PR #539, final group review running |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
 | 9b | H3 review-harness tickets (to main, alone) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | next free | waiting on PRs |
 | 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
@@ -89,6 +89,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | ID | Title | From | Blocked by | Status |
 |---|---|---|---|---|
 | C-0020 | Re-check the SQL (L-0532) and PHP (L-0533) standards sets against the owner's private repos; admit or drop rules the public-evidence pass could not settle | owner decision 2026-10-05: ship thin from public evidence | L-0532, L-0533 landed | needs ticket |
+| C-0021 | Sabotage entries for L-0530: the `read` could-not-tell branch, and a hint applied as a write (`sabotage_tracker.py`, harness) | G8 report | L-0530 on main | H2 lane |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
