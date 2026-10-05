@@ -202,7 +202,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   harness paths and are left out. Until the allowance lands, a ticket whose `embed`
   refresh writes a README its Touch does not name is flagged by the Stop audit:
   name the README in Touch.
-### Changed — `crew` 1.0.378: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+### Changed — `crew`: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
 
 - **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
   exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
