@@ -2819,6 +2819,18 @@ def test_a_tilde_origin_is_one_claim_from_every_worktree(capsys, monkeypatch, tm
 
 # --- Codex review round 3 (rush g0) ---------------------------------------------
 
+@pytest.mark.parametrize("cmd", ["claim", "recover"])
+def test_no_claude_pid_claims_nothing(capsys, monkeypatch, wt, remote, cmd):
+    # Round 4: a holder with no pid never matches itself, so its claim could not be released.
+    _session(monkeypatch, "sess-a")
+    monkeypatch.delenv("CLAUDE_PID")
+
+    code, out = _run(capsys, wt, cmd)
+
+    assert (code, "CLAUDE_PID" in out) == (crew_coord.EXIT_UNKNOWN, True), out
+    assert git(remote, "rev-parse", "--verify", "-q", REF, check=False) == ""
+
+
 _HOLDER = {"session": "s", "machine": "m", "worktree": "/w", "pid": 5, "pid_start": None}
 
 

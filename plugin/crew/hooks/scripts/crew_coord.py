@@ -1338,6 +1338,10 @@ def cmd_claim(chan, top, key, repo, ticket, args, ttl):
         print("unknown - cannot tell who is claiming: CLAUDE_CODE_SESSION_ID is absent. "
               "Claim from inside a Claude Code session.")
         return EXIT_UNKNOWN
+    if me["pid"] is None:  # same_holder never matches it: the claim could not be released
+        print("unknown - cannot tell which process is claiming: CLAUDE_PID is absent or not a pid; "
+              "nothing was claimed")
+        return EXIT_UNKNOWN
 
     def change(files):
         claim, why, present = _record(files, key)
@@ -1490,6 +1494,10 @@ def cmd_recover(chan, top, key, repo, ticket, args, ttl):
     me = current_holder(top)
     if me is None:
         print("unknown - cannot tell who is recovering: CLAUDE_CODE_SESSION_ID is absent")
+        return EXIT_UNKNOWN
+    if me["pid"] is None:
+        print("unknown - cannot tell which process is recovering: CLAUDE_PID is absent or not a pid; "
+              "nothing was written")
         return EXIT_UNKNOWN
     outcome = {}
 
