@@ -86,5 +86,5 @@ How it writes, whatever the arguments say:
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
   under the lock, compared with what the preview read (a changed file is put
-  back and nothing is deleted), and three printed restore lines (sh, cmd,
-  PowerShell).
+  back and nothing is deleted; exit 1 when the file is not, or may not be,
+  at its path, naming the backup), and three printed restore lines.

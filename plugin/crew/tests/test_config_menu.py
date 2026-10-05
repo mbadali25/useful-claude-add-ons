@@ -1785,3 +1785,149 @@ def test_sleep_overrides_offer_the_three_policies_and_unset(tmp_path):
                 sorted(map(repr, (c["value"] for c in rows[path]["choices"])))) == (
             True, sorted(map(repr, ("human", "self", "risk", None)))), path
 
+
+# --- T-0103: an OS error during delete names where the file is ---------------
+
+
+def _apply(root, plan):
+    return menu.apply_delete(root, plan, "repo", now=_now(), expect=_bound(plan))
+
+
+def _backup_path(root):
+    return os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+
+
+@pytest.mark.parametrize("where", ["fsync", "read"])
+def test_delete_failure_after_the_move_names_the_backup(tmp_path, capsys,
+                                                        monkeypatch, where):
+    root, gpath = _repo(tmp_path)
+    original = _bytes(_config(root))
+    plan = menu.plan_delete(root, gpath)
+
+    def _fail(*_args, **_kwargs):
+        raise OSError(errno.EIO, "I/O error")
+    monkeypatch.setattr(crew_config_files,
+                        "_fsync_dir" if where == "fsync" else "_regular_bytes", _fail)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert _backup_path(root) in err
+    assert "left in place" not in err
+    assert _bytes(_backup_path(root)) == original
+    assert not os.path.lexists(_config(root))
+
+
+def test_delete_move_back_failure_names_the_backup(tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    changed = b'{"tracker": "sdp"}\n'
+    _write_config(root, changed)
+
+    def _no_move_back(*_args, **_kwargs):
+        raise OSError(errno.EIO, "I/O error")
+    monkeypatch.setattr(crew_config_files, "move_no_clobber", _no_move_back)
+    real_aside = crew_config_files.move_aside
+
+    def _aside(src, dest):
+        crew_config_files.os.rename(src, dest)   # the real move, not the patched one
+        return crew_config_files._regular_bytes(dest)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside)
+    assert real_aside is not _aside
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert _backup_path(root) in err and "changed since the preview" in err
+    assert "left in place" not in err
+    assert _bytes(_backup_path(root)) == changed
+
+
+def test_delete_lock_failure_is_not_reported_as_a_backup_failure(tmp_path, capsys,
+                                                                 monkeypatch):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    before = _bytes(_config(root))
+    plan = menu.plan_delete(root, gpath)
+    _deny_lock_files(monkeypatch)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert (code, _bytes(_config(root)), _backups(root)) == (2, before, [])
+    assert gpath + ".lock" in err and "left in place" in err
+    assert "could not be moved to a backup" not in err
+
+
+def test_delete_move_failure_before_the_file_moved_says_left_in_place(
+        tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    before = _bytes(_config(root))
+    plan = menu.plan_delete(root, gpath)
+
+    def _refuse(*_args, **_kwargs):
+        raise OSError(errno.EROFS, "Read-only file system")
+    monkeypatch.setattr(crew_config_files.os, "link", _refuse)
+    monkeypatch.setattr(crew_config_files.os, "rename", _refuse)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert (code, _bytes(_config(root)), _backups(root)) == (2, before, [])
+    assert "left in place" in err
+
+
+def test_delete_reports_both_paths_when_it_cannot_tell(tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+
+    def _fail(*_args, **_kwargs):
+        raise OSError(errno.EIO, "I/O error")
+    monkeypatch.setattr(crew_config_files, "_fsync_dir", _fail)
+
+    def _probe(_path):
+        raise OSError(errno.EIO, "probe failed")
+    monkeypatch.setattr(menu.os.path, "lexists", _probe)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert _config(root) in err and _backup_path(root) in err
+    assert "left in place" not in err and "could not tell" in err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_delete_move_back_displaced_names_where_the_original_is(
+        tmp_path, capsys, monkeypatch):
+    """The move back (backup -> path) finds a foreign file at the backup name
+    once it has linked the changed file at `path`: every path stderr names
+    must exist, and it must not say the original is at the backup."""
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    changed = b'{"tracker": "sdp"}\n'
+    foreign = b'{"foreign": 1}\n'
+    _write_config(root, changed)
+    real_link = os.link
+    backup = _backup_path(root)
+
+    def _link(src, dst, **kwargs):
+        real_link(src, dst, **kwargs)
+        if src == backup and dst == _config(root):
+            sibling = backup + ".foreign.tmp"
+            with open(sibling, "wb") as handle:
+                handle.write(foreign)
+            os.replace(sibling, backup)
+        elif dst == backup and src.endswith(".moving"):
+            pass
+    monkeypatch.setattr(crew_config_files.os, "link", _link)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    named = [w.strip(";,.()") for w in err.split() if w.startswith(str(tmp_path))]
+    assert code == 1
+    assert named and all(os.path.lexists(p) for p in named), (err, named)
+    assert f"the original is at {backup}" not in err
+    assert _bytes(_config(root)) == changed

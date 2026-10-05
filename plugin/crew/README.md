@@ -1301,7 +1301,10 @@ first; the owner never has to type one.
   back, never over a file saved in between, and nothing is deleted. A file
   another writer puts at `.crew/config.json` during the rename is never
   unlinked: it keeps a second name, `*.moving`, and the command exits 1
-  naming the backup, the config and that name — nothing is lost. It prints the restore command three ways,
+  naming the backup, the config and that name — nothing is lost. An OS error after the move
+  (a failed fsync or read-back, or a failed move back) also exits 1 and names the backup, never
+  "left in place"; one before the move (a lock, the machine file) exits 2 and says the file is in
+  place. It prints the restore command three ways,
   `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
   (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
   executed by a test, and restore accepts exactly what delete does, exiting 1

@@ -872,6 +872,43 @@ def _unbound(plan, expect):
     return None
 
 
+def _delete_os_error(exc, stage, path, backup):
+    """The message and exit code for an OSError inside `apply_delete`.
+    Before the move: the file is in place (exit 2). From the move on: the
+    two names are probed, and "left in place" is said only when the backup
+    is absent and the file is present; otherwise the backup is named (exit
+    1), and a probe that fails says it could not tell and names both."""
+    why = crew_config_files.os_error_text(exc)
+    if stage == "before":
+        print(f"refused: {why}; {path} left in place", file=sys.stderr)
+        return 2
+    try:
+        moved, there = os.path.lexists(backup), os.path.lexists(path)
+    except Exception:  # pylint: disable=broad-except
+        moved = there = None
+    if moved is False and there is True and stage == "moving-back":
+        print(f"refused: {path} changed since the preview; it is back in place "
+              f"({why} after the move back) and nothing was deleted. Re-run "
+              "the preview.", file=sys.stderr)
+        return 2
+    if moved is False and there is True:
+        print(f"refused: {path} could not be moved to a backup ({why}); left "
+              "in place", file=sys.stderr)
+        return 2
+    if moved is True:
+        check = f"; check {path}" if there else ""
+        if stage == "moving-back":
+            print(f"refused: {path} changed since the preview and could not be "
+                  f"moved back ({why}); it is at {backup}{check}", file=sys.stderr)
+        else:
+            print(f"refused: {why} after {path} was moved; the original is at "
+                  f"{backup}{check}", file=sys.stderr)
+        return 1
+    print(f"refused: {why}; could not tell where the file is: check {path} "
+          f"and {backup}", file=sys.stderr)
+    return 1
+
+
 def apply_delete(root, plan, confirm, now=None, expect=None):
     """Phase two: the typed name and the preview's two digests (`expect`),
     then, under the machine lock and then the repo config lock (crew's one
@@ -882,8 +919,9 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
     neither name), then compare the moved bytes with the held ones. A
     mismatch means the file changed since the preview: it is moved straight
     back, never over a file saved in the gap. Returns an exit code: 0
-    deleted, 2 refused (file in place), 1 a foreign writer interleaved (every
-    file kept, each named)."""
+    deleted, 2 refused (file in place), 1 when the file is not, or may not
+    be, at its path -- a foreign writer interleaved, or an OS error after
+    the move (T-0103); every file is kept and named."""
     path = plan["path"]
     if confirm != plan["name"]:
         why = ("no confirmation" if confirm is None
@@ -895,6 +933,9 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
     if problem:
         print(f"refused, nothing deleted: {problem}", file=sys.stderr)
         return 2
+    # How far the apply got, for the OSError handler: "before" the move was
+    # called, or "moving" once it was (the file may then be at the backup).
+    stage, backup = "before", None
     try:
         with crew_config_files.machine_lock(plan["machinePath"]), \
                 crew_config_files.Lock(path):
@@ -906,8 +947,10 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
                       "run the preview again", file=sys.stderr)
                 return 2
             backup = _free_backup(root, now)
+            stage = "moving"
             got = crew_config_files.move_aside(path, backup)
             if got != plan["held"]:
+                stage = "moving-back"
                 try:
                     crew_config_files.move_no_clobber(backup, path)
                 except FileExistsError:
@@ -923,14 +966,19 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
         print(f"refused: {exc}; {path} left in place", file=sys.stderr)
         return 2
     except crew_config_files.Displaced as exc:
+        if stage == "moving-back":
+            # T-0103: the move back linked the changed file at `path` before
+            # the foreign one turned up at the backup name; never say "the
+            # original is at" a name that now holds someone else's file.
+            print(f"refused: {exc}; nothing is lost: {path} changed since the "
+                  f"preview and was moved back there; check {path} and "
+                  f"{exc.parked}", file=sys.stderr)
+            return 1
         print(f"refused: {exc}; nothing is lost: the original is at {backup}, "
               f"check {path}", file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"refused: {path} could not be moved to a backup "
-              f"({crew_config_files.os_error_text(exc)}); left "
-              "in place", file=sys.stderr)
-        return 2
+        return _delete_os_error(exc, stage, path, backup)
     if os.path.lexists(path):
         print(f"note: a new {path} appeared after the move; the original is "
               f"at {backup}", file=sys.stderr)

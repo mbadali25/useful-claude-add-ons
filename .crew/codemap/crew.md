@@ -543,7 +543,11 @@ inside them (a machine write since the preview refuses, exit 2, nothing deleted;
 the file to a fresh `.crew/config.json.bak-<UTC>` (`_free_backup`, `:585`) with `move_aside` and
 compares the moved bytes with the held ones - a changed file is moved straight back with
 `move_no_clobber`, never over a file saved in the gap (exit 2; exit 1 when a new file appeared);
-a `Displaced` move exits 1 naming the backup, the config path and the kept `*.moving` name - and
+a `Displaced` move exits 1 naming the backup, the config path and the kept `*.moving` name; an
+`OSError` goes to `_delete_os_error` with the stage the apply reached (T-0103, DERIVED,
+`plugin/crew/hooks/scripts/crew_config_menu.py`): before the move exit 2 "left in place", from the
+move on the two names are probed and a present backup is named with exit 1 (a failed probe says it
+could not tell and names both) - and
 prints three restore lines (`restore_lines` `:773`, `command_forms` `:756`: sh `shlex.quote`, cmd
 double-quoted with forward slashes and a `%` warning, PowerShell `&` with single quotes).
 `restore_repo_config` (`:962`) accepts exactly what `_valid_backup` (`:946`, location, name, then
