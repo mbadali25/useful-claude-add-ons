@@ -95,6 +95,10 @@ jobs:
       # check on this run's own branch. A push to main has an empty diff and
       # passes; the PR run is the gate. Exit 77 (origin/main not a ref, the PR
       # event unreadable) is a red step, never a silent pass.
+      # T-0054: every owner-requested example is in the /crew:autopilot guide,
+      # in its source and its built HTML (a stale build fails too).
+      - name: Autopilot guide examples suite
+        run: python3 scripts/_test/autopilot-guide.py
       - name: Crew docs-touched-or-declared suite
         run: python3 scripts/_test/crew-docs.py
       - name: Crew docs-touched-or-declared check
