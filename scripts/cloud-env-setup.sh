@@ -115,13 +115,16 @@ actionlint_tool() {
 }
 
 # ---- apt tools ---------------------------------------------------------------
+# bubblewrap (bwrap) is Codex's sandbox. Without it on PATH, every codex run warns
+# and falls back to a bundled copy.
 apt_tools() {
   local pkgs=() need_pwsh=0
+  have bwrap || pkgs+=(bubblewrap)
   have fdfind || pkgs+=(fd-find)
   have hyperfine || pkgs+=(hyperfine)
   have pwsh || need_pwsh=1
   if [ "${#pkgs[@]}" -eq 0 ] && [ "$need_pwsh" = 0 ]; then
-    log "apt: fd-find, hyperfine, pwsh already installed"
+    log "apt: bubblewrap, fd-find, hyperfine, pwsh already installed"
   else
     if [ "$need_pwsh" = 1 ]; then
       # Microsoft's apt repo; github.com release downloads are not on the proxy allowlist.
