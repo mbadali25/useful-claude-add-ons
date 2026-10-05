@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:00 UTC
+Last updated: 2026-10-05 04:11 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 05:20: owner: start the next spec-draft wave in parallel while #501/batch 7 wait. Planner picking 4-5 unbuilt, deps-on-main tickets that avoid batch 7's files.
 - 05:10: owner: crew 1.1.0 (C-0006) closes this rush; next rush = remaining new draft PRs (spec-draft waves).
 - 05:00: #357 857188a6 CI done: all Windows green, only red = expected bump. Fully ready for batch 7; unsubscribed (batch PR is the gate now).
 - 04:55: #501 fixes pushed c39dc4e6 (combined-session rule, basename uniqueness, lint configs, pinned !cancelled, whole-expr gates, explicit combined key; unrequested: -c gizmoduck pytest.ini for combined run). CI green. Re-check started.
