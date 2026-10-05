@@ -137,6 +137,15 @@ class TestCouldNotTell(unittest.TestCase):
         del doc["Status"]
         self.assert_unknown(run(doc), "Status")
 
+    def test_missing_identity_could_not_tell(self):
+        for key in ("CommandId", "InstanceId"):
+            with self.subTest(key=key):
+                doc = invocation()
+                del doc[key]
+                self.assert_unknown(run(doc), key)
+        bare = {"StandardOutputContent": "", "StandardErrorContent": "", "Status": "Success"}
+        self.assert_unknown(run(bare), "CommandId")
+
     def test_not_json_could_not_tell(self):
         self.assert_unknown(run("this is not json {"), "JSON")
 

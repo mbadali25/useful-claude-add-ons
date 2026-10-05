@@ -19,13 +19,19 @@ Windows too. Branch on which shell you are in, never on "is this Windows".
 ## Interpreters that are not where you expect
 
 - **`python3` is missing in Git Bash.** The Windows installer provides `python` and the
-  `py` launcher, not `python3`. Resolve in order and fail loudly:
+  `py` launcher, not `python3`, and a bare `python` may be the Microsoft Store stub, which
+  exists on PATH but does not run Python. Pick the first candidate that actually runs, and
+  fail loudly:
   ```bash
-  PY=$(command -v python3 || command -v python || command -v py) \
-    || { echo "no python on PATH" >&2; exit 1; }
+  PY=
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
+      PY=$c; break
+    fi
+  done
+  [ -n "$PY" ] || { echo "no working python on PATH" >&2; exit 1; }
   ```
-  A bare `python` may also be the Microsoft Store stub, which prints nothing useful and
-  exits non-zero; `"$PY" -c 'import sys; print(sys.executable)'` shows which one you got.
+  `"$PY" -c 'import sys; print(sys.executable)'` shows which one you got.
 - **`pwsh` is not on Git Bash's PATH** on many machines even when PowerShell 7 is
   installed. Name it by full path: `"/c/Program Files/PowerShell/7/pwsh.exe"`. A bare
   `pwsh` fails as "command not found", which a test runner reports as a failed check,
@@ -52,12 +58,15 @@ them: `/tmp/x` becomes `C:/Users/.../AppData/Local/Temp/x`, and an argument such
 A shell script with CRLF endings fails with misleading errors: `$'\r': command not
 found`, `bad interpreter: /bin/bash^M`, or a variable that silently ends in `\r`.
 
-- Measure the file in the working tree, not what `git show` prints (with
-  `core.autocrlf=true` it renders CRLF whatever the blob holds):
+- The committed blob and the working tree can differ: `core.autocrlf=true` converts on
+  checkout, and a program that rewrites the file converts after it. Bash runs the working
+  tree, so measure that, and measure the blob separately:
   ```bash
-  file script.sh                    # "with CRLF line terminators"
-  od -c script.sh | head -3         # \r \n pairs
+  file script.sh                    # working tree: "with CRLF line terminators"
+  od -c script.sh | head -3         # working tree: \r \n pairs
+  git show HEAD:script.sh | tr -cd '\r' | wc -c   # committed blob: 0 means LF
   ```
+  `git show <rev>:<path>` prints the blob as stored; it does not apply checkout conversion.
 - Python's `pathlib.Path.write_text` and `open(..., "w")` write CRLF on Windows. Pass
   `newline="\n"` for any `.sh` you write.
 - `.gitattributes` with `*.sh text eol=lf` fixes checkouts, not files a program writes.

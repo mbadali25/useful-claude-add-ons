@@ -37,6 +37,9 @@ FINISHED = ("Success", "Failed")
 # Every other documented Status: still running, or stopped before it finished.
 NOT_FINISHED = ("Pending", "InProgress", "Delayed", "Cancelling", "Cancelled", "TimedOut")
 
+# Fields every get-command-invocation result carries, besides the two streams.
+IDENTITY = ("CommandId", "InstanceId", "Status")
+
 STREAMS = (
     ("stdout", "StandardOutputContent", "StandardOutputUrl", STDOUT_LIMIT),
     ("stderr", "StandardErrorContent", "StandardErrorUrl", STDERR_LIMIT),
@@ -70,6 +73,11 @@ def judge(text: str) -> tuple[int, list[str]]:
     if not isinstance(doc, dict):
         return UNKNOWN, [f"input is JSON but not an object ({type(doc).__name__})"]
 
+    missing = [key for key in IDENTITY if not isinstance(doc.get(key), str) or not doc.get(key)]
+    if missing:
+        return UNKNOWN, [f"{', '.join(missing)} missing or empty: not a get-command-invocation "
+                         "result"]
+
     reasons: list[str] = []
     cut = False
     for name, key, url_key, limit in STREAMS:
@@ -100,8 +108,6 @@ def judge(text: str) -> tuple[int, list[str]]:
     if status in NOT_FINISHED:
         return UNKNOWN, reasons + [f"status {status}: the command has not finished, "
                                    "or stopped before it did"]
-    if status is None:
-        return UNKNOWN, reasons + ["Status is missing"]
     return UNKNOWN, reasons + [f"status {status!r} is not a documented Status value"]
 
 
