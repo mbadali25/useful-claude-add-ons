@@ -64,6 +64,7 @@ gizmoduck runs **inside** a container or a CI job; it never drives Docker itself
   | `perl`, `libxml-writer-perl` | nikto |
   | `wkhtmltopdf` | PDF reports (HTML reports work without it) |
   | `bsdextrautils` | `hexdump`, without which testssl.sh is skipped under `--user` |
+  | `python3-pip` | `pip3`, which checkov and semgrep install through (without it both **fail**) |
 
 - **Exit status**, so a pipeline can gate on it: `0` nothing failed; `1` a tool or the Nuclei
   template download failed (it used to exit 0 after a partial install); `2` a usage or
@@ -71,9 +72,11 @@ gizmoduck runs **inside** a container or a CI job; it never drives Docker itself
   is `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`, the same shape as `GIZMODUCK_ROUTINE_INCOMPLETE`.
 - **`--dry-run`** prints the tool home, the privilege it would use and one `plan:` line per
   tool, then exits 0: no network call, no file written, no directory created.
-- **Cache between runs**: the tool home and Nuclei's template directory (`~/nuclei-templates`,
-  or what `~/.config/nuclei/.templates-config.json` names). A re-run skips every tool that is
-  already installed and passes its probe.
+- **Cache between runs**: the tool home, Nuclei's template directory (`~/nuclei-templates`,
+  or what `~/.config/nuclei/.templates-config.json` names), and Python's user base
+  (`python3 -m site --user-base`, usually `~/.local`), where `pip3 install --user` puts checkov
+  and semgrep - the tool home holds only links to their scripts. A re-run skips every tool that
+  is already installed and passes its probe.
 - **Secrets** come from the pipeline's secret store as environment variables, never from a
   manifest or a committed file: `GITHUB_TOKEN` (optional; release lookups use it for a higher
   API rate limit, and it is passed to curl as a header file, never printed or put on a command

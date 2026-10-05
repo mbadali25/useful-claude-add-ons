@@ -417,3 +417,18 @@ def test_user_mode_keeps_a_tool_home_dir_that_is_not_a_clone(env, tmp_path, tool
     assert "clone" not in log.read_text(), log.read_text()
     assert proc.stdout.splitlines()[-1] == f"failed={tool}", proc.stdout + proc.stderr
     assert "not a git clone" in proc.stderr
+
+
+def test_user_mode_keeps_a_dangling_link_where_a_clone_would_go(env, tmp_path):
+    e, _fakes, log = env
+    home = tmp_path / "toolhome"
+    home.mkdir()
+    (home / "sqlmap").symlink_to(tmp_path / "nowhere")
+    e["GIZMODUCK_HOME"] = str(home)
+    script = ('source "$0"; USER_MODE=1; set_user_dirs; PRIV=(); '
+              'try_install sqlmap install_sqlmap; echo "failed=${FAILED[*]}"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert (home / "sqlmap").is_symlink(), proc.stdout + proc.stderr
+    assert "clone" not in log.read_text(), log.read_text()
+    assert proc.stdout.splitlines()[-1] == "failed=sqlmap", proc.stdout + proc.stderr

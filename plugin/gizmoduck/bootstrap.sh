@@ -508,7 +508,7 @@ install_nikto_user() {
   if [[ -d "$dir/.git" ]]; then
     git_net 600 -C "$dir" pull --ff-only || {
       echo "!! nikto: git pull in ${dir} failed" >&2; return 1; }
-  elif [[ -e "$dir" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+  elif [[ ( -e "$dir" || -L "$dir" ) && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
     # Not a clone this script made: never delete it without being told to.
     echo "!! nikto: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
     return 1
@@ -562,7 +562,7 @@ install_testssl() {
 # Returns 0 (and says so) when the caller must leave it alone.
 keep_foreign_dir() {
   local name="$1" dir="$2"
-  if [[ $USER_MODE == 1 && -e "$dir" && ! -d "$dir/.git" \
+  if [[ $USER_MODE == 1 && ( -e "$dir" || -L "$dir" ) && ! -d "$dir/.git" \
         && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
     echo "!! ${name}: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
     return 0
