@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: Angular 2+ candidate standards, no gated set yet (L-0538)
+
+- **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with their
+  sources. The one that matters most is NG-07: a failed read shows "could not verify" and
+  blocks the writes it feeds. Nothing is enforced yet.
+- **What changed.** New `plugin/crew/skills/stack-angular/references/candidates.md` covers
+  NG-07 (its rule, Applies when and Self-check, taken from the spec's publishable text), NG-P1
+  (no `bypassSecurityTrust*` on content a user, contact or model can author) and NG-P2
+  (interceptors send credentials only to allow-listed origins). Each gives its change sets, its
+  verdict and angular.dev Source sentences, re-matched against the raw pages.
+  `stack-angular/SKILL.md` gains a `## Standards` section and two pitfall pointers, and its
+  description says AngularJS gets no standards. The AngularJS section is unchanged. No
+  `references/angular.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. NG-07 is at the bar in the coordinator's private count, but its
+  Why, Earned by and Change sets text was not supplied in a publishable form. Public change sets
+  do not count (owner decision), so the slice ships candidates only (direction Option 3). The
+  other research ids are not listed one by one, because their titles and counts are private.
+  That is a reported deviation.
+
 ### Added — crew: Terraform candidate standards and settled questions, no gated set yet (L-0536)
 
 - **Summary.** `stack-terraform` now lists three candidate Terraform standards with their
