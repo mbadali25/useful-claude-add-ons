@@ -192,8 +192,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_quota_spends_no_round"),
     ("review_run: a reviewer's tree change is not a reason",
      RUN,
-     "        if changed:\n            extra.append(",
-     "        if False:\n            extra.append(",
+     "        if changed:\n            tree.append(",
+     "        if False:\n            tree.append(",
      _R + "test_run_kimi_tree_change_is_incomplete"),
     ("review_run: the tree fingerprint forgets HEAD",
      RUN,
@@ -202,7 +202,7 @@ KIMI_MUTATIONS = (
      _R + "test_tree_fingerprint_sees_a_move_of_head_alone"),
     ("review_run: an unfingerprintable tree reads as unchanged",
      RUN,
-     "    if before is None or after is None:\n        extra.append(KIMI_TREE_UNKNOWN)\n    else:",
+     "    if before is None or after is None:\n        tree.append(KIMI_TREE_UNKNOWN)\n    else:",
      "    if False:\n        pass\n    else:",
      _R + "test_run_kimi_unfingerprintable_tree_is_incomplete"),
     # The HEAD and status None exits go together: outside a repository each
@@ -395,8 +395,8 @@ KIMI_MUTATIONS = (
      _R + "test_stop_survivors_that_will_not_die_is_could_not_tell"),
     ("review_run: an unstoppable review survivor is not a reason",
      RUN,
-     "    if survivor_unknown:\n        extra.append(survivor_unknown)\n",
-     "    if False:\n        extra.append(survivor_unknown)\n",
+     "    if survivor_unknown:\n        tree.append(survivor_unknown)\n",
+     "    if False:\n        tree.append(survivor_unknown)\n",
      _R + "test_run_kimi_a_review_survivor_that_will_not_die_is_incomplete"),
     ("review_run: an unstoppable probe survivor still launches the review",
      RUN,
@@ -778,6 +778,13 @@ KIMI_MUTATIONS = (
      "tests/test_provider_table.py::"
      "test_a_provider_review_run_cannot_launch_is_not_eligible"),
     # --- L-0527 review (the port onto main) ---
+    ("review_run: a Kimi write is refunded as a tool failure again (group review r4)",
+     RUN,
+     "    extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)\n",
+     "    extra_reasons = list(extra_reasons) + bundle_problems(manifest)\n"
+     "    stream_reasons += list(tree_reasons)\n"
+     "    extra_reasons += list(tree_reasons)\n",
+     _R + "test_run_kimi_tree_change_is_incomplete"),
     ("review_run: a timed-out Windows launch leaves Kimi's job unrecorded again (group review r3)",
      RUN,
      "            started.append(_end_job(job))  # a caller watching survivors (Kimi)\n",

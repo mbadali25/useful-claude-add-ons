@@ -134,8 +134,8 @@ REVIEW_FIX_MUTATIONS = (
         # receipt binds the untouched tree hash.
         "the review round no longer checks the bundle parts",
         REVIEW_RUN,
-        "    extra_reasons = list(extra_reasons) + bundle_problems(manifest)\n",
-        "    extra_reasons = list(extra_reasons)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons)\n",
         ("tests/test_review_receipt.py::"
          "test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt"),
     ),

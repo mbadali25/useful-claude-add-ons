@@ -1127,8 +1127,12 @@ def auto_accept_line(root, ticket):
             "--auto-accept --follow-up <id>)")
 
 
-def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
-    """Verdict -> ledger -> review.json. Returns the process exit code."""
+def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_reasons=()):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    """Verdict -> ledger -> review.json. Returns the process exit code.
+    `extra_reasons` are the stream's (the answer never arrived intact: a tool
+    failure); `tree_reasons` are what the working tree did (a Kimi write, or a
+    tree or survivor that cannot be checked), classed `tree` like a bundle
+    problem, so never refunded (group review r4 of #540)."""
     manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
@@ -1138,7 +1142,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     stream_reasons = list(extra_reasons)
-    extra_reasons = list(extra_reasons) + bundle_problems(manifest)
+    extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)
     extra_reasons += webtest_reasons
     # The outside reasons go INTO the parse, so a stray line is never
     # recovered on a round they make INCOMPLETE (L-0576).
@@ -1311,7 +1315,7 @@ def _probe_kimi(args, before):
 
 def _run_kimi(args, number, prompt, before):
     """Launch the reserved Kimi round and finish it."""
-    extra = []
+    extra, tree = [], []
     cmd = command_for("kimi", args.kimi_exe, args.root, prompt, args.launched_model, "",
                       args.scratch)
     started = []
@@ -1321,17 +1325,17 @@ def _run_kimi(args, number, prompt, before):
     # running once its leader is gone, so survivors are stopped either way.
     killed, survivor_unknown = stop_survivors(started)
     if survivor_unknown:
-        extra.append(survivor_unknown)
+        tree.append(survivor_unknown)
     elif killed:
         _err("review-run: kimi left processes running after it exited; they were "
              "stopped before the tree was checked\n")
     after = tree_fingerprint(args.root)
     if before is None or after is None:
-        extra.append(KIMI_TREE_UNKNOWN)
+        tree.append(KIMI_TREE_UNKNOWN)
     else:
         changed, set_aside = reviewer_changes(before, after, args.graph_out)
         if changed:
-            extra.append(f"{KIMI_TREE_CHANGED}: {_named(changed)}")
+            tree.append(f"{KIMI_TREE_CHANGED}: {_named(changed)}")
         if set_aside:
             _err(f"review-run: not counted against the reviewer, under graph.out "
                  f"(graphify's background rebuild), or ignored IDE state or crew "
@@ -1343,7 +1347,7 @@ def _run_kimi(args, number, prompt, before):
         extra.append(f"kimi: {kimi_probe.redact(error)}")
     _write_atomic(os.path.join(args.scratch, "out.txt"), output)
     _write_atomic(os.path.join(args.scratch, "stderr.txt"), kimi_probe.redact(stderr))
-    return finish(args, number, output, code, timed_out, extra)
+    return finish(args, number, output, code, timed_out, extra, tree)
 
 
 def gate_record(args):

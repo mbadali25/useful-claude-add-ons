@@ -22,7 +22,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `preflight` and `reserve`; launches with the read-only agent file and flags and `kimi_env`; stops
   any process it left running, after a timeout too (on Windows by ending its job object and waiting
   for it to empty; no job is could-not-tell); fingerprints again; and a write
-  makes the round INCOMPLETE, naming the paths (`graph.out`, and while gitignored IDE state and
+  makes the round INCOMPLETE of class `tree` (never refunded), naming the paths (`graph.out`, and while gitignored IDE state and
   crew's hook logs, are set aside). The stream is read by `kimi_probe.final_message`, the one parser.
   A Kimi round is not retried in-process (L-0514). `commands/review.md`: the Kimi probe and strike
   rows, step 2e, exits 2 and 8, and `$ELIGIBLE` keeps `kimi`. Tests: `test_review_run_kimi.py`, the

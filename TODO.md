@@ -72,7 +72,7 @@ be wrong can be closed on evidence.
   (crew-providers `SKILL.md`, `alternative-providers.md`, the `kimi_probe.py` and
   `crew_config.review_launchable` docstrings), which still say the launch lands later. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
-  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  `plugin/crew/agents/reviewer.md:27`'s order names kimi since the #540 group review (done).
   (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
   `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
   `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";

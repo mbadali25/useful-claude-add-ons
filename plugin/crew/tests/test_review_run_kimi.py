@@ -131,6 +131,19 @@ def test_run_kimi_tree_change_is_incomplete(repo, tmp_path):
 
     assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
     assert any("working tree changed" in r for r in review["reasons"])
+    # Must-block (group review r4 of #540): a reviewer's write is the tree's
+    # failure, counted against the budget, never a refunded tool round.
+    assert (review["failure_class"], review["refunded"],
+            rl.status(str(repo), "T1")["rounds_refunded"]) == ("tree", False, 0)
+
+
+def test_run_kimi_a_stream_error_alone_is_still_a_tool_round(repo, tmp_path):
+    """Must-allow: an answer that never arrived intact, with an unchanged tree,
+    is the tool's failure and refunded as before."""
+    result, review = _run(repo, tmp_path, mode="turnfail")
+
+    assert (result.returncode, review["failure_class"], review["refunded"]) == (
+        3, "tool", True), review["reasons"]
 
 
 def test_run_kimi_argv_and_env(repo, tmp_path):
