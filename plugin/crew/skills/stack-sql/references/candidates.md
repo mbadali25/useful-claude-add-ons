@@ -6,7 +6,8 @@ evidence so that a rule can be promoted into `crew-standards/references/sql.md` 
 `applies-to: ["**/*.sql"]`) once three distinct reviewed change sets earn it.
 
 **Why nothing ships.** The bar and the counting rule are `python.md`'s: a change set is a
-crew review, or a fix commit whose own message records that a review found the defect.
+crew review, or a fix commit whose own message or CHANGELOG entry records that a review
+found the defect. There is no file-type condition.
 The owner decided on 2026-10-05 that public third-party change sets do not count toward
 that bar. The evidence the spec relies on is the owner's research (SQL-01..SQL-20) and
 review-recorded fix commits in the owner's private repositories. **Owner-private evidence
@@ -75,8 +76,11 @@ could not be determined.
 CONCURRENTLY` reverses it. `CONCURRENTLY` cannot run inside a transaction block, so the
 migration opts out of the runner's wrapping transaction (for example sqlx's
 `-- no-transaction` first line) and holds that one statement. An index created in the
-same file as its new table needs neither. Builds this on the existing
-`CREATE INDEX CONCURRENTLY` pitfall in `SKILL.md`.
+same file as its new table needs neither. A partitioned table is the exception:
+`CONCURRENTLY` does not work on its parent index. Build each partition's index
+concurrently, then create the parent index non-concurrently with `ON ONLY` and attach the
+partition indexes. A partitioned table's index cannot be dropped `CONCURRENTLY` either.
+This builds on the existing `CREATE INDEX CONCURRENTLY` pitfall in `SKILL.md`.
 
 Public change sets (message text only):
 - `distantsignal-e667de01` (FasterSpeeding/Distant-Signal@e667de01), `.sql`: "Review
@@ -93,25 +97,38 @@ used, PostgreSQL will build the index without taking any locks that prevent conc
 inserts, updates, or deletes on the table; whereas a standard index build locks out
 writes (but not reads) on the table until it's done." "Another difference is that a
 regular CREATE INDEX command can be performed within a transaction block, but CREATE
-INDEX CONCURRENTLY cannot."
+INDEX CONCURRENTLY cannot." "Concurrent builds for indexes on partitioned tables are
+currently not supported." "However, you may concurrently build the index on each
+partition individually and then finally create the partitioned index non-concurrently in
+order to reduce the time where writes to the partitioned table will be locked out."
+https://www.postgresql.org/docs/current/sql-dropindex.html, on `CONCURRENTLY`: "Lastly,
+indexes on partitioned tables cannot be dropped using this option."
 
-Public verdict: candidate. The bar counts `.sql` changes, and only 2 of the 3 are `.sql`.
-The research id could not be determined.
+Public verdict: 3 public change sets under the shipped counting rule, which has no
+file-type condition. The research pass left this open because one of them is a Python
+migration, outside this set's `applies-to`. Under the owner's decision the count is 0
+either way. The research id could not be determined.
 
 ### SQL-17 SQL Server: session SET options are part of the change
 
 0 counted. 0 public change sets found. The owner's private count is unknown.
 
-Rule text from the public pass (the research's own wording was not read): a procedure,
-view or index script that depends on `QUOTED_IDENTIFIER` or `ANSI_NULLS`
-sets them explicitly in the script. The values in effect at `CREATE` time are stored with
-the object and are not taken from the caller's session.
+Rule text from the public pass (the research's own wording was not read). These settings
+behave differently for two kinds of object:
+- A stored procedure captures the `QUOTED_IDENTIFIER` and `ANSI_NULLS` values in effect
+  when it is created. Its script therefore sets both explicitly before `CREATE`/`ALTER`.
+  The caller's session does not change them later.
+- An index on a computed column, or an indexed view, needs `QUOTED_IDENTIFIER ON` when
+  it is created or changed. It also needs it in every later session that writes to the
+  table, so a writer's connection options are part of the change too.
 
 Source: https://learn.microsoft.com/en-us/sql/t-sql/statements/set-quoted-identifier-transact-sql?view=sql-server-ver17:
 "When you create a stored procedure, the SET QUOTED_IDENTIFIER and SET ANSI_NULLS settings
 are captured and used for subsequent invocations of that stored procedure." "You must set
 SET QUOTED_IDENTIFIER to ON when you create or change indexes on computed columns or
-indexed views."
+indexed views." "If you set SET QUOTED_IDENTIFIER to OFF, CREATE, UPDATE, INSERT, and
+DELETE statements fail on tables with indexes on computed columns, or tables with indexed
+views."
 
 ## Not assessed
 

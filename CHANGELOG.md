@@ -12,7 +12,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Added — crew: SQL candidate standards, no gated SQL set yet (L-0532)
 
 - **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is
-  enforced, because no SQL rule yet has three reviewed change sets that count.
+  enforced: this build showed no SQL rule with three reviewed change sets that count, and the
+  owner-private evidence, which may hold more, was not consulted.
 - **What changed.** New `plugin/crew/skills/stack-sql/references/candidates.md` covers SQL-P1
   (PostgreSQL `SECURITY DEFINER` pins `search_path` and revokes `EXECUTE` from `PUBLIC`), SQL-P2
   (PostgreSQL `CREATE INDEX CONCURRENTLY` outside the runner's transaction) and SQL-17 (SQL Server

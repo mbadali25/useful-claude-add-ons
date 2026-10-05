@@ -63,9 +63,9 @@ time" - `crew:security` reviews the injection and permission side of this.
 
 ## Standards
 
-No gated SQL standards set ships yet (L-0532): no SQL rule has three reviewed change sets
-under `crew-standards`' counting rule. Public change sets do not count (owner, 2026-10-05),
-and the owner-private evidence was not consulted (re-check: C-0020). The candidates, with
+No gated SQL standards set ships yet (L-0532). This build showed no SQL rule with three
+reviewed change sets that count: public change sets do not count (owner, 2026-10-05), and
+the owner-private evidence, which may hold more, was not consulted (re-check: C-0020). The candidates, with
 their sources and public verdicts, are in `references/candidates.md`. They are guidance,
 not rows of the self-check.
 
