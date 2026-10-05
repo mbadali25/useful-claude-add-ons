@@ -78,7 +78,8 @@
       "delaySeconds": 3,
       "minHandoffLines": 5,
       "onlyRepos": null,
-      "onlySessions": null
+      "onlySessions": null,
+      "wrapUp": null
     }
   },
   "resume": {
@@ -128,6 +129,9 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "git": {
+    "forbiddenTrailers": []
   },
   "route": {
     "enabled": false

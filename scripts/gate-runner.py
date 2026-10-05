@@ -160,6 +160,7 @@ TABLE = (
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
          ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),)),
+    _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
     _bash_suite("menu-groups", "scripts/_test/menu-groups.sh", "marketplace.yml",

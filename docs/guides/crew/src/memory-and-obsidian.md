@@ -268,11 +268,12 @@ board at the vault root, and a card another repo owns is refused.
 
 | Ticket status | Lane (default name) |
 |---|---|
-| `direction`, `ready` | Backlog |
+| `direction`, `ready`, `needs-owner` | Backlog |
 | `spec`, `planned` | Ready |
 | `in-progress` | In Progress |
 | `review` | Review |
 | `done` | Done, checked, below `**Complete**` |
+| `cancelled`, `superseded` (closed; leaving one needs `--reopen`) | Done, checked |
 
 **Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
 `<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your
@@ -288,6 +289,122 @@ and run the command again. Crew never rewrites a note for you.
 
 The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.
+
+## Native memories as vault pointers
+
+Claude Code keeps its own native memory, one Markdown file per fact under
+`~/.claude/projects/<project>/memory/`. Crew can read such a file whose body is
+a single pointer line into your vault, with the frontmatter left as it is:
+
+```
+vault: <name> | note: <vault-relative path, forward slashes, ending .md>
+```
+
+The vault is named, not given as a path, so the same file works on every
+machine the vault syncs to. The name is looked up in that machine's
+`~/.claude/obsidian/config.json` (`vaults.<name>.path`; a vault with role
+`ignore` is not looked up). Only the name `memory` falls back: to crew's
+`memory.vaultPath`, then, only when the Obsidian config has no `vaults` block,
+to its legacy top-level `vaultPath`. `OBSIDIAN_VAULT_PATH` is not used. The
+line is exact and must be the whole body: a first line that starts `vault` and
+`:`, in any case, indent or spacing, is a pointer attempt when `note:` or `|`
+is on that line, or the next line starts with `|` or `note:` (a pointer wrapped
+before its `|`), or the line is a bare vault name alone (`vault: work`) or nothing after the colon (`vault:`); a
+table or a `Note:` line further down does not count; anything less than the full
+grammar is then `malformed`. With neither the line is prose: `Vault: keep client notes in the work vault, not personal.` is a memory, not a pointer. A config file counts as missing only when it is not there at all; one
+that is there but does not read, parse or have the expected shape (a `vaults`
+object of objects with a string `path`, a string `vaultPath`, crew's `memory`
+an object with a string or null `vaultPath`; no duplicate key, not nested too
+deep, at most 1 MiB) is `no-vault-config`, naming the field. A bad Obsidian config stops every name; a bad crew config stops `memory`, the one name it can answer for, and any name when there is no Obsidian config to say which failure applies.
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py resolve --file <memory file>
+python3 plugin/crew/hooks/scripts/crew_memory.py check --memory-dir <memory dir>
+```
+
+`resolve` prints `state:` and, when the note is found, `path:`. `check` prints
+one row per memory file (not `MEMORY.md`) and a count per state. Both read
+only; `--json` gives the same rows as JSON.
+
+| state | meaning | exit |
+|---|---|---|
+| `resolved` | the note exists on this host | 0 |
+| `full-text` | not a pointer; the body is the memory | 0 |
+| `malformed` | a `vault:` first line, in any case, indent or spacing, that is not a valid pointer alone in the body (absolute path, `:`, `..`, a second field, an invisible character) | 1 |
+| `no-vault-config` | no Obsidian config and no `memory.vaultPath`, or a config file that cannot be read, does not parse or has a field of the wrong shape | 1 |
+| `vault-unknown` | this machine names no vault of that name, or marks it `ignore` | 1 |
+| `vault-unavailable` | the configured folder is not there (not mounted, not synced) | 1 |
+| `note-missing` | the vault is there, the note is not | 1 |
+| `outside-vault` | the path passes through a symlink inside the vault, or leaves it | 1 |
+| `unreadable` | the memory file is not a regular file readable as UTF-8 (`check` never opens a FIFO, device or directory), or a folder or note inside the vault cannot be read or opened | 1 |
+
+An unavailable vault is never replaced by another one that happens to hold a
+note at the same path.
+
+### Saving a memory as a pointer
+
+`save` turns one memory that holds its full text into a pointer, note first:
+
+```bash
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag>
+python3 plugin/crew/hooks/scripts/crew_memory.py save --file <memory file> --tag <tag> --apply
+```
+
+Without `--apply` it prints the plan (the vault, the note, `create`, `append`
+or `unchanged`, and the pointer line) and writes nothing. Read your vault's own
+`CLAUDE.md` for its folders and tags first; `--note`, `--title`, `--type`
+(`concept` by default) and `--project` change the defaults
+(`memories/<project>/<title>.md`, the title taken from the memory's `name:`
+line).
+
+It writes only to the one writable vault: the vault with role `primary`
+(without roles, the `default: true` vault, else the first; with no `vaults`
+block, `memory`). The folder must hold `.obsidian/`. A `recall` or `ignore`
+vault is never written, and a primary that is not mounted is reported, not
+replaced. The note gets the vault's six frontmatter keys plus `project` and
+`memory_id`; saving the same memory again appends a dated `## Update`
+passage, and a note that belongs to another memory is a `collision`.
+
+The order is the point. The note is written through a temp file, read back,
+and the pointer resolved; only then is the memory's body replaced, its
+frontmatter kept byte for byte, through a temp file and a rename. Any refusal
+or failure prints `kept-full-text: <reason>` and leaves the memory exactly as
+it was:
+
+| state | memory file | exit |
+|---|---|---|
+| `pointer-written` | body replaced by the pointer | 0 |
+| `already-pointer` | untouched | 0 |
+| `kept-full-text: no vault configured` | untouched | 0 |
+| `kept-full-text: vault unavailable`, `no primary`, `several primaries`, `not a vault`, `config unreadable` | untouched | 1 |
+| `kept-full-text: collision`, `ascii-required`, `outside-vault`, `bad-note-path`, `the existing note is not UTF-8` | untouched | 1 |
+| `kept-full-text: MEMORY.md is the index`, `the memory file is a symlink`, `the memory has no body to save` | untouched | 1 |
+| `kept-full-text: another save is running now`, `lock failed`, `note write failed`, `the note changed during save`, `note not readable after write`, `the memory file changed during save`, `the memory file cannot be read again`, `pointer write failed` | untouched | 1 |
+
+Two `save` runs by the same user on the same machine do not interleave:
+each holds kernel locks for the note and for the memory, on files
+in `~/.cache/crew/memory-locks` (`$XDG_CACHE_HOME` when set;
+`%LOCALAPPDATA%\crew\memory-locks` on Windows), never in the vault. The
+operating system drops a lock when its save exits or is killed, so
+`another save is running now` means one is running; a lock that cannot be
+taken at all (an unwritable cache, a full disk, or no absolute cache folder
+because `HOME` is unset) is `lock failed`. A file is locked by its real path,
+case-folded, and by its inode, so a symlinked folder, `..`, a case variant
+and a hard link all meet the same lock. The lock
+does not cover a save on another machine that syncs the same vault, or an
+edit by Claude Code, Obsidian or any other program, none of which take it.
+For those, the memory and an existing note are compared again right before
+each rename. An edit by another program in the
+instant between that compare and the rename is not detected: a rename cannot
+compare and swap. An existing note keeps every byte, a BOM and CRLF line
+endings included; only its `updated:` value changes and the passage is
+appended. A new note gets mode 0644 less your umask.
+
+Claude Code 2.1.289 was seen to keep a one-line pointer body across new
+sessions (it rewrites the frontmatter when it updates the memory, and kept
+the pointer). If a later version rewrites the body with full text, `check`
+shows it as `full-text` again; run `save` again. Converting existing
+memories in bulk arrives in a later version.
 
 ## Confirming recall reaches your sessions
 

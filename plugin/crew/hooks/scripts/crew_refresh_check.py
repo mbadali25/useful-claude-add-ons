@@ -128,18 +128,18 @@ uses for the same purpose.
 ## What is admitted without Touch (T-0094)
 
 The guard's allowance is a path test; the completion audit's is narrower.
-`artifact_verdicts` judges each changed artifact of an approved ticket, and
-`completion_audit.audit` admits it without Touch only on `True` -- wired by
-L-0540, the harness half the owner split from T-0094 on 2026-09-30 (a
-tooling change lands alone); until it lands the audit admits the whole dirs
-as since 1.0.36. Two questions, each with an observable answer: did a path
+`artifact_verdicts` judges each changed artifact of an approved ticket for
+its caller, `completion_audit.audit`, whose own docstring states what it
+admits without Touch. Two questions, each with an observable answer: did a path
 the ticket changed REACH it, and is the edit a RE-ANCHOR or a REGENERATION.
 
 Every kind that reads or admits a working-tree file first asks `_on_disk`
 (review round 6): the file must be a regular file, with no symlink at its
 path or along its dirs, whose mode git sees unchanged from the base copy
 and that git does not stage as a link (120000) or gitlink (160000); a
-deleted one is never a re-anchor or a regeneration. The kind comes from
+deleted one is never a re-anchor or a regeneration, and neither is one the
+base holds and the index no longer does (`git rm --cached`, the file left on
+disk: the commit deletes it; L-0688). The kind comes from
 the MOST SPECIFIC artifact dir holding the path; two equally specific dirs
 are could-not-tell.
 
@@ -509,7 +509,8 @@ def _git_rc(root, *args):
     """git's return code, or None when git could not run at all."""
     try:
         return subprocess.run(
-            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            [crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+             "--literal-pathspecs", *args],
             capture_output=True, stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT,
             check=False).returncode
     except (OSError, subprocess.SubprocessError):
@@ -522,7 +523,8 @@ def _git_out(root, *args, data=None):
     feed = {"input": data} if data is not None else {"stdin": subprocess.DEVNULL}
     try:
         done = subprocess.run(
-            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            [crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+             "--literal-pathspecs", *args],
             capture_output=True, timeout=GIT_TIMEOUT, check=False, **feed)
     except (OSError, subprocess.SubprocessError):
         return None, b""
@@ -552,7 +554,8 @@ def _base_text(root, base, rel):
     if not out.strip(b"\0"):
         return None, "absent"
     try:
-        done = subprocess.run(["git", "-C", root, "--no-optional-locks", "show", spec],
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root, "--no-optional-locks",
+                               "show", spec],
                               capture_output=True, stdin=subprocess.DEVNULL,
                               timeout=GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError):
@@ -803,8 +806,10 @@ def _on_disk(top, base, rel, deleted):
     text was admitted while git stores only the link, and nothing asked
     whether a rendered diagram or a graph file still existed. A refresh
     writes regular files in place: a link at the path or along it, a changed
-    mode, or a missing file is not one. `deleted` is the reason for a file
-    lstat proves absent."""
+    mode, or a missing file is not one, and neither is a file the base holds
+    and the index does not (L-0688): `git commit` records the deletion
+    whatever the disk keeps. `deleted` is the reason for a file lstat proves
+    absent."""
     path = os.path.join(top, *rel.split("/"))
     try:
         info = os.lstat(path)
@@ -843,7 +848,18 @@ def _on_disk(top, base, rel, deleted):
             return (None, f"{COULD_NOT_TELL}: {name} of {rel} {why}"), None
         for record in out.split(b"\0"):
             if record.startswith(b":"):
-                old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
+                fields = record[1:].decode("ascii", "replace").split(" ")
+                old, new = fields[:2]
+                if cached and new == "000000" and old != "000000":
+                    # L-0688: the base holds it and the index has no stage-0
+                    # entry while the disk does (lstat proved it above).
+                    # `U` is a conflicted merge's unmerged path, which prints
+                    # the same modes; anything else is `git rm --cached`.
+                    if fields[4:5] == ["U"]:
+                        return (False, "unmerged in the index (resolve the conflict "
+                                       "first); not a re-anchor or a regeneration"), None
+                    return (False, "removed from the index, so the commit deletes it; "
+                                   "not a re-anchor or a regeneration"), None
                 if "000000" not in (old, new) and old != new:
                     return (False, f"mode changed from {old} to {new}, which no refresh does"), None
     code, out = _git_out(top, "ls-files", "-s", "-z", "--", rel)

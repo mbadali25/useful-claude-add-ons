@@ -37,6 +37,8 @@ import subprocess
 import sys
 import hashlib
 
+import crew_common
+
 # Every line this module writes to stdout is read by a shell on the other
 # end (bash `read` or a PowerShell pipe), one record per line. On native
 # Windows Python, stdout defaults to TEXT mode and translates every '\n' to
@@ -582,7 +584,8 @@ def tree_snapshot(root, stable=False):
                  ("diff", "--name-only", "-z", "--cached"),
                  ("diff", "--name-only", "-z", "HEAD")):
         try:
-            out = subprocess.run(("git", "-c", "core.quotePath=false") + args, cwd=root,
+            out = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false") + args,
+                                 cwd=root,
                                  capture_output=True, check=False, timeout=120,
                                  stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError):
@@ -591,7 +594,7 @@ def tree_snapshot(root, stable=False):
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
     try:
-        flags = subprocess.run(("git", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+        flags = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
                                cwd=root, capture_output=True, check=False, timeout=120,
                                stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
@@ -631,7 +634,8 @@ def _refs_digest(root):
     diffs `origin/main...HEAD` -- so a fetch that moves `origin/main` must
     empty the cache as surely as an edit. None when git cannot list them."""
     try:
-        out = subprocess.run(("git", "for-each-ref", "--format=%(refname) %(objectname)"),
+        out = subprocess.run((crew_common.require_tool("git"), "for-each-ref",
+                              "--format=%(refname) %(objectname)"),
                              cwd=root, capture_output=True, check=False, timeout=120,
                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
@@ -824,8 +828,8 @@ def cmd_sync():
              "chronic"|"reach_declared"|"reach_undeclared"|"reach_wrapper"|
              "reach_syntax"|"clean_tree_required", "reason":..., "cmds": [...],
              "unknown": bool}, ...],
-         "cmd_log": [{"cmd":..., "status": "pass"|"fail"|"skip77"|"covered",
-             "elapsed": N}, ...]}
+         "cmd_log": [{"cmd":..., "status": "pass"|"fail"|"skip77"|"covered"|
+             "unknown", "elapsed": N}, ...]}
 
     `matched_rules` is every rule that matched a changed path this turn,
     from the SAME matcher run that decided what to execute; `cmd_log` is
@@ -985,12 +989,14 @@ def _sync(sha, matched, cmd_log, all_run=False):
             }
             continue
         if not all(s in ("pass", COVERED) for s in statuses):
-            # Defensive: "pass"/"fail"/"skip77"/"covered" are the only values
-            # a cmd_log status can carry, and the others are handled above,
-            # so this is unreachable in practice. Kept explicit rather than
-            # falling through to "clean" by default - an unrecognised status
-            # must not silently read as a pass, the same fail-safe direction
-            # this module's docstring already states for a corrupt record.
+            # "unknown" (T-0082: a rule the gate could not judge - killed,
+            # never started, no completion record) lands here, and so would
+            # any status this list does not know. The rule's record entry is
+            # left exactly as it was, for the reason the fail branch gives
+            # for not persisting a failure. Kept explicit rather than falling
+            # through to "clean" by default - an unrecognised status must not
+            # silently read as a pass, the same fail-safe direction this
+            # module's docstring already states for a corrupt record.
             continue
         # Every command this rule names ran and passed, or was credited by a
         # superset that ran and passed this same run (L-0572): clean.

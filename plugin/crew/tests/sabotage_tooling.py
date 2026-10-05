@@ -1053,3 +1053,249 @@ TOOLING_MUTATIONS += (
         _CI + "test_a_deploy_marker_is_left_alone_and_does_not_block[sh]",
     ),
 )
+
+# T-0080: the per-entry bound `sabotage.py` runs every entry under. Mutating
+# `sabotage_bound.py` cannot weaken the run doing the mutating: that run
+# imported it before the first entry, and only the child pytest reads the
+# mutated file.
+BOUND = os.path.join(CREW, "tests", "sabotage_bound.py")
+_BOUND = "tests/test_sabotage_bound.py::"
+TOOLING_MUTATIONS += (
+    (
+        "sabotage bound: the memory cap is never applied",
+        BOUND,
+        '    if cap:\n        kwargs["preexec_fn"]',
+        '    if False:\n        kwargs["preexec_fn"]',
+        _BOUND + "test_a_child_over_the_memory_cap_fails_instead_of_growing",
+    ),
+    (
+        "sabotage bound: a timeout stops only the leader",
+        BOUND,
+        "        os.killpg(pid, sig)\n",
+        "        os.kill(pid, sig)\n",
+        _BOUND + "test_a_timeout_stops_the_whole_group_and_returns_124",
+    ),
+    (
+        "sabotage bound: an unreadable limit reads as the default",
+        BOUND,
+        '    if not re.fullmatch(r"[0-9]+", raw) or int(raw) < minimum:\n',
+        '    if not re.fullmatch(r"[0-9]+", raw) or int(raw) < minimum:\n        return default\n',
+        _BOUND + "test_an_unreadable_limit_refuses_and_never_means_no_cap[CREW_SABOTAGE_MEM_MB-abc]",
+    ),
+    (
+        "sabotage bound: a timed-out entry counts as RED",
+        BOUND,
+        "    if code == REAL_TEST_FAILURE:\n",
+        "    if code in (REAL_TEST_FAILURE, TIMED_OUT):\n",
+        "tests/test_sabotage_harness.py::test_main_reports_a_timed_out_entry_as_unproven_and_fails",
+    ),
+    (
+        "sabotage bound: the harness dying leaves its child running",
+        BOUND,
+        '        if os.name == "posix":\n            _signal_group(proc.pid, signal.SIGKILL)\n'
+        "        elif proc.poll() is None:\n            _stop(proc)\n",
+        "        pass\n",
+        _BOUND + "test_the_harness_dying_stops_a_running_child",
+    ),
+    (
+        "sabotage bound: a same-group child outlives a normal exit",
+        BOUND,
+        '        if os.name == "posix":\n            _signal_group(proc.pid, signal.SIGKILL)\n'
+        "        elif proc.poll() is None:\n            _stop(proc)\n",
+        "        pass\n",
+        _BOUND + "test_a_same_group_child_left_behind_is_stopped_after_a_normal_exit",
+    ),
+    (
+        "sabotage bound: a pre-4.7 kernel reads as enforced",
+        BOUND,
+        "    if (int(found.group(1)), int(found.group(2))) < (4, 7):\n",
+        "    if False:\n",
+        _BOUND + "test_the_cap_is_absent_below_linux_4_7[4.6.7-False]",
+    ),
+)
+
+# T-0082: a rule passes only on a completion record. Each mutation names the
+# test that must catch it; the .ps1 ones run wherever pwsh exists.
+_DONE = "tests/test_verify_gate_rule_completion.py::"
+TOOLING_MUTATIONS += (
+    (
+        "(a) sh: pass on the wrapper status alone (record not read)",
+        GATE_SH,
+        "    LC_ALL=C IFS= read -r -d '' -n 8 RULE_REC < \"$RULE_DONE_FILE\" 2>/dev/null || RULE_REC_EOF=1\n",
+        "    RULE_REC=\"$RULE_WRAP_RC\"$'\\n'; RULE_REC_EOF=1\n",
+        _DONE + "test_a_rule_killed_mid_run_could_not_tell[sh]",
+    ),
+    (
+        "(b) sh: pass on the record alone (wrapper status not read)",
+        GATE_SH,
+        '    if [ "$RULE_WRAP_RC" -ne 0 ]; then\n',
+        "    if false; then\n",
+        _DONE + "test_no_completion_record_could_not_tell[wrapper-killed-sh]",
+    ),
+    (
+        "(c) sh: a missing record reads as 0",
+        GATE_SH,
+        '      *) RULE_REC="" ;;\n',
+        "      *) RULE_REC=0 ;;\n",
+        _DONE + "test_no_completion_record_could_not_tell[record-vanished-sh]",
+    ),
+    (
+        "sh: a record above 255 is read as a status",
+        GATE_SH,
+        '    [ -n "$RULE_REC" ] && [ "$RULE_REC" -gt 255 ] && RULE_REC=""\n',
+        "",
+        _DONE + "test_unreadable_record_could_not_tell[256-sh]",
+    ),
+    (
+        "(d) sh: a status above 128 reads as a plain failure",
+        GATE_SH,
+        '    elif [ "$RULE_REC" -gt 128 ]; then\n',
+        "    elif false; then\n",
+        _DONE + "test_a_rule_killed_mid_run_could_not_tell[sh]",
+    ),
+    (
+        "(e) sh: unknown is logged as pass",
+        GATE_SH,
+        '    CMD_STATUS="unknown"\n',
+        '    CMD_STATUS="pass"\n',
+        _DONE + "test_unknown_status_is_never_recorded_clean[sh]",
+    ),
+    (
+        "(f) sh: the trap's in-flight lines removed",
+        GATE_SH,
+        '  [ -n "${RULE_IN_FLIGHT:-}" ] || return 0\n',
+        "  return 0\n",
+        _DONE + "test_a_signalled_gate_names_the_command_in_flight",
+    ),
+    (
+        "sh: the in-flight command is never cleared",
+        GATE_SH,
+        '    RULE_WRAP_RC=$?\n    RULE_IN_FLIGHT=""\n',
+        "    RULE_WRAP_RC=$?\n",
+        _DONE + "test_a_signalled_gate_with_no_rule_in_flight_names_nothing",
+    ),
+    (
+        "sh: the record sits beside other files, not in a private dir",
+        GATE_SH,
+        '  [ -n "$RULE_DONE_DIR" ] && RULE_DONE_FILE="$RULE_DONE_DIR/rc"\n',
+        '  [ -n "$RULE_DONE_DIR" ] && RULE_DONE_FILE="$RULE_DONE_DIR.rc"\n',
+        _DONE + "test_the_record_lives_in_a_private_directory[sh]",
+    ),
+    (
+        "sh: the record directory survives a signalled gate",
+        GATE_SH,
+        '  [ -n "${RULE_DONE_DIR:-}" ] && rm -rf -- "$RULE_DONE_DIR"\n',
+        "  :\n",
+        _DONE + "test_a_signalled_gate_leaves_no_record_file",
+    ),
+    (
+        "sh: a record with a leading zero is read",
+        GATE_SH,
+        "      0$'\\n'|[1-9]$'\\n'|[1-9][0-9]$'\\n'|[1-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
+        "      [0-9]$'\\n'|[0-9][0-9]$'\\n'|[0-9][0-9][0-9]$'\\n') RULE_REC=${RULE_REC%$'\\n'} ;;\n",
+        _DONE + "test_unreadable_record_could_not_tell[leading-zero-sh]",
+    ),
+    (
+        "sh: the record goes through command substitution (a NUL is dropped)",
+        GATE_SH,
+        "    LC_ALL=C IFS= read -r -d '' -n 8 RULE_REC < \"$RULE_DONE_FILE\" 2>/dev/null || RULE_REC_EOF=1\n",
+        "    RULE_REC=$(head -c 8 \"$RULE_DONE_FILE\" 2>/dev/null; printf x); "
+        "RULE_REC=${RULE_REC%x}; RULE_REC_EOF=1\n",
+        _DONE + "test_unreadable_record_could_not_tell[nul-sh]",
+    ),
+    (
+        "sh: 255 is called a signal",
+        GATE_SH,
+        '    elif [ "$RULE_REC" -gt 192 ]; then\n',
+        "    elif false; then\n",
+        _DONE + "test_a_255_record_is_not_called_a_signal[sh]",
+    ),
+    (
+        "sh: a signalled gate leaves the rule's temp files",
+        GATE_SH,
+        "_crew_gate_register_cleanup _crew_gate_rule_files_cleanup\n",
+        "",
+        _DONE + "test_a_signalled_gate_leaves_no_record_file",
+    ),
+)
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "(g) ps1: $rc not reset per rule",
+            GATE_PS1,
+            "  $rc = $null\n  $ruleRec = $null\n",
+            "  $ruleRec = $null\n",
+            _DONE + "test_ps1_launch_failure_does_not_inherit_the_previous_status",
+        ),
+        (
+            "(h) ps1: a missing record takes the wrapper's status",
+            GATE_PS1,
+            '      $ruleWhy = "no completion record"\n',
+            "      $ruleRec = $rc\n",
+            _DONE + "test_no_completion_record_could_not_tell[record-vanished-ps1]",
+        ),
+        (
+            "(i) ps1: unknown does not set $failed",
+            GATE_PS1,
+            "    $failed = $true\n    $unknownCount++\n",
+            "    $unknownCount++\n",
+            _DONE + "test_unknown_never_advances_the_marker[ps1]",
+        ),
+        (
+            "ps1: a status above 128 reads as a plain failure",
+            GATE_PS1,
+            "    } elseif ($ruleRec -gt 128) {\n",
+            "    } elseif ($false) {\n",
+            _DONE + "test_a_rule_killed_mid_run_could_not_tell[ps1]",
+        ),
+        (
+            "ps1: the .crew/ fallbacks are relative to the process directory",
+            GATE_PS1,
+            '    $crewDir = Join-Path $root ".crew"\n',
+            '    $crewDir = ".crew"\n',
+            _DONE + "test_ps1_fallback_record_from_a_subdirectory_passes",
+        ),
+        (
+            "ps1: the record directory is left world-readable",
+            GATE_PS1,
+            "          [System.IO.File]::SetUnixFileMode($candidate, "
+            "[System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')\n",
+            "",
+            _DONE + "test_the_record_lives_in_a_private_directory[ps1]",
+        ),
+        (
+            "ps1: a record with a leading zero is read",
+            GATE_PS1,
+            "'\\A(0|[1-9][0-9]{0,2})\\n\\z'",
+            "'\\A[0-9]{1,3}\\n\\z'",
+            _DONE + "test_unreadable_record_could_not_tell[leading-zero-ps1]",
+        ),
+        (
+            "ps1: 255 is called a signal",
+            GATE_PS1,
+            "    } elseif ($ruleRec -gt 192) {\n",
+            "    } elseif ($false) {\n",
+            _DONE + "test_a_255_record_is_not_called_a_signal[ps1]",
+        ),
+        (
+            "ps1: pass on the record alone (wrapper status not read)",
+            GATE_PS1,
+            "    } elseif ($rc -ne 0) {\n      $ruleWhy = \"the rule's runner",
+            "    } elseif ($false) {\n      $ruleWhy = \"the rule's runner",
+            _DONE + "test_no_completion_record_could_not_tell[wrapper-killed-ps1]",
+        ),
+        (
+            "ps1: a record above 255 is read as a status",
+            GATE_PS1,
+            " -and [int]$recText.Trim() -le 255)",
+            ")",
+            _DONE + "test_unreadable_record_could_not_tell[256-ps1]",
+        ),
+        (
+            "ps1: unknown is logged as pass",
+            GATE_PS1,
+            '    $cmdStatus = "unknown"\n',
+            '    $cmdStatus = "pass"\n',
+            _DONE + "test_unknown_status_is_never_recorded_clean[ps1]",
+        ),
+    )

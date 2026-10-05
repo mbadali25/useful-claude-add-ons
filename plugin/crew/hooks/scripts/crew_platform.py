@@ -53,6 +53,7 @@ import shutil
 import subprocess
 import sys
 
+import crew_backup
 import crew_common
 import crew_config
 import hook_once
@@ -307,18 +308,28 @@ def heal_config(root):
                 )
             backed_up = os.path.basename(saved_to)
 
-    cfg = crew_config.default_config()
+    # The TEMPLATE, not `default_config()` (T-0050): a healed file that spelled
+    # the personal keys at crew's defaults would hold the owner's global values
+    # down. Never the owner's saved profile either: a SessionStart hook is not
+    # the owner's yes, so the message names the rebuild that is.
+    cfg = crew_config.template_config()
     text = json.dumps(cfg, indent=2) + "\n"
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
         with open(tmp, "w", encoding="utf-8", newline="") as handle:
             handle.write(text)
+        # T-0050: the bytes about to be replaced (corrupt or `{}`) go to the
+        # timestamped store first; no backup, no write.
+        crew_backup.backup(path)
         os.replace(tmp, path)
+    except crew_backup.BackupError as exc:
+        _discard(tmp)
+        return None, (
+            f"## config - {CONFIG_PATH} is malformed, and could NOT be backed "
+            f"up before rewriting ({exc}). Left it untouched"
+        )
     except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        _discard(tmp)
         return None, (
             f"## config - {CONFIG_PATH} is missing or malformed, and "
             f"defaults could NOT be written - is the checkout read-only?"
@@ -333,20 +344,23 @@ def heal_config(root):
             f"## config - {CONFIG_PATH} was malformed; backed it up to "
             f".crew/{saved_as} and wrote defaults - "
             f"tracker, roles, and every other choice are back to defaults; "
-            f"run /crew:init to re-record them"
+            f"run /crew:init to re-record them, "
+            "or restore your saved values: /crew:config --rebuild --repo"
         )
     elif was_empty:
         message = (
             f"## config - {CONFIG_PATH} was an empty object, which reads "
             f"everywhere downstream as `not a crew repo`; wrote defaults - "
             f"tracker, roles, and every other choice are back to defaults; "
-            f"run /crew:init to re-record them"
+            f"run /crew:init to re-record them, "
+            "or restore your saved values: /crew:config --rebuild --repo"
         )
     else:
         message = (
             f"## config - {CONFIG_PATH} was missing; wrote defaults - "
             f"tracker, roles, and every other choice are back to defaults; "
-            f"run /crew:init to re-record them"
+            f"run /crew:init to re-record them, "
+            "or restore your saved values: /crew:config --rebuild --repo"
         )
     return cfg, message
 
@@ -459,14 +473,19 @@ def apply_changes(root, cfg, raw, changes):
     try:
         with open(tmp, "w", encoding="utf-8", newline="") as handle:
             handle.write(text)
+        crew_backup.backup(path)          # T-0050: no backup, no write
         os.replace(tmp, path)
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+    except (OSError, crew_backup.BackupError):
+        _discard(tmp)
         return False
     return True
+
+
+def _discard(tmp):
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
 
 
 def report(changes, concern_list, facts):

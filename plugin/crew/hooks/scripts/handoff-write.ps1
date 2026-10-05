@@ -283,6 +283,102 @@ function Complete-CrewEventClaim([string]$Claim) {
 
 # Raw BYTES, not [Console]::In.ReadToEnd(): event_claim.py hashes the payload,
 # and the bash twin hands it the bytes as received.
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
+function Get-CrewHandoffPath($Value) {
+  # The handoff note's path relative to the cwd (the checkout root):
+  # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
+  # checkout -- absolute, `..`, or through a link -- or names a directory (the
+  # checkout itself, `notes/`), with a warning on stderr. Forward slashes.
+  # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
+  # on links: 5.1 cannot resolve one as realpath does, so any link between the
+  # root and the target reads as leaving. In a linked worktree inheriting the
+  # main checkout's config (L-0680) an absolute value would name the main
+  # checkout's file. Copied verbatim into handoff-read.ps1, handoff-write.ps1
+  # and context-watch.ps1; test_worktree_config_shell.py holds the copies equal.
+  $default = '.work/HANDOFF.md'
+  if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $default }
+  # PowerShell's file cmdlets read `\` as a separator on every OS (on POSIX
+  # too, where the .NET path APIs do not), so the containment check below must
+  # see the path those cmdlets will use: `..\main\x` is `../main/x`.
+  $sep = [System.IO.Path]::DirectorySeparatorChar
+  if ($sep -ne '\') { $Value = $Value.Replace('\', '/') }
+  $inside = $false
+  try {
+    $base = [System.IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd('\', '/')
+    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, $Value))
+    $cmp = if ($env:OS -eq 'Windows_NT' -and $IsLinux -ne $true) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $inside = $full.StartsWith($base + [System.IO.Path]::DirectorySeparatorChar, $cmp)
+    for ($at = $full; $inside -and $at.Length -gt $base.Length; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if ($item -and $item.LinkType) { $inside = $false }
+    }
+  } catch { $inside = $false }
+  if (-not $inside) {
+    $script:CrewHandoffPathLeft = $true   # context-watch.ps1 says so in its message
+    [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+    return $default
+  }
+  # A directory (`notes/`, an existing folder) cannot hold the note.
+  if ($Value.EndsWith('/') -or $Value.EndsWith([string]$sep) -or (Test-Path -LiteralPath $full -PathType Container)) {
+    [Console]::Error.WriteLine("crew: context.handoffPath names a directory - using $default")
+    return $default
+  }
+  # Forward slashes on every OS, as the bash twin prints it. Only Windows can
+  # have a `\` left here; converting after the check is safe because the check
+  # above already saw `\` as the separator it is to the cmdlets.
+  $rel = $full.Substring($base.Length + 1)
+  if ($sep -eq '\') { $rel = $rel.Replace('\', '/') }
+  return $rel
+}
+
 $stdinStream = [Console]::OpenStandardInput()
 $memStream = New-Object System.IO.MemoryStream
 $stdinStream.CopyTo($memStream)
@@ -294,7 +390,20 @@ Set-Location $cwd -ErrorAction SilentlyContinue
 # .crew/crew.json alone is enough for the T-0006 PreCompact record below
 # (/crew:migrate may retire .crew/config.json); the transcript copy and the
 # skeleton handoff further down still need .crew/config.json, as before.
-if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json")) { exit 0 }
+# L-0680: the resolved repo config (Get-CrewRepoConfigDir, T-0096): a linked
+# worktree with none of its own reads the main checkout's; own files win whole;
+# `unknown` reads only the own .crew/. The transcripts, the record and the
+# handoff skeleton are still written here, in this checkout.
+$repoCfg = Get-CrewRepoConfigDir '.'
+$cfgPath = Join-Path $repoCfg.Dir 'config.json'
+# Own or unknown, the resolved directory IS this checkout's .crew/, so that
+# branch keeps the literal gate (tests/sabotage_resume.py anchors on its text).
+if ($repoCfg.Source -eq 'main') {
+  if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf) -and
+      -not (Test-Path -LiteralPath (Join-Path $repoCfg.Dir 'crew.json') -PathType Leaf)) { exit 0 }
+} else {
+  if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json")) { exit 0 }
+}
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
@@ -353,7 +462,7 @@ if ($resumePy) {
     if (-not $proc.WaitForExit(10000)) { try { $proc.Kill() } catch { } }
   } catch { }
 }
-if (-not (Test-Path ".crew/config.json")) {
+if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) {
   # A crew.json-only repo: the record above is all this hook does there.
   Complete-CrewEventClaim $claim
   exit 0
@@ -375,16 +484,23 @@ if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
   if (-not (Test-Path $dest)) { $failed = $true }
   $keep = 5
   try {
-    $k = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context.keepTranscripts
-    if ($k -is [int] -and $k -ge 0) { $keep = $k }
+    $k = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).context.keepTranscripts
+    # [long] too: PowerShell 7's ConvertFrom-Json reads a JSON integer as Int64,
+    # clamped to Int32.MaxValue -- a bare [int] cast throws past it, which left
+    # 5 and deleted what the user kept. An integer only, as documented: a digit
+    # string, a bool or a negative keeps 5, the same as handoff-write.sh.
+    # Past Int64 it arrives as BigInteger.
+    if (($k -is [int] -or $k -is [long] -or $k -is [System.Numerics.BigInteger]) -and $k -ge 0) {
+      $keep = if ($k -gt [int]::MaxValue) { [int]::MaxValue } else { [int]$k }
+    }
   } catch { }
   Get-ChildItem ".crew/transcripts/*.jsonl" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -Skip $keep |
     Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-$cfg  = Get-Content .crew/config.json -Raw | ConvertFrom-Json
-$path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
+$cfg  = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
+$path = Get-CrewHandoffPath $cfg.context.handoffPath
 if (Test-Path $path) {
   if (-not $failed) { Complete-CrewEventClaim $claim }
   exit 0

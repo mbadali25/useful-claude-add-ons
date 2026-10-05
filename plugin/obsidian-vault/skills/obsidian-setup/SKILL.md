@@ -29,7 +29,7 @@ is a successful diagnosis, not a crash.
 | Create a new vault and name it | `create-vault --name N --path P [--apply]` |
 | Give every vault a role: primary / recall / ignore | `adopt [--role NAME=ROLE ...] [--apply]` |
 | Import a folder or vault into the primary vault | `import --source DIR\|VAULT [--apply]` |
-| Read-only recall (the context-hook contract) | `recall --query TEXT [--vaults A,B] [--max-chars N] --json` |
+| Read-only recall (the context-hook contract) | `recall --query TEXT [--vaults A,B] [--project NAME] [--min-terms N] [--include-excluded] [--max-chars N] --json` |
 | Gardener queue, one bounded run, backlog | `queue`, `garden-run`, `drain [--apply]` |
 | Print (never install) a daily gardener unit | `schedule --os cron\|systemd\|windows [--designate --apply]` |
 
