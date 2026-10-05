@@ -42,6 +42,23 @@ Versions: no bump when a source PR folds into its group; each merge into `releas
 next free 1.1.x in landing order; `release/1.2.0` -> main takes the next 1.1.x; H2, the last merge,
 sets 1.2.0. The drift check dates a version from its first commit, so every re-merge re-bumps.
 
+### Added by the owner mid-rush (2026-10-05, PRs being opened)
+
+Placed by what each ticket says it touches; re-placed when its PR shows the real file list.
+
+| Ticket | Title (short) | Lane | Why |
+|---|---|---|---|
+| L-0527 | Kimi review launch in the review harness (tooling half of T-0028) | H1 | review harness |
+| L-0528 | `review_run.py` EXIT_UNVERIFIED and EXIT_PROBE_LIMITED both 5 | H1 | `review_*.py` is HARNESS |
+| L-0518 | T-0085 round-4 findings in crew-standards / review_run self-check gate | H1 | review_run |
+| L-0514 | INCOMPLETE review rounds retry automatically after a tool-failure refund | H1 | review loop |
+| T-0033 | version-only re-bump does not stale a review receipt | H1 | review receipt hash |
+| L-0525 | sabotage suite: 13 vacuous entries, 1 unproven, cloud-guard r1 OOM | H2 | sabotage suite |
+| L-0519 | reconcile crew-standards with crew-qa-standards | G1b | skills/docs; moves to H1 if it touches HARNESS |
+| L-0517 | heavy-run logs each lane's slot wait | G5 | gate-runner / heavy-run tooling |
+| L-0511 | version bump and artifact refresh happen once at land | G5 | release bookkeeping; H1 if it touches HARNESS |
+| L-0515 | dependency-aware lane scheduling (folded into L-0520) | G6 | autopilot lanes; L-0520 is on main |
+
 ### Blocked inside the rush
 
 | PRs | Blocked by | Note |
