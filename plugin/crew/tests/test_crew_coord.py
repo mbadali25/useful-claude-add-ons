@@ -2870,3 +2870,26 @@ def test_repo_key_keeps_a_trailing_space_in_origins_local_path(tmp_path, monkeyp
     monkeypatch.setattr(crew_coord, "run_git", fake)
 
     assert crew_coord.repo_key(str(tmp_path))[0] != crew_coord.owner_name("/srv/Repo")[0]
+
+
+def test_status_line_gives_an_age_for_every_state():
+    # Codex review round 6 (rush g0): released and done lines had a holder and no age.
+    claim = {"state": "released", "holder": {"session": "s", "machine": "m", "worktree": "/w"},
+             "heartbeat_at": crew_coord.stamp()}
+    assert " ago" in crew_coord.describe(claim)
+
+
+def test_no_heartbeat_is_promised_for_a_pid_this_process_cannot_see(capsys, monkeypatch, tmp_path):
+    # Codex review round 6 (rush g0): in a sandbox whose pid namespace hides CLAUDE_PID the
+    # loop exits before its first beat, yet claim printed `heartbeat every ...`.
+    monkeypatch.setattr(crew_coord, "probe_pid", lambda pid: crew_coord.PidProbe("gone", None, True))
+    spawned = []
+    monkeypatch.setattr(crew_coord.subprocess, "Popen", lambda *a, **k: spawned.append(a))
+    args = type("A", (), {"no_heartbeat": False})()
+    chan = type("C", (), {"remote": "origin", "channel": "c"})()
+
+    crew_coord._maybe_start_heartbeat(chan, str(tmp_path), "k", "r", "T-1",  # pylint: disable=protected-access
+                                      {"pid": 4242}, 30, args)
+
+    out = capsys.readouterr()
+    assert (spawned, "heartbeat every" in out.out, "no heartbeat runs" in out.err) == ([], False, True)

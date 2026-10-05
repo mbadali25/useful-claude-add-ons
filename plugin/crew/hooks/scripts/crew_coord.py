@@ -1219,7 +1219,7 @@ def describe(claim):
             f"{safe(holder.get('worktree', '?'))}"
     if claim["state"] == "working":
         return f"{where}, heartbeat {age_text(heartbeat_age(claim))} ago"
-    return where
+    return f"{where}, last written {age_text(heartbeat_age(claim))} ago"
 
 
 def log_line(files, event, key, holder_session, detail):
@@ -1412,6 +1412,12 @@ def _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args):
     if not me.get("pid"):
         print(f"warning: CLAUDE_PID is absent, so no heartbeat runs; {key} reads owner unknown after "
               f"{ttl} minutes", file=sys.stderr)
+        return
+    if probe_pid(me["pid"]).state == "gone":
+        # A sandbox whose pid namespace hides CLAUDE_PID: the loop would exit before its
+        # first beat, so never claim one runs (codex review, rush g0).
+        print(f"warning: pid {me['pid']} is not visible from here (a sandbox's pid namespace?), so no "
+              f"heartbeat runs; {key} reads owner unknown after {ttl} minutes", file=sys.stderr)
         return
     interval = max(1, min(HEARTBEAT_SECONDS, int(ttl * 60 // 3)))
     argv = [sys.executable, os.path.abspath(__file__), "heartbeat-loop", "--root", top,
