@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:42 UTC
+Last updated: 2026-10-05 00:43 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:05: #499 re-review at 860718db: 0 BLOCK 0 FIX (NITs left: 'batch N' inside a normal title; bullet-less normal entry with #### renders the subheading; no real heading has either shape). Aed63c4d run cancelled by push (aggregator reports cancelled as FAIL - not real). Waiting on CI 860718db, then merge.
 - 01:00: #499 re-review of 9fac87a2: 0 BLOCK 3 FIX (hyphen/no-dash batch heading dropped parts; batch with own bullet showed ticket list; cut list ended '....'). Fixed + NITs in aed63c4d, then 860718db (batch-mode false positive, self-found). 20/20, sabotage red 5/19. Re-review of 860718db running.
 - 00:50: MERGED batch PR #498 -> efcf4666 (crew 1.0.345); #364/#416/#420 show merged. #499: merged main, resolved CHANGELOG (L-1518 on top), found + fixed parser skipping batch ### headings (9fac87a2, 15/15, sabotage red 2/15); focused re-review running. Builders re-woken: #497 build(3.12) red, #407 6 Windows red, #496 only verify-gate ran. LANDPREP: sync-updates step added.
 - 00:32: #499 L-1518 at c726f8a1, CI green: README 916->426 lines; generated 'What's new' (2 newest CHANGELOG entries via Summary bullet) + link; UPDATE.md kept for sub-READMEs; 13-case suite. Cost: every PR adding a changelog entry must re-run sync-updates.py (land-prep step). Review spawned.
