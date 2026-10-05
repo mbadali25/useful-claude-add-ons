@@ -227,6 +227,8 @@ def parse_stamp(text):
 
 
 def age_text(seconds):
+    if seconds is None:
+        return "an unknown time"
     seconds = max(0, int(seconds))
     if seconds < 60:
         return f"{seconds}s"
@@ -1206,11 +1208,16 @@ def parse_claim(key, blob):
 
 
 def heartbeat_age(claim):
-    return (utcnow() - parse_stamp(claim["heartbeat_at"])).total_seconds()
+    """Seconds since heartbeat_at, or None when it is absent or not a stamp
+    (a broken corrupt claim is rewritten with null timestamps)."""
+    when = parse_stamp(claim.get("heartbeat_at"))
+    return None if when is None else (utcnow() - when).total_seconds()
 
 
 def is_stale(claim, ttl_minutes):
-    return claim["state"] == "working" and heartbeat_age(claim) > ttl_minutes * 60
+    """A working claim whose heartbeat age cannot be told is stale: owner unknown, never fresh."""
+    age = heartbeat_age(claim)
+    return claim["state"] == "working" and (age is None or age > ttl_minutes * 60)
 
 
 def describe(claim):

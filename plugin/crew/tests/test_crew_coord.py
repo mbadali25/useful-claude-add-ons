@@ -2893,3 +2893,14 @@ def test_no_heartbeat_is_promised_for_a_pid_this_process_cannot_see(capsys, monk
 
     out = capsys.readouterr()
     assert (spawned, "heartbeat every" in out.out, "no heartbeat runs" in out.err) == ([], False, True)
+
+
+@pytest.mark.parametrize("state", ["released", "working"])
+def test_a_claim_with_no_heartbeat_stamp_never_crashes_status_lines(state):
+    # Codex review round 7 (rush g0): breaking a corrupt claim writes null timestamps,
+    # and describe() then raised TypeError, so status could not report the channel.
+    claim = {"state": state, "holder": {"session": "s", "machine": "m", "worktree": "/w"},
+             "heartbeat_at": None}
+
+    assert ("an unknown time ago" in crew_coord.describe(claim), crew_coord.is_stale(claim, 30)) == (
+        True, state == "working")
