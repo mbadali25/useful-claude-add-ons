@@ -150,14 +150,15 @@ corrupt file from the template plus that profile, as a dry run until
   for you.</li>
 <li><strong>Notifications.</strong> In the machine file, set <code>notify.provider</code> and the
   environment variable names in <code>notify.urlEnv</code> / <code>notify.tokenEnv</code>. The
-  secret stays in your environment, never in the file.</li>
+  secret stays in your environment, never in the file. Those two are
+  machine-only: a repo file's value is ignored with a notice.</li>
 </ul>
 <p>The reasoning behind each key is in <code>plugin/crew/CONFIG.md</code>, which ships with
 the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>141 keys</strong>: 81 settable in the machine-global file, 60 repo-only.</p>
+<p><strong>143 keys</strong>: 83 settable in the machine-global file, 60 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -931,42 +932,58 @@ the plugin.</p>
 <tr>
 <td><code>notify.provider</code></td>
 <td>both</td>
-<td><code>"none"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/notify.sh</code> (expects string)</td>
+<td><code>null</code></td>
+<td>telegram, teams, none or null; any other value sends nothing (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
 <td>0.11.0 or earlier</td>
-<td>Where notifications go; <code>none</code> is off.</td>
+<td>Where notifications go: <code>telegram</code>, <code>teams</code> or <code>none</code> (off). A repo null inherits the machine provider; a repo <code>none</code> opts this repo out.</td>
 </tr>
 <tr>
 <td><code>notify.urlEnv</code></td>
-<td>both</td>
+<td>machine-only</td>
 <td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/notify.sh</code> (expects string or null)</td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_notify.py</code> (expects string or null)</td>
 <td>0.11.0 or earlier</td>
-<td>Environment variable holding the webhook URL.</td>
+<td>Name of the environment variable holding the Teams webhook URL. Honoured from the machine file only; a repo's is ignored with a notice.</td>
 </tr>
 <tr>
 <td><code>notify.tokenEnv</code></td>
-<td>both</td>
+<td>machine-only</td>
 <td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/notify.sh</code> (expects string or null)</td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_notify.py</code> (expects string or null)</td>
 <td>0.11.0 or earlier</td>
-<td>Environment variable holding the token.</td>
+<td>Name of the environment variable holding the Telegram bot token; null may be filled from the notify skill's <code>bot_token_env</code>. Honoured from the machine file only.</td>
 </tr>
 <tr>
 <td><code>notify.chatId</code></td>
 <td>both</td>
 <td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/notify.sh</code> (expects string or null)</td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_notify.py</code> (expects string or null)</td>
 <td>0.11.0 or earlier</td>
-<td>Chat id for chat providers.</td>
+<td>Telegram chat id; null may be filled from the notify skill's <code>chat_id</code>, and the skill's example value counts as unset.</td>
 </tr>
 <tr>
 <td><code>notify.events</code></td>
 <td>both</td>
-<td><code>["phase", "gate", "waiting"]</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/notify.sh</code> (expects list of event names)</td>
+<td><code>["blocker", "deploy", "question"]</code></td>
+<td>list of event names; an unknown name is dropped with a notice (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
 <td>0.11.0 or earlier</td>
-<td>Events that notify. A list is one leaf.</td>
+<td>Events that notify: <code>deploy</code>, <code>question</code>, and <code>blocker</code> (reserved, sends nothing yet). The pre-1.0 names <code>gate</code>, <code>waiting</code>, <code>phase</code>, <code>review</code> and <code>done</code> are mapped with a notice. A list is one leaf.</td>
+</tr>
+<tr>
+<td><code>notify.realertHours</code></td>
+<td>both</td>
+<td><code>6</code></td>
+<td>number of hours; negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
+<td>1.0.378</td>
+<td>The same event + ticket + reason is sent once per this many hours; a question pings once per waiting episode.</td>
+</tr>
+<tr>
+<td><code>notify.questionTypes</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
+<td>1.0.378</td>
+<td>The Claude Code <code>notification_type</code> values that count as a question; null uses the built-in five (<code>crew_notify.QUESTION_TYPES</code>).</td>
 </tr>
 </tbody>
 </table>
