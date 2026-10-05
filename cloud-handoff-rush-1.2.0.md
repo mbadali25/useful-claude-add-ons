@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T15:21Z
+Last updated: 2026-10-05T15:23Z
 
 ## >>> RESUME HERE
 
@@ -93,6 +93,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T15:23Z G0 ported (T-0030 7 rounds, T-0029 6 rounds; head 80027aa1). Both capped: coordinator reviews of 2dcbf27c3 (T-0030) and 80027aa1e (T-0029) running. Harness halves at $S/harness-T-0030.patch then harness-T-0029.patch (sabotage_coord 101, sabotage_wave 15, scope_guard never-list) -> H2. Builder ran pkill -f 'codex exec' once: other groups' in-flight reviews may have died. C-0029, C-0030 minted.
 - 2026-10-05T15:21Z G3b built (L-0675, T-0103 [9 rounds, CLEAN], T-0106; head 99917c8d). L-0667 (#455) blocked on T-0064 (G1) -> G3c. Landing queue: G1 (lander running) -> G3 -> G3b. C-0027, C-0028 minted. Note: sabotage.py on G3b reports 32 STILL GREEN entries outside its files (L-0525 territory, H2).
 - 2026-10-05T14:47Z Owner: gpt-5.6-sol allowed as review fallback. codex-review.sh: gpt-6-sol x3 then gpt-5.6-sol x3 on capacity; the model used is printed and logged.
 - 2026-10-05T14:39Z Owner accepted recommendations 1-7 (H3 may land before H1; <=8 agents; land-when-ready; 6-round cap; close source PRs at main; G6 sleep tickets slip if G2 is last; keep gpt-6-sol).
