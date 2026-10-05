@@ -56,6 +56,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (`!pattern`) re-includes denylisted <path>; remove that line or accept the exposure`` and exits 1.
   A symlink is judged by its target too, and
   `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
+- `--write` writes through a symlinked `.graphifyignore` only to an ignore file inside the
+  repository and never into `.git`; anything else is unknown, exit 2, nothing written. A
+  `.graphifyignore` line holding a backslash never counts as covering (git un-escapes it, graphify
+  does not), and a denylisted file a `.gitignore` `!` line re-includes is uncovered, because
+  graphify applies that negation after `.graphifyignore`.
 - `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
   `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,
   so neither it nor autopilot names a graphify command then. `/crew:status` gains a `graph-ignore`
@@ -108,6 +113,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `plugin/crew/tests/test_crew_gitignore.py` (new) and four `test_status.py` cases, mapped
   by a new `.crew/verify.json` rule; 19 hand-run sabotage mutations each turned their named test red.
   Registering them in `sabotage.py` is a harness change and lands alone (TODO.md).
+- **Review fixes at the 1.2.0 port.** A slash-free secret row is probed one directory down too, so a
+  root-only `/.env` does not read as covered; a basename `!keep.txt` and a glob above the directory
+  (`!src/*/bin/keep.txt`) are conflicts; no cap drops a project's anchored rows; a tracked Terraform
+  state file is `needs-owner`; and `summary` says `current except N conflict(s)` rather than a bare
+  `current` while a human `!` line keeps a row out.
 
 ### Changed — crew: the shortfall rule says its wording list cannot be complete (L-0604)
 
