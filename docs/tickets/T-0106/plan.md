@@ -9,7 +9,8 @@ Written by the implementing session (feature rush 1.2.0, branch rush/g3b-bridge,
    `node_modules` and symlinks are skipped, the current repo is skipped by realpath; a directory
    reached again through an overlapping root at a shallower level is walked again so the depth
    limit does not depend on root order), `_scan_candidate` (either file opted in -> found; a present
-   file that is not a JSON object and no opt-in in the other -> unreadable, never "not opted in"),
+   file that is not a JSON object -> unreadable even when the other file opted in, never "not opted
+   in"),
    `check_scan_roots`, `_widening_message`, `widening_refusal`, `WideningRefused` (a `ValueError`,
    so `main`'s existing handler gives exit 1).
 3. `detect_onlyRepos_widening` and `apply_migrate_to_repo` keep their positional parameters and

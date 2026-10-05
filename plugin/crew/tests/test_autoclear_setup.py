@@ -863,6 +863,22 @@ def test_unreadable_candidate_is_reported_not_treated_as_not_opted_in(tmp_path):
     assert broken in plan["widening"]["message"] and listed in plan["widening"]["message"]
 
 
+def test_an_unreadable_file_is_not_masked_by_an_opted_in_sibling(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    mixed = _repo(str(scan / "mixed"))
+    _repo(str(scan / "mixed"), name="crew.json", raw="{not json")
+    global_path = _widening_global(tmp_path)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=global_path,
+                                       scan_roots=[str(scan)])
+
+    assert [item["path"] for item in plan["widening"]["scan"]["unreadable"]] == [mixed]
+    assert plan["widening"]["scan"]["found"] == []
+    assert setup.main(["--root", here, "--global-path", global_path, "apply-migrate",
+                       "--scan-root", str(scan), "--yes-widen"]) == 1
+
+
 def test_yes_widen_refuses_when_a_candidate_could_not_be_read(tmp_path, capsys):
     scan = tmp_path / "src"
     here = _repo(str(tmp_path / "here"))

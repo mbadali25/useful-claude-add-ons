@@ -371,8 +371,9 @@ def _scan_candidate(directory):
     holds `.crew/config.json` or `.crew/crew.json`. Opted in when either
     file's `context.autoClear.enabled` is exactly `true` -- the test
     `had_repo_local_opt_in` applies to the current repo. `reason` is set
-    when a present file could not be read as a JSON object and no other
-    file showed the opt-in: that repo is unreadable, never "not opted in"."""
+    when either present file could not be read as a JSON object -- even
+    when the other shows the opt-in, as the spec has it: that repo is
+    unreadable (never "not opted in"), and it blocks `--yes-widen`."""
     present, opted_in, problems = False, False, []
     for name in _REPO_CONFIG_NAMES:
         path = os.path.join(directory, ".crew", name)
@@ -390,8 +391,7 @@ def _scan_candidate(directory):
         context = doc.get("context")
         if had_repo_local_opt_in(context if isinstance(context, dict) else {}):
             opted_in = True
-    reason = "" if opted_in else "; ".join(problems)
-    return present, opted_in, reason
+    return present, opted_in, "; ".join(problems)
 
 
 def _scan_children(directory):
@@ -437,10 +437,10 @@ def scan_opted_in_repos(roots, depth=SCAN_DEPTH_DEFAULT, *, current=None):
                 continue
             is_candidate, opted_in, reason = _scan_candidate(directory)
             if is_candidate:
-                if opted_in:
-                    found.add(directory)
-                elif reason:
+                if reason:
                     unreadable[directory] = reason
+                elif opted_in:
+                    found.add(directory)
                 continue
             if level >= depth:
                 continue
