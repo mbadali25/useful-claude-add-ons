@@ -565,14 +565,6 @@ _CONFIGS = {
     "dotless-i twin names (sh refuses)": (_envs(
         ("Iq", None, ["./deploy.sh a"]), ("\u0131q", None, ["./deploy.sh b"]),
         ("production", _PROD, None)), {"production": "refused"}),
-    "JSON nested 1000 deep (sh refuses)": (_raw(
-        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
-        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 1000 + "]" * 1000 + '}'),
-        {"production": "refused"}),
-    "JSON nested 1100 deep (both refuse)": (_raw(
-        '"production": {"deploy": ["' + _PROD_PREFIX + '"], "github": ' + _GH_PROD
-        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 1100 + "]" * 1100 + '}'),
-        {"production": "refused"}),
     # A date-shaped string that ConvertFrom-Json keeps as a string is fine.
     "a near-date deploy elsewhere": (_envs(
         ("dated", None, ["2026-10-04T00:00"]), ("production", _PROD, None)),
@@ -585,7 +577,6 @@ _ONE_GATE_REFUSES = {
     "a date-time deploy elsewhere (ps1 refuses)": "ps1",
     "a /Date()/ deploy elsewhere (ps1 refuses)": "ps1",
     "dotless-i twin names (sh refuses)": "sh",
-    "JSON nested 1000 deep (sh refuses)": "sh",
 }
 
 
@@ -759,11 +750,9 @@ _EITHER = [
     ({"d": gate_tests._env("2026-10-04T00:00:00.123+02:00"), "p": "deploy-p"},  # pylint: disable=protected-access
      ["deploy-p"]),
     ({"d": gate_tests._env("/Date(0)/"), "p": "deploy-p"}, ["deploy-p"]),  # pylint: disable=protected-access
-    # sh alone refuses (Python's fold, Python's recursion limit)
+    # sh alone refuses (Python's fold)
     ({"Iq": "deploy-a", "\u0131q": "deploy-b"}, ["deploy-a"]),
     ({"Sx": "deploy-a", "\u017fx": "deploy-b"}, ["deploy-a"]),
-    (_raw('"p": {"deploy": "deploy-p", ' + _RB + '}, "deep": {"x": '
-          + "[" * 1000 + "]" * 1000 + '}'), ["deploy-p"]),
     # both read it; a date-shaped string ConvertFrom-Json keeps is a command
     ({"d": gate_tests._env(["2026-10-04T00:00", "2026-10-04 00:00:00"]),  # pylint: disable=protected-access
       "p": "deploy-p"}, ["2026-10-04T00:00", "deploy-p", "2026-10-04 00:00:00 now"]),
@@ -789,8 +778,7 @@ def test_simulate_gate_refuses_when_either_gate_refuses(tmp_path, index):
     repo = gate_tests.Repo(tmp_path / "r", deploys if isinstance(deploys, str) else
                            {n: gate_tests._cfg(d) for n, d in deploys.items()})  # pylint: disable=protected-access
     text = (repo.root / ".crew" / "verify.json").read_text(encoding="utf-8")
-    # The raw rows name only `p` (and `deep`); json cannot read the deep one.
-    names = list(deploys) if isinstance(deploys, dict) else ["p", "deep"]
+    names = list(json.loads(text)["environments"])
     differed = False
     for command in commands:
         sh, ps1 = _gate("sh", repo.root, command), _gate("ps1", repo.root, command)
@@ -798,7 +786,7 @@ def test_simulate_gate_refuses_when_either_gate_refuses(tmp_path, index):
         assert crew_ghdeploy.simulate_gate(text, command) == _union(sh, ps1, names), (
             f"either{index}, {command!r}: sh {sh!r}, ps1 {ps1!r}")
     # Each row but the both-read one is a case where the gates really differ.
-    assert differed or index == 9, f"either{index}: the gates agree; the row proves nothing"
+    assert differed or index == 8, f"either{index}: the gates agree; the row proves nothing"
 
 
 def test_the_dotnet_only_fold_table_is_pinned():
@@ -840,14 +828,39 @@ def test_is_dotnet_date_is_what_convertfrom_json_converts(text, date):
     assert crew_ghdeploy._is_dotnet_date(text) is date  # pylint: disable=protected-access
 
 
-def test_deep_json_is_refused_not_a_traceback(tmp_path):
-    """NIT1: past Python's recursion limit json raises RecursionError, which
-    is no ValueError; check must still end on a result line."""
-    root = _repo(tmp_path, None, raw=_raw(
-        '"staging": {"deploy": ["' + _PREFIX + '"], "github": ' + json.dumps(_ENTRY)
-        + ', ' + _RB + '}, "deep": {"x": ' + "[" * 5000 + "]" * 5000 + '}'))
+def _nested(depth):
+    """A map whose `deep` environment nests `depth` levels in all."""
+    inner = depth - 3  # the document, `environments` and `deep` are three
+    return _raw('"staging": {"deploy": ["' + _PREFIX + '"], "github": '
+                + json.dumps(_ENTRY) + ', ' + _RB + '}, "deep": {"x": '
+                + "[" * inner + "]" * inner + '}')
+
+
+@pytest.mark.parametrize("depth, refused", [
+    (crew_ghdeploy._MAX_DEPTH, False),  # pylint: disable=protected-access
+    (crew_ghdeploy._MAX_DEPTH + 1, True),  # pylint: disable=protected-access
+    (5000, True)])
+def test_nesting_past_a_fixed_bound_is_refused_on_every_interpreter(tmp_path, depth, refused):
+    """NIT1, re-done. Where json.loads hits RecursionError depends on the
+    interpreter (3.11 refuses 1,000 levels, 3.12 reads them), so `check`
+    refuses past a fixed `_MAX_DEPTH` (200), below every interpreter's limit
+    and ConvertFrom-Json's 1,024, and never reaches a RecursionError. What
+    the real promote-gate.sh does at 1,000 levels is deliberately not asserted."""
+    text = _nested(depth)
+    assert crew_ghdeploy._depth(text) == depth  # pylint: disable=protected-access
+    root = _repo(tmp_path, None, raw=text)
     proc = _check(root)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert _last(proc) == "result=refused reason=gate-refuses-map"
-    assert crew_ghdeploy.simulate_gate(
-        _raw('"d": {"x": ' + "[" * 5000 + "]" * 5000 + '}'), "x") == "map"
+    if refused:
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        assert _last(proc) == "result=refused reason=gate-refuses-map"
+        assert crew_ghdeploy.simulate_gate(text, "x") == "map"
+    else:
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert crew_ghdeploy.simulate_gate(text, _PREFIX) == "staging"
+
+
+@pytest.mark.parametrize("text, depth", [
+    ('{"a": "[[[{{{"}', 1), ('{"a": "\\"[[["}', 1), ('{"a": "\\\\", "b": [[]]}', 3),
+    ("[]", 1), ('"x"', 0), ('{"a": {"b": [1, {"c": []}]}}', 5)])
+def test_depth_skips_brackets_inside_strings(text, depth):
+    assert crew_ghdeploy._depth(text) == depth  # pylint: disable=protected-access

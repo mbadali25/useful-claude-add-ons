@@ -339,19 +339,19 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 `environments.*` section, not re-derived here.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
-environment's `github` entry out of `.crew/verify.json` (`_environment`, `:458`; `entries`, `:223`),
-validates each against a closed key set (`KEYS`, `:98`) and value grammar (`VALUE`, `:95`;
-`entry_problem`, `:185`; the ref as a branch name, `_ref_problem`, `:124`), requires `deploy` to be
-exactly the entries' prefixes (`check`, `:505`; `prefix`, `:236`), and applies L-1503's promote-gate
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:496`; `entries`, `:224`),
+validates each against a closed key set (`KEYS`, `:99`) and value grammar (`VALUE`, `:96`;
+`entry_problem`, `:186`; the ref as a branch name, `_ref_problem`, `:125`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:542`; `prefix`, `:237`), and applies L-1503's promote-gate
 rule, refusing when EITHER gate refuses: twin keys under Python's or .NET's fold and an empty key at
-any depth (`_no_twins`, `:288`; the 27 .NET-only pairs, `_DOTNET_ONLY_FOLDS`, `:264`), bad names,
-a null, non-string or ConvertFrom-Json date-time `deploy` (`_is_dotnet_date`, `:346`), a list or
-object `requireHuman` (`gate_problem`, `:383`) and JSON past the recursion limit (`_parse`, `:416`)
+any depth (`_no_twins`, `:289`; the 27 .NET-only pairs, `_DOTNET_ONLY_FOLDS`, `:265`), bad names,
+a null, non-string or ConvertFrom-Json date-time `deploy` (`_is_dotnet_date`, `:347`), a list or
+object `requireHuman` (`gate_problem`, `:384`) and JSON nested past a fixed 200 levels, scanned iteratively (`_MAX_DEPTH`, `:423`; `_depth`, `:426`)
 are `gate-refuses-map`; each dispatch is printed with `gated-as:` - every environment whose
 `deploy` matches it literally, ignoring case under either gate's fold, either way round, after CR
-stripping (`gate_matches`, `:406`; `simulate_gate`, `:440`, is the agreement tables' entry point).
-It prints the dispatch for HEAD (`dispatch`, `:244`), runs only `git rev-parse HEAD`, the git
-`crew_common.require_tool` resolves (`_head`, `:491`), and writes nothing; no hook calls it yet,
+stripping (`gate_matches`, `:407`; `simulate_gate`, `:478`, is the agreement tables' entry point).
+It prints the dispatch for HEAD (`dispatch`, `:245`), runs only `git rev-parse HEAD`, the git
+`crew_common.require_tool` resolves (`_head`, `:528`), and writes nothing; no hook calls it yet,
 and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
 mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
 the anchor; the anchor was not moved for it.

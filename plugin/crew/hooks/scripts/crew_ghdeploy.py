@@ -57,8 +57,9 @@ construction rather than by luck:
     under .NET's OrdinalIgnoreCase (`_DOTNET_ONLY_FOLDS`: 27 Greek
     iota-subscript pairs), and a `deploy` string ConvertFrom-Json turns into
     a DateTime (`_is_dotnet_date`). promote-gate.sh alone refuses keys that
-    are twins only under Python's fold (dotless i, long s) and JSON nested
-    past Python's recursion limit;
+    are twins only under Python's fold (dotless i, long s), and JSON nested
+    past its recursion limit (about 1,000 levels, by interpreter): `check`
+    refuses anything nested past `_MAX_DEPTH` (200), stricter than both;
   - an environment matches when it matches under EITHER gate's case fold,
     so `gated-as: <names>` (printed under each dispatch) is the union of
     what the two gates apply. They agree on every ASCII command, and a
@@ -413,13 +414,50 @@ def gate_matches(command, envs):
             if any(dep and _matches(command, dep) for dep in _deploys(cfg))]
 
 
+# Deeper JSON is refused before it is parsed. promote-gate.sh's json.loads
+# raises RecursionError somewhere near 1,000 levels, but where depends on the
+# interpreter (3.11 refuses 1,000; 3.12 and 3.13 read it), and
+# promote-gate.ps1's ConvertFrom-Json stops at 1,024. A fixed bound far below
+# every one of them keeps `check` at least as strict as either gate on every
+# interpreter, and the scan is iterative, so it cannot recurse itself.
+_MAX_DEPTH = 200
+
+
+def _depth(text):
+    """The deepest `[`/`{` nesting in JSON `text`, strings skipped."""
+    depth = deepest = 0
+    in_string = escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif char in "]}":
+            depth -= 1
+    return deepest
+
+
+def _load_json(text):
+    """`text` as JSON with `_no_twins` at every depth. _MapRefused for a map
+    nested past `_MAX_DEPTH` or a key either gate refuses; ValueError for
+    text that is not JSON."""
+    if _depth(text) > _MAX_DEPTH:
+        raise _MapRefused(f"nested deeper than {_MAX_DEPTH} levels")
+    return json.loads(text, object_pairs_hook=_no_twins)
+
+
 def _parse(text):
-    """`text` as JSON with `_no_twins` at every depth; _MapRefused for what
-    either gate refuses to parse, nesting past the recursion limit included."""
+    """`_load_json`, with text that is not JSON a _MapRefused too."""
     try:
-        return json.loads(text, object_pairs_hook=_no_twins)
-    except RecursionError as exc:
-        raise _MapRefused("nested too deeply to read") from exc
+        return _load_json(text)
     except ValueError as exc:
         raise _MapRefused(f"not JSON: {exc}") from exc
 
@@ -466,10 +504,9 @@ def _environment(root, env):
     except OSError as exc:
         raise CouldNotTell("verify-json-unreadable", f"{path}: {exc}") from exc
     try:
-        doc = json.loads(text, object_pairs_hook=_no_twins)
-    except (_MapRefused, RecursionError) as exc:
-        raise Refused("gate-refuses-map", f"a promote gate refuses {path}: "
-                                          f"{exc or 'nested too deeply to read'}") from exc
+        doc = _load_json(text)
+    except _MapRefused as exc:
+        raise Refused("gate-refuses-map", f"a promote gate refuses {path}: {exc}") from exc
     except ValueError as exc:
         raise CouldNotTell("verify-json-unreadable", f"{path}: {exc}") from exc
     envs = _get_ci(doc, "environments", None) if isinstance(doc, dict) else None
