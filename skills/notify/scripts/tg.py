@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """tg.py - minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
+import http.client
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -25,6 +27,19 @@ CHUNK_PAUSE_SECONDS = 1.0
 
 class TgError(RuntimeError):
     pass
+
+
+def token_from_env(name):
+    """The bot token in env var `name`, stripped; None when unset or blank.
+
+    A token pasted or set with a trailing space or newline (setx, the Windows
+    System Properties dialog, `echo ... > file`) put that whitespace inside
+    the API URL, and urllib refused the URL with an InvalidURL whose message
+    QUOTES the path - bot token included (2026-10-05). A real token never
+    contains whitespace, so stripping it changes nothing for a good one.
+    """
+    token = (os.environ.get(name) or "").strip()
+    return token or None
 
 
 def api(token, method, params=None, timeout=35, retries=3):
@@ -70,6 +85,15 @@ def api(token, method, params=None, timeout=35, retries=3):
                 time.sleep(2 ** attempt)
                 continue
             raise TgError(f"{method} -> {exc}") from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # A 200 that is not JSON - a captive portal or proxy page.
+            raise TgError(f"{method} -> the reply was not JSON (a proxy or captive portal?)") from exc
+        except (http.client.InvalidURL, ValueError) as exc:
+            # http.client's InvalidURL quotes the request path, which holds
+            # the token: never pass its message on. A non-ASCII character in
+            # the token arrives as UnicodeEncodeError, also a ValueError.
+            raise TgError(f"{method} -> the bot token is not usable in a URL (it contains "
+                          "whitespace or a control character)") from exc
 
         if not out.get("ok"):
             raise TgError(out.get("description", f"{method} failed"))

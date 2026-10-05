@@ -1107,11 +1107,10 @@ AUTHORITY_DEFAULT = "report-only"
 # a test can assert on, and nobody can paraphrase away. Each entry is
 # (slug, what the PM must not do without an explicit yes).
 #
-# The first three are the bound-2 stops `act` already carried, restated at this
-# tier because a wider authority is precisely where someone would assume they
-# lapsed. The fourth is new with `autonomous`: a PM that dispatches without
-# asking is a PM that can reach git, and every item under it destroys work that
-# exists nowhere else once it runs.
+# The first three are the bound-2 stops `act` already carried, restated here: a
+# wider authority is where someone would assume they lapsed. The fourth is new
+# with `autonomous` (a PM that dispatches unasked can reach git, and each item
+# destroys work that exists nowhere else); the fifth is T-0049's in-flight marker.
 AUTONOMOUS_STOPS = (
     ("offboard-role", "offboarding a role, or removing one from the roster"),
     ("delete-map", "deleting a codemap file or a diagram"),
@@ -1119,6 +1118,7 @@ AUTONOMOUS_STOPS = (
     ("git-destruction",
      "destroying git history or tracked work - force-push, branch delete, "
      "history rewrite, or rm of a tracked file"),
+    ("clear-inflight", "clearing another runner's in-flight marker"),
 )
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases `crew_autopilot.py next` names from disk.

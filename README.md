@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
-- **crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
+- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
