@@ -165,18 +165,14 @@ def merged_slices(top, ctx, upto):
         entry = _shipped_entry(ctx, k)
         if entry is None:
             continue
-        done, why, _allowed = _verified_merged(top, ctx, k, 0)
+        # One read per slice: the state judged is the state recorded, so a PR
+        # that merges between two reads is never counted unverified.
+        done, why, _allowed, state = _verified_merged(top, ctx, k, 0)
         if done is None:
             return None, why
+        states[k] = state
         if done:
             merged.add(k)
-            states[k] = "MERGED"
-            continue
-        pr = crew_ship.read_pr(top, entry.get("branch") or "")
-        if pr is None:
-            return None, (f"could not read slice {k}'s PR state ({entry.get('branch')}) - a "
-                          "human looks")
-        states[k] = pr["state"]
     return merged, states
 
 
@@ -205,41 +201,49 @@ def _allowed_bases(top, ctx, k, depth=0):
     below = (slice_branches(ctx) or {}).get(base)
     if not below:
         return None, f"slice {base}'s branch is not recorded, so slice {k}'s base is unknown"
-    merged, why, under = _verified_merged(top, ctx, base, depth + 1)
+    merged, why, under, _state = _verified_merged(top, ctx, base, depth + 1)
     if merged is None:
         return None, why
     return ({below} | under) if merged else {below}, ""
 
 
+# The PR states a slice can be in; anything else gh answers is unknown.
+_PR_STATES = ("OPEN", "CLOSED", "MERGED")
+
+
 def _verified_merged(top, ctx, j, depth):
-    """`(merged, why, allowed_j)`: True only when slice j's PR merged INTO a
-    base its own chain allows; False when it has not shipped or merged yet;
-    None (a stop, `why` set) when its state, its destination or its chain
-    cannot be read, or it merged anywhere else."""
+    """`(merged, why, allowed_j, state)`: True only when slice j's PR merged
+    INTO a base its own chain allows; False when it has not shipped, or its
+    PR is OPEN or CLOSED; None (a stop, `why` set) when its state is anything
+    else or unreadable, its destination or chain cannot be read, or it merged
+    anywhere else. `state` is the one state this read judged."""
     entry = _shipped_entry(ctx, j)
     if entry is None:
-        return False, "", set()
+        return False, "", set(), "NONE"
     branch = entry.get("branch")
     if not isinstance(branch, str) or not branch:
-        return None, f"slices.json records no branch for slice {j} - a human looks", set()
+        return None, f"slices.json records no branch for slice {j} - a human looks", set(), ""
+    state = "MERGED"
     if not crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
         pr = crew_ship.read_pr(top, branch)
-        if pr is None:
-            return None, f"could not read slice {j}'s PR state ({branch}) - a human looks", set()
-        if pr.get("state") != "MERGED":
-            return False, "", set()
+        state = pr.get("state") if isinstance(pr, dict) else None
+        if state not in _PR_STATES:
+            return None, (f"could not read slice {j}'s PR state ({branch}"
+                          + (f": {state!r}" if state else "") + ") - a human looks"), set(), ""
+        if state != "MERGED":
+            return False, "", set(), state
     allowed, why = _allowed_bases(top, ctx, j, depth)
     if allowed is None:
-        return None, why, set()
+        return None, why, set(), ""
     view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
     found = view.get("baseRefName") if isinstance(view, dict) else None
     if not isinstance(found, str) or not found:
-        return None, f"could not read where slice {j}'s PR ({branch}) was merged", set()
+        return None, f"could not read where slice {j}'s PR ({branch}) was merged", set(), ""
     if found not in allowed:
         return None, (f"slice {j}'s PR ({branch}) merged into {found}, not a base the plan "
                       f"names ({', '.join(sorted(allowed))}) - the chain did not reach its "
-                      "base; a person looks"), set()
-    return True, "", allowed
+                      "base; a person looks"), set(), ""
+    return True, "", allowed, state
 
 
 def _merged_into_stop(top, ctx, k, branch):

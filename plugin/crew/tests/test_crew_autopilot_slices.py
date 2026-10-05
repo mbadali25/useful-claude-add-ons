@@ -869,3 +869,31 @@ def test_a_recorded_merge_sha_into_the_wrong_branch_is_not_merged(tmp_path, monk
 
     assert (merged, "merged into develop" in why, "merged into develop" in order) == (
         None, True, True), (why, order)
+
+
+def test_a_pr_that_merges_between_reads_is_never_counted_unverified(tmp_path, monkeypatch):
+    """Fix review r2 BLOCK: one read per slice - OPEN then MERGED (into
+    develop) must not leave order_stop open."""
+    root = _ticket(tmp_path, header="status: in-progress   risk: low")
+    _state(root, current=2, done=[1], shipped=[_shipped(1, BRANCH)])
+    reads = [_view(dict(_pr("OPEN", number=11), baseRefName="main"))]
+    later = _view(dict(_pr("MERGED", number=11), baseRefName="develop"))
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=lambda args: reads.pop(0) if reads else later, repo_view=MAIN))
+    ctx = crew_autopilot_slices.context(str(root), T)
+
+    order = crew_autopilot_slices.order_stop(str(root), ctx, f"{BRANCH}-s2", "merge")
+
+    assert order, "slice 2 may not ship"
+
+
+def test_an_unrecognised_predecessor_state_is_a_stop(tmp_path, monkeypatch):
+    """Fix review r2 BLOCK: a PR state gh answers that is not OPEN, CLOSED or
+    MERGED is unknown, never "not merged yet"."""
+    root, ctx = _slice2_ctx(tmp_path, s2_base=BRANCH)
+    _merged_world(monkeypatch, {BRANCH: ("UNRECOGNIZED", "main"),
+                                f"{BRANCH}-s2": ("MERGED", BRANCH)})
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
+
+    assert "could not read slice 1's PR state" in why, why
