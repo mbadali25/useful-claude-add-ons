@@ -75,8 +75,11 @@ array-unrolling fix, but whether the review itself found that defect could not b
 1 public change set, which does not count.
 
 Wrap any value whose `.Count`, indexing or emptiness matters in `@(...)`, after assignment on
-5.1. Check for `$null` first: `@($null).Count` is 1, so a missing or failed result would
-otherwise read as one item. Expect 5.1's `ConvertFrom-Json` to emit an array as one object, and an empty JSON array
+5.1. Decide failure from the operation itself, not from the result being `$null`. For example,
+run `ConvertFrom-Json -ErrorAction Stop` inside `try`/`catch` and check the raw text for
+emptiness, because a valid `[]` also comes back as `$null`. Then wrap: `@($result).Count` is
+0 for that empty array. A `$null` that means "missing" is caught before the wrap, because
+`@($null).Count` is 1. Expect 5.1's `ConvertFrom-Json` to emit an array as one object, and an empty JSON array
 to unroll to `$null`. Windows PowerShell 5.1's `ConvertFrom-Json` has no `-NoEnumerate`
 (it is a PowerShell 7 parameter), so on 5.1 assign the result first and then wrap it in `@()`.
 

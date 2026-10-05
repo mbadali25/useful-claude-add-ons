@@ -35,8 +35,9 @@ already uses: a framework's query builder, escaping helper or container wins ove
   `$wpdb->prepare`) - never concatenation, even after an escaping call; identifiers come
   from an allow-list. Use `charset=utf8mb4` in a MySQL/MariaDB DSN.
   (Candidate PHP-01 in `references/candidates.md`.)
-- **Output is escaped for its context at the point it is echoed** - HTML text and
-  attributes with `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`; each value
+- **Output is escaped for its context at the point it is echoed** - HTML text and quoted
+  attribute values (`attr="..."`, never an unquoted attribute, an event handler or `style`)
+  with `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`; each value
   placed inside a URL (a path segment, a query value) with `rawurlencode`, never the whole
   URL, and the assembled URL then escaped for its HTML attribute; JavaScript with
   `json_encode` and the `JSON_HEX_*` flags. (Candidate PHP-P2.)

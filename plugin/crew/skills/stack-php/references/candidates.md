@@ -103,8 +103,10 @@ under the owner's decision.
 Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
 2 public change sets, which do not count.
 
-HTML text and attributes use `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE,
-'UTF-8')`. Other contexts use their own encoder.
+HTML text and quoted attribute values use `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE,
+'UTF-8')`. An attribute value is always quoted, because in an unquoted attribute a space in the
+data starts a new attribute that this escaping leaves untouched. Event-handler and `style`
+attributes, URLs and JavaScript use their own encoders, or take no untrusted data.
 
 Public change sets: `sanskrit-e660dc37` (sanskrit-lexicon/csl-websanlexicon@e660dc37), where
 a security review found a query parameter echoed raw into an HTML attribute, and

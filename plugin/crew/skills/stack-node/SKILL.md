@@ -23,7 +23,8 @@ Playwright work is `stack-angular`'s and `stack-web`'s; `stack-web` also owns th
 - **A shell string is an injection sink.** `exec`/`execSync` and `shell: true` hand one string
   to `/bin/sh -c` or `cmd.exe`. Values from outside the code (paths, branch names, user text)
   go as an argv array to `execFile`/`spawn`. On Windows a `.cmd`/`.bat` target cannot run
-  without a shell, so it needs an explicit, quoted plan. (Candidate NODE-P1.)
+  without a shell, and quoting does not make outside input safe there: refuse it or hold it
+  to a strict allow-list. (Candidate NODE-P1.)
 - **`fetch` resolves on HTTP errors.** Branch on `res.ok`/`res.status` before treating the body
   as data; read an error body safely (text, JSON only if it is JSON) and throw with the status.
   An error response never becomes `[]`, `0` or "none found". (Candidate NODE-P2.)
@@ -67,7 +68,7 @@ summary line. A change to a child-process or HTTP path needs a test that drives 
 
 ```json
 {
-  "paths": ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.js", "**/*.mjs", "**/*.cjs", "package.json"],
+  "paths": ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.js", "**/*.mjs", "**/*.cjs", "**/package.json", "**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock"],
   "run": [
     "sh -c 'command -v npm >/dev/null 2>&1 || { echo \"TOOL MISSING: npm is not on PATH, so the test suite DID NOT RUN. This is a missing tool, not a passing or failing check. Install Node.js to check locally.\" >&2; exit 77; }; npm test'",
     "sh -c 'T=node_modules/.bin/tsc; [ -x \"$T\" ] || { echo \"TOOL MISSING: node_modules/.bin/tsc is not installed, so the type check DID NOT RUN. Install dependencies from the lockfile to check locally.\" >&2; exit 77; }; \"$T\" --noEmit'"

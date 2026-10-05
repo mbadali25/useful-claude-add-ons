@@ -54,7 +54,9 @@ Use `execFile`, `spawn` or `execFileSync` with an argv array and `shell: false` 
 for any command that carries a value from outside the code. Do not use `exec`/`execSync`,
 or a template literal with `shell: true`. A Windows `.cmd` or `.bat` target is the exception:
 it cannot be launched without `cmd.exe`, so an argument array alone does not make it safe.
-It needs an explicit plan, with every argument quoted for `cmd.exe` or the input refused.
+Quoting is not enough there, because embedded quotes can break out of it. Untrusted input is
+refused, or checked against a strict allow-list that admits no quotes and no `cmd.exe`
+metacharacters, before it reaches a batch file.
 
 Public leads: grimmerk/codev@897c2889 (CodeRabbit review, "use execFile instead of exec"; a
 second review fix one day later counts with it), iOfficeAI/AionUi@f192f772 (code review HIGH
