@@ -732,6 +732,11 @@ AUTOCLEAR_DEFAULTS = {
 # saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
 RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
+# T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
+UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
+    "profile": None, "identity": None, "region": None}, "nonProd": {}}}
+UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",), ("aws",)
+
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
 # `wtype` types into whatever currently has focus, which Wayland offers no way

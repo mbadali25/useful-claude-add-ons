@@ -27,6 +27,7 @@ never a ticket; `assign` comes with T-0019, `--goal` resume with L-0541). `sub=s
 `sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or
 `crew_autopilot.py wake --root .`, print its line, stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
 `ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
+Unattended cloud work is started by `crew_unattended.py launch -- claude ...` (README), never from a running session.
 
 ## 1. status
 

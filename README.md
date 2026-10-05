@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.2**: Unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse. `crew_unattended.py launch -- claude ...` starts an unattended session holding temporary, read-only cloud credentials for one identity the machine owner named, sealed against repo settings and credential stores, or refuses to start.
 - **crew 1.1.2**: Autopilot's docs phase and tracker step. Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.
-- **crew 1.1.2**: Inert settings are named, and `/crew:status --approvals` lists only what needs you. Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

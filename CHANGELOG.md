@@ -9,6 +9,58 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.2: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
+
+- **Summary.** `crew_unattended.py launch -- claude ...` starts an unattended session holding temporary, read-only cloud credentials for one identity the machine owner named, sealed against repo settings and credential stores, or refuses to start.
+- **Ported to release/1.2.0 (feature rush, PR #369).** Merged onto current code: `explain_config` keeps T-0050's personal-key rows beside the machine-only `unattendedCloud` rows; the four `unattendedCloud` leaves get `crew_keys.KEY_META` rows (T-0048 landed since; `since` is the placeholder 1.1.2, re-set at landing) and read `machine-only` in the generated layer column, and the generated CONFIG.md and configuration-reference tables are regenerated. The old troubleshooting DOCX/PDF renders (renamed since by C-0006) are not regenerated; the source and HTML carry the text. Not ported: the old branch's code-map and rules re-anchors.
+- New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
+  It starts an unattended Claude session with temporary AWS credentials for ONE identity the
+  machine owner named, no inherited `AWS_*` variable, IMDS off, `CREW_UNATTENDED=1`, a region-only
+  `AWS_CONFIG_FILE`, and `--settings` that turn the sandbox on with no escape hatch and deny every
+  credential store (`~/.aws` whole, `~/.azure`, `~/.terraform.d/credentials.tfrc.json`, crew's
+  machine config) to Bash and the file tools. Before it starts anything it proves the identity
+  comes from the machine file, the credentials are temporary with 15+ minutes left, `aws sts
+  get-caller-identity` returns the named role prefix, and a real sandboxed Bash probe cannot open
+  any store. "Could not tell" is its own `unknown` state and refuses; it never falls back to
+  ambient credentials and never writes or prints a credential. This is the boundary T-0005's
+  command-line guard cannot be.
+- New machine-only config block `unattendedCloud` (`~/.claude/crew/config.json` and
+  `templates/global.template.json` only). A repo copy is dropped from `resolve_config` and reported
+  as `repoIgnored` by `explain_config`. The defaults name nothing, so every launch refuses until the
+  owner names a role. Any provider other than `aws` refuses as not implemented.
+- Nothing existing changes behaviour: `cloud_guard.py`'s decisions, autopilot, auto-resume and
+  auto-clear are untouched. On a host where Claude Code's sandbox cannot run commands (the
+  AppArmor userns `apply-seccomp` error) every launch refuses with `sandbox: unavailable`.
+- Docs: plugin README ("Unattended runs: sealed cloud credentials"), CONFIG.md, `/crew:autopilot`,
+  crew-cloud and crew-setup skills, the troubleshooting guide (rebuilt HTML/DOCX/PDF), the code map
+  and the config data-flow diagram. `.crew/verify.json` maps the launcher to its suite.
+- Review fixes (Sonnet review of `ce400de3`): the session AND the probe now start as
+  `<claude> --settings <sealed> --setting-sources user`, from `--root`, with the same executable, so
+  a cloned repo's `.claude/settings.json`/`settings.local.json` never load (their
+  `sandbox.excludedCommands`, `allowRead`, hooks and `env` cannot reach the sealed session); a new
+  `settings` check also refuses a repo file with any `sandbox` key or `Read` allow rule, and a user
+  file with `sandbox.excludedCommands`, `filesystem.disabled: true` or an `allowRead` that could
+  re-open a store. The launcher `chdir`s to `--root` before `exec`. Every store is now denied for
+  writes too (`denyWrite`, `Edit(...)`), as are the sealed directory and the user settings file.
+  The stores add `~/.config/gcloud`, `~/.kube`, `~/.config/gh` and `~/.docker/config.json`, and the
+  environment drops `AZURE_*`, `ARM_*`, `CLOUDSDK_*`, `GOOGLE_*`, `TF_TOKEN_*`, `KUBECONFIG`,
+  `GITHUB_TOKEN`/`GH_TOKEN`, `DOCKER_CONFIG`/`DOCKER_AUTH_CONFIG` and friends (so `gh`, registry
+  pushes and `kubectl` have no credentials unattended, by design). The probe opens each store root
+  plus a bounded sample, prints indices with the nonce first and an end marker last, and no longer
+  refuses a store with many entries. A stale `crew-sealed-<pid>-*` directory is removed by the next
+  launch once its process has exited. Accepted residual risks are listed in the README.
+- Round-2 review fixes: a new `version` check (after `settings`) runs `<claude> --version` on the
+  same file the probe and the launch use and refuses as `unknown` below Claude Code 2.1.246 (where
+  `--setting-sources` starts keeping an excluded source's sandbox entries out), on output that does
+  not parse, a non-zero exit or a timeout. In a linked git worktree the settings check also reads
+  the main checkout's `.claude/settings.local.json` (Claude Code reads that file there), and a
+  `.git` file whose main checkout cannot be found is `unknown`. The stale-directory sweep's owner
+  check and its refusal to follow a symlink now have tests. README residuals add that the sweep
+  cannot see processes in another PID namespace sharing `/tmp`.
+- Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
+  and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
+  branch instead, and each turned its named test red.
+
 ### Added — crew 1.1.2: autopilot's docs phase and tracker step (T-0022)
 
 - **Summary.** Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.

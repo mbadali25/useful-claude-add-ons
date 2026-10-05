@@ -471,6 +471,49 @@ it *would* refuse before enforcing with `"block"`.
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through `--profile`/`--subscription` does.
 
+### Unattended launch refuses
+
+`crew_unattended.py launch -- claude ...` starts an unattended session holding sealed, owner-named
+cloud credentials, or refuses and starts nothing (plugin README, "Unattended runs: sealed cloud
+credentials"). Run `python3 "<crew>/hooks/scripts/crew_unattended.py" check --root .` to see every
+check without launching. Each line is `ready`, `refuse` or `unknown` (could not tell, which also
+refuses).
+
+- **`config: no read-only identity named`** (or `no unattendedCloud in the machine config`). The
+  defaults name nothing. **Fix:** name the read-only role in `~/.claude/crew/config.json`, never in
+  the repo (a repo copy is ignored and reported): set `unattendedCloud.aws.readOnly.profile` and
+  `unattendedCloud.aws.readOnly.identity`, the assumed-role ARN prefix ending in `/`.
+- **`config: environment X is not nonProd`** or **`no machine entry for nonProd environment X`.**
+  `--environment` needs both the repo's `environments.nonProd` to match the name and a machine
+  `unattendedCloud.aws.nonProd` entry for it. There is no production entry, by design.
+- **`provider not implemented`.** Only `aws` is read; remove the other key.
+- **`export: no SessionToken ...: these are static keys`.** The profile resolves to long-lived
+  keys. **Fix:** point it at an SSO or assume-role profile; crew never runs `aws sso login` for you.
+- **`export: credentials expire in under 15 minutes`** or `export ... exited`: refresh the
+  profile's session yourself (`aws sso login`), then retry.
+- **`identity: STS says ..., expected ...`.** The exported credentials are a different role than the
+  one named; a `:user/` ARN is a long-lived IAM user and always refuses. Fix the profile, or the
+  prefix if the role was renamed.
+- **`sandbox: unavailable: apply-seccomp: write /proc/self/setgroups ...`.** Claude Code's sandbox
+  starts but cannot run commands on this host (measured with
+  `kernel.apparmor_restrict_unprivileged_userns = 1`). Every launch refuses until the host owner
+  makes the sandbox usable or runs unattended work as a separate OS user or container.
+- **`settings: <file> sets sandbox`** or **`allows Read(...)`.** The repo's `.claude/settings.json`
+  or `.claude/settings.local.json` tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. **Fix:** remove the key
+  from the repo's file, or run that work attended.
+- **`settings: ... sandbox.excludedCommands`**, **`allowRead entry ... could re-open a credential
+  store`** or **`sandbox.filesystem.disabled`.** Your `~/.claude/settings.json` loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. **Fix:** move the entry out of
+  your user settings (or narrow the `allowRead` away from the stores), then retry.
+- **`sandbox: the session can read a store: OPEN <path>`.** The sealed settings did not hold for that
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.
+- **`sandbox: store not reported`, `could not tell`, `no end marker`, or `probe made no tool
+  call`.** The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.
+- **`refuse command: ...`.** `launch` runs `claude` only (an executable file or a name on `PATH`),
+  and supplies `--settings` and `--setting-sources` itself.
+
 ## Obsidian
 
 See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day to day:

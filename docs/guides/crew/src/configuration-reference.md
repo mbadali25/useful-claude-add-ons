@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**143 keys**: 83 settable in the machine-global file, 60 repo-only.
+**147 keys**: 87 settable in the machine-global file, 60 repo-only.
 
 Columns:
 
@@ -399,6 +399,15 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `route.enabled` | both | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_route.py`) | 1.0.42 | Route plain-text prompts to `/crew:` commands; only the JSON value `true` arms it. |
+
+### `unattendedCloud`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.2 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.2 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
+| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.2 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.2 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 

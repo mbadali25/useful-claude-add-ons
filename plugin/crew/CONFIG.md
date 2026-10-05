@@ -747,7 +747,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-83 of 143 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
+87 of 147 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -837,6 +837,10 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `autopilot.questions` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
+| `unattendedCloud.aws.readOnly.profile` | machine-only | profile name, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | ARN prefix ending in `/`, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.readOnly.region` | machine-only | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.nonProd` | machine-only | None (checked in `hooks/scripts/crew_unattended.py`) | `{}` |
 <!-- generated:config-keys-global end -->
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
@@ -871,7 +875,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-60 of 143 keys are repo-only (generated; 83 are global-settable, section 10).
+60 of 147 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -1956,8 +1960,9 @@ strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
 -e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
-and scripts. The real boundary is the credentials an unattended run holds,
-which is T-0044. README, "What the guard does not catch", lists the commands.
+and scripts. The real boundary is the credentials an unattended run holds:
+`crew_unattended.py launch` and `unattendedCloud` below. README, "What the
+guard does not catch", lists the commands.
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of
@@ -1998,6 +2003,52 @@ applies promote-gate's own rule (L-1503): it refuses a map either gate
 refuses and prints, under each dispatch, `gated-as:` - every environment
 whose `deploy` matches it under either gate, whose requirements all apply. A test
 table runs both real gates beside it on the same maps and commands.
+
+### `unattendedCloud` — the identity an unattended run holds (machine only)
+
+Read by `hooks/scripts/crew_unattended.py` (T-0044) from the machine file
+`~/.claude/crew/config.json` **alone**. It is in `default_global_config()` and
+`templates/global.template.json`, and absent from the repo shape: a repo's
+`.crew/config.json` copy is dropped by `resolve_config`, reported as
+`repoIgnored` by `/crew:config --show`, and named as ignored by the launcher. A
+repo travels inside a clone written by someone else, so it must never choose
+credentials on this machine — stronger than `resume.auto`, where a repo may at
+least veto.
+
+```json
+"unattendedCloud": {
+  "aws": {
+    "readOnly": {"profile": "ro", "identity": "arn:aws:sts::123456789012:assumed-role/ReadOnlyAccess/", "region": "eu-west-1"},
+    "nonProd": {"dev": {"profile": "dev-writer", "identity": "arn:aws:sts::123456789012:assumed-role/DevWriter/"}}
+  }
+}
+```
+
+- `identity` is the assumed-role ARN **prefix** exactly as `aws sts
+  get-caller-identity` prints it, ending in `/`. STS's ARN must start with it.
+- `profile` is the `~/.aws/config` profile `aws configure export-credentials`
+  exports; it must yield temporary credentials (`SessionToken` and
+  `Expiration`). `region` defaults to `us-east-1`.
+- `nonProd` maps an environment name to the same three keys, for
+  `launch --environment NAME`. A name is usable only when the repo's
+  `environments.nonProd` also classifies it as nonProd: both layers agree, as
+  with `prodUnattended`. There is no production entry and none can be written.
+- Any provider key other than `aws` refuses as not implemented (the provider
+  seam for Azure and TFC/HCP).
+
+The defaults name nothing (`profile`, `identity`, `region` all `null`,
+`nonProd` empty), so every launch refuses with `no read-only identity named`
+until the owner names one. README, "Unattended runs: sealed cloud
+credentials", lists every check and refusal.
+
+The launched session loads `~/.claude/settings.json` and the sealed
+`--settings` only (`--setting-sources user`): a repo's `.claude/settings.json`
+and `.claude/settings.local.json` never load, and the launcher refuses if
+either has a `sandbox` key or a `Read` allow rule. Your own settings file does
+load, so the launcher refuses while it sets `sandbox.excludedCommands`,
+`sandbox.filesystem.disabled: true`, or a `sandbox.filesystem.allowRead` entry
+that is a glob or sits at or under a credential store. Move such an entry to a
+settings file the unattended run does not need, or run that tool attended.
 
 ### The ratchet is one table, not five copies
 
