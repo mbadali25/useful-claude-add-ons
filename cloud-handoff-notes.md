@@ -24,7 +24,7 @@ main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | review 1 BLOCK (combined pytest = one session; subset hides cross-suite breaks) + 2 FIX (lint config files; unpinned !cancelled()) -> builder fixing | re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | re-review running; then batch 7 |
+| T-0020 #357 | `T-0020-build` 50a0104b | reworked: explicit focus marker (autopilot-focus.json), unknown marker refuses; Windows green; only red = missing bump (by design) | re-review 0 BLOCK 2 FIX (no way out on corrupt marker; unlocked read-modify-write loses focus, fails open) -> builder fixing + merging main 47f71e93 | re-check, batch 7 |
 | Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
 | Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
 | Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
@@ -47,7 +47,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:08 UTC
+Last updated: 2026-10-05 03:12 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +106,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 03:45: #357 re-review 0 BLOCK 2 FIX: F1 unknown marker gives no removal command and points to focus off which refuses; F2 concurrent focus loses an entry and the guard fails open (re-read insufficient, lock required). No-marker behaviour byte-identical to main (34 inputs); full crew suite 11664 passed. Sent fixes + main merge to builder. N3 (plain-text 'focus on T-1' writes marker) kept, owner informed.
 - 03:35: MERGED batch 6 #502 -> 47f71e93 (crew 1.0.348); #500 #348 #338 #361 show merged. CI 28/28 incl. 6+3 Windows; full crew suite 12358 passed. LANDPREP: full crew suite required on batch branches.
 - 03:20: #501 review 1 BLOCK 2 FIX: combined pytest is one session (dup basenames / gizmoduck pytest.ini as configfile) so subset runs hide breaks; ruff/pylint config not lint-selecting; !cancelled() unpinned. Sent to builder. Minted C-0005 (4 suites run by no workflow).
 - 03:10: T-0020 #357 reworked to explicit focus (50a0104b), Windows green, sabotage: pointer-as-focus -> 55 route tests red. Accepted its 1-line test_crew_route edit (focus leaves _RESERVED). Re-review started (incl. trap check: refusal on corrupt marker must name the file + fix).
