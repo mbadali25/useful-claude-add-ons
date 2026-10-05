@@ -353,7 +353,8 @@ GHDEPLOY_MUTATIONS = (
      _R.format("snapshot-unreadable")),
     ("ghdeploy prepare: a classifier crash is a pass", GH,
      "        raise Refused(\"classifier-failed\", f\"the dispatch classifier failed: \"\n",
-     "        return crew_dispatch.ENV_NONPROD\n        raise Refused(\"classifier-failed\", f\"the dispatch classifier failed: \"\n",
+     "        return crew_dispatch.ENV_NONPROD\n        raise Refused(\"classifier-failed\", f\"t"
+     "he dispatch classifier failed: \"\n",
      _T + "test_prepare_classifier_crash_refuses"),
     ("ghdeploy prepare: an environment name may leave the state directory", GH,
      '    if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]*", env) is None:\n',
@@ -634,7 +635,8 @@ GHDEPLOY_MUTATIONS = (
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-ps1]"),
     ("promote-gate.sh reads a malformed github as no github", SH,
      '            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n',
-     '            pass\n        if False:\n            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n',
+     '            pass\n        if False:\n            unreadable(f"environment `{name}` in .cre'
+     'w/verify.json has a `github` "\n',
      _G + 'test_a_malformed_github_value_refuses_the_map[string-sh]'),
     ("promote-gate.ps1 reads a malformed github as no github", PS1,
      "    if (-not $ghOk) {\n",
@@ -646,7 +648,8 @@ GHDEPLOY_MUTATIONS = (
      _G + "test_another_dispatchs_sha_input_does_not_stand_in[sh]"),
     ("promote-gate: github null reads as no github", GHRULE,
      "    github = get_ci(cfg, \"github\", _ABSENT) if isinstance(cfg, dict) else _ABSENT\n",
-     "    github = get_ci(cfg, \"github\", None) if isinstance(cfg, dict) else None\n    github = _ABSENT if github is None else github\n",
+     "    github = get_ci(cfg, \"github\", None) if isinstance(cfg, dict) else None\n    github "
+     "= _ABSENT if github is None else github\n",
      _G + "test_the_helper_alone_refuses_a_null_github"),
     ("promote-gate.sh: github null reads as no github", SH,
      '        has_github = any(fold(k) == fold("github") for k in cfg)\n',
@@ -658,7 +661,8 @@ GHDEPLOY_MUTATIONS = (
      _G + "test_a_malformed_github_value_refuses_the_map[null-ps1]"),
     ("promote-gate: a shaInput that names no input switches the rule off", GHRULE,
      "    if not isinstance(name, str) or not name:\n        return (f\"the `github` entry's `shaInput`",
-     "    if not isinstance(name, str) or not name:\n        return None\n        return (f\"the `github` entry's `shaInput`",
+     "    if not isinstance(name, str) or not name:\n        return None\n        return (f\"the"
+     " `github` entry's `shaInput`",
      _G + "test_a_sha_input_that_names_no_input_blocks[number-sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
     ("promote-gate: the sha rule compares against the project dir's HEAD", SH,

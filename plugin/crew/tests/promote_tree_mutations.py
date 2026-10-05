@@ -207,11 +207,15 @@ PROMOTE_TREE_MUTATIONS = (
      '            return all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
      _R + "[pass-then-fail-sh]"),
     ("promote-gate.ps1 returns on the first matching row again (fail then pass)", PS1,
-     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }\n",
-     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' })\n",
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq '"
+     "pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'p"
+     "ass') { 'pass' } else { 'fail' })\n",
      _R + "[fail-then-pass-ps1]"),
     ("promote-gate.ps1 returns on the first matching row again (pass then fail)", PS1,
-     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }\n",
-     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' })\n",
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq '"
+     "pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'p"
+     "ass') { 'pass' } else { 'fail' })\n",
      _R + "[pass-then-fail-ps1]"),
 )
