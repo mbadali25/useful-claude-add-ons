@@ -381,9 +381,9 @@ Columns:
 | `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
 | `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 | `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
-| `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.348 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
-| `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.348 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
-| `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.348 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
+| `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.349 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
+| `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
 
 ### `tickets`
 

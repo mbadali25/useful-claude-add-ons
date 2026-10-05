@@ -1701,7 +1701,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>"merge"</code></td>
 <td><code>pr</code> | <code>merge</code></td>
-<td>1.0.348</td>
+<td>1.0.349</td>
 <td>After <code>/crew:done</code>: <code>pr</code> pushes and opens the PR; <code>merge</code> also merges it (a merge commit) once the required checks allow. Anything else reads as <code>pr</code>, with a warning.</td>
 </tr>
 <tr>
@@ -1709,7 +1709,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>[]</code></td>
 <td>list of check names (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.348</td>
+<td>1.0.349</td>
 <td>Required checks whose <code>fail</code> does not block a merge, matched by exact name; anything but a list of strings reads as <code>[]</code>, with a warning.</td>
 </tr>
 <tr>
@@ -1717,7 +1717,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>60</code></td>
 <td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.348</td>
+<td>1.0.349</td>
 <td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
 </tr>
 </tbody>

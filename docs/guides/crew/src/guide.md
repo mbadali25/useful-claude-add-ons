@@ -262,7 +262,7 @@ Plan approval and open questions stop too, unless `autopilot.approval` and
 `scope.allowCliApproval: true` in the repo file, even under a machine-wide
 `autopilot.approval: self`; an open question does not.
 
-After done, autopilot ships the ticket (since crew 1.0.348). `autopilot.ship`
+After done, autopilot ships the ticket (since crew 1.0.349). `autopilot.ship`
 set to `pr` pushes the branch and opens a pull request, then stops for a
 person to merge. Set to `merge`, the default, it also merges once every
 required check passes, or fails under a name listed exactly in

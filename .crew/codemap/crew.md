@@ -833,7 +833,7 @@ JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
 
-**Ship (T-0011, crew 1.0.348).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
+**Ship (T-0011, crew 1.0.349).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
 with `grep -n`); the line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
 (spec header `status: done`, or INDEX `done` with that header), armed, `_phase` hands off to
 `_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:610`): unarmed is `closed` without
@@ -861,13 +861,13 @@ Since batch 7 the part that reads no review ledger - `ship_decision`, the gh/git
 (crew_autopilot.py had passed pylint's 3400-line cap), and `_run_gh`/`_push` run
 `crew_common.require_tool`'s path (L-1508); the cites above are T-0011's, before the move.
 
-**Worktree-aware reads and `commit-refresh` (T-0063, crew 1.0.348).** DERIVED on T-0063-build
+**Worktree-aware reads and `commit-refresh` (T-0063, crew 1.0.349).** DERIVED on T-0063-build
 at `309575c2`; its line numbers are that commit's, not the anchor's. `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:530`) first asks `_main_folder`
 (`:353`, called at `:544`): a ticket folder only in the main checkout stops as phase
 `folder-elsewhere`, its reason the `cp -r` to make, both paths `shlex.quote`d (`_folder_elsewhere` `:365`);
 with no folder here and a main checkout `_main_checkout` could not name, the same phase stops
 saying it could not tell whether the folder is in the main checkout, with `why` (review FIX 1,
-crew 1.0.348); `resume_target` asks the same at `:852`. The folder is named, never read: `crew_ticket.ticket_dir` and the
+crew 1.0.349); `resume_target` asks the same at `:852`. The folder is named, never read: `crew_ticket.ticket_dir` and the
 scope guard keep reading this checkout's. The INDEX row is `_index_row` (`:329`, called at
 `:552`): this checkout's row (`_index_status` `:291`, now taking an `index_path`), else the main
 checkout's, whose path comes from `_main_checkout` (`:303`: `(None, "")` with no subprocess when
@@ -1600,7 +1600,7 @@ whole answer `unknown`, and every artifact measured against that base with it
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- **`fresh` means current and committed (T-0063, crew 1.0.348).** DERIVED on T-0063-build at `309575c2`; its line numbers are that
+- **`fresh` means current and committed (T-0063, crew 1.0.349).** DERIVED on T-0063-build at `309575c2`; its line numbers are that
   commit's, not the anchor's.
   `ticket_freshness` lists the uncommitted paths under `refresh_artifact_paths` with
   `_uncommitted` (`plugin/crew/hooks/scripts/crew_refresh_check.py:451`, called at `:1470`):

@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew — batch 7: T-0020, T-0011, T-0063
+### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
 - **Summary.** Three autopilot changes in one update: `/crew:autopilot focus` locks it onto one ticket
   until you release it, autopilot can push, open and (only when every required check allows) merge a
