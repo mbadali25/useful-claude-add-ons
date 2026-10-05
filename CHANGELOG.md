@@ -79,7 +79,10 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   before a stop is recorded even when the stop does not name it. Round 3:
   `parse_slices` refuses steps listed out of order (`Steps: 1, 3, 2`) and a
   stacked slice whose base chain leaves out an earlier slice it shares (or may
-  share) Files with.
+  share) Files with. Round 4: a merged slice PR counts as shipped only when it
+  merged into a base the plan could name (the default branch, its recorded
+  base, an earlier slice's branch); two Step headings with one number are
+  refused.
 
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 

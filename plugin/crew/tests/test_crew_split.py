@@ -2037,3 +2037,15 @@ def test_stacked_slice_must_carry_every_earlier_slice_it_shares_files_with():
     _, problems = crew_split.parse_slices(plan)
 
     assert any("leaves out slice 2" in p for p in problems), problems
+
+
+
+def test_duplicate_step_headings_refused():
+    """T-0058/T-0059 port review FIX: two `### Step 1` headings merge into one
+    block; the partition cannot account for them separately."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("### Step 2: step 2", "### Step 1: again")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("step 1 has more than one Step heading" in p for p in problems), problems

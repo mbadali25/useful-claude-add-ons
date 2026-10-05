@@ -463,7 +463,8 @@ def _ship_phase(top, ticket, answer, why, ctx=None):
                       "failed: gh missing, not authenticated, no remote, or an answer that "
                       "is not a PR) - a human looks")
     state = pr["state"]
-    wrong = sl.expected_base_stop(top, ctx, branch) if ctx and state == "OPEN" else ""
+    wrong = (sl.expected_base_stop(top, ctx, branch) if ctx and state == "OPEN" else
+             sl.merged_base_stop(top, ctx, branch) if ctx and state == "MERGED" else "")
     if wrong:
         return answer("ship", True, wrong)
     if state == "MERGED":

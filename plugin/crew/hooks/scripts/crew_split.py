@@ -1348,6 +1348,12 @@ def parse_slices(plan_text):
     blocks = _step_blocks(text)
     step_files = {n: crew_ticket.parse_plan(block)[0] for n, block in blocks.items()}
     slices, problems = [], []
+    # Two `Step N` headings with one number merge into one block above: the
+    # partition could not account for them separately, so it is refused.
+    numbers = [int(m.group(1)) for line in text.splitlines()
+               for m in [_PLAN_STEP_RE.match(line)] if m]
+    problems += [f"step {n} has more than one Step heading" for n in
+                 sorted({n for n in numbers if numbers.count(n) > 1})]
     for n, name, lines in section:
         fields = {}
         for line in lines:

@@ -544,12 +544,28 @@ def test_merged_non_final_slice_names_next_slice(tmp_path, monkeypatch):
     root, _, _, _ = _ship_env(tmp_path, monkeypatch)
     head = git(root, "rev-parse", "HEAD").strip()
     monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
-        pr_view=_view(_pr("MERGED", number=11, head=head))))
+        pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="main")),
+        repo_view=MAIN))
 
     got = _next(root)
 
     assert (got["phase"], got["stop"], got["command"]) == (
         "next-slice", False, f"crew_autopilot.py next-slice --ticket {T}")
+
+
+def test_merged_slice_pr_on_another_base_is_not_shipped(tmp_path, monkeypatch):
+    """T-0059 port review r4 BLOCK: a slice PR retargeted and then merged
+    elsewhere did not reach its base; next stops instead of moving on."""
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch)
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="develop")),
+        repo_view=MAIN))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "merged into develop" in got["reason"]) == (
+        "ship", True, True), got
 
 
 def test_open_non_final_slice_under_pr_names_next_slice(tmp_path, monkeypatch):
@@ -582,7 +598,8 @@ def _next_slice_env(tmp_path, monkeypatch, **block):
     head = git(root, "rev-parse", "HEAD").strip()
     _state(root, current=1, done=[1], shipped=[_shipped(1, BRANCH, merge_sha="c" * 40)])
     monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
-        pr_view=_view(_pr("MERGED", number=11, head=head)), repo_view=MAIN))
+        pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="main")),
+        repo_view=MAIN))
     return root
 
 

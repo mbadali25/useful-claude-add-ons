@@ -276,6 +276,30 @@ def expected_base_stop(top, ctx, branch):
     return pr_base_stop(top, branch, base)
 
 
+def merged_base_stop(top, ctx, branch):
+    """A merged slice PR counts as shipped only when it merged into a branch
+    the plan could have based it on: the default branch, the base recorded
+    when it shipped, or an earlier slice's branch (a stacked base that may
+    have merged on since). The reason it did not, or "" ; could not read is
+    a stop too."""
+    if ctx.get("error"):
+        return ctx["error"]
+    default = crew_ship._default_branch(top)  # pylint: disable=protected-access
+    entry = _shipped_entry(ctx, ctx["piece"]["n"]) or {}
+    n = ctx["piece"]["n"]
+    allowed = {default, entry.get("base")} | {
+        b for k, b in (slice_branches(ctx) or {}).items() if k < n}
+    allowed.discard(None)
+    view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
+    found = view.get("baseRefName") if isinstance(view, dict) else None
+    if not default or not isinstance(found, str) or not found:
+        return f"could not read where {branch}'s merged PR was merged, or the default branch"
+    if found not in allowed:
+        return (f"{branch}'s PR merged into {found}, not a base the plan names "
+                f"({', '.join(sorted(allowed))}) - the slice did not reach its base; a person looks")
+    return ""
+
+
 def pr_base_stop(top, branch, base):
     """The reason an existing PR for `branch` may not ship, or "": its base
     must be the plan's (`slice_base`). A retargeted or hand-opened PR would
