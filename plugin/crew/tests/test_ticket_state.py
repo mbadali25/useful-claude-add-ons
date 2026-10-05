@@ -149,6 +149,21 @@ def test_unreadable_spec_is_unknown_not_unblocked(tmp_path):
     assert got["blocked"] is None
 
 
+def test_open_row_and_a_closing_prose_line_disagree_and_are_unknown(tmp_path):
+    root = _repo(tmp_path, "| T-0002 | open | low | r | t |\n\n- Done: T-0002\n")
+    state, reason = crew_ticket_state.dependency_state(str(root), "T-0002")
+    assert (state, "cannot tell" in reason) == ("unknown", True)
+
+
+def test_unrecognised_ledger_state_is_not_read_as_no_replan(tmp_path):
+    root = _repo(tmp_path)
+    _spec(root, T)
+    _ledger(root, T, json.dumps({"state": "UNRECOGNIZED", "rounds": []}))
+    got = _view(root)
+    assert got["needs_replan"] is None
+    assert any("UNRECOGNIZED" in p for p in got["problems"])
+
+
 def test_missing_spec_is_unknown_not_unblocked(tmp_path):
     root = _repo(tmp_path)
     got = _view(root)

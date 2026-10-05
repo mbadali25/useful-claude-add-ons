@@ -43,6 +43,7 @@ import os
 import re
 
 import crew_common
+import crew_state
 import crew_ticket
 import review_ledger
 
@@ -53,6 +54,10 @@ GATING_STATUSES = ("hold", "landing", "needs-owner") + CLOSING_STATUSES
 # A dependency's spec header that says it is finished, when it has no INDEX row.
 HEADER_CLOSED = ("done", "merged")
 CANNOT_TELL = "cannot tell"
+# Ledger states that say "no replan": `EMPTY` is `review_ledger.summary`'s word
+# for a ledger with no state yet. Any other word but NEEDS_REPLAN cannot tell.
+LEDGER_NOT_REPLAN = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
+                     review_ledger.ACCEPTED)
 
 _DEPENDS_RE = re.compile(r"^depends-on:\s*(.*?)\s*$", re.IGNORECASE)
 
@@ -153,6 +158,9 @@ def dependency_state(top, dep):
     closed, why = crew_ticket._index_closed(top, dep)  # pylint: disable=protected-access
     if closed is None:
         return "unknown", f"{CANNOT_TELL} whether {dep} is closed: {why}"
+    if closed and found and cell not in crew_state._TABLE_DONE_WORDS:  # pylint: disable=protected-access
+        return "unknown", (f"{CANNOT_TELL} whether {dep} is closed: its {_rel_index()} row says "
+                           f"`{cell}` and a prose line there marks it closed")
     if closed:
         return "closed", f"{dep} is {cell or 'closed'} in {_rel_index()}"
     if found:
@@ -176,10 +184,14 @@ def _needs_replan(top, ticket, problems):
     except (review_ledger.LedgerError, OSError, ValueError) as exc:
         problems.append(f"needs-replan: {CANNOT_TELL}, the review ledger could not be read ({exc})")
         return None
-    if state == review_ledger.UNKNOWN:
-        problems.append(f"needs-replan: {CANNOT_TELL}, the review ledger could not be read")
-        return None
-    return state == review_ledger.NEEDS_REPLAN
+    if state == review_ledger.NEEDS_REPLAN:
+        return True
+    if state in LEDGER_NOT_REPLAN:
+        return False
+    problems.append(f"needs-replan: {CANNOT_TELL}, the review ledger "
+                    + ("could not be read" if state == review_ledger.UNKNOWN
+                       else f"has a state crew does not know ({state!r})"))
+    return None
 
 
 def view(top, ticket):
