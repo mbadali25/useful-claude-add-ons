@@ -14,6 +14,31 @@ set -uo pipefail   # deliberately no -e: try_install isolates failures itself
 
 FAILED=()
 
+# Install locations. The defaults are the real ones; the test suite points
+# them at a throwaway directory so it can run the real download / verify /
+# unpack steps without touching the machine.
+BIN_DIR="${GIZMODUCK_BIN_DIR:-/usr/local/bin}"
+OPT_DIR="${GIZMODUCK_OPT_DIR:-/opt}"
+APT_LISTS_DIR="${GIZMODUCK_APT_LISTS_DIR:-/var/lib/apt/lists}"
+
+# Time limits, so a stalled network fails one step instead of hanging the
+# whole bootstrap (and a cloud session's setup phase with it). API calls are
+# small; downloads include ZAP's ~286MB zip, hence the long ceiling.
+CURL_API=(--connect-timeout 20 --max-time 60)
+CURL_DL=(--connect-timeout 20 --max-time 1800)
+
+# Runs git with a low-speed abort (under 1000 B/s for 30s) and, where
+# coreutils' `timeout` exists, a hard ceiling of $1 seconds. Without `timeout`
+# it still runs, with only the low-speed abort.
+git_net() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 timeout "$secs" git "$@"
+  else
+    GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git "$@"
+  fi
+}
+
 # Runs $2.. as a function, in a subshell with its own `set -e` so a failing
 # command inside it aborts just that one install instead of the whole script.
 # The subshell's exit status is what the `if` below tests, so -e in the
@@ -44,14 +69,14 @@ try_install() {
 # 1, leaving try_install's isolation to carry on with the rest.
 resolve_latest_tag() {
   local repo="$1" tool="$2" ver=""
-  ver=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+  ver=$(curl -fsSL "${CURL_API[@]}" "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
         | grep '"tag_name"' | head -1 | cut -d'"' -f4) || ver=""
   if [[ -n "$ver" ]]; then
     printf '%s\n' "$ver"
     return 0
   fi
   echo ">> ${tool}: GitHub API lookup failed - trying git tags of github.com/${repo}" >&2
-  ver=$(git ls-remote --tags --refs "https://github.com/${repo}.git" 2>/dev/null \
+  ver=$(git_net 120 ls-remote --tags --refs "https://github.com/${repo}.git" 2>/dev/null \
         | sed -n 's#^.*refs/tags/##p' \
         | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
         | awk '{ n = $0; sub(/^v/, "", n); print n, $0 }' \
@@ -66,16 +91,50 @@ resolve_latest_tag() {
   return 1
 }
 
-# Idempotency: a tool whose command is already on PATH is reported and
+# Idempotency: a tool that is on PATH AND passes a probe is reported and
 # skipped, so re-running this script (or a cloud session's setup script
-# running it on every start) does not re-download hundreds of MB. Set
+# running it on every start) does not re-download hundreds of MB. The probe
+# is `<cmd> --version` unless $3 names a function to call with the path
+# instead; existence alone is not trusted, so a zero-byte binary or a
+# half-unpacked install fails the probe and is reinstalled. Set
 # GIZMODUCK_BOOTSTRAP_FORCE=1 to reinstall/upgrade everything anyway.
 already_installed() {
-  local name="$1" cmd="$2" path
+  local name="$1" cmd="$2" probe="${3:-}" path
   [[ "${GIZMODUCK_BOOTSTRAP_FORCE:-}" == 1 ]] && return 1
   path=$(command -v "$cmd" 2>/dev/null) || return 1
+  # An empty file with +x "runs" (bash treats it as an empty script, exit 0),
+  # so a zero-byte leftover would pass any probe - check size first.
+  if [[ ! -s "$path" ]]; then
+    echo ">> ${name}: ${path} is empty - reinstalling"; return 1
+  fi
+  if [[ -n "$probe" ]]; then
+    "$probe" "$path" >/dev/null 2>&1 || {
+      echo ">> ${name}: ${path} is present but fails its check - reinstalling"; return 1; }
+  else
+    "$path" --version >/dev/null 2>&1 || {
+      echo ">> ${name}: ${path} is present but '--version' fails - reinstalling"; return 1; }
+  fi
   echo ">> ${name}: already installed (${path}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 reinstalls"
   return 0
+}
+
+# Checks $2, a file in directory $1, against its line in checksums file $3
+# (same directory, `sha256sum` format). The line is matched on its exact file
+# name field, so foo.zip never picks up foo.zip.sig's hash. No line, or a
+# mismatch, refuses: nothing unverified gets installed.
+verify_sha256() {
+  local dir="$1" file="$2" sums="$3" want got
+  want=$(awk -v f="$file" '$2 == f || $2 == "*" f { print $1; exit }' "$dir/$sums" 2>/dev/null)
+  if [[ -z "$want" ]]; then
+    echo "!! ${file}: no checksum line in ${sums} - refusing to install it" >&2
+    return 1
+  fi
+  got=$(sha256sum "$dir/$file" | cut -d' ' -f1)
+  if [[ "$want" != "$got" ]]; then
+    echo "!! ${file}: sha256 mismatch (expected ${want}, got ${got}) - refusing to install it" >&2
+    return 1
+  fi
+  echo ">> ${file}: sha256 OK"
 }
 
 # Every apt-get call goes through these two. The options:
@@ -93,7 +152,17 @@ apt_get() {
   sudo apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600 "$@"
 }
 
+apt_lists_present() {
+  compgen -G "${APT_LISTS_DIR}/*_Packages*" >/dev/null
+}
+
 apt_install() {
+  # Package lists can be empty (a fresh image, or one that just ran `clean`
+  # and a lists purge); install would then fail with "Unable to locate
+  # package", so refresh them first. Each tool installs in its own subshell,
+  # so a flag would not survive between them - the lists themselves are the
+  # record.
+  apt_lists_present || apt_get update -y || return
   # Explicit `|| return`: a caller like `cmd || apt_install x` runs this with
   # set -e suspended, and a failed install must not be masked by a clean that
   # succeeds. A failed clean only costs disk, so it warns and moves on.
@@ -117,7 +186,7 @@ install_prereqs() {
 }
 
 install_nuclei() {
-  already_installed nuclei nuclei && return 0
+  already_installed nuclei nuclei probe_nuclei && return 0
   local arch
   case "$(uname -m)" in
     x86_64|amd64) arch=amd64 ;;
@@ -128,7 +197,8 @@ install_nuclei() {
   local ver
   ver=$(resolve_latest_tag projectdiscovery/nuclei "nuclei") || return 1
   local num="${ver#v}"
-  local zip="nuclei_${num}_linux_${arch}.zip"
+  local zip="nuclei_${num}_linux_${arch}.zip" sums="nuclei_${num}_checksums.txt"
+  local base="https://github.com/projectdiscovery/nuclei/releases/download/${ver}"
 
   # Stage under /opt (where the rest of gizmoduck's manually-installed tools
   # already live) instead of /tmp - /tmp is world-writable and the most
@@ -136,18 +206,21 @@ install_nuclei() {
   # download shouldn't sit there even briefly. Nuclei's only permanent home
   # is the single /usr/local/bin/nuclei binary, so this staging dir is
   # scratch space, not a destination - remove it once the binary is moved.
-  local stage=/opt/gizmoduck-nuclei-download
+  local stage="${OPT_DIR}/gizmoduck-nuclei-download"
   sudo rm -rf "$stage"
   sudo mkdir -p "$stage"
-  sudo curl -fsSL -o "$stage/$zip" \
-    "https://github.com/projectdiscovery/nuclei/releases/download/${ver}/${zip}"
+  sudo curl -fsSL "${CURL_DL[@]}" -o "$stage/$zip" "$base/$zip"
+  sudo curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
+  verify_sha256 "$stage" "$zip" "$sums" || { sudo rm -rf "$stage"; return 1; }
   sudo unzip -oq "$stage/$zip" -d "$stage"
-  sudo mv "$stage/nuclei" /usr/local/bin/nuclei
-  sudo chmod +x /usr/local/bin/nuclei
+  sudo mv "$stage/nuclei" "${BIN_DIR}/nuclei"
+  sudo chmod +x "${BIN_DIR}/nuclei"
   sudo rm -rf "$stage"
 
-  echo ">> installed: $(nuclei -version 2>&1 | head -1)"
+  echo ">> installed: $("${BIN_DIR}/nuclei" -version 2>&1 | head -1)"
 }
+
+probe_nuclei() { "$1" -version; }
 
 update_nuclei_templates() {
   # NOT run through try_install, and this is deliberate - do not "fix" it into
@@ -158,15 +231,25 @@ update_nuclei_templates() {
   # Success is judged by templates actually being on disk, not by the exit
   # code: where api.github.com is refused, `nuclei -update-templates` exits 0
   # having downloaded nothing (measured in the Claude Code cloud sandbox with
-  # nuclei v3.11.1 - an empty ~/nuclei-templates and rc 0). In that case the
-  # same release is cloned with git, which those networks still allow.
+  # nuclei v3.11.1 - an empty ~/nuclei-templates and rc 0). Only when NO
+  # templates are on disk is the same release cloned with git, which those
+  # networks still allow. A failed update over existing templates keeps them.
+  if ! command -v nuclei >/dev/null 2>&1; then
+    echo "!! the nuclei engine is not installed, so there is nothing to fetch" >&2
+    echo "!! templates for. Fix the nuclei install above and re-run." >&2
+    exit 1
+  fi
   echo ">> downloading Nuclei community templates..."
-  local tdir
+  local tdir rc=0
   tdir=$(nuclei_templates_dir)
-  if nuclei -update-templates -silent && nuclei_templates_present "$tdir"; then
+  nuclei -update-templates -silent || rc=$?
+  if nuclei_templates_present "$tdir"; then
+    if [[ $rc -ne 0 ]]; then
+      echo "!! nuclei -update-templates failed (exit ${rc}); keeping the existing templates in ${tdir}" >&2
+    fi
     return 0
   fi
-  echo ">> nuclei -update-templates left no templates in ${tdir} - trying git clone" >&2
+  echo ">> no templates in ${tdir} after nuclei -update-templates (exit ${rc}) - trying git clone" >&2
   if clone_nuclei_templates "$tdir" && nuclei_templates_present "$tdir"; then
     echo ">> nuclei templates cloned to ${tdir}"
     return 0
@@ -191,17 +274,32 @@ nuclei_templates_present() {
   [[ -n "$(find "$1" -name '*.yaml' -print -quit 2>/dev/null)" ]]
 }
 
-# Clones the newest stable nuclei-templates release into $1. Only called when
-# $1 holds no templates at all, so replacing it loses nothing.
+# Clones the newest stable nuclei-templates release and moves it to $1 -
+# but only if $1 is missing or holds no files at all. The path comes from a
+# user-editable config, so this never deletes anything that is a file: the
+# clone goes into a sibling temp dir first, only empty directories in $1 are
+# removed, and if any file remains the clone is discarded and $1 is left as
+# it was.
 clone_nuclei_templates() {
-  local tdir="$1" tag new
+  local tdir="$1" tag tmp
   tag=$(resolve_latest_tag projectdiscovery/nuclei-templates "nuclei templates") || return 1
-  new="${tdir}.gizmoduck-clone"
-  rm -rf "$new"
-  git -c advice.detachedHead=false clone -q --depth 1 --branch "$tag" \
-    https://github.com/projectdiscovery/nuclei-templates.git "$new" || { rm -rf "$new"; return 1; }
-  rm -rf "$tdir"
-  mv "$new" "$tdir"
+  mkdir -p "$(dirname "$tdir")" || return 1
+  tmp=$(mktemp -d "${tdir%/}.gizmoduck-clone.XXXXXX") || return 1
+  if ! git_net 900 -c advice.detachedHead=false clone -q --depth 1 --branch "$tag" \
+      https://github.com/projectdiscovery/nuclei-templates.git "$tmp/t"; then
+    rm -rf "$tmp"   # our own temp dir, never the user's
+    return 1
+  fi
+  if [[ -e "$tdir" ]]; then
+    find "$tdir" -depth -type d -empty -delete 2>/dev/null
+    if [[ -e "$tdir" ]]; then
+      echo "!! ${tdir} holds files but no templates - not replacing it." >&2
+      echo "!! Move them aside (or point nuclei elsewhere) and re-run." >&2
+      rm -rf "$tmp"
+      return 1
+    fi
+  fi
+  mv "$tmp/t" "$tdir" && rmdir "$tmp"
 }
 
 install_nmap() {
@@ -215,24 +313,29 @@ install_nikto() {
 }
 
 install_testssl() {
+  # testssl.sh refuses to run at all without hexdump ("Fatal error: You need
+  # to install hexdump"), and Ubuntu 24.04 moved it to bsdextrautils, which a
+  # minimal image lacks (measured in the Claude Code cloud image).
+  command -v hexdump >/dev/null 2>&1 || apt_install bsdextrautils
   already_installed testssl.sh testssl.sh && return 0
-  local dir=/opt/testssl.sh
+  local dir="${OPT_DIR}/testssl.sh"
   if [[ -d "$dir/.git" ]]; then
-    sudo git -C "$dir" pull --ff-only
+    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
     sudo rm -rf "$dir"
-    sudo git clone --depth 1 https://github.com/drwetter/testssl.sh.git "$dir"
+    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+      git clone --depth 1 https://github.com/drwetter/testssl.sh.git "$dir"
   fi
   sudo chmod +x "$dir/testssl.sh"
-  sudo ln -sf "$dir/testssl.sh" /usr/local/bin/testssl.sh
+  sudo ln -sf "$dir/testssl.sh" "${BIN_DIR}/testssl.sh"
 }
 
 install_trivy() {
   already_installed trivy trivy && return 0
   # Official install script (documented at trivy.dev) - resolves the latest
   # release and puts the binary on the given path itself.
-  if curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-      | sudo sh -s -- -b /usr/local/bin; then
+  if curl -sfL "${CURL_API[@]}" https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+      | sudo sh -s -- -b "${BIN_DIR}"; then
     return 0
   fi
   # That script looks the release up on github.com/<repo>/releases/<tag>,
@@ -257,17 +360,17 @@ install_trivy_asset() {
   local base="https://github.com/aquasecurity/trivy/releases/download/${ver}"
 
   # Stage under /opt, not /tmp - see install_nuclei for why.
-  local stage=/opt/gizmoduck-trivy-download
+  local stage="${OPT_DIR}/gizmoduck-trivy-download"
   sudo rm -rf "$stage"
   sudo mkdir -p "$stage"
-  sudo curl -fsSL -o "$stage/$tgz" "$base/$tgz"
-  sudo curl -fsSL -o "$stage/$sums" "$base/$sums"
-  ( cd "$stage" && grep " ${tgz}\$" "$sums" | sudo sha256sum -c - )
+  sudo curl -fsSL "${CURL_DL[@]}" -o "$stage/$tgz" "$base/$tgz"
+  sudo curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
+  verify_sha256 "$stage" "$tgz" "$sums" || { sudo rm -rf "$stage"; return 1; }
   sudo tar -xzf "$stage/$tgz" -C "$stage" trivy
-  sudo mv "$stage/trivy" /usr/local/bin/trivy
-  sudo chmod +x /usr/local/bin/trivy
+  sudo mv "$stage/trivy" "${BIN_DIR}/trivy"
+  sudo chmod +x "${BIN_DIR}/trivy"
   sudo rm -rf "$stage"
-  echo ">> installed: $(trivy --version 2>&1 | head -1)"
+  echo ">> installed: $("${BIN_DIR}/trivy" --version 2>&1 | head -1)"
 }
 
 install_checkov() {
@@ -292,12 +395,12 @@ install_depcheck() {
 
   # Stage next to the extraction target (/opt) instead of /tmp - see
   # install_nuclei above for why.
-  sudo curl -fsSL -o "/opt/$zip" \
+  sudo curl -fsSL "${CURL_DL[@]}" -o "${OPT_DIR}/$zip" \
     "https://github.com/jeremylong/DependencyCheck/releases/download/${ver}/${zip}"
-  sudo unzip -oq "/opt/$zip" -d /opt
-  sudo rm -f "/opt/$zip"
-  sudo chmod +x /opt/dependency-check/bin/dependency-check.sh
-  sudo ln -sf /opt/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
+  sudo unzip -oq "${OPT_DIR}/$zip" -d "${OPT_DIR}"
+  sudo rm -f "${OPT_DIR}/$zip"
+  sudo chmod +x "${OPT_DIR}/dependency-check/bin/dependency-check.sh"
+  sudo ln -sf "${OPT_DIR}/dependency-check/bin/dependency-check.sh" "${BIN_DIR}/dependency-check"
 
   # Dependency-Check is a Java app; make sure something can run it.
   command -v java >/dev/null 2>&1 || apt_install default-jre
@@ -308,18 +411,19 @@ install_sqlmap() {
   # git clone is sqlmap's own documented install method - there is no PyPI
   # package (spec 13.9: no --report-json either, but that's a routine.py
   # adapter concern, not a bootstrap one).
-  local dir=/opt/sqlmap
+  local dir="${OPT_DIR}/sqlmap"
   if [[ -d "$dir/.git" ]]; then
-    sudo git -C "$dir" pull --ff-only
+    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
     sudo rm -rf "$dir"
-    sudo git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git "$dir"
+    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+      git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git "$dir"
   fi
-  sudo tee /usr/local/bin/sqlmap >/dev/null <<'EOS'
+  sudo tee "${BIN_DIR}/sqlmap" >/dev/null <<EOS
 #!/usr/bin/env bash
-exec python3 /opt/sqlmap/sqlmap.py "$@"
+exec python3 ${dir}/sqlmap.py "\$@"
 EOS
-  sudo chmod +x /usr/local/bin/sqlmap
+  sudo chmod +x "${BIN_DIR}/sqlmap"
 }
 
 install_zap() {
@@ -331,7 +435,7 @@ install_zap() {
     apt_install openjdk-17-jre
   fi
 
-  already_installed "OWASP ZAP" zap.sh && return 0
+  already_installed "OWASP ZAP" zap.sh probe_zap && return 0
 
   # The Crossplatform zip ships both zap.sh and zap.bat plus the Automation
   # Framework add-on, so the same download works for bootstrap.ps1 too. This
@@ -346,12 +450,20 @@ install_zap() {
   # Stage next to the extraction target (/opt) instead of /tmp - a 286MB ZAP
   # zip sitting in /tmp mid-download is exactly what got flagged and
   # quarantined by Defender on Windows; /tmp is the equivalent risk here.
-  sudo curl -fsSL -o "/opt/$zip" \
+  sudo curl -fsSL "${CURL_DL[@]}" -o "${OPT_DIR}/$zip" \
     "https://github.com/zaproxy/zaproxy/releases/download/${ver}/${zip}"
-  sudo unzip -oq "/opt/$zip" -d /opt
-  sudo rm -f "/opt/$zip"
-  sudo chmod +x "/opt/ZAP_${num}/zap.sh"
-  sudo ln -sf "/opt/ZAP_${num}/zap.sh" /usr/local/bin/zap.sh
+  sudo unzip -oq "${OPT_DIR}/$zip" -d "${OPT_DIR}"
+  sudo rm -f "${OPT_DIR}/$zip"
+  sudo chmod +x "${OPT_DIR}/ZAP_${num}/zap.sh"
+  sudo ln -sf "${OPT_DIR}/ZAP_${num}/zap.sh" "${BIN_DIR}/zap.sh"
+}
+
+# `zap.sh -version` starts a JVM (seconds), so the skip check looks for what
+# a half-unpacked zip would lack instead: the launcher's own zap-<ver>.jar.
+probe_zap() {
+  local real
+  real=$(readlink -f "$1") || return 1
+  compgen -G "$(dirname "$real")/zap-*.jar" >/dev/null
 }
 
 # Sourced rather than executed (the test suite does this to reach

@@ -19,23 +19,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `git ls-remote --tags`, skipping rc/beta/alpha, weekly and malformed tags, and names the tool when
   both fail. `bootstrap.ps1` gets the same lookup as `Resolve-LatestTag`.
 - **Trivy.** Its official install script looks releases up on `github.com/<repo>/releases/<tag>`,
-  which the same networks refuse, so on failure the versioned release tarball is fetched and checked
-  against the release's checksums file.
+  which the same networks refuse, so on failure the versioned release tarball is fetched instead.
+- **Checksums.** The Nuclei zip (both bootstraps) and the Trivy tarball are checked against their
+  release's checksums file, matched on the exact file name; a mismatch, a missing line or a missing
+  file refuses the install and nothing reaches the install directory.
 - **Templates.** `nuclei -update-templates` was measured exiting 0 with an empty
-  `~/nuclei-templates` when the API is refused. Both bootstraps now check for templates on disk,
-  clone the newest stable `nuclei-templates` tag with git when there are none, and still fail hard
-  when that also fails. `doctor` reports an empty templates directory as a failure instead of OK.
-- **Re-runs.** `bootstrap.sh` reports "already installed" and skips any tool already on PATH;
+  `~/nuclei-templates` when the API is refused. Both bootstraps now check for templates on disk and,
+  only when there are none, clone the newest stable `nuclei-templates` tag with git into a sibling
+  temp directory. It is moved into place only if the target is missing or holds no files; a
+  directory with files is never deleted. A failed update over existing templates keeps them with a
+  warning. No templates after the clone, or no Nuclei engine at all, is still a hard failure.
+  `doctor` reports an empty templates directory as a failure instead of OK.
+- **Re-runs.** `bootstrap.sh` reports "already installed" and skips a tool that is on PATH, not
+  empty, and passes `--version` (ZAP: its `zap-<ver>.jar` is present); anything else is reinstalled.
   `GIZMODUCK_BOOTSTRAP_FORCE=1` reinstalls everything.
+- **Time limits.** curl calls carry `--connect-timeout`/`--max-time`; `git ls-remote` and the
+  template clone run under `timeout` (skipped where it is missing) with a low-speed abort.
+- **testssl.sh.** It refuses to start without `hexdump`, which a minimal Ubuntu 24.04 lacks;
+  `bsdextrautils` is installed when it is missing.
 - **apt.** Every `apt-get` call goes through one helper that passes
   `-o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600`, and installs end with `apt-get clean`.
   An image that ships `/tmp` as 755 root:root (measured in the Claude Code cloud image) leaves apt's
   `_apt` sandbox user unable to write its temp files, and `apt-get update`/`install` fail with
   "Couldn't create temporary file /tmp/apt.conf.XXXX"; the lock timeout waits out another apt run
   instead of failing, and `clean` frees the downloaded packages on a fixed disk allowance. `/tmp`'s
-  permissions are not touched.
+  permissions are not touched. Empty package lists are refreshed before an install.
 - **Version.** 0.5.7 was set on this branch and never released; this lands as 0.5.8 so the commit
   that sets the version stays the last change to `plugin/gizmoduck/`.
+
 ### Changed — repository: one cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners (C-0009)
 
 - **Summary.** `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session:

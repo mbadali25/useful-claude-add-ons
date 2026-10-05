@@ -10,6 +10,11 @@ bootstrap.sh is SOURCED (it returns before installing anything when sourced),
 and `curl`, `git` and `sudo` are stubs placed first on PATH, so nothing here
 touches the network or the machine. Every stub logs its argv, which is how
 the tests prove a fallback was (or was not) taken.
+
+`sudo` really runs what it is given (except apt-get, which it only logs), and
+GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR point the install at tmp_path, so the
+real download -> verify -> unpack -> install steps run against fixtures. The
+`curl` stub serves `-o` downloads from a per-test assets directory.
 """
 import os
 import platform
@@ -31,13 +36,27 @@ echo "{name} $*" >> "$STUB_LOG"
 """
 
 _CURL_BODY = """
-case "${STUB_CURL_MODE:-fail}" in
-  ok)   printf '{\\n  "url": "x",\\n  "tag_name": "v9.9.9",\\n  "name": "v9.9.9"\\n}\\n' ;;
-  *)    echo "curl: (22) The requested URL returned error: 403" >&2; exit 22 ;;
-esac
+out=""; url=""; prev=""
+for a in "$@"; do
+  [[ "$prev" == -o ]] && out="$a"
+  [[ "$a" == http* ]] && url="$a"
+  prev="$a"
+done
+if [[ -n "$out" ]]; then
+  f="$STUB_ASSETS/${url##*/}"
+  if [[ -f "$f" ]]; then cp "$f" "$out"; exit 0; fi
+  echo "curl: (22) The requested URL returned error: 404" >&2; exit 22
+fi
+if [[ "${STUB_CURL_MODE:-fail}" == ok && "$url" == https://api.github.com/* ]]; then
+  printf '{\\n  "url": "x",\\n  "tag_name": "v9.9.9",\\n  "name": "v9.9.9"\\n}\\n'
+  exit 0
+fi
+echo "curl: (22) The requested URL returned error: 403" >&2; exit 22
 """
 
 _GIT_BODY = """
+[[ -n "${GIT_HTTP_LOW_SPEED_LIMIT:-}" ]] && \\
+  echo "git-env ${GIT_HTTP_LOW_SPEED_LIMIT} ${GIT_HTTP_LOW_SPEED_TIME:-}" >> "$STUB_LOG"
 if [[ "$1" == -c ]]; then shift 2; fi
 if [[ "${STUB_GIT_MODE:-fail}" == ok && "$1" == ls-remote ]]; then
   cat "$STUB_GIT_TAGS"
@@ -50,7 +69,16 @@ else
 fi
 """
 
-_SUDO_BODY = "exit 0\n"
+_SUDO_BODY = """
+if [[ "$1" == apt-get ]]; then
+  [[ " $* " == *" install "* && -n "${STUB_APT_FAIL_INSTALL:-}" ]] && exit 100
+  exit 0
+fi
+exec "$@"
+"""
+
+
+_TIMEOUT_BODY = 'shift\nexec "$@"\n'
 
 
 def _sha(i: int) -> str:
@@ -61,14 +89,20 @@ def _sha(i: int) -> str:
 def stubs(tmp_path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    for name, body in (("curl", _CURL_BODY), ("git", _GIT_BODY), ("sudo", _SUDO_BODY)):
+    for name, body in (("curl", _CURL_BODY), ("git", _GIT_BODY), ("sudo", _SUDO_BODY),
+                       ("timeout", _TIMEOUT_BODY)):
         p = bindir / name
         p.write_text(_STUB.format(name=name, body=body), newline="\n")
         p.chmod(0o755)
     log = tmp_path / "calls.log"
     log.write_text("")
     tags = tmp_path / "tags.txt"
-    return {"bin": bindir, "log": log, "tags": tags, "tmp": tmp_path}
+    for d in ("assets", "inst-bin", "inst-opt", "apt-lists"):
+        (tmp_path / d).mkdir()
+    (tmp_path / "apt-lists" / "x_Packages").write_text("")
+    return {"bin": bindir, "log": log, "tags": tags, "tmp": tmp_path,
+            "assets": tmp_path / "assets", "inst_bin": tmp_path / "inst-bin",
+            "inst_opt": tmp_path / "inst-opt", "apt_lists": tmp_path / "apt-lists"}
 
 
 def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
@@ -81,6 +115,10 @@ def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
         "STUB_GIT_TAGS": str(stubs["tags"]),
         "STUB_CURL_MODE": curl,
         "STUB_GIT_MODE": git,
+        "STUB_ASSETS": str(stubs["assets"]),
+        "GIZMODUCK_BIN_DIR": str(stubs["inst_bin"]),
+        "GIZMODUCK_OPT_DIR": str(stubs["inst_opt"]),
+        "GIZMODUCK_APT_LISTS_DIR": str(stubs["apt_lists"]),
     }
     env.update(extra_env or {})
     proc = subprocess.run(
@@ -101,7 +139,8 @@ def test_api_ok_uses_api_and_never_asks_git(stubs):
                      curl="ok", git="ok", tags=["v1.0.0"])
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "v9.9.9"
-    assert "curl -fsSL https://api.github.com/repos/acme/tool/releases/latest" in log
+    assert "https://api.github.com/repos/acme/tool/releases/latest" in log
+    assert "--connect-timeout 20 --max-time 60" in log
     assert "git " not in log
 
 
@@ -233,7 +272,7 @@ def test_update_that_exits_0_with_no_templates_falls_back_to_git_clone(stubs):
     proc, log = _run(stubs, "update_nuclei_templates; echo rc=$?", git="ok",
                      tags=["v10.4.9", "v10.5.0-rc1", "v9.9.9"])
     assert "rc=0" in proc.stdout, proc.stderr
-    assert "left no templates" in proc.stderr
+    assert "no templates in" in proc.stderr and "trying git clone" in proc.stderr
     assert "clone -q --depth 1 --branch v10.4.9 https://github.com/projectdiscovery/nuclei-templates.git" in log, log
     assert (stubs["tmp"] / "nuclei-templates" / "http" / "cves" / "stub.yaml").is_file()
 
@@ -268,6 +307,10 @@ function Invoke-RestMethod {
   if ($env:STUB_CURL_MODE -eq "ok") { return [pscustomobject]@{ tag_name = "v9.9.9" } }
   throw "Response status code does not indicate success: 403 (Forbidden)."
 }
+if ($env:PS_BODY) {
+  try { Invoke-Expression $env:PS_BODY } catch { Write-Output "ERR=$($_.Exception.Message)" }
+  return
+}
 try {
   $v = Resolve-LatestTag -Repo "acme/tool" -Tool "Widget Scanner"
   Write-Output "TAG=$v"
@@ -297,7 +340,7 @@ def _pwsh_cache_dir(tmp):
     return tempfile.mkdtemp(prefix="gizmoduck-pwsh-", dir=ambient if usable else str(tmp))
 
 
-def _run_ps(stubs, curl="fail", git="fail", tags=()):
+def _run_ps(stubs, curl="fail", git="fail", tags=(), body=""):
     stubs["tags"].write_text(
         "".join(f"{_sha(i)}\trefs/tags/{t}\n" for i, t in enumerate(tags, 1)))
     driver = stubs["tmp"] / "driver.ps1"
@@ -312,6 +355,7 @@ def _run_ps(stubs, curl="fail", git="fail", tags=()):
         "STUB_CURL_MODE": curl,
         "STUB_GIT_MODE": git,
         "XDG_CACHE_HOME": cache,
+        "PS_BODY": body,
     }
     try:
         proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(driver)],
@@ -375,3 +419,291 @@ def test_every_apt_get_call_goes_through_the_helper():
              if "apt-get " in ln and not ln.lstrip().startswith("#")
              and "command -v apt-get" not in ln and "echo" not in ln]
     assert calls == [f"  sudo {_APT_OPTS} \"$@\""], calls
+
+
+
+# --- review round 1 (C-0008): templates never lose files ---------------------
+
+def _fake_nuclei_rc(stubs, rc):
+    p = stubs["bin"] / "nuclei"
+    p.write_text('#!/usr/bin/env bash\necho "nuclei $*" >> "$STUB_LOG"\n'
+                 f'exit {rc}\n', newline="\n")
+    p.chmod(0o755)
+
+
+def _tree(root):
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+
+def test_failed_update_over_existing_templates_keeps_every_file(stubs):
+    # Must-block: the clone fallback once ran on any non-zero exit and
+    # replaced the directory, deleting a user's own templates.
+    tdir = stubs["tmp"] / "nuclei-templates"
+    (tdir / "custom").mkdir(parents=True)
+    (tdir / "custom" / "mine.yaml").write_text("id: mine\n")
+    (tdir / "notes.txt").write_text("keep me\n")
+    before = _tree(tdir)
+    _fake_nuclei_rc(stubs, 1)
+    proc, log = _run(stubs, "update_nuclei_templates; echo rc=$?", git="ok", tags=["v10.4.9"])
+    assert "rc=0" in proc.stdout, proc.stderr
+    assert "keeping the existing templates" in proc.stderr
+    assert _tree(tdir) == before
+    assert "clone" not in log
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+def test_files_but_no_templates_are_never_replaced(stubs):
+    # Must-block: a directory with files but no *.yaml is refused, not wiped.
+    tdir = stubs["tmp"] / "nuclei-templates"
+    (tdir / "sub").mkdir(parents=True)
+    (tdir / "sub" / "important.json").write_text("{}\n")
+    _fake_nuclei_rc(stubs, 0)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo after", git="ok", tags=["v10.4.9"])
+    assert proc.returncode == 1
+    assert "holds files but no templates - not replacing it" in proc.stderr
+    assert (tdir / "sub" / "important.json").read_text() == "{}\n"
+    assert not list(tdir.rglob("*.yaml"))
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+def test_empty_directories_are_replaced_by_the_clone(stubs):
+    tdir = stubs["tmp"] / "nuclei-templates"
+    (tdir / "github" / "empty").mkdir(parents=True)
+    _fake_nuclei_rc(stubs, 0)
+    proc, _ = _run(stubs, "update_nuclei_templates; echo rc=$?", git="ok", tags=["v10.4.9"])
+    assert "rc=0" in proc.stdout, proc.stderr
+    assert (tdir / "http" / "cves" / "stub.yaml").is_file()
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+def test_missing_engine_is_a_hard_failure(stubs):
+    # PATH without any directory holding a real nuclei.
+    keep = [d for d in os.environ.get("PATH", "").split(os.pathsep)
+            if d and not os.path.exists(os.path.join(d, "nuclei"))]
+    proc, log = _run(stubs, "update_nuclei_templates; echo reached-after",
+                     extra_env={"PATH": os.pathsep.join([str(stubs["bin"])] + keep)})
+    assert proc.returncode == 1
+    assert "reached-after" not in proc.stdout
+    assert "nuclei engine is not installed" in proc.stderr
+    assert "clone" not in log
+
+
+def test_template_clone_runs_under_timeout_with_a_low_speed_limit(stubs):
+    _fake_nuclei_rc(stubs, 0)
+    _, log = _run(stubs, "update_nuclei_templates", git="ok", tags=["v10.4.9"])
+    assert "timeout 900 git -c advice.detachedHead=false clone" in log, log
+    assert "timeout 120 git ls-remote" in log, log
+    assert "git-env 1000 30" in log, log
+
+
+def test_ls_remote_still_runs_where_timeout_is_missing(stubs, tmp_path):
+    # A PATH of only what resolve_latest_tag needs, and no `timeout`.
+    lean = tmp_path / "lean"
+    lean.mkdir()
+    for tool in ("bash", "sed", "grep", "awk", "sort", "tail", "cut", "head", "cat"):
+        real = shutil.which(tool)
+        if real is None:
+            pytest.skip(f"{tool} not found")
+        (lean / tool).symlink_to(real)
+    for tool in ("curl", "git"):
+        (lean / tool).symlink_to(stubs["bin"] / tool)
+    proc, log = _run(stubs, "resolve_latest_tag acme/tool tool", git="ok",
+                     tags=["v1.2.3"], extra_env={"PATH": str(lean)})
+    assert proc.stdout.strip() == "v1.2.3", proc.stderr
+    assert "timeout 120" not in log
+    assert "git-env 1000 30" in log
+
+
+# --- review round 1: downloads are verified before anything is installed ----
+
+posix_only = pytest.mark.skipif(os.name == "nt", reason="bootstrap.sh is Linux/WSL only")
+
+
+def _need(*tools):
+    missing = [t for t in tools if shutil.which(t) is None]
+    if missing:
+        pytest.skip(f"missing {missing}")
+
+
+def _sha256(path):
+    import hashlib  # pylint: disable=import-outside-toplevel
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _nuclei_assets(stubs, good=True, sums_line=True):
+    import zipfile  # pylint: disable=import-outside-toplevel
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64",
+            "arm64": "arm64"}.get(platform.machine().lower())
+    if arch is None:
+        pytest.skip(f"no nuclei asset name for {platform.machine()}")
+    zpath = stubs["assets"] / f"nuclei_3.11.1_linux_{arch}.zip"
+    with zipfile.ZipFile(zpath, "w") as z:
+        info = zipfile.ZipInfo("nuclei")
+        info.external_attr = 0o755 << 16
+        z.writestr(info, "#!/usr/bin/env bash\necho 'Nuclei Engine Version: v3.11.1' >&2\n")
+    digest = _sha256(zpath) if good else "0" * 64
+    if sums_line is not None:
+        name = zpath.name if sums_line else zpath.name + ".sig"
+        (stubs["assets"] / "nuclei_3.11.1_checksums.txt").write_text(f"{digest}  {name}\n")
+    return zpath
+
+
+@posix_only
+def test_nuclei_installs_when_its_checksum_matches(stubs):
+    _need("unzip", "sha256sum")
+    _nuclei_assets(stubs)
+    proc, _ = _run(stubs, 'try_install nuclei install_nuclei; echo "FAILED=${FAILED[*]}"',
+                   git="ok", tags=["v3.11.1"], extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "FAILED=\n" in proc.stdout, proc.stdout + proc.stderr
+    assert "sha256 OK" in proc.stdout
+    assert os.access(stubs["inst_bin"] / "nuclei", os.X_OK)
+    assert not (stubs["inst_opt"] / "gizmoduck-nuclei-download").exists()
+
+
+@posix_only
+@pytest.mark.parametrize("case", ["mismatch", "no-line", "no-file"])
+def test_nuclei_refuses_an_unverified_download(stubs, case):
+    _need("unzip", "sha256sum")
+    _nuclei_assets(stubs, good=(case != "mismatch"),
+                   sums_line={"mismatch": True, "no-line": False, "no-file": None}[case])
+    proc, _ = _run(stubs, 'try_install nuclei install_nuclei; echo "FAILED=${FAILED[*]}"',
+                   git="ok", tags=["v3.11.1"], extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "FAILED=nuclei" in proc.stdout, proc.stdout + proc.stderr
+    assert not (stubs["inst_bin"] / "nuclei").exists()
+    if case == "mismatch":
+        assert "sha256 mismatch" in proc.stderr
+    if case == "no-line":
+        assert "no checksum line" in proc.stderr
+
+
+def _trivy_assets(stubs, good=True):
+    import io  # pylint: disable=import-outside-toplevel
+    import tarfile  # pylint: disable=import-outside-toplevel
+    arch = {"x86_64": "64bit", "amd64": "64bit", "aarch64": "ARM64",
+            "arm64": "ARM64"}.get(platform.machine().lower())
+    if arch is None:
+        pytest.skip(f"no trivy asset name for {platform.machine()}")
+    tpath = stubs["assets"] / f"trivy_0.75.0_Linux-{arch}.tar.gz"
+    body = b"#!/usr/bin/env bash\necho 'Version: 0.75.0'\n"
+    with tarfile.open(tpath, "w:gz") as t:
+        info = tarfile.TarInfo("trivy")
+        info.size, info.mode = len(body), 0o755
+        t.addfile(info, io.BytesIO(body))
+    digest = _sha256(tpath) if good else "f" * 64
+    (stubs["assets"] / "trivy_0.75.0_checksums.txt").write_text(
+        f"{'1' * 64}  {tpath.name}.sig\n{digest}  {tpath.name}\n")
+
+
+@posix_only
+def test_trivy_asset_installs_when_its_checksum_matches(stubs):
+    _need("tar", "sha256sum")
+    _trivy_assets(stubs)
+    proc, _ = _run(stubs, 'try_install trivy install_trivy; echo "FAILED=${FAILED[*]}"',
+                   git="ok", tags=["v0.75.0"], extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "FAILED=\n" in proc.stdout, proc.stdout + proc.stderr
+    assert "sha256 OK" in proc.stdout
+    assert os.access(stubs["inst_bin"] / "trivy", os.X_OK)
+
+
+@posix_only
+def test_trivy_asset_with_a_bad_checksum_installs_nothing(stubs):
+    # Must-fail: sha256 actually runs (the old no-op sudo stub hid it).
+    _need("tar", "sha256sum")
+    _trivy_assets(stubs, good=False)
+    proc, _ = _run(stubs, 'try_install trivy install_trivy; echo "FAILED=${FAILED[*]}"',
+                   git="ok", tags=["v0.75.0"], extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "FAILED=trivy" in proc.stdout, proc.stdout + proc.stderr
+    assert "sha256 mismatch" in proc.stderr
+    assert not (stubs["inst_bin"] / "trivy").exists()
+
+
+# --- review round 1: skip-if-present probes, apt lists ----------------------
+
+def test_a_present_but_broken_tool_is_reinstalled(stubs):
+    broken = stubs["bin"] / "nuclei"
+    broken.write_text("", newline="\n")   # zero-byte: exec fails
+    broken.chmod(0o755)
+    proc, log = _run(stubs, "install_nuclei", git="ok", tags=["v3.11.1"])
+    assert "is empty - reinstalling" in proc.stdout, proc.stdout + proc.stderr
+    assert "releases/download/v3.11.1/" in log
+
+
+def test_zap_without_its_jar_is_reinstalled_and_with_it_is_skipped(stubs):
+    zdir = stubs["tmp"] / "ZAP_2.17.0"
+    zdir.mkdir()
+    (zdir / "zap.sh").write_text("#!/usr/bin/env bash\n", newline="\n")
+    (zdir / "zap.sh").chmod(0o755)
+    (stubs["bin"] / "zap.sh").symlink_to(zdir / "zap.sh")
+    script = "already_installed 'OWASP ZAP' zap.sh probe_zap; echo rc=$?"
+    proc, _ = _run(stubs, script)
+    assert "rc=1" in proc.stdout and "fails its check" in proc.stdout
+    (zdir / "zap-2.17.0.jar").write_text("")
+    proc, _ = _run(stubs, script)
+    assert "rc=0" in proc.stdout and "already installed" in proc.stdout
+
+
+def test_empty_apt_lists_are_refreshed_before_an_install(stubs):
+    (stubs["apt_lists"] / "x_Packages").unlink()
+    _, log = _run(stubs, "install_nmap", extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    lines = [ln for ln in log.splitlines() if ln.startswith("sudo apt-get")]
+    assert lines[0] == f"sudo {_APT_OPTS} update -y", lines
+    assert lines[1] == f"sudo {_APT_OPTS} install -y nmap", lines
+
+
+def test_present_apt_lists_skip_the_refresh(stubs):
+    _, log = _run(stubs, "install_nmap", extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert " update -y" not in log
+
+
+def test_a_present_tool_whose_version_check_fails_is_reinstalled(stubs):
+    _fake_nuclei_rc(stubs, 1)
+    proc, _ = _run(stubs, "already_installed nuclei nuclei probe_nuclei; echo rc=$?")
+    assert "rc=1" in proc.stdout and "fails its check - reinstalling" in proc.stdout
+
+
+
+# --- review round 1: bootstrap.ps1 twins (checksum, safe template clone) -----
+
+@ps_only
+@pytest.mark.parametrize("case,expect", [
+    ("good", "OK-INSTALLED"),
+    ("mismatch", "ERR=nuclei_9.zip: sha256 mismatch"),
+    ("sig-only", "ERR=nuclei_9.zip: no checksum line"),
+])
+def test_ps1_assert_sha256(stubs, case, expect):
+    z = stubs["tmp"] / "nuclei_9.zip"
+    z.write_bytes(b"payload")
+    digest = _sha256(z) if case != "mismatch" else "0" * 64
+    name = z.name + (".sig" if case == "sig-only" else "")
+    sums = stubs["tmp"] / "sums.txt"
+    sums.write_text(f"{digest}  {name}\n")
+    body = f"Assert-Sha256 -File '{z}' -SumsFile '{sums}'; Write-Output OK-INSTALLED"
+    proc, _ = _run_ps(stubs, body=body)
+    assert expect in proc.stdout, proc.stdout + proc.stderr
+    if case != "good":
+        assert "OK-INSTALLED" not in proc.stdout
+
+
+@ps_only
+def test_ps1_template_clone_never_replaces_a_dir_with_files(stubs):
+    tdir = stubs["tmp"] / "nuclei-templates"
+    (tdir / "sub").mkdir(parents=True)
+    (tdir / "sub" / "keep.json").write_text("{}\n")
+    proc, _ = _run_ps(stubs, git="ok", tags=["v10.4.9"],
+                      body=f"Install-NucleiTemplatesClone -Dir '{tdir}'")
+    assert "holds files but no templates" in proc.stdout, proc.stdout + proc.stderr
+    assert (tdir / "sub" / "keep.json").read_text() == "{}\n"
+    assert not list(tdir.rglob("*.yaml"))
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
+
+
+@ps_only
+def test_ps1_template_clone_replaces_only_empty_dirs(stubs):
+    tdir = stubs["tmp"] / "nuclei-templates"
+    (tdir / "github" / "empty").mkdir(parents=True)
+    proc, log = _run_ps(stubs, git="ok", tags=["v10.4.9"],
+                        body=f"Install-NucleiTemplatesClone -Dir '{tdir}'; Write-Output DONE")
+    assert "DONE" in proc.stdout, proc.stdout + proc.stderr
+    assert (tdir / "http" / "cves" / "stub.yaml").is_file()
+    assert "git-env 1000 30" in log
+    assert not list(stubs["tmp"].glob("nuclei-templates.gizmoduck-clone*"))
