@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew**: Tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP. On a shared Obsidian board, two repositories whose origins differ only in the case of the user or path are now two owners, and one repository reached through `file://`, `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
-- **crew**: A vault write matches every directory from the vault down, not just the vault. A board or note directory inside the Obsidian vault that is swapped for another real directory between crew's checks and its write is now refused instead of written into.
+- **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -42,14 +42,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   now also asserts the board half did not run, so its sabotage mutation still goes red now that the
   board follows INDEX. New mutations for these fixes are L-0669 (tooling PR).
 
-### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
+### crew 1.1.0 — C-0006: version-free guide file names
+
+- **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
+  names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a
+  rename.
+- **What changed.** Every `docs/guides/crew/crew-1.0-<name>.{html,docx,pdf}` is renamed
+  `crew-<name>.{html,docx,pdf}` (guide, quickstart, daily-workflow, memory-and-obsidian,
+  working-with-codex, troubleshooting, configuration-reference) and rebuilt by
+  `docs/guides/crew/src/build.py`, whose `html_name` now returns `crew-<name>.html`; the HTML is
+  byte-identical, only the names moved. `guide.md`'s title and its two product-line mentions say
+  crew 1.1; its `crew 1.0.349` arrival and the "1.0 layout" `/crew:migrate` produces are unchanged.
+  `docs/guides/crew/src/README.md` lists the new names, and `scripts/_test/crew-guide.py` pins all
+  three built files of every guide at the version-free name and fails on any `crew-1.<n>-*` file
+  left beside them.
+
+### crew 1.0.352, gizmoduck 0.5.9 — batch 9: T-0081, T-0049, C-0015, C-0017
+
+- **Summary.** Three changes in one update: a crew vault write refuses a directory on its path that
+  was swapped for another real directory after the checks, one runner drives a crew ticket at a time
+  through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot
+  check: links in the templates dir, a nikto that exits 0 without running, and testssl without
+  `hexdump`.
+
+#### Fixed — crew: a vault write matches every directory from the vault down, not just the vault (T-0081)
 
 - **Summary.** A board or note directory inside the Obsidian vault that is swapped for another real
   directory between crew's checks and its write is now refused instead of written into.
 - **What changed.** `_vault_paths` in `plugin/crew/hooks/scripts/crew_tracker.py` records each real
-  directory between the vault and the board or note (`boardDirIds`, `noteDirIds`: `(st_dev, st_ino)`
-  from `os.lstat`, or None), and both pinned walks match it: the POSIX fd walk after each no-follow
-  open, the Windows handle walk on every held component. A different identity refuses as "a
+  directory between the vault and the board or note as `boardDirIds` / `noteDirIds`, one
+  `(st_dev, st_ino)` from `os.lstat` or None per directory, and both pinned walks match it: the POSIX
+  fd walk after each no-follow open, the Windows handle walk on every held component. A different identity refuses as "a
   directory on its path changed after the vault checks"; an identity that cannot be told (none
   recorded, a list that does not line up, or an inode / file id of 0 on either side) refuses as
   "could not tell".
@@ -64,6 +87,111 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   tested alone; the end-to-end swap is kept as `[replaced-full]`). With those, all 87 committed
   crew_tracker sabotage mutations go red (`sabotage.py`, SABOTAGE SUITE: PASS). Mutations for the
   new branches follow in L-0672.
+
+#### Added — `crew`: in-flight markers, one runner drives a ticket at a time (T-0049)
+
+- **Summary.** Before its loop `/crew:autopilot` claims the ticket with a marker shared by every
+  worktree of the clone, so a second runner on the same ticket is refused instead of racing it, and
+  `/crew:status` prints one `in-flight:` line per marker.
+- **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
+  marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by
+  every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a
+  token, the holder, worktree, branch, `since` and `heartbeat_at`. The holder is
+  `CLAUDE_CODE_SESSION_ID` plus the long-lived Claude Code process (`CLAUDE_PID`
+  only when it is an ancestor of the claiming command that started before it -
+  the chain is walked with /proc, `ps` or a Windows process snapshot, and a hint
+  that cannot be checked is never trusted - else the nearest `claude`
+  ancestor; a Claude Code session where neither is found records no pid, and
+  the session id decides alone only when neither side has a pid; a lane's
+  script records its own shell), with that
+  process's start time, pid namespace, boot id and host. `holds(root, ticket)`
+  answers `free`, `mine`, `live`, `stale`, `elsewhere` or `unknown` and writes
+  nothing; anything it cannot read, parse, probe or trust is `unknown`, never
+  `free`. The pid is measured with `/proc` on Linux, `kill -0` plus `ps` on other
+  POSIX systems, and the exit code and creation time on Windows. `claim`
+  publishes with `os.link` (one of six racing claimers wins) and starts one
+  detached heartbeat keyed by the token, rewriting `heartbeat_at` every 600 s
+  against a 30-minute TTL. The heartbeat stops by itself once its holder has
+  gone more than the TTL without being confirmed alive, so where the pid cannot
+  be measured the TTL still decides. `release` is the holder's; `clear --by
+  --reason` is the owner's and refuses anything but stale or unknown. All three
+  write their event first and do nothing if it cannot be written. Nothing clears
+  a marker by age. `crew_autopilot.py next --runner autopilot` stops as
+  `in-flight` on live, stale and unknown (stale and unknown carry the clear
+  command) and as `handover-elsewhere` on a fresh holder in another worktree;
+  free and mine change nothing, and without `--runner` `next` is unchanged.
+  `/crew:autopilot` claims after resume/activate, passes `--runner autopilot`,
+  and releases at every stop (autopilot.md stays at 109 lines).
+  `crew_state.AUTONOMOUS_STOPS` gains `clear-inflight`. `/crew:status` prints
+  one `in-flight:` line per marker (at most five).
+- **Why.** An autopilot session, a workflow lane and a person's session could
+  all drive one ticket and nothing recorded who was driving it, so two could
+  double-drive it, and a lane that died left nothing to say so. T-0060's stall
+  ping (#363) reads `holds()` and this TTL; it was blocked on this ticket.
+- **Owner decisions.** The owner approved (2026-10-04) every `OWNER CHECK:`
+  choice in the reconstructed spec as written: TTL 1800 s with no config key;
+  never clear by age; the owner's `clear` command; `elsewhere` is a fresh
+  holder in another worktree and stops as `handover-elsewhere`; runner names
+  `autopilot`/`lane`/`session`; autopilot.md net 0 lines, never raising
+  `AUTOPILOT_MAX_LINES`; the holder identity fields; and the tooling-PR split
+  for `sabotage_inflight.py` while `sabotage*.py` is harness.
+- **Review round 1.** Without /proc the holder was the per-call tool shell (a
+  later Bash call read `live` against itself) and a dead holder was never
+  measured, so its heartbeat beat forever: fixed by the identity and probe above
+  and the heartbeat's TTL bound. A transient `os.replace` refusal (Windows) now
+  skips one beat instead of ending the heartbeat; marker, token and holder are
+  checked before the lock, so a leftover lock never keeps a dead holder's loop
+  alive; events are written before the effect.
+- **Measured.** A child started with `start_new_session=True` from a Claude
+  Code Bash tool call outlived the call: reparented to pid 1, it beat every
+  second for 128 s across five later calls (Claude Code 2.1.42, Linux cloud
+  container, no pid namespace or bubblewrap). The no-/proc paths are tested by
+  hiding /proc (and `ps`) from the CLI on Linux. Not measured: Windows, macOS,
+  or a sandboxed (bubblewrap) Linux session. Where the holder cannot be
+  measured, a dead holder reads stale within 2 x TTL + one heartbeat (4200 s,
+  70 minutes: the last beat lands at most 2400 s after the last confirmation,
+  then the TTL), and a live run there longer than that reads stale too,
+  stopping autopilot, never double-driving. The Windows process snapshot,
+  exit-code probe and creation-time check are tested only through mocked
+  seams; real Windows is unverified.
+- **Review round 2.** `CLAUDE_PID` is no longer trusted where the ancestor
+  chain cannot be walked (Windows now walks it with CreateToolhelp32Snapshot,
+  and a failed walk means no pid, so the session id and the TTL decide); a
+  hint must also have started before the claimer. A marker pid outside
+  1..2^32 reads unknown, and an overflowing pid probes as unmeasured. A broken
+  `events.jsonl` refusal names the file to fix or move aside before retrying.
+- **Sabotage.** 24 mutations, each RED on its named test by hand (the table is
+  in the PR). `sabotage_inflight.py` and its `sabotage.py` registration land in
+  a separate harness-only PR (T-0087 rule).
+
+#### Fixed — `gizmoduck`: bootstrap refuses links in the templates dir, install checks read a version, doctor sees testssl's missing `hexdump` (C-0015, C-0017)
+
+- **Summary.** gizmoduck's bootstrap no longer deletes through a symlink or junction in the Nuclei
+  templates dir, no longer counts a nikto that cannot run as installed, and ignores its directory
+  overrides outside its own tests; `doctor` reports testssl as unavailable when `hexdump` is absent.
+- **What changed.** `bootstrap.ps1`'s `Install-NucleiTemplatesClone` refuses a symlink or junction
+  in the templates dir, or the dir itself being one, instead of deleting them. The new
+  `Get-EmptyDirsDeepestFirst` walks one level at a time with its own stack and never uses
+  `Get-ChildItem -Recurse`, which follows junctions under PowerShell 5.1, so only real, empty
+  directories reach the non-recursive delete. `bootstrap.sh` already refused, and is now tested too.
+- **nikto.** The installed check reads a version string instead of trusting the exit code: on nikto
+  2.6.1 `nikto --version` prints "Unknown option: version" and exits 0, while `-Version` prints
+  `Nikto 2.6.1 (LW 2.5)`. It is `probe_nikto` in `bootstrap.sh` and `Test-NiktoRuns` in
+  `bootstrap.ps1`, which also runs it after cloning, so a nikto that cannot run is a failed install.
+- **Behaviour change.** `GIZMODUCK_BIN_DIR`, `GIZMODUCK_OPT_DIR` and `GIZMODUCK_APT_LISTS_DIR` take
+  effect only with `GIZMODUCK_BOOTSTRAP_TEST=1`; otherwise they are ignored with a notice and the
+  install locations stay `/usr/local/bin` and `/opt`. The test suite's `sudo` stub also refuses
+  real install paths.
+- **doctor.** testssl is reported as "installed, but hexdump not found" and counted as unavailable,
+  through a new `missing_prerequisite()` hook on the testssl adapter.
+- **C-0017.** No code change: `crew_keys.py`'s `since` is the first crew version whose template
+  declared the key, and `notify.urlEnv`, `notify.tokenEnv` and `notify.chatId` were declared before
+  0.11.0 (`c57d5bb6` / `7e503fe3`), so `FIRST` is correct and the configuration reference is not
+  regenerated.
+- **Not in this change.** GPG or checksum verification for dependency-check and ZAP (C-0015.5).
+- **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap_version.py` and `test_doctor.py`: each
+  guard has must-block and must-allow cases, each sabotaged to confirm it goes red.
+||||||| 23fb9d91
 
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
