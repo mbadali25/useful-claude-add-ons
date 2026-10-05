@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
-- **crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21**: Six changes in one update: `/crew:migrate` carries your `autopilot` settings over instead of filing them as unmapped, crew can convert a memory folder to vault pointers and undo one, the CI receipt shows UNKNOWN for a command the gate could not judge, gizmoduck's Nuclei scans are safe by default, diagrams are embedded in the READMEs they describe, and crew notify is rebuilt to ping only for deploy results and questions that stopped Claude, each led by a subject.
+- **crew 1.1.8**: Pre-review checks, L-0574's round-10 follow-ups. The pre-review linter checks and the review runner no longer crash on Windows timeouts, an unreadable output file or a swapped manifest, escape bidirectional control characters in status lines, and on Linux end a clean linter's leftover background processes before reaping it.
+- **crew 1.1.8**: Review ledger supersede and accepter correction, and the override line in the review prompt. An owner can now send an accepted review back to replanning with one recorded command, correct who accepted a round without voiding it, and the review prompt tells the reviewer when a round ran under a recorded gate override instead of leaving a bare MISSING to be read as a defect.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
