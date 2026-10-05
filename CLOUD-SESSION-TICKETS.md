@@ -61,7 +61,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0009 | Owner 2026-10-05: ONE cloud setup script. Fold the coordinator's additions (pwsh, gizmoduck bootstrap, apt /tmp-755 sandbox fix, mermaid-cli + mcp npm, pytest uv-tool shadow fix) into the repo's scripts/cloud-env-setup.sh (#503, owner's other session). Stacked on #504 (bubblewrap). | builder on C-0009-build | after #504 |
 
-Next free untracked ID: **C-0010** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0010 | From #401 review (pre-existing): ci_receipt.py's parser lets a failing rule's own output inject `verify-gate: Ns  <cmd>` lines, producing an extra PASS row for a command (pending.pop then elapsed => PASS). Bind elapsed lines to the command the gate is actually running (sequence), not to any matching text. Not acceptance-affecting today (check never reads commands) but the receipt list can lie. | none yet | after #401 |
+
+Next free untracked ID: **C-0011** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
