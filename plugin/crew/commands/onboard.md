@@ -250,5 +250,5 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-the upgrade report does — surfaced, not resolved. Then run step 6, and item 6 above (`crew_gitignore.py apply`):
-a ticket that added a language or manifest is when its ignore patterns go missing.
+the upgrade report does — surfaced, not resolved. Then run step 6. Also run item 6 above
+(`crew_gitignore.py apply`): a ticket that added a language or manifest is when its ignore patterns go missing.

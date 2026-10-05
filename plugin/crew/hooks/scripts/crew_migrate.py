@@ -779,8 +779,7 @@ def apply_plan(plan):
             mode = _mode_of(path) if item.get("replaces") else None
             try:
                 fd = os.open(path + TMP_SUFFIX,
-                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                             0o666)
+                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
             except FileExistsError as exc:
                 raise MigrateError(f"{item['path']}{TMP_SUFFIX} appeared since the plan was "
                                    "built; not overwritten, and this apply is undone") from exc
@@ -789,6 +788,11 @@ def apply_plan(plan):
                 fh.write(item["data"])
                 fh.flush()
                 os.fsync(fh.fileno())
+            # os.open made it 0777 less the umask; dropping the execute bits
+            # leaves 0666 less the umask without reading the umask.
+            staged_mode = _mode_of(path + TMP_SUFFIX)
+            if mode is None and staged_mode is not None:
+                mode = staged_mode & 0o666
             if mode is not None:
                 os.chmod(path + TMP_SUFFIX, mode)
         manifest["state"] = "committing"

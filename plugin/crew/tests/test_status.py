@@ -316,7 +316,10 @@ def test_status_graph_ignore_ok_and_unknown(tmp_path, case, prefix):
     assert line.startswith(prefix), line
 
 
-_HOSTILE = ("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok")
+# ESC and LF cannot be in a Windows file name; U+202E (a format character) and
+# U+2028 (a line separator) can, and must be escaped the same way.
+_HOSTILE = (("Z\x1b[2J.PEM", "ID_RSA\ngraph-ignore  ok") if sys.platform != "win32"
+            else ("Z\u202e[2J.PEM", "ID_RSA\u2028graph-ignore  ok"))
 
 
 def test_status_graph_ignore_line_escapes_hostile_names(tmp_path):
@@ -333,7 +336,8 @@ def test_status_graph_ignore_line_escapes_hostile_names(tmp_path):
     out = _run(root).stdout
     line = _graph_ignore_line(out)
 
-    assert ("\x1b" in out, ascii(_HOSTILE[0]) in line, ascii(_HOSTILE[1]) in line) == (
+    assert (any(c in out for c in "\x1b\u202e\u2028"), ascii(_HOSTILE[0]) in line,
+            ascii(_HOSTILE[1]) in line) == (
         False, True, True), out
 
 

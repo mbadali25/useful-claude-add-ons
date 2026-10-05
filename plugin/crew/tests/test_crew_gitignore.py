@@ -228,9 +228,11 @@ def test_global_excludes_file_does_not_count_as_covered(tmp_path, monkeypatch):
     excludes = tmp_path / "global-ignore"
     excludes.write_text("__pycache__/\n", encoding="utf-8")
     cfg = tmp_path / "gitconfig"
-    cfg.write_text(f"[core]\n\texcludesFile = {excludes}\n", encoding="utf-8")
+    # Forward slashes: git config reads a backslash as an escape, so a Windows
+    # path written raw (`C:\Users\...`) makes the whole file invalid (exit 128).
+    cfg.write_text(f"[core]\n\texcludesFile = {excludes.as_posix()}\n", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
-    _git(root, "config", "core.excludesFile", str(excludes))  # the repo's local config too
+    _git(root, "config", "core.excludesFile", excludes.as_posix())  # the repo's local config too
     (root / ".git" / "info" / "exclude").write_text("__pycache__/\n", encoding="utf-8")
     assert _ignored(root, "__pycache__/x.pyc")  # git itself honours it
 
@@ -661,23 +663,32 @@ def test_unexpected_exception_is_unknown_exit_4(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out.count("unknown ") == 3
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a control character in a file name")
+# ESC and LF cannot be in a Windows file name; U+202E (a format character) and
+# U+2028 (a line separator Python's splitlines breaks on) can, and do not print.
+_HOSTILE_PEM = ("x\x1b[2J\ngitignore: current.pem" if sys.platform != "win32"
+                else "x\u202e[2J\u2028gitignore: current.pem")
+
+
 def test_a_tracked_name_with_control_characters_is_escaped(tmp_path):
     """Group review r4 (g1-ports): a tracked secret-shaped name carrying an
     escape sequence and a line break reaches neither the `/crew:status` line
     nor the check report raw."""
-    name = "x\x1b[2J\ngitignore: current.pem"
+    name = _HOSTILE_PEM
     root = _repo(tmp_path, files={name: "s3cret", "a.py": ""}, tracked=[name])
 
     line = cg.summary(str(root))
     done = _run(root, "check")
 
-    assert ("\x1b" in line + done.stdout, "\n" in line, done.returncode,
+    assert (any(c in line + done.stdout for c in "\x1b\u202e\u2028"), "\n" in line, done.returncode,
             [x for x in done.stdout.splitlines() if x.startswith("gitignore: current")]) == (
         False, False, 3, [])
     assert ascii(name) in line and f"needs-owner {ascii(name)} is tracked" in done.stdout
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="a file name holding an undecodable byte cannot exist on Windows: NTFS "
+                           "stores UTF-16 and Python decodes a bytes path as UTF-8, so open() "
+                           "refuses b'k\\xff.pem' before crew_gitignore.py is reached")
 @pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
 def test_undecodable_tracked_name_still_reports_owner_exit_3(tmp_path, encoding):
     root = _repo(tmp_path, files={"a.py": ""})

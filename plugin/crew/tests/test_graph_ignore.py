@@ -288,9 +288,15 @@ def test_read_rules_translate_to_root_patterns(rule, pattern):
     assert (pattern in patterns, skipped, unknown) == (True, None, None), patterns
 
 
-def test_a_read_rule_naming_a_path_inside_the_repo_absolutely_is_kept():
+def test_a_read_rule_naming_a_path_inside_the_repo_absolutely_is_kept(tmp_path):
+    """`//` plus the repository's own absolute path, in the docs' form: on
+    Windows that is `//c/Users/...`, so the fixture is built from a real path
+    rather than `/repo`, which Windows reads as `<current drive>:/repo`."""
+    root = str(tmp_path / "repo")
+    absolute = crew_graph_ignore._posix(root)  # pylint: disable=protected-access
+
     patterns, _skipped, _unknown = crew_graph_ignore.translate_rule(
-        "Read(//repo/keys/**)", "/repo")
+        f"Read(/{absolute}/keys/**)", root)
 
     assert patterns == ["/keys/**"]
 
