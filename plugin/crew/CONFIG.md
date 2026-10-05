@@ -787,7 +787,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `context.autoClear.command` | both | not validated - read by `hooks/scripts/crew_autocycle.py` (expects string) | `"/clear"` |
 | `context.autoClear.delaySeconds` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `3` |
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
-| `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
+| `context.autoClear.onlyRepos` | machine-only | list of absolute repo paths, or null (coerced in `hooks/scripts/crew_autocycle.py`); `/crew:migrate`'s `apply-migrate --scan-root <dir>` finds the repos that opted in under 0.20.x | `null` |
 | `context.autoClear.onlySessions` | machine-only | list of session ids, or null (coerced in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `context.autoClear.wrapUp` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
 | `resume.auto` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_resume.py`) | `null` |

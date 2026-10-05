@@ -598,7 +598,7 @@ they disagree:
   everything routed through `crew_config.py` (the guards, the verify gate,
   `/crew:config`, `/crew:model`) still reads `config.json` only, and
   `apply_migrate_to_repo`'s own docstring
-  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:501-507`) names
+  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:679-685`) names
   the specific consequence for auto-clear: "`crew_status.py` reads it
   [`crew.json`] only to report the migration schema... converting
   `crew.json` alone [does nothing for autoClear behaviour, which
@@ -666,6 +666,15 @@ and gets nothing created.
   helper, "so a repo onboarded standalone gets the identical question"),
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
+- DERIVED (T-0106): `apply-migrate --scan-root <dir>` (repeatable,
+  `--scan-depth`, default 3) walks each root read-only
+  (`scan_opted_in_repos` in `crew_autoclear_setup.py`) for repos whose
+  `.crew/config.json` or `.crew/crew.json` still carries `enabled: true`,
+  without descending into a candidate, a dot-directory, `node_modules` or a
+  symlink; finds join `proposedOnlyRepos`, unreadable ones are their own
+  list (`widening.scan.unreadable`). `--yes-widen` raises `WideningRefused`
+  (exit 1, nothing written) for an unreadable candidate or an empty
+  proposal. Each `apply-migrate` note starts with its file.
 
 ### Which terminal: the session's own process (T-0016, crew 1.0.333)
 
@@ -2211,8 +2220,8 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
   one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()`
   confirmed at a specific line this pass; called with subcommands
-  (`plan-windows-default`, `apply-migrate`) from the three sites named
-  above.
+  (`plan-windows-default`, `apply-migrate [--scan-root <dir>]
+  [--scan-depth <n>] [--yes-widen]`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1325` — `ticket_freshness`,

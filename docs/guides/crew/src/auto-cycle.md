@@ -143,6 +143,12 @@ same machine file. They can only narrow what `enabled` turns on:
   matter. On Windows, case does not matter and `/c/repos/x` means `C:\repos\x`. A relative path such
   as `.` never matches.
 - Session ids must match exactly, including case.
+- Finding the repos to list: when `/crew:migrate` reports a widening, run
+  `crew_autoclear_setup.py --root . apply-migrate --scan-root <dir>`. It looks under `<dir>` (3
+  levels by default, `--scan-depth <n>`), read-only, for repos whose `.crew/config.json` or
+  `.crew/crew.json` still says `context.autoClear.enabled: true`, and proposes them with this repo.
+  A repo it cannot read is listed and blocks `--yes-widen`. Repos outside `<dir>`, and repos an
+  earlier migration already converted (their opt-in is gone), cannot be found: add those by hand.
 - These keys are read **only** from the machine file. If a repo's `.crew/config.json` sets them, they
   are ignored, so a repo cannot add itself. A repo's `enabled: false` still turns auto-clear off.
 - In any other repo or session, auto-clear stays silent. It does not write a log line, just as it

@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.7: `/crew:migrate` finds the other repos that opted in to auto-clear
+
+- **Summary.** When migrating finds auto-clear armed in every repo, it can now look under a folder
+  you name for the other repos that opted in, and propose them too, instead of leaving you to search
+  the disk by hand.
+- **crew `crew_autoclear_setup.py` (T-0106).** `apply-migrate --scan-root <dir>` (repeatable,
+  `--scan-depth <n>`, default 3) walks each folder read-only and adds every repo whose
+  `.crew/config.json` or `.crew/crew.json` still says `context.autoClear.enabled: true` to
+  `proposedOnlyRepos`; a repo it cannot read is listed in `widening.scan.unreadable`, never counted
+  as "not opted in". Repos outside the folders, and repos an earlier migration already converted,
+  cannot be found.
+- **Behaviour change.** `apply-migrate --yes-widen` now exits 1 and writes nothing instead of
+  writing `onlyRepos: []` (which turns auto-clear off in every repo), and also refuses while a
+  scanned repo could not be read. Every `apply-migrate` note now starts with its file
+  (`.crew/config.json: ` or `.crew/crew.json: `).
+
 ### Fixed — crew 1.1.7: config delete names the backup after an OS error; a repo `null` that widens is marked
 
 - **Summary.** Deleting a repo's crew config no longer says the file was "left in place" when it had

@@ -703,3 +703,281 @@ def test_global_file_problem_reports_invalid_utf8_instead_of_raising(tmp_path):
         assert False, "expected GlobalConfigUnreadable, not a raw exception"
     except setup.GlobalConfigUnreadable:
         pass
+
+
+# ------------------------------------------- apply-migrate --scan-root (T-0106)
+# Every repo below is built under tmp_path; nothing reads a real config.
+
+
+def _widening_global(tmp_path):
+    """A machine file with enabled: true and onlyRepos: null -- the widening."""
+    path = str(tmp_path / "g.json")
+    setup.write_autoclear_method("auto", consent=True, path=path)
+    setup.write_autoclear_enabled(True, consent=True, path=path)
+    return path
+
+
+def _repo(path, name="config.json", enabled=True, raw=None):
+    os.makedirs(os.path.join(path, ".crew"), exist_ok=True)
+    with open(os.path.join(path, ".crew", name), "w", encoding="utf-8") as handle:
+        if raw is not None:
+            handle.write(raw)
+        else:
+            json.dump({"context": {"autoClear": {"method": "auto", "enabled": enabled}}},
+                      handle)
+    return os.path.realpath(path)
+
+
+def _snapshot(top):
+    out = {}
+    for base, _dirs, files in os.walk(top):
+        for name in files:
+            path = os.path.join(base, name)
+            with open(path, "rb") as handle:
+                out[path] = handle.read()
+    return out
+
+
+def _read(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def test_scan_root_adds_every_opted_in_repo_to_the_proposal(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(scan / "here"))
+    via_config = _repo(str(scan / "a"))
+    via_crew_json = _repo(str(scan / "b"), name="crew.json")
+    _repo(str(scan / "c"), enabled=False)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    widening = plan["widening"]
+    assert widening["proposedOnlyRepos"] == sorted([here, via_config, via_crew_json])
+    assert widening["scan"]["found"] == sorted([via_config, via_crew_json])
+    assert widening["scan"]["unreadable"] == []
+    assert "found 2 other" in widening["message"]
+
+
+def test_scan_root_proposes_other_repos_when_this_repo_never_opted_in(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"), enabled=False)
+    other = _repo(str(scan / "other"))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["proposedOnlyRepos"] == [other]
+
+
+def test_no_scan_without_scan_root(tmp_path, monkeypatch):
+    here = _repo(str(tmp_path / "here"))
+    _repo(str(tmp_path / "other"))
+    walked = []
+    monkeypatch.setattr(setup, "scan_opted_in_repos", lambda *a, **k: walked.append(a))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path))
+
+    assert "scan" not in plan["widening"]
+    assert plan["widening"]["proposedOnlyRepos"] == [here]
+    assert "--scan-root" in plan["widening"]["message"]
+    assert walked == []
+
+
+def test_scan_depth_limits_the_walk(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    deep = _repo(str(scan / "a" / "b" / "c" / "deep"))
+    global_path = _widening_global(tmp_path)
+
+    shallow = setup.detect_onlyRepos_widening(
+        crew_config.read_global_config(global_path), here, True,
+        scan_roots=[str(scan)], scan_depth=3)
+    assert shallow["scan"]["found"] == []
+
+    raised = setup.detect_onlyRepos_widening(
+        crew_config.read_global_config(global_path), here, True,
+        scan_roots=[str(scan)], scan_depth=4)
+    assert raised["scan"]["found"] == [deep]
+
+
+def test_scan_skips_nested_hidden_vendored_and_symlinked_directories(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    outer = _repo(str(scan / "outer"), enabled=False)
+    _repo(str(scan / "outer" / "nested"))
+    _repo(str(scan / ".hidden" / "repo"))
+    _repo(str(scan / "node_modules" / "repo"))
+    target = _repo(str(tmp_path / "elsewhere" / "linked"))
+    try:
+        os.symlink(os.path.dirname(target), str(scan / "link"), target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pass  # the platform cannot create one; the other cases still run
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["scan"]["found"] == []
+    assert plan["widening"]["proposedOnlyRepos"] == [here]
+    assert outer not in plan["widening"]["proposedOnlyRepos"]
+
+
+def test_scan_does_not_list_the_current_repo_twice(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(scan / "here"))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["proposedOnlyRepos"] == [here]
+    assert plan["widening"]["scan"]["found"] == []
+
+
+def test_overlapping_scan_roots_deduplicate(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    other = _repo(str(scan / "team" / "other"))
+
+    plan = setup.apply_migrate_to_repo(
+        here, global_path=_widening_global(tmp_path),
+        scan_roots=[str(scan), str(scan / "team"), str(scan)])
+
+    assert plan["widening"]["scan"]["found"] == [other]
+    assert plan["widening"]["proposedOnlyRepos"] == sorted([here, other])
+
+
+def test_unreadable_candidate_is_reported_not_treated_as_not_opted_in(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    broken = _repo(str(scan / "broken"), raw="{not json")
+    listed = _repo(str(scan / "listed"), raw="[1, 2]")
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    unreadable = plan["widening"]["scan"]["unreadable"]
+    assert [item["path"] for item in unreadable] == sorted([broken, listed])
+    assert all(item["reason"] for item in unreadable)
+    assert plan["widening"]["proposedOnlyRepos"] == [here]
+    assert broken in plan["widening"]["message"] and listed in plan["widening"]["message"]
+
+
+def test_yes_widen_refuses_when_a_candidate_could_not_be_read(tmp_path, capsys):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    _repo(str(scan / "ok"))
+    broken = _repo(str(scan / "broken"), raw="{not json")
+    global_path = _widening_global(tmp_path)
+    before = (_read(global_path), _read(os.path.join(here, ".crew", "config.json")))
+
+    code = setup.main(["--root", here, "--global-path", global_path, "apply-migrate",
+                       "--scan-root", str(scan), "--yes-widen"])
+
+    assert code == 1
+    assert broken in capsys.readouterr().err
+    assert (_read(global_path), _read(os.path.join(here, ".crew", "config.json"))) == before
+
+
+def test_yes_widen_refuses_an_empty_proposal(tmp_path, capsys):
+    here = _repo(str(tmp_path / "here"), enabled=False)
+    _repo(str(tmp_path / "here"), name="crew.json", enabled=False)
+    global_path = _widening_global(tmp_path)
+    repo_files = [os.path.join(here, ".crew", n) for n in ("config.json", "crew.json")]
+    before = [_read(p) for p in repo_files]
+
+    code = setup.main(["--root", here, "--global-path", global_path, "apply-migrate",
+                       "--yes-widen"])
+
+    assert code == 1
+    assert "--scan-root" in capsys.readouterr().err
+    on_disk = crew_config.read_global_config(global_path)
+    assert on_disk["context"]["autoClear"].get("onlyRepos") is None
+    assert [_read(p) for p in repo_files] == before
+
+
+def test_yes_widen_with_scan_root_writes_the_scanned_list(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    other = _repo(str(scan / "other"))
+    global_path = _widening_global(tmp_path)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=global_path, yes_widen=True,
+                                       scan_roots=[str(scan)])
+
+    assert plan["wideningApplied"] is True
+    on_disk = crew_config.read_global_config(global_path)
+    assert on_disk["context"]["autoClear"]["onlyRepos"] == sorted([here, other])
+
+
+def test_scan_never_writes_to_a_scanned_repo(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(scan / "here"))
+    _repo(str(scan / "a"))
+    _repo(str(scan / "b"), name="crew.json")
+    _repo(str(scan / "c"), enabled=False)
+    before = {p: b for p, b in _snapshot(str(scan)).items()
+              if not p.startswith(os.path.join(here, ""))}
+
+    setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                yes_widen=True, scan_roots=[str(scan)])
+
+    after = {p: b for p, b in _snapshot(str(scan)).items()
+             if not p.startswith(os.path.join(here, ""))}
+    assert after == before
+
+
+def test_scan_root_and_depth_usage_errors(tmp_path, capsys):
+    here = _repo(str(tmp_path / "here"))
+    global_path = _widening_global(tmp_path)
+    before = (_read(global_path), _read(os.path.join(here, ".crew", "config.json")))
+    missing = str(tmp_path / "missing")
+
+    assert setup.main(["--root", here, "--global-path", global_path, "apply-migrate",
+                       "--scan-root", missing, "--yes-widen"]) == 1
+    assert missing in capsys.readouterr().err
+    assert (_read(global_path), _read(os.path.join(here, ".crew", "config.json"))) == before
+
+    for argv in (["--scan-root", str(tmp_path), "--scan-depth", "0"], ["--scan-depth", "2"]):
+        try:
+            setup.main(["--root", here, "--global-path", global_path, "apply-migrate"]
+                       + argv)
+            assert False, "expected a usage error"
+        except SystemExit as exc:
+            assert exc.code == 2
+    assert (_read(global_path), _read(os.path.join(here, ".crew", "config.json"))) == before
+
+
+def test_scan_skipped_when_there_is_no_widening(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    _repo(str(scan / "other"))
+    global_path = _widening_global(tmp_path)
+    setup.apply_onlyRepos_narrowing(["/x"], consent=True, path=global_path)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=global_path,
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["widening"] is False
+    assert "scan" not in plan["widening"]
+
+
+def test_apply_migrate_notes_name_their_file(tmp_path):
+    root = str(tmp_path / "repo")
+    block = {"autoClear": {"method": "windows", "enabled": True, "onlyRepos": []}}
+    _write_config_json(root, block)
+    _write_crew_json(root, block)
+
+    plan = setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+
+    assert plan["notes"]
+    assert all(note.startswith((".crew/config.json: ", ".crew/crew.json: "))
+               for note in plan["notes"])
+    assert len(set(plan["notes"])) == len(plan["notes"])
+
+
+def test_forbidden_words_check_covers_a_scan_with_found_and_unreadable():
+    samples = setup.forbidden_word_samples()
+    assert any("Could not read 1" in s and "found 1 other" in s for s in samples)
+    assert any("refused --yes-widen" in s and "empty" in s for s in samples)
+    assert any("refused --yes-widen" in s and "could not be read" in s for s in samples)

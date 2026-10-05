@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.7**: `/crew:migrate` finds the other repos that opted in to auto-clear. When migrating finds auto-clear armed in every repo, it can now look under a folder you name for the other repos that opted in, and propose them too, instead of leaving you to search the disk by hand.
 - **crew 1.1.7**: Config delete names the backup after an OS error; a repo `null` that widens is marked. Deleting a repo's crew config no longer says the file was "left in place" when it had already been moved to the backup, and setting a repo value to `null` that inherits a wider machine value now shows the widening warning.
-- **crew 1.1.7**: Vault recall ranks this repo's notes first. crew now tells obsidian-vault which project a session is in, so recalled notes about this repository come before other projects' notes; an older obsidian-vault still works as before.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
