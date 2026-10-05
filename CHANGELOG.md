@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: SQL candidate standards, no gated SQL set yet (L-0532)
+
+- **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is
+  enforced, because no SQL rule yet has three reviewed change sets that count.
+- **What changed.** New `plugin/crew/skills/stack-sql/references/candidates.md` covers SQL-P1
+  (PostgreSQL `SECURITY DEFINER` pins `search_path` and revokes `EXECUTE` from `PUBLIC`), SQL-P2
+  (PostgreSQL `CREATE INDEX CONCURRENTLY` outside the runner's transaction) and SQL-17 (SQL Server
+  session `SET` options are part of the change). Each entry gives its public change sets, its
+  verdict and a Source sentence, re-matched against the raw page. `stack-sql/SKILL.md` gains a
+  `## Standards` section that says why no set ships, and the README and PLUGINS.md say so too.
+  No `references/sql.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  three-reviewed-change-sets bar. Owner-private evidence was not consulted, and the re-check is
+  tracked as C-0020. SQL-01..SQL-20 from the owner's research were not assessed, so the spec's
+  `grep -c '^SQL-' >= 20` check of the change-set file does not pass. That is a reported
+  deviation, with no placeholder rows added. The MySQL docs site failed during the pass, so no
+  MySQL/MariaDB rule was checked.
+
 ### Fixed — crew: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
 
 - **Summary.** A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a

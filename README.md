@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: SQL candidate standards, no gated SQL set yet. `stack-sql` now lists three candidate SQL standards with their sources. None is enforced, because no SQL rule yet has three reviewed change sets that count.
 - **crew**: Standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch`. A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's standards can be listed before any scope base exists.
-- **crew**: One source per kind of rule for crew-standards and crew-qa-standards. crew's two standards skills now say which owns which rule: code-level rules live in `crew-standards`, the repository's machinery in `crew-qa-standards`, and the recurring-findings probes are derived from the standards, with a test that every standard they name exists.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

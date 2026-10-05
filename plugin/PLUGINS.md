@@ -221,7 +221,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section |
 | `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening |
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
-| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking |
+| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking; no gated SQL set yet, its candidate standards and their sources |
 | `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces |
 | `stack-web` | Playwright web UI testing pitfalls, checks and `verify.json` wiring — role/testid locators, web-first assertions, trace and visual-baseline discipline, accessibility via axe. Backs `/crew:webtest` |
 
