@@ -50,7 +50,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   first (exit 2 naming the missing ones). A tool skipped inside an install step is recorded in a
   temp file, since each step runs in a subshell, so it reaches the `GIZMODUCK_BOOTSTRAP_SKIPPED:`
   line. A cached nikto clone is kept with no network call only when `perl nikto.pl -Version` runs;
-  otherwise it is re-cloned (`GIZMODUCK_BOOTSTRAP_FORCE=1` always updates it).
+  otherwise it is re-cloned (`GIZMODUCK_BOOTSTRAP_FORCE=1` always updates it). A fresh clone that
+  perl cannot run (no XML::Writer) fails the step naming `libxml-writer-perl`.
 - **`GITHUB_TOKEN`.** Release lookups send it when set, as a header file descriptor, so it is on no
   command line and never printed.
 - **Docs.** The plugin README's new "CI and containers" section: root in a container, `--user`,

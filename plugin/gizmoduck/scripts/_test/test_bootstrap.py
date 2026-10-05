@@ -300,3 +300,24 @@ def test_user_mode_cached_nikto_is_kept_only_when_it_runs(env, tmp_path, works):
     else:
         assert "fails its check - reinstalling" in proc.stdout, proc.stdout + proc.stderr
         assert "git" in calls and "clone" in calls, calls
+
+
+@pytest.mark.parametrize("works", [True, False])
+def test_user_mode_fresh_nikto_clone_must_run(env, tmp_path, works):
+    # A fresh clone is an install only when perl runs it, like a cached one.
+    e, fakes, _log = env
+    out = "Nikto 2.5.0" if works else "Can't locate XML/Writer.pm"
+    _fake(fakes, "perl", f'#!{_BASH}\necho "{out}"\n')
+    _fake(fakes, "git", f'#!{_BASH}\nfor d; do :; done\nmkdir -p "$d/program"\n'
+                        f'echo "#!/usr/bin/perl" > "$d/program/nikto.pl"\n')
+    opt = tmp_path / "opt"
+    script = (f'source "$0"; USER_MODE=1; OPT_DIR={opt}; '
+              'install_nikto_user; echo "rc=$?"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    assert (opt / "nikto" / "program" / "nikto.pl").is_file(), proc.stdout + proc.stderr
+    if works:
+        assert proc.stdout.splitlines()[-1] == "rc=0", proc.stdout + proc.stderr
+    else:
+        assert proc.stdout.splitlines()[-1] == "rc=1", proc.stdout + proc.stderr
+        assert "perl cannot run" in proc.stderr, proc.stderr

@@ -504,7 +504,13 @@ install_nikto_user() {
     rm -rf "$dir"
     git_net 600 clone --depth 1 https://github.com/sullo/nikto.git "$dir"
   fi
-  [[ -f "$dir/program/nikto.pl" ]]
+  [[ -f "$dir/program/nikto.pl" ]] || return 1
+  # The same run check as a cached copy: perl without nikto's modules
+  # (XML::Writer) has a clone it cannot run, which is not an install.
+  if ! probe_nikto_pl "$dir/program/nikto.pl"; then
+    echo "!! nikto: perl cannot run ${dir}/program/nikto.pl (add 'libxml-writer-perl' to the image)" >&2
+    return 1
+  fi
 }
 
 install_testssl() {
