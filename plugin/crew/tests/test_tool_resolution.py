@@ -53,36 +53,10 @@ SCAN_ROOTS = ("plugin", "skills")
 SKIP_PARTS = {"tests", "_test", "node_modules", "__pycache__"}
 SUBPROCESS_FNS = {"run", "Popen", "check_output", "check_call", "call"}
 
-_PR_B = "L-1508 PR B"  # harness (scripts/check-tooling-pr.py HARNESS): lands alone, T-0087
-
 # (file, enclosing function, tool) -> why a bare name is right, or not fixed
 # here. A gated entry also cites the gate's `path:line` and the text on that
 # line, and test_every_gate_citation_still_points_at_its_gate checks it.
 ALLOWLIST = (
-    {"file": "plugin/crew/hooks/scripts/completion_audit.py", "function": "_git_fields",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/crew_ticket.py", "function": "_git",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/merged_main.py", "function": "_is_ancestor",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/review_gate.py", "function": "_git",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/review_ledger.py", "function": "common_dir",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/review_patch.py", "function": "_run_raw",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/review_prompt.py", "function": "_head",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/verify_fingerprint.py", "function": "_head",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/verify_fingerprint.py", "function": "_index_entries",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/verify_fingerprint.py", "function": "_sub_changed",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/verify_record.py", "function": "tree_snapshot",
-     "tool": "git", "reason": _PR_B},
-    {"file": "plugin/crew/hooks/scripts/verify_record.py", "function": "_refs_digest",
-     "tool": "git", "reason": _PR_B},
     {"file": "plugin/crew/hooks/scripts/crew_autocycle.py", "function": "_proc",
      "tool": "ps", "reason": "POSIX only: _proc returns before ps on native Windows",
      "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:651",
@@ -354,7 +328,7 @@ def test_no_bare_name_subprocess_outside_the_allowlist():
 def test_the_scan_reaches_every_plugin_and_skill_script():
     # A scan that silently found nothing would pass the test above.
     files = {rel for rel, _, _, _ in _repo_sites()}
-    assert {"plugin/crew/hooks/scripts/verify_record.py",
+    assert {"plugin/crew/hooks/scripts/crew_autocycle.py",
             "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
             "skills/notify/scripts/notifyd.py"} <= files
 
@@ -454,7 +428,7 @@ def test_sabotage_an_allowlist_entry_without_its_reason_goes_red():
     got = problems(list(_repo_sites()), dropped)
 
     assert any("without a file, function, tool or reason" in p for p in got)
-    assert any(dropped[0]["file"] in p and "runs a bare 'git'" in p for p in got)
+    assert any(dropped[0]["file"] in p and f"runs a bare '{dropped[0]['tool']}'" in p for p in got)
 
 
 def test_a_stale_allowlist_entry_goes_red():
