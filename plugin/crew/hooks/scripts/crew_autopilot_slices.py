@@ -292,19 +292,22 @@ def _allowed_bases(top, ctx, k):
 
 def _merged_into_stop(top, ctx, k, branch):
     """The reason slice k's PR (on `branch`) does not count as merged into a
-    base its plan allows, or ""."""
-    memo = {}
-    try:
-        allowed = _allowed(top, ctx, k, memo)
-        state, found = _live(top, branch, memo, k)
-        if state != "MERGED":
-            raise _Stop(f"{branch}'s PR is {state}, not merged")
-        if found not in allowed:
-            raise _Stop(f"{branch}'s PR merged into {found or '(unreadable)'}, not a base the "
-                        f"plan names ({', '.join(sorted(allowed))}) - slice {k} did not "
-                        "reach its base; a person looks")
-    except _Stop as stop:
-        return str(stop)
+    base its plan allows, or "". The same decision as `merged_slices` over
+    slices 1..k -- order (no gap), every entry, every live read -- and slice k
+    must be recorded on exactly `branch` and verified MERGED: a PR on any
+    other branch, or one slices.json never recorded, never closes a slice."""
+    merged, states = merged_slices(top, ctx, k + 1)
+    if merged is None:
+        return states
+    entry = _shipped_entry(ctx, k)
+    if entry is None:
+        return (f"slices.json has no record of slice {k}'s PR, so {branch}'s merge cannot "
+                "be checked - a human looks")
+    if entry.get("branch") != branch:
+        return (f"slice {k} is recorded on {entry.get('branch')!r}, not {branch} - a human "
+                "looks")
+    if states.get(k) != "MERGED":
+        return f"slice {k}'s PR ({branch}) is {states.get(k)}, not merged"
     return ""
 
 

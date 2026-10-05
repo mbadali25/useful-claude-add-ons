@@ -541,7 +541,9 @@ def test_unsliced_ticket_ship_unchanged(tmp_path, monkeypatch):
 
 
 def test_merged_non_final_slice_names_next_slice(tmp_path, monkeypatch):
-    root, _, _, _ = _ship_env(tmp_path, monkeypatch)
+    # Oracle review r2: a merged slice counts only when slices.json recorded
+    # its PR (ship records it on opening), on exactly this branch.
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, shipped=[_shipped(1, BRANCH)])
     head = git(root, "rev-parse", "HEAD").strip()
     monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
         pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="main")),
@@ -556,7 +558,7 @@ def test_merged_non_final_slice_names_next_slice(tmp_path, monkeypatch):
 def test_merged_slice_pr_on_another_base_is_not_shipped(tmp_path, monkeypatch):
     """T-0059 port review r4 BLOCK: a slice PR retargeted and then merged
     elsewhere did not reach its base; next stops instead of moving on."""
-    root, _, _, _ = _ship_env(tmp_path, monkeypatch)
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, shipped=[_shipped(1, BRANCH)])
     head = git(root, "rev-parse", "HEAD").strip()
     monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
         pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="develop")),
@@ -999,14 +1001,14 @@ def _oracle_merged(bases, facts):
     return frozenset(merged)
 
 
-def _oracle_merged_into(bases, facts, k):
-    """"" when slice k's own live PR counts as merged into its allowed set."""
-    allowed = _oracle_allowed(bases, facts, k)
-    live = facts[k][1]
-    if allowed == _STOP or not live.startswith("M-"):
+def _oracle_merged_into(bases, facts, k, branch):
+    """"" when slice k's PR on `branch` counts as merged: slices 1..k pass the
+    merged-slices rule (order, entries, live reads), slice k is recorded on
+    exactly `branch`, and it is verified MERGED."""
+    merged = _oracle_merged(bases[:k], {j: facts[j] for j in range(1, k + 1)})
+    if merged == _STOP or facts[k][0] == "absent" or branch != _branch(k):
         return _STOP
-    found = {"M-declared": _declared(bases, k), "M-default": "main", "M-wrong": "develop"}[live]
-    return "" if found in allowed else _STOP
+    return "" if k in merged else _STOP
 
 
 def _world(bases, facts):
@@ -1050,10 +1052,13 @@ def test_merged_slice_decision_matches_the_oracle(monkeypatch, shape):
             "/r", ctx, k)
         merged, _why = crew_autopilot_slices.merged_slices("/r", ctx, k + 1)
         into = crew_autopilot_slices.merged_base_stop("/r", ctx, _branch(k))
+        other = crew_autopilot_slices.merged_base_stop("/r", ctx, "other")
         got = (_STOP if allowed is None else frozenset(allowed),
-               _STOP if merged is None else frozenset(merged), _STOP if into else "")
+               _STOP if merged is None else frozenset(merged), _STOP if into else "",
+               _STOP if other else "")
         want = (_oracle_allowed(bases, facts, k), _oracle_merged(bases, facts),
-                _oracle_merged_into(bases, facts, k))
+                _oracle_merged_into(bases, facts, k, _branch(k)),
+                _oracle_merged_into(bases, facts, k, "other"))
         if got != want:
             wrong.append((combo, got, want))
     assert not wrong, f"{len(wrong)} combinations disagree; first: {wrong[:3]}"
@@ -1075,3 +1080,18 @@ def test_a_branch_named_like_a_memo_key_is_read_live(monkeypatch, name):
     merged, why = crew_autopilot_slices.merged_slices("/r", ctx, 2)
 
     assert merged == {1}, why
+
+
+def test_an_unrecorded_merged_slice_never_closes(tmp_path, monkeypatch):
+    """Oracle review r2 BLOCK: a merged PR slices.json never recorded (or on
+    another branch than recorded) is not this slice's verified merge."""
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch)
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("MERGED", number=11, head=head), baseRefName="main")),
+        repo_view=MAIN))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "no record of slice 1's PR" in got["reason"]) == (
+        "ship", True, True), got
