@@ -150,7 +150,11 @@ def test_changelog_entry_names_version_is_updated(tmp_path):
     "### Fixed - crew 1.0.1: name not backticked",
     "### Fixed - `crew` 1.0.10: a longer version is not this one",
     "### Fixed - `crew` 1.0.1.1: a dotted extension is not this one",
-], ids=["old-version", "unquoted-name", "prefix-version", "dotted-suffix"])
+    "### Fixed - `crew` 1.0.1-rc.1: a prerelease is not this one",
+    "### Fixed - `crew` 1.0.1+build5: build metadata is not this one",
+    "### Fixed - `crew` 1.0.1_2: an underscored suffix is not this one",
+], ids=["old-version", "unquoted-name", "prefix-version", "dotted-suffix", "prerelease",
+        "build", "underscore"])
 def test_changelog_entry_that_does_not_name_this_version_is_missing(tmp_path, entry):
     root = _repo(tmp_path)
     _write(root, "plugin/crew/hooks/scripts/app.py", "x = 2\n")
@@ -282,16 +286,37 @@ def test_security_path_without_reason_missing(tmp_path):
     assert _verdict(_check(root), "SECURITY.md") == ("not needed", "reporting policy unchanged")
 
 
+_DEFER = {"key": "T-0099", "why": "ADRs are not measured", "unblock": "T-0040 lands"}
+
+
 def test_deferred_missing_from_todo(tmp_path):
     root = _repo(tmp_path)
     _write(root, "src/lib.py", "y = 2\n")
-    _docs_json(root, deferred=[{"key": "T-0099", "why": "x", "unblock": "y"}])
+    _docs_json(root, deferred=[_DEFER])
 
     got = _check(root)
 
     assert (got["status"], _verdict(got, "TODO.md")[0]) == ("missing", "MISSING")
-    _write(root, "TODO.md", "# TODO\n- T-0099: measure ADRs (blocked on y)\n")
+    _write(root, "TODO.md", "# TODO\n- T-0099: measure ADRs. Why: ADRs are not\n"
+                            "  measured. Unblock: T-0040 lands.\n")
     assert _verdict(_check(root), "TODO.md")[0] == "updated"
+
+
+@pytest.mark.parametrize("todo", [
+    "# TODO\n- T-00990: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n- XT-0099: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n- T-0099: measure ADRs\n",
+    "# TODO\n- T-0099: ADRs are not measured\n- other: T-0040 lands\n",
+], ids=["longer-id", "prefixed-id", "no-why-or-unblock", "unblock-in-another-entry"])
+def test_deferred_todo_entry_must_be_its_own_with_why_and_unblock(tmp_path, todo):
+    """T-0022 port review r2 FIX: the key as a whole id, and its own entry
+    carries the recorded why and unblock."""
+    root = _repo(tmp_path)
+    _write(root, "src/lib.py", "y = 2\n")
+    _docs_json(root, deferred=[_DEFER])
+    _write(root, "TODO.md", todo)
+
+    assert _verdict(_check(root), "TODO.md")[0] == "MISSING"
 
 
 def test_nothing_deferred_todo_not_needed(tmp_path):
@@ -461,8 +486,9 @@ def test_readme_base_marketplace_corrupt_is_unknown(tmp_path):
 def test_todo_absent_at_base_counts_every_line_added(tmp_path):
     root = _repo(tmp_path, todo=False)
     _write(root, "src/lib.py", "y = 2\n")
-    _write(root, "TODO.md", "# TODO\n- T-0099: deferred here\n")
-    _docs_json(root, deferred=[{"key": "T-0099", "why": "x", "unblock": "y"}])
+    _write(root, "TODO.md", "# TODO\n- T-0099: deferred here; ADRs are not measured; "
+                            "T-0040 lands\n")
+    _docs_json(root, deferred=[_DEFER])
 
     assert _verdict(_check(root), "TODO.md")[0] == "updated"
 

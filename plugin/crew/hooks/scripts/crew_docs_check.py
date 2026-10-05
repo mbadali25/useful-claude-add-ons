@@ -49,8 +49,9 @@ or a recorded reason, or MISSING. No CHANGELOG.md: `not applicable`.
   needed (no security-relevant path changed)` with no reason asked for.
 - A triggered document is `updated` when it changed, `not needed (<reason>)`
   with a docs.json reason, else MISSING.
-- TODO.md: every docs.json `deferred[].key` must appear in TODO.md's added
-  lines; nothing deferred is `not needed (nothing deferred)`.
+- TODO.md: every docs.json `deferred[]` item must appear in TODO.md's added
+  lines as its own entry (the key as a whole id, with its recorded `why` and
+  `unblock`); nothing deferred is `not needed (nothing deferred)`.
 
 Both glob lists are judgement (spec Unknowns) and `--explain` prints them.
 
@@ -255,7 +256,7 @@ def _judged(doc, changed_raw, reasons, why_triggered):
 
 def _names_version(line, name, version):
     return (f"`{name}`" in line and bool(version)
-            and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + r"(?!\.?[0-9A-Za-z])",
+            and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + r"(?![.+_-]?[0-9A-Za-z])",
                           line) is not None)
 
 
@@ -343,21 +344,57 @@ def _security_rows(top, changed, changed_raw, reasons):
                     + (f" (+{len(hits) - 1} more)" if len(hits) > 1 else ""))]
 
 
+def _words(text):
+    return " ".join(str(text).split()).lower()
+
+
+def _todo_entries(added, key):
+    """The added TODO.md entries naming `key` as a whole id (`T-0099`, never
+    inside `T-00990`): each the added line naming it plus the added lines
+    straight after it up to the next bullet or blank line, joined."""
+    named = re.compile(r"(?<![0-9A-Za-z])" + re.escape(key) + r"(?![0-9A-Za-z])")
+    entries = []
+    for at, (index, line) in enumerate(added):
+        if not named.search(line):
+            continue
+        body, last = [line], index
+        for nxt, more in added[at + 1:]:
+            if nxt != last + 1 or not more.strip() or more.lstrip().startswith(("- ", "* ")):
+                break
+            body.append(more)
+            last = nxt
+        entries.append(_words(" ".join(body)))
+    return entries
+
+
 def _todo_rows(top, base, deferred):
-    keys = [d["key"].strip() for d in deferred]
-    if not keys:
+    """Each deferral must reach TODO.md's added lines as its own entry: the
+    key as a whole id, with the recorded `why` and `unblock` in that entry
+    (whitespace and case aside), so the TODO says why it waits and what
+    unblocks it, not only that it exists."""
+    if not deferred:
         return [_row(TODO, NOT_NEEDED, "nothing deferred")]
     now = _disk_text(top, TODO)
     try:
         old = _base_text(top, base, TODO)
     except GitFailed as exc:
         return [_unknown_row(TODO, exc)]
-    added = "\n".join(line for _i, line in added_lines(old, now))
-    absent = [k for k in keys if now is None or k not in added]
-    if absent:
-        return [_row(TODO, MISSING, "deferred in docs.json but not added to TODO.md: "
-                     + ", ".join(absent))]
-    return [_row(TODO, UPDATED, f"{len(keys)} deferred item(s) added")]
+    added = added_lines(old, now) if now is not None else []
+    absent, thin = [], []
+    for item in deferred:
+        key = item["key"].strip()
+        entries = _todo_entries(added, key)
+        if not entries:
+            absent.append(key)
+        elif not any(_words(item["why"]) in e and _words(item["unblock"]) in e for e in entries):
+            thin.append(key)
+    if absent or thin:
+        return [_row(TODO, MISSING, "; ".join(
+            ([f"deferred in docs.json but not added to TODO.md: {', '.join(absent)}"]
+             if absent else [])
+            + ([f"added to TODO.md without its recorded why and unblock: {', '.join(thin)}"]
+               if thin else [])))]
+    return [_row(TODO, UPDATED, f"{len(deferred)} deferred item(s) added")]
 
 
 def _base_doubt(top, base, source, ticket):
@@ -446,7 +483,7 @@ def explain():
         "README triggers (under an entry's source): " + ", ".join(README_TRIGGERS)
         + "; root README.md when the entry names differ from the base's",
         "SECURITY_PATHS: " + ", ".join(SECURITY_PATHS),
-        "TODO.md: every docs.json deferred[].key in TODO.md's added lines",
+        "TODO.md: every docs.json deferred[] item in TODO.md's added lines, with its why and unblock",
     ])
 
 
