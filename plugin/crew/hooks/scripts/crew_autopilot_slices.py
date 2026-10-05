@@ -248,19 +248,35 @@ def ship_slice(top, ticket, ctx, branch, default, ship_from):
         return ap._ship_result(ticket, "stop", True, (  # pylint: disable=protected-access
             order or "could not read an earlier slice's PR state") + " - nothing pushed")
     base = slice_base(ctx["piece"]["n"], ctx["slices"], merged, branches, default)
-    wrong = _pr_base_stop(top, branch, base)
+    wrong = pr_base_stop(top, branch, base)
     if wrong:
         return ap._ship_result(ticket, "stop", True, wrong + " - nothing pushed")  # pylint: disable=protected-access
-    result = ship_from(create_argv(ticket, ctx, branch, base))
+    result = ship_from(create_argv(ticket, ctx, branch, base), base)
     # Any PR this run left behind is recorded -- one created before a stop
-    # (checks failed or timed out) included -- so a person merging it later
-    # still leaves the slice's branch on record for next-slice.
-    if result["action"] in ("open-pr", "merged") or result.get("pr"):
+    # (checks failed or timed out, or the follow-up read failed) included -- so
+    # a person merging it later still leaves the slice's branch on record.
+    after = crew_ship.read_pr(top, branch) if not result.get("pr") else None
+    if result["action"] in ("open-pr", "merged") or result.get("pr") or (
+            isinstance(after, dict) and after.get("state") in ("OPEN", "MERGED")):
         record_shipped(top, ticket, ctx, branch, base)
     return result
 
 
-def _pr_base_stop(top, branch, base):
+def expected_base_stop(top, ctx, branch):
+    """`next`'s check of an existing slice PR's base (T-0059): the reason it
+    is not the plan's, or "". Could not read is a stop too."""
+    if ctx.get("error"):
+        return ctx["error"]
+    default = crew_ship._default_branch(top)  # pylint: disable=protected-access
+    merged, why = merged_slices(top, ctx, ctx["piece"]["n"])
+    if not default or merged is None:
+        return why if merged is None else "could not read the default branch"
+    base = slice_base(ctx["piece"]["n"], ctx["slices"], merged,
+                      slice_branches(ctx) or {1: branch}, default)
+    return pr_base_stop(top, branch, base)
+
+
+def pr_base_stop(top, branch, base):
     """The reason an existing PR for `branch` may not ship, or "": its base
     must be the plan's (`slice_base`). A retargeted or hand-opened PR would
     merge into some other branch. Could not read is a stop too."""

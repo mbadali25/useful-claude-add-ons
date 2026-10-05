@@ -463,6 +463,9 @@ def _ship_phase(top, ticket, answer, why, ctx=None):
                       "failed: gh missing, not authenticated, no remote, or an answer that "
                       "is not a PR) - a human looks")
     state = pr["state"]
+    wrong = sl.expected_base_stop(top, ctx, branch) if ctx and state == "OPEN" else ""
+    if wrong:
+        return answer("ship", True, wrong)
     if state == "MERGED":
         return crew_ship.merged_phase(top, branch, pr, answer, finished)
     if state == "OPEN" and config["ship"] != "merge":
@@ -552,8 +555,10 @@ def _wait_for_ci(top, ticket, branch, pr, head):
         _sleep(min(POLL_SECONDS, deadline - _clock()))
 
 
-def _pre_merge_stop(top, ticket, branch, pr, head, gate):
-    """Every check between CI turning green and the merge call, or ""."""
+def _pre_merge_stop(top, ticket, branch, pr, head, gate, base=None):
+    """Every check between CI turning green and the merge call, or "". `base`
+    is a slice's planned base (T-0059): a PR retargeted while CI ran is never
+    merged."""
     # The receipt was checked before the push; commits made while CI ran
     # would ship unreviewed without this second look.
     stands, why = review_ledger.check_receipt(top, ticket)
@@ -569,6 +574,9 @@ def _pre_merge_stop(top, ticket, branch, pr, head, gate):
     tree = crew_ship._tree_stop(top)
     if tree:
         return f"{tree} - never merged"
+    wrong = crew_autopilot_slices.pr_base_stop(top, branch, base) if base else ""
+    if wrong:
+        return f"{wrong} - never merged"
     queue = crew_ship.read_merge_queue(top, pr["number"])
     if queue is not False:
         return (("the base branch has a merge queue, or the PR is in one" if queue else
@@ -612,11 +620,11 @@ def ship(root, ticket):
         # T-0059: one PR per slice, in order, based per the plan's Base: rule.
         return crew_autopilot_slices.ship_slice(
             top, ticket, ctx, branch, default,
-            lambda create: _ship(top, ticket, branch, create))
+            lambda create, base: _ship(top, ticket, branch, create, base))
     return _ship(top, ticket, branch, ["pr", "create", "--head", branch, "--fill"])
 
 
-def _ship(top, ticket, branch, create):
+def _ship(top, ticket, branch, create, base=None):
     """`ship` from the clean-tree check on, with `create` the `gh pr create`
     argv when the branch has no PR."""
     tree = crew_ship._tree_stop(top)
@@ -651,7 +659,7 @@ def _ship(top, ticket, branch, create):
     if stopped:
         return stopped
     families = gate["families"]
-    why = _pre_merge_stop(top, ticket, branch, pr, head, gate)
+    why = _pre_merge_stop(top, ticket, branch, pr, head, gate, base)
     if why:
         return _ship_result(ticket, "stop", True, why, pr, checks, families)
     merged = crew_ship._run_gh(top, crew_ship.merge_argv(pr["number"], head))
@@ -1127,7 +1135,16 @@ def _ledger_status(top, ticket):
     if ledger["state"] != review_ledger.UNKNOWN and "slices" not in ledger:
         data, state = review_ledger._load(ledger["path"])  # pylint: disable=protected-access
         if state == "ok" and isinstance(data, dict):
-            ledger = dict(ledger, slices=data.get("slices") or [])
+            rows = data.get("slices", [])
+            count = len(data.get("rounds") or [])
+            # A slice boundary that is not a list of rows each with an
+            # in-range integer `after_round` cannot say which rounds are this
+            # slice's: UNKNOWN, never "every round counts".
+            if not isinstance(rows, list) or not all(
+                    isinstance(r, dict) and crew_autopilot_slices.is_int(r.get("after_round"))
+                    and 0 <= r["after_round"] <= count for r in rows):
+                return dict(ledger, state=review_ledger.UNKNOWN)
+            ledger = dict(ledger, slices=rows)
     return ledger
 
 

@@ -554,7 +554,9 @@ def test_merged_non_final_slice_names_next_slice(tmp_path, monkeypatch):
 
 def test_open_non_final_slice_under_pr_names_next_slice(tmp_path, monkeypatch):
     root, _, _, _ = _ship_env(tmp_path, monkeypatch, ship="pr")
-    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(pr_view=_view(_pr("OPEN", number=11))))
+    # T-0059 port review r2: the open PR's base is read and must be the plan's.
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("OPEN", number=11), baseRefName="main")), repo_view=MAIN))
 
     got = _next(root)
 
@@ -660,3 +662,46 @@ def test_slice_pr_created_before_a_stop_is_recorded(tmp_path, monkeypatch):
 
     assert got["action"] == "stop", got
     assert [(e["slice"], e["branch"]) for e in _read_state(root)["shipped"]] == [(1, BRANCH)]
+
+
+
+def test_next_stops_on_an_open_slice_pr_with_another_base(tmp_path, monkeypatch):
+    """T-0059 port review r2 BLOCK: under `ship: pr` an open slice PR whose
+    base is not the plan's is never `next-slice`."""
+    prs = {BRANCH: dict(_pr("OPEN", number=5), baseRefName="develop")}
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, prs=prs, ship="pr")
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], "based on develop, not main" in got["reason"]) == (
+        "ship", True, True), got
+
+
+@pytest.mark.parametrize("rows", [[{"slice": 2}], [{"slice": 2, "after_round": "1"}],
+                                  [{"slice": 2, "after_round": 9}], {"after_round": 1}])
+def test_malformed_slice_rows_stop_review_as_unknown(tmp_path, monkeypatch, rows):
+    """T-0059 port review r2 BLOCK: a slice boundary that cannot be read is
+    UNKNOWN, never "every round counts" and never a crash."""
+    root = _ticket(tmp_path, header="status: in-progress   risk: high")
+    _accepted_ledger(root, rounds=1, slices=rows)
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], "UNKNOWN" in got["reason"]) == (
+        "review", True, True), got
+
+
+def test_slice_pr_recorded_when_the_result_names_none(tmp_path, monkeypatch):
+    """T-0059 port review r2 FIX: a PR opened before ship stopped without
+    naming it (the follow-up read failed) is still recorded."""
+    root, _, remote, _ = _ship_env(tmp_path, monkeypatch, ship="pr")
+    real = crew_autopilot._ship  # pylint: disable=protected-access
+
+    def opened_then_lost(top, ticket, branch, create, base=None):
+        real(top, ticket, branch, create, base)
+        return crew_autopilot._ship_result(ticket, "stop", True, "lost")  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_autopilot, "_ship", opened_then_lost)
+
+    crew_autopilot.ship(str(root), T)
+
+    assert remote.created and [e["slice"] for e in _read_state(root)["shipped"]] == [1]

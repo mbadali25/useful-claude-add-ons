@@ -72,7 +72,11 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   branch already has a PR on another base than the plan's; a PR ship opened
   and then stopped on (a failed or timed-out check) is recorded in
   `slices.json`; `Base: slice 0` is refused; the README's writer list names
-  sliced `ship`'s `slices.json`.
+  sliced `ship`'s `slices.json`. Round 2: `next` checks an open slice PR's base
+  before naming `next-slice`, and `ship` re-reads it right before the merge (a
+  PR retargeted while CI ran is never merged); a malformed `slices` boundary
+  in the review ledger is `UNKNOWN`, never "every round counts"; a PR opened
+  before a stop is recorded even when the stop does not name it.
 
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
@@ -162,7 +166,8 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   one), and a `--check` the gate refuses drops the passing record
   `crew_split.check` wrote, so `confirm` can never trust it. Round 3: a
   `metrics.md` holding a review row whose counts do not parse is a malformed
-  source (`unknown`), never "no review recorded".
+  source (`unknown`), never "no review recorded" -- a row with too few cells
+  too.
 
 ### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
@@ -284,7 +289,10 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   `GIT_SSH_COMMAND`, and never prints a failing `aws` command's stderr (the check names the command
   and its exit code). Round 5: `~/.terraformrc` is denied and probed and `TERRAFORM_CONFIG`
   stripped; the session gets `credential.helper` reset to empty through `GIT_CONFIG_COUNT`, so no
-  helper `~/.gitconfig` names (`store --file <anywhere>`, a script) answers git.
+  helper `~/.gitconfig` names (`store --file <anywhere>`, a script) answers git. Round 6:
+  `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` are stripped (they move a CLI's stored token off the denied
+  default path), and an `identity` must name one role (`.../assumed-role/<role>/`), never a bare
+  `.../assumed-role/` that would admit every role in the account.
 - Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
@@ -375,7 +383,10 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   is named `(repo, not read)`; and a config file that is there and cannot be read
   is `could not tell (...)`, never an empty list (sorted first, so a cut line
   still says it); a repo `[]` scope is named too, and a key holding a `.` is one
-  key, never two levels -- in the machine file's dropped keys too.
+  key, never two levels -- in the machine file's dropped keys too, and a key
+  `mode.foo` is not read as a child of the known `mode`. `--approvals` in a
+  linked worktree is `could not tell` when the two INDEX files disagree on
+  whether a ticket is open.
 - **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
   ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
   and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
