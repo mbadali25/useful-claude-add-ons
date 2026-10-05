@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
+
+- **Summary.** crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript,
+  with pitfalls and verify rules, and lists four candidate Node standards with the evidence each
+  has. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-node/SKILL.md` covers child processes,
+  `fetch` status handling, paging that says it stopped, unhandled rejections, erased types,
+  ESM/CJS, date parsing, integers above 2^53, `process.exit()` and `npm ci`. The behaviour
+  claims were checked on Node 22.22.0. It proposes two verify.json commands, `npm test` and
+  `node_modules/.bin/tsc --noEmit`; each exits 77 with `TOOL MISSING` when its tool is absent.
+  New `stack-node/references/candidates.md` covers NODE-08 (a partial result says it is
+  partial), NODE-P1 (argv arrays, not shell strings), NODE-P2 (status before body) and NODE-P3
+  (credentials only to the configured origin). `test_stack_skills.py` lists `stack-node`, and
+  crew's skill count reads 33 everywhere it is stated. No set file, loader or gate change.
+- **Evidence.** The evidence is this repository's commits and CHANGELOG, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. NODE-08 is at
+  the bar (4) in the spec's re-count, but three of its change sets are in a private repository
+  and their text was not available, so it stays a candidate. Public change sets do not count
+  (owner decision). That is a reported deviation from the spec, which expected `node.md` with
+  NODE-08.
+
 ### Added — crew: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
 
 - **Summary.** A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one

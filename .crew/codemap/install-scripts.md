@@ -234,7 +234,7 @@ through their own package managers.
   merely re-synced.** All of the following read **4 agents, 36 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
   `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 32 skills (32 since L-0533 added `stack-php`; 31 from T-0085's landing merge with #267's `crew-qa-standards`; 29 until T-0085 added `crew-standards`; at
+  the plugin-level 33 skills (33 since L-0537 added `stack-node`, 32 since L-0533 added `stack-php`; 31 from T-0085's landing merge with #267's `crew-qa-standards`; 29 until T-0085 added `crew-standards`; at
   `22399a9c` `plugin/README.md:414` and `INSTALLATION.md:252` still say 29, outside
   T-0085's Touch, and `scripts/check-marketplace.py` fails on both; both read 30
   from `b82035e6`, the Touch amendment, and the check passes) / 34 hook

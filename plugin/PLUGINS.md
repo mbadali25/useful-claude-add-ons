@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 1.1.0<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 36 commands, 32 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 36 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -219,6 +219,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy; no gated Angular set yet (set `NG` when earned), its Angular 2+ candidate standards |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
 | `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |
+| `stack-node` | Server-side and CLI Node.js/TypeScript pitfalls, checks and `verify.json` wiring — child processes, `fetch` status handling, paging that says it stopped, unhandled rejections, module format, dates, big integers; no gated Node set yet, its candidate standards |
 | `stack-php` | PHP 8 pitfalls, checks and `verify.json` wiring — loose comparison, array keys, bound SQL parameters, output escaping, `unserialize`, time zones, a `php -l` rule; no gated PHP set yet, its candidate standards |
 | `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening; the PWSH standards set's pointer and its candidates |
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
