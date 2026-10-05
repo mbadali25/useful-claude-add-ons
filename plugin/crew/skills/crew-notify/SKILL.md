@@ -76,6 +76,16 @@ Group ids are negative. That is normal, not an error.
 export CREW_TELEGRAM_TOKEN='123456789:AA...'
 ```
 
+On Windows, set it for your user from PowerShell. `.Trim()` drops the
+trailing space or newline a paste often carries; the hooks trim too, but the
+`curl` test below does not:
+
+```powershell
+[Environment]::SetEnvironmentVariable('CREW_TELEGRAM_TOKEN', '123456789:AA...'.Trim(), 'User')
+```
+
+Restart Claude Code afterwards so the hooks see it.
+
 6. Test:
 
 ```bash

@@ -143,6 +143,30 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this change.** GPG or checksum verification for dependency-check and ZAP (C-0015.5).
 - **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap_version.py` and `test_doctor.py`: each
   guard has must-block and must-allow cases, each sabotaged to confirm it goes red.
+||||||| 23fb9d91
+
+### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
+
+- **Summary.** Chat notifications now go through when the bot token was saved with a trailing space
+  or newline, a missing setting is named along with where to set it, a refused send says Telegram's
+  reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
+- **crew `crew_notify.py`.** The token, its variable name, the chat id and the Teams URL are stripped
+  before use; a token set with a trailing newline failed as a bare `failed (InvalidURL)`. A value
+  that cannot be a bot token (`<digits>:<letters>`) sends nothing and says so. "telegram token env or
+  chatId missing" is now one of: `notify.tokenEnv` not set in `~/.claude/crew/config.json` (the only
+  place it is read from), the variable empty or unset, or `notify.chatId` not set. A refusal carries
+  Telegram's `description` ("HTTP 400: Bad Request: chat not found"), and an `InvalidURL` is caught
+  without its message, which quotes the token.
+- **notify skill.** The token is stripped where it is read (`notify.py`, `notifyd.py`,
+  `telegram_get_chat_id.py`). A token urllib refuses is now a `TgError` that does not quote the URL;
+  before, `InvalidURL` escaped `tg.api` and `notify.py` printed its message, bot token included. A
+  reply that is not JSON says so.
+- **notifyd: no more repeats.** A request is taken off the queue before it is sent, and an unexpected
+  error costs one turn of the loop, not the daemon. Before, such an error left the request on disk and
+  ended the daemon; a supervisor (nssm, Task Scheduler) restarted it and it posted the same message
+  again, indefinitely. A restart also re-posted every unanswered question; it now resumes waiting on
+  the message already sent.
+- **Docs.** `crew-notify` gains the PowerShell line for setting the token on Windows.
 
 ### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
 

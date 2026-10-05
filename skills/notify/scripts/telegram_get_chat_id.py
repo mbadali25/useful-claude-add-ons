@@ -17,9 +17,14 @@ import sys
 import urllib.request
 
 def main():
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    # Stripped: a trailing space or newline from setx or a paste otherwise
+    # lands inside the URL, and urllib's InvalidURL message quotes it.
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         print("Set TELEGRAM_BOT_TOKEN first.", file=sys.stderr); sys.exit(2)
+    if any(c.isspace() or ord(c) < 32 for c in token):
+        print("TELEGRAM_BOT_TOKEN contains a space or control character inside it; "
+              "re-copy it from @BotFather.", file=sys.stderr); sys.exit(2)
     url = f"https://api.telegram.org/bot{token}/getUpdates?timeout=0"
     try:
         with urllib.request.urlopen(url, timeout=15) as r:

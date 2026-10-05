@@ -85,7 +85,7 @@ def poll_into_inbox(cfg, root, seconds):
     is up the daemon is the only reader and this must not run.
     """
     tgc = cfg.get("telegram", {})
-    token = os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+    token = tg.token_from_env(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
     if not token:
         # Reading messages already on disk is still useful without a token, so warn and
         # fall through to the file rather than killing the run.
@@ -190,7 +190,7 @@ def via_dispatcher(cfg, subject, body, event, job_id, want_reply, buttons, timeo
 # ---------- Telegram direct (no dispatcher) ----------
 def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
     tgc = cfg.get("telegram", {}); chat_id = tgc.get("chat_id")
-    token = os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+    token = tg.token_from_env(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
     if not chat_id: die("telegram.chat_id required")
     if dry:
         parts = tg.split_body(body)

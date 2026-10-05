@@ -57,6 +57,7 @@ Every entry point exits 0. A reason goes to stderr when nothing was sent.
 import argparse
 import datetime
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -103,6 +104,9 @@ SUBJECTS = {
 GLOBAL_ONLY_KEYS = {"tokenEnv": "(or the notify skill's config) names the token",
                     "urlEnv": "names the webhook URL"}
 EXAMPLE_CHAT_ID = "-1001234567890"
+# <digits>:<letters, digits, _ and ->. Anything else -- an inner space, a quote,
+# two tokens pasted together -- cannot be a bot token.
+_BOT_TOKEN = re.compile(r"\d+:[A-Za-z0-9_-]+")
 MAX_REASON = 280
 MAX_EXCERPT = 200
 REALERT_HOURS = 6
@@ -544,7 +548,10 @@ def _telegram(token, chat, text, loud):
                     return False, "429 retry_after over the send budget"
                 time.sleep(wait)
                 continue
-            return False, f"HTTP {exc.code}"
+            return False, f"HTTP {exc.code}" + _because(out)
+        except http.client.InvalidURL:
+            # Its message quotes the request path, token included: never pass it on.
+            return False, "the bot token is not usable in a URL"
         except (urllib.error.URLError, OSError, ValueError) as exc:
             return False, f"network error ({exc.__class__.__name__})"
         try:
@@ -553,8 +560,16 @@ def _telegram(token, chat, text, loud):
             return False, "response is not JSON"
         if status == 200 and isinstance(out, dict) and out.get("ok") is True:
             return True, "ok"
-        return False, "ok: false"
+        return False, "ok: false" + _because(out)
     return False, "429 twice"
+
+
+def _because(reply):
+    """`: <Telegram's description>` -- "Bad Request: chat not found",
+    "Unauthorized" -- or nothing. The status alone never said which setting
+    was wrong."""
+    why = reply.get("description") if isinstance(reply, dict) else None
+    return f": {redact(_one_line(why))[:120]}" if isinstance(why, str) and why.strip() else ""
 
 
 def _teams(url, text):
@@ -606,16 +621,36 @@ def _outcome(outcome, reason):
 def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
     """Everything after the filters: credentials, line, episode, dedupe, transport."""
     provider = cfg.get("provider")
+    # Every credential is stripped: a token set with a trailing space or newline
+    # (setx, a paste, the System Properties dialog) put it inside the URL, and the
+    # send failed as a bare `failed (InvalidURL)` (2026-10-05, a Windows host).
+    # And each missing value is named, with where it is read from: "token env or
+    # chatId missing" sent the owner to set a chat id that was already there.
     if provider == "telegram":
         token_env = cfg.get("tokenEnv")
-        token = os.environ.get(token_env) if isinstance(token_env, str) and token_env else None
-        target = cfg.get("chatId")
-        if not token or target in (None, ""):
-            _say("telegram token env or chatId missing; nothing sent")
+        token_env = token_env.strip() if isinstance(token_env, str) else ""
+        token = (os.environ.get(token_env) or "").strip() if token_env else ""
+        target = str(cfg.get("chatId")).strip() if cfg.get("chatId") is not None else ""
+        if not token_env:
+            _say("telegram notify.tokenEnv is not set in ~/.claude/crew/config.json or the notify "
+                 "skill's bot_token_env (a repo's notify.tokenEnv is ignored); nothing sent")
+            return "missing-credentials"
+        if not token:
+            _say(f"telegram token missing: ${token_env} is empty or unset in this process's "
+                 "environment; nothing sent")
+            return "missing-credentials"
+        if not _BOT_TOKEN.fullmatch(token):
+            _say(f"${token_env} does not look like a Telegram bot token (<digits>:<letters>); "
+                 "nothing sent")
+            return "missing-credentials"
+        if not target:
+            _say("telegram chatId missing: set notify.chatId in this repo's crew config or the "
+                 "machine-global one; nothing sent")
             return "missing-credentials"
     elif provider == "teams":
         url_env = cfg.get("urlEnv")
-        target = os.environ.get(url_env) if isinstance(url_env, str) and url_env else None
+        url_env = url_env.strip() if isinstance(url_env, str) else ""
+        target = (os.environ.get(url_env) or "").strip() if url_env else ""
         token = None
         if not target:
             _say(f"teams url env ${url_env} not set; nothing sent")
