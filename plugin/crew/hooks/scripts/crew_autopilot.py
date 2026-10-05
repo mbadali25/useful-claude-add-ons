@@ -2564,7 +2564,10 @@ FOCUS_LOCK_WAIT = 5.0
 
 # PowerShell reads U+2018..U+201B as single quotes too.
 _PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
-_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f\u2018-\u201b]|\s{2,}")
+# C0, DEL and C1 controls (a terminal acts on C1 too), the PowerShell quotes,
+# and the bidi embedding/override/isolate controls U+202A..U+202E and
+# U+2066..U+2069 (they reorder what a person reads): the JSON form instead.
+_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f-\x9f\u2018-\u201b\u202a-\u202e\u2066-\u2069]|\s{2,}")
 
 
 def _posix_quoted(path):
@@ -2579,7 +2582,7 @@ def _ps_quoted(path):
 
 def _paste_safe(path):
     """Whether `path` survives into a printed command unchanged: no control
-    character, no run of whitespace (`_one_line` would collapse it), no
+    character (C0, DEL or C1), no bidi control, no run of whitespace (`_one_line` would collapse it), no
     quote PowerShell also reads, and the POSIX command parses back to exactly
     `rm -- <path>`."""
     if _UNSAFE_PATH.search(path):

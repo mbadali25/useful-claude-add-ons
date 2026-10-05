@@ -791,7 +791,9 @@ def test_printed_removal_names_exactly_the_path_or_no_command(path):
 @pytest.mark.parametrize("path,commands", [("/r/a b/autopilot-focus.json", True),
                                            ("/r/two  spaces/autopilot-focus.json", False),
                                            ("/r/new\nline/autopilot-focus.json", False),
-                                           ("/r/\u00fcn\u00ef\u2019c/autopilot-focus.json", False)])
+                                           ("/r/\u00fcn\u00ef\u2019c/autopilot-focus.json", False),
+                                           ("/r/c1\x9bctl/autopilot-focus.json", False),
+                                           ("/r/bidi\u202eevil/autopilot-focus.json", False)])
 def test_commands_are_printed_only_for_a_paste_safe_path(path, commands):
     assert ("rm -- " in crew_autopilot._focus_remedy(path)) is commands  # pylint: disable=protected-access
 
