@@ -41,6 +41,34 @@ _FAKE = textwrap.dedent(r'''
         print("this is not json"); sys.exit(0)
     if mode == "empty":
         sys.exit(0)
+    if mode == "setsid-holder":
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c",
+                                  "import os, time; os.setsid(); time.sleep(60)"])
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
+        print("[]"); sys.exit(0)
+    if mode == "sleep-pid":
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+        sys.stderr.write("x"); sys.stderr.flush()
+        time.sleep(60)
+    if mode == "detached":
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
+        print("[]"); sys.exit(0)
+    if mode == "raw":
+        out = os.environ.get("FAKE_LINT_STDOUT", "")
+        if out == "ROW_AND_NULL":
+            head = [f for f in json.load(open(args[-2], encoding="utf-8"))
+                    if "head" in f.replace("\\", "/").split("/")]
+            out = json.dumps([{"file": head[0], "rule": "R1", "severity": "Warning",
+                               "message": "m"}, None])
+        print(out); sys.exit(0)
     if mode == "nomessage":
         if tool == "shellcheck":
             print(json.dumps({"comments": [{"file": f, "code": 2086, "level": "warning"}
@@ -465,17 +493,33 @@ def test_real_ruff_catches_blind_except(tmp_path):
     assert (result["status"], [r["rule"] for r in result["new"]]) == (rc.FAIL, ["BLE001"]), result
 
 
-def _pssa_present():
-    pwsh = shutil.which("pwsh")
-    return pwsh and subprocess.run(
-        [pwsh, "-NoProfile", "-NonInteractive", "-Command",
+def _pssa_missing(exe="pwsh"):
+    """What is missing for a real-PSSA case under `exe`, or '' when nothing is."""
+    found = shutil.which(exe)
+    if not found:
+        return f"{exe} is not on PATH"
+    probe = subprocess.run(
+        [found, "-NoProfile", "-NonInteractive", "-Command",
          "if (Get-Module -ListAvailable PSScriptAnalyzer) { exit 0 } else { exit 1 }"],
-        capture_output=True, stdin=subprocess.DEVNULL, check=False, timeout=120).returncode == 0
+        capture_output=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
+    return "" if probe.returncode == 0 else f"{exe} has no PSScriptAnalyzer module"
+
+
+def _pssa_or_skip(exe="pwsh", require="CREW_REQUIRE_PSSA"):
+    """Skip a real-PSSA case when the tool is absent, unless `require` is
+    set to 1: then a missing tool FAILS, so a proving run (this host,
+    win-repo-2) can never pass by skipping (L-0605)."""
+    missing = _pssa_missing(exe)
+    if not missing:
+        return
+    if os.environ.get(require) == "1":
+        pytest.fail(f"{require}=1 but {missing}, so this real-tool case could not run")
+    pytest.skip(f"{exe} with PSScriptAnalyzer is not installed ({missing}), so this real-tool "
+                "case did not run")
 
 
 def test_real_pssa_catches_empty_catch(tmp_path):
-    if not _pssa_present():
-        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    _pssa_or_skip()
     repo = _start(tmp_path, {"t.ps1": "Write-Output 'a'\n"},
                   [{"tool": "psscriptanalyzer", "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
     _edit(repo, "t.ps1", "try { Write-Output 'a' } catch { }\n")
@@ -486,9 +530,108 @@ def test_real_pssa_catches_empty_catch(tmp_path):
         rc.FAIL, ["PSAvoidUsingEmptyCatchBlock"]), result
 
 
+def test_real_pssa_script_prints_an_empty_list_when_clean(tmp_path):
+    """L-0605 (round-10 BLOCK :148): the script's own stdout for a clean file
+    is exactly `[]`, never `[null]`, whatever the engine does with an empty
+    statement's output."""
+    _pssa_or_skip()
+    clean = tmp_path / "clean.ps1"
+    clean.write_text("Write-Output 'a'\n", encoding="utf-8")
+    for path, text in ((tmp_path / "pssa.ps1", rc._PSSA_SCRIPT),  # pylint: disable=protected-access
+                       (tmp_path / "files.json", json.dumps([str(clean)])),
+                       (tmp_path / "rules.json", json.dumps(["PSAvoidUsingEmptyCatchBlock"]))):
+        path.write_text(text + "\n", encoding="utf-8", newline="\n")
+
+    proc = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File",
+                           str(tmp_path / "pssa.ps1"), str(tmp_path / "files.json"),
+                           str(tmp_path / "rules.json")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=300)
+
+    assert (proc.returncode, proc.stdout.strip()) == (0, "[]"), proc.stderr
+
+
+def test_real_pssa_clean_files_pass(tmp_path):
+    """L-0605: a modified clean file (linted at its base too) and an added
+    one read exactly pass; the dirty-file case beside it proves the tool ran."""
+    _pssa_or_skip()
+    repo = _start(tmp_path, {"a.ps1": "Write-Output 'a'\n"},
+                  [{"tool": "psscriptanalyzer", "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
+    _edit(repo, "a.ps1", "Write-Output 'b'\n")
+    _edit(repo, "b.ps1", "Write-Output 'c'\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], result["detail"]) == (rc.PASS, "no new findings in 2 file(s)"), result
+
+
+def test_require_pssa_turns_a_missing_tool_into_a_failure(tmp_path):
+    """L-0605: with CREW_REQUIRE_PSSA=1 a missing pwsh fails the real-tool
+    case; without it the case skips."""
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    target = f"{os.path.abspath(__file__)}::test_real_pssa_clean_files_pass"
+    base = {k: v for k, v in os.environ.items() if k != "CREW_REQUIRE_PSSA"}
+    base["PATH"] = str(empty)
+    runs = {}
+    for flag in ("1", ""):
+        env = dict(base, CREW_REQUIRE_PSSA=flag) if flag else dict(base)
+        runs[flag] = subprocess.run(
+            [sys.executable, "-m", "pytest", target, "-q", "-p", "no:cacheprovider",
+             "-p", "no:randomly", "-o", "addopts="],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, env=env,
+            timeout=300)
+
+    assert (runs["1"].returncode, "CREW_REQUIRE_PSSA=1 but pwsh is not on PATH" in runs["1"].stdout,
+            runs[""].returncode, "1 skipped" in runs[""].stdout) == (1, True, 0, True), (
+        runs["1"].stdout[-2000:], runs[""].stdout[-2000:])
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1 exists only on Windows")
+@pytest.mark.parametrize("dirty", [False, True])
+def test_real_pssa_under_windows_powershell_fails_closed(tmp_path, dirty):
+    """L-0605 Exclusion: 5.1 is not supported, but it may never pass a new
+    finding. Two changed files under command powershell: the right answer
+    or could-not-check, and never pass when one file adds an empty catch."""
+    _pssa_or_skip("powershell", require="CREW_REQUIRE_PSSA51")
+    repo = _start(tmp_path, {"a.ps1": "Write-Output 'a'\n", "b.ps1": "Write-Output 'b'\n"},
+                  [{"tool": "psscriptanalyzer", "command": ["powershell"],
+                    "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
+    _edit(repo, "a.ps1", "try { Write-Output 'a' } catch { }\n" if dirty else "Write-Output 'x'\n")
+    _edit(repo, "b.ps1", "Write-Output 'y'\n")
+
+    result = _one(repo, tmp_path)
+
+    allowed = (rc.FAIL, rc.COULD_NOT) if dirty else (rc.PASS, rc.COULD_NOT)
+    assert result["status"] in allowed, result
+    if result["status"] == rc.FAIL:
+        assert [r["rule"] for r in result["new"]] == ["PSAvoidUsingEmptyCatchBlock"], result
+
+
+@pytest.mark.parametrize("stdout, expected", [
+    ("[null]", rc.COULD_NOT), ("null", rc.COULD_NOT), ("{}", rc.COULD_NOT), ("", rc.COULD_NOT),
+    ("ROW_AND_NULL", rc.FAIL), ("[]", rc.PASS)])
+def test_pssa_output_that_is_not_a_list_of_rows_is_never_pass(tmp_path, fake, monkeypatch,
+                                                              stdout, expected):
+    """L-0605: a null row is never read as "no findings". A known NEW finding
+    beside an unreadable row still FAILs (the existing precedence); with no
+    finding established it is could-not-check. Only `[]` passes."""
+    repo = _start(tmp_path, {"ps/tool.ps1": "x\n"}, [_linter(fake, "psscriptanalyzer")])
+    _edit(repo, "ps/tool.ps1", "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", "raw")
+    monkeypatch.setenv("FAKE_LINT_STDOUT", stdout)
+
+    result = _one(repo, tmp_path)
+
+    assert result["status"] == expected, result
+    if expected == rc.FAIL:
+        assert ([r["rule"] for r in result["new"]], "could not be read" in result["detail"]) == (
+            ["R1"], True), result
+
+
 def test_real_pssa_unknown_rule_is_could_not_check(tmp_path):
-    if not _pssa_present():
-        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    _pssa_or_skip()
     repo = _start(tmp_path, {"t.ps1": "Write-Output 'a'\n"},
                   [{"tool": "psscriptanalyzer", "rules": ["PSNoSuchRuleL0574"]}])
     _edit(repo, "t.ps1", "Write-Output 'b'\n")
@@ -900,8 +1043,7 @@ def test_real_ruff_unreadable_file_is_could_not_check(tmp_path):
 
 @pytest.mark.parametrize("name, encoding", [("t/a[1].ps1", "utf-8"), ("u.ps1", "utf-16")])
 def test_real_pssa_reads_awkward_names_and_utf16(tmp_path, name, encoding):
-    if not _pssa_present():
-        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    _pssa_or_skip()
     repo = _start(tmp_path, {}, [{"tool": "psscriptanalyzer",
                                   "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
     (repo / name).parent.mkdir(parents=True, exist_ok=True)
@@ -1608,8 +1750,7 @@ def test_a_newline_in_a_powershell_name_never_splits_the_file_list(tmp_path, fak
 
 @pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is POSIX here")
 def test_real_pssa_lints_a_name_with_a_newline(tmp_path):
-    if not _pssa_present():
-        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    _pssa_or_skip()
     repo = _start(tmp_path, {"first.ps1": "Write-Output 'a'\n", "second.ps1": "Write-Output 'b'\n"},
                   [{"tool": "psscriptanalyzer", "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
     _edit(repo, "first.ps1\nhead/second.ps1", "try { Write-Output 'a' } catch { }\n")
@@ -1860,6 +2001,43 @@ def test_a_linter_that_exits_cleanly_still_has_its_job_ended(tmp_path, fake, mon
     assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
 
 
+class _RefusingJob(_FakeJob):
+    """A job whose TerminateJobObject fails: WindowsJob.terminate raises."""
+    def terminate(self):
+        self.calls.append(("terminate",))
+        raise OSError(5, "TerminateJobObject failed")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_job_that_cannot_end_after_a_clean_exit_is_could_not_check(tmp_path, fake, monkeypatch):
+    """L-0605 (Sonnet review of 73af42d7): a clean exit whose leftovers could
+    not be ended is could-not-check (ADR 0005), never a raw OSError."""
+    job = _RefusingJob(str(tmp_path / "pid"))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    with pytest.raises(rc.CouldNotCheck, match="could not end what .* left running"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+    assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_job_that_ends_after_a_clean_exit_returns_the_run(tmp_path, fake, monkeypatch):
+    """The must-allow side: a terminate that succeeds hands back the run."""
+    job = _FakeJob(str(tmp_path / "pid"))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    result = rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+    assert isinstance(result, subprocess.CompletedProcess), result
+
+
 # ---- review round 9 (owner grant 2026-10-02: final round 10) ----
 
 def test_a_later_linter_that_raises_never_discards_an_earlier_new_finding(tmp_path, fake):
@@ -1939,6 +2117,41 @@ def test_a_verify_map_with_a_duplicate_key_is_could_not_check(tmp_path, fake):
         True, [("config", rc.COULD_NOT)]), results
 
 
+_BIDI = ["\u061c", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+         "\u2066", "\u2067", "\u2068", "\u2069"]
+
+
+@pytest.mark.parametrize("char", _BIDI, ids=[f"U+{ord(c):04X}" for c in _BIDI])
+def test_one_line_escapes_every_bidi_control(char):
+    """Review round 10 FIX :159: every Bidi_Control code point is escaped, so
+    a name or message cannot visually reorder a status line."""
+    assert rc.one_line("a" + char + "b") == f"a\\u{ord(char):04x}b"
+
+
+def test_a_bidi_control_in_a_changed_name_prints_escaped(tmp_path, fake):
+    name = "x\u202e.py"
+    repo = _start(tmp_path, {"m.py": "x\n"}, [_linter(fake, "ruff")])
+    try:
+        _edit(repo, name, "# LINT BLE001 new\n")
+    except OSError:
+        pytest.skip("this filesystem refuses a bidi control in a file name")
+
+    printed = rc.lines([_one(repo, tmp_path)])
+
+    assert ([l for l in printed if "\\u202e" in l and "NEW" in l] != [],
+            [l for l in printed if "\u202e" in l]) == (True, []), printed
+
+
+def test_a_bidi_control_in_a_rule_name_is_a_config_problem(tmp_path, fake):
+    repo = _start(tmp_path, {"a.ps1": "x\n"},
+                  [_linter(fake, "psscriptanalyzer", rules=["PSAvoidUsingEmptyCatchBlock\u202e"])])
+    _edit(repo, "a.ps1", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert any("rules must not hold a control character" in r["detail"] for r in results), results
+
+
 def test_a_lone_surrogate_prints_escaped():
     """Round 9 FIX :165: one_line escapes a lone surrogate too, so a strict
     UTF-8 stream never raises on it."""
@@ -1975,14 +2188,263 @@ def test_any_crash_in_the_cli_is_could_not_check(monkeypatch):
     assert rc.main(["--manifest", "m.json"]) == rc.EXIT_COULD_NOT
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+_LINUX_WAITID = pytest.mark.skipif(
+    not (hasattr(os, "waitid") and hasattr(os, "WNOWAIT") and os.path.isdir("/proc/self")),
+    reason="needs os.waitid with WNOWAIT and /proc (Linux); elsewhere a clean exit's leftovers "
+           "are not ended")
+
+
+def _zombie(pid):
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(") ", 1)[1][0] == "Z"
+    except OSError:
+        return False
+
+
+@_LINUX_WAITID
 def test_a_reaped_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch):
-    """Round 9 FIX :727: after communicate() the leader is reaped and its
-    group id may be reused; only an unreaped leader's group is signalled."""
+    """Round 9 FIX :727, kept by L-0605: the group is signalled only while
+    the leader is an unreaped zombie, whose pid and group id cannot be reused."""
     seen = []
+    real = os.killpg
+
+    def recording(pgid, sig):
+        seen.append(_zombie(pgid))
+        real(pgid, sig)
+    monkeypatch.setattr(rc.os, "killpg", recording)
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert (len(seen) >= 1, all(seen)) == (True, True), seen
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_without_waitid_a_clean_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch):
+    """Where os.waitid is missing (macOS) the leader is reaped by
+    communicate() first, so nothing may be signalled after it."""
+    seen = []
+    monkeypatch.delattr(rc.os, "waitid", raising=False)
     monkeypatch.setattr(rc.os, "killpg", lambda pgid, sig: seen.append(pgid))
     monkeypatch.setenv("FAKE_LINT_MODE", "empty")
 
     rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
 
     assert seen == [], seen
+
+
+def _kill_quietly(pid):
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+
+
+@_LINUX_WAITID
+def test_a_clean_linter_s_detached_leftover_is_ended(tmp_path, fake, monkeypatch):
+    """L-0605 / ADR 0005: a background process a linter leaves after a CLEAN
+    exit, its stdio detached, is ended with the group before the reap."""
+    pid_out = tmp_path / "child.pid"
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", "detached")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+
+    result = _one(repo, tmp_path)
+    pid = int(pid_out.read_text(encoding="utf-8"))
+    try:
+        gone = not _alive_after(pid, 5)
+    finally:
+        _kill_quietly(pid)
+
+    assert (result["status"], gone) == (rc.PASS, True), result
+
+
+def _alive_after(pid, wait):
+    import time  # pylint: disable=import-outside-toplevel
+    deadline = time.monotonic() + wait
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    return _alive(pid)
+
+
+_LEAVER = textwrap.dedent("""
+    import json, os, sys, time
+    sys.path[:0] = [{tests!r}, {scripts!r}]
+    import review_checks as rc
+    import test_review_checks as t
+    started = time.monotonic()
+    try:
+        rc._spawn([sys.executable, {fake!r}, "ruff"], {cwd!r}, {timeout})
+        print(json.dumps(["no error", time.monotonic() - started]))
+    except rc.CouldNotCheck as exc:
+        print(json.dumps([str(exc), time.monotonic() - started]))
+""")
+
+
+@_LINUX_WAITID
+def test_a_leftover_that_left_the_group_cannot_hang_the_check(tmp_path, fake, monkeypatch):
+    """Spec review r1 BLOCK: a child that setsid()s out of the group and
+    keeps stdout open costs at most timeout + _REAP_SECONDS, in a child
+    Python under an outer timeout so a hang is a failure, not a stuck suite."""
+    pid_out = tmp_path / "child.pid"
+    env = dict(os.environ, FAKE_LINT_MODE="setsid-holder", FAKE_LINT_PID_OUT=str(pid_out))
+    code = _LEAVER.format(tests=os.path.dirname(os.path.abspath(__file__)), scripts=_SCRIPTS,
+                          fake=fake, cwd=str(tmp_path), timeout=2)
+    try:
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                              env=env, stdin=subprocess.DEVNULL, check=False, timeout=60)
+    finally:
+        if pid_out.exists():
+            _kill_quietly(int(pid_out.read_text(encoding="utf-8")))
+    detail, elapsed = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    assert ("timed out" in detail, elapsed < 2 + rc._REAP_SECONDS + 5) == (  # pylint: disable=protected-access
+        True, True), (detail, elapsed, proc.stderr)
+
+
+@_LINUX_WAITID
+def test_the_post_kill_drain_and_reap_share_one_deadline(tmp_path, fake, monkeypatch):
+    """Spec review r2 FIX: after the kill, the drain and the reap share one
+    _REAP_SECONDS deadline; the reap gets only what the drain left."""
+    import time  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "child.pid"
+    monkeypatch.setattr(rc, "_REAP_SECONDS", 2)
+    monkeypatch.setenv("FAKE_LINT_MODE", "setsid-holder")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    given = []
+    real_wait = subprocess.Popen.wait
+
+    def wait(self, timeout=None):
+        given.append(timeout)
+        return real_wait(self, timeout=timeout)
+    monkeypatch.setattr(subprocess.Popen, "wait", wait)
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(rc.CouldNotCheck, match="timed out"):
+            rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 1)  # pylint: disable=protected-access
+    finally:
+        if pid_out.exists():
+            _kill_quietly(int(pid_out.read_text(encoding="utf-8")))
+    elapsed = time.monotonic() - started
+
+    bounded = [g for g in given if g is not None]
+    assert (bounded != [] and max(bounded) <= 0.5, elapsed < 6) == (True, True), (given, elapsed)
+
+
+@_LINUX_WAITID
+def test_a_failed_output_read_is_could_not_check(tmp_path, fake, monkeypatch):
+    """Spec review r1/r2 FIX: a read error is could-not-check, and the
+    still-running linter is killed and reaped before it is raised."""
+    import time  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "lint.pid"
+    monkeypatch.setenv("FAKE_LINT_MODE", "sleep-pid")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    real = rc._read_chunk  # pylint: disable=protected-access
+
+    def failing(stream):
+        if stream.fileno() == stderr_fd[0]:
+            raise OSError(5, "boom")
+        return real(stream)
+    stderr_fd = [None]
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)  # pylint: disable=consider-using-with
+        stderr_fd[0] = proc.stderr.fileno()
+        return proc
+    monkeypatch.setattr(rc.subprocess, "Popen", popen)
+    monkeypatch.setattr(rc, "_read_chunk", failing)
+
+    started = time.monotonic()
+    with pytest.raises(rc.CouldNotCheck, match="could not read"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 30)  # pylint: disable=protected-access
+    elapsed = time.monotonic() - started
+    pid = int(pid_out.read_text(encoding="utf-8"))
+
+    assert (elapsed < 10, os.path.exists(f"/proc/{pid}")) == (True, False), elapsed
+
+
+@_LINUX_WAITID
+def test_a_selector_error_still_ends_and_reaps_the_linter(tmp_path, fake, monkeypatch):
+    """Spec review r4 FIX: an OSError registering the pipes, after the
+    linter started, still kills, closes and reaps it."""
+    import selectors  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "lint.pid"
+    monkeypatch.setenv("FAKE_LINT_MODE", "sleep-pid")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    real = selectors.DefaultSelector
+
+    class Refusing(real):  # pylint: disable=too-many-ancestors
+        def register(self, fileobj, events, data=None):
+            raise OSError(9, "reg")
+    monkeypatch.setattr(selectors, "DefaultSelector", Refusing)
+    before = len(os.listdir("/proc/self/fd"))
+
+    with pytest.raises(rc.CouldNotCheck, match="could not watch"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 30)  # pylint: disable=protected-access
+    pid = int(pid_out.read_text(encoding="utf-8")) if pid_out.exists() else None
+
+    assert (pid is None or not os.path.exists(f"/proc/{pid}"),
+            len(os.listdir("/proc/self/fd")) - before) == (True, 0)
+
+
+@_LINUX_WAITID
+def test_a_leftover_that_cannot_be_signalled_is_could_not_check(tmp_path, fake, monkeypatch):
+    """Spec review r2 BLOCK: PermissionError from the post-exit killpg means
+    a member was not ended: could-not-check, and the leader still reaped."""
+    reaped = []
+
+    def refusing(pgid, sig):
+        reaped.append(pgid)
+        raise PermissionError(1, "not permitted")
+    monkeypatch.setattr(rc.os, "killpg", refusing)
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    with pytest.raises(rc.CouldNotCheck, match="could not end"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert (len(reaped), os.path.exists(f"/proc/{reaped[0]}")) == (1, False), reaped
+
+
+@_LINUX_WAITID
+def test_the_drain_closes_its_pipes_on_every_path(tmp_path, fake, monkeypatch):
+    """Spec review r3 FIX: no descriptor is left behind, on success or on a
+    read error."""
+    before = len(os.listdir("/proc/self/fd"))
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+    for _ in range(20):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+    monkeypatch.setattr(rc, "_read_chunk", lambda stream: (_ for _ in ()).throw(OSError(5, "x")))
+    for _ in range(5):
+        with pytest.raises(rc.CouldNotCheck):
+            rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert len(os.listdir("/proc/self/fd")) == before
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a real job object exists only on Windows")
+def test_windows_job_terminate_failure_raises():
+    """L-0605: TerminateJobObject's failure is no longer discarded, so a
+    caller never reads an unended tree as ended."""
+    job = rc.WindowsJob(kill_on_close=True)
+
+    class _Refusing:
+        def __init__(self, real):
+            self._real = real
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        @staticmethod
+        def TerminateJobObject(handle, code):  # pylint: disable=invalid-name
+            return 0
+
+    job._k32 = _Refusing(job._k32)  # pylint: disable=protected-access
+    try:
+        with pytest.raises(OSError, match="TerminateJobObject failed"):
+            job.terminate()
+    finally:
+        job.close()

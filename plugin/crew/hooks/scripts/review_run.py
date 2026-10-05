@@ -395,16 +395,27 @@ def _launch(job, cmd, root, timeout):
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        notes, tree_ended = [], False
         if job is not None:
             # By handle: safe whether or not the leader has already exited.
-            job.terminate()
+            try:
+                job.terminate()
+                tree_ended = True
+            except OSError as exc:
+                notes.append(f"job termination failed ({exc})")
         escaped = False
         if proc.poll() is None:
-            killer = review_checks.taskkill() if os.name == "nt" else None
-            if os.name == "nt" and killer:
-                # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
-                subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True, timeout=30, check=False)
+            if review_checks._WINDOWS:  # pylint: disable=protected-access
+                # Never os.killpg here: Windows has none (L-0605, review round
+                # 10 FIX :400). Only a job's terminate() establishes that the
+                # tree ended; taskkill /T walks parent pids, so even its exit 0
+                # cannot reach a child whose parent already exited.
+                if not tree_ended:
+                    _windows_taskkill(proc, notes)
+                try:
+                    proc.kill()  # TerminateProcess by the handle Popen holds
+                except OSError:
+                    pass  # already exited
             else:
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
@@ -416,6 +427,8 @@ def _launch(job, cmd, root, timeout):
             # is safe here. Without a job, whatever kept the pipe open is on
             # its own; with one, job.terminate() above already ended it.
             escaped = job is None
+        if review_checks._WINDOWS:  # pylint: disable=protected-access
+            escaped = escaped or not tree_ended
         try:
             stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -423,12 +436,32 @@ def _launch(job, cmd, root, timeout):
             stdout = _decode_partial(exc.output)
             stderr = _decode_partial(exc.stderr)
         if escaped:
+            why = (f" ({'; '.join(notes)}: only the reviewer process itself is known to have "
+                   "ended)") if notes else ""
             stderr = (stderr or "") + (
                 "\nreview-run: a descendant process may have escaped the "
                 f"{timeout}s timeout and is still holding the output pipe "
-                "open; proceeding with whatever output had already arrived\n")
+                f"open{why}; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
     return stdout, stderr, proc.returncode, False
+
+
+def _windows_taskkill(proc, notes):
+    """`taskkill /T /F` the leader's tree, adding to `notes` why the tree is
+    still not known to have ended. Never raises (L-0605)."""
+    killer = review_checks.taskkill()
+    if not killer:
+        notes.append("no taskkill.exe")
+        return
+    # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
+    try:
+        done = subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
+                              capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        notes.append(f"taskkill failed ({exc})")
+        return
+    notes.append("no job object: taskkill /T cannot reach a child whose parent already exited"
+                 if done.returncode == 0 else f"taskkill exited {done.returncode}")
 
 
 def bundle_problems(manifest):
@@ -445,7 +478,7 @@ def bundle_problems(manifest):
     for row in rows:
         try:
             data = review_checks.read_regular(row["path"], _part_base(row["path"]))
-        except (OSError, KeyError, TypeError) as exc:
+        except (OSError, KeyError, TypeError, ValueError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
         whole.update(data)
@@ -511,6 +544,44 @@ def webtest_check(root, ticket, manifest):
     return rows, record, reasons
 
 
+def _manifest_problem(manifest):
+    """The first field `finish` and its callees read that is malformed, or None."""
+    if not isinstance(manifest, dict):
+        return "not a JSON object"
+    parts = manifest.get("parts")
+    if parts is not None:
+        if not isinstance(parts, list):
+            return "parts is not a list"
+        for part in parts:
+            if not isinstance(part, dict):
+                return "a part is not an object"
+            path, name = part.get("path"), part.get("name")
+            if not ((isinstance(path, str) and path) or (not path and isinstance(name, str)
+                                                         and name)):
+                return "a part has no non-empty path or name"
+            if any(isinstance(v, str) and "\0" in v for v in (path, name)):
+                return "a part's path or name holds a NUL"
+    for key in ("bundle_sha256", "head", "base"):
+        if manifest.get(key) is not None and not isinstance(manifest[key], str):
+            return f"{key} is not a string"
+    return None
+
+
+def _finish_manifest(args):
+    """(manifest, reasons). After a reservation the manifest may have been
+    swapped: unreadable or malformed, it is `{}` and a tree reason, so the
+    round is INCOMPLETE and review.json is still written (L-0605, the
+    neighbour of review round 10 FIX :955)."""
+    try:
+        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    except (OSError, ValueError) as exc:
+        return {}, [f"the manifest {args.manifest} could not be read ({exc})"]
+    problem = _manifest_problem(manifest)
+    if problem:
+        return {}, [f"the manifest {args.manifest} is malformed ({problem})"]
+    return manifest, []
+
+
 def _webtest_open(rows, webtest_record):
     """The ledger's `webtest_open`: open rows counted, WEBTEST_NA when the
     check did not apply (no record), None when it applied and could not be
@@ -533,7 +604,7 @@ def auto_accept_line(root, ticket):
 
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
-    manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    manifest, manifest_reasons = _finish_manifest(args)
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
     # its name, which review_verdict still matches exactly.
@@ -543,6 +614,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     stream_reasons = list(extra_reasons)
     extra_reasons = list(extra_reasons) + bundle_problems(manifest)
+    extra_reasons += manifest_reasons
     extra_reasons += webtest_reasons
     # The outside reasons go INTO the parse, so a stray line is never
     # recovered on a round they make INCOMPLETE (L-0576).
@@ -991,9 +1063,17 @@ def main(argv):
             if args.round is None or args.output is None or args.exit_code is None:
                 parser.error("the claude provider takes --reserve-only, or --round N "
                              "--output FILE --exit-code N after the subagent ran")
-            output = (_read(args.output, _trusted(args.output, args.scratch))
-                      if os.path.exists(args.output) else "")
-            return finish(args, args.round, output, args.exit_code, False)
+            output, reasons = "", []
+            if os.path.exists(args.output):
+                # After the reservation: an output read_regular refuses is an
+                # INCOMPLETE round, never an escaped exception (L-0605,
+                # review round 10 FIX :955).
+                try:
+                    output = _read(args.output, _trusted(args.output, args.scratch))
+                except OSError as exc:
+                    reasons.append(f"the reviewer's output {args.output} could not be read "
+                                   f"({exc})")
+            return finish(args, args.round, output, args.exit_code, False, reasons)
         if args.reserve_only or args.round is not None:
             parser.error("--reserve-only and --round are for the claude provider only")
         return run(args)
