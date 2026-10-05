@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `scripts/gate-runner.py` records its heavy-run slot, repository tooling, no plugin version (L-0517)
+
+- **Summary.** The local gate runner's status file now names the heavy-run slot it ran in, and a
+  reviewed patch makes the machine-local heavy-run wrapper log every slot wait to one JSONL file.
+- **Gate runner.** `--inner` records `HEAVY_RUN_SLOT` as `slot` in `heavy-part.json`; the outer copies
+  it to `status.json`'s `heavy_run.slot` beside `waited_seconds`. It is `null` when unset, empty or
+  malformed (not a string, over 64 characters, or containing `/`), and it never changes a step's
+  state. Three new suite cases.
+- **Wrapper patch.** `docs/tickets/L-0517/heavy-run.patch` (against `heavy-run.snapshot`) appends one
+  line per invocation to `/root/crew-tmp/heavy-run-waits.jsonl` (`HEAVY_RUN_WAITS_LOG` overrides) from
+  the EXIT trap: lane, slot, priority tag, pid, requested/acquired/released UTC, waited and held
+  seconds, rc and the first 120 characters of the command, and exports `HEAVY_RUN_SLOT` while a slot
+  is held. A call stopped while waiting logs `slot`, `acquired` and `held_s` as `null`; `rc` is `null`
+  unless the command finished; `lane` is `"unknown"` when nothing names it. The owner's local session
+  applies the patch; this repository does not ship the wrapper.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
