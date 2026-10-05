@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:47 UTC
+Last updated: 2026-10-05 01:52 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:52: L-1508 PR B #496 green at f5f3789a (crew 1.0.347, README in ALONGSIDE, main 2828acef merged); ready to land
 - 02:15: batch 6 survey done; builder started on batch-6-build: #500, #348, #338, #361, #357. 7 review-clean PRs red on Windows (old runs), #365/#345 blocked by deps, #340/#418 harness-alone. Recorded in RESUME table.
 - 02:10: #500 rebuild review 0 BLOCK 0 FIX (new files byte-identical to #407, edits identical, main text preserved). NIT: ghdeploy_mutations.py:255 mutation only covered by a pwsh-only case (sabotage reports vacuous without pwsh) -> carry to L-0650. Batch 6 candidate survey started.
 - 02:00: #500 (T-0045 rebuild) all tests green incl. all Windows shards; only red = check-marketplace content-without-bump (Marketplace + verify-gate row), by design until batch 6 bump. Rebuild-fidelity review started.
