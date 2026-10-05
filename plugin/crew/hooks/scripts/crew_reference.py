@@ -126,6 +126,33 @@ def generated_header(text):
     return None
 
 
+def _fence_states(lines):
+    """[(line, inside)] for every line: `inside` is True for a fence marker
+    and every line between an opening fence and its close (CommonMark: a run
+    of the opener's character at least as long, nothing after it)."""
+    out, fence = [], None
+    for line in lines:
+        run = _FENCE_RE.match(line)
+        if fence is None and run:
+            fence = run.group(1)
+            out.append((line, True))
+            continue
+        if fence is not None:
+            if (run and run.group(1)[0] == fence[0] and len(run.group(1)) >= len(fence)
+                    and not line.strip()[len(run.group(1)):].strip()):
+                fence = None
+            out.append((line, True))
+            continue
+        out.append((line, False))
+    return out
+
+
+def unfenced_lines(lines):
+    """`lines` without fenced examples: what the doc itself says. The refresh
+    check reads citations from these, as the lint reads entries."""
+    return [line for line, inside in _fence_states(lines) if not inside]
+
+
 def _sections(lines):
     """[(heading line number, [lines], under a `## ` system)] for each `### `
     entry. A heading inside a ``` or ~~~ fence is an example, not an entry or
@@ -134,16 +161,9 @@ def _sections(lines):
     documents. A fence closes only on a run of its own character at least as
     long as the one that opened it (CommonMark), so a ```` example holding
     ``` lines stays one example."""
-    found, fence, system = [], None, False
-    for number, line in enumerate(lines, 1):
-        run = _FENCE_RE.match(line)
-        if fence is None and run:
-            fence = run.group(1)
-            continue
-        if fence is not None:
-            if (run and run.group(1)[0] == fence[0] and len(run.group(1)) >= len(fence)
-                    and not line.strip()[len(run.group(1)):].strip()):
-                fence = None
+    found, system = [], False
+    for number, (line, inside) in enumerate(_fence_states(lines), 1):
+        if inside:
             continue
         if line.startswith("### "):
             found.append((number, [], system))

@@ -1409,9 +1409,11 @@ def _references(root, changed, untracked):
         return [_entry("reference", name, UNKNOWN, "the doc could not be read, so what it "
                        "cites cannot be told", command, refreshable=False)] if changed else []
     # Every `path:line` anchor the lint accepts, extensionless ones included
-    # (`Dockerfile:12`), plus every path-shaped citation as a code map's.
-    anchored = [m.group(1) for m in crew_reference.ANCHOR_RE.finditer(body)]
-    cited = list(dict.fromkeys(anchored + [c for c in _CITATION_RE.findall(body)
+    # (`Dockerfile:12`), plus every path-shaped citation as a code map's --
+    # outside fenced examples, which cite nothing the doc itself documents.
+    text = "\n".join(crew_reference.unfenced_lines(body.splitlines()))
+    anchored = [m.group(1) for m in crew_reference.ANCHOR_RE.finditer(text)]
+    cited = list(dict.fromkeys(anchored + [c for c in _CITATION_RE.findall(text)
                                            if "/" in c or "." in c]))
     if not cited:
         return [_entry("reference", name, UNKNOWN, "cites no path, so which changes reach "

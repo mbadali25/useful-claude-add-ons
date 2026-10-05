@@ -1444,6 +1444,18 @@ def test_an_extensionless_anchor_reaches_the_reference_doc(tmp_path):
     assert (item["status"], "Dockerfile" in item["reason"]) == ("stale", True), item
 
 
+def test_an_anchor_only_in_a_fenced_example_is_no_citation(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+    head = head_sha(root, length=40)
+    _commit(root, _INTEGRATIONS, f"> Generated from repo@{head} on 2026-09-27.\n\n## Shop\n\n"
+            "### GET https://shop.example/orders\n```\n`src/app.py:1`\n```\nAuth: none\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], "cites no path" in item["reason"]) == ("unknown", True), item
+
+
 def test_api_and_features_docs_are_not_judged(tmp_path):
     root, start = _repo(tmp_path)
     _reference(root, "docs/reference/api.md", start, ["src/app.py"])
