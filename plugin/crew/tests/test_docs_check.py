@@ -309,8 +309,12 @@ def test_deferred_missing_from_todo(tmp_path):
     "# TODO\n- T-0099: ADRs are not measured\n- other: T-0040 lands\n",
     "# TODO\n- T-1000: Notes for T-0099: ADRs are not measured; T-0040 lands\n",
     "# TODO\n## Notes for T-0099: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n- T-0099: measure ADRs\n## Other work: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n- T-0099: measure ADRs\n+ other: ADRs are not measured; T-0040 lands\n",
+    "# TODO\n- T-0099: measure ADRs\n1. other: ADRs are not measured; T-0040 lands\n",
 ], ids=["longer-id", "prefixed-id", "no-why-or-unblock", "unblock-in-another-entry",
-        "inside-another-entry", "heading-not-opening-with-the-key"])
+        "inside-another-entry", "heading-not-opening-with-the-key", "next-heading",
+        "next-plus-bullet", "next-numbered-item"])
 def test_deferred_todo_entry_must_be_its_own_with_why_and_unblock(tmp_path, todo):
     """T-0022 port review r2 FIX: the key as a whole id, and its own entry
     carries the recorded why and unblock."""

@@ -348,6 +348,11 @@ def _words(text):
     return " ".join(str(text).split()).lower()
 
 
+# What ends an entry's continuation: a blank line, any bullet (`-`, `*`, `+`,
+# `1.`, `1)`) or a heading -- each is a new entry, never this one's text.
+_ENTRY_START = re.compile(r"^\s*$|^\s*(?:[-*+]|\d+[.)]|#{1,6})(?:\s|$)")
+
+
 def _todo_entries(added, key):
     """The added TODO.md entries whose subject is `key` as a whole id
     (`- T-0099: ...`, never `T-00990`, never `- T-1000: notes for T-0099`):
@@ -364,7 +369,7 @@ def _todo_entries(added, key):
             continue
         body, last = [line], index
         for nxt, more in added[at + 1:]:
-            if nxt != last + 1 or not more.strip() or more.lstrip().startswith(("- ", "* ")):
+            if nxt != last + 1 or _ENTRY_START.match(more):
                 break
             body.append(more)
             last = nxt
