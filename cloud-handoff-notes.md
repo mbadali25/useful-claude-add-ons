@@ -23,7 +23,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 main = 47f71e93 (batch 6 #502 merged), crew 1.0.348.
 | Item | Where | State | Next |
 |---|---|---|---|
-| C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | review 1 BLOCK (combined pytest = one session; subset hides cross-suite breaks) + 2 FIX (lint config files; unpinned !cancelled()) -> builder fixing | re-check, land ALONE; first notes push after merge proves the skip path |
+| C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | c39dc4e6: BLOCK + 2 FIX + 2 NIT fixed (22 sabotages red), CI green 28/28; also pins combined run to gizmoduck pytest.ini | focused re-check running; re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
 | T-0020 #357 | `T-0020-build` 857188a6 | review-clean (final re-check 0/0, 16 hostile paths); 38bd282e all Windows green; 857188a6 CI running | batch 7 member |
 | Batch 7 | `batch-7-build` (builder started 04:45) | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
@@ -48,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 03:39 UTC
+Last updated: 2026-10-05 03:45 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -107,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 04:55: #501 fixes pushed c39dc4e6 (combined-session rule, basename uniqueness, lint configs, pinned !cancelled, whole-expr gates, explicit combined key; unrequested: -c gizmoduck pytest.ini for combined run). CI green. Re-check started.
 - 04:50: CORRECTION: the 04:00 owner-decision edits (C-0006 row, decision lines, RESUME rule line) never applied (a failed stamp write short-circuited the && chain). Re-applied and verified now; C-0007 added; next free C-0008.
 - 04:45: #357 final re-check 0 BLOCK 0 FIX. Batch 7 builder started: #357, #353, #368, + #366 if its Windows pre-flight (dispatched now on T-0059-build) is green. Carry #357 NIT (C1/bidi into _UNSAFE_PATH). Minted C-0007 (trailing-space repo path breaks focus via crew_ticket.toplevel).
 - 04:35: #357 re-check 0 BLOCK 1 FIX: _focus_remedy printed via _one_line collapses whitespace after quoting (wrong file for 'two  spaces', tab, newline; PS curly quotes). Fix: command only when paste-safe else json path. Lock (F2) verified: race keeps both entries. verify-gate red only on check-marketplace bump (log checked).
