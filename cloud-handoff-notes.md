@@ -52,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 04:57 UTC
+Last updated: 2026-10-05 05:01 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -111,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 08:30: #451 T-0108 review 0 BLOCK 3 FIX (live-verified): -config/-tp profile and ambient nuclei config.yaml defeat safe defaults; adapter accepts rate 0 / intrusive 'false'. Owner: refuse profiles in routine; pin -rld 1s + refuse risky ambient config (fail closed). Sent to builder.
 - 08:15: #401 L-0673 review 0 BLOCK 2 FIX (log_complete faked by rule output's total line; flaky seconds==0 test). Not SEAM. NITs incl. harness ps1 citations of verify.md :72/:114 moved by rewrap. Sent to builder. Minted C-0010 (receipt PASS-row injection, pre-existing).
 - 08:05: batch 7 #505 merge review 0 BLOCK 0 FIX (full crew suite 14955 passed, 1 load-flake wallclock passed alone; no-focus routing identical to main). NITs N1-N5 (CONFIG.md:2884 ship_decision name, misleading commit msgs, split-into quote on status:done, LRM/RLM in _UNSAFE_PATH, codemap ship cites) -> carry. CI: 2 Windows shards left. Subscribed.
 - 07:55: T-0105 #433 FIX verified by coordinator (wording names both files + stricter rule; matches PERSONAL_KEYS). Review-clean at 01f27184; batch-8 candidate once Windows CI green (prior head all green).

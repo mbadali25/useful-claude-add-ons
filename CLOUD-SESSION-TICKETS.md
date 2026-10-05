@@ -243,6 +243,7 @@ Held for your go: L-0674 (#404).
 - crew 1.1.0 at the END of this push, plus a guide-rename PR (ticket C-0006).
 - Owner 2026-10-05 05:10: crew 1.1.0 (C-0006) CLOSES this rush. The NEXT rush starts after it, on the remaining new draft PRs (the spec-draft waves in docs/handoff/cloud/WAVES-2026-10-04.md).
 - T-0108 (#451): try installing Nuclei in the build container; if impossible, build anyway and mark the exclusion-beats-tags premise NOT VERIFIED in the PR (owner 2026-10-05, option A).
+- T-0108 (#451) safety posture (owner 2026-10-05): routine/strict scans REFUSE -config/-tp/-profile; always pass -rld 1s; read the ambient Nuclei config and REFUSE if it re-includes tags/templates or loosens rates; unreadable config -> refuse. `scan --extra` stays raw passthrough (documented).
 - C-0002..C-0005 (and C-0007) after batch 7.
 - C-0001 (per-component CI skip) is TOP PRIORITY.
 - #499 README: show 2 newest updates + changelog link (shipped).
