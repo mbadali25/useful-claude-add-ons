@@ -143,8 +143,9 @@ same machine file. They can only narrow what `enabled` turns on:
   matter. On Windows, case does not matter and `/c/repos/x` means `C:\repos\x`. A relative path such
   as `.` never matches.
 - Session ids must match exactly, including case.
-- Finding the repos to list: when `/crew:migrate` reports a widening, run
-  `crew_autoclear_setup.py --root . apply-migrate --scan-root <dir>`. It looks under `<dir>` (3
+- Finding the repos to list: pass `--scan-root <dir>` on the one `apply-migrate` run that
+  `/crew:migrate` makes (`crew_autoclear_setup.py --root . apply-migrate --scan-root <dir>`); a later
+  run cannot see this repo's own opt-in, which the first run removed. It looks under `<dir>` (3
   levels by default, `--scan-depth <n>`), read-only, for repos whose `.crew/config.json` or
   `.crew/crew.json` still says `context.autoClear.enabled: true`, and proposes them with this repo.
   A repo it cannot read is listed and blocks `--yes-widen`. Repos outside `<dir>`, and repos an

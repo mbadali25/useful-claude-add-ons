@@ -8,6 +8,8 @@ committed broken state.
 import json
 import os
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autoclear_setup as setup
 import crew_config
@@ -877,6 +879,46 @@ def test_an_unreadable_file_is_not_masked_by_an_opted_in_sibling(tmp_path):
     assert plan["widening"]["scan"]["found"] == []
     assert setup.main(["--root", here, "--global-path", global_path, "apply-migrate",
                        "--scan-root", str(scan), "--yes-widen"]) == 1
+
+
+def test_a_crew_directory_that_cannot_be_listed_is_unreadable(tmp_path, monkeypatch):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    locked = _repo(str(scan / "locked"))
+    real_listdir = os.listdir
+
+    def _listdir(path):
+        if os.path.realpath(path) == os.path.join(locked, ".crew"):
+            raise PermissionError(13, "Permission denied", path)
+        return real_listdir(path)
+    monkeypatch.setattr(setup.os, "listdir", _listdir)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert [item["path"] for item in plan["widening"]["scan"]["unreadable"]] == [locked]
+    assert plan["widening"]["proposedOnlyRepos"] == [here]
+
+
+def test_a_symlinked_crew_directory_is_not_followed(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    outside = _repo(str(tmp_path / "outside"))
+    linked = scan / "linked"
+    os.makedirs(str(linked))
+    try:
+        os.symlink(os.path.join(outside, ".crew"), str(linked / ".crew"),
+                   target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot create a symlink")
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    scan_result = plan["widening"]["scan"]
+    assert scan_result["found"] == []
+    assert [item["path"] for item in scan_result["unreadable"]] == [os.path.realpath(linked)]
+    assert outside not in plan["widening"]["proposedOnlyRepos"]
 
 
 def test_yes_widen_refuses_when_a_candidate_could_not_be_read(tmp_path, capsys):

@@ -1099,8 +1099,9 @@ same machine file. They can only narrow what <code>enabled</code> turns on:</p>
   matter. On Windows, case does not matter and <code>/c/repos/x</code> means <code>C:\repos\x</code>. A relative path such
   as <code>.</code> never matches.</li>
 <li>Session ids must match exactly, including case.</li>
-<li>Finding the repos to list: when <code>/crew:migrate</code> reports a widening, run
-  <code>crew_autoclear_setup.py --root . apply-migrate --scan-root &lt;dir&gt;</code>. It looks under <code>&lt;dir&gt;</code> (3
+<li>Finding the repos to list: pass <code>--scan-root &lt;dir&gt;</code> on the one <code>apply-migrate</code> run that
+  <code>/crew:migrate</code> makes (<code>crew_autoclear_setup.py --root . apply-migrate --scan-root &lt;dir&gt;</code>); a later
+  run cannot see this repo's own opt-in, which the first run removed. It looks under <code>&lt;dir&gt;</code> (3
   levels by default, <code>--scan-depth &lt;n&gt;</code>), read-only, for repos whose <code>.crew/config.json</code> or
   <code>.crew/crew.json</code> still says <code>context.autoClear.enabled: true</code>, and proposes them with this repo.
   A repo it cannot read is listed and blocks <code>--yes-widen</code>. Repos outside <code>&lt;dir&gt;</code>, and repos an

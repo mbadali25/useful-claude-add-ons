@@ -372,16 +372,26 @@ def _scan_candidate(directory):
     file's `context.autoClear.enabled` is exactly `true` -- the test
     `had_repo_local_opt_in` applies to the current repo. `reason` is set
     when either present file could not be read as a JSON object -- even
-    when the other shows the opt-in, as the spec has it: that repo is
-    unreadable (never "not opted in"), and it blocks `--yes-widen`."""
+    when the other shows the opt-in, as the spec has it -- and when the
+    `.crew` directory itself is a symlink (never followed) or cannot be
+    listed: that repo is unreadable (never "not opted in"), and it blocks
+    `--yes-widen`."""
+    crew_dir = os.path.join(directory, ".crew")
+    if os.path.islink(crew_dir):
+        return True, False, ".crew is a symlink; the scan does not follow it"
+    if not os.path.isdir(crew_dir):
+        return False, False, ""
+    try:
+        names = set(os.listdir(crew_dir))
+    except OSError as exc:
+        return True, False, f".crew could not be listed: {exc}"
     present, opted_in, problems = False, False, []
     for name in _REPO_CONFIG_NAMES:
-        path = os.path.join(directory, ".crew", name)
-        if not os.path.lexists(path):
+        if name not in names:
             continue
         present = True
         try:
-            doc = _read_json_if_present(path)
+            doc = _read_json_if_present(os.path.join(directory, ".crew", name))
         except (OSError, ValueError) as exc:
             problems.append(f".crew/{name}: {exc}")
             continue
