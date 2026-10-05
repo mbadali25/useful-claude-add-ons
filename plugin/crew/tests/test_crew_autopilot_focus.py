@@ -614,9 +614,9 @@ def test_plain_text_routes_with_a_pointer_and_no_focus(tmp_path, monkeypatch, pr
             got["command"], got["unavailable"]) == (T, "route", command, False)
 
 
-@pytest.mark.parametrize("sub", ["assign", "goal", "wave", "split", "deploy"])
+@pytest.mark.parametrize("sub", ["assign", "wave", "split", "deploy"])
 def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
-    """Today's AVAILABLE: assign and goal stop as arriving, an unknown name as
+    """Today's AVAILABLE: assign stops as arriving, an unknown name as
     unknown -- never as focus."""
     root = _pointed(tmp_path)
 
@@ -625,6 +625,16 @@ def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
     assert (crew_autopilot.focus_guard(str(root), sub), "focus is on" in got["reason"],
             "arrives with" in got["reason"] or got["reason"] == crew_autopilot.UNKNOWN_SUB) == (
         None, False, True)
+
+
+def test_route_goal_with_a_pointer_and_no_focus_is_available(tmp_path):
+    """T-0012 landed `goal`: a plain pointer is not focus, so it routes."""
+    root = _pointed(tmp_path)
+
+    got = crew_autopilot.route(str(root), "goal")
+
+    assert (crew_autopilot.focus_guard(str(root), "goal"), got["sub"], got["stop"]) == (
+        None, "goal", False)
 
 
 @pytest.mark.parametrize("prompt,command", _PLAIN)

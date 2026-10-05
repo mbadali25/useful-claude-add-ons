@@ -2872,6 +2872,12 @@ phase command's procedure in-session, and stops wherever a person is needed.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.
+`/crew:autopilot goal` (T-0012) writes a goal file and asks for its split
+approval under the same `autopilot.approval`, with no key of its own: `self`
+approves the split, `risk` only when every proposed ticket is a known
+`risk: low`, `human` stops, and every setting needs `scope.allowCliApproval:
+true` and `mode: plan`; the owner's `/crew:approve goal:<slug>` receipt
+approves it at any setting (README, "Autopilot").
 Since T-0050 every key in its block is **personal**: settable in the machine
 file as the owner's default for every repo, combined per key with the repo's
 value by the rule in §20a (the stricter of the layers that set it wins). The
@@ -3052,7 +3058,9 @@ when you turn it on is `2`.
 **The writers.** `crew_autopilot.py` is read-only except `approve` and
 `auto-reject`, and L-0652's `sleep` and `wake`, which write or remove only
 `<git-common-dir>/crew/autopilot-sleep.json`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
-`crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
+`crew_ticket.py assign` and `mint`, not by this script; T-0012's `goal-propose`
+and `goal-approve` write only the working file `.work/autopilot/<slug>.json`,
+never a receipt). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger

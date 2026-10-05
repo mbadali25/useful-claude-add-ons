@@ -693,6 +693,9 @@ def _main(root, action, *rest):
 # T-0074: `auto-reject` is the module's second writer; L-0652's `sleep` and
 # `wake` the others (they write only the manual sleep state); nothing else writes.
 WRITERS = ("approve", "auto-reject", "sleep", "wake", "focus")
+# T-0012: the goal pair writes only the working file `.work/autopilot/<slug>.json`,
+# never a receipt; test_crew_autopilot_goals.py pins exactly what each writes.
+GOAL_WRITERS = ("goal-propose", "goal-approve")
 
 
 def _usage_subcommands():
@@ -762,7 +765,7 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     manual = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-sleep.json")
     changed = sorted(p for p in set(staged) | set(last) if staged.get(p) != last.get(p))
     marker = os.path.join(crew_ticket.state_dir(str(root)), "autopilot-focus.json")
-    assert (_usage_subcommands() - {run[0] for run in READ_ONLY_RUNS}, after_reads == before,
+    assert (_usage_subcommands() - {run[0] for run in READ_ONLY_RUNS} - set(GOAL_WRITERS), after_reads == before,
             code, added, {p: v for p, v in after.items() if p in before} == before,
             slept, sorted(set(after_sleep) - set(after)),
             {p: v for p, v in after_sleep.items() if p in after} == after,

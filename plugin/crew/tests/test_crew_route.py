@@ -735,8 +735,8 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
 
 # T-0020 added `focus` to AVAILABLE, so "focus on T-1" routes now
 # (test_crew_autopilot_focus.py::test_plain_text_focus_on_routes_now_that_focus_is_available).
-_RESERVED = ["take care of the login audit", "work toward zero flaky tests",
-             "pick the goal back up"]
+# T-0012 landed `goal`: "work toward ..." routes (test_goal_routes_without_patching).
+_RESERVED = ["take care of the login audit", "pick the goal back up"]
 _NEW_ROWS = ["autopilot status", "take care of the login audit",
              "work toward zero flaky tests", "focus on T-1", "pick the goal back up"]
 _UNDO = "After it runs, tell the user in one line what changed and how to undo it."
@@ -774,7 +774,7 @@ def test_autopilot_status_route_line_names_the_skill(tmp_path):
 
 @pytest.mark.parametrize("prompt", _RESERVED)
 def test_a_reserved_subcommand_asks_softly(tmp_path, prompt):
-    """origin/main's AVAILABLE is status and run: every other row asks, says
+    """A row whose subcommand is not in AVAILABLE asks, says
     the command is not available yet, and leaves the prompt to be answered."""
     root = _repo(tmp_path)
     make_ticket(root, "T-1")
@@ -786,6 +786,17 @@ def test_a_reserved_subcommand_asks_softly(tmp_path, prompt):
             "answer the prompt as written" in line, "which ticket" in line,
             "do not run it" in line, "\n" in line) == \
         ("ask", True, None, True, True, False, True, False)
+
+
+def test_goal_routes_without_patching(tmp_path):
+    """T-0012: `goal` is in the real AVAILABLE, so the goal row routes as is."""
+    root = _repo(tmp_path)
+    make_ticket(root, "T-1")
+
+    got = crew_route.decide(str(root), "work toward zero flaky tests")
+
+    assert (got["outcome"], got["command"], got["unavailable"]) == (
+        "route", "/crew:autopilot goal zero flaky tests", False)
 
 
 def test_an_available_subcommand_routes(tmp_path, monkeypatch):
