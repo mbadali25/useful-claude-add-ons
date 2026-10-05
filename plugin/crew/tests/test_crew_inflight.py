@@ -264,6 +264,19 @@ def test_probe_error_is_unmeasured(monkeypatch, repo):
     assert crew_inflight.probe(dict(me, pid=12345), me) == "unmeasured"
 
 
+def test_unresolvable_ps_is_unmeasured_never_gone(monkeypatch, repo):
+    """L-1508 per-site: on POSIX without /proc, a `ps` that does not resolve
+    raises ToolNotFound inside _posix_process; a live, same-host holder must
+    then probe as unmeasured, never gone (which would read stale)."""
+    import crew_common  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_inflight, "_platform", lambda: "posix")
+    real = crew_common.resolve_tool
+    monkeypatch.setattr(crew_common, "resolve_tool",
+                        lambda name: None if name == "ps" else real(name))
+    me = crew_inflight.identity(str(repo), SESSION)
+    assert crew_inflight.probe(dict(me, pid=os.getppid(), pid_start=123), me) == "unmeasured"
+
+
 # --- must-block: unknown ---------------------------------------------------------------
 
 def _unknown(root):
