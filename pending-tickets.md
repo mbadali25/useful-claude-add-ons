@@ -31,6 +31,8 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.7 | building |
 | 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.4 | building |
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | 1.1.5 | building |
+| 4b | G3c contracts on coord/wave | `rush/g3c-contracts` | #408 T-0031, #410 L-0633, #412 L-0634 (base: G0 + release) | next free | building |
+| 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667 (base: G0 + release) | next free | building |
 | 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
 | 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
 | 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | **merged into release/1.2.0** (#539, c510b764) |
