@@ -3329,6 +3329,9 @@ def test_resolve_config_drops_a_repo_unattended_cloud(tmp_path, monkeypatch):
 @pytest.mark.parametrize("block,needle", [
     ({"aws": {"readOnly": {"identity": "arn:aws:sts::1:assumed-role/RO"}}},
      "end in `/`"),
+    # T-0044 port review r6 BLOCK: one named role, never every role.
+    ({"aws": {"readOnly": {"identity": "arn:aws:sts::111111111111:assumed-role/"}}},
+     "must name one role"),
     ({"aws": {"nonProd": []}}, "nonProd"),
     ({"aws": {"readOnly": {"profile": 7}}}, "profile"),
     ({"aws": {}, "azure": {}}, "azure"),

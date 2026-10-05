@@ -362,3 +362,12 @@ def test_a_dropped_machine_key_holding_a_dot_is_named_with_its_value(tmp_path, m
     assert [(e["key"], e["value"]) for e in entries if e["kind"] == "global-ignored"] == [
         ("scope.bad.key", 1)], entries
     assert "scope.bad.key=1 (global, not read)" in line
+
+
+def test_a_dotted_key_under_a_known_setting_is_still_inert(tmp_path):
+    """T-0070 port review r7 FIX: `autopilot.mode.foo` read as the real key
+    `mode.foo`, not a child of the known `autopilot.mode`."""
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"mode.foo": "x"}},
+                                   git=False)
+
+    assert [e["key"] for e in crew_config.inert_settings(str(root))] == ["autopilot.mode.foo"]

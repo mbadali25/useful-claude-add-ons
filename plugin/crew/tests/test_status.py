@@ -547,6 +547,21 @@ def test_status_approvals_names_a_main_checkout_with_no_index(tmp_path):
     assert lines[1].startswith("note: the main checkout (") and "no .work/INDEX.md" in lines[1]
 
 
+def test_status_approvals_cannot_tell_when_the_two_indexes_disagree(tmp_path):
+    """T-0070 port review r7 BLOCK: a ticket closed here and open in the main
+    checkout (or the reverse) is left out of the walk; could not tell."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| T-1 | done | x |\n", encoding="utf-8")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert len(lines) == 1 and lines[0].startswith("could not tell (") and "T-1" in lines[0], lines
+
+
 def test_status_approvals_says_nothing_needs_approval(tmp_path):
     root = make_repo(tmp_path, config={})
     (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",

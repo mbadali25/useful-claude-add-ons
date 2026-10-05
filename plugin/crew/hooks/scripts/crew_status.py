@@ -345,6 +345,33 @@ def _index_unreadable(root):
     return None if found else "no .work/INDEX.md"
 
 
+def _index_disagreement(root):
+    """Why this checkout's INDEX and the main checkout's disagree on whether a
+    ticket is open, or None. The walk takes this checkout's row and skips the
+    main checkout's for that ticket, so a ticket closed here but open there
+    (or the reverse) would be left out silently (`_index_row` names the same
+    disagreement for `next`)."""
+    # pylint: disable=import-outside-toplevel,protected-access
+    import crew_autopilot
+    import crew_ticket
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    main, why = crew_autopilot._main_checkout(top)
+    if why or not main or os.path.abspath(main) == os.path.abspath(top):
+        return None
+    def opened(rows):
+        out = {}
+        for ticket, line in rows:
+            out.setdefault(ticket, crew_autopilot._is_open(ticket, line))
+        return out
+    here = opened(crew_autopilot._index_rows(top))
+    there = opened(crew_autopilot._index_rows(top, os.path.join(main, ".work", "INDEX.md")))
+    split = sorted(t for t, is_open in here.items() if t in there and is_open != there[t])
+    if not split:
+        return None
+    return (f"this checkout's .work/INDEX.md and the main checkout's disagree on whether "
+            f"{', '.join(split)} {'is' if len(split) == 1 else 'are'} open - make them agree")
+
+
 def _index_note(root):
     """A linked worktree whose main checkout has no `.work/INDEX.md`: said, so
     `nothing needs approval` is read as "nothing in THIS checkout's INDEX",
@@ -368,6 +395,9 @@ def approvals_lines(root):
     unknown = _index_unreadable(root)
     if unknown:
         return [f"could not tell ({unknown})"]
+    split = _index_disagreement(root)
+    if split:
+        return [f"could not tell ({split})"]
     note = _index_note(root)
     pending, invalid = pending_approvals(root)
     # The paste line alone: `/crew:approve T-1  (why)` would read as a group of

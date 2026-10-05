@@ -1226,7 +1226,15 @@ def _unattended_target_problem(where, entry, need_named):
     if isinstance(ident, str) and not ident.endswith("/"):
         return (f"`{where}.identity` must end in `/` (an assumed-role ARN "
                 "prefix exactly as STS prints it)")
+    # One named role, never a whole account: `.../assumed-role/` alone would
+    # let any role's session through.
+    if isinstance(ident, str) and not _ROLE_PREFIX.fullmatch(ident):
+        return (f"`{where}.identity` must name one role: "
+                "`arn:<partition>:sts::<account>:assumed-role/<role name>/`")
     return ""
+
+
+_ROLE_PREFIX = re.compile(r"arn:[a-z-]+:sts::[0-9]{12}:assumed-role/[^/\s]+/")
 
 
 def unattended_cloud_block_problem(block):
@@ -2237,12 +2245,13 @@ def installed_version():
     return version if isinstance(version, str) and version else None
 
 
-def _known_leaf(dotted, known):
-    """True when `dotted` or one of its prefixes is a default leaf -- the
-    prefix case is an open table (`dev.roles`) or a scalar default the user
-    replaced with a block, both of which crew reads as one setting."""
-    parts = dotted.split(".")
-    return any(".".join(parts[:i]) in known for i in range(1, len(parts) + 1))
+def _known_leaf(parts, known):
+    """True when the key tuple `parts` or one of its prefixes is a default
+    leaf -- the prefix case is an open table (`dev.roles`) or a scalar default
+    the user replaced with a block, both of which crew reads as one setting.
+    Tuples, never dotted text: a key `mode.foo` is not a child of `mode`."""
+    parts = tuple(parts)
+    return any(parts[:i] in known for i in range(1, len(parts) + 1))
 
 
 def inert_settings(root, path=None):
@@ -2281,10 +2290,10 @@ def inert_settings(root, path=None):
             block[parts[1]] = copy.deepcopy(row["effective"])
             personal[dotted] = ("global" if row["heldDownBy"] == "global"
                                 or row["repo"] is None else "repo")
-    known = set(leaf_paths(default_config()))
+    known = {parts for parts, _value in _leaf_items(default_config())}
     # A machine-only block (T-0044's `unattendedCloud`) is known from the
     # machine file, which its own reader reads; a repo copy stays unknown.
-    known_global = known | set(leaf_paths(default_global_config()))
+    known_global = known | {parts for parts, _value in _leaf_items(default_global_config())}
 
     def layer(parts):
         dotted = ".".join(parts)
@@ -2310,7 +2319,7 @@ def inert_settings(root, path=None):
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
             continue
-        if not _known_leaf(dotted, known_global if layer(parts) == "global" else known):
+        if not _known_leaf(parts, known_global if layer(parts) == "global" else known):
             effect, ticket = pending or (_UNKNOWN_EFFECT, None)
             kind = "pending" if pending else "unknown"
         elif isinstance(value, (str, int, float, bool)) \

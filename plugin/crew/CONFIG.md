@@ -2025,7 +2025,9 @@ least veto.
 ```
 
 - `identity` is the assumed-role ARN **prefix** exactly as `aws sts
-  get-caller-identity` prints it, ending in `/`. STS's ARN must start with it.
+  get-caller-identity` prints it, ending in `/`, and naming one role
+  (`arn:<partition>:sts::<account>:assumed-role/<role>/`; a bare
+  `.../assumed-role/` would admit every role and is refused). STS's ARN must start with it.
 - `profile` is the `~/.aws/config` profile `aws configure export-credentials`
   exports; it must yield temporary credentials (`SessionToken` and
   `Expiration`). `region` defaults to `us-east-1`.
