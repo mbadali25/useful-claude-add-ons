@@ -14,8 +14,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
   round, and a review you accepted that a later edit staled goes back through refresh and review
   instead of being reported as unfinished.
-- **FIX 1.** The un-accepted FINDINGS stop's reason ends `or fixes, then runs crew_refresh_check.py
-  --root . --ticket <id> and commits each `refresh with` it names, then /crew:review <id>`. The
+- **FIX 1.** The un-accepted FINDINGS stop's reason ends: or fixes, then reruns
+  `crew_refresh_check.py --root . --ticket <id>` until it says fresh (committing what each
+  `refresh with` writes and each `uncommitted:` path; unknown is a stop), then `/crew:review <id>`. The
   L-0510 auto-accept clause in front of it is unchanged; it is still a stop, with no new stop id.
   `commands/autopilot.md` and the README no longer claim `next` refreshes before every later round:
   it does so only for a round it reaches itself.

@@ -1390,8 +1390,9 @@ def _review_phase(top, ticket, evidence, answer):
                if refusal is None else f"review_ledger.py --auto-accept refuses it ({refusal}): ")
         return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; "
                       f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
-                      "or fixes, then runs crew_refresh_check.py --root . --ticket "  # T-0043
-                      f"{ticket} and commits each `refresh with` it names, then /crew:review {ticket}")
+                      "or fixes, then reruns crew_refresh_check.py --root . --ticket "  # T-0043
+                      f"{ticket} until it says fresh (commit what each `refresh with` writes and "
+                      f"each `uncommitted:` path; unknown is a stop), then /crew:review {ticket}")
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
