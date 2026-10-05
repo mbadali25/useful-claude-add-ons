@@ -249,6 +249,44 @@ def test_put_over_a_body_that_does_not_match_its_hash_is_unknown(capsys, tmp_pat
     assert git(hub, "rev-parse", REF) == before
 
 
+def _record_bytes(version=1, **changes):
+    record = {"name": "api", "version": version, "hash": _sha(BODY), "status": "built-against",
+              "built_by": [{"repo": "r", "ticket": "T-1", "hash": _sha(BODY), "at": "2026-01-01T00:00:00+00:00"}]}
+    record.update(changes)
+    return json.dumps(record).encode()
+
+
+@pytest.mark.parametrize("cmd", ["put", "new-version", "build-against"])
+def test_a_corrupt_earlier_version_stops_every_write(capsys, tmp_path, wt, hub, cmd):
+    """Review round 3: only the latest version was checked, so a corrupt v1
+    under a valid v2 let put write."""
+    _approved(wt)
+    v2 = _record_bytes(2) if cmd == "new-version" else _record_bytes(2, status="draft", built_by=[])
+    _raw_write(wt, {"contracts/api/v1.json": b"{corrupt", "contracts/api/v1.body": BODY,
+                    "contracts/api/v2.json": v2, "contracts/api/v2.body": BODY})
+    before = git(hub, "rev-parse", REF)
+    two = _body(tmp_path, BODY_2, "two.txt")
+
+    if cmd == "put":
+        code, out = _put(capsys, wt, two)
+    elif cmd == "new-version":
+        code, out = _put(capsys, wt, two, "--new-version", "--ticket", "T-2")
+    else:
+        code, out = _build(capsys, wt, version=2)
+
+    assert code == crew_contract.EXIT_UNKNOWN, out
+    assert "v1 has a corrupt record" in out
+    assert git(hub, "rev-parse", REF) == before
+    assert not _binding_path(wt).exists()
+
+
+def test_a_record_version_that_is_not_an_integer_is_corrupt():
+    for value in (1.0, True, "1"):
+        record, why = crew_contract.parse_record("api", 1, _record_bytes(version=value))
+        assert record is None and "different contract or version" in why, value
+    assert crew_contract.parse_record("api", 1, _record_bytes())[0] is not None
+
+
 def test_new_version_leaves_the_old_version_byte_identical(capsys, tmp_path, wt, hub):
     _frozen(capsys, tmp_path, wt)
     old = {k: v for k, v in _remote_files(hub).items() if k.startswith("contracts/api/v1.")}

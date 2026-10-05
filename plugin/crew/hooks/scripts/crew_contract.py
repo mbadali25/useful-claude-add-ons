@@ -154,7 +154,7 @@ def parse_record(name, version, blob):
     if record.get("status") not in STATUSES:
         return None, f"status {crew_coord.safe(record.get('status'), 40)!r} is not {DRAFT} or {FROZEN}"
     number = record.get("version")
-    if record.get("name") != name or isinstance(number, bool) or number != version:
+    if record.get("name") != name or type(number) is not int or number != version:  # not 1.0, not True
         return None, "it names a different contract or version than its file name"
     if not isinstance(record.get("hash"), str) or not _HASH_RE.fullmatch(record["hash"]):
         return None, "its hash is not sha256:<64 hex digits>"
@@ -172,22 +172,32 @@ def builders(record):
                      for e in record["built_by"]) or "nobody"
 
 
+def _told(found, name, skip=None):
+    """{N: record} for every version but `skip`. Unknown when any record is
+    corrupt or any body's sha256 is not its record's hash: a write never
+    builds on a contract whose history cannot be told."""
+    records = {}
+    for number in sorted(found):
+        if number == skip:
+            continue
+        record, why = parse_record(name, number, found[number][0])
+        if record is None:
+            raise Unknown(crew_coord.peer(f"contract {name} v{number} has a corrupt record ({why})"))
+        if body_hash(found[number][1]) != record["hash"]:
+            raise Unknown(crew_coord.peer(f"contract {name} v{number}'s body does not match its recorded hash "
+                                          f"{record['hash'][:HASH_SHOWN]}"))
+        records[number] = record
+    return records
+
+
 def _latest(files, name):
     """(N, record) for the latest version, (0, None) when there is none.
-    Unknown on a malformed tree, a corrupt latest record, or a latest body
-    whose sha256 is not its record's hash: a write never builds on a version
-    that cannot be told."""
-    found = versions(files, name)
-    if not found:
+    Unknown on a malformed tree or any version that cannot be told."""
+    records = _told(versions(files, name), name)
+    if not records:
         return 0, None
-    latest = max(found)
-    record, why = parse_record(name, latest, found[latest][0])
-    if record is None:
-        raise Unknown(crew_coord.peer(f"contract {name} v{latest} has a corrupt record ({why})"))
-    if body_hash(found[latest][1]) != record["hash"]:
-        raise Unknown(crew_coord.peer(f"contract {name} v{latest}'s body does not match its recorded hash "
-                                      f"{record['hash'][:HASH_SHOWN]}"))
-    return latest, record
+    latest = max(records)
+    return latest, records[latest]
 
 
 # --- the local binding ------------------------------------------------------------
@@ -308,6 +318,10 @@ def cmd_build_against(chan, top, name, version, ticket, repo):
             return "refused", crew_coord.peer(
                 f"refused: contract {name} v{version}'s body does not match its recorded hash "
                 f"({record['hash'][:HASH_SHOWN]} recorded, {actual[:HASH_SHOWN]} found); nothing was written")
+        try:
+            _told(found, name, skip=version)
+        except Unknown as exc:
+            return "unknown", f"unknown - {exc}; nothing was written"
         if any(b["hash"] != record["hash"] for b in held):
             return "refused", crew_coord.peer(
                 f"refused: {local} records {ticket} as built against {name} v{version} with another hash than "
