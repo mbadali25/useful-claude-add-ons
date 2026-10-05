@@ -25,7 +25,7 @@ main = 7ba4c184 (#499 L-1518 merged), crew 1.0.345.
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
 | #497 L-1512 | `L-1512-build` e8a3fb48 | re-check 0 BLOCK / 1 FIX (version 1.0.412 -> 1.0.346); Windows CI green | builder: merge main, 1.0.346, sync-updates; then land alone |
 | #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder waits for #497 merge, then one push at 1.0.347; lands ALONE |
-| T-0045 (was #407) | `T-0045-v2-build` (new) | owner chose FRESH BRANCH from main (batch 5 merged-then-reverted #407's old head); cp1252 + depth fixes done | builder rebuilding, closes #407 -> batch 6 |
+| T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | owner chose FRESH BRANCH from main (batch 5 merged-then-reverted #407's old head); cp1252 + depth fixes done | builder rebuilding, closes #407 -> batch 6 |
 | Batch 6 | not started | T-0045 v2, #353 T-0011 + #366 T-0059, more | batch PR per LANDPREP (sync-updates step) |
 
 ### Ready / next up
@@ -45,7 +45,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:23 UTC
+Last updated: 2026-10-05 01:25 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -104,6 +104,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:35: T-0045 rebuilt from main as draft #500 (f031d5bd); #407 commented 'Superseded by #500' and closed (verified: only these writes, per owner's fresh-branch choice). #497 c1c978dc CI running (12 ok, 0 fail).
 - 01:23: L-1512 #497 re-versioned to crew 1.0.346 at c1c978dc after merging main 7ba4c184 (README synced); CI running
 - 01:30: #496 review 0 BLOCK 2 FIX (version, sync-updates). Builder holds until #497 merges, then 1.0.347 in one push. Minted C-0002 (.cmd git drops ^ peels on Windows, fail-closed) and C-0003 (verify_fingerprint unknown->nothing-changed).
 - 01:20: MERGED #499 L-1518 -> 7ba4c184. Owner: #407 -> fresh branch from main (T-0045-v2-build). #497 re-check 0/1 (version); builder fixing. #496 CI green, review started. C-0001 agent accidentally pkilled a reviewer's pytest; asked reviewer to confirm its rule 4/7 runs were complete. LANDPREP: never merge-then-revert in a batch; alone PRs = main+1 at land.
