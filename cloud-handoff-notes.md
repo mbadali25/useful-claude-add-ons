@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:38: #407 closed, superseded by draft #500 (T-0045-v2-build f031d5bd from main 7ba4c184, no version bump for batch 6): Pytest all green incl. 6+3 Windows shards; Marketplace red only for content-without-bump (by design until batch 6); verify-gate receipt pass=false
 - 01:55: #496 blocker: since L-1518 every CHANGELOG entry changes root README.md, but check-tooling-pr ALONGSIDE lacks README.md -> no harness PR can pass both sync-updates --check and check-tooling-pr. Decision (coordinator, per CLAUDE.md T-0087 'docs may ride along'): add root README.md to ALONGSIDE in #496 with must-allow/must-block cases + sabotage. C-0001 warned.
 - 01:45: MERGED #497 L-1512 -> 2828acef (crew 1.0.346), CI 29/29 incl. all Windows shards. #496 builder released for its one push at 1.0.347; subscribed to #496.
 - 01:35: T-0045 rebuilt from main as draft #500 (f031d5bd); #407 commented 'Superseded by #500' and closed (verified: only these writes, per owner's fresh-branch choice). #497 c1c978dc CI running (12 ok, 0 fail).
