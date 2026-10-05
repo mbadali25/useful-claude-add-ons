@@ -174,7 +174,9 @@ def builders(record):
 
 def _latest(files, name):
     """(N, record) for the latest version, (0, None) when there is none.
-    Unknown on a malformed tree or a corrupt latest record."""
+    Unknown on a malformed tree, a corrupt latest record, or a latest body
+    whose sha256 is not its record's hash: a write never builds on a version
+    that cannot be told."""
     found = versions(files, name)
     if not found:
         return 0, None
@@ -182,6 +184,9 @@ def _latest(files, name):
     record, why = parse_record(name, latest, found[latest][0])
     if record is None:
         raise Unknown(crew_coord.peer(f"contract {name} v{latest} has a corrupt record ({why})"))
+    if body_hash(found[latest][1]) != record["hash"]:
+        raise Unknown(crew_coord.peer(f"contract {name} v{latest}'s body does not match its recorded hash "
+                                      f"{record['hash'][:HASH_SHOWN]}"))
     return latest, record
 
 

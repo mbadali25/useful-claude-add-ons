@@ -226,6 +226,29 @@ def test_new_version_needs_a_frozen_predecessor_and_a_ticket(capsys, tmp_path, w
     assert log[-1]["event"] == "contract-new-version" and "T-2" in log[-1]["detail"]
 
 
+def test_put_over_a_body_that_does_not_match_its_hash_is_unknown(capsys, tmp_path, wt, hub):
+    """Review round 2: put replaced, and --new-version superseded, a version
+    whose body status already read as unknown."""
+    _put(capsys, wt, _body(tmp_path))
+    _raw_write(wt, {"contracts/api/v1.body": b"swapped\n"})
+    before = git(hub, "rev-parse", REF)
+
+    code, out = _put(capsys, wt, _body(tmp_path, BODY_2, "two.txt"))
+
+    assert code == crew_contract.EXIT_UNKNOWN and "does not match" in out
+    assert git(hub, "rev-parse", REF) == before
+    record = _record(hub)
+    record.update(status="built-against", built_by=[{"repo": "r", "ticket": "T-1", "hash": record["hash"],
+                                                     "at": "2026-01-01T00:00:00+00:00"}])
+    _raw_write(wt, {"contracts/api/v1.json": json.dumps(record).encode()})
+    before = git(hub, "rev-parse", REF)
+
+    code, out = _put(capsys, wt, _body(tmp_path, BODY_2, "two.txt"), "--new-version", "--ticket", "T-2")
+
+    assert code == crew_contract.EXIT_UNKNOWN and "does not match" in out
+    assert git(hub, "rev-parse", REF) == before
+
+
 def test_new_version_leaves_the_old_version_byte_identical(capsys, tmp_path, wt, hub):
     _frozen(capsys, tmp_path, wt)
     old = {k: v for k, v in _remote_files(hub).items() if k.startswith("contracts/api/v1.")}
