@@ -23,6 +23,7 @@ approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
 """
 import os
+import shutil
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _S = os.path.join(CREW, "hooks", "scripts")
@@ -47,6 +48,17 @@ _UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
 _DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
+TICKET = os.path.join(_S, "crew_ticket.py")
+GATE_SH = os.path.join(_S, "verify-gate.sh")
+GATE_PS1 = os.path.join(_S, "verify-gate.ps1")
+_BK = "tests/test_crew_bookkeeping.py::"
+_GB = "tests/test_verify_gate_bookkeeping.py::"
+_SH_DROP = 'changed = [f for f in changed if _kinds.get(f) != "bookkeeping"]\n'
+_SH_UNMAPPED = '    if not hit and _kinds.get(f) != "artifact": unmatched.append(f)\n'
+_PS1_DROP = ("$changed = @($changed | Where-Object { -not $crewBookkeeping.Contains("
+             "[string]$_) })\n")
+_PS1_UNMAPPED = ("  if (-not $hit -and -not $crewArtifacts.Contains([string]$f)) "
+                 "{ [void]$unmapped.Add($f) }\n")
 
 
 def _scope_guard_rule_span():
@@ -271,7 +283,66 @@ REFRESH_MUTATIONS = (
      "    if not path.startswith('\"'):\n        return path\n",
      "    if True:\n        return path\n",
      _CAI + "test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change"),
+    # T-0068: crew's own bookkeeping (crew_ticket.CREW_BOOKKEEPING_PATHS).
+    ("the gate records are not bookkeeping", TICKET,
+     '    ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177\n',
+     "",
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("bookkeeping matches below the root", TICKET,
+     "and walk(i + 1, j + 1)\n\n    return walk(0, 0)\n\n\ndef _crew_listed",
+     "and walk(i + 1, j + 1)\n\n    return any(walk(0, k) for k in range(len(names)))"
+     "\n\n\ndef _crew_listed",
+     _BK + "test_is_crew_bookkeeping_matches_whole_segments_at_the_root"),
+    ("a config path is bookkeeping", TICKET,
+     '    ".crew/*.lock",                       # lock files\n',
+     '    ".crew/*.lock",                       # lock files\n    ".crew/*.json",\n',
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("the matcher and git disagree on a directory", TICKET,
+     "            first = j + 1 if i == len(pat) - 1 else j\n",
+     "            first = j\n",
+     _BK + "test_a_trailing_double_star_is_everything_below_never_the_directory"),
+    ("the sh gate reports bookkeeping as unmapped", GATE_SH,
+     _SH_DROP, "",
+     _GB + "test_untracked_bookkeeping_is_not_unmapped[sh]"),
+    ("the sh gate reports refresh artifacts as unmapped", GATE_SH,
+     _SH_UNMAPPED, "    if not hit: unmatched.append(f)\n",
+     _GB + "test_a_refresh_artifact_with_no_rule_is_not_unmapped[sh]"),
+    ("the sh gate maps every unmatched path", GATE_SH,
+     _SH_UNMAPPED, "    if False: unmatched.append(f)\n",
+     _GB + "test_an_ordinary_unmapped_file_still_fails[sh]"),
+    ("the sh gate drops refresh artifacts instead of mapping them", GATE_SH,
+     _SH_DROP, 'changed = [f for f in changed if _kinds.get(f) not in ("bookkeeping", '
+               '"artifact")]\n',
+     _GB + "test_a_refresh_artifact_a_rule_names_still_runs_it[sh]"),
+    ("classify calls everything bookkeeping", AUDIT,
+     "        elif crew_ticket.is_crew_bookkeeping(path):\n",
+     "        elif True:\n",
+     _CAI + "test_classify_names_each_kind"),
+    ("classify reads an unknown artifact list as every path an artifact", AUDIT,
+     "        dirs, is_artifact = [], None\n",
+     "        dirs, is_artifact = [], lambda _p, _d: True\n",
+     _CAI + "test_classify_without_refresh_check_calls_nothing_an_artifact"),
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
 )
+
+# The .ps1 twins need pwsh to run their test; without it the [ps1] cases skip
+# and a mutation could only read as vacuous, so they join where pwsh exists
+# (sabotage_tooling.py's convention) and the report says when they did not.
+if shutil.which("pwsh"):
+    REFRESH_MUTATIONS += (
+        ("the ps1 gate reports bookkeeping as unmapped", GATE_PS1,
+         _PS1_DROP, "",
+         _GB + "test_untracked_bookkeeping_is_not_unmapped[ps1]"),
+        ("the ps1 gate reports refresh artifacts as unmapped", GATE_PS1,
+         _PS1_UNMAPPED, "  if (-not $hit) { [void]$unmapped.Add($f) }\n",
+         _GB + "test_a_refresh_artifact_with_no_rule_is_not_unmapped[ps1]"),
+        ("the ps1 gate drops refresh artifacts instead of mapping them", GATE_PS1,
+         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewArtifacts.Add([string]$changed[$i]) }\n",
+         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewBookkeeping.Add([string]$changed[$i]) }\n",
+         _GB + "test_a_refresh_artifact_a_rule_names_still_runs_it[ps1]"),
+        ("the ps1 gate maps every unmatched path", GATE_PS1,
+         _PS1_UNMAPPED, "  if ($false) { [void]$unmapped.Add($f) }\n",
+         _GB + "test_an_ordinary_unmapped_file_still_fails[ps1]"),
+    )

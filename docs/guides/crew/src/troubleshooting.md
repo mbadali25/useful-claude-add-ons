@@ -165,7 +165,15 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
-  was accidental, revert the edit and re-check.
+  was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
+  (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
+  leaves `crew_ticket.CREW_BOOKKEEPING_PATHS` out, whatever `.gitignore` says.
+
+- **Symptom: a receipt accepted under an older crew reads stale after the upgrade.** The upgrade
+  to the release that brought T-0068 drops crew's bookkeeping from the bundle, so a receipt whose
+  bundle held a non-ignored bookkeeping file (a repository that does not ignore `.crew/*`) no
+  longer matches the rebuilt hash.
+  **Fix:** one re-review of that ticket. Later bookkeeping writes cannot stale the new receipt.
 
 - **Symptom: Codex hit a usage limit.** The probe printed `PROBE=limited` (exit 5) with the
   error on `PROBE_DETAIL=...`, or a round printed `review: codex usage limit in round N: ...`.
@@ -331,6 +339,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   A value that names no commit here, or a config that does not parse, reads as **could not tell**:
   `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
   back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
+- **Symptom: the completion audit or the verify gate lists `.crew/.scope-base`,
+  `.crew/metrics.md` or `.crew/.verify-gate.record.json`.** Only a crew from before T-0068 does
+  that, in a repository whose `.gitignore` does not ignore `.crew/*`.
+  **Fix:** update crew. These are crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
+  never a changed path for the audit, the gate or the review bundle; do not add them to Touch.
+  A `.crew/` path the audit still lists (`.crew/verify.json`, `.crew/config.json`, a committed
+  `.crew/incident.json` or `.crew/tfplan/` file, a session marker) is a real change: only the
+  ticket-flow bookkeeping and the hook logs (`.crew/guard.log`, `.crew/.autoclear.log`) are left
+  out, never a file crew reads as a trust input.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and

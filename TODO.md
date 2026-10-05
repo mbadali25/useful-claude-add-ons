@@ -58,6 +58,21 @@ be wrong can be closed on evidence.
   edited in L-0526's tooling PR. (b) Sabotage rows S16-S19 (L-0520's PYTHON-set fixes) and
   S20-S33 (L-0558's round-2 fixes, CHANGELOG 1.0.102) were drafted machine-local and never reached
   the repo; `plugin/crew/tests/sabotage_train.py` holds S1-S15, R1-R6 and P1-P6 only.
+- **T-0068 follow-ups (crew's own bookkeeping).** (a) A `verify.knownFailures` allowance for TSS
+  F496 (`bash _verify/smoke.sh` fails `local:srl-merged-away-backfill` as root, on main too): a
+  repo-only list of check ids, each with a ticket reference and an expiry, reported as
+  `known-fail` never `pass`, never covering a check that passes on main and fails on the branch,
+  and listed by `/crew:done`. Excluded from T-0068's spec (open question 1, a new config key with
+  its own must-block cases); the owner's answer to that question is not recorded here. (b) The
+  command prose outside the review/gate harness, left out because T-0068 is a harness change
+  that lands alone (`scripts/check-tooling-pr.py`): `plugin/crew/commands/done.md` checks 1-3
+  (bookkeeping written after acceptance does not stale the receipt; the audit never lists it, so
+  a listed `.crew/` path is a real finding), `plugin/crew/commands/verify.md:95-102` (bookkeeping
+  is never unmapped, refresh artifacts are mapped; `:102` still says the gate record is "never
+  tracked") and `plugin/crew/commands/implement.md` step 6 (bookkeeping beside the
+  refresh-artifact allowance). (c) `/crew:init` and `/crew:migrate` adding the untracked
+  bookkeeping to `.gitignore` (direction, excluded by the spec as unnecessary for correctness).
+
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and

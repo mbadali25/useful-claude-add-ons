@@ -2310,11 +2310,49 @@ Added after this note's anchor; read in full at the L-0678 build head. No new wr
 - `review_ledger.py`, `review_patch.py` — part of the review pipeline
   `/crew:review` and `/crew:done` depend on — were opened only at the T-0087
   and T-0092 lines cited below; the rest was not re-read.
-- DERIVED (T-0092, crew 1.0.54): `EXCLUDED` and `_EXCLUDE_SPEC`
-  (`plugin/crew/hooks/scripts/review_patch.py:111`,
-  `plugin/crew/hooks/scripts/review_patch.py:112`) name `.work/`, the
-  generated `graphify-out/` and, since L-0578, `.crew/metrics.md`, root-anchored, on every diff and listing but
-  never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
+- DERIVED (T-0092, crew 1.0.54; T-0068): `EXCLUDED` and `_EXCLUDE_SPEC`
+  (`plugin/crew/hooks/scripts/review_patch.py:117`,
+  `plugin/crew/hooks/scripts/review_patch.py:118`) name `.work/`, the
+  generated `graphify-out/` and, since T-0068, every entry of
+  `crew_ticket.CREW_BOOKKEEPING_PATHS` (which took over L-0578's single
+  `.crew/metrics.md`), on every diff and listing but never on `git add`; the
+  manifest's `excluded` is `list(EXCLUDED)`.
+- DERIVED (T-0068, split after review of 514ca132): three lists of what crew
+  writes under `.crew/`. `CREW_BOOKKEEPING_PATHS`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:441`) is only the ticket-flow
+  bookkeeping that deadlocked `/crew:done` -- the scope base, the verify
+  gate's record, timings, fingerprint, lock, marker and rule-output scratch,
+  `metrics.md`, `metrics.jsonl` -- and, since round 2 of the review of
+  1292b863, the hook logs and notice marker nothing reads to decide
+  (`guard.log`, `.autoclear.log`, `.cloud-guard-unpinned-noted`), which a
+  hook writes mid-session and so deadlocked the audit the same way.
+  `CREW_WRITE_ALLOWED_PATHS`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:469`) is its one Edit-able
+  member, `.crew/metrics.md`. `CREW_STATE_PATHS`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:483`) is everything else crew
+  writes (tfplan sidecars, `incident.json`, `.deploy-in-flight`, the
+  session markers a hook reads to decide -- `.autoclear-sent-*`,
+  `.handoff-requested-*`, `.hook-*`, `.qa-audit-at` -- archives), excluded
+  from nothing because several are trust inputs. `CREW_CONTENT_PATHS` (`plugin/crew/hooks/scripts/crew_ticket.py:510`)
+  is what crew reads as config, verify map, endpoints, standards, approvals,
+  the code map, the archive. `_crew_listed`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:541`) matches whole segments
+  from the root, refuses an unnormalised path, and agrees with git's glob (a
+  trailing `/**` is one or more segments); `bookkeeping_excludes`
+  (`plugin/crew/hooks/scripts/crew_ticket.py:585`) returns one
+  `:(exclude,top,glob)` pathspec per bookkeeping entry. Consumers: the bundle
+  (above), the completion audit's `_ONLY`
+  (`plugin/crew/hooks/scripts/completion_audit.py:94`) and the verify gate's
+  changed list through `completion_audit.classify_paths`
+  (`plugin/crew/hooks/scripts/completion_audit.py:211`) take the bookkeeping
+  list; the scope guard's rule 2 refuses `is_crew_write_refused`
+  (`plugin/crew/hooks/scripts/scope_guard.py:252`, bookkeeping minus
+  write-allowed) and rule 5a opens only the write-allowed list
+  (`plugin/crew/hooks/scripts/scope_guard.py:210`). JUDGEMENT: a Bash
+  write to the gate's marker and unkeyed fingerprint is not closed by
+  this. Lives in `crew_ticket.py` rather than `crew_common.py` because every
+  consumer is
+  review/gate harness (`scripts/check-tooling-pr.py` `HARNESS`).
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
   an empty list as `excluded (never in the bundle): none`, and a missing
   key or anything but a list of non-blank strings as

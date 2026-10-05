@@ -216,6 +216,9 @@ ALLOWED = {
     # - the delete path's backup file name `.crew/<BACKUP_PREFIX><stamp>`, own path;
     # - the scratch repo's config.json written to preview the post-heal rows.
     "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
+    # T-0068: CREW_CONTENT_PATHS names the two config files as content that is
+    # never crew bookkeeping (always reviewed and judged); a list entry, not a read.
+    "crew_ticket.py": (2, "CREW_CONTENT_PATHS lists the config files, not a config read"),
     # review_gate.py reads the stand-down flag exactly where verify-gate.sh does,
     # the worktree's own file, until T-0096 routes the shell gate; pinned by
     # test_review_gate.py's lane test.
