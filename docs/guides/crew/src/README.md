@@ -24,7 +24,7 @@ Ticket numbers follow the merged order in `docs/review/04-redesign.md`
 The four existing HTML families that used to live in `docs/guides/crew/`
 (overview, capabilities, technical reference, the dated progress report) are
 retired: `crew-overview`, `crew-capabilities` and `crew-technical-reference`
-are replaced by the `crew-1.0-*` guides below and removed; the dated progress
+are replaced by the `crew-*` guides below and removed; the dated progress
 report has no replacement and was moved to `docs/guides/crew/archive/` as
 historical record. This directory's own build is unaffected — none of the
 five guides here were ever built from those four.
@@ -33,9 +33,9 @@ five guides here were ever built from those four.
 
 T10 built the five guides with `doc-builder` (theme `midnight`, brand
 `neutral`, rendered by LibreOffice on Linux), each as HTML, DOCX and PDF in
-`docs/guides/crew/`, named `crew-1.0-<guide>.{html,docx,pdf}` - except the
-full guide, renamed `crew-1.1-guide.*` with crew 1.1.0 (C-0006; `build.py`'s
-`GUIDE_LINES`). The three
+`docs/guides/crew/`, named `crew-<guide>.{html,docx,pdf}`. The names carry no
+crew version (C-0006; they were `crew-1.0-*` before), so a release never
+renames them. The three
 appendix sources (`daily-workflow-scope.md`, `memory-recall-proof.md`,
 `auto-cycle.md`) have no `doc-builder` include mechanism to fold into their
 parent at build time, so they are folded by concatenating Markdown before
@@ -45,13 +45,13 @@ than shipped as separate linked files:
 
 | Artifact | Built from |
 |---|---|
-| `crew-1.0-quickstart.{html,docx,pdf}` | `quickstart.md` |
-| `crew-1.0-daily-workflow.{html,docx,pdf}` | `daily-workflow.md` + `daily-workflow-scope.md` |
-| `crew-1.0-memory-and-obsidian.{html,docx,pdf}` | `memory-and-obsidian.md` + `memory-recall-proof.md` |
-| `crew-1.0-working-with-codex.{html,docx,pdf}` | `working-with-codex.md` |
-| `crew-1.0-troubleshooting.{html,docx,pdf}` | `troubleshooting.md` + `auto-cycle.md` |
-| `crew-1.1-guide.{html,docx,pdf}` | `guide.md` |
-| `crew-1.0-configuration-reference.{html,docx,pdf}` | `configuration-reference.md`, itself written by `config_reference.py --write` |
+| `crew-quickstart.{html,docx,pdf}` | `quickstart.md` |
+| `crew-daily-workflow.{html,docx,pdf}` | `daily-workflow.md` + `daily-workflow-scope.md` |
+| `crew-memory-and-obsidian.{html,docx,pdf}` | `memory-and-obsidian.md` + `memory-recall-proof.md` |
+| `crew-working-with-codex.{html,docx,pdf}` | `working-with-codex.md` |
+| `crew-troubleshooting.{html,docx,pdf}` | `troubleshooting.md` + `auto-cycle.md` |
+| `crew-guide.{html,docx,pdf}` | `guide.md` |
+| `crew-configuration-reference.{html,docx,pdf}` | `configuration-reference.md`, itself written by `config_reference.py --write` |
 
 `build.py --check` rebuilds every guide's HTML in memory and exits 1 naming any
 committed HTML that differs (2 when it cannot run). DOCX and PDF are not

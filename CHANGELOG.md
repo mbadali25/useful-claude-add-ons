@@ -9,17 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.1.0 — C-0006: guide renamed for the 1.1 line
+### crew 1.1.0 — C-0006: version-free guide file names
 
-- **Summary.** crew moves to the 1.1 line, and its full guide is now `crew-1.1-guide` (HTML, DOCX and
-  PDF) instead of `crew-1.0-guide`.
-- **What changed.** `docs/guides/crew/crew-1.0-guide.{html,docx,pdf}` are renamed
-  `crew-1.1-guide.{html,docx,pdf}` and rebuilt by `docs/guides/crew/src/build.py`, which now names
-  each guide's file through `html_name` and a `GUIDE_LINES` table (the full guide on `1.1`, every
-  other guide still `crew-1.0-*`). `guide.md`'s title and its two "crew 1.0" product-line mentions
-  say 1.1; its `crew 1.0.349` arrival and the "1.0 layout" `/crew:migrate` produces are unchanged.
-  `docs/guides/crew/src/README.md` names the new file, and `scripts/_test/crew-guide.py` pins all
-  three built files under the new name and the old name's absence.
+- **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file
+  names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a
+  rename.
+- **What changed.** Every `docs/guides/crew/crew-1.0-<name>.{html,docx,pdf}` is renamed
+  `crew-<name>.{html,docx,pdf}` (guide, quickstart, daily-workflow, memory-and-obsidian,
+  working-with-codex, troubleshooting, configuration-reference) and rebuilt by
+  `docs/guides/crew/src/build.py`, whose `html_name` now returns `crew-<name>.html`; the HTML is
+  byte-identical, only the names moved. `guide.md`'s title and its two product-line mentions say
+  crew 1.1; its `crew 1.0.349` arrival and the "1.0 layout" `/crew:migrate` produces are unchanged.
+  `docs/guides/crew/src/README.md` lists the new names, and `scripts/_test/crew-guide.py` pins all
+  three built files of every guide at the version-free name and fails on any `crew-1.<n>-*` file
+  left beside them.
 
 ### crew 1.0.350, gizmoduck 0.5.8, localgpu 0.1.21 — batch 8: T-0105, L-0678, L-0673, T-0108, T-0035, T-0051
 
