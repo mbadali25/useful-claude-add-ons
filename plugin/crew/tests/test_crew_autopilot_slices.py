@@ -774,3 +774,83 @@ def test_stacked_slice_merged_into_main_before_its_base_is_not_shipped(tmp_path,
     why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
 
     assert f"merged into main, not a base the plan names ({BRANCH})" in why, why
+
+
+# --- coordinator review of 09eb0a47 / f4d5a1c3: one fail-closed base decision ----
+
+def _merged_world(monkeypatch, answers):
+    """gh answers per head branch: a dict (state, baseRefName) or None for a
+    read that fails."""
+    def view(args):
+        got = answers.get(args[2])
+        if got is None:
+            return (1, "", "HTTP 502\n")
+        return _view(dict(_pr(got[0], number=11), baseRefName=got[1]))
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(pr_view=view, repo_view=MAIN))
+
+
+def _slice2_ctx(tmp_path, s2_base="main", s1_base="main"):
+    root = _ticket(tmp_path, header="status: in-progress   risk: low")
+    _state(root, current=2, done=[1, 2], shipped=[
+        _shipped(1, BRANCH, base=s1_base), _shipped(2, f"{BRANCH}-s2", base=s2_base)])
+    return root, crew_autopilot_slices.context(str(root), T)
+
+
+def test_final_main_slice_merged_into_slice_1_branch_is_not_closed(tmp_path, monkeypatch):
+    """Coordinator BLOCK: slice 3 (`Base: main`) merged into slice 1's branch
+    never reached main; next does not close the ticket."""
+    shipped = [_shipped(1, BRANCH, merge_sha="c" * 40), _shipped(2, f"{BRANCH}-s2",
+                                                                  merge_sha="c" * 40)]
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, current=3, shipped=shipped,
+                              branch=f"{BRANCH}-s3")
+    head = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(
+        pr_view=_view(dict(_pr("MERGED", number=13, head=head), baseRefName=BRANCH)),
+        repo_view=MAIN))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("ship", True), got
+
+
+def test_a_malformed_recorded_base_is_a_stop_not_a_crash(tmp_path, monkeypatch):
+    """Coordinator FIX: a recorded base that is not a branch name stops."""
+    root, ctx = _slice2_ctx(tmp_path, s2_base=["main"])
+    _merged_world(monkeypatch, {BRANCH: ("MERGED", "main"), f"{BRANCH}-s2": ("MERGED", "main")})
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
+
+    assert "not a branch name" in why, why
+
+
+def test_predecessor_merged_into_the_wrong_branch_does_not_unlock_main(tmp_path, monkeypatch):
+    """Coordinator BLOCK: slice 1 merged into develop, slice 2 (`Base: slice
+    1`) merged into main - the chain never reached its base."""
+    root, ctx = _slice2_ctx(tmp_path, s2_base=BRANCH)
+    _merged_world(monkeypatch, {BRANCH: ("MERGED", "develop"),
+                                f"{BRANCH}-s2": ("MERGED", "main")})
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
+
+    assert "merged into develop" in why, why
+
+
+def test_recorded_main_base_with_an_unreadable_chain_is_a_stop(tmp_path, monkeypatch):
+    """Coordinator BLOCK: slice 2 recorded `main`, slice 1's PR cannot be
+    read - fail closed, never "main is allowed"."""
+    root, ctx = _slice2_ctx(tmp_path, s2_base="main")
+    _merged_world(monkeypatch, {BRANCH: None, f"{BRANCH}-s2": ("MERGED", "main")})
+
+    why = crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2")
+
+    assert "could not read slice 1's PR state" in why, why
+
+
+def test_stacked_slice_merged_into_main_after_its_base_merged_into_main_ships(
+        tmp_path, monkeypatch):
+    """Must-allow: slice 1 merged into main, then slice 2 (retargeted by
+    GitHub) merged into main - the chain reached its base."""
+    root, ctx = _slice2_ctx(tmp_path, s2_base=BRANCH)
+    _merged_world(monkeypatch, {BRANCH: ("MERGED", "main"), f"{BRANCH}-s2": ("MERGED", "main")})
+
+    assert crew_autopilot_slices.merged_base_stop(str(root), ctx, f"{BRANCH}-s2") == ""

@@ -180,46 +180,78 @@ def merged_slices(top, ctx, upto):
     return merged, states
 
 
-def _allowed_bases(top, ctx, k):
-    """The branches slice `k`'s PR may have merged into: the base recorded
-    when it shipped, the default branch (where GitHub retargets a PR whose
-    stacked base merged), and the branches of slice k's own `Base: slice`
-    chain. Never an unrelated earlier slice's branch."""
+def _allowed_bases(top, ctx, k, depth=0):
+    """`(allowed, why)`: the ONE set of branches slice `k`'s PR may have merged
+    into, from its declared base and the verified chain under it, or
+    `(None, why)` -- a stop -- when anything it rests on is unknown or
+    malformed. `Base: main` is the default branch alone. `Base: slice <j>` is
+    slice j's branch, plus whatever slice j's own PR could merge into once
+    slice j is verified merged INTO one of those (GitHub retargets a stacked
+    PR when its base merges). A recorded base is never trusted on its own."""
     by_n = {s["n"]: s for s in ctx["slices"]}
-    branches = slice_branches(ctx) or {}
-    allowed = {(_shipped_entry(ctx, k) or {}).get("base")}
-    base, chain = by_n[k]["base"], []
-    while isinstance(base, int) and base in by_n and base not in chain:
-        chain.append(base)
-        allowed.add(branches.get(base))
-        base = by_n[base]["base"]
-    # The default branch only once the whole stacked chain under slice k has
-    # merged: before that, a PR merged straight into it skipped a dependency.
-    if all(_chain_slice_merged(top, ctx, j) for j in chain):
-        allowed.add(crew_ship._default_branch(top))  # pylint: disable=protected-access
-    allowed.discard(None)
-    return allowed
+    entry = _shipped_entry(ctx, k) or {}
+    recorded = entry.get("base")
+    if recorded is not None and not (isinstance(recorded, str) and recorded):
+        return None, (f"slices.json records slice {k}'s base as {recorded!r}, not a branch "
+                      "name - a human looks")
+    default = crew_ship._default_branch(top)  # pylint: disable=protected-access
+    if not default:
+        return None, "could not read the default branch"
+    base = by_n[k]["base"]
+    if base == "main":
+        return {default}, ""
+    if not is_int(base) or base not in by_n or base >= k or depth > len(by_n):
+        return None, f"slice {k}'s Base: is not an earlier slice - a human looks"
+    below = (slice_branches(ctx) or {}).get(base)
+    if not below:
+        return None, f"slice {base}'s branch is not recorded, so slice {k}'s base is unknown"
+    merged, why, under = _verified_merged(top, ctx, base, depth + 1)
+    if merged is None:
+        return None, why
+    return ({below} | under) if merged else {below}, ""
 
 
-def _chain_slice_merged(top, ctx, j):
-    """True when slice `j` is recorded merged, or its PR reads MERGED."""
+def _verified_merged(top, ctx, j, depth):
+    """`(merged, why, allowed_j)`: True only when slice j's PR merged INTO a
+    base its own chain allows; False when it has not shipped or merged yet;
+    None (a stop, `why` set) when its state, its destination or its chain
+    cannot be read, or it merged anywhere else."""
     entry = _shipped_entry(ctx, j)
     if entry is None:
-        return False
-    if crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
-        return True
-    pr = crew_ship.read_pr(top, entry.get("branch") or "")
-    return isinstance(pr, dict) and pr.get("state") == "MERGED"
+        return False, "", set()
+    branch = entry.get("branch")
+    if not isinstance(branch, str) or not branch:
+        return None, f"slices.json records no branch for slice {j} - a human looks", set()
+    if not crew_ship._full_sha(entry.get("merge_sha")):  # pylint: disable=protected-access
+        pr = crew_ship.read_pr(top, branch)
+        if pr is None:
+            return None, f"could not read slice {j}'s PR state ({branch}) - a human looks", set()
+        if pr.get("state") != "MERGED":
+            return False, "", set()
+    allowed, why = _allowed_bases(top, ctx, j, depth)
+    if allowed is None:
+        return None, why, set()
+    view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
+    found = view.get("baseRefName") if isinstance(view, dict) else None
+    if not isinstance(found, str) or not found:
+        return None, f"could not read where slice {j}'s PR ({branch}) was merged", set()
+    if found not in allowed:
+        return None, (f"slice {j}'s PR ({branch}) merged into {found}, not a base the plan "
+                      f"names ({', '.join(sorted(allowed))}) - the chain did not reach its "
+                      "base; a person looks"), set()
+    return True, "", allowed
 
 
 def _merged_into_stop(top, ctx, k, branch):
     """The reason slice `k`'s merged PR (on `branch`) did not reach a base the
-    plan names, or ""; could not read is a stop."""
+    plan names, or ""; anything unknown or malformed is a stop."""
+    allowed, why = _allowed_bases(top, ctx, k)
+    if allowed is None:
+        return why
     view = crew_ship._gh(top, ["pr", "view", branch, "--json", "baseRefName"])  # pylint: disable=protected-access
     found = view.get("baseRefName") if isinstance(view, dict) else None
-    allowed = _allowed_bases(top, ctx, k)
-    if not isinstance(found, str) or not found or not crew_ship._default_branch(top):  # pylint: disable=protected-access
-        return f"could not read where {branch}'s merged PR was merged, or the default branch"
+    if not isinstance(found, str) or not found:
+        return f"could not read where {branch}'s merged PR was merged"
     if found not in allowed:
         return (f"{branch}'s PR merged into {found}, not a base the plan names "
                 f"({', '.join(sorted(allowed))}) - slice {k} did not reach its base; a "
