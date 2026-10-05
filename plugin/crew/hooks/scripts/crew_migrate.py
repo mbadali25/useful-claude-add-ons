@@ -32,9 +32,10 @@ Nothing is dropped, and `to_legacy()` rebuilds the original dict exactly from
 crew.json alone -- that inverse is what the round-trip test asserts.
 
 A setting 1.0 carries but no longer acts on is also said out loud: crew.json
-gains a `notes` list and the report a `note` line. Today that is one case,
+gains a `notes` list and the report a `note` line. Today that is two cases:
 `pm.authority: autonomous` -> "/crew:autopilot drives one ticket; set
-autopilot.mode: plan to enable".
+autopilot.mode: plan to enable"; and any `autopilot` key -> crew reads it from
+`.crew/config.json` only, so the crew.json copy is not read.
 
 | config.json (<= 7) | crew.json (1)            | Note |
 |--------------------|--------------------------|------|
@@ -64,6 +65,7 @@ autopilot.mode: plan to enable".
 | `guards`           | `guards`                 | |
 | `production`       | `production`             | |
 | `change`           | `change`                 | |
+| `autopilot`        | `autopilot`              | read from `.crew/config.json` only |
 
 `MAPPING` below is this table as code; a test asserts the two agree.
 
@@ -114,6 +116,7 @@ MAPPING = (
     ("guards", "guards"),
     ("production", "production"),
     ("change", "change"),
+    ("autopilot", "autopilot"),
 )
 
 # The 1.0 roster (docs/review/04-redesign.md, "Roster: 54 agents -> 4").
@@ -125,6 +128,10 @@ RENAMED = {"qa-reviewer": "reviewer"}
 # and in crew.json, never dropped silently.
 AUTOPILOT_NOTE = ("pm.authority: autonomous - /crew:autopilot drives one ticket; set "
                   "autopilot.mode: plan to enable (kept under retired.pm)")
+# crew reads `autopilot` from `.crew/config.json` alone (crew_autopilot.settings),
+# so the copy migrate writes to crew.json arms nothing (T-0105).
+AUTOPILOT_FILE_NOTE = ("autopilot - the copy in crew.json is not read; crew reads this key "
+                       "from .crew/config.json, so edit it there")
 
 # `LETTERS-digits`, the shape the rest of crew recognises as a ticket id
 # (crew_state._TICKET_RE). Anchored, so it doubles as a path-safety check: an
@@ -295,10 +302,13 @@ def to_crew(legacy):
 def migration_notes(legacy):
     """Settings 1.0 carries but does not act on, said out loud. `to_legacy`
     never reads `notes`, so the round trip is unaffected."""
+    notes = []
     pm = legacy.get("pm")
     if isinstance(pm, dict) and pm.get("authority") == "autonomous":
-        return [AUTOPILOT_NOTE]
-    return []
+        notes.append(AUTOPILOT_NOTE)
+    if "autopilot" in legacy:
+        notes.append(AUTOPILOT_FILE_NOTE)
+    return notes
 
 
 def to_legacy(crew):

@@ -596,6 +596,13 @@ they disagree:
   the same for `route` (`:361-364`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
   `crew.json` first for `memory.inject`: one hook, two files, by key.
+- DERIVED (T-0105): `/crew:migrate` carries a config's `autopilot` block to
+  crew.json's top-level `autopilot` (`MAPPING` row,
+  `plugin/crew/hooks/scripts/crew_migrate.py:119`), not `unmapped`, and says
+  the copy is not read: `AUTOPILOT_FILE_NOTE` (`:133`), added by
+  `migration_notes` (`:302`, `:310`) to the report and crew.json `notes`.
+  Crew still reads the key from `config.json` only; the mapping means the
+  `settings` warning above fires once `config.json` is gone.
   Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,

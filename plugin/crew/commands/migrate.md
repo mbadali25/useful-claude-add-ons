@@ -23,7 +23,9 @@ Preview writes nothing. Show me its output verbatim and point out:
 - every `retireable` line - an original left in place that 1.0 no longer reads;
 - every `note` line - notably `pm.authority: autonomous`, which 1.0 keeps under
   `retired.pm` and records in `crew.json` `notes`: it arms nothing, and
-  `/crew:autopilot` is its successor, off until `autopilot.mode: plan`.
+  `/crew:autopilot` is its successor, off until `autopilot.mode: plan`; and any
+  `autopilot` block, which lands at crew.json's top-level `autopilot` with a note
+  (`AUTOPILOT_FILE_NOTE`): crew reads that key from `.crew/config.json` only.
 
 Then list the path-scoped rules apply will generate from the code map:
 
@@ -53,7 +55,8 @@ What apply does, in order:
    the tree is the old one. A hard kill leaves the manifest unfinished; every
    later run reports it until you roll back.
 3. Never overwrites and never deletes. An existing target with different bytes
-   is a conflict, found in preview.
+   is a conflict, found in preview. A crew.json an older crew wrote with
+   `unmapped.autopilot` is one: roll that migrate back, or leave it.
 
 | From | To |
 |---|---|

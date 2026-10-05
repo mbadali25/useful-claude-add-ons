@@ -454,3 +454,113 @@ def test_autopilot_note_names_the_shipped_command_not_a_future_release():
 
     assert ("arrives in 1.1.0" in note, "/crew:autopilot" in note,
             "autopilot.mode: plan" in note) == (False, True, True)
+
+
+AUTOPILOT = {"mode": "off", "maxPhases": 12, "deploy": "none"}
+
+
+def _write_config(root, cfg):
+    text = json.dumps(cfg)
+    with open(os.path.join(root, ".crew", "config.json"), "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _with_autopilot(root, value=None, **extra):
+    """The fixture config with `autopilot` (and `extra` keys) added; the PM
+    block is made non-autonomous so the PM note does not appear."""
+    cfg = json.loads(_load(root, ".crew/config.json"))
+    cfg["pm"] = {"authority": "act"}
+    cfg["autopilot"] = dict(AUTOPILOT) if value is None else value
+    cfg.update(extra)
+    _write_config(root, cfg)
+    return cfg
+
+
+def test_autopilot_key_lands_at_top_level_not_unmapped(repo, capsys):
+    _with_autopilot(repo)
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    crew = json.loads(_load(repo, ".crew/crew.json"))
+    assert (code, crew.get("autopilot"), "unmapped" in crew,
+            "unmapped  config key 'autopilot'" in capsys.readouterr().out) == (
+        0, AUTOPILOT, False, False)
+
+
+def test_autopilot_key_note_names_config_json(repo, capsys):
+    _with_autopilot(repo)
+    before = _snapshot(repo, skip_backups=False)
+
+    preview_code = crew_migrate.main(["--root", repo, "--preview"])
+    preview = capsys.readouterr().out
+    unchanged = _snapshot(repo, skip_backups=False) == before
+    crew_migrate.main(["--root", repo, "--apply"])
+    applied = capsys.readouterr().out
+
+    crew = json.loads(_load(repo, ".crew/crew.json"))
+    line = f"note   {crew_migrate.AUTOPILOT_FILE_NOTE}"
+    note = crew_migrate.AUTOPILOT_FILE_NOTE
+    assert (preview_code, unchanged, preview.count(line), applied.count(line), crew["notes"],
+            "autopilot" in note, ".crew/config.json" in note, "not read" in note) == (
+        0, True, 1, 1, [note], True, True, True)
+
+
+@pytest.mark.parametrize("value", [{"mode": "plan"}, {}, "plan", None, 12])
+def test_autopilot_key_round_trips_whatever_its_value(value):
+    cfg = {"schema": 7, "tracker": "files", "autopilot": value}
+
+    crew, unmapped = crew_migrate.to_crew(cfg)
+
+    assert (crew_migrate.to_legacy(crew) == cfg, unmapped, crew["notes"]) == (
+        True, [], [crew_migrate.AUTOPILOT_FILE_NOTE])
+
+
+def test_autonomous_pm_and_autopilot_key_give_both_notes_in_order():
+    cfg = {"schema": 7, "pm": {"authority": "autonomous"}, "autopilot": dict(AUTOPILOT)}
+
+    crew, _unmapped = crew_migrate.to_crew(cfg)
+
+    assert crew["notes"] == [crew_migrate.AUTOPILOT_NOTE, crew_migrate.AUTOPILOT_FILE_NOTE]
+
+
+def test_unknown_key_beside_autopilot_is_still_unmapped(repo, capsys):
+    cfg = _with_autopilot(repo, futureKey={"nested": [1]})
+
+    crew_migrate.main(["--root", repo, "--apply"])
+
+    crew = json.loads(_load(repo, ".crew/crew.json"))
+    out = capsys.readouterr().out
+    assert (crew["unmapped"], crew["autopilot"], crew_migrate.to_legacy(crew) == cfg,
+            "unmapped  config key 'futureKey'" in out,
+            "unmapped  config key 'autopilot'" in out) == (
+        {"futureKey": {"nested": [1]}}, AUTOPILOT, True, True, False)
+
+
+def test_migrated_autopilot_is_reported_by_settings_once_config_json_is_gone(repo):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    _with_autopilot(repo)
+    crew_migrate.main(["--root", repo, "--apply"])
+    kept = crew_autopilot.settings(repo)["warnings"]
+    os.remove(os.path.join(repo, ".crew", "config.json"))
+
+    gone = crew_autopilot.settings(repo)["warnings"]
+
+    def named(warnings):
+        return [w for w in warnings if ".crew/crew.json" in w]
+
+    assert (named(kept), len(named(gone))) == ([], 1)
+
+
+def test_crew_json_from_an_older_mapping_is_a_conflict_and_is_left_intact(repo):
+    cfg = _with_autopilot(repo)
+    old, _unmapped = crew_migrate.to_crew(cfg)
+    old["unmapped"] = {"autopilot": old.pop("autopilot")}
+    old.pop("notes")
+    text = json.dumps(old, indent=2) + "\n"
+    with open(os.path.join(repo, ".crew", "crew.json"), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    before = _snapshot(repo, skip_backups=False)
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    assert (code, _snapshot(repo, skip_backups=False)) == (1, before)

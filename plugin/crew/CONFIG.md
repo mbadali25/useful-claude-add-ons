@@ -2880,7 +2880,9 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word. `settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans`
+no word. Migrate carries the block to crew.json's top-level `autopilot` with
+a note (`AUTOPILOT_FILE_NOTE`) naming `.crew/config.json` as the file to edit.
+`settings` prints `mode`, `maxPhases`, `deploy` and `maxAutoReplans`
 on its first text line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
 questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
