@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 08:17 UTC
+Last updated: 2026-10-05 08:20 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 08:50: #512 (C-0006) review at 2514bd58: 0 BLOCK / 0 FIX. At land: merge main after batch 9, move C-0006 CHANGELOG entry back to top of [Unreleased], carry NIT crew-guide.py:257 (git ls-files for 'is committed'), version-only commit crew 1.1.0, graphify update. Minted C-0018 (pre-existing guide .md link 404s + T-0500/0501/0504 handoff docs name crew-1.0-*). Next free C-0019.
 - 08:40: #512 reworked: all 7 guide families version-free (crew-<name>.*, 21 files), head 2514bd58, no bump. Review spawned. Still pending: #510 fixes, batch 9 (holding version commit).
 - 08:30: #512 = C-0006 draft (b575a2f5). Owner: version-free guide names for all 7 -> builder reworking. #510 review: 0 BLOCK / 3 FIX (fresh-Windows Strawberry Perl not on PATH -> nikto FAILED; .sh exit-code half untested; sudo-stub guard prefix-only + no tripwire). Fixer spawned; batch 9 builder told to hold version commit for new #510 head. Not ours: #511, #508 (other session; #508 touches CI selection).
 - 08:10: Container restart stopped sweep round 2 + #510 review. Owner: SHORT PATH (batch 9 = #478/#395/#510, then C-0006 + 1.1.0; sweep PRs to next rush). Restored real nuclei/trivy (owner OK). Freed disk 90%->75% (stale worktrees). Running in parallel: #510 review, batch 9 build (crew 1.0.351, gizmoduck 0.5.9), C-0006 prep (guide rename, version commit after batch 9).

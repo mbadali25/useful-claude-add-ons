@@ -73,9 +73,10 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0015 | From #506 re-check (NITs, gizmoduck bootstrap): (1) ps1 Install-NucleiTemplatesClone deletes a symlink/junction inside the target instead of refusing like sh; under PS 5.1 Get-ChildItem -Recurse follows junctions (empty dirs outside $Dir could be removed); (2) nikto `--version` exits 0 on "Unknown option" so skip-if-present proves nothing; (3) GIZMODUCK_BIN_DIR/OPT_DIR/APT_LISTS_DIR honoured in real runs: gate behind a test flag or document; (4) doctor should check `hexdump` next to testssl (testssl --version passes without it); (5) dependency-check/ZAP downloads unverified (no checksum asset; GPG/.asc or release-body hashes). | none yet | batch 9 |
 | C-0017 | NIT from batch 8 review: plugin/crew/hooks/scripts/crew_keys.py:303 notify.urlEnv/tokenEnv/chatId keep since=FIRST though T-0051 changed their meaning (cosmetic). | none yet | batch 9 |
+| C-0018 | Pre-existing: built crew guide HTML links to `quickstart.md`, `troubleshooting.md` etc. relative to docs/guides/crew/ (e.g. crew-guide.html:160) but those sources live in src/, so the links 404. Also: open tickets T-0500/T-0501/T-0504 (PRs #275/#272/#271) handoff docs still say rebuild `crew-1.0-*` (now `crew-<name>.*` after C-0006). | none yet | next rush |
 | C-0016 | gate-runner's sabotage step is red on main on this host: the full `scripts/_test/sabotage.py` has 34 non-red entries (PowerShell, verify-gate, cloud-guard, migration), identical on main abddc302 and on #478's head (re-run by the #478 reviewer, 2026-10-05). Find which need pwsh/tools absent here vs real stale mutations; sabotage.py is HARNESS, so the fix lands alone. | none yet | after batch 9 (harness, lands alone) |
 
-Next free untracked ID: **C-0018** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+Next free untracked ID: **C-0019** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 
