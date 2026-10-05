@@ -16,10 +16,22 @@ FAILED=()
 
 # Install locations. The defaults are the real ones; the test suite points
 # them at a throwaway directory so it can run the real download / verify /
-# unpack steps without touching the machine.
-BIN_DIR="${GIZMODUCK_BIN_DIR:-/usr/local/bin}"
-OPT_DIR="${GIZMODUCK_OPT_DIR:-/opt}"
-APT_LISTS_DIR="${GIZMODUCK_APT_LISTS_DIR:-/var/lib/apt/lists}"
+# unpack steps without touching the machine. These are a TEST seam, not a
+# supported setting: everything under them is written with `sudo rm -rf` /
+# `sudo mv`, so a GIZMODUCK_*_DIR inherited from a profile or a CI job must
+# not redirect a real run. They are honoured only with
+# GIZMODUCK_BOOTSTRAP_TEST=1, and otherwise ignored with a notice (C-0015).
+BIN_DIR=/usr/local/bin
+OPT_DIR=/opt
+APT_LISTS_DIR=/var/lib/apt/lists
+if [[ "${GIZMODUCK_BOOTSTRAP_TEST:-}" == 1 ]]; then
+  BIN_DIR="${GIZMODUCK_BIN_DIR:-$BIN_DIR}"
+  OPT_DIR="${GIZMODUCK_OPT_DIR:-$OPT_DIR}"
+  APT_LISTS_DIR="${GIZMODUCK_APT_LISTS_DIR:-$APT_LISTS_DIR}"
+elif [[ -n "${GIZMODUCK_BIN_DIR:-}${GIZMODUCK_OPT_DIR:-}${GIZMODUCK_APT_LISTS_DIR:-}" ]]; then
+  echo "!! GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR / GIZMODUCK_APT_LISTS_DIR are test-only and" >&2
+  echo "!!   ignored here (they need GIZMODUCK_BOOTSTRAP_TEST=1); installing to the defaults." >&2
+fi
 
 # Time limits, so a stalled network fails one step instead of hanging the
 # whole bootstrap (and a cloud session's setup phase with it). API calls are
@@ -312,8 +324,19 @@ install_nmap() {
 }
 
 install_nikto() {
-  already_installed nikto nikto && return 0
+  already_installed nikto nikto probe_nikto && return 0
   apt_install nikto
+}
+
+# `nikto --version` is not a nikto option: it prints "Unknown option: version"
+# and the usage text, and still exits 0 (measured on nikto 2.6.1), so the
+# default probe passes for any nikto that merely starts. `-Version` prints
+# "Nikto 2.6.1 (LW 2.5)", so require that version string as well as exit 0.
+# Twin of bootstrap.ps1's Test-NiktoRuns.
+probe_nikto() {
+  local out
+  out=$("$1" -Version 2>&1) || return 1
+  grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
 }
 
 install_testssl() {
