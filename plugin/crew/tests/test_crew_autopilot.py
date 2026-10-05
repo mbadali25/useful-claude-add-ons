@@ -1358,6 +1358,10 @@ def test_autopilot_report_calls_run_stop():
 
     assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p> "
             '--reason "<r>"' in report, "at every stop" in report) == (1, True, True)
+    # T-0060 port review BLOCK: a claim refused for a stale or unknown marker
+    # stops before `next` names a phase; it stops as `in-flight`, so the ping runs.
+    claim = text[text.index("## 2."):text.index("## 3.")]
+    assert "stops, as phase `in-flight` for section 5's ping" in claim
 
 
 def test_command_drives_through_the_cli_and_writes_the_resume_line():

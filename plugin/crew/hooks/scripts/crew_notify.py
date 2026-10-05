@@ -832,7 +832,7 @@ def hook(root, payload_bytes):
 # The autopilot stops whose ping is decided here. Every other phase is filtered:
 # `done`, `max-phases`, no-progress, `handover-elsewhere` and a live holder are
 # not blockers.
-ROUNDS_PHASES = ("accept-review", "replan")
+ROUNDS_PHASES = ("accept-review", "replan", "auto-replan-cap")
 
 
 def rounds_check(root, ticket):
@@ -914,7 +914,8 @@ def _plan_digest(root, ticket):
 def run_stop(root, ticket, phase, reason):
     """Decide whether `/crew:autopilot`'s stop pings. `approve` (a stale receipt
     included) is `Approval waiting`; `in-flight` reads the holder; an
-    `accept-review` or `replan` stop with the budget spent and a BLOCK open is
+    `accept-review`, `replan` or `auto-replan-cap` stop with the budget spent
+    and a BLOCK open is
     `Review out of rounds`. Every other phase is `filtered`. Never raises."""
     try:
         try:
@@ -985,18 +986,24 @@ def stop_outcome(root, gate, refused, payload_bytes):
                 stops.pop(key, None)
                 _write_json(path, stops)
                 return "cleared"
-            seen = stops[key]["ids"] if key in stops else []
+            entry = stops.get(key) or {}
+            seen = entry.get("ids") or []
             if ident in seen:
                 return "twin"
+            # `first` is kept apart from the bounded `ids` window, so the
+            # streak keeps one identity however long it runs.
+            first = entry.get("first") if isinstance(entry.get("first"), str) else (
+                seen[0] if seen else ident)
+            count = len(seen) + 1
             seen = (seen + [ident])[-10:]
-            stops[key] = {"ids": seen, "at": now}
+            stops[key] = {"ids": seen, "first": first, "at": now}
             _write_json(path, stops)
-        if len(seen) < 2:
+        if count < 2:
             return "counted"
         # The streak's first refusal names the episode: after a pass, a new
         # streak of two pings again inside realertHours.
         return send(root, "blocker", f"{gate} gate refused twice", ticket=ticket,
-                    unblock="/crew:status", kind="gate", dedupe=seen[0])
+                    unblock="/crew:status", kind="gate", dedupe=first)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"stop failed ({exc.__class__.__name__})")
         return "failed:error"

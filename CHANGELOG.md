@@ -59,6 +59,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   notify rule runs the new file and also maps `review_ledger.py` and `crew_inflight.py`.
 - **Ported** onto release/1.2.0 (PR #363) by hand on current `crew_notify.py`; the guide sources and
   their HTML follow (the DOCX/PDF builds were renamed away by C-0006 and are not regenerated here).
+- **Port review fixes.** A `claim` refused for a stale or unreadable marker stops as phase
+  `in-flight`, so its `Lane stalled`/`Lane state unknown` ping runs; `auto-replan-cap` (the cap
+  turning a BLOCK-carrying `accept-review` stop into its own) is checked for out-of-rounds like
+  `accept-review`; a Stop-gate refusal streak keeps its first refusal as its identity past the
+  ten-id window, so a long streak pings once.
 
 ### Added — crew 1.1.2: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
 

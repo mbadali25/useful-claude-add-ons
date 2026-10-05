@@ -49,7 +49,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py claim --root . -
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; nothing here deploys), `maxAutoReplans` (0: off), `approval`, `questions`, `sleep=`; print each `warning: inert:` line (a key this crew ignores) - it never stops a run. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:` and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's active one. `activate=1` (no pointer is set): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>` so the scope guard judges edits by it; it also records the scope base (print its stderr). Never pick from `## Next action`.
-Then `claim` (T-0049): `claimed` or `refreshed` goes on; `refused:` (held by another, stale, unreadable) stops.
+Then `claim` (T-0049): `claimed` or `refreshed` goes on; `refused:` (held by another, stale, unreadable) stops, as phase `in-flight` for section 5's ping.
 
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 

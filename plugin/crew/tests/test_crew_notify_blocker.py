@@ -98,7 +98,9 @@ def test_rounds_check_never_raises_on_an_unreadable_ledger(tmp_path, telegram):
     assert (crew_notify.rounds_check(str(root), TICKET), telegram.requests) == ("filtered", [])
 
 
-@pytest.mark.parametrize("phase", ["accept-review", "replan"])
+# auto-replan-cap (T-0060 port review FIX): the cap turns a BLOCK-carrying
+# accept-review stop into this one, and it is still the owner's.
+@pytest.mark.parametrize("phase", ["accept-review", "replan", "auto-replan-cap"])
 def test_run_stop_out_of_rounds_phases_send_rounds(tmp_path, telegram, phase):
     root = _blocker_repo(tmp_path)
     _rounds(root, ("FINDINGS", 1), ("FINDINGS", 1))
@@ -316,6 +318,18 @@ def test_second_refusal_sends_one_blocker(tmp_path, telegram):
     assert (words, len(telegram.requests), _subject(telegram),
             "verify gate refused twice" in line, line.endswith("-> /crew:status")) == (
                 ["counted", "sent", "deduped"], 1, "Stop gate refused", True, True)
+
+
+def test_a_long_refusal_streak_pings_once(tmp_path, telegram):
+    """T-0060 port review FIX: the streak keeps its first refusal as its
+    identity past the ten-id window, so refusal 12 is not a new episode."""
+    root = _blocker_repo(tmp_path)
+
+    words = [crew_notify.stop_outcome(str(root), "verify", True, _stop_payload(f"p-{n}"))
+             for n in range(1, 15)]
+
+    assert (words[:2], set(words[2:]), len(telegram.requests)) == (
+        ["counted", "sent"], {"deduped"}, 1), words
 
 
 def test_pass_between_refusals_resets(tmp_path, telegram):
