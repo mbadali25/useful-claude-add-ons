@@ -3,8 +3,8 @@
 The gated PowerShell set is `crew-standards/references/powershell.md`, set `PWSH`. It holds
 PWSH-16, the command-resolution half of that research rule. Nothing in this file is loaded by
 `crew_standards.py` or asked in the self-check. There are three ways forward. An ordinary
-candidate is promoted into the set once three distinct reviewed change sets earn it. PWSH-04
-keeps its id. PWSH-P1, -P2 and -P3 are public-pass labels that the loader cannot read
+candidate is promoted into the set once three distinct reviewed change sets earn it. PWSH-03
+and PWSH-04 keep their ids. PWSH-P1, -P2 and -P3 are public-pass labels that the loader cannot read
 (`[A-Z]{2,6}-\d{2}`), so on promotion each takes its research id once the owner's file maps
 it, or else the next unused `PWSH-NN`. The StrictMode half joins the shipped PWSH-16 as an
 amendment if three change sets earn that half. PWSH-20 never enters the plugin set: it is
@@ -79,7 +79,9 @@ containing wildcards."
 
 Counted: unknown. crew 1.0.153's review round 1 includes a 5.1 `ConvertFrom-Json`
 array-unrolling fix, but whether the review itself found that defect could not be determined.
-1 public change set, which does not count.
+1 public change set, which does not count: bolin8017/env-setup@e82554ce, where a PR review
+found that `'X'.Split(',').Trim()` returned a scalar whose `.Count` threw, and wrapped the
+filter in `@()`. Public verdict: candidate.
 
 Wrap any value whose `.Count`, indexing or emptiness matters in `@(...)`, after assignment on
 5.1. Decide failure from the operation itself, not from the result being `$null`. For example,
@@ -106,16 +108,23 @@ Read raw bytes, strip a BOM, and decode in the encoding the producer actually wr
 `[Console]::OutputEncoding` and `$OutputEncoding` to the encoding the consumer expects before
 piping to it. For the cited case, JSON exchanged with Python, both sides are UTF-8. This
 standard does not assert 5.1's redirection default, because the documentation pages
-contradict each other and no 5.1 host was measured. PowerShell source (`.ps1`, `.psm1`,
-`.psd1`) that Windows PowerShell 5.1 must read is saved as UTF-8 with a BOM only when it holds a
-non-ASCII byte, because 5.1 reads a BOM-less file in the ANSI codepage (direction:
-BOM-when-non-ASCII). Generated scripts and data for other consumers follow what those
-consumers expect; this BOM rule is not for them. This repository's `.ps1` files are all
-ASCII-only and pass as they are.
+contradict each other and no 5.1 host was measured. Source files are PWSH-03's, below.
 
 Source: about_Preference_Variables: "$OutputEncoding Determines the character encoding method
 that PowerShell uses when piping data into native applications." about_Character_Encoding:
 "PowerShell (v6 and higher) defaults to utf8NoBOM for all text output."
+
+### PWSH-03 PowerShell source is UTF-8 with a BOM only when it holds a non-ASCII byte
+
+Counted: unknown. The spec names this rule and its position (BOM-when-non-ASCII), but its
+evidence is in the owner's research, which this build did not have.
+
+PowerShell source (`.ps1`, `.psm1`, `.psd1`) that Windows PowerShell 5.1 must read is saved as
+UTF-8 with a BOM only when it holds a non-ASCII byte, because 5.1 reads a BOM-less file in the
+ANSI codepage. ASCII-only source stays BOM-less. Generated scripts and data for other consumers
+follow what those consumers expect; this rule is not for them. This repository's PowerShell
+files have ASCII-only content and pass as they are. Two `exo_preflight.ps1` copies carry a BOM
+on ASCII content, which the rule allows but does not require.
 
 ### PWSH-16, `Set-StrictMode` half (documentation only)
 
@@ -139,7 +148,7 @@ records several guard review rounds of this kind (for example "Second review of 
 
 ## Not assessed
 
-PWSH-01 to -03, -05 to -15 and -17 to -19 are the owner's research ids. Their text was not
+PWSH-01, -02, -05 to -15 and -17 to -19 are the owner's research ids. Their text was not
 available to this build. The spec names PWSH-07, -10, -11 and -19 as the best supported,
 reaching two change sets, or three if commits of one series count separately. Whether PWSH-P1,
 -P2 or -P3 is one of them could not be determined.
