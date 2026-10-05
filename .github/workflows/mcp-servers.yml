@@ -18,7 +18,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # scripts/ci-select.py, the one rule pytest-crew.yml, pylint.yml and
+  # shell-suites.yml read too (C-0001). Its own job here, unlike theirs, because
+  # `test` has a Windows leg and the script is run on ubuntu only. The `test`
+  # legs always run and report their required checks; their steps run unless
+  # the selection is exactly 'false'. A select job that fails or is skipped
+  # leaves the output empty, and empty RUNS the suite (fail closed).
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mcp_servers: ${{ steps.select.outputs.mcp_servers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its first parent: what ci-select diffs.
+          fetch-depth: 2
+      - name: Select the suites this PR changes (C-0001)
+        id: select
+        run: python3 scripts/ci-select.py --event "${{ github.event_name }}" --output "$GITHUB_OUTPUT"
+
   test:
+    needs: select
+    # !cancelled(), not the default success(): a failed select job must not
+    # skip the required legs, it must run them.
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,8 +52,14 @@ jobs:
       run:
         working-directory: mcp-servers
     steps:
+      - name: mcp-servers SKIPPED on this pull_request
+        if: needs.select.outputs.mcp_servers == 'false'
+        working-directory: .
+        run: echo "::notice::mcp-servers suite SKIPPED, not passed - this PR changes nothing under mcp-servers/ (scripts/ci-select.py). It runs on push to main and workflow_dispatch."
       - uses: actions/checkout@v4
+        if: needs.select.outputs.mcp_servers != 'false'
       - uses: actions/setup-node@v4
+        if: needs.select.outputs.mcp_servers != 'false'
         with:
           # Every package's test script passes an explicit glob
           # ("dist/test/**/*.test.js") rather than a bare directory path to
@@ -38,8 +68,10 @@ jobs:
           # locally on Node 26; 22 is this repo's documented LTS floor.
           node-version: "22"
       - name: Install workspace dependencies
+        if: needs.select.outputs.mcp_servers != 'false'
         run: npm ci
       # Every test mocks fetch and passes a fake TokenCredential -- no live
       # tenant or network access is used or required.
       - name: Build and run offline tests
+        if: needs.select.outputs.mcp_servers != 'false'
         run: npm test
