@@ -663,24 +663,26 @@ def test_unexpected_exception_is_unknown_exit_4(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out.count("unknown ") == 3
 
 
-# ESC and LF cannot be in a Windows file name; U+202E (a format character) and
-# U+2028 (a line separator Python's splitlines breaks on) can, and do not print.
-_HOSTILE_PEM = ("x\x1b[2J\ngitignore: current.pem" if sys.platform != "win32"
-                else "x\u202e[2J\u2028gitignore: current.pem")
+# ESC, LF and `:` cannot be in a Windows file name; U+202E (a format character)
+# and U+2028 (a line separator Python's splitlines breaks on) can, and do not
+# print. The text after the break is the line a raw print would forge.
+_HOSTILE_PEM = (("x\x1b[2J", "\n", "gitignore: current.pem") if sys.platform != "win32"
+                else ("x\u202e[2J", "\u2028", "gitignore - current.pem"))
 
 
 def test_a_tracked_name_with_control_characters_is_escaped(tmp_path):
     """Group review r4 (g1-ports): a tracked secret-shaped name carrying an
     escape sequence and a line break reaches neither the `/crew:status` line
     nor the check report raw."""
-    name = _HOSTILE_PEM
+    name = "".join(_HOSTILE_PEM)
+    forged = _HOSTILE_PEM[2]
     root = _repo(tmp_path, files={name: "s3cret", "a.py": ""}, tracked=[name])
 
     line = cg.summary(str(root))
     done = _run(root, "check")
 
     assert (any(c in line + done.stdout for c in "\x1b\u202e\u2028"), "\n" in line, done.returncode,
-            [x for x in done.stdout.splitlines() if x.startswith("gitignore: current")]) == (
+            [x for x in done.stdout.splitlines() if x.startswith(forged)]) == (
         False, False, 3, [])
     assert ascii(name) in line and f"needs-owner {ascii(name)} is tracked" in done.stdout
 
