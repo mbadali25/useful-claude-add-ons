@@ -2,8 +2,11 @@
 
 The gated PowerShell set is `crew-standards/references/powershell.md`, set `PWSH`. It holds
 PWSH-16, the command-resolution half of that research rule. Nothing in this file is loaded by
-`crew_standards.py` or asked in the self-check. A rule here is promoted into the set, keeping
-its id, once three distinct reviewed change sets earn it. `PWSH-NN` is the owner's research
+`crew_standards.py` or asked in the self-check. There are three ways forward. An ordinary
+candidate (PWSH-P1, -P2, -P3, -04) is promoted into the set, keeping its id, once three
+distinct reviewed change sets earn it. The StrictMode half joins the shipped PWSH-16 as an
+amendment if three change sets earn that half. PWSH-20 never enters the plugin set: it is
+overlay material and needs the owner's approval of a proposal. `PWSH-NN` is the owner's research
 `POWERSHELL-NN`. The set name is `PWSH` because the loader takes 2-6 capitals.
 
 **Counting.** The rule is `python.md`'s: a crew review, or a fix commit whose own message or

@@ -22,8 +22,8 @@ cites these ids, and on a conflict the standard wins and the probe is fixed.
 - **Stack sets** - further files in `references/` (per language, T-0086),
   each with an `applies-to` glob list; a set applies when a changed file
   matches one of its globs: `python.md` (`PYTHON`, `**/*.py`) and
-  `powershell.md` (`PWSH`, `.ps1`/`.psm1`/`.psd1`). Other stacks list
-  candidates in their `stack-*` skill until three change sets earn a set.
+  `powershell.md` (`PWSH`, `.ps1`/`.psm1`/`.psd1`). SQL, .NET, Terraform,
+  Angular, PHP and Node.js list candidates in their `stack-*` skill.
 - **The repository overlay** - `.crew/standards.md`, set `REPO`, read when it
   exists. It adds standards (`## REPO-01 <name>`) and `## Supplements
   <GEN-id>` sections carrying the repository's literal commands for a plugin

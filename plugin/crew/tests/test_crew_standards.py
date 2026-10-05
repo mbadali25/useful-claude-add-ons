@@ -385,9 +385,10 @@ def test_python_set_applies_to_python_files_only():
 _ADMITTED_PWSH = ["PWSH-16"]
 
 # Hand count of the defects PWSH-16's Why enumerates, each matched to a quoted finding
-# in its Earned by: crew-0.19.69 one, crew-0.19.92 two (no proof run; -All walked past
-# the stub), crew-1.0.23 one. A new or edited standard re-counts, never copies the Why.
-_PWSH_FINDINGS = {"PWSH-16": 4}
+# in its Earned by: crew-0.19.69 one (no Application filter), crew-0.19.92 one (no proof
+# run), crew-1.0.23 one (bare-name fallback). The reviews' WindowsApps and first-match
+# findings are not counted: the 1.0.5 burn-in reversed them (review round 1, BLOCK).
+_PWSH_FINDINGS = {"PWSH-16": 3}
 
 
 def test_pwsh_set_parses_with_every_field():

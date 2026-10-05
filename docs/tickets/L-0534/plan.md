@@ -24,7 +24,7 @@ The research text was not available, so PWSH-16's id rests on the spec's descrip
    - `quote-check-pwsh.txt`: every Source sentence and every Earned-by quote found in the
      raw page, the CHANGELOG or the commit message.
    - `notes.md`: the hand-run mutations.
-2. `references/powershell.md`: PWSH-16 with Rule, Why ("4 findings across 3 change
+2. `references/powershell.md`: PWSH-16 with Rule, Why ("3 findings across 3 change
    sets"), Change sets, Applies when, Self-check, Earned by and Source. There is no
    StrictMode clause.
 3. Tests in `test_crew_standards.py`: `_ADMITTED_PWSH`, `_PWSH_FINDINGS`, and four new
