@@ -143,20 +143,31 @@ sha you measured at.
   hurt what they truncate: `plugin/localgpu/mcp/store.py:646` writes a temp
   file that `:651` then `os.replace`s — the immune construction — and
   `scripts/check-marketplace.py:1330` writes into a `TemporaryDirectory`. Six
-  more were read one by one and none has a raise reachable between the open
+  more were read one by one. Five have no raise reachable between the open
   and the write, each for a reason that is a fact about today: the argument
   is a `str` already in hand
   (`skills/aws-opensearch/scripts/opensearch_client.py:405`, read at `:402`;
   `plugin/gizmoduck/scripts/scanners/checkov.py:82` and
   `plugin/gizmoduck/scripts/scanners/semgrep.py:100`, whose `result.stdout` is
-  coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); a
+  coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); or a
   `str.join` over lines split before the open
   (`plugin/gizmoduck/scripts/gizmoduck.py:152`,
-  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`); or a re-run of a function
-  whose raising calls already ran once in the same run
-  (`skills/doc-builder/scripts/build_gallery.py:206` calls `index_html()` again
-  after `:128`, and only the thumbnail `os.path.isfile` at `:85` differs). That
-  is reading, not execution. The ninth is the one to re-check first:
+  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`). For those five that is
+  reading, not execution. The sixth,
+  `skills/doc-builder/scripts/build_gallery.py:206`, has one under a
+  condition, and it was run in a throwaway copy, not only read: its second
+  `index_html()` call (the first is at `:128`) re-reads the theme and density
+  files from disk after the Chromium renders, so the thumbnail
+  `os.path.isfile` at `:85` is not the only difference. It raises when the
+  `professional` theme or the `compact` density file (the pair
+  `COMPACT_SAMPLE` names at `:48`) has become unparsable (`OverlayInvalid`)
+  or gone (`OverlayNotFound`) by then, or when any theme file has become
+  valid JSON of the wrong shape (`AttributeError`, `TypeError` or
+  `ValueError`, by shape). Any other theme file made unparsable or removed
+  does not raise: `list_themes()` skips it. The raise is inside the `with` opened at `:204`, so `index.html`
+  is left at zero bytes (measured: 10988 bytes to 0, with `professional.json`
+  removed). Those are the cases that were run, not a complete list. The
+  ninth is the one to re-check first:
   `plugin/gizmoduck/scripts/routine.py:508` calls `json.dumps` once per finding
   inside the `with` opened at `:506`, so a value `json` cannot encode (a
   `Path`, a `set`) raises there. On the first finding that leaves
