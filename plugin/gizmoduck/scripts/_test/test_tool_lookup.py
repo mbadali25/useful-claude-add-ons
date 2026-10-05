@@ -112,6 +112,23 @@ def test_which_tries_windows_extensions_in_tool_home(home, path_dir, monkeypatch
     assert base.which("dependency-check") == str(bat)
 
 
+def test_empty_override_disables_the_tool(monkeypatch, path_dir):
+    _exe(path_dir / "nikto")
+    _exe(path_dir / "perl")
+    monkeypatch.setenv("GIZMODUCK_NIKTO_PL", "")
+    assert nikto.is_available() is False
+
+
+def test_windows_tool_home_does_not_run_a_shell_script_directly(home, path_dir, monkeypatch):
+    _exe(home / "bin" / "testssl.sh")
+    bash = _exe(path_dir / "bash")
+    monkeypatch.setattr(base, "_windows", lambda: True)
+    monkeypatch.setenv("PATHEXT", os.pathsep.join([".COM", ".EXE", ".BAT", ".CMD"]))
+    assert base.which("testssl.sh") is None or not base.which("testssl.sh").startswith(str(home))
+    script = _exe(home / "testssl.sh" / "testssl.sh")
+    assert testssl._resolve_command() == [str(bash), str(script)]
+
+
 @POSIX_ONLY
 def test_zap_non_executable_wrapper_is_not_a_route(monkeypatch, tmp_path, path_dir):
     java = _exe(path_dir / "java")
@@ -143,7 +160,7 @@ def test_override_states_unset_ok_broken(monkeypatch, tmp_path):
     monkeypatch.delenv("GIZMODUCK_X", raising=False)
     assert base.override("GIZMODUCK_X", base.existing_file).state == base.UNSET
     monkeypatch.setenv("GIZMODUCK_X", "")
-    assert base.override("GIZMODUCK_X", base.existing_file).state == base.UNSET
+    assert base.override("GIZMODUCK_X", base.existing_file).state == base.BROKEN
     real = tmp_path / "x.pl"
     real.write_text("x")
     monkeypatch.setenv("GIZMODUCK_X", str(real))

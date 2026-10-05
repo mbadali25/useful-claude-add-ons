@@ -65,11 +65,21 @@ def _windows():
     return os.name == "nt"
 
 
+def _pathext():
+    return [e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(os.pathsep)
+            if e]
+
+
 def is_executable(path):
-    """A file this process may run: a file with the execute bit off Windows,
-    any file on Windows (where os.access X_OK is true for every file)."""
+    """A file this process may run: off Windows, a file with the execute bit;
+    on Windows (where os.access X_OK is true for every file), a file whose
+    extension is in PATHEXT - a `testssl.sh` there is not one."""
     try:
-        return Path(path).is_file() and (_windows() or os.access(path, os.X_OK))
+        if not Path(path).is_file():
+            return False
+        if _windows():
+            return Path(path).suffix.lower() in _pathext()
+        return os.access(path, os.X_OK)
     except OSError:
         return False
 
@@ -79,8 +89,7 @@ def _names(binary):
     as shutil.which tries them: `dependency-check` is `dependency-check.bat`."""
     if not _windows() or Path(binary).suffix:
         return [binary]
-    exts = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(os.pathsep)
-    return [binary] + [binary + ext.lower() for ext in exts if ext]
+    return [binary] + [binary + ext for ext in _pathext()]
 
 
 def which(binary):
@@ -101,8 +110,8 @@ UNSET, OK, BROKEN = "unset", "ok", "broken"
 class Override:
     """One lookup variable's state. `found` is what `value` resolved to.
 
-    BROKEN covers both "points at nothing usable" and "could not be checked"
-    (an OSError while looking): a variable that is set is never read as
+    BROKEN covers "empty", "points at nothing usable" and "could not be
+    checked" (an OSError while looking): a variable that is set is never read as
     UNSET, so a broken override disables its tool instead of letting the
     lookup fall through to some other install.
     """
@@ -114,9 +123,13 @@ class Override:
 
 def override(var, resolve):
     """Read `var` now and resolve it with `resolve(Path) -> found | None`."""
-    value = os.environ.get(var)
-    if not value:
+    if var not in os.environ:
         return Override(var, UNSET)
+    value = os.environ[var]
+    if not value.strip():
+        # Exported but empty: set, and naming nothing - broken, never unset,
+        # so the tool is disabled instead of found somewhere else.
+        return Override(var, BROKEN, value)
     try:
         found = resolve(Path(value))
     except OSError:
