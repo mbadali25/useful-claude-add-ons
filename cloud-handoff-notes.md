@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 06:38 UTC
+Last updated: 2026-10-05 06:40 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 06:50: #395 (T-0049) fixes pushed, head db693ec0 on main d38e2d73: FIX 1 test (skipped on Windows: os.kill(getppid(),0) = CTRL_C_EVENT there), pure walk_parents + 4 must-block, codemap cites re-taken. Windows all green; only check/verify-gate red (version bump, batch adds it). Re-review spawned; then batch 9.
 - 06:45: C-0001 skip proof checked on notes sha a2a53a4e: everything ran, which is correct. ci-select says 'note.sh is outside every component and not a plain document' (fail-safe). The same diff without note.sh selects 2 test files and skips 13 suites. So the skip works; the notes PR runs full CI only because it carries a .sh.
 - 06:40: #478 (T-0081) re-check 46e5ee76: 0 BLOCK / 0 FIX -> batch 9. Minted C-0016: 34 sabotage.py entries non-red on main abddc302 (same on #478), so gate-runner's sabotage step is red on main here; harness, lands alone. Next free C-0017.
 - 12:25: #506 C-0008 re-check 0 BLOCK 0 FIX (never-delete rule held vs symlinks/hidden/race). Builder: merge main (CHANGELOG/README) + leak fix + sqlmap quoting, keep 0.5.7 last; then merge. Batch 8 told gizmoduck 0.5.8. Minted C-0015 (remaining bootstrap NITs).
