@@ -218,6 +218,13 @@ Held for your go: L-0674 (#404).
 | T-0506 | #476 | not started (spec only) | concurrent pwsh runs corrupt the shared ~/.cache/powershell startup profile; every later p |
 | T-0507 | #479 | not started (spec only) | Refresh the 7 code maps (crew, install-scripts, localgpu, marketplace-registration, obsidi |
 
+### Owner decisions, 2026-10-05 (cloud session)
+- #407 T-0045: rebuild on a FRESH branch from main (#500), not revert-the-revert.
+- T-0020 #357: **explicit focus only** — focus is on only after `/crew:autopilot focus <id>`; an active-ticket pointer is not focus. Main's plain-text routing wins. Rework for batch 7.
+- Batch 6 ships with 4 (#500, #348, #338, #361); T-0020 held out.
+- C-0001 (per-component CI skip) is TOP PRIORITY.
+- #499 README: show 2 newest updates + changelog link (shipped).
+
 ## Owner decisions, 2026-10-04 evening (open questions that blocked builds)
 
 | Ticket | Question | Decision |

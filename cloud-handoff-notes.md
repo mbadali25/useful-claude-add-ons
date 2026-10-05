@@ -24,7 +24,8 @@ main = 8479a837 (#496 L-1508 PR B merged), crew 1.0.347.
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| Batch 6 | `batch-6-build` (builder) | #500 T-0045 -> #348 T-0041 -> #338 L-0582 -> #361 T-0050 -> #357 T-0020 (survey 02:15: all review-clean, heads unmoved, Windows-green, no harness) | merge-resolution review, CI 6+3, merge |
+| Batch 6 | `batch-6-build` (builder) | 4 members: #500 T-0045, #348 T-0041, #338 L-0582, #361 T-0050 (owner: ship 4; T-0020 held out), crew 1.0.348 | merge-resolution review running; CI 6+3; merge |
+| T-0020 #357 | `T-0020-build` | owner: EXPLICIT focus only (pointer != focus); builder reworking + merging main | re-review, Windows pre-flight, batch 7 |
 | Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
 | Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
 | Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
@@ -47,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:53 UTC
+Last updated: 2026-10-05 02:07 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -106,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 02:40: batch 6 builder stopped on T-0020: its focus_guard (pointer=focus) refuses assign/goal/wave/split that main's router sends (55 route tests red). Owner: explicit focus only; ship batch 6 with 4. Builder finishing batch 6 at 1.0.348; merge-resolution review started; T-0020 rework builder started.
 - 02:25: MERGED #496 L-1508 PR B -> 8479a837 (crew 1.0.347), CI 29/29; ALONGSIDE README.md change sabotage-verified by coordinator (19/20 without, 20/20 with). Batch 6 builder told: version 1.0.348.
 - 01:52: L-1508 PR B #496 green at f5f3789a (crew 1.0.347, README in ALONGSIDE, main 2828acef merged); ready to land
 - 02:15: batch 6 survey done; builder started on batch-6-build: #500, #348, #338, #361, #357. 7 review-clean PRs red on Windows (old runs), #365/#345 blocked by deps, #340/#418 harness-alone. Recorded in RESUME table.
