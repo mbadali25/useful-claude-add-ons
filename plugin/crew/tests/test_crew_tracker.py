@@ -2915,6 +2915,48 @@ def test_a_note_under_both_names_is_kept_when_a_later_check_refuses(tmp_path):
     assert (crew_tracker.exit_code(got), (_board_dir(vault) / f"{CARD}.md").is_file()) == (1, True)
 
 
+def test_a_folder_only_archive_reads_as_partly_archived(tmp_path):
+    root, _vault = _done_obsidian(tmp_path)
+    tickets = root / ".work" / "tickets"
+    (tickets / ARCHIVED).mkdir()
+    os.rename(tickets / CARD, tickets / ARCHIVED / CARD)
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], "the ticket folder is in" in (got["reason"] or "")) == (True, True), got
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the pinned move is POSIX only")
+def test_a_complete_folder_swapped_during_the_move_is_reported(tmp_path, monkeypatch):
+    root, _vault = _done_obsidian(tmp_path)
+    tickets = root / ".work" / "tickets"
+    real = crew_tracker._rename_dir_no_replace  # pylint: disable=protected-access
+
+    def swap(src, dst, dst_dir_fd=None):
+        real(src, dst, dst_dir_fd=dst_dir_fd)
+        os.rename(tickets / ARCHIVED, tickets / "elsewhere")
+        (tickets / ARCHIVED).mkdir()
+    monkeypatch.setattr(crew_tracker, "_rename_dir_no_replace", swap)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert crew_tracker.exit_code(got) == 1
+    assert any("moved or replaced during the move" in (r.get("reason") or "") for r in got["results"])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-unlink move is POSIX only")
+def test_a_two_name_note_replaced_after_the_check_is_not_removed(tmp_path, monkeypatch):
+    root, vault = _done_obsidian(tmp_path)
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    os.link(_board_dir(vault) / f"{CARD}.md", _board_dir(vault) / ARCHIVED / f"{CARD}.md")
+    answers = iter([True, False])
+    monkeypatch.setattr(crew_tracker, "_one_note_two_names", lambda _paths: next(answers, False))
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), (_board_dir(vault) / f"{CARD}.md").is_file()) == (1, True), got
+
+
 def test_an_archived_read_with_an_open_index_row_disagrees(tmp_path):
     root, _vault = _archived_obsidian(tmp_path)
     (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", "review"), encoding="utf-8",

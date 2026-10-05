@@ -1641,10 +1641,13 @@ def _obsidian_read(root, settings, ticket):
     disagree = card["lane"] != expected
     notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
-    if where == crew_common.COMPLETE:
-        # The note moved and the board write did not: a half-done archive.
+    _, folder_where, _ = crew_common.locate_ticket(root, ticket)
+    if crew_common.COMPLETE in (where, folder_where):
+        # The archive stopped part-way: the folder (moved first) or the note
+        # is in Complete/ while the card is still on the board.
         disagree = True
-        notes += [f"partly archived: the note is in {crew_common.ARCHIVE_DIR}/ but the card is "
+        half = "note" if where == crew_common.COMPLETE else "ticket folder"
+        notes += [f"partly archived: the {half} is in {crew_common.ARCHIVE_DIR}/ but the card is "
                   f"still on the board; rerun crew_tracker.py archive --ticket {ticket}"]
     return [files, _result("obsidian", READ, "; ".join(notes) or None, lane=card["lane"], disagree=disagree)]
 
@@ -1706,8 +1709,15 @@ def _files_archive(root, ticket):
                            "or resolves elsewhere; nothing moved")
         # Never shutil.move: a cross-device move would copy. And never a bare
         # os.rename on POSIX: it replaces an empty directory that appeared
-        # since the check. `_rename_dir_no_replace` claims the name first.
-        _rename_dir_no_replace(folder, os.path.join(archive, ticket))
+        # since the check. On POSIX the destination is the Complete/ opened
+        # once without following a link and re-checked after the move, so a
+        # swap for a link in between cannot carry the folder elsewhere.
+        if os.name == "nt":
+            _rename_dir_no_replace(folder, os.path.join(archive, ticket))
+        else:
+            moved = _rename_into_pinned(folder, archive, ticket)
+            if moved:
+                return _result(backend, FAILED, f"{done_rel}: {moved}")
     except FileExistsError:
         return _result(backend, FAILED, f"{done_rel} already exists; nothing moved")
     except OSError as exc:
@@ -1758,7 +1768,24 @@ def _renameat2_noreplace(src, dst, src_dir_fd=None, dst_dir_fd=None):
     raise OSError(err, os.strerror(err), dst)
 
 
-def _rename_dir_no_replace(src, dst):
+def _rename_into_pinned(src, parent, name):
+    """POSIX: rename directory `src` to `<parent>/<name>` through a descriptor
+    for `parent` opened without following a link; None when done, else why
+    the move cannot be trusted (the parent was swapped meanwhile)."""
+    pinned = os.open(parent, _DIR_FLAGS)
+    try:
+        before = os.fstat(pinned)
+        _rename_dir_no_replace(src, name, dst_dir_fd=pinned)
+        now = os.lstat(parent)
+        if (now.st_dev, now.st_ino) != (before.st_dev, before.st_ino):
+            return ("the archive folder was moved or replaced during the move; check where the "
+                    "folder went")
+        return None
+    finally:
+        os.close(pinned)
+
+
+def _rename_dir_no_replace(src, dst, dst_dir_fd=None):
     """Rename directory `src` to `dst`, raising FileExistsError when `dst`
     exists. Windows' rename never replaces; Linux uses `renameat2`'s
     RENAME_NOREPLACE. Elsewhere on POSIX the name is claimed with an atomic
@@ -1769,17 +1796,17 @@ def _rename_dir_no_replace(src, dst):
     if os.name == "nt":
         os.rename(src, dst)
         return
-    if _renameat2_noreplace(src, dst):
+    if _renameat2_noreplace(src, dst, None, dst_dir_fd):
         return
-    os.mkdir(dst)
-    mine = os.lstat(dst)
+    os.mkdir(dst, dir_fd=dst_dir_fd)
+    mine = os.stat(dst, dir_fd=dst_dir_fd, follow_symlinks=False)
     try:
-        os.rename(src, dst)
+        os.rename(src, dst, dst_dir_fd=dst_dir_fd)
     except OSError:
         with contextlib.suppress(OSError):
-            now = os.lstat(dst)
+            now = os.stat(dst, dir_fd=dst_dir_fd, follow_symlinks=False)
             if (now.st_dev, now.st_ino) == (mine.st_dev, mine.st_ino):
-                os.rmdir(dst)
+                os.rmdir(dst, dir_fd=dst_dir_fd)
         raise
 
 
@@ -1910,8 +1937,12 @@ def _obsidian_archive_checks(root, settings, ticket):
         if owner != OURS:
             problem = (_foreign if owner == FOREIGN else _unclaimed)(paths, ticket, detail, here)
     if not problem and linked:
-        # Every check passed: only now drop the live name a crash left.
+        # Every check passed: only now drop the live name a crash left, and
+        # only if it is still that one file (an editor may have replaced it;
+        # the window between this re-check and the unlink is the one left).
         try:
+            if not _one_note_two_names(paths):
+                raise OSError(errno.ESTALE, "changed since it was checked; nothing removed")
             os.unlink(paths["note"])
         except OSError as exc:
             problem = f"{paths['noteShown']}: {exc.strerror or exc}"
