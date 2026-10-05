@@ -66,20 +66,25 @@ _ORDER = {"nonProd": 0, None: 1, "prod": 2}
 
 def _target(top, envs, env, cfg, sha):
     """`(class or None, problem or None)` for one `github` environment: why
-    autopilot may not drive it, said only when it is the next target."""
+    autopilot may not drive it, said only when it is the next target. Every
+    entry is judged: `/crew:promote` dispatches each of them, so one entry
+    that is unsafe makes the environment unsafe."""
     try:
-        entry = crew_ghdeploy.validated(envs, env)[0]
+        found = crew_ghdeploy.validated(envs, env)
     except crew_ghdeploy.Refused as exc:
         return None, f"{env}: `crew_ghdeploy.py check` refuses it ({exc.reason}): {exc}"
-    try:
-        klass = crew_ghdeploy.classify(top, env, crew_ghdeploy.dispatch(entry, env, sha))
-    except crew_ghdeploy.Refused as exc:
-        return None, f"class {exc.reason}: {env}: {exc}"
+    klass = None
+    for index, entry in enumerate(found):
+        try:
+            klass = crew_ghdeploy.classify(top, env, crew_ghdeploy.dispatch(entry, env, sha))
+        except crew_ghdeploy.Refused as exc:
+            return None, f"class {exc.reason}: {env} github[{index}]: {exc}"
     if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:  # pylint: disable=protected-access
         return klass, f"require-human-target: {env} has requireHuman: true, which autopilot never drives"
-    if not entry.get("shaInput"):
-        return klass, (f"no-sha-input: {env}'s github entry has no shaInput, so the workflow "
-                       "would deploy its branch tip, not the merged sha")
+    for index, entry in enumerate(found):
+        if not entry.get("shaInput"):
+            return klass, (f"no-sha-input: {env}'s github[{index}] entry has no shaInput, so the "
+                           "workflow would deploy its branch tip, not the merged sha")
     return klass, None
 
 

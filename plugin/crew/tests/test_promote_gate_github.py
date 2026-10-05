@@ -332,3 +332,31 @@ def test_an_echoed_declared_dispatch_with_no_real_one_blocks(flavour, ghrepo):
     assert code == 2, err
     assert "cannot read a dispatch of `deploy.yml`" in err, err
     assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_a_shorter_entrys_dispatch_is_checked_beside_a_longer_one(flavour, ghrepo):
+    """Group review r1: development has two entries, `a.yml` with
+    `shaInput` and a longer `long-deploy.yml` without. A command
+    dispatching both, `a.yml` with no sha, is blocked: the longer entry does
+    not stand in for the other dispatch."""
+    doc = json.loads(json.dumps(_GH_MAP))
+    short = {"workflow": "a.yml", "ref": "main", "shaInput": "sha"}
+    longer = {"workflow": "long-deploy.yml", "ref": "main", "inputs": {"target": "dev"}}
+    doc["environments"]["development"]["github"] = [short, longer]
+    doc["environments"]["development"]["deploy"] = [
+        "gh workflow run a.yml --ref main", "gh workflow run long-deploy.yml --ref main -f target=dev"]
+    (ghrepo.main / ".crew" / "verify.json").write_text(json.dumps(doc, indent=2) + "\n",
+                                                       encoding="utf-8")
+    _git(ghrepo.main, "add", "-A")
+    _git(ghrepo.main, "commit", "-q", "-m", "two entries")
+    full = _git(ghrepo.main, "rev-parse", "HEAD")
+    sep = " && " if flavour == "sh" else "; "
+    both = "gh workflow run a.yml --ref main" + sep + "gh workflow run long-deploy.yml --ref main -f target=dev"
+    code, err = tree.run_gate(flavour, ghrepo, both)
+    assert code == 2, err
+    assert "carries no `-f sha=<sha>`" in err, err
+    assert ghrepo.in_flight() is None
+    code, err = tree.run_gate(flavour, ghrepo, "gh workflow run a.yml --ref main -f sha=" + full
+                              + sep + "gh workflow run long-deploy.yml --ref main -f target=dev")
+    assert code == 0, err

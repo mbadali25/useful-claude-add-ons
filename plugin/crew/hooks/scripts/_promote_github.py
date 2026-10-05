@@ -9,11 +9,13 @@ tree the deploy runs from is known, so the two cannot drift apart:
         --envs <name>[,<name>...] -          (the command on stdin; cwd: the
                                               project dir)
 
-For every matched environment that declares `github` entries, the entry whose
-canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`, what
-`crew_ghdeploy.py check` makes `deploy` list) is the LONGEST substring of the
-command, ignoring case, is the one being run. If it sets `shaInput`, the
-command must carry `-f|--raw-field|-F|--field <shaInput>=<value>` exactly once,
+For every matched environment that declares `github` entries, each entry
+whose canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`,
+what `crew_ghdeploy.py check` makes `deploy` list) is a substring of the
+command, ignoring case, may be being run. Each dispatch in the command is
+bound to the entries it fits; per environment, the one with the LONGEST
+prefix among them is the one that dispatch runs. If it sets `shaInput`, that
+dispatch must carry `-f|--raw-field|-F|--field <shaInput>=<value>` exactly once,
 the value must be 40 lowercase hex characters, and it must equal `--full`, the
 full HEAD of the tree the gate judges. A substitution (`$(git rev-parse
 HEAD)`) is not a literal: the gate does not run the shell that would expand
@@ -87,7 +89,10 @@ def prefix(entry):
 
 
 def chosen(found, command, env):
-    """The entry being run: the longest canonical prefix inside `command`."""
+    """`[(prefix length, entry)]`: every entry whose canonical prefix is
+    inside `command`. Which of them a dispatch runs is decided per dispatch
+    (`sha_problems`): keeping only the longest here would let a second
+    dispatch of a shorter entry go unchecked."""
     fits = [(len(p), e) for e, p in ((e, prefix(e)) for e in found)
             if p and fold(p) in fold(command)]
     if not fits:
@@ -95,12 +100,23 @@ def chosen(found, command, env):
                          "entry's canonical dispatch is in it, so which entry's sha rule "
                          "applies cannot be told. Run the dispatch `crew_ghdeploy.py check "
                          f"--env {env}` prints")
-    longest = max(n for n, _e in fits)
-    best = [e for n, e in fits if n == longest]
-    if len({json.dumps(e.get("shaInput")) for e in best}) > 1:
-        raise ValueError(f"two `github` entries of `{env}` fit the command equally and name "
-                         "different sha inputs, so which applies cannot be told")
-    return best[0]
+    return fits
+
+
+def _runs(fit, picked, where):
+    """The entries a dispatch fitting `fit` (indices into `picked`) runs: per
+    environment (`where[i]` = (env, prefix length)), the longest prefix.
+    Raises ValueError when two equally long ones name different sha inputs."""
+    runs = []
+    for env in dict.fromkeys(where[i][0] for i in fit):
+        mine = [i for i in fit if where[i][0] == env]
+        longest = max(where[i][1] for i in mine)
+        best = [i for i in mine if where[i][1] == longest]
+        if len({json.dumps(picked[i].get("shaInput")) for i in best}) > 1:
+            raise ValueError(f"two `github` entries of `{env}` fit the command equally and name "
+                             "different sha inputs, so which applies cannot be told")
+        runs.append(best[0])
+    return runs
 
 
 def _workflow(name):
@@ -117,14 +133,18 @@ def _name_problem(entry):
     return None
 
 
-def sha_problems(picked, command, shell, full):
+def sha_problems(picked, command, shell, full, where=None):
     """Why the command's dispatches do not carry the reviewed HEAD, for the
-    entries `picked` (one per matched environment): [] when they do. Each
-    dispatch of a picked entry's workflow is bound to the picked entries whose
-    declared inputs it gives - it must fit at least one, and carries the sha
-    input of every one it fits, on its own inputs: neither another dispatch's
-    sha input nor the declared text elsewhere on the line (an `echo`) vouches
-    for it. Every picked entry with `shaInput` needs a dispatch that fits it."""
+    entries `picked` (every entry of a matched environment whose prefix is in
+    the command; `where[i]` = (environment, prefix length), default one
+    environment each): [] when they do. Each dispatch of a picked entry's
+    workflow is bound to the picked entries whose declared inputs it gives -
+    it must fit at least one, and carries the sha input of the entry it runs
+    in each environment (`_runs`), on its own inputs: neither another
+    dispatch's sha input nor the declared text elsewhere on the line (an
+    `echo`) vouches for it. Every picked entry with `shaInput` needs a
+    dispatch that fits it."""
+    where = where or [(i, 0) for i in range(len(picked))]
     problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]
     checked = [e for e in picked if "shaInput" in e]
     if problems or not checked:
@@ -145,8 +165,12 @@ def sha_problems(picked, command, shell, full):
             return [f"a dispatch of `{scope.get('workflow')}` in the command does not give any "
                     "matched entry's declared inputs, so it fits no declared environment and "
                     "which environment's preconditions apply cannot be told"]
-        for i in fit:
-            seen.add(i)
+        seen.update(fit)
+        try:
+            runs = _runs(fit, picked, where)
+        except ValueError as why:
+            return [str(why)]
+        for i in runs:
             entry = picked[i]
             if "shaInput" in entry:
                 problem = _scope_problem(scope, entry["shaInput"],
@@ -193,17 +217,19 @@ def decide(command, shell, full, names):
     with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
         doc = json.load(fh)
     envs = get_ci(doc, "environments", {}) if isinstance(doc, dict) else {}
-    picked, out = [], []
+    picked, where, out = [], [], []
     for env in names:
         cfg = envs.get(env) if isinstance(envs, dict) else None
         found = entries(cfg, env)
         if not found:
             continue
         try:
-            picked.append(chosen(found, command, env))
+            for length, entry in chosen(found, command, env):
+                picked.append(entry)
+                where.append((env, length))
         except ValueError as why:
             out.append(str(why))
-    out += sha_problems(picked, command, shell, full) if not out else []
+    out += sha_problems(picked, command, shell, full, where) if not out else []
     return [f"block\t{' '.join(problem.split())}" for problem in out]
 
 

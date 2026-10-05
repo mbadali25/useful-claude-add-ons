@@ -344,3 +344,35 @@ def test_a_failed_probe_of_promotions_is_deploy_target(tmp_path, monkeypatch):
     got = _after(root)
     assert (got["phase"], got["stop"]) == ("deploy-target", True)
     assert "promotions-unreadable" in got["reason"]
+
+
+def _two_entry_env(second):
+    """staging with two `github` entries, the second one `second`:
+    /crew:promote dispatches both, so both are judged (group review r1)."""
+    first = _entry("staging")
+    prefixes = [f"gh workflow run deploy.yml --ref main -f target={e['inputs']['target']}"
+                for e in (first, second)]
+    return {"deploy": prefixes, "github": [first, second], "rollback": "none",
+            "rollbackReason": "fixture"}
+
+
+@pytest.mark.parametrize("second,why", [
+    (_entry("staging-eu", sha_input=False), "no-sha-input: staging's github[1]"),
+    (_entry("prod"), "class-mismatch"),
+], ids=["second-no-sha-input", "second-dispatches-prod"])
+def test_every_github_entry_is_judged_not_only_the_first(tmp_path, monkeypatch, second, why):
+    root = _repo(tmp_path, monkeypatch, envs={"staging": _two_entry_env(second)},
+                 non_prod=("staging", "staging-eu"))
+    allowed = Allowed()
+    got = _after(root, allowed)
+    assert (got["phase"], got["stop"], got["command"]) == ("deploy-target", True, "")
+    assert why in got["reason"], got["reason"]
+    assert allowed.calls == []
+
+
+def test_two_safe_github_entries_are_driven(tmp_path, monkeypatch):
+    """Non-vacuity: two entries, both nonProd with a shaInput, still deploy."""
+    root = _repo(tmp_path, monkeypatch, envs={"staging": _two_entry_env(_entry("staging-eu"))},
+                 non_prod=("staging", "staging-eu"))
+    got = _after(root)
+    assert (got["phase"], got["command"]) == ("deploy", "/crew:promote staging")

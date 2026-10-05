@@ -47,10 +47,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ### Added — `crew` 1.1.4: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
 
-- **Summary.** When a command matches an environment with `github` entries, both promote gates take
-  the entry whose canonical prefix is the longest part of the command; if it sets `shaInput`, the
-  command must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase hex,
-  equal to the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
+- **Summary.** When a command matches an environment with `github` entries, both promote gates bind
+  each dispatch in it to the entry it runs (of the entries whose canonical prefix is in the command
+  and whose inputs the dispatch gives, the longest); if that entry sets `shaInput`, the dispatch
+  must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase hex, equal to
+  the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
   name, a substitution such as `$(git rev-parse HEAD)`, or another commit blocks and says which.
 - **Malformed map.** A `github` that is not an object or a non-empty list of objects makes the map
   unreadable (blocks every command). One helper, `_promote_github.py`, decides the rule for both
@@ -241,8 +242,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `gh alias`, `curl`.
 - **Docs:** the troubleshooting guide now documents T-0005's
   `environments.nonProd`, `environments.prodUnattended` (both layers) and the
-  destroy rule, beside the dispatch grammar; its HTML is
-  rebuilt (DOCX and PDF were not: LibreOffice could not load the source here).
+  destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
+  rebuilt.
 - **Ported onto release/1.2.0 (PR #336).** The dispatch reader is its own module,
   `hooks/scripts/crew_dispatch.py`: merged with main's T-0047 wrapper reading it took
   `crew_guards.py` past `.pylintrc`'s 3400-line ceiling, and the section imports
