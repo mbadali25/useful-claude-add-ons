@@ -275,6 +275,13 @@ board at the vault root, and a card another repo owns is refused.
 | `done` | Done, checked, below `**Complete**` |
 | `cancelled`, `superseded` (closed; leaving one needs `--reopen`) | Done, checked |
 
+Any other word in an INDEX status cell maps to no lane, and crew will not
+guess one. Moving to it is refused, and reading the ticket says the word is
+not a status crew knows rather than calling the card misplaced. For a word
+that was retired - `approved`, `merged`, `closed`, `new`, `parked` - it also
+names the word to write instead (`spec`, `done`, `done`, `direction`,
+`needs-owner`). Fix the INDEX cell by hand; crew never rewrites it for you.
+
 **Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
 `<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your
 repository's cards from another's. The value is your origin URL with `.git`
