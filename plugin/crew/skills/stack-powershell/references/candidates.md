@@ -29,8 +29,11 @@ string-matched against the raw learn.microsoft.com page (`view=powershell-7.5`) 
 
 Counted: 1 (crew-0.19.92). 6 public change sets, which do not count.
 
-After every native command whose outcome matters, read `$LASTEXITCODE` immediately: not
-after a cmdlet, `Invoke-Expression`, or a pipeline that may have closed early. A launch that
+After every native command whose outcome matters, read `$LASTEXITCODE` immediately, before
+anything else that can change it: another native program, a PowerShell script, or
+`Invoke-Expression` running either. Ordinary cmdlets leave it alone, so a value read after one
+still belongs to an earlier program. In a pipeline that may have closed early (for example
+`Select-Object -First 1`), the value is not that program's real exit. A launch that
 fails (a missing or unstartable program) leaves the previous value in place, so a stale 0 reads
 as a pass. Set `$LASTEXITCODE = $null` before each invocation, and catch its launch error.
 Treat `$null` afterwards as failure, because it means the program never ran, and
