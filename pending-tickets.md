@@ -34,7 +34,8 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 4b | G3c contracts on coord/wave | `rush/g3c-contracts` | #408 T-0031, #410 L-0633, #412 L-0634 (base: G0 + release) | next free | building |
 | 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667 (base: G0 + release) | next free | building |
 | 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | waiting on PRs |
-| 8 | G6 autopilot builds, sleep, goals | `rush/g6-autopilot-builds` | #485, #486, #397, #426, #443, #449, #446, #453, #483, #444, #431, #435, then L-0541 (no PR yet), #459, #463, #469 | next free | after G2 lands (T-0012) |
+| 8 | G6a autopilot core | `rush/g6a-autopilot` | #485, #486, #397, #426, #449, #443, #446, #453, #483 (base: G2 + G0 + release) | next free | building |
+| 8b | G6b goals and sleep | `rush/g6b-goals-sleep` | L-0541 (#515), #459, #463, #469, then sleep #435, #431, #444 (base: G2 + release) | next free | building |
 | 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | **merged into release/1.2.0** (#539, c510b764) |
 | 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.8 | building |
 | 9b | H3 review-harness tickets (to main, alone) — built, head ddb96134, crew 1.1.12; T-0033 on hold (owner question) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | next free | waiting on PRs |
