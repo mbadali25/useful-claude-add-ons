@@ -25,7 +25,11 @@ main = 2828acef (#497 L-1512 merged), crew 1.0.346.
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | `C-0001-build` | builder running | review, land ALONE |
 | #496 L-1508 PR B (harness) | `L-1508b-build` 1a264e2a | CI green; review 0 BLOCK / 2 FIX (version, sync-updates after main merge) + Summary-bullet NIT | builder pushing at 1.0.347 (main merged); lands ALONE when CI green |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
-| Batch 6 | not started | T-0045 v2, #353 T-0011 + #366 T-0059, more | batch PR per LANDPREP (sync-updates step) |
+| Batch 6 | `batch-6-build` (builder) | #500 T-0045 -> #348 T-0041 -> #338 L-0582 -> #361 T-0050 -> #357 T-0020 (survey 02:15: all review-clean, heads unmoved, Windows-green, no harness) | merge-resolution review, CI 6+3, merge |
+| Batch 7 (next) | - | #353 T-0011 (+668 crew_autopilot), #368 T-0063, then #366 (stacked on #353, needs pre-flight) | after batch 6 |
+| Windows-RED review-clean PRs | #344, #342, #341, #346, #362, #395, #363(+deps) | red on OLD 3-shard runs (shell-matrix + default shards): possibly the L-1512 exit-2304 flake fixed in #497 | catch-up merge main + re-run Windows before batching |
+| Harness, land alone | #340 L-0526 (Windows green; needs catch-up + graphify update), #418 H1 (needs pre-flight) | | after #496 |
+| Blocked | #365 T-0058 (needs #354 T-0012, not review-clean); #345 (needs red #344) | | |
 
 ### Ready / next up
 - Review-clean, need Windows pre-flight: #421 (green), #364 (green), #416, #407 (after rework), #365/#366 (stacked on #364/#354), plus the 18 older ones in `CLOUD-SESSION-TICKETS.md`.
@@ -44,7 +48,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 01:43 UTC
+Last updated: 2026-10-05 01:47 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +107,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 02:15: batch 6 survey done; builder started on batch-6-build: #500, #348, #338, #361, #357. 7 review-clean PRs red on Windows (old runs), #365/#345 blocked by deps, #340/#418 harness-alone. Recorded in RESUME table.
 - 02:10: #500 rebuild review 0 BLOCK 0 FIX (new files byte-identical to #407, edits identical, main text preserved). NIT: ghdeploy_mutations.py:255 mutation only covered by a pwsh-only case (sabotage reports vacuous without pwsh) -> carry to L-0650. Batch 6 candidate survey started.
 - 02:00: #500 (T-0045 rebuild) all tests green incl. all Windows shards; only red = check-marketplace content-without-bump (Marketplace + verify-gate row), by design until batch 6 bump. Rebuild-fidelity review started.
 - 01:38: #407 closed, superseded by draft #500 (T-0045-v2-build f031d5bd from main 7ba4c184, no version bump for batch 6): Pytest all green incl. 6+3 Windows shards; Marketplace red only for content-without-bump (by design until batch 6); verify-gate receipt pass=false
