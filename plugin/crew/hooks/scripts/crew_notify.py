@@ -900,20 +900,23 @@ def _lane(root, ticket):
                 ticket=ticket, unblock="/crew:status", kind="lane-unknown")
 
 
-def _plan_digest(root, ticket):
-    """The approval episode: the sha256 of the ticket's `plan.md`, so a successor
-    plan (or an edit that staled the receipt) waiting again is a new ping."""
+def _plan_digest(root, ticket, name="plan.md"):
+    """The approval episode: the sha256 of the ticket's `plan.md` (or, for a
+    split, `split.md`), so a successor plan or decision (or an edit that
+    staled the receipt) waiting again is a new ping."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    label = name.split(".", 1)[0]
     try:
-        with open(os.path.join(top, ".work", "tickets", ticket, "plan.md"), "rb") as handle:
-            return "plan:" + hashlib.sha256(handle.read()).hexdigest()
+        with open(os.path.join(top, ".work", "tickets", ticket, name), "rb") as handle:
+            return f"{label}:" + hashlib.sha256(handle.read()).hexdigest()
     except OSError:
-        return "plan:none"
+        return f"{label}:none"
 
 
 def run_stop(root, ticket, phase, reason):
     """Decide whether `/crew:autopilot`'s stop pings. `approve` (a stale receipt
-    included) is `Approval waiting`; `in-flight` reads the holder; an
+    included) and T-0058's `split-approval` are `Approval waiting`; `in-flight`
+    reads the holder; an
     `accept-review`, `replan` or `auto-replan-cap` stop with the budget spent
     and a BLOCK open is
     `Review out of rounds`. Every other phase is `filtered`. Never raises."""
@@ -929,6 +932,11 @@ def run_stop(root, ticket, phase, reason):
             return send(root, "blocker", "plan waiting on approval", ticket=ticket,
                         unblock=f"/crew:approve {ticket}", kind="approval",
                         dedupe=_plan_digest(root, ticket))
+        if phase == "split-approval":
+            # T-0058: a split decision autopilot may not apply waits on the owner.
+            return send(root, "blocker", "split waiting on the owner", ticket=ticket,
+                        unblock=f"/crew:split {ticket}", kind="approval",
+                        dedupe=_plan_digest(root, ticket, "split.md"))
         if phase == "in-flight":
             return _lane(root, ticket)
         if phase in ROUNDS_PHASES:

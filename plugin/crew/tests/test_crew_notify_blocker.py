@@ -134,6 +134,22 @@ def test_run_stop_approve_sends_blocker(tmp_path, telegram, reason):
                 "sent", "Approval waiting", True, True)
 
 
+def test_run_stop_split_approval_sends_one_blocker_per_decision(tmp_path, telegram):
+    """T-0058: a split autopilot may not apply waits on the owner's /crew:split;
+    the same split.md pings once, an edited one is a new episode."""
+    root = _blocker_repo(tmp_path)
+    split = root / ".work" / "tickets" / TICKET / "split.md"
+    split.parent.mkdir(parents=True, exist_ok=True)
+    split.write_text("decision: split\n", encoding="utf-8")
+
+    words = [crew_notify.run_stop(str(root), TICKET, "split-approval", "r") for _ in range(2)]
+    split.write_text("decision: split\nanswered: acceptance-count\n", encoding="utf-8")
+    words.append(crew_notify.run_stop(str(root), TICKET, "split-approval", "r"))
+
+    assert (words, _subject(telegram), _text(telegram).endswith(f"-> /crew:split {TICKET}")) == (
+        ["sent", "deduped", "sent"], "Approval waiting", True)
+
+
 def test_run_stop_approve_twice_in_a_run_sends_once(tmp_path, telegram):
     root = _blocker_repo(tmp_path)
 

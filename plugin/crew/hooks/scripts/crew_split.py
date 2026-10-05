@@ -2,7 +2,7 @@
 """crew_split.py -- the one split rulebook (T-0052), behind /crew:split.
 
 `/crew:split` calls it in every tracker mode, and T-0058's `/crew:autopilot
-split` will call the same functions: there is one set of rules, so autopilot
+split` calls the same functions: there is one set of rules, so autopilot
 gets none of its own that could drift from the command's.
 
 The API (stable; T-0058 and T-0059 build on it):
@@ -12,6 +12,8 @@ The API (stable; T-0058 and T-0059 build on it):
                                         tickets_too_large}; None = unreadable
     triggers(measures, stage)       -> fired names for stage "spec"|"plan";
                                         a None measure is "unknown:<name>"
+    absent_sources(top)             -> {trigger: why} for a source the repo
+                                        does not have (T-0058's "unmeasured")
     parent_criteria(spec_text)      -> the Acceptance bullets, or None
     parse_proposal(text)            -> the split.md fields (no judgement)
     minted_tail(text)               -> (body, {n: id}) for a valid trailing
@@ -21,6 +23,8 @@ The API (stable; T-0058 and T-0059 build on it):
     check(top, ticket, ...)         -> (decision, problems); records the pass
     confirm(top, ticket, session)   -> {"ok", "reason"}
     apply(top, ticket, via, ...)    -> {"children", "parent", "warnings"}
+    ticket_split_policy(top, ticket) -> {allow, policy, risk, known, reason,
+                                        warnings} (T-0058, autopilot's yes)
 
 A trigger means LOOK, never SPLIT: a split also needs `separable-criteria`
 evidence, and "not too big" is a result, not a failure. `split.md` format:
@@ -72,11 +76,22 @@ or from a harness envelope, not a session or process that sets out to forge
 the answer; the prose confirmation is what reads it. Follow-up: route split
 approval through the /crew:approve harness path (TODO.md).
 
+`apply --via autopilot` (T-0058) needs no human turn: its yes is
+`ticket_split_policy`, T-0012's split rule (`crew_autopilot_goal._split_rule`)
+on the parent's spec risk, asked at apply time and never read from a record.
+It refuses in jira mode whatever `autopilot.approval` says -- autopilot never
+creates a Jira issue; the owner runs /crew:split <KEY> -- and in sdp mode.
+Any caller may pass `--via autopilot`: like `crew_ticket.approve` ("whoever
+calls"), the gate is the repository's policy, not who the caller is. Out of
+the box it refuses (`scope.allowCliApproval` defaults to false, autopilot to
+off), and the owner opts in per repository; the policy, not the `via`
+string, is what a split under `--via autopilot` answers to.
+
 CLI (exit 0 ok, 1 refused):
     crew_split.py [measure] --root . --ticket <id> [--stage spec|plan]
     crew_split.py check --root . --ticket <id> [--proposal <f>] [--criteria-file <f>]
     crew_split.py confirm --root . --ticket <id-or-KEY>
-    crew_split.py apply --root . --ticket <id> --via command
+    crew_split.py apply --root . --ticket <id> --via command|autopilot
 """
 
 import argparse
@@ -122,9 +137,11 @@ STAGES = ("spec", "plan")
 RISKS = ("low", "med", "high")
 MEASURES = ("plan_steps", "acceptance", "touch", "subsystems", "findings_rate",
             "tickets_too_large")
-# Who may call apply. T-0058 appends "autopilot" with its own approval path.
-VIAS = ("command",)
+# Who may call apply: /crew:split (a human turn) or autopilot (T-0058, the policy).
+VIAS = ("command", "autopilot")
 SDP_STOP = "SDP is a service desk, not where this work gets decomposed"
+JIRA_STOP = ("autopilot never creates a Jira issue, whatever autopilot.approval says: "
+             "the owner runs /crew:split <KEY>")
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 UNKNOWN = "unknown"
 SUPERSEDED = "superseded"
@@ -263,6 +280,36 @@ def measure(top, ticket):
         got["findings_rate"] = rate
         got["tickets_too_large"] = rate > crew_state.HEALTHY_HIGH
     return got
+
+
+def absent_sources(top):
+    """`{trigger name: why}` for each repo-level measure whose source this
+    repository does not have at all: no `.crew/codemap/` (`subsystems`), or
+    no review recorded -- `.crew/metrics.md` absent, or readable with no row
+    (`findings-rate`, `tickets-too-large`). measure() reports these None like
+    an unreadable source; T-0058's autopilot gate names them `unmeasured`
+    and does not stop on them. A source that IS there and cannot be read is
+    not listed: that one stays unknown."""
+    top = _top(top)
+    absent = {}
+    if not os.path.lexists(os.path.join(top, ".crew", "codemap")):
+        absent["subsystems"] = "no .crew/codemap/ in this repository"
+    path = os.path.join(top, ".crew", "metrics.md")
+    why = None
+    if not os.path.lexists(path):
+        why = "no .crew/metrics.md (no review recorded)"
+    elif os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                handle.read()
+        except OSError:
+            why = None
+        else:
+            if crew_state.read_metrics(top).get("tickets") == 0:
+                why = "no review recorded in .crew/metrics.md yet"
+    if why:
+        absent["findings-rate"] = absent["tickets-too-large"] = why
+    return absent
 
 
 def triggers(measures, stage):
@@ -599,9 +646,12 @@ def check(top, ticket, proposal=None, criteria_file=None, session=None):
         return decision, problems
     turn, _ = current_turn(top, session)
     prompt, _ = current_prompt(top, session)
+    # policy_at_check is for the report only: apply asks ticket_split_policy again.
+    policy = ticket_split_policy(top, ticket)
     record = {"proposal": path, "proposal_sha256": _proposal_sha(data), "turn": turn,
               "prompt_sha256": _prompt_sha(prompt),
-              "session": session if session is not None else os.environ.get(SESSION_ENV)}
+              "session": session if session is not None else os.environ.get(SESSION_ENV),
+              "policy_at_check": {"allow": policy["allow"], "reason": policy["reason"]}}
     target = check_record_path(top, ticket)
     os.makedirs(os.path.dirname(target), exist_ok=True)
     _atomic_write(target, (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
@@ -684,6 +734,51 @@ def _drop(path):
         os.remove(path)
     except FileNotFoundError:
         pass
+
+
+# --- the ticket split policy (T-0058) ---------------------------------------------------
+
+def ticket_split_policy(top, ticket):
+    """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
+    autopilot may apply `ticket`'s split itself. jira refuses (JIRA_STOP),
+    sdp refuses (SDP_STOP), an unknown mode refuses; otherwise T-0012's split
+    rule on the parent's spec risk (`crew_autopilot._ticket_risk`: missing or
+    unreadable reads `high`, unknown). Asked fresh on every call; anything
+    that raises refuses as could-not-tell."""
+    base = {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False, "warnings": []}
+    try:
+        # pylint: disable=import-outside-toplevel  # crew_autopilot imports this module
+        import crew_autopilot
+        import crew_autopilot_goal
+        top = _top(top)
+        mode = tracker_mode(top)
+        if mode == "jira":
+            return dict(base, reason=f"tracker is jira: {JIRA_STOP}")
+        if mode == "sdp":
+            return dict(base, reason=f"tracker is sdp: {SDP_STOP}")
+        if mode == UNKNOWN:
+            return dict(base, reason="the tracker mode could not be told, so autopilot "
+                                     "applies no split")
+        conf = crew_autopilot.settings(top)
+        risk = crew_autopilot._ticket_risk(top, ticket)  # pylint: disable=protected-access
+        allowed = crew_ticket.cli_approval_allowed(top)
+        policy = conf["approval"]
+        warnings = [w for w in conf["warnings"] if "autopilot.approval " in w
+                    or "autopilot.mode " in w]
+        words = (f"risk: {risk['risk']}" if risk["known"]
+                 else "no risk: low|med|high in the spec header (reads as high)")
+        low = risk["known"] and risk["risk"] == "low"
+        result = dict(base, policy=policy, risk=risk["risk"], known=risk["known"],
+                      warnings=warnings)
+        why = crew_autopilot_goal._split_rule(  # pylint: disable=protected-access
+            conf, warnings, allowed, low,
+            f"autopilot.approval is risk and the spec has {words}, not risk: low")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return dict(base, reason=f"could not tell whether autopilot may apply the split "
+                                 f"({type(exc).__name__}: {exc})")
+    if why:
+        return dict(result, reason=why)
+    return dict(result, allow=True, reason=f"autopilot.approval is {policy} ({words})")
 
 
 # --- apply -----------------------------------------------------------------------------
@@ -905,16 +1000,22 @@ def apply(top, ticket, via, session=None):
     sdp or an unknown mode, on a `via` not in VIAS, on a spec or proposal that
     is not UTF-8, on a proposal check_proposal refuses or whose decision is
     not `split`, on a `## Minted` entry apply did not write, on a parent
-    already superseded, and when confirm refuses. Then, in order: record the
-    apply; write spec.pre-split.md byte-identical to spec.md; mint each child
-    (recording each id in split.md as it returns); and only after every mint
-    returned, mark the parent's spec header and INDEX row `superseded`. A
-    success spends the check record; a failure part-way drops it too, so a
-    re-run needs a fresh check and yes."""
+    already superseded, and when the approval refuses: confirm (a human turn)
+    for `command`, ticket_split_policy asked now for `autopilot` (which runs
+    every other check, existing-children verification included). Then, in
+    order: record the apply; write spec.pre-split.md byte-identical to
+    spec.md; mint each child (recording each id in split.md as it returns);
+    and only after every mint returned, mark the parent's spec header and
+    INDEX row `superseded`. A success spends the check record; a failure
+    part-way drops it too, so a re-run needs a fresh check and yes."""
     top = _top(top)
     if via not in VIAS:
-        raise SplitError(f"via {via} is not one of {'|'.join(VIAS)} (T-0058 adds autopilot's "
-                         "path); nothing was written")
+        raise SplitError(f"via {via} is not one of {'|'.join(VIAS)}; nothing was written")
+    if via == "autopilot":
+        policy = ticket_split_policy(top, ticket)
+        if not policy["allow"]:
+            raise SplitError(f"the split policy refused: {policy['reason']}; nothing was "
+                             f"written - the owner runs /crew:split {ticket}")
     _refuse_mode(top)
     folder = _folder(top, ticket)
     spec_path = os.path.join(folder, "spec.md")
@@ -930,11 +1031,13 @@ def apply(top, ticket, via, session=None):
         raise SplitError(f"the decision is {decision}, not split; nothing to apply")
     got = parse_proposal(proposal)
     existing = _existing_children(top, ticket, got["children"], got["minted"])
-    gate = confirm(top, ticket, session)
+    gate = confirm(top, ticket, session) if via == "command" else {"ok": True}
     if not gate["ok"]:
         raise SplitError(f"confirm refused: {gate['reason']}; nothing was written")
     check_path, record_path = check_record_path(top, ticket), apply_record_path(top, ticket)
     if not os.path.lexists(record_path):
+        # --via autopilot may run with no check before it, so nothing made the folder.
+        os.makedirs(os.path.dirname(record_path), exist_ok=True)
         _atomic_write(record_path, (json.dumps({"parent": ticket}) + "\n").encode("utf-8"))
     try:
         _write_pre_split(folder, spec)
@@ -973,7 +1076,8 @@ def main(argv=None):
     parser.add_argument("--proposal", help="check: the split.md (default the ticket's)")
     parser.add_argument("--criteria-file", help="check: the parent's criteria as bullets "
                         "(Jira, where the parent is an issue with no spec.md)")
-    parser.add_argument("--via", help="apply: who is applying; only `command` here")
+    parser.add_argument("--via", help="apply: command (/crew:split, after a human turn) or "
+                        "autopilot (ticket_split_policy)")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     try:

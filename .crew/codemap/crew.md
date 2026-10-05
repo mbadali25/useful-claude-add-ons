@@ -1656,7 +1656,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:106`),
   `ACCEPTANCE_LOOK` (`:110`), `SUBSYSTEMS_LOOK` (`:113`), `CHILDREN_MIN,
   CHILDREN_MAX` (`:116`); `EVIDENCE_KEYS` (`:118`), `VIAS` (`:126`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:127`). `measure`
+  only until T-0058 appended `autopilot`), `SDP_STOP` (`:127`). `measure`
   (`:241`) returns None, never 0, for a measure it cannot read or a readable
   section that yields nothing, and `triggers` (`:268`) reports it as
   `unknown:<name>`. `check_proposal` (`:418`) over `parse_proposal` (`:352`)
@@ -1693,6 +1693,44 @@ Obsidian vault). A CLI the commands call, not a hook.
   JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
   HARNESS, so its mutations were run by hand and a separate tooling PR
   registers them (`TODO.md`).
+
+## Autopilot's size check and `/crew:autopilot split` (T-0058)
+
+- DERIVED (T-0058, ported onto release/1.2.0 by hand; cites are line numbers
+  on rush/g2-autopilot at the commit that adds this section, behind the
+  anchor above like the rest of the file): `_phase` calls
+  `crew_autopilot_split.gate` after the spec validates
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1000`) and after the plan
+  validates (`:1010`). The code lives in
+  `plugin/crew/hooks/scripts/crew_autopilot_split.py` (pylint's module
+  length): `gate` (`:106`) reads `_size_check` (`:58`: `crew_split.measure`,
+  `triggers`, `absent_sources`) and `_decision_state` (`:76`:
+  `check_proposal` plus the `answered:` rule), and T-0059's `parse_slices`
+  through `_slice_problems` (`:93`, `SLICES_ARRIVE` `:40`). `split_report`
+  (`:146`), `_not_current` (`:185`: the gate's unknown stop and `answered:`
+  rule, which `--check` and `--apply` share, at `_gate_stage` `:175`;
+  wording `_unknown_words` `:167`) and `main` (`:211`) are the `split`
+  action, dispatched through `EXTRA_ACTIONS`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2322`); `split` joins the
+  router at `:351` and `WAITING` at `:2769`. T-0012's rule is slug-free as
+  `_split_rule` (`plugin/crew/hooks/scripts/crew_autopilot_goal.py:429`),
+  which `split_policy` (`:394`) and `crew_split.ticket_split_policy`
+  (`plugin/crew/hooks/scripts/crew_split.py:741`, its whole read inside one
+  could-not-tell boundary) both call. `VIAS` gains `autopilot`
+  (`plugin/crew/hooks/scripts/crew_split.py:141`, `JIRA_STOP` `:143`);
+  `apply` asks the policy for it (`:1014`) and skips only `confirm`, keeping
+  T-0052's existing-children verification; `check` records
+  `policy_at_check` for the report only (`:649-654`). `absent_sources`
+  (`:285`) is what the gate names `unmeasured`.
+- Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
+  block at the end of `plugin/crew/tests/test_crew_split.py`, on the
+  `crew_split` rule in `.crew/verify.json`.
+  JUDGEMENT: a source the repository lacks (no codemap, no review recorded)
+  not stopping the run is this ticket's reading of the spec's "unreadable
+  measure"; a stop on every run of a repo without metrics would be the
+  "check that always fires" the plan's risk names. Owner-approved 2026-10-04;
+  a source that is there but unmeasurable (no `- [ ]` acceptance bullet, no
+  `### Step`, a Touch entry outside every codemap subsystem) still stops.
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 

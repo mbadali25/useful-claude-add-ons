@@ -696,6 +696,10 @@ WRITERS = ("approve", "auto-reject", "sleep", "wake", "focus")
 # T-0012: the goal pair writes only the working file `.work/autopilot/<slug>.json`,
 # never a receipt; test_crew_autopilot_goals.py pins exactly what each writes.
 GOAL_WRITERS = ("goal-propose", "goal-approve")
+# T-0058: `split --check` writes crew_split.check's record and `split --apply`
+# what crew_split.apply writes, under the policy; test_crew_autopilot_split.py
+# and test_crew_split.py pin both, and bare `split` writes nothing.
+GOAL_WRITERS += ("split",)
 
 
 def _usage_subcommands():

@@ -614,7 +614,7 @@ def test_plain_text_routes_with_a_pointer_and_no_focus(tmp_path, monkeypatch, pr
             got["command"], got["unavailable"]) == (T, "route", command, False)
 
 
-@pytest.mark.parametrize("sub", ["assign", "wave", "split", "deploy"])
+@pytest.mark.parametrize("sub", ["assign", "wave", "deploy"])  # T-0058 landed `split`
 def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
     """Today's AVAILABLE: assign stops as arriving, an unknown name as
     unknown -- never as focus."""

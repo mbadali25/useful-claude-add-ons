@@ -2929,7 +2929,12 @@ approval under the same `autopilot.approval`, with no key of its own: `self`
 approves the split, `risk` only when every proposed ticket is a known
 `risk: low`, `human` stops, and every setting needs `scope.allowCliApproval:
 true` and `mode: plan`; the owner's `/crew:approve goal:<slug>` receipt
-approves it at any setting (README, "Autopilot").
+approves it at any setting (README, "Autopilot"). Autopilot's size check after
+spec and after plan (T-0058) applies a ticket's split, `crew_autopilot.py split
+--apply`, under the same `autopilot.approval` and T-0012's rule on the
+parent's spec risk (`crew_split.ticket_split_policy`), with no key of its own;
+in `tracker: jira` it always stops for the owner's `/crew:split <KEY>`, and in
+`sdp` it stops.
 Since T-0050 every key in its block is **personal**: settable in the machine
 file as the owner's default for every repo, combined per key with the repo's
 value by the rule in §20a (the stricter of the layers that set it wins). The

@@ -417,27 +417,37 @@ def split_policy(root, slug, goal=None):
     words = (f"goal risk: {risk['risk']}" if risk["known"]
              else "a proposed ticket's risk is not low|med|high (reads as high)")
     all_low = risk["known"] and risk["risk"] == "low"
-    # First refusal wins; only `self`, or `risk` with every ticket low, is left.
+    why = _split_rule(conf, warnings, allowed, all_low,
+                      f"autopilot.approval is risk and the {words}, not every ticket low")
+    if why:
+        return dict(result, reason=why)
+    return dict(result, allow=True, reason=(
+        f"autopilot.approval is self ({words})" if policy == ap.SELF
+        else "autopilot.approval is risk and every proposed ticket is risk: low"))
+
+
+def _split_rule(conf, warnings, allowed, low, risk_refusal):
+    """T-0012's split rule, slug-free (T-0058 applies it to a ticket's split
+    too, through `crew_split.ticket_split_policy`): the first refusal's
+    reason, or "" when autopilot may approve. `conf` is `settings`'s answer,
+    `allowed` `crew_ticket.cli_approval_allowed`'s, `low` whether the risk is
+    a KNOWN `low`; `risk_refusal` names the risk under `risk`. Only `self`,
+    or `risk` with a known `low`, is left."""
+    policy = conf["approval"]
     refusals = (
         (policy == ap.UNKNOWN, f"could not tell the approval policy "
-                            f"({'; '.join(warnings) or 'unreadable'}); the human approves the "
-                            "split"),
+                               f"({'; '.join(warnings) or 'unreadable'}); the human approves "
+                               "the split"),
         (allowed is not True, f"{ap.ALLOW_CLI} is not exactly true in .crew/config.json, so no "
                               "split approval but the human's counts"),
         (conf["armed"] is not True, "autopilot is not armed (autopilot.mode is not plan), so "
                                     "it approves no split"),
         # `human`, and anything settings did not map to a policy: never approves.
-        (policy not in (ap.SELF, ap.RISK), f"autopilot.approval is {policy}: the split waits for "
-                                     "the owner"),
-        (policy == ap.RISK and not all_low, f"autopilot.approval is risk and the {words}, not "
-                                         "every ticket low"),
+        (policy not in (ap.SELF, ap.RISK), f"autopilot.approval is {policy}: the split waits "
+                                           "for the owner"),
+        (policy == ap.RISK and low is not True, risk_refusal),
     )
-    for refused, why in refusals:
-        if refused:
-            return dict(result, reason=why)
-    return dict(result, allow=True, reason=(
-        f"autopilot.approval is self ({words})" if policy == ap.SELF
-        else "autopilot.approval is risk and every proposed ticket is risk: low"))
+    return next((why for refused, why in refusals if refused), "")
 
 
 def _owner_receipt(top, slug, digest):

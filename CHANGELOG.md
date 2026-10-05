@@ -9,6 +9,83 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
+
+- **What changed.** `crew_autopilot.next_phase` runs T-0052's split rulebook
+  (`crew_split.measure` and `triggers`) once the spec validates and once the
+  plan validates. A trigger means look, never split: nothing fired
+  continues; a fired trigger with no current `split.md` decision is
+  `split-check` (not a stop; autopilot judges the boundaries, writes
+  `split.md` with `answered:` naming every fired trigger, and runs `split
+  --check`), and a trigger that first fires after plan re-opens a decision
+  taken after spec. `not-too-big` continues; `slices` continues after spec
+  and, after plan, only when T-0059's `crew_split.parse_slices` validates the
+  plan's `## PR slices` (until it lands: `split-check-unknown` naming T-0059);
+  `split` is `split-approval`, a stop, until the parent is `superseded`
+  (then `closed`). `crew_autopilot.py split --root . --ticket <id>` prints
+  the measures, triggers, unmeasured sources, decision and policy; `--check`
+  runs `crew_split.check` plus the `answered:` rule; `--apply` runs
+  `crew_split.apply(..., via="autopilot")`, and a refusal ends `owner: the
+  human types /crew:split <id>`. The router lists `split`, so
+  `/crew:autopilot split <id>` runs the same check on demand.
+- **The approval.** `crew_split.ticket_split_policy` is T-0012's split rule,
+  factored slug-free as `crew_autopilot_goal._split_rule` (T-0012's
+  `split_policy` and its tests unchanged), on the parent's spec risk
+  (unknown reads `high`): `self` any risk, `risk` only a known `risk: low`,
+  `human` never, always `scope.allowCliApproval: true` and armed. It refuses
+  in **Jira mode whatever `autopilot.approval` says** (autopilot never
+  creates a Jira issue; the owner runs `/crew:split <KEY>`), in SDP mode and
+  in an unknown tracker mode, and `apply --via autopilot` asks it at apply
+  time, never from a record. It skips only the human-turn confirmation:
+  every other check of T-0052's `apply` still runs, the existing-children
+  verification (`split-apply.json`, provenance lines, an open INDEX row, a
+  direction matching the current proposal) included, and `apply` now makes
+  the record folder itself, since autopilot may apply with no `check`
+  before it. `--via command` needs no policy and keeps T-0052's
+  confirmation. Any caller may pass `--via autopilot` (documented): like
+  `crew_ticket.approve`, the gate is the repository's policy, not the caller.
+  Everything the policy reads, the rule included, is inside its
+  could-not-tell boundary, so a crash refuses and `next` stops at
+  `split-approval` instead of raising. `split --check` and `split --apply`
+  apply the gate's rules at the gate's stage (`plan` only once plan.md
+  validates): both refuse while a measure is unknown, in the gate's
+  `split-check-unknown` wording, and refuse a `split.md` whose `answered:`
+  misses a trigger firing now.
+- **Unknown measures.** A measure whose source is there and cannot be read
+  stops as `split-check-unknown`. A source the repository does not have at
+  all (no `.crew/codemap/`; no review recorded in `.crew/metrics.md`) is
+  named `unmeasured: <name> (<why>)` on the split-check reason and the
+  `split` output and does not stop (`crew_split.absent_sources`): the spec's
+  "unreadable measure" read so that a repo without metrics is not stopped on
+  every ticket; **owner-approved 2026-10-04**. A source that is there but
+  cannot be measured still stops, including T-0052's zero-count `None`s: an
+  Acceptance section with no `- [ ]` bullet, a plan with no `### Step`, a
+  Touch entry no codemap subsystem covers (the stop names the fix).
+  T-0052's `measure` is unchanged. The shared test fixture
+  (`scope_fixtures.SPEC`/`PLAN`) now writes `- [ ] tests pass` and
+  `### Step 1`, the shapes `/crew:spec` and `/crew:plan` write.
+- **Why.** The owner's 2026-09-26 direction (T-0052): autopilot looks at a
+  ticket's size after spec and after plan through the same rulebook as
+  `/crew:split`, and a split it applies goes through the approval policy,
+  with Jira always the owner's yes.
+- **Tests.** `test_crew_autopilot_split.py` (40 cases: every gate outcome,
+  the subcommand, the router, the prose) and the T-0058 block in
+  `test_crew_split.py` (policy must-block and must-allow, apply via
+  autopilot in files and Obsidian mode). `test_crew_route.py`'s subcommand
+  tuple and `test_lifecycle_commands.py`'s exact-CLI list gain `split`.
+  Twenty-two T-0058 mutations and T-0052's ten were hand-run on the tree
+  merged with T-0052 at 1b0de3cb, each red on its
+  named test; `sabotage_split.py` is a HARNESS path, so registering them is
+  a separate tooling PR.
+- **Ported onto release/1.2.0 (PR #365).** The gate, `split_report` and the
+  `split` action live in the new `crew_autopilot_split.py` (dispatched through
+  `EXTRA_ACTIONS`, as T-0022's tracker is) to keep `crew_autopilot.py` under
+  pylint's module-length limit. A `split-approval` stop now pings: the
+  report's `crew_notify.py run-stop` sends T-0060's blocker `Approval waiting
+  -> /crew:split <id>`, once per `split.md`. Two of the mutations (the gate
+  after plan removed; the Jira refusal removed) were re-run on the port, each
+  red; the rest were not re-run here. `autopilot.md` is 115 of its 120 lines.
+
 ### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
 - **`blocker` sends.** It moves from `RESERVED` to `EVENTS` in `plugin/crew/hooks/scripts/crew_notify.py`,

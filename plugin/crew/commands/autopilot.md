@@ -1,6 +1,6 @@
 ---
 description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|sleep|wake|assign|goal|focus] [ticket id | off | --goal <slug>]"
+argument-hint: "[status|run|sleep|wake|assign|goal|focus|split] [ticket id | off | --goal <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
@@ -25,7 +25,7 @@ It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line
 a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
 never a ticket; `assign` comes with T-0019, `--goal` resume with L-0541). `sub=status`: section 1; `sub=focus`: section 6 only; `sub=goal`: section 7 only;
 `sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or
-`crew_autopilot.py wake --root .`, print its line, stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
+`crew_autopilot.py wake --root .`, print its line, stop. `sub=split` (`split`): section 3's `split-check` for `<ticket>`, then stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
 `ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 Unattended cloud work is started by `crew_unattended.py launch -- claude ...` (README), never from a running session.
 
@@ -63,7 +63,11 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback 
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it, or run `commit-refresh`'s `git add -- ... && git commit ... -- ...` exactly as printed; then the tracker step (below). `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. `phase=ship` (T-0011): print the lines of
   `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py ship --root . --ticket <ticket>`; `stop=1` stops. Then `LAST=<c>`, `N+=1`, again.
-- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
+- `phase=split-check` (T-0058, the size check after spec or plan; a trigger means look, never split): run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket>`, judge the boundaries by the split rulebook (`crew_split.py`, crew:explorer), write `split.md` (`answered:` names every fired trigger), then run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --check` until `ok`, and back through `next`.
+- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below. With `phase=split-approval` - not yet a stop: run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --apply` (it applies only under the approval policy, and in Jira mode it always refuses); report each `child=`, or on `refused:` stop - the human types `/crew:split <ticket>`. Never run `/crew:split` yourself.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other policy writer is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
@@ -85,7 +89,7 @@ The tracker step (T-0022), after each phase and after `/crew:done` succeeds, mov
 
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's; a BLOCK is never accepted here, at any setting, and only `auto-replan` rejects one); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`, `docs-missing`, `docs-unknown`, `docs-after-review`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
+`max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`, `docs-missing`, `docs-unknown`, `docs-after-review`, `split-approval` (unless section 3's `--apply` passes), `split-check-unknown`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up and `split --apply`'s children, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.

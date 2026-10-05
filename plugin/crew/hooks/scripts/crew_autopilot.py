@@ -19,6 +19,7 @@
     python3 crew_autopilot.py focus --root . [--ticket <id> | --off |
                                     --findings --ticket <id>]
     python3 crew_autopilot.py ship --root . --ticket <id> [--json]
+    python3 crew_autopilot.py split --root . --ticket <id> [--check|--apply]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -32,7 +33,10 @@ only other writers: each writes or removes only
 (`crew_sleep`'s docstring; `sleep` only where `scope.allowCliApproval` is
 exactly true).
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
-T-0072's `deploy-allowed` and T-0011's `ship` write no file. `ship` is the one
+T-0072's `deploy-allowed` and T-0011's `ship` write no file. T-0058's `split
+--check` writes `crew_split.check`'s record and `split --apply` what
+`crew_split.apply` writes, only under `crew_split.ticket_split_policy`
+(crew_autopilot_split.py's docstring). `ship` is the one
 action outside the checkout: it pushes the ticket's branch, opens its PR and
 may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
@@ -126,8 +130,10 @@ force says `take`. Exit 0 valid, 1 not.
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
+  size check after spec (T-0058)         split-*             crew_autopilot_split.py
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
+  size check after plan (T-0058)         split-*             crew_autopilot_split.py
   approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
@@ -243,6 +249,7 @@ import completion_audit
 import crew_common
 import crew_autopilot_docs
 import crew_autopilot_sleep
+import crew_autopilot_split
 import crew_config
 import crew_ship
 import crew_sleep
@@ -313,6 +320,7 @@ FIXED_STOPS = (
     ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
                         "ticket's review ledger: the owner decides, with the history"),
 ) + crew_autopilot_docs.FIXED_STOPS  # T-0022: the docs phase and the tracker step
+FIXED_STOPS += crew_autopilot_split.FIXED_STOPS  # T-0058: the size check
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
 PROCEDURE_STOPS = (
@@ -340,7 +348,8 @@ HUMAN_STOPS = (
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
 SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
-AVAILABLE = frozenset({"status", "run", "goal", "focus", "sleep", "wake"})
+SUBCOMMANDS += ("split",)  # T-0058
+AVAILABLE = frozenset({"status", "run", "goal", "focus", "sleep", "wake", "split"})
 # L-0652: the subcommands that take no ticket, not even a second word.
 NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019"}
@@ -988,6 +997,9 @@ def _phase(root, ticket, policy=True):
     if spec_only:
         return answer("spec", True, "spec.md fails crew_ticket.validate: "
                       + "; ".join(spec_only), f"/crew:spec {ticket}")
+    gate = crew_autopilot_split.gate(top, ticket, "spec", answer, policy)
+    if gate:
+        return gate
     evidence.append(_rel(top, os.path.join(folder, "plan.md")))
     if contract["plan.md"] is None:
         return answer("plan", False, "no plan.md", f"/crew:plan {ticket}")
@@ -995,6 +1007,9 @@ def _phase(root, ticket, policy=True):
     if problems:
         return answer("plan", True, "plan.md fails crew_ticket.validate: "
                       + "; ".join(problems), f"/crew:plan {ticket}")
+    gate = crew_autopilot_split.gate(top, ticket, "plan", answer, policy)
+    if gate:
+        return gate
     approval = crew_ticket.accepted(top, ticket)
     evidence.append(_rel(top, crew_ticket.approval_path(top, ticket)))
     if approval["status"] != "approved":
@@ -2304,7 +2319,7 @@ GOAL_RESUME_ARRIVES = "L-0541"  # `--goal` resume; the goal file itself: crew_au
 # Script actions whose code (parsers, usage and `main`) lives in a sibling module.
 EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_autopilot_goal",
                  "tracker": "crew_autopilot_docs", "sleep": "crew_autopilot_sleep",
-                 "wake": "crew_autopilot_sleep"}
+                 "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split"}
 
 
 def stops():
@@ -2749,7 +2764,9 @@ def focus_text(root, ticket="", off=False, findings=False):
 WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
-    "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER) + crew_autopilot_docs.WAITING}
+    "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER) + crew_autopilot_docs.WAITING
+    + crew_autopilot_split.WAITING}
+WAITING["split-check"] = "autopilot"  # T-0058: autopilot looks, then goes on
 WAITING["ship"] = "owner"
 WAITING["closed"] = "nobody"
 WAITING["drift"] = "owner"
