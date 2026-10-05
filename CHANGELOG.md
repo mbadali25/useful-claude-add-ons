@@ -48,6 +48,55 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   exits 2 on the option is asked once more without it, inside the same 4-second budget; no other
   failure is retried. The context log's `recall` record gains `project` and `projectUsed`.
 
+### Changed — crew 1.1.1: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None` (L-0530)
+
+- **Summary.** When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a
+  retired word it names the crew word to write instead; it still never guesses a lane.
+- **`read`.** An INDEX status outside the ten-word vocabulary reads `disagree: "could not tell"` with
+  `INDEX status <s> is not a status crew knows (direction, ready, needs-owner, spec, planned, in-progress,
+  review, done, cancelled, superseded)`; a missing INDEX status reads `could not tell` as well. It no longer
+  prints `INDEX status <s> expects None`. `read --json` consumers: `disagree` can now be the string
+  `"could not tell"`, not only a boolean. A known status reads exactly as before.
+- **Retired words.** `RETIRED_STATUSES` (`approved` -> `spec`, `merged` -> `done`, `closed` -> `done`,
+  `new` -> `direction`, `parked` -> `needs-owner`) appends `; the crew word is <w>` to that note, to
+  `move --to <s>`'s `maps to no lane` refusal, and to the could-not-tell refusal for a move from such a word.
+  It is a hint only: no lane, write or exit code changes, and `land-blocked` gets none.
+- **Docs and tests.** `commands/obsidian-sync.md`, the README's Ticket statuses, the memory-and-obsidian guide
+  and the code map describe it; eight new tracker and vocabulary tests. Sabotage entries for the new branch are
+  a separate tooling-only follow-up (harness path).
+
+### Changed — `check-marketplace.py --pending-bump`: a draft PR reports version drift as pending at land, repository tooling, no plugin version (L-0511, PR 1)
+
+- **Summary.** A build branch no longer has to bump a plugin version to get a green draft PR: version drift
+  there reads `pending at land`, and a ready PR or a push to main still fails on it.
+- **The flag.** `python3 scripts/check-marketplace.py --pending-bump` prints each version-drift finding as
+  `pending at land: <plugin>: ...` and exits 0 for that check alone; every other check fails as before. On
+  branch `main` the flag is ignored and a `note:` line says so; a detached HEAD (a CI merge ref) is not `main`.
+- **Where it runs.** The Marketplace workflow passes it only when `github.event.pull_request.draft` is true and
+  now also runs on `ready_for_review`, so marking a PR ready re-runs the full check on the same head (`main`
+  requires `check`, strict, no merge queue). Verify rules 0, 2 and 3 (every rule that runs
+  `check-marketplace.py`) run it at Stop, so a branch that also touches the root docs or `scripts/` gets the
+  same pending verdict. REPO-03 in `.crew/standards.md` says so. `scripts/gate-runner.py` pins both CI
+  strings and still runs the full check locally.
+- **Tests.** Five new `scripts/_test/version-drift.py` cases run the real `main()`; each was sabotaged by hand
+  and went red.
+
+### Changed — `scripts/gate-runner.py` records its heavy-run slot, repository tooling, no plugin version (L-0517)
+
+- **Summary.** The local gate runner's status file now names the heavy-run slot it ran in, and a
+  reviewed patch makes the machine-local heavy-run wrapper log every slot wait to one JSONL file.
+- **Gate runner.** `--inner` records `HEAVY_RUN_SLOT` as `slot` in `heavy-part.json`; the outer copies
+  it to `status.json`'s `heavy_run.slot` beside `waited_seconds`. It is `null` when unset, empty or
+  malformed (not a string, over 64 characters, or containing `/`), and it never changes a step's
+  state. Three new suite cases.
+- **Wrapper patch.** `docs/tickets/L-0517/heavy-run.patch` (against `heavy-run.snapshot`) appends one
+  line per invocation to `/root/crew-tmp/heavy-run-waits.jsonl` (`HEAVY_RUN_WAITS_LOG` overrides) from
+  the EXIT trap: lane, slot, priority tag, pid, requested/acquired/released UTC, waited and held
+  seconds, rc and the first 120 characters of the command, and exports `HEAVY_RUN_SLOT` while a slot
+  is held. A call stopped while waiting logs `slot`, `acquired` and `held_s` as `null`; `rc` is `null`
+  unless the command finished; `lane` is `"unknown"` when nothing names it. The owner's local session
+  applies the patch; this repository does not ship the wrapper.
+
 ### crew 1.1.0 — C-0006: version-free guide file names
 
 - **Summary.** crew moves to the 1.1 line, and its seven guides drop the version from their file

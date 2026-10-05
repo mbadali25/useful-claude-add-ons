@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Two-slot heavy-run lock (owner, 2026-09-27: "let two test runs at once").
+# Slot 1 is /root/crew-tmp/heavy.lock itself, so callers still using
+# `flock /root/crew-tmp/heavy.lock` share slot 1 with this wrapper; slot 2 is
+# heavy.lock.2. Usage: heavy-run <command> [args...]
+set -u
+slots=(/root/crew-tmp/heavy.lock /root/crew-tmp/heavy.lock.2)
+# Priority slot (owner 2026-09-30 via crew-chat: "T-0085 and T-0087 jump the heavy-run
+# queue"; then "T-0085 first"). /root/crew-tmp/heavy-priority lists lane tags in RANK
+# order (first = highest). A lane matches by TMPDIR basename, by "/<tag>/" in the
+# command, or by its worktree folder (uca-t0085...). A matching lane also gets
+# heavy.lock.prio, tried first, reserved for listed lanes; at most 3 heavy runs at once.
+# Ordering: each waiting priority lane leaves a marker; a lane skips the priority
+# slot (but keeps its shared slots) while a HIGHER-ranked lane has a live marker.
+# Empty or delete heavy-priority to turn all of this off.
+resolve_prio() {
+  # Re-read on every attempt, so an edit to heavy-priority reaches jobs already waiting.
+  prio_tag=""; prio_rank=0
+  [ -f /root/crew-tmp/heavy-priority ] || return
+  local r=0 t num
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue; r=$((r+1)); num=${t#t-}
+    case " ${TMPDIR:-} $ARGS $PWD " in
+      *"/$t "*|*"/$t/"*|*"uca-t$num"*|*"uca-$t"*) prio_tag=$t; prio_rank=$r; return;;
+    esac
+  done < /root/crew-tmp/heavy-priority
+}
+ARGS="$*"
+resolve_prio
+waitdir=/root/crew-tmp/heavy-prio-wait
+marker=""
+trap '[ -n "$marker" ] && rm -f "$marker"' EXIT
+mark() {
+  local want=""
+  [ -n "$prio_tag" ] && want="$waitdir/$prio_rank.$prio_tag.$$"
+  if [ "$want" != "$marker" ]; then
+    [ -n "$marker" ] && rm -f "$marker"
+    marker=$want
+    [ -n "$marker" ] && { mkdir -p "$waitdir"; : > "$marker"; }
+  fi
+}
+higher_waiting() {
+  local f rank pid
+  for f in "$waitdir"/*; do
+    [ -e "$f" ] || continue
+    f=${f##*/}; rank=${f%%.*}; pid=${f##*.}
+    if ! kill -0 "$pid" 2>/dev/null; then rm -f "$waitdir/$f"; continue; fi
+    # A lane already HOLDING a slot is not waiting (older wrappers kept their marker).
+    ls -l /proc/"$pid"/fd 2>/dev/null | grep -q 'heavy\.lock' && continue
+    [ "$rank" -lt "$prio_rank" ] && return 0
+  done
+  return 1
+}
+# pytest-xdist (owner 2026-09-30 "Install + cap at -n 4"): `-n auto` would start one
+# worker per CPU (20 here) inside the 6G cap, twice over with two slots. Cap it.
+export PYTEST_XDIST_AUTO_NUM_WORKERS="${PYTEST_XDIST_AUTO_NUM_WORKERS:-4}"
+while :; do
+  resolve_prio; mark
+  try=("${slots[@]}")
+  if [ -n "$prio_tag" ] && ! higher_waiting; then
+    try=(/root/crew-tmp/heavy.lock.prio "${slots[@]}")
+    # Second priority slot = a 4th heavy run (owner 2026-09-30, "6 GB free"): only
+    # while MemAvailable >= 6 GB, since each run may use up to its 6G cap.
+    avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    [ "${avail_kb:-0}" -ge 6291456 ] && try+=(/root/crew-tmp/heavy.lock.prio.2)
+  fi
+  for s in "${try[@]}"; do
+    exec {fd}>>"$s"
+    if flock -n "$fd"; then
+      [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
+      # Memory cap (2026-09-27 19:25 CDT): the sabotage entry "a FIFO or device
+      # is opened as a plan" makes cloud_guard read /dev/zero unbounded; that
+      # python3 reached 20 GB and the global OOM took the orchestrating session
+      # down twice (18:36, 19:08). A per-run cgroup confines the kill to the run.
+      # OOMPolicy=continue (owner 2026-10-03, L-0608): without it systemd stops the whole
+      # scope after one OOM-killed child, SIGTERMing the rest of the run (rc 143).
+      if [ -z "${HEAVY_RUN_NOCAP:-}" ] && command -v systemd-run >/dev/null; then
+        systemd-run --scope -q -p MemoryMax="${HEAVY_RUN_MEM:-6G}" -p MemorySwapMax=0 -p OOMPolicy=continue "$@"; rc=$?
+      else
+        "$@"; rc=$?
+      fi
+      flock -u "$fd"; exec {fd}>&-
+      [ -n "$marker" ] && rm -f "$marker"
+      exit $rc
+    fi
+    exec {fd}>&-
+  done
+  sleep 5
+done
