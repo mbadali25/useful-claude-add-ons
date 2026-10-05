@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
+
+- **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now
+  tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
+  An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
+- **crew `crew_ticket_state.py`** (new, read-only). `dependency_state` reads each dependency's INDEX
+  cell, then its spec header: `done`/`merged` is closed; open, `cancelled`, `superseded` and anything
+  it cannot read block. `view` adds `needs_replan` from the ledger (None, never False, when the ledger
+  cannot be read), the gating status (`hold`, `landing`, `needs-owner`, `cancelled`, `superseded`;
+  INDEX first, then header) and reports a typed `blocked`/`needs-replan` cell instead of obeying it.
+  Nothing acts on the answer yet.
+- **`/crew:spec`** shows the optional `depends-on: [T-####, ...]` line; it is hashed with the spec.
+- **`next.md` (L-0640).** `crew_ticket_state.read_next` parses `.work/tickets/<id>/next.md`:
+  `waiting-on:` (`owner`, `agent`, `external` or a ticket id), `next:`, `reason:`, `revisit:`
+  (`YYYY-MM-DD`) and `superseded-by:` (a ticket id). `view(top, ticket, today=None)` carries them as
+  `next` with `revisit_due` (None, never False, for a missing or bad date). A bad, empty or repeated
+  value, an unreadable file and a link out of the ticket folder are problems, never "nothing asked";
+  a `needs-owner` gate with no `next:` and a `superseded` gate with no successor (in `next.md` or
+  under the spec header) are reported. Nothing writes `next.md`, and it is not hashed or validated.
+
 ### Changed — crew 1.1.2: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
 
 - **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or

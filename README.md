@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.5**: Derived `blocked` and `needs-replan`, and `next.md`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan. An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
 - **crew 1.1.2**: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself. A `.crew/config.json` with no `schema` key, or an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code `/crew:upgrade` ran) and migrated to `.crew/crew.json` in the same run.
-- **crew 1.1.2**: A graph build never reads a secrets-denylisted file. graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore` does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked `config/env.php` listed only in `.gitignore` reached ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
