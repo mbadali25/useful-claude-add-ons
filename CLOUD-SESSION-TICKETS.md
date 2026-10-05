@@ -63,7 +63,9 @@ Use this file to update your local tracker. One row per ticket. "Head" is the PR
 
 | C-0010 | From #401 review (pre-existing): ci_receipt.py's parser lets a failing rule's own output inject `verify-gate: Ns  <cmd>` lines, producing an extra PASS row for a command (pending.pop then elapsed => PASS). Bind elapsed lines to the command the gate is actually running (sequence), not to any matching text. Not acceptance-affecting today (check never reads commands) but the receipt list can lie. | none yet | after #401 |
 
-Next free untracked ID: **C-0011** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
+| C-0011 | From batch 7 (harness, lands alone): batch 7 moved T-0011's ship code into new plugin/crew/hooks/scripts/crew_ship.py; it reads a harness format but is not in SEAM in scripts/check-tooling-pr.py. Add it to SEAM (+ tooling-pr suite case). Also carry batch-7 NITs N1-N5: CONFIG.md:2884 crew_ship.ship_decision; split-into quote lost for status:done (decide); LRM/RLM/ALM (U+200E/200F/061C) in _UNSAFE_PATH; codemap ship cites (crew.md:835-861). N1/N3/N4/N5 are feature-side: split into a separate feature PR. | none yet | after #501 |
+
+Next free untracked ID: **C-0012** (owner rule 2026-10-05: cloud-session tickets use the C-NNNN series from now on; L-1500 to L-1518 keep their IDs because they are already in PR titles and merged commits).
 
 ## Merged this session
 

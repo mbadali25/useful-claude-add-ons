@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:02 UTC
+Last updated: 2026-10-05 05:04 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 08:40: batch 7 builder final report received (post-merge). Minted C-0011: crew_ship.py into SEAM (harness, alone) + batch-7 NITs as a separate feature PR. #366 Windows pre-flight red (shell-matrix + wallclock) -> Windows sweep round 2.
 - 08:35: MERGED batch 7 #505 -> abddc302 (crew 1.0.349); #357 #353 #368 show merged. CI 28/28. Batch-7 NITs N1-N5 for a follow-up.
 - 08:30: #451 T-0108 review 0 BLOCK 3 FIX (live-verified): -config/-tp profile and ambient nuclei config.yaml defeat safe defaults; adapter accepts rate 0 / intrusive 'false'. Owner: refuse profiles in routine; pin -rld 1s + refuse risky ambient config (fail closed). Sent to builder.
 - 08:15: #401 L-0673 review 0 BLOCK 2 FIX (log_complete faked by rule output's total line; flaky seconds==0 test). Not SEAM. NITs incl. harness ps1 citations of verify.md :72/:114 moved by rewrap. Sent to builder. Minted C-0010 (receipt PASS-row injection, pre-existing).
