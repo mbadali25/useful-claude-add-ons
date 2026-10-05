@@ -73,6 +73,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -128,7 +129,14 @@ def parse(data):
 
 
 def next_step(chan):
-    return f"next: crew_coord.py status --channel {chan.channel} --remote {crew_coord.safe(chan.remote, 80)}"
+    """The one next step, runnable as printed: the remote is a configured
+    remote's name, which git lets hold shell metacharacters (`x;id`), so it is
+    shell-quoted whole; one holding a character `safe` would replace is
+    withheld rather than printed raw."""
+    remote = chan.remote
+    if crew_coord.safe(remote, len(remote)) != remote:
+        return f"next: crew_coord.py status --channel {chan.channel} --remote {crew_coord.UNSAFE}"
+    return f"next: crew_coord.py status --channel {chan.channel} --remote {shlex.quote(remote)}"
 
 
 class RecordChannel(crew_coord.Channel):

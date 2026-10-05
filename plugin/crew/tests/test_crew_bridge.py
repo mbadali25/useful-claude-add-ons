@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -202,6 +203,20 @@ def test_receive_ancestor_tip_exits_0(world, capsys):
     code, lines = receive(work, capsys, bell(tip, kind="question", ref="T-0001"))
     assert code == 0
     assert [line for line in lines if line.startswith("next:")] == [NEXT]
+
+
+@pytest.mark.parametrize("remote", ["x;id", "a$(id)b", "q'x", "`id`&b|c", "r" * 120])
+def test_the_next_step_quotes_the_remote_whole(world, capsys, remote):
+    _, work, _, tip = world
+    url = git(work, "remote", "get-url", "origin")
+    git(work, "remote", "add", remote, url)
+    code, lines = run(work, ["receive", "--channel", CHANNEL, "--remote", remote], stdin=bell(tip).encode(),
+                      capsys=capsys)
+    assert code == 0
+    assert [line for line in lines if line.startswith("next:")] == [
+        f"next: crew_coord.py status --channel {CHANNEL} --remote {shlex.quote(remote)}"]
+    words = shlex.split(lines[-1][len("next: "):])
+    assert words == ["crew_coord.py", "status", "--channel", CHANNEL, "--remote", remote]
 
 
 # --- receive: could not tell --------------------------------------------------------
