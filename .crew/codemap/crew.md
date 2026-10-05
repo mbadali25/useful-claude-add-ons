@@ -1870,7 +1870,7 @@ writes a vault note, a native memory file or `MEMORY.md` (the writer is L-0677, 
 - DERIVED `crew_memory.py:451` `_check_one` - `check` lists every `*.md` (suffix in any case)
   but the exact name `MEMORY.md` (`:442`; on a case-insensitive filesystem `memory.md` is that file); `os.stat` follows links and only a regular file is
   opened, so a dangling link, FIFO, device or directory is `unreadable` unopened.
-- DERIVED `crew_memory.py:1314` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
+- DERIVED `crew_memory.py:1345` `main` - `resolve` and `check`; exit 0 for `resolved`/`full-text`,
   1 for any other state, 2 for usage, a missing `--file`/`--memory-dir` or an unlistable folder.
 - JUDGEMENT: no hook reads it; the `crew-memory` skill is the only caller. A session follows it
   because the skill says to (open question 2 in the ticket: a hook is a follow-up, not built).
@@ -1962,24 +1962,27 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
 Added after this note's anchor; read in full at the L-0678 build head. No new write path:
 `migrate` is a loop over `plan_save` / `apply_save`, `restore` one native-file replace.
 
-- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:1133` `_migrate_row` - one row per file:
-  `resolve_file` first (`resolved` is `skip: already a pointer`, `unreadable` a refuse, any
-  other non-`full-text` state `skip: <state>`), then the `name:` line, `:1128` `portable`
+- DERIVED `plugin/crew/hooks/scripts/crew_memory.py:1134` `_migrate_row` - one row per file:
+  not a regular file is `refuse: not a file`; `resolve_file` first (`resolved` is `skip: already a pointer`, `unreadable` a refuse, any
+  other non-`full-text` state `skip: <state>`), then the `name:` line, `:1129` `portable`
   (`:1123` `_UNPORTABLE`: `<>:"/\|?*`, Cc, a trailing dot or space; plus device names), then
   `plan_save` with the note `<note-dir or memories/<project>>/<title>.md`; a non-`pending`
-  plan is `refuse: <reason>`, `create` is `convert`, `append`/`unchanged` is `append`.
-- DERIVED `crew_memory.py:1159` `plan_migrate` - two pending rows with one note path,
-  case-folded, are both `refuse: duplicate note path`. `:1174` `_migrate_names` lists `*.md`
+  plan is `refuse: <reason>`, `create` is `convert`, `append`/`unchanged` is `append` only when
+  the existing note's `project:` (`:1179` `_owner`) is this run's, else `refuse: note belongs to
+  another project`. `:1170` `_default_project`: `<slug>` for `.../<slug>/memory`, else
+  --root's basename.
+- DERIVED `crew_memory.py:1190` `plan_migrate` - two pending rows with one note path,
+  case-folded, are both `refuse: duplicate note path`. `:1205` `_migrate_names` lists `*.md`
   minus the index (`_listed`, `_is_index`), sorted; an `--only` name not there is exit 2.
-- DERIVED `crew_memory.py:1192` `_migrate_cli` - `writer_vault` first (`nothing to migrate:
-  <reason>`, its exit code); with `--apply` each pending row goes through `:1184`
+- DERIVED `crew_memory.py:1223` `_migrate_cli` - `writer_vault` first (`nothing to migrate:
+  <reason>`, its exit code); with `--apply` each pending row goes through `:1215`
   `_migrate_apply` (`apply_save`) in name order, a failure being `failed` with the
   `kept-full-text` state and the loop going on. Exit 1 while a row is pending (dry run),
   refused or failed.
-- DERIVED `crew_memory.py:1232` `plan_restore` - only a resolving pointer, not a symlink;
+- DERIVED `crew_memory.py:1263` `plan_restore` - only a resolving pointer, not a symlink;
   new bytes = BOM + the pointer file's frontmatter bytes + a blank line + the note's text after
   its frontmatter, LF-only; refused when that text is empty or would classify as anything but
-  `full-text`. `:1260` `apply_restore` takes `save`'s `_take_lock` on the native file,
+  `full-text`. `:1291` `apply_restore` takes `save`'s `_take_lock` on the native file,
   writes a temp beside it, re-compares, `os.replace`, then re-classifies.
 - JUDGEMENT: no state file is the design; a re-run is a no-op because converted rows are
   pointers on the next read. Nothing calls either subcommand but the `crew-memory` skill.

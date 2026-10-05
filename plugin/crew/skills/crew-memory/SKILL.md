@@ -171,7 +171,10 @@ order: `convert` or `append` (a note with this `memory_id` exists) with the note
 would write, `skip: already a pointer`, `skip: <state>` for a pointer that does not
 resolve or is `malformed`, or `refuse: <reason>` for anything `save` would refuse,
 including `title is not a portable file name` (`: ? * < > | " \`, a trailing dot or
-space, a device name such as `CON`) and `duplicate note path` (two files, one note).
+space, a device name such as `CON`), `duplicate note path` (two files, one note),
+`note belongs to another project` (an existing note whose `project:` is not this run's)
+and `not a file`. The project defaults to `<slug>` for a folder
+`~/.claude/projects/<slug>/memory`, else the repository folder's name.
 Show the user that table. Run it again with `--apply` only on their yes: each
 `convert` and `append` row goes through `save` one file at a time; a `failed` row
 prints `save`'s `kept-full-text` reason and the rest go on. Exit 0 only when no row is

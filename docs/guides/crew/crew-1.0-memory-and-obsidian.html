@@ -557,7 +557,7 @@ a row and never edited:</p>
 </tr>
 <tr>
 <td><code>refuse: &lt;reason&gt;</code></td>
-<td>anything <code>save</code> refuses, a title that is not a portable file name (<code>: ? * &lt; &gt; \| " \</code>, a trailing dot or space, a device name such as <code>CON</code>), or two files that would write one note (<code>duplicate note path</code>)</td>
+<td>anything <code>save</code> refuses, a title that is not a portable file name (<code>: ? * &lt; &gt; \| " \</code>, a trailing dot or space, a device name such as <code>CON</code>), two files that would write one note (<code>duplicate note path</code>), a note that belongs to another project (<code>note belongs to another project</code>), or a folder named like a memory (<code>not a file</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -565,7 +565,9 @@ a row and never edited:</p>
 A file whose save fails is shown as <code>failed</code> with <code>save</code>'s <code>kept-full-text</code>
 reason, and the others still go ahead. One <code>--tag</code> set covers the run; use
 <code>--only &lt;file name&gt;</code> to run batches with different tags. <code>--note-dir</code>,
-<code>--type</code> and <code>--project</code> work as they do for <code>save</code>. Nothing is recorded
+<code>--type</code> and <code>--project</code> work as they do for <code>save</code>; without <code>--project</code>, a
+folder <code>~/.claude/projects/&lt;slug&gt;/memory</code> uses <code>&lt;slug&gt;</code> as the project, so
+two projects' memories never land in one note. Nothing is recorded
 between runs, so running it again converts nothing twice.</p>
 <p><code>restore</code> is the way back for one memory:</p>
 <pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_memory.py restore --file &lt;memory file&gt; --apply

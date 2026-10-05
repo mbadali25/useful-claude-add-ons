@@ -424,13 +424,15 @@ a row and never edited:
 | `append` | a note with this `memory_id` already exists; `save` would add to it |
 | `skip: already a pointer` | nothing to do |
 | `skip: <state>` | a pointer that does not resolve, or a `malformed` one |
-| `refuse: <reason>` | anything `save` refuses, a title that is not a portable file name (`: ? * < > \| " \`, a trailing dot or space, a device name such as `CON`), or two files that would write one note (`duplicate note path`) |
+| `refuse: <reason>` | anything `save` refuses, a title that is not a portable file name (`: ? * < > \| " \`, a trailing dot or space, a device name such as `CON`), two files that would write one note (`duplicate note path`), a note that belongs to another project (`note belongs to another project`), or a folder named like a memory (`not a file`) |
 
 With `--apply`, each `convert` and `append` row is saved one file at a time.
 A file whose save fails is shown as `failed` with `save`'s `kept-full-text`
 reason, and the others still go ahead. One `--tag` set covers the run; use
 `--only <file name>` to run batches with different tags. `--note-dir`,
-`--type` and `--project` work as they do for `save`. Nothing is recorded
+`--type` and `--project` work as they do for `save`; without `--project`, a
+folder `~/.claude/projects/<slug>/memory` uses `<slug>` as the project, so
+two projects' memories never land in one note. Nothing is recorded
 between runs, so running it again converts nothing twice.
 
 `restore` is the way back for one memory:

@@ -102,7 +102,7 @@ def test_migrate_preview_shows_append(host, capsys):
     vault = host.work()
     (vault / "memories" / "repo").mkdir(parents=True)
     (vault / "memories" / "repo" / "Mine.md").write_text(
-        '---\nupdated: 2026-01-01\nmemory_id: "mine"\n---\n\nolder\n', encoding="utf-8")
+        '---\nupdated: 2026-01-01\nproject: "repo"\nmemory_id: "mine"\n---\n\nolder\n', encoding="utf-8")
     host.memory(name="mine.md", frontmatter=fm("Mine"))
     code, out = run(host, capsys)
     assert code == 1 and rows(out) == {"mine.md": "append"}
@@ -132,6 +132,7 @@ def test_migrate_continues_past_a_failed_file(host, capsys, monkeypatch):
     host.work()
     three(host)
     two = (host.mem / "two.md").read_bytes()
+    three_before = (host.mem / "three.md").read_bytes()
     real, calls = crew_memory.apply_note, []
 
     def flaky(plan):
@@ -146,6 +147,7 @@ def test_migrate_continues_past_a_failed_file(host, capsys, monkeypatch):
     assert (host.mem / "two.md").read_bytes() != two  # name order: one, three, two
     failed = [n for n, a in rows(out).items() if a == "failed"]
     assert failed == ["three.md"]
+    assert (host.mem / "three.md").read_bytes() == three_before
     assert "kept-full-text: note write failed: disk full" in out
     for name in ("one.md", "two.md"):
         assert crew_memory.resolve_file(str(host.mem / name), str(host.root))["state"] \
@@ -195,6 +197,7 @@ def test_migrate_only_unknown_name_exits_2(host, capsys):
 
 @pytest.mark.parametrize("title", ["a:b", "why?", "star*", "less<than", "pipe|d",
                                    "trailing.", "trailing ", "CON", "com1.notes", 'q"uote',
+                                   "COM0", "lpt0", "COM\u00b9", "LPT\u00b3.x",
                                    "back\\slash"])
 def test_migrate_refuses_unportable_titles(host, capsys, title):
     host.work()
@@ -377,3 +380,130 @@ def test_migrate_from_bash_and_pwsh(tmp_path, monkeypatch, shell):
         assert proc.returncode == 1, proc.stdout + proc.stderr
         outs.append(proc.stdout)
     assert outs[0] == outs[1] and b"convert" in outs[0]
+
+
+# --- review round 1 ---------------------------------------------------------------
+
+def test_default_project_is_the_memory_folders_project(tmp_path, monkeypatch, capsys):
+    """`~/.claude/projects/<slug>/memory`: the project defaults to `<slug>`,
+    not to the basename of --root."""
+    host = Host(tmp_path / "a", monkeypatch)
+    vault = host.work()
+    folder = host.home / "projects" / "-home-me-alpha" / "memory"
+    folder.mkdir(parents=True)
+    host.mem = folder
+    host.memory(name="role.md", frontmatter=fm("Role"))
+    code, out = run(host, capsys, apply=True)
+    assert code == 0, out
+    assert (vault / "memories" / "-home-me-alpha" / "Role.md").exists()
+
+
+def _project_folder(host, slug, body):
+    folder = host.home / "projects" / slug / "memory"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "user_role.md").write_text(fm("User role") + body, encoding="utf-8",
+                                         newline="\n")
+    return folder
+
+
+def _migrate(host, capsys, folder, *extra, apply=True):
+    host.mem = folder
+    return run(host, capsys, *extra, apply=apply)
+
+
+def test_a_second_projects_folder_never_appends_to_the_first(host, capsys):
+    """Must block: two projects, one memory name, one note path (forced by
+    --project or --note-dir). The second is refused, its file untouched."""
+    vault = host.work()
+    first = _project_folder(host, "proj-a", "A's role.\n")
+    second = _project_folder(host, "proj-b", "B's role.\n")
+    assert _migrate(host, capsys, first, "--note-dir", "shared")[0] == 0
+    note = (vault / "shared" / "User role.md").read_bytes()
+    before = (second / "user_role.md").read_bytes()
+    code, out = _migrate(host, capsys, second, "--note-dir", "shared")
+    assert code == 1
+    assert rows(out)["user_role.md"] == \
+        "refuse: note belongs to another project (proj-a/user_role)"
+    assert (second / "user_role.md").read_bytes() == before
+    assert (vault / "shared" / "User role.md").read_bytes() == note
+
+
+def test_the_same_projects_rerun_still_appends(host, capsys):
+    """Must allow: a note this project wrote (crash recovery, or a pointer
+    turned back into full text) is still `append`."""
+    vault = host.work()
+    folder = _project_folder(host, "proj-a", "A's role.\n")
+    assert _migrate(host, capsys, folder)[0] == 0
+    assert crew_memory.main(["restore", "--file", str(folder / "user_role.md"),
+                             "--root", str(host.root), "--apply"]) == 0
+    capsys.readouterr()
+    (folder / "user_role.md").write_text(fm("User role") + "A's role, revised.\n",
+                                         encoding="utf-8", newline="\n")
+    code, out = _migrate(host, capsys, folder, apply=False)
+    assert code == 1 and rows(out)["user_role.md"] == "append"
+    assert _migrate(host, capsys, folder)[0] == 0
+    assert "## Update" in (vault / "memories" / "proj-a" / "User role.md").read_text(
+        encoding="utf-8")
+
+
+def test_a_note_without_a_project_line_is_refused(host, capsys):
+    vault = host.work()
+    (vault / "memories" / "repo").mkdir(parents=True)
+    (vault / "memories" / "repo" / "Mine.md").write_text(
+        '---\nmemory_id: "mine"\n---\n\nolder\n', encoding="utf-8")
+    host.memory(name="mine.md", frontmatter=fm("Mine"))
+    code, out = run(host, capsys)
+    assert code == 1
+    assert rows(out)["mine.md"] == "refuse: note belongs to another project (unknown project/mine)"
+
+
+def test_restore_refuses_a_memory_changed_before_the_replace(host, capsys, monkeypatch):
+    """Must block: a write to the memory between the plan and the replace is
+    kept; restore refuses and writes nothing, and leaves no temp file."""
+    _vault, mem, _original = saved(host, capsys)
+    real = crew_memory._write_temp  # pylint: disable=protected-access
+    edited = FRONTMATTER.encode("utf-8") + b"Written by someone else meanwhile.\n"
+
+    def racing(directory, data, mode=None):
+        temp = real(directory, data, mode)
+        mem.write_bytes(edited)
+        return temp
+
+    monkeypatch.setattr(crew_memory, "_write_temp", racing)
+    code, out = restore(host, mem, capsys)
+    assert code == 1 and "the memory file changed during restore" in out
+    assert mem.read_bytes() == edited
+    assert sorted(p.name for p in mem.parent.iterdir()) == [mem.name]
+
+
+def test_migrate_refuses_a_directory_named_md(host, capsys):
+    host.work()
+    (host.mem / "folder.md").mkdir()
+    host.memory(name="ok.md", frontmatter=fm("Ok"))
+    code, out = run(host, capsys)
+    assert code == 1 and rows(out)["folder.md"] == "refuse: not a file"
+    assert rows(out)["ok.md"] == "convert"
+
+
+def test_migrate_a_file_that_vanishes_is_a_refuse_row(host, capsys, monkeypatch):
+    host.work()
+    host.memory(name="gone.md", frontmatter=fm("Gone"))
+    real = crew_memory._read_bytes  # pylint: disable=protected-access
+
+    def vanish(path):
+        if str(path).endswith("gone.md"):
+            raise FileNotFoundError(2, "No such file or directory")
+        return real(path)
+
+    monkeypatch.setattr(crew_memory, "_read_bytes", vanish)
+    code, out = run(host, capsys)
+    assert code == 1 and rows(out)["gone.md"] == "refuse: unreadable"
+
+
+def test_migrate_project_with_a_slash_exits_2(host, capsys):
+    host.work()
+    host.memory(name="ok.md", frontmatter=fm("Ok"))
+    before = tree(host.base)
+    with pytest.raises(SystemExit) as caught:
+        run(host, capsys, "--project", "a/b", apply=True)
+    assert caught.value.code == 2 and tree(host.base) == before

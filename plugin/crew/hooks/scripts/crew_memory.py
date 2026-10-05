@@ -1121,8 +1121,9 @@ def _save_cli(args, root):
 # A title Windows cannot hold as a file name: a reserved character or control
 # character, a trailing dot or space, or a device name (with any extension).
 _UNPORTABLE = re.compile(r'[<>:"/\\|?*\x00-\x1f]|[. ]$')
-_DEVICES = frozenset(["CON", "PRN", "AUX", "NUL", *(f"{d}{n}" for d in ("COM", "LPT")
-                                                      for n in range(1, 10))])
+_DEVICES = frozenset(["CON", "PRN", "AUX", "NUL", *(d + n for d in ("COM", "LPT")
+                                                      for n in "0123456789\u00b9\u00b2\u00b3")])
+_PROJECT = re.compile(r"project:[ \t]*(.+?)[ \t]*")
 
 
 def portable(title):
@@ -1134,6 +1135,8 @@ def _migrate_row(path, root, opts):
     """`(action, plan or reason)` for one memory file; nothing is written.
     A pointer (or pointer attempt) is a `skip`; a file `save` would refuse is
     a `refuse`; else `convert` or `append` with `save`'s plan."""
+    if not os.path.isfile(path):
+        return "refuse: not a file", "not a regular file"
     row = resolve_file(path, root)
     if row["state"] == "resolved":
         return "skip: already a pointer", "already a pointer"
@@ -1141,19 +1144,47 @@ def _migrate_row(path, root, opts):
         return "refuse: unreadable", row["reason"]
     if row["state"] != "full-text":
         return f"skip: {row['state']}", row["reason"]
-    raw = _read_bytes(path).decode("utf-8")
+    try:
+        raw = _read_bytes(path).decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return "refuse: unreadable", f"cannot read as UTF-8: {exc}"
     title = _field(_split_raw(raw.lstrip("﻿"))[0], _NAME_LINE)
     if not title:
         return "refuse: no name: line", "no name: line in the memory"
     if not portable(title):
         return "refuse: title is not a portable file name", f"title {title!r}"
-    project = opts["project"] or os.path.basename(root)
+    project = opts["project"] or _default_project(os.path.dirname(path), root)
     folder = (opts["note_dir"] or f"memories/{project}").strip("/")
     plan = plan_save(path, root, opts["tags"], note=f"{folder}/{title}.md", kind=opts["type"],
                      project=project)
     if plan["state"] != "pending":
         return f"refuse: {plan['reason']}", plan["reason"]
+    if plan["existing"] is not None:
+        owner = _owner(plan["existing"])
+        if owner[0] != project:
+            why = f"note belongs to another project ({owner[0] or 'unknown project'}/{owner[1]})"
+            return f"refuse: {why}", why
     return ("convert" if plan["action"] == "create" else "append"), plan
+
+
+def _default_project(directory, root):
+    """`<slug>` for Claude Code's `~/.claude/projects/<slug>/memory`, so two
+    projects' folders never share notes; else the basename of --root."""
+    folder = os.path.abspath(directory)
+    if os.path.basename(folder) == "memory":
+        return os.path.basename(os.path.dirname(folder))
+    return os.path.basename(root)
+
+
+def _owner(existing):
+    """`(project, memory_id)` from an existing note's frontmatter (None when
+    absent or unreadable): an `append` only joins a note of this project."""
+    try:
+        text = existing.decode("utf-8").lstrip("\ufeff")
+    except UnicodeDecodeError:
+        return None, None
+    front = _split_raw(text)[0]
+    return _field(front, _PROJECT), _field(front, _MEMORY_ID)
 
 
 def plan_migrate(directory, names, root, opts):
@@ -1342,6 +1373,8 @@ def main(argv=None):
     if args.command in ("save", "migrate"):
         if not args.tag or not all(TAG.fullmatch(tag) for tag in args.tag):
             sub.choices[args.command].error(f"at least one --tag, each matching {TAG.pattern}")
+        if args.command == "migrate" and args.project and "/" in args.project:
+            move.error("--project may not hold '/'")
         return (_save_cli if args.command == "save" else _migrate_cli)(args, root)
     if args.command == "restore":
         return _restore_cli(args, root)
