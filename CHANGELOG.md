@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — gizmoduck 0.5.8: bootstrap works where the GitHub API is blocked (C-0008)
+### Fixed — gizmoduck 0.5.7: bootstrap works where the GitHub API is blocked (C-0008)
 
 - **Summary.** `bootstrap.sh` now installs every gizmoduck scanner and the Nuclei templates on
   networks that refuse `api.github.com`, such as a Claude Code cloud session, and skips tools that are
@@ -44,8 +44,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   "Couldn't create temporary file /tmp/apt.conf.XXXX"; the lock timeout waits out another apt run
   instead of failing, and `clean` frees the downloaded packages on a fixed disk allowance. `/tmp`'s
   permissions are not touched. Empty package lists are refreshed before an install.
-- **Version.** 0.5.7 was set on this branch and never released; this lands as 0.5.8 so the commit
-  that sets the version stays the last change to `plugin/gizmoduck/`.
 
 ### Changed — repository: PRs run only the heavy CI suites their changes reach (C-0001)
 
