@@ -459,9 +459,9 @@ foreach ($p in $vm.environments.PSObject.Properties) {
   # L-0648: the gate reads a `github` entry's sha rule, so a `github` that is
   # not an object or a non-empty list of objects is malformed (as in the .sh).
   $ghProp = $p.Value.PSObject.Properties['github']
-  if ($ghProp -and $null -ne $ghProp.Value) {
+  if ($ghProp) {
     $ghVal = $ghProp.Value
-    $ghOk = ($ghVal -is [System.Management.Automation.PSCustomObject]) -or
+    $ghOk = ($null -ne $ghVal) -and ($ghVal -is [System.Management.Automation.PSCustomObject]) -or
             ($ghVal -is [array] -and $ghVal.Count -gt 0 -and
              @($ghVal | Where-Object { $_ -isnot [System.Management.Automation.PSCustomObject] }).Count -eq 0)
     if (-not $ghOk) {

@@ -245,8 +245,9 @@ def matching(envs, strict):
                        "false", 4)
         # L-0648: the gate reads a `github` entry's sha rule, so a `github`
         # that is not an object or a non-empty list of objects is malformed.
+        has_github = any(fold(k) == fold("github") for k in cfg)
         github = get_ci(cfg, "github", None)
-        if strict and github is not None and not isinstance(github, dict) and not (
+        if strict and has_github and not isinstance(github, dict) and not (
                 isinstance(github, list) and github
                 and all(isinstance(e, dict) for e in github)):
             unreadable(f"environment `{name}` in .crew/verify.json has a `github` "

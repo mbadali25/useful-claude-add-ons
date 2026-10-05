@@ -183,8 +183,8 @@ def test_near_miss_names_a_declared_workflow_but_no_environment(flavour, ghrepo)
 
 
 @pytest.mark.parametrize("flavour", tree.FLAVOURS)
-@pytest.mark.parametrize("github", ['"x"', "3", '[{"workflow": "deploy.yml"}, "s"]', "[]"],
-                         ids=["string", "number", "list-holding-a-string", "empty-list"])
+@pytest.mark.parametrize("github", ['"x"', "3", '[{"workflow": "deploy.yml"}, "s"]', "[]", "null"],
+                         ids=["string", "number", "list-holding-a-string", "empty-list", "null"])
 def test_a_malformed_github_value_refuses_the_map(flavour, github, ghrepo):
     """must-block (exit-4 path): a `github` that is not an object or a list
     of objects makes the map unreadable, for every command."""
@@ -242,3 +242,49 @@ def test_the_rule_applies_only_to_a_github_entry_with_a_sha_input(flavour, comma
     code, err = tree.run_gate(flavour, ghrepo, command)
     assert code == 0, err
     assert ghrepo.in_flight() == (f"{marker} {ghrepo.main_sha}" if marker else None)
+
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_another_dispatchs_sha_input_does_not_stand_in(flavour, ghrepo):
+    """L-0648 r1: the sha input must be on the declared dispatch itself, not
+    on another dispatch in the same command."""
+    sep = " && " if flavour == "sh" else "; "
+    command = _prefix("dev") + sep + f"gh workflow run ci.yml -f sha={ghrepo.main_full}"
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "carries no `-f sha=<sha>`" in err, err
+    assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+@pytest.mark.parametrize("value", [123, "", None], ids=["number", "empty", "null"])
+def test_a_sha_input_that_names_no_input_blocks(flavour, value, ghrepo):
+    """L-0648 r1: a present `shaInput` that cannot name an input is not
+    "no sha rule"."""
+    doc = json.loads(json.dumps(_GH_MAP))
+    doc["environments"]["development"]["github"]["shaInput"] = value
+    (ghrepo.main / ".crew" / "verify.json").write_text(json.dumps(doc, indent=2) + "\n",
+                                                       encoding="utf-8")
+    _git(ghrepo.main, "add", "-A")
+    _git(ghrepo.main, "commit", "-q", "-m", "bad shaInput")
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev"))
+    assert code == 2, err
+    assert "names no input" in err, err
+
+
+def test_the_helper_alone_refuses_a_null_github(tmp_path):
+    """`_promote_github.py` itself reads a `github: null` as malformed (exit
+    4), not as "no github", even where the gates' matcher did not run first."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    (tmp_path / ".crew").mkdir()
+    (tmp_path / ".crew" / "verify.json").write_text(
+        json.dumps({"environments": {"development": {"deploy": [_prefix("dev")],
+                                                     "github": None}}}), encoding="utf-8")
+    helper = tree._SH.parent / "_promote_github.py"  # pylint: disable=protected-access
+    proc = subprocess.run([sys.executable, str(helper), "--shell", "bash", "--full", "a" * 40,
+                           "--envs", "development", "-"], input=_prefix("dev"), text=True,
+                          capture_output=True, cwd=tmp_path, check=False, timeout=60)
+    assert proc.returncode == 4, proc.stdout + proc.stderr
+    assert "`github`" in proc.stderr

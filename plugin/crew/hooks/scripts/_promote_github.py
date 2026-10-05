@@ -56,10 +56,14 @@ class Malformed(Exception):
     """A `github` value the gates refuse to read: exit 4."""
 
 
+_ABSENT = object()
+
+
 def entries(cfg, env):
-    """The environment's `github` entries, [] when it has none."""
-    github = get_ci(cfg, "github", None) if isinstance(cfg, dict) else None
-    if github is None:
+    """The environment's `github` entries, [] when it has no `github` key (a
+    key holding null is malformed, never "none")."""
+    github = get_ci(cfg, "github", _ABSENT) if isinstance(cfg, dict) else _ABSENT
+    if github is _ABSENT:
         return []
     if isinstance(github, dict):
         return [github]
@@ -99,17 +103,39 @@ def chosen(found, command, env):
     return best[0]
 
 
+def _workflow(name):
+    name = name or ""
+    return name[len(".github/workflows/"):] if name.startswith(".github/workflows/") else name
+
+
 def sha_problem(entry, command, shell, full):
-    """Why the command's sha input is not the reviewed HEAD, or None."""
-    name = entry.get("shaInput")
-    if not isinstance(name, str) or not name:
+    """Why the command's sha input is not the reviewed HEAD, or None. Every
+    dispatch of the entry's workflow in the command is checked on its own
+    inputs: another dispatch's sha input never stands in for it."""
+    if "shaInput" not in entry:
         return None
+    name = entry["shaInput"]
+    if not isinstance(name, str) or not name:
+        return (f"the `github` entry's `shaInput` is {json.dumps(name)}, which names no input, "
+                "so the sha rule cannot be applied. Fix the entry (`crew_ghdeploy.py check`)")
     flag = f"`-f {name}=<sha>`"
     kind, why, scopes = crew_dispatch.dispatch_read(command, shell)
     if kind == "unsure":
         return (f"the sha input {flag} is not a plain literal the gate can read ({why}). "
                 "Pass the full sha itself, as `crew_ghdeploy.py prepare` prints it")
-    values = [value for scope in scopes for got, value, _why in scope.get("inputs", [])
+    mine = [s for s in scopes if _workflow(s.get("workflow")) == _workflow(entry.get("workflow"))]
+    if not mine:
+        return (f"the gate cannot read a dispatch of `{entry.get('workflow')}` in the command, "
+                f"so its {flag} cannot be checked")
+    for scope in mine:
+        problem = _scope_problem(scope, name, flag, full)
+        if problem:
+            return problem
+    return None
+
+
+def _scope_problem(scope, name, flag, full):
+    values = [value for got, value, _why in scope.get("inputs", [])
               if isinstance(got, str) and got.lower() == name.lower()]
     if not values:
         return f"the dispatch carries no {flag}, so the sha it deploys is the branch tip, unchecked"
