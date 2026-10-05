@@ -168,11 +168,11 @@ shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
 names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
 `.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
-resolve one). Still
-own-file only: the verify gate, the scope and completion wrappers, and
-`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
-lane's own `emergency.standDown` while the bash verify gate and
-`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
+resolve one). The
+verify gate (both flavours), `review_gate.py`, the gate's fingerprint and the
+scope and completion wrappers' no-python proof read the resolved file too
+(L-0681); in those wrappers `unknown` is never proof that `scope.mode` is off.
+`.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -2658,8 +2658,11 @@ re-ran from that same old commit, forever. That was the actual 7+ minute Stop
 gate defect this section exists to explain the fix for.
 
 **The per-rule record replaces "everything or nothing."**
-`.crew/.verify-gate.record.json` (machine-local, gitignored, never tracked —
-see the `.crew/*` ignore policy in root `CLAUDE.md`) now tracks status per
+`.crew/.verify-gate.record.json` (machine-local, gitignored by the shipped
+`.crew/*` template — see the ignore policy in root `CLAUDE.md`; where a repo
+does not ignore it, it is crew bookkeeping, `crew_ticket.CREW_BOOKKEEPING_PATHS`,
+excluded by name from the review bundle, the completion audit and the gate's
+own changed list, and refused to Write/Edit by the scope guard, T-0068) now tracks status per
 rule, keyed by a content hash of that rule's `paths`/`run` so it survives
 `.crew/verify.json` being reordered:
 

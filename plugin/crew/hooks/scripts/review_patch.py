@@ -65,12 +65,17 @@ a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
 parts. The pathspec is root-anchored, so a look-alike such as
 `docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.
 
-`.crew/metrics.md` is excluded the same way since L-0578, for `.work/`'s
-reason: `review_run.py` appends a row to it after every round, between
-building this bundle and checking its receipt, so in a repository that does
-not gitignore `.crew/` a CLEAN receipt would stop checking the moment it was
-written. Only that one file: the rest of `.crew/` (config, verify map,
-standards) is reviewable.
+crew's own bookkeeping -- `crew_ticket.CREW_BOOKKEEPING_PATHS`, every path a
+crew script writes for itself under `.crew/` (the scope base, the verify
+gate's records, `metrics.md` and `metrics.jsonl`, logs, markers, locks) -- is
+excluded the same way, for `.work/`'s reason (L-0578 for `metrics.md`, T-0068
+for the rest): `review_run.py` appends a metrics row after every round, and
+`/crew:done` runs the gate, both between building this bundle and checking
+its receipt, so in a repository that does not gitignore `.crew/` a CLEAN
+receipt stopped checking the moment it was written (TSS-510's deadlock). The
+pathspecs are `:(exclude,top,glob)`, root-anchored, so `sub/.crew/.scope-base`
+stays in; never passed to `git add` (the note above applies unchanged). What
+crew READS -- config, verify map, standards, code map -- stays reviewable.
 
 MERGED MAIN (T-0100). `--base` is the ticket's recorded start, so after the
 ticket merges its integration branch every file main changed in between used
@@ -116,6 +121,7 @@ import sys
 import tempfile
 
 import crew_common
+import crew_ticket
 import merged_main
 import webtest_guard
 
@@ -129,11 +135,11 @@ EXIT_NOTHING_TO_REVIEW = 2
 # and small enough that a reviewer acknowledging each part is meaningful.
 DEFAULT_MAX_PART_BYTES = 200 * 1024
 
-# Pathspecs excluding crew's scratch space and the generated graph from every
-# diff and listing. Never passed to `git add`: there it fails outright when
-# `.work` is gitignored.
-EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")
-_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", ":(exclude).crew/metrics.md"]
+# Pathspecs excluding crew's scratch space, the generated graph and crew's own
+# bookkeeping from every diff and listing. Never passed to `git add`: there it
+# fails outright when `.work` is gitignored.
+EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS
+_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + crew_ticket.bookkeeping_excludes()
 
 # Flags every diff here runs with, so a user's own git config cannot change
 # the bytes: no colour codes, no external diff driver, no textconv filter,

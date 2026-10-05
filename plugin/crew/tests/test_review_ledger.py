@@ -533,3 +533,63 @@ def test_a_well_formed_successors_path_still_reads(repo, extra, left):
     got = rl.status(str(repo), "T1")
 
     assert (got["state"], got["rounds_left"]) == ("REVIEWED", left)
+
+
+# ---- T-0068: bookkeeping written after acceptance keeps the receipt ----------
+
+def _accept_clean(repo):
+    """A CLEAN round over the current tree: the receipt `--check-receipt` reads."""
+    import review_patch  # pylint: disable=import-outside-toplevel
+    base = git(repo, "rev-parse", "HEAD")
+    manifest, _, _ = review_patch.compute(str(repo), base)
+    ok, number, _ = rl.reserve(str(repo), "T1", "codex")
+    assert ok
+    rl.record(str(repo), "T1", number, {
+        "verdict": "CLEAN", "counts": {}, "bundle_sha256": manifest["bundle_sha256"],
+        "base": base, "head": manifest["head"], "provider": "codex", "model": None,
+        "model_family": "gpt"})
+
+
+def _tss_shaped(repo):
+    """A ticket's real change, uncommitted, in a repo whose `.gitignore` does
+    not ignore `.crew/` -- TheSelectSource's shape, where TSS-510 deadlocked."""
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / "feature.txt").write_text("feature v1\n", encoding="utf-8")
+    return repo
+
+
+def test_bookkeeping_written_after_acceptance_keeps_the_receipt(repo):
+    """The TSS-510 repro (bundle 1028da4e -> edee5c83): accept, then run the
+    gate (its two records), append the metrics rows and rewrite the scope
+    base. The receipt still checks."""
+    _tss_shaped(repo)
+    _accept_clean(repo)
+    crew = repo / ".crew"
+    (crew / ".verify-gate.record.json").write_text('{"rules": []}\n', encoding="utf-8")
+    (crew / ".verify-gate.timings.json").write_text("{}\n", encoding="utf-8")
+    with open(crew / "metrics.md", "a", encoding="utf-8") as fh:
+        fh.write("| 2026-10-04 | T1 | codex (r1) | 0 | 0 |\n")
+    with open(crew / "metrics.jsonl", "a", encoding="utf-8") as fh:
+        fh.write('{"ticket": "T1"}\n')
+    (crew / ".scope-base").write_text('{"T1": "deadbeef"}\n', encoding="utf-8")
+    crew_fixtures.write_bookkeeping(repo)
+
+    result = _cli(repo, "--ticket", "T1", "--check-receipt")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("rel", ["feature.txt", "new.txt", ".crew/verify.json",
+                                 "sub/.crew/.scope-base"])
+def test_a_source_edit_after_acceptance_still_stales_the_receipt(repo, rel):
+    """The neighbour: anything that is not bookkeeping -- the ticket's file, a
+    new file, crew's verify map, a nested look-alike -- still stales it."""
+    _tss_shaped(repo)
+    _accept_clean(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("edited after acceptance\n", encoding="utf-8")
+
+    result = _cli(repo, "--ticket", "T1", "--check-receipt")
+
+    assert result.returncode == 1 and "stale" in result.stdout, result.stdout + result.stderr

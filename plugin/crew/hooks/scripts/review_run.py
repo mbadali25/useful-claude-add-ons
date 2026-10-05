@@ -58,7 +58,7 @@ PATH is not being able to review: a logged-out or rate-limited Codex resolves
 on PATH and fails at the first call (T-0088).
 
 STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
-(question 3 below), for every provider
+and `prereview_gate` (questions 1-4 below), for every provider
 (`claude --reserve-only` included): a ticket with an approval receipt must
 have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
 manifest's `bundle_sha256` and the effective standards digest
@@ -138,8 +138,9 @@ timeout (a retry could double a --timeout wait), a gate, receipt or bundle that
 changed, and the second tool failure. The exit code is the last round's. The
 claude provider records a round in two calls, so it never retries here.
 
-BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
-then `prereview_gate`, then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
+asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
+`prereview_gate`, then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -155,7 +156,16 @@ then `prereview_gate`, then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
+  3. Once the clone's merge train is armed (`train_gate`, L-0526;
+     `crew_train.py arm`): does this ticket hold the train? `crew_train.
+     acquire` is asked; holding goes on. Waiting behind an overlapping
+     ticket, `merge <base> first`, a train that could not be read, or any
+     exception in the step is exit 10 with the reason on stderr and no round
+     spent -- never a reservation on a tree another lane is landing over.
+     An unarmed clone (state.json proven absent) is not asked and prints
+     nothing. The train is taken BEFORE the pre-review checks, so they lint
+     the tree that has the base merged in.
+  4. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
      its own base did not have (`review_checks.py`, configured under
      `preReview` in `.crew/verify.json`)? A NEW finding is exit 9, no round
      spent, and `--allow-unverified` does not override it. A check that could
@@ -164,13 +174,19 @@ then `prereview_gate`, then `standards_gate`):
      exit 9 too, unless `--allow-unverified`, which review.json records as
      `prereview.overridden`. Only an active incident stands both down, and
      logs a `prereview-checks` skip. No `preReview` key proceeds and says so.
-  4. Only then (`standards_gate`, T-0085): is the standards self-check
+  5. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
-     asks for a self-check, and a refusal at (2) or (3) comes first.
+     asks for a self-check, and a refusal at (2), (3) or (4) comes first.
 
-Questions 3 and 4 are not asked when the budget is already spent: the
-reservation refuses that (exit 4) whatever they would say.
+Questions 3, 4 and 5 are not asked when the budget is already spent: the
+reservation refuses that (exit 4) whatever they would say, and a ticket that
+cannot gate never takes the train (it would hold it, and every overlapping
+lane would wait on exit 10 behind it, for good). A holder refused after taking
+the train (exit 9 from 4, exit 2 from 5) keeps holding it: the next review
+re-confirms the hold, or `crew_train.py release --ticket <id>` frees it.
+The Claude fallback's second call (`--round N --output`) records the round
+the first call reserved and does not ask again; `--probe` never reaches the train.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
@@ -182,11 +198,16 @@ Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN, or no round left per the status, before a Kimi probe); 8 the
 Kimi probe changed the working tree (stop and report the named paths; do not
 walk to the next provider); 9 not run, verify gate not green or a pre-review check new or
-could not check (no round spent); 2 usage or setup error, or the standards
+could not check (no round spent); 10 not run, the merge train is armed and
+this ticket does not hold it (waiting, `merge <base> first`, or the train
+could not be read; no round spent); 2 usage or setup error, or the standards
 self-check missing or stale, or a gate that could not run or a ledger that
-moved since the gate decision (L-0518) -- not run, no round spent. Exit 9 is decided
-before exit 2 (self-check) is asked for. 5, 6 and 7 are `--probe`'s alone
-(L-0528): no two EXIT_* constants share a value.
+moved since the gate decision (L-0518) -- not run, no round spent. The verify
+gate's exit 9 is decided before exit 10, exit 10 before the pre-review checks'
+exit 9, and all of them before exit 2 (self-check) is asked for. 5, 6 and 7
+are `--probe`'s alone (L-0528): no two EXIT_* constants share a value, so the
+train's exit is 10, not the 6 L-0526 first gave it (it reserves nothing and
+`--probe` never reaches the train).
 """
 import argparse
 import datetime
@@ -205,6 +226,7 @@ import crew_freshness
 import crew_incident
 import crew_standards
 import crew_state
+import crew_train
 import kimi_probe
 import review_checks
 import review_gate
@@ -218,6 +240,8 @@ import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 EXIT_UNVERIFIED = 9
+# The merge train is armed and this ticket does not hold it (L-0526).
+EXIT_TRAIN = 10
 # The Kimi probe changed the working tree (round 4 of T-0028). No round was
 # reserved, but the tree is no longer the one the bundle was built from, so
 # /crew:review stops and reports the named paths -- it must never walk on to
@@ -899,16 +923,27 @@ def _launch(job, cmd, root, timeout, env=None, started=None):  # pylint: disable
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        notes, tree_ended = [], False
         if job is not None:
             # By handle: safe whether or not the leader has already exited.
-            job.terminate()
+            try:
+                job.terminate()
+                tree_ended = True
+            except OSError as exc:
+                notes.append(f"job termination failed ({exc})")
         escaped = False
         if proc.poll() is None:
-            killer = review_checks.taskkill() if os.name == "nt" else None
-            if os.name == "nt" and killer:
-                # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
-                subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True, timeout=30, check=False)
+            if review_checks._WINDOWS:  # pylint: disable=protected-access
+                # Never os.killpg here: Windows has none (L-0605, review round
+                # 10 FIX :400). Only a job's terminate() establishes that the
+                # tree ended; taskkill /T walks parent pids, so even its exit 0
+                # cannot reach a child whose parent already exited.
+                if not tree_ended:
+                    _windows_taskkill(proc, notes)
+                try:
+                    proc.kill()  # TerminateProcess by the handle Popen holds
+                except OSError:
+                    pass  # already exited
             else:
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
@@ -920,6 +955,8 @@ def _launch(job, cmd, root, timeout, env=None, started=None):  # pylint: disable
             # is safe here. Without a job, whatever kept the pipe open is on
             # its own; with one, job.terminate() above already ended it.
             escaped = job is None
+        if review_checks._WINDOWS:  # pylint: disable=protected-access
+            escaped = escaped or not tree_ended
         try:
             stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -929,14 +966,34 @@ def _launch(job, cmd, root, timeout, env=None, started=None):  # pylint: disable
         if job is not None and started is not None:
             started.append(_end_job(job))  # a caller watching survivors (Kimi)
         if escaped:
+            why = (f" ({'; '.join(notes)}: only the reviewer process itself is known to have "
+                   "ended)") if notes else ""
             stderr = (stderr or "") + (
                 "\nreview-run: a descendant process may have escaped the "
                 f"{timeout}s timeout and is still holding the output pipe "
-                "open; proceeding with whatever output had already arrived\n")
+                f"open{why}; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
     if job is not None and started is not None:
         started.append(_end_job(job))
     return stdout, stderr, proc.returncode, False
+
+
+def _windows_taskkill(proc, notes):
+    """`taskkill /T /F` the leader's tree, adding to `notes` why the tree is
+    still not known to have ended. Never raises (L-0605)."""
+    killer = review_checks.taskkill()
+    if not killer:
+        notes.append("no taskkill.exe")
+        return
+    # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
+    try:
+        done = subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
+                              capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        notes.append(f"taskkill failed ({exc})")
+        return
+    notes.append("no job object: taskkill /T cannot reach a child whose parent already exited"
+                 if done.returncode == 0 else f"taskkill exited {done.returncode}")
 
 
 def _end_job(job):
@@ -1041,7 +1098,7 @@ def bundle_problems(manifest):
     for row in rows:
         try:
             data = review_checks.read_regular(row["path"], _part_base(row["path"]))
-        except (OSError, KeyError, TypeError) as exc:
+        except (OSError, KeyError, TypeError, ValueError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
         whole.update(data)
@@ -1107,6 +1164,44 @@ def webtest_check(root, ticket, manifest):
     return rows, record, reasons
 
 
+def _manifest_problem(manifest):
+    """The first field `finish` and its callees read that is malformed, or None."""
+    if not isinstance(manifest, dict):
+        return "not a JSON object"
+    parts = manifest.get("parts")
+    if parts is not None:
+        if not isinstance(parts, list):
+            return "parts is not a list"
+        for part in parts:
+            if not isinstance(part, dict):
+                return "a part is not an object"
+            path, name = part.get("path"), part.get("name")
+            if not ((isinstance(path, str) and path) or (not path and isinstance(name, str)
+                                                         and name)):
+                return "a part has no non-empty path or name"
+            if any(isinstance(v, str) and "\0" in v for v in (path, name)):
+                return "a part's path or name holds a NUL"
+    for key in ("bundle_sha256", "head", "base"):
+        if manifest.get(key) is not None and not isinstance(manifest[key], str):
+            return f"{key} is not a string"
+    return None
+
+
+def _finish_manifest(args):
+    """(manifest, reasons). After a reservation the manifest may have been
+    swapped: unreadable or malformed, it is `{}` and a tree reason, so the
+    round is INCOMPLETE and review.json is still written (L-0605, the
+    neighbour of review round 10 FIX :955)."""
+    try:
+        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    except (OSError, ValueError) as exc:
+        return {}, [f"the manifest {args.manifest} could not be read ({exc})"]
+    problem = _manifest_problem(manifest)
+    if problem:
+        return {}, [f"the manifest {args.manifest} is malformed ({problem})"]
+    return manifest, []
+
+
 def _webtest_open(rows, webtest_record):
     """The ledger's `webtest_open`: open rows counted, WEBTEST_NA when the
     check did not apply (no record), None when it applied and could not be
@@ -1133,7 +1228,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
     failure); `tree_reasons` are what the working tree did (a Kimi write, or a
     tree or survivor that cannot be checked), classed `tree` like a bundle
     problem, so never refunded (group review r4 of #540)."""
-    manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    manifest, manifest_reasons = _finish_manifest(args)
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
     # its name, which review_verdict still matches exactly.
@@ -1143,6 +1238,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     stream_reasons = list(extra_reasons)
     extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)
+    extra_reasons += manifest_reasons
     extra_reasons += webtest_reasons
     # The outside reasons go INTO the parse, so a stray line is never
     # recovered on a round they make INCOMPLETE (L-0576).
@@ -1383,9 +1479,40 @@ def _fmt_elapsed(seconds):
 
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
-    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above. For
-    Kimi the probe has already run before these questions, as Codex's
-    `--probe` runs before its round (T-0028, owner 2026-09-30)."""
+    having reserved nothing. For Kimi the probe has already run before
+    these questions, as Codex's `--probe` runs before its round (T-0028,
+    owner 2026-09-30). See BEFORE ANY ROUND IS RESERVED above:
+    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`) unless
+    the budget is already spent (`_budget_spent`): then `reserve` refuses it
+    (exit 4) and the train is never taken, so a ticket that cannot gate can
+    never hold the train other lanes wait behind.
+
+    The budget answer is kept on `args.budget_spent` for `run`, which must
+    reserve on the SAME decision (H1 group review r3): a round refunded
+    between two reads would otherwise skip the train here yet reserve gated
+    there. A skipped train always reserves ungated, so `reserve` refuses a
+    ledger that is no longer spent under its lock (L-0518's GATE_CHANGED)."""
+    short = _receipt_and_gate(args)
+    if short is not None:
+        return short
+    args.budget_spent = _budget_spent(args)
+    if args.budget_spent:
+        return None
+    return train_gate(args)
+
+
+def _budget_spent(args):
+    """True when the ledger already reads NEEDS_REPLAN or no rounds left, or
+    cannot be read at all (review of ee01a3ca: `reserve` refuses an unreadable
+    ledger with exit 4 too, so taking the train first would hold it for a
+    ticket that cannot run a round)."""
+    ledger = review_ledger.status(args.root, args.ticket)
+    return (ledger.get("state") in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN)
+            or ledger.get("rounds_left") == 0)
+
+
+def _receipt_and_gate(args):
+    """Questions 1 and 2: None to go on, or the exit code to stop with."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     clean = ok and (data.get("receipt") or {}).get("kind") == "clean"
@@ -1420,6 +1547,39 @@ def preflight(args):
             "--allow-unverified reviews it anyway and records that it did.\n")
         return EXIT_UNVERIFIED
     _err(f"review-run: gate {state}: {reason}\n")
+    return None
+
+
+def train_gate(args):
+    """None to go on; EXIT_TRAIN to refuse with nothing spent. See question 3
+    above. An unarmed clone returns None and prints nothing; anything this
+    step cannot vouch for -- including an exception -- refuses."""
+    try:
+        # Review of 84c841e6: a state.json that is not a regular file (a FIFO
+        # would block crew_train's plain open) is could-not-tell.
+        odd = review_checks.not_a_regular_file(
+            os.path.join(crew_train.train_dir(args.root), "state.json"))
+        if odd:
+            _err(f"review-run: train: could not tell ({odd}); no round reserved\n")
+            return EXIT_TRAIN
+        _state, where, why = crew_train.load(args.root)
+        if where == "absent":
+            return None
+        if where != "ok":
+            _err(f"review-run: train: could not tell ({why}); no round reserved\n")
+            return EXIT_TRAIN
+        code, lines = crew_train.acquire(args.root, args.ticket)
+    except Exception as exc:  # noqa: BLE001 - boundary  pylint: disable=broad-exception-caught
+        # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
+        _err(f"review-run: train: could not tell ({type(exc).__name__}: {exc}); "
+             "no round reserved\n")
+        return EXIT_TRAIN
+    for line in lines:
+        _err(f"review-run: train: {line}\n")
+    if code != crew_train.EXIT_OK:
+        _err("review-run: train: no round reserved; the gate round runs once this ticket "
+             "holds the train (crew_train.py status)\n")
+        return EXIT_TRAIN
     return None
 
 
@@ -1644,10 +1804,13 @@ def run(args):
     # A spent budget is a precondition already known to fail (GEN-03): the
     # self-check cannot change it, so the budget refusal below answers first
     # rather than sending the author to answer and restamp for nothing.
-    # `reserve` re-reads the ledger under its lock and is what refuses.
-    ledger = review_ledger.status(args.root, args.ticket)
-    gated = not (ledger.get("state") == review_ledger.NEEDS_REPLAN
-                 or ledger.get("rounds_left") == 0)
+    # `reserve` re-reads the ledger under its lock and is what refuses. One
+    # predicate with the train's (review of 6ec829c9): an unreadable ledger
+    # is refused by `reserve` too, so no later check answers first. The
+    # decision is preflight's own (`args.budget_spent`), never a second read:
+    # a skipped train must reserve ungated.
+    spent = getattr(args, "budget_spent", None)
+    gated = not (_budget_spent(args) if spent is None else spent)
     if gated:
         refused = prereview_gate(args)
         if refused is None:
@@ -1685,8 +1848,12 @@ def run(args):
             _out(f"review: retry: not retried - {why}")
             _out(RETRY_OPTIONS)
             return status
-        ok, retry_number, message = review_ledger.reserve(args.root, args.ticket,
-                                                          args.provider, args.model)
+        # On the retry preflight's own budget decision, as the first
+        # reservation (H1 group review r4): a train that read skipped is never
+        # followed by a gated reservation.
+        ok, retry_number, message = review_ledger.reserve(
+            args.root, args.ticket, args.provider, args.model,
+            gated=not getattr(args, "budget_spent", False))
         _err(f"review-run: {message}\n")
         if not ok:
             _out("review: retry: not retried - the ledger refused the retry's reservation")
@@ -1908,9 +2075,17 @@ def main(argv):
             if args.round is None or args.output is None or args.exit_code is None:
                 parser.error("the claude provider takes --reserve-only, or --round N "
                              "--output FILE --exit-code N after the subagent ran")
-            output = (_read(args.output, _trusted(args.output, args.scratch))
-                      if os.path.exists(args.output) else "")
-            return finish(args, args.round, output, args.exit_code, False)
+            output, reasons = "", []
+            if os.path.exists(args.output):
+                # After the reservation: an output read_regular refuses is an
+                # INCOMPLETE round, never an escaped exception (L-0605,
+                # review round 10 FIX :955).
+                try:
+                    output = _read(args.output, _trusted(args.output, args.scratch))
+                except OSError as exc:
+                    reasons.append(f"the reviewer's output {args.output} could not be read "
+                                   f"({exc})")
+            return finish(args, args.round, output, args.exit_code, False, reasons)
         if args.reserve_only or args.round is not None:
             parser.error("--reserve-only and --round are for the claude provider only")
         return run(args)

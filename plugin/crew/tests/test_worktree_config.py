@@ -201,7 +201,6 @@ ALLOWED = {
     "crew_platform.py": (1, "the writer: CONFIG_PATH, which never follows the main checkout"),
     "crew_autoclear_setup.py": (2, "the writer: converts the worktree's own two files"),
     "crew_migrate.py": (7, "the writer and its labels, plus the PM journal archive join"),
-    "verify_fingerprint.py": (1, "a fingerprint input list, not a read of the config"),
     "webtest_rules.py": (1, "a secret-file glob, not a read of the config"),
     "crew_route.py": (1, "a message label naming the repo layer"),
     "role_write_guard.py": (1, "a message label naming the corrupt layer"),
@@ -217,10 +216,9 @@ ALLOWED = {
     # - the delete path's backup file name `.crew/<BACKUP_PREFIX><stamp>`, own path;
     # - the scratch repo's config.json written to preview the post-heal rows.
     "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
-    # review_gate.py reads the stand-down flag exactly where verify-gate.sh does,
-    # the worktree's own file, until T-0096 routes the shell gate; pinned by
-    # test_review_gate.py's lane test.
-    "review_gate.py": (1, "mirrors verify-gate.sh's own-file stand-down read (T-0096)"),
+    # T-0068: CREW_CONTENT_PATHS names the two config files as content that is
+    # never crew bookkeeping (always reviewed and judged); a list entry, not a read.
+    "crew_ticket.py": (2, "CREW_CONTENT_PATHS lists the config files, not a config read"),
     "review_run.py": (2, "CREW_CONFIG_PATHS: the fingerprint's two config path constants, "
                          "never a config read"),
 }

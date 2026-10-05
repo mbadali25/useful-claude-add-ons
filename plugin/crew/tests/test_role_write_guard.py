@@ -2209,6 +2209,7 @@ def test_block_mode_deny_role_is_refused_powershell(tmp_path):
 # test below became a two-way one, plus new cases specific to this file.
 
 _VERIFY_GATE_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
+_CLOUD_GUARD_PS1 = os.path.join(_ROOT, "hooks", "scripts", "cloud-guard.ps1")
 
 
 def _stub(path, reports=None):
@@ -2412,9 +2413,11 @@ def test_role_write_guard_resolver_is_the_one_shared_probe():
     differed from verify-gate.ps1's. crew 1.0 replaced every copy with one
     probe (execute every PATH match, bounded, WindowsApps tried rather than
     skipped); tests/test_ps1_python_probe.py asserts all of them agree and
-    drives the behaviour. This keeps the two files this section names in
-    step with that."""
-    assert _resolver_code_lines(_PS1) == _resolver_code_lines(_VERIFY_GATE_PS1)
+    drives the behaviour. L-0690 split it into two groups until its follow-up
+    rejoins them: verify-gate.ps1 is one of the four harness carriers (the
+    probe that reports a timeout and a trail), so role-write-guard.ps1 is held
+    to the other group's cloud-guard.ps1 here."""
+    assert _resolver_code_lines(_PS1) == _resolver_code_lines(_CLOUD_GUARD_PS1)
 
 
 # --- BLOCK 1: a launch failure must not silently allow --------------------
