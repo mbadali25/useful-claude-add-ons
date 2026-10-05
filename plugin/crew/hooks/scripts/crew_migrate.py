@@ -93,6 +93,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -271,13 +272,15 @@ def _json_bytes(obj):
     return (json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, mode=None):
     """Write `data` to `path` via a sibling temp file and `os.replace`.
 
     The payload is fully built before anything is opened, and the target is
     only ever replaced whole -- never truncated in place (CLAUDE.md, the
     `open(p, "w")` landmine). The temp file is created exclusively under a
     unique name, so no file already beside the target is truncated or removed.
+    `mode`, when given, is set on the temp file before it replaces the target
+    (mkstemp's own is 0600).
     """
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
@@ -288,6 +291,8 @@ def atomic_write(path, data):
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         _remove(tmp)
@@ -769,9 +774,13 @@ def apply_plan(plan):
         for item in plan["writes"]:
             os.makedirs(os.path.dirname(contained(root, item["path"])), exist_ok=True)
             path = contained(root, item["path"])
+            # A replaced config.json keeps its own permission bits (a 0600
+            # file stays 0600); a created file is 0666 less the umask.
+            mode = _mode_of(path) if item.get("replaces") else None
             try:
                 fd = os.open(path + TMP_SUFFIX,
-                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
+                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                             0o666)
             except FileExistsError as exc:
                 raise MigrateError(f"{item['path']}{TMP_SUFFIX} appeared since the plan was "
                                    "built; not overwritten, and this apply is undone") from exc
@@ -780,6 +789,8 @@ def apply_plan(plan):
                 fh.write(item["data"])
                 fh.flush()
                 os.fsync(fh.fileno())
+            if mode is not None:
+                os.chmod(path + TMP_SUFFIX, mode)
         manifest["state"] = "committing"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         for item, path in staged:
@@ -817,7 +828,7 @@ def _undo_landed(landed):
         if current is None or _sha(current) != _sha(item["data"]):
             left.append(item["path"])
         elif item.get("replaces"):
-            atomic_write(path, item["original"])
+            atomic_write(path, item["original"], _mode_of(path))
         else:
             _remove(path)
     return left
@@ -838,6 +849,14 @@ def _check_pre_state(root, item):
     if now != item.get("pre_sha256"):
         raise MigrateError(f"{item['path']} changed since the plan was built; not "
                            "overwritten, and this apply is undone")
+
+
+def _mode_of(path):
+    """The permission bits of `path`, or None when it cannot be read."""
+    try:
+        return stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        return None
 
 
 def _remove(path):
@@ -933,7 +952,7 @@ def rollback(root, backup):
             os.remove(path + TMP_SUFFIX)
         if target.get("existed"):
             if _sha(_read_bytes(path)) == target["sha256"]:
-                atomic_write(path, originals[target["path"]])
+                atomic_write(path, originals[target["path"]], _mode_of(path))
                 removed.append(("restored", target["path"]))
         elif os.path.exists(path):
             os.remove(path)

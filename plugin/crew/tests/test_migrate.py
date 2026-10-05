@@ -777,6 +777,43 @@ def test_crash_mid_apply_leaves_a_file_edited_since_it_landed(v1_repo, monkeypat
         True, b"edited by someone else\n", True, [])
 
 
+def _mode(repo, rel):
+    return os.stat(os.path.join(repo, *rel.split("/"))).st_mode & 0o777
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+@pytest.mark.parametrize("undo", ["applied", "--rollback", "in-process"])
+def test_a_private_config_json_keeps_its_mode(v1_repo, monkeypatch, capsys, undo):
+    """Group review r3 (g1-ports): the upgraded config.json, and the original
+    the undo writes back, keep their bits (0640: neither the umask default nor
+    mkstemp's 0600); created files are never executable."""
+    os.chmod(os.path.join(v1_repo, ".crew", "config.json"), 0o640)
+    plan = crew_migrate.build_plan(v1_repo)
+    created = [w["path"] for w in plan["writes"] if not w.get("replaces")]
+    if undo == "in-process":
+        real = os.replace
+        backups = os.path.join(v1_repo, ".crew", "backups") + os.sep
+        calls = {"target": 0}
+
+        def flaky(src, dst):
+            if not dst.startswith(backups) and src.endswith(crew_migrate.TMP_SUFFIX):
+                calls["target"] += 1
+                if calls["target"] == len(plan["writes"]):
+                    raise OSError("injected crash")
+            return real(src, dst)
+        monkeypatch.setattr(crew_migrate.os, "replace", flaky)
+        with pytest.raises(OSError, match="injected crash"):
+            crew_migrate.apply_plan(plan)
+        modes = []
+    else:
+        backup = _applied_backup(v1_repo, capsys)
+        modes = sorted({_mode(v1_repo, rel) & 0o111 for rel in created})
+        if undo == "--rollback":
+            assert crew_migrate.main(["--root", v1_repo, "--rollback", backup]) == 0
+
+    assert (_mode(v1_repo, ".crew/config.json"), modes) == (0o640, [] if undo == "in-process" else [0])
+
+
 def test_pre_0_20_rollback_restores_config_json_byte_identical(v1_repo, capsys):
     before = _bytes_only(_snapshot(v1_repo))
     backup = _applied_backup(v1_repo, capsys)

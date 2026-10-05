@@ -20,7 +20,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   config is never rewritten.
 - **`config.json` is the one file migrate overwrites, and rollback restores it.** The original is
   copied into the backup first; the manifest marks it `existed` with its `originalSha256`. The
-  in-process undo and `--rollback` write the original bytes back - never remove it - and rollback
+  in-process undo and `--rollback` write the original bytes back - never remove it - with its own
+  permission bits, as the upgraded file has them too (a 0600 config stays 0600), and rollback
   refuses when the file was edited since apply (the in-process undo leaves a landed file edited in
   between as it is and names it on stderr and in the manifest note), when the backed-up original
   does not match the manifest, or when the manifest's config entry lacks `existed`/`originalSha256`.
