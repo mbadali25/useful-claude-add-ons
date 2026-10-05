@@ -1,6 +1,7 @@
 """The ticket-contract block of the review prompt: every piece is either
 present or stated as MISSING, never silently omitted."""
 import json
+import os
 import pathlib
 import re
 
@@ -641,6 +642,24 @@ def test_prompt_marks_an_unreadable_merge_log(repo):
 
     assert CATCH_UP_HEAD in text
     assert f"UNREADABLE: {path}:1 does not parse" in text
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a POSIX FIFO")
+def test_a_merge_log_that_is_a_fifo_is_unreadable_and_never_blocks(repo):
+    """Review of 84c841e6: a FIFO with no writer would block a plain read
+    forever; the brief says UNREADABLE instead."""
+    import threading  # pylint: disable=import-outside-toplevel
+    path = pathlib.Path(crew_train.merge_log_path(str(repo), "T9"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(path)
+    out = []
+    worker = threading.Thread(target=lambda: out.append(rp.build(str(repo), "T9", MANIFEST)),
+                              daemon=True)
+    worker.start()
+    worker.join(60)
+
+    assert out, "the brief blocked on the FIFO merge log"
+    assert CATCH_UP_HEAD in out[0] and "is not a regular file" in out[0]
 
 
 def test_a_merge_log_that_raises_is_unknown_never_silent(repo, monkeypatch):

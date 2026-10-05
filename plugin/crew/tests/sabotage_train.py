@@ -115,6 +115,11 @@ TRAIN_MUTATIONS = (
      "    if review_ledger.status(args.root, args.ticket).get(\"state\") != "
      "review_ledger.NEEDS_REPLAN:\n",
      _R + "test_an_unreadable_ledger_is_answered_before_the_later_checks"),
+    ("R9 a FIFO train state is opened and blocks", RUN,
+     "        if odd:\n            _err(f\"review-run: train: could not tell ({odd}); "
+     "no round reserved\\n\")\n",
+     "        if False:\n            pass\n",
+     _R + "test_a_train_state_that_is_a_fifo_refuses_and_never_blocks"),
     ("R5 the train is taken after the pre-review checks", RUN,
      "    return train_gate(args)\n",
      "    return prereview_gate(args) or train_gate(args)\n",
@@ -145,6 +150,10 @@ TRAIN_MUTATIONS = (
      '        replayed = row.get("rerere_replayed") if isinstance(row, dict) else None\n',
      '        replayed = row.get("rerere_replayed") or []\n',
      _P + "test_an_unknown_replayed_list_is_unreadable_never_none"),
+    ("P7 a FIFO merge log is read and blocks the brief", PROMPT,
+     "        if odd:\n            raise OSError(odd)\n",
+     "        if False:\n            raise OSError(odd)\n",
+     _P + "test_a_merge_log_that_is_a_fifo_is_unreadable_and_never_blocks"),
     ("P5 a replayed path reaches the brief unescaped", PROMPT,
      "        out += [f\"  {review_checks.one_line(path)} ({base})",
      "        out += [f\"  {path} ({base})",

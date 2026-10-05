@@ -405,6 +405,11 @@ def _catch_up_block(root, ticket):
     """Rerere-replayed files from the ticket's catch-up merges, or None when
     there were none. Could not tell is said, never dropped."""
     try:
+        # Review of 84c841e6: a merge log that is not a regular file (a FIFO
+        # would block the read) is could-not-tell, never read.
+        odd = review_checks.not_a_regular_file(crew_train.merge_log_path(root, ticket))
+        if odd:
+            raise OSError(odd)
         rows, where, why = crew_train.read_merge_log(root, ticket)
     except Exception as exc:  # noqa: BLE001 - boundary  pylint: disable=broad-exception-caught
         rows, where, why = [], "could not tell", f"{type(exc).__name__}: {exc}"

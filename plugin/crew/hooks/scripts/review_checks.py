@@ -202,6 +202,21 @@ def _not_plain(info):
         getattr(info, "st_file_attributes", 0) & _REPARSE_POINT)
 
 
+def not_a_regular_file(path):
+    """Why `path` must not be opened for an automatic read, or None when it is
+    missing or a regular file (lstat, so a link is refused too). A FIFO with no
+    writer would block a plain open() forever (review of 84c841e6, L-0526)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"{path} cannot be inspected: {exc}"
+    if _not_plain(info) or not stat.S_ISREG(info.st_mode):
+        return f"{path} is not a regular file"
+    return None
+
+
 def read_regular(path, base):
     """The bytes of `path`, which must be a regular file inside `base`, the
     directory the caller trusts (the repo root, or the scratch directory):

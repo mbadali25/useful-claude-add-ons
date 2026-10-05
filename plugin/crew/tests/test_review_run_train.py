@@ -191,6 +191,21 @@ def test_a_spent_budget_is_refused_without_taking_the_train(lanes, tmp_path):
     assert other.returncode == 0 and "ROUND=1" in other.stdout, other.stderr
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a POSIX FIFO")
+def test_a_train_state_that_is_a_fifo_refuses_and_never_blocks(lanes, tmp_path):
+    """Review of 84c841e6: a FIFO state.json with no writer would block
+    crew_train's plain open forever; the gate round refuses (exit 6) instead."""
+    assert _train(lanes["repo"], "arm") == 0
+    state = pathlib.Path(crew_train.train_dir(str(lanes["T-1"]))) / "state.json"
+    state.unlink()
+    os.mkfifo(state)
+
+    refused = _run(lanes["T-1"], "T-1", tmp_path)
+
+    assert refused.returncode == review_run.EXIT_TRAIN == 6, refused.stderr
+    assert "is not a regular file" in refused.stderr
+
+
 def test_an_unreadable_ledger_is_refused_without_taking_the_train(lanes, tmp_path):
     """Review of ee01a3ca: a corrupt ledger reads UNKNOWN, `reserve` refuses it
     (exit 4), so it must not take the train first and hold it."""

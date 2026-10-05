@@ -819,6 +819,13 @@ def train_gate(args):
     above. An unarmed clone returns None and prints nothing; anything this
     step cannot vouch for -- including an exception -- refuses."""
     try:
+        # Review of 84c841e6: a state.json that is not a regular file (a FIFO
+        # would block crew_train's plain open) is could-not-tell.
+        odd = review_checks.not_a_regular_file(
+            os.path.join(crew_train.train_dir(args.root), "state.json"))
+        if odd:
+            _err(f"review-run: train: could not tell ({odd}); no round reserved\n")
+            return EXIT_TRAIN
         _state, where, why = crew_train.load(args.root)
         if where == "absent":
             return None
