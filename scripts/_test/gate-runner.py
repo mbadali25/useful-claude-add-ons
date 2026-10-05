@@ -129,7 +129,7 @@ def run_gate(tmp: str, steps: list[dict] | None, *args: str, heavy: str = "none"
         argv += ["--table", table]
     argv += list(args)
     env = {k: v for k, v in os.environ.items()
-           if k not in ("HEAVY_RUN_NOCAP", "HEAVY_RUN_MEM", "HEAVY_RUN")}
+           if k not in ("HEAVY_RUN_NOCAP", "HEAVY_RUN_MEM", "HEAVY_RUN", "HEAVY_RUN_SLOT")}
     env["HEAVY_RUN"] = heavy
     env.update(env_extra or {})
     proc = subprocess.run(argv, capture_output=True, text=True, env=env, cwd=cwd,
@@ -493,7 +493,7 @@ def case_status_file_shape_and_atomic_write(tmp: str) -> None:
     for key in ("head", "dirty", "table_source", "heavy_run", "started", "ended", "overall",
                 "steps"):
         expect(key in status, f"status has no {key!r}")
-    for key in ("mode", "path", "rc", "waited_seconds"):
+    for key in ("mode", "path", "rc", "waited_seconds", "slot"):
         expect(key in status["heavy_run"], f"heavy_run has no {key!r}")
     for step in status["steps"]:
         for key in ("name", "phase", "group", "argv", "cwd", "rc", "state", "reason", "seconds",
@@ -1004,6 +1004,70 @@ def case_heavy_part_wrong_shape_is_could_not_tell(tmp: str) -> None:
         expect(rc == 3, f"started {shape}: rc={rc}\n{out}")
         waited = status["heavy_run"].get("waited_seconds")
         expect(waited is None, f"started {shape}: waited_seconds={waited!r}, expected absent")
+
+
+# ---- L-0517: the slot heavy-run gave the call ------------------------------
+
+def case_heavy_run_slot_recorded(tmp: str) -> None:
+    hr = fake_heavy_run(tmp, 'HEAVY_RUN_SLOT=heavy.lock.2 exec "$@"\n')
+    rc, out, status = run_gate(tmp, [sh_step("a1", "heavy", "exit 0", "A")], heavy=hr)
+    expect(rc == 0, f"rc={rc}\n{out}")
+    slot = status["heavy_run"].get("slot")
+    expect(slot == "heavy.lock.2", f"heavy_run.slot={slot!r}, expected 'heavy.lock.2'")
+    waited = status["heavy_run"].get("waited_seconds")
+    expect(isinstance(waited, (int, float)) and not isinstance(waited, bool),
+           f"waited_seconds={waited!r}: the slot must not change it")
+
+
+def case_heavy_run_slot_absent_is_null(tmp: str) -> None:
+    # Unset, empty, and no heavy-run at all: the slot is unknown, never guessed.
+    bodies = {"unset": 'unset HEAVY_RUN_SLOT; exec "$@"\n',
+              "empty": 'HEAVY_RUN_SLOT= exec "$@"\n', "absent": None}
+    for label, body in bodies.items():
+        sub = os.path.join(tmp, label)
+        os.makedirs(sub)
+        hr = "none" if body is None else fake_heavy_run(sub, body)
+        rc, out, status = run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A")], heavy=hr)
+        expect(rc == 0, f"{label}: rc={rc}\n{out}")
+        expect("slot" in status["heavy_run"], f"{label}: heavy_run has no 'slot'")
+        slot = status["heavy_run"]["slot"]
+        expect(slot is None, f"{label}: heavy_run.slot={slot!r}, expected null")
+        if body is not None:
+            waited = status["heavy_run"].get("waited_seconds")
+            expect(isinstance(waited, (int, float)), f"{label}: waited_seconds={waited!r}")
+
+
+def case_heavy_part_bad_slot_is_null(tmp: str) -> None:
+    # A malformed slot in heavy-part.json reads null, never an exception, and
+    # no step's state moves: the slot is recorded, not trusted.
+    shapes = ["1", "true", "[\"heavy.lock\"]", "{}", json.dumps("x" * 65),
+              json.dumps("../heavy.lock"), json.dumps("/root/crew-tmp/heavy.lock"), '""']
+    for i, shape in enumerate(shapes):
+        sub = os.path.join(tmp, f"b{i}")
+        os.makedirs(sub)
+        patcher = write(os.path.join(sub, "patch.py"),
+                        "import json, sys\n"
+                        "p = sys.argv[1]\n"
+                        "d = json.load(open(p))\n"
+                        f"d['slot'] = json.loads({shape!r})\n"
+                        "with open(p + '.tmp', 'w') as fh:\n"
+                        "    fh.write(json.dumps(d))\n"
+                        "import os; os.replace(p + '.tmp', p)\n")
+        body = ('part=""; prev=""\n'
+                'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
+                '"$@"; rc=$?\n'
+                f'"{sys.executable}" "{patcher}" "$part" || exit 99\n'
+                'exit $rc\n')
+        hr = fake_heavy_run(sub, body)
+        steps = [sh_step("a1", "heavy", "exit 0", "A"), sh_step("s1", "solo", "exit 0")]
+        rc, out, status = run_gate(sub, steps, heavy=hr)
+        expect("Traceback" not in out, f"slot {shape}: the outer runner crashed\n{out}")
+        expect(rc == 0, f"slot {shape}: rc={rc}, expected 0\n{out}")
+        slot = status["heavy_run"].get("slot", "missing")
+        expect(slot is None, f"slot {shape}: heavy_run.slot={slot!r}, expected null")
+        st = by_name(status)
+        for name in ("a1", "s1"):
+            expect(st[name]["state"] == "PASS", f"slot {shape}: {name} is {st[name]['state']}")
 
 
 def case_table_cwd_stays_in_root(tmp: str) -> None:
@@ -1768,6 +1832,9 @@ CASES = [
     case_relative_path_tool_is_made_absolute,
     case_heavy_part_fail_needs_a_failing_rc,
     case_heavy_part_needs_step_metadata,
+    case_heavy_run_slot_recorded,
+    case_heavy_run_slot_absent_is_null,
+    case_heavy_part_bad_slot_is_null,
     case_no_group_signal_after_leader_reaped,
     case_timeout_kills_group_outliving_leader,
 ]

@@ -240,9 +240,17 @@ written after them it suppresses all four. `.crew/transcripts/` is inside that
 block and is the one nobody may drop: raw transcripts contain everything the
 session saw, including any secret that reached it.
 
+Then the language patterns, without asking (owner decision, T-0039): run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_gitignore.py apply --root .` and show its diff and
+report verbatim. It detects the languages from the files git lists, and adds what is missing only inside
+its own `# crew:gitignore:managed` block at the top of `.gitignore` - never a line of §3c's block, never a
+human line. `tracked` lines name files the new pattern cannot untrack; `needs-owner` (exit 3) is a
+committed secret - report it to me, never untrack or rewrite history; exit 4 is "could not tell".
+
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
 missing sections and no remaining placeholders,
-and `.gitignore` covers secrets and transcripts.
+and `.gitignore` covers secrets and transcripts, and the managed language block is current
+(`crew_gitignore.py check` exits 0, or 3 with the owner told).
 
 ## Phase 2 — Providers and notifications
 
