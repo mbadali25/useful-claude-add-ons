@@ -1321,8 +1321,9 @@ def _presented(chan, claim, key, top, me, ttl):
     else:
         head = f"yours from a previous session - needs the owner: {reason}"
         if "may still be running" in reason:
-            action = ("let the old session finish or release it; if it has ended, run status again once its "
-                      "heartbeat is older than the TTL - an end that cannot be proven then goes to the owner")
+            action = ("let the old session finish or release it; once it has ended, run status again - a pid "
+                      "this machine proves gone is recoverable at once, and an end that cannot be proven goes "
+                      "to the owner once its heartbeat is older than the TTL")
         else:
             action = (f"the owner runs crew_coord.py release --break --by <name> {flags} from a terminal "
                       "outside Claude Code, once the old session is confirmed gone")
