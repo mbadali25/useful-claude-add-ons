@@ -104,6 +104,9 @@ CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
 LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 RANG = "rang"
+# The subject of every ring commit: `pending` finds the rings in the channel's
+# history by it, so a log rewritten without one cannot hide it.
+RANG_SUBJECT = "crew-coord: rang "
 DOORBELL_RE = re.compile(
     r"crew-doorbell/1 channel=(?P<channel>[a-z0-9][a-z0-9-]{0,63}) "
     r"tip=(?P<tip>[0-9a-f]{40}|[0-9a-f]{64}) "
@@ -248,7 +251,7 @@ def cmd_ring_to(chan, top, kind, ref, label):
         files[crew_coord.LOG] = log + rang_line(me, label, tip, ref).encode("utf-8") + b"\n"
         return "ok", ""
 
-    result = chan.write(change, f"crew-coord: rang {label}")
+    result = chan.write(change, f"{RANG_SUBJECT}{label}")
     if result.status != "ok":
         print(result.message)
         return {"refused": crew_coord.EXIT_REFUSED, "usage": crew_coord.EXIT_USAGE}.get(
@@ -293,6 +296,30 @@ def read_log(blob):
     return entries, ""
 
 
+def lost_ring(chan, tip, log):
+    """Why a ring the channel's history recorded is gone from the current log,
+    or None. The log is append-only, but a later commit can still rewrite it;
+    every ring commit (`RANG_SUBJECT`) appended its `rang` line last, and that
+    exact line must still be in the log at `tip`, or nothing pending can be
+    told. A history or blob that cannot be read is a reason too."""
+    listed = crew_coord.run_git(chan.root, ["log", "--format=%H %s", tip])
+    if listed.code != 0:
+        return "the channel's history could not be listed"
+    current = set(log.decode("utf-8", "replace").split("\n"))
+    for row in listed.out.decode("utf-8", "replace").splitlines():
+        sha, _, subject = row.partition(" ")
+        if not subject.startswith(RANG_SUBJECT):
+            continue
+        blob = crew_coord.run_git(chan.root, ["cat-file", "blob", f"{sha}:{crew_coord.LOG}"])
+        if blob.code != 0:
+            return f"the ring commit {sha[:12]}'s {crew_coord.LOG} could not be read"
+        rang = blob.out.decode("utf-8", "replace").rstrip("\n").split("\n")[-1]
+        if rang not in current:
+            return (f"the ring recorded in {sha[:12]} is no longer in {crew_coord.LOG} (a later commit "
+                    "rewrote the log)")
+    return None
+
+
 def pending_rings(entries, session, here, top):
     """Rings of this session (its id, or this machine and worktree) that no
     later entry by a holder other than the ringer and this session follows."""
@@ -330,6 +357,10 @@ def cmd_pending(chan, top):
         return crew_coord.EXIT_UNKNOWN
     entries, why = read_log(files[crew_coord.LOG])
     if entries is None:
+        print(f"unknown - {why} on {chan.ref}; pending doorbells cannot be told")
+        return crew_coord.EXIT_UNKNOWN
+    why = lost_ring(chan, tip, files[crew_coord.LOG])
+    if why:
         print(f"unknown - {why} on {chan.ref}; pending doorbells cannot be told")
         return crew_coord.EXIT_UNKNOWN
     session = os.environ.get("CLAUDE_CODE_SESSION_ID") or None

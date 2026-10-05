@@ -2712,7 +2712,10 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   failed fetch, a channel that does not exist, a channel with no or an empty
   `log.jsonl`, a blank line in it, and a log line that is not a whole entry (every key
   `crew_coord.py` writes) are all `unknown`, never `no pending doorbells`:
-  an incomplete line is never read as a peer moving the record. `/crew:autopilot`
+  an incomplete line is never read as a peer moving the record. So is a log
+  a later commit rewrote: every ring commit (subject `crew-coord: rang
+  <label>`) appended its `rang` line last, and `pending` requires each of
+  those lines in the current log before it can say none is pending. `/crew:autopilot`
   prints it in `status` and in its resume step and reports the lines to you;
   a pending ring is not a stop. **Limit:** any later log line by a holder
   other than the ringer and this session clears the ring — a third session on

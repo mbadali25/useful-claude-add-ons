@@ -1165,11 +1165,11 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 
 **Cross-session messages (T-0032).** DERIVED on `rush/g3d-bridge` (release/1.2.0 plus the T-0030
 port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
-(`:107`) is the closed grammar, `compose` (`:114`) builds the line `ring` prints (`cmd_ring`, `:349`),
-`parse` (`:128`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
-`cmd_receive` (`:386`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
-`_confirm` (`:367`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
-result ending in `next_step` (`:189`), the remote shell-quoted whole. Apart from L-0636's
+(`:110`) is the closed grammar, `compose` (`:117`) builds the line `ring` prints (`cmd_ring`, `:380`),
+`parse` (`:131`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
+`cmd_receive` (`:417`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
+`_confirm` (`:398`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
+result ending in `next_step` (`:192`), the remote shell-quoted whole. Apart from L-0636's
 `ring --to` it writes nothing, and it builds only on `crew_coord`'s public names (`Channel`,
 `safe`, `peer`, `run_git`, the exit codes); `CHANNEL_RE` (`:103`) restates `crew_coord._CHANNEL_RE`,
 pinned equal by `test_channel_rule_is_crew_coords`. `commands/autopilot.md:117` is section 8, the
@@ -1177,21 +1177,22 @@ untrusted-data rules. JUDGEMENT: `kind` and `ref` change no behaviour on purpose
 always re-reads the record, so a lying hint costs a fetch, not an action.
 
 **Unanswered doorbells (L-0636).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `crew_bridge.py
-ring --to <label>` (`cmd_ring_to`, `:220`) appends one `rang` line (`rang_line`, `:214`) through
-`crew_coord.Channel.write`, on `RecordChannel` (`:202`), which remembers the tip of its last fetch
-because `write` hands `change` only the files. `pending` (`cmd_pending`, `:314`) reads `unknown` for
-a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:260`: a
+ring --to <label>` (`cmd_ring_to`, `:223`) appends one `rang` line (`rang_line`, `:217`) through
+`crew_coord.Channel.write`, on `RecordChannel` (`:205`), which remembers the tip of its last fetch
+because `write` hands `change` only the files. `pending` (`cmd_pending`, `:341`) reads `unknown` for
+a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:263`: a
 line that is not a whole `log_line` entry, or a `rang` line without its fields, is `unknown`), then
 keeps each ring of this session id, or this machine and worktree, that no later line by a holder
-other than the ringer and this session follows (`pending_rings`, `:296`). `crew_coord.cmd_status`
+other than the ringer and this session follows (`pending_rings`, `:323`), once `lost_ring`
+(`:299`) has found every ring commit's `rang` line still in the log. `crew_coord.cmd_status`
 reads only `claims/`, so the new event cannot disturb it. JUDGEMENT: matching on machine and
 worktree as well as the session id is what lets the resume step after `/clear` still see a ring.
 
 **The hub rule (L-0637).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `ring` calls `lane_state`
-(`:147`) before any fetch: the main checkout (the first `crew_wave.worktrees` entry) is never a lane;
+(`:150`) before any fetch: the main checkout (the first `crew_wave.worktrees` entry) is never a lane;
 elsewhere every lane file under `<main>/.work/autopilot/<slug>/lanes/` is read with
 `crew_wave.read_lane`, and one whose `worktree` is this worktree makes it a lane (`HUB_REFUSAL`,
-`:144`, exit 1); a listing or lane file that cannot be read is `unknown` (exit 3). The lane prompt
+`:147`, exit 1); a listing or lane file that cannot be read is `unknown` (exit 3). The lane prompt
 (`crew_wave.lane_prompt`) returns a question for another session to the main session, and
 `hooks/scripts/_test/validate-prompts.py`'s `check_bridge_tools` fails an agent granted
 `SendMessage` or `ListAgents` and a lane-prompt source naming either. JUDGEMENT: a linked worktree

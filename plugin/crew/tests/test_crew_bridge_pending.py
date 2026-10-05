@@ -239,6 +239,7 @@ def test_a_channel_without_a_log_is_unknown(world, capsys):
 
 def _replace_log(seed, bare, text):
     """Point the channel at a commit whose log.jsonl is `text`, or with no log when None."""
+    git(seed, "fetch", "-q", "origin", REF)  # the channel's tip object, whoever pushed it
     entries = ""
     if text is not None:
         blob = subprocess.run(["git", "-C", str(seed), "hash-object", "-w", "--stdin"], input=text, check=True,
@@ -271,6 +272,23 @@ def test_ring_to_refuses_to_write_over_a_missing_or_unreadable_log(world, capsys
     assert code == 3 and lines[0].startswith("unknown")
     assert not any(line.startswith("crew-doorbell/") for line in lines)
     assert channel_tip(bare) == sha
+
+
+def test_a_log_rewritten_without_the_ring_is_unknown(world, capsys):
+    bare, work, seed, _ = world
+    before = channel_log(bare) + "\n"
+    assert ring_to(work, capsys)[0] == 0
+    _replace_log(seed, bare, before)  # a well-formed log, the ring line gone
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown") and "rewrote the log" in lines[0]
+
+
+def test_a_ring_line_edited_in_place_is_unknown(world, capsys):
+    bare, work, seed, _ = world
+    assert ring_to(work, capsys)[0] == 0
+    _replace_log(seed, bare, channel_log(bare).replace('"to": "peer-a"', '"to": "peer-b"') + "\n")
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown")
 
 
 def test_a_resumed_session_in_this_worktree_still_sees_its_ring(world, capsys, monkeypatch):
