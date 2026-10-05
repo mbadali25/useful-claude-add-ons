@@ -132,6 +132,7 @@ Next free untracked ID: **C-0017** (owner rule 2026-10-05: cloud-session tickets
 | T-0045 | #407 | 6cada04c | ready to land | Slice 1 of 8 (`crew_ghdeploy.py check`). `check` now simulates both promote gates. |
 | T-0057 | #416 | 2eaac674 | ready to land | Carry at landing merge: route the 3 autopilot sites through T-0069's `_route()`, drop `_LINE_BREAKS`, re-review the merge. Printable-ASCII allowlist for free text. Also fixes a main bug: `implement ſ-12` routed to S-12. |
 | T-0081 | #478 | 46e5ee76 | review-clean 0 BLOCK / 0 FIX (re-check 2026-10-05) -> batch 9 | 89/89 tracker+README mutations red. NITs to carry: Windows wording "inode 0" vs file id; duplicate `_components()`; codemap cites the merge sha; nested parentheses. |
+| T-0049 | #395 | db693ec0 | review-clean 0 BLOCK / 0 FIX (re-review 2026-10-05), Windows green -> batch 9 | NIT to carry: .crew/codemap/crew.md:836 says 'DERIVED at 3e6ff1e9' but cites were re-taken at 841b0585. Test that sends os.kill(getppid(),0) skips on Windows (CTRL_C_EVENT); no other test has the hazard. |
 
 ## Review-clean on older bases (catch-up merge + version at their turn)
 
