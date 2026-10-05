@@ -22,7 +22,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 | Item | Where | State | Next |
 |---|---|---|---|
 | #499 L-1518 README "What's new" | `L-1518-build` 860718db | merged main (batch 5) + coordinator FIX: parser skipped batch `###` headings (README showed 1.0.344). Re-review of 9fac87a2 found 3 FIX, fixed in aed63c4d + 860718db; 20/20 suite, sabotage-tested | re-review of 860718db, CI green, then merge alone (repo tooling, no bump) |
-| #497 L-1512 cloud-guard 2304 | `L-1512-build` 108d5da0 | `build (3.12)` failed (job 111569933122) | builder fixing; then focused re-check, land alone |
+| #497 L-1512 cloud-guard 2304 | `L-1512-build` e8a3fb48 | pylint C0305 fixed; leftover-child hang fixed via process substitution (temp file broke 2 mktemp-failure suites); CI running. Version says 1.0.412, must be 1.0.346 | focused re-check running; fix version; land alone |
 | #407 T-0045 | `T-0045-build` 8588ab74 | 6 Windows jobs red | builder merging main + root-causing; batch 6 once green |
 | #496 L-1508 PR B (harness) | `L-1508b-build` 4807695e | only verify-gate ran | builder getting full CI; then review; lands ALONE |
 | Batch 6 | not started | candidates: #407, #353 T-0011 + #366 T-0059 (stacked), more review-clean Windows-green PRs | batch PR per LANDPREP, with the sync-updates step |
