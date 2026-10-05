@@ -96,9 +96,16 @@ def _auto_accepted(repo):
     _review(repo)
     rl.accept(str(repo), T, "the owner")
     # What --auto-accept writes beside the kind (review of 55135844, FIX2).
-    _edit(repo, lambda data: data["receipt"].update(
-        kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY, provider="codex", model_family="gpt",
-        review_json_sha256="b" * 64, ignored_lines=0, findings=[], follow_up="L-0001"))
+    # The round carries the findings --auto-accept copies (review of b077446e).
+    findings = ["FIX|src/a.py|1|a finding"]
+
+    def change(data):
+        data["rounds"][-1]["findings"] = list(findings)
+        data["receipt"].update(
+            kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY, provider="codex", model_family="gpt",
+            review_json_sha256="b" * 64, ignored_lines=0, findings=list(findings),
+            follow_up="L-0001")
+    _edit(repo, change)
 
 
 def _auto(change):
@@ -341,6 +348,9 @@ REFUSALS = {
     "auto_receipt_no_findings": (_auto(lambda data: data["receipt"].pop("findings")), None),
     "auto_receipt_findings_string": (
         _auto(lambda data: data["receipt"].__setitem__("findings", "x")), None),
+    # Review of b077446e: findings that are not the round's.
+    "auto_receipt_other_findings": (
+        _auto(lambda data: data["receipt"].__setitem__("findings", ["BLOCK|x|1|y"])), None),
     "auto_receipt_no_follow_up": (_auto(lambda data: data["receipt"].pop("follow_up")), None),
     "auto_receipt_blank_follow_up": (
         _auto(lambda data: data["receipt"].__setitem__("follow_up", " ")), None),

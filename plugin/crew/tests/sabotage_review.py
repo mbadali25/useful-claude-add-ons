@@ -1503,6 +1503,15 @@ REVIEW_FIX_MUTATIONS = (
         "tests/test_review_correct_acceptance.py::test_correction_refused",
     ),
     (
+        # Review of b077446e: an auto receipt whose findings are not the round's.
+        "--supersede-accepted takes an auto receipt with another round's findings",
+        REVIEW_LEDGER,
+        '            and receipt["findings"] == latest.get("findings")  # review of b077446e\n',
+        "            and True\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
         # Review of dc538c79, FIX1: a correction takes a receipt naming no bundle.
         "--correct-acceptance takes a receipt naming no bundle",
         REVIEW_LEDGER,

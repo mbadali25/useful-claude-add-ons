@@ -819,6 +819,7 @@ def _auto_receipt_readable(receipt, latest):
             and type(ignored) is int and ignored == 0  # pylint: disable=unidiomatic-typecheck
             and _SHA256_RE.fullmatch(digest) is not None
             and isinstance(receipt.get("findings"), list)
+            and receipt["findings"] == latest.get("findings")  # review of b077446e
             and isinstance(follow_up, str) and bool(follow_up.strip())
             and _receipt_names_the_reviewer(receipt, latest))
 
