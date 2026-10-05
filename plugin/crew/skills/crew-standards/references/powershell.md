@@ -34,10 +34,12 @@ an external program (`python`, `bash`, `git`, `pwsh`), take candidates only from
 in PowerShell's command precedence, wins the lookup, and has no `.Source`. Where a candidate
 lives never decides whether it is believed. Every candidate is executed before it is trusted,
 under a bound (a per-candidate timeout that kills the whole process tree, and an overall
-deadline inside the hook's timeout). It is accepted only on proof the real program alone can
+deadline the caller sets; in a hook, that deadline sits inside the hook's timeout). It is accepted only on proof the real program alone can
 give: its process exit code plus a structured answer, for example a JSON object carrying its
-version and executable path. On real Windows, a candidate that `CreateProcess` cannot launch
-(no `.exe`, `.com`, `.cmd` or `.bat` extension) is skipped before it is started. When every
+version and executable path. On real Windows, a candidate without a launchable extension is
+skipped before it is started. An `.exe` or `.com` file can be started directly, but a `.cmd`
+or `.bat` file runs only through `cmd.exe /c`, so it is never passed straight to
+`Process.Start`. When every
 candidate is rejected, return nothing and refuse by name. Never fall back to the bare name,
 which `&` re-resolves through the same lookup to the shim that was just rejected.
 
@@ -66,8 +68,9 @@ that runs an external program by a bare name from a hook or other unattended pat
 2. Is every candidate executed and proven (exit code plus a structured answer) before it is
    trusted, rather than accepted or rejected by where it lives? Pass: yes, with a test that
    puts a broken candidate ahead of a working same-named one.
-3. Is each probe bounded (a timeout that kills the process tree, and an overall deadline inside
-   the hook's timeout)? Pass: yes, with a test using a candidate that hangs.
+3. Is each probe bounded (a timeout that kills the process tree, and an overall deadline the
+   caller sets, inside the hook's timeout when the caller is a hook)? Pass: yes, with a test
+   using a candidate that hangs.
 4. When every candidate is rejected, does the caller get an empty result and refuse by name,
    never a bare name that `&` would re-resolve? Pass: yes, with a test that runs the real
    script on an all-rejected PATH.

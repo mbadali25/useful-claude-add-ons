@@ -93,9 +93,12 @@ the OEM codepage).
 Read raw bytes, strip a BOM, and decode as UTF-8 explicitly. Set
 `[Console]::OutputEncoding` and `$OutputEncoding` before piping to a native program. This
 standard does not assert 5.1's redirection default, because the documentation pages
-contradict each other and no 5.1 host was measured. A file is written with a BOM only when it
-holds a non-ASCII byte (direction: BOM-when-non-ASCII). This repository's `.ps1` files are all
-ASCII-only and pass that as they are.
+contradict each other and no 5.1 host was measured. PowerShell source (`.ps1`, `.psm1`,
+`.psd1`) that Windows PowerShell 5.1 must read is saved as UTF-8 with a BOM only when it holds a
+non-ASCII byte, because 5.1 reads a BOM-less file in the ANSI codepage (direction:
+BOM-when-non-ASCII). Generated scripts and data for other consumers follow what those
+consumers expect; this BOM rule is not for them. This repository's `.ps1` files are all
+ASCII-only and pass as they are.
 
 Source: about_Preference_Variables: "$OutputEncoding Determines the character encoding method
 that PowerShell uses when piping data into native applications." about_Character_Encoding:
