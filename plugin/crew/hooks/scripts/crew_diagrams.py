@@ -205,8 +205,11 @@ def _origin_is_bitbucket(top):
 
 
 def _git_ignored(top, rel):
+    """True/False from `git check-ignore`, or None when it cannot tell (no git on
+    PATH included: require_tool raises ToolNotFound, an OSError)."""
     try:
-        done = subprocess.run(["git", "check-ignore", "-q", "--no-index", rel], cwd=top,
+        done = subprocess.run([crew_common.require_tool("git"), "check-ignore", "-q",
+                               "--no-index", rel], cwd=top,
                               capture_output=True, stdin=subprocess.DEVNULL, timeout=30,
                               check=False)
     except (OSError, subprocess.SubprocessError):
