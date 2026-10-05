@@ -266,7 +266,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <p>A round's outcome is <code>CLEAN</code>, <code>FINDINGS</code> or <code>INCOMPLETE</code>. A completed round 2 — either <code>FINDINGS</code>
   or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
   <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
-  refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
+  refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code> (autopilot's
+  <code>crew_autopilot.py auto-reject</code>, under <code>autopilot.maxAutoReplans</code>, is a <code>--reject</code> by the name
+  <code>autopilot (policy: autopilot.maxAutoReplans)</code>).
   <strong>Fix:</strong> a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: <code>review: auto-accept: eligible</code>, then
   <code>--auto-accept --follow-up &lt;id&gt;</code> writes an <code>auto-accepted</code> receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A <code>review: auto-accept: refused - &lt;reason&gt;</code> line names what
@@ -347,7 +349,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   everything.
   <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
   undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
-  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> and review the merged head. <code>could not tell</code> (exit 3)
+  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (resolve any conflict), bump the version one past
+  the base's, refresh the artifacts, commit, gate the merged head, review it again if
+  <code>review_ledger.py --check-receipt</code> reads stale, then acquire again. <code>could not tell</code> (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.</p>
 <ul>
 <li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it
@@ -364,8 +368,10 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   paths this ticket touches after it was gated, so the verdict covers a different tree.
   <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
   are listed and left unstaged for you to inspect, <code>git add</code> and commit; a version file is never
-  replayed and comes back conflicted), gate the merged head again (<code>/crew:review</code>),
-  then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
+  replayed and comes back conflicted), then bump the version one past the base's, refresh the
+  artifacts, commit, gate the merged head, review it again (<code>/crew:review</code>) if
+  <code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
+  passed is the tree that lands. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
   conflict to resolve first.</li>
 </ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
@@ -384,9 +390,14 @@ contract itself. This section is what goes wrong with the approval and the audit
   those, never merged with the main checkout's - delete them to inherit. <code>/crew:status</code> names
   that case: <code>... the main checkout's (&lt;path&gt;) is not read ...</code>. A lane made before 1.0.69 almost
   always has one, a default that crew's SessionStart heal wrote there. <code>(unknown)</code> means git
-  could not name the main checkout; then no default is written either. The shell and PowerShell readers (<code>verify-gate.sh</code>,
-  <code>_common.sh</code>, <code>notify.sh</code>, the handoff scripts, <code>promote-gate.ps1</code>, <code>scope-guard.ps1</code>,
-  <code>cloud-guard.ps1</code>, <code>auto-clear.ps1</code>) do not inherit yet.</li>
+  could not name the main checkout; then no default is written either. Of the shell and
+  PowerShell readers (T-0096), the incident stand-down read (<code>_common.sh</code>,
+  <code>promote-gate.ps1</code>), both cloud-guard no-python fallbacks and <code>auto-clear.ps1</code> inherit too; in
+  the cloud guard's fallback <code>unknown</code> counts as armed. So do the session hooks (<code>notify</code>, the
+  handoff scripts, <code>context-watch</code>; crew 1.0.343, L-0680): a lane notifies with the main
+  checkout's settings, and a relative handoff path still names a file in the lane. The verify
+  gate, the scope and completion wrappers and <code>review_gate.py</code> do not inherit yet, so <code>verify-gate.ps1</code> still reads the lane's own
+  <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
@@ -399,6 +410,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
   <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>, and an <code>autopilot</code> receipt (from
   <code>crew_autopilot.py approve</code>) only while that is true and <code>autopilot.approval</code> still allows it.
+  That includes a receipt written inside an <code>autopilot.sleep.schedule</code> window under
+  <code>autopilot.sleep.approval</code>: once the window ends, the day value decides, and it may not allow it.
+  The same holds for a manual <code>/crew:autopilot sleep</code> once its <code>until</code> passes. If <code>settings</code>
+  prints <code>sleep=unknown source=manual</code>, <code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code> could not be
+  trusted (the warning names why): the stricter value applies per key until
+  <code>/crew:autopilot wake</code> removes or replaces it.
   <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — the only other route is
   <code>/crew:autopilot</code> under an opted-in <code>autopilot.approval</code>; <code>scope_guard.py</code> refuses a Write/Edit
   under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but <code>off</code>, so a session cannot forge or refresh its
@@ -467,6 +484,35 @@ contract itself. This section is what goes wrong with the approval and the audit
   reading the closed refusal as a false positive.</p>
 </li>
 </ul>
+<h2 id="verify-gate-says-could-not-tell">Verify Gate Says COULD NOT TELL</h2>
+<p><code>verify-gate.sh</code> / <code>.ps1</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
+<strong>and</strong> left a completion record saying the rule exited 0. Anything else that is not a plain exit
+status is FAILED as "could not tell": the gate prints <code>VERIFY FAILED: &lt;cmd&gt;</code>, then
+<code>verify-gate: COULD NOT TELL (&lt;reason&gt;): &lt;cmd&gt;</code>, exits 2, and neither marker advances. The summary
+adds <code>verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED</code>. The reasons:</p>
+<ul>
+<li><strong>"exit status N, above 128 and not a signal number - the rule's own status"</strong> (N from 193 to
+  255; signals stop at 64): the rule itself exited that code - 255 is common from <code>ssh</code> or a shell
+  error. It is still could-not-tell, because nothing distinguishes it from a crash code.</li>
+<li><strong>"exit status N: ended by signal N-128, or the rule's own status"</strong> (N from 129 to 192): the rule was
+  killed (137 is KILL, 143 is TERM) - an OOM kill, an outside <code>timeout -s KILL</code>, a CI step limit - or
+  it really exited that code. Re-run the command by hand and see which.</li>
+<li><strong>"the rule's runner ended with status N before it recorded a result"</strong>: the wrapper around the
+  rule was itself killed before it could write the record, so the rule's own result is unknown.</li>
+<li><strong>"no completion record"</strong>: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
+  above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
+  be told from that run.</li>
+<li><strong>"the rule's shell could not be started"</strong> (<code>.ps1</code> only): the resolved bash vanished or would not
+  launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.</li>
+<li><strong>"cannot create an output-capture file or a completion-record file"</strong> or <strong>"no usable bash
+  resolved"</strong>: the existing refusals, now named as could-not-tell.</li>
+<li><strong>"the gate received TERM while this command was running"</strong> (<code>.sh</code> only): the gate itself was
+  signalled mid-rule; it still exits 128+N. A killed <code>.ps1</code> gate prints nothing (PowerShell has no
+  signal trap); the marker not advancing covers it.</li>
+</ul>
+<p>The command log carries status <code>unknown</code> for such a rule; the record sync leaves that rule's entry as
+it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
+rule is not ended by the gate.</p>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
@@ -565,7 +611,12 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   Also confirm <code>memory.inject</code> is not <code>false</code> in <code>.crew/config.json</code> — recall and code-map injection
   are on by default since 1.0.0, so "no recall ever appears" with the key set to <code>false</code> is expected.
   <strong>Fix:</strong> <code>$VO recall --query "&lt;words you expect&gt;"</code> directly, to separate "the CLI can't find it"
-  from "the hook isn't calling the CLI".</p>
+  from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
+  excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
+  more than one matching word for a longer query, matches whole words only, and never reads
+  <code>wiki/sessions/archive/</code>. Re-run with <code>--min-terms 1</code>
+  (the floor off) and <code>--include-excluded</code> (read the archive) and read <code>below_floor</code> and
+  <code>excluded_dirs</code> in the <code>--json</code> output to see which one hid it.</p>
 <ul>
 <li>
 <p><strong>Symptom: the gardener seems to be falling behind.</strong>
@@ -804,19 +855,24 @@ cleanly, clear, and pick up where it stopped.</p>
 <li><strong>Wrap-up.</strong> When the context window crosses its threshold, the <code>Stop</code> hook blocks once. It asks
    the session to finish or park the change in flight, write <code>.work/HANDOFF.md</code>, and update the
    ticket. This happens once for each threshold crossing in each session. It never happens on the
-   forced continuation that follows a block.</li>
+   forced continuation that follows a block. With <code>context.autoClear.wrapUp</code> armed (below), the
+   block carries the wrap-up procedure instead, and the clear waits for its results.</li>
 <li><strong>Clear, or notify.</strong> After the handoff is written, auto-clear acts on it. What it does depends
    on <code>method</code> (below): <code>notify</code> (the default on native Windows) prints a message telling you the
    handoff is written and it is safe to run <code>/clear</code> (or <code>/compact</code>) yourself — it types nothing.
    <code>tmux</code>, <code>xdotool</code> and <code>sendkeys</code> actually type the configured command into the terminal that runs
-   this session. Whichever method is in force, it acts only when all four of these hold:
+   this session. Whichever method is in force, it acts only when all five of these hold:
    - this machine opted in;
    - the handoff was written by this session after the wrap-up request, is longer than a stub, and
      is not the automatic PreCompact skeleton;
    - the context reading that caused the wrap-up was a real measurement (see "When it will not
      clear");
+   - this session is bound to its own Claude Code process, and that process has a terminal of its
+     own (see "Which window gets the keystroke") — a headless session, such as a <code>claude -p</code> child,
+     gets one message instead, naming its handoff and saying the process that started it must
+     start a new one;
    - for a method that types (<code>tmux</code>/<code>xdotool</code>/<code>sendkeys</code>), the target window can be identified
-     exactly — <code>notify</code> needs none of this, since it identifies no window.</li>
+     exactly, from that process — <code>notify</code> needs none of this, since it identifies no window.</li>
 </ol>
 <p><strong>Crew neither causes nor tunes Claude Code's own auto-compact.</strong> That is a separate, built-in
    behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
@@ -836,7 +892,7 @@ cleanly, clear, and pick up where it stopped.</p>
    unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
    does not match the checkout; the ticket directory or goal file is missing; the command is not
    installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
-   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   handoff; a later handoff write could not replace or remove <code>handoff-author.json</code> (<code>handoff-author.json.stuck</code>), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without
    <code>/proc</code>, such as native Windows or macOS); the record of past auto-resumes (<code>resume-state.json</code>)
    could not be read, or its directory cannot be searched; this handoff was already resumed; the
@@ -923,10 +979,16 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <td>vetoes auto-resume in this repo. <code>true</code> here does not switch it on.</td>
 </tr>
 <tr>
+<td><code>~/.claude/crew/config.json</code></td>
+<td><code>context.autoClear.wrapUp</code></td>
+<td><code>true</code></td>
+<td>turns the wrap-up into the wrap-up procedure and makes the clear wait for its results (off by default; acts only where <code>enabled</code> is armed). A repo <code>false</code> vetoes it; a repo <code>true</code> does nothing.</td>
+</tr>
+<tr>
 <td><code>.crew/config.json</code></td>
 <td><code>context.autoWrapUp</code></td>
 <td><code>false</code></td>
-<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once.</td>
+<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed <code>wrapUp</code> supersedes both wordings.</td>
 </tr>
 <tr>
 <td><code>.crew/config.json</code></td>
@@ -948,6 +1010,25 @@ before anything is written. To turn the cycle off on a machine, set <code>contex
 <code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
 <code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
 because only the machine file can arm or narrow them.</p>
+<h4 id="armed-wrap-up-contextautoclearwrapup">Armed wrap-up (<code>context.autoClear.wrapUp</code>)</h4>
+<p>A hook cannot make the session do anything; it can only refuse to clear. So with <code>wrapUp</code> armed the
+threshold block sends one procedure — start no new step; run the step's <code>Test:</code> command (the
+active ticket's plan step, or the checks for the tracked diff with no ticket); commit only if it
+passes; if it cannot pass, leave the tree and write <code>resume: none</code> with the reason under <strong>Verify
+first</strong>; run <code>/crew:handoff --wrap-up</code>; end the turn — and auto-clear acts only when, beside the
+checks above:</p>
+<ul>
+<li>the handoff's <code>head:</code> is HEAD, so it was written after the commit;</li>
+<li>its <code>branch:</code> is the checked-out branch;</li>
+<li>no tracked file is modified (untracked files, and the handoff itself, do not count);</li>
+<li>its <code>resume:</code> line parses, or is <code>resume: none</code>.</li>
+</ul>
+<p>Anything crew cannot tell — git failing, no <code>crew_resume</code>, on native Windows no python — refuses.
+A refusal is logged, shown to you as <code>crew wrap-up: not clearing - &lt;reason&gt;</code>, and handed back to
+the session once, at its next ordinary Stop. Crew checks that the commit happened, not that the
+test passed: the verify gate stands down on the turn the commit is made on.</p>
+<p>The chain end to end: wrap-up (T-0017) → the target proven from this session's own process
+(T-0016) → clear → <code>resume.auto</code> decides (T-0006) → the command is typed (T-0013).</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
@@ -1012,12 +1093,12 @@ arm only that repo without anyone noticing.</p>
 <tbody>
 <tr>
 <td><code>tmux</code></td>
-<td>Types the command into the <code>$TMUX_PANE</code> that is an ancestor of the hook. No focus involved — the most reliable method.</td>
+<td>Types the command into the <code>$TMUX_PANE</code> whose process is this session's own process or an ancestor of it. No focus involved — the most reliable method.</td>
 <td>Linux, macOS, WSL, Git Bash on Windows, when <code>$TMUX</code> names a pane and <code>tmux</code> is on PATH</td>
 </tr>
 <tr>
 <td><code>xdotool</code></td>
-<td>Types into the one X11 window owned by the nearest ancestor process (or matching <code>windowTitle</code>).</td>
+<td>Types into the one X11 window owned by the nearest ancestor of this session's own process, when that window hosts no other terminal (or matching <code>windowTitle</code>).</td>
 <td>Linux with <code>xdotool</code> on PATH and <code>$DISPLAY</code> set</td>
 </tr>
 <tr>
@@ -1027,7 +1108,7 @@ arm only that repo without anyone noticing.</p>
 </tr>
 <tr>
 <td><code>sendkeys</code></td>
-<td><code>System.Windows.Forms.SendKeys</code> against the one window owned by an ancestor process (or matching <code>windowTitle</code>), confirmed still in the foreground right before typing. <strong><code>auto</code> never picks this</strong> — typing into a window this hook found itself is a risk <code>auto</code> does not get to accept on your behalf. Set <code>method: "sendkeys"</code> explicitly to opt in. Even then, it declines and falls back to <code>notify</code> — logging why — when the target window is owned by Windows Terminal, because that host puts every tab in one window and nothing outside it can confirm which tab is active.</td>
+<td><code>System.Windows.Forms.SendKeys</code> against the one window owned by an ancestor of this session's own process (or matching <code>windowTitle</code>), confirmed still in the foreground right before typing. <strong><code>auto</code> never picks this</strong> — typing into a window this hook found itself is a risk <code>auto</code> does not get to accept on your behalf. Set <code>method: "sendkeys"</code> explicitly to opt in. Even then, it declines and falls back to <code>notify</code> — logging why — when the target window is owned by Windows Terminal, because that host puts every tab in one window and nothing outside it can confirm which tab is active.</td>
 <td>never (opt-in only)</td>
 </tr>
 <tr>
@@ -1079,8 +1160,36 @@ fallback), just not a keystroke.</p>
 <td>the window is ambiguous, so nothing is typed (<code>sendkeys</code>/<code>xdotool</code> only)</td>
 </tr>
 <tr>
-<td><code>no window belongs to any ancestor of this hook</code></td>
+<td><code>no window belongs to any ancestor of this hook</code> / <code>... of this session's process</code></td>
 <td>the terminal's window could not be found by process id, and no <code>windowTitle</code> is set (<code>sendkeys</code>/<code>xdotool</code> only)</td>
+</tr>
+<tr>
+<td><code>sent - method notify-headless: crew: this session has no terminal of its own (...)</code></td>
+<td>a headless session (<code>claude -p</code>: entrypoint <code>sdk-cli</code>, or no controlling terminal): nothing was typed, and the message names the handoff and its <code>resume:</code> line. The process that started the session restarts it</td>
+</tr>
+<tr>
+<td><code>could not identify this session's process (...)</code></td>
+<td>no Claude Code session record names a process above the hook with this session's id and start time (or the record is unreadable, or names another session). Nothing is typed; <code>auto</code> falls back to <code>notify</code></td>
+</tr>
+<tr>
+<td><code>could not tell whether this session has a terminal of its own (entrypoint '...' ...)</code></td>
+<td>the session record's entrypoint is not one measured to have a terminal (only <code>cli</code> is). Nothing is typed; <code>auto</code> falls back to <code>notify</code></td>
+</tr>
+<tr>
+<td><code>passes through another Claude Code session (pid N)</code></td>
+<td>this session is a child of another session, and the pane or window above it is the parent's</td>
+</tr>
+<tr>
+<td><code>the window's owner (pid N) also hosts another terminal</code> / <code>another Claude Code session</code></td>
+<td>the terminal that owns the window also runs another tab or session, so the window is not provably this one's</td>
+</tr>
+<tr>
+<td><code>could not be listed</code> / <code>the parent of pid N could not be read</code> / <code>deeper than 16 processes</code></td>
+<td>the process tree could not be read far enough to prove anything</td>
+</tr>
+<tr>
+<td><code>found by its title alone, and another Claude Code session is live</code> / <code>has no owning process</code></td>
+<td>a <code>windowTitle</code> match (or a window with no process) cannot tell two sessions apart</td>
 </tr>
 <tr>
 <td><code>tmux pane %N could not be confirmed</code></td>
@@ -1109,12 +1218,23 @@ fallback), just not a keystroke.</p>
 <h3 id="which-window-gets-the-keystroke">Which Window Gets the Keystroke</h3>
 <p>Applies only to the methods that type — <code>tmux</code>, <code>xdotool</code>, <code>sendkeys</code>. <code>notify</code> identifies no window
 and needs none of this.</p>
+<p>First, the session is bound to its own process: the nearest ancestor of the hook named by a Claude
+Code session record (<code>${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/&lt;pid&gt;.json</code>) carrying this session's
+id and that process's start time. Only a session whose record says kind <code>interactive</code> and
+entrypoint <code>cli</code>, with a controlling terminal (native Windows has none to read), is typed into.
+Every rule below walks up from that process, not from the hook, and refuses when the walk passes
+through another Claude Code session — a child started from a session's Bash tool inherits <code>$TMUX</code>,
+and without this its parent's pane is the one that got <code>/clear</code>. CONFIG.md §14 has the full rules and
+their limits (Windows' entrypoint is unmeasured; macOS cannot check the start time).</p>
 <ul>
-<li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is an
-  ancestor of the hook. No title is needed. This is the most reliable method.</li>
-<li><strong>X11 (<code>xdotool</code>):</strong> the one visible window owned by the nearest ancestor process of the hook. If
+<li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is this
+  session's own process or an ancestor of it. No title is needed. This is the most reliable method.</li>
+<li><strong>X11 (<code>xdotool</code>):</strong> the one visible window owned by the nearest ancestor of the session's process,
+  and only when no other terminal (another tab's tty, another session) runs under that window's
+  owner. If
   that process owns more than one window, <code>windowTitle</code> has to narrow the choice to one. If no
-  ancestor owns a window, exactly one window must match <code>windowTitle</code>. The keystroke goes to that
+  ancestor owns a window, exactly one window must match <code>windowTitle</code>, and no other session may be
+  live, since a title cannot tell two apart. The keystroke goes to that
   window id after it is activated and confirmed active.</li>
 <li><strong>Windows (<code>sendkeys</code>):</strong> chosen the same way, by owner process first and then by title. Declines
   outright, before any of that matters, when the resolved window is owned by Windows Terminal — see

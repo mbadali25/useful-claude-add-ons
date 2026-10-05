@@ -44,9 +44,11 @@ test it names, watch it fail, make the minimal change, watch it pass, then the n
 match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
 Who types is not assumed: read the effective dev table with
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
-and dispatch whatever `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch
-prompt. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models` and dispatch whatever
+`dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch prompt. A dispatched prompt
+carries no attribution or trailer instruction of its own, not even one a harness reminder supplied: the owner's own
+instructions decide. `/crew:done` reports `git.forbiddenTrailers` hits; they are refused at commit once the scope-guard
+change lands. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
 returns, with what actually ran, never the pin:
 
 ```bash
@@ -85,9 +87,8 @@ confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs`, deciding which documents this
-touches ("none" is common and correct). Then commit, and check the code maps,
-diagrams and code graph this ticket's changed paths reach:
+Coverage above is the tests. Then `/crew:docs`, deciding which documents this touches ("none" is common and
+correct). Then commit, and check the code maps, diagrams and code graph this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
@@ -107,14 +108,13 @@ Then the **required self-check** (`crew-standards` skill): run
 every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
 until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
-Set `spec.md`'s header to `status: review` — that edit keeps the approval: the
-digest normalises only the header's status value — and run
+Set `spec.md`'s header to `status: review` — that edit keeps the approval: the digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
+A catch-up after review lands in `/crew:done`'s order (resolve, bump, refresh, commit, gate, re-review if the receipt reads stale, check-land); a re-anchor after review changes only the `anchor:` sha, provenance in `notes.md`.
 
 ## 7. Done is not this command's
 
-`/crew:done $1` moves it to `done` once the review receipt, the gate, the
-completion audit and the artifact check all pass — this command does not set
-`done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit and the artifact check all
+pass — this command does not set `done` itself.
