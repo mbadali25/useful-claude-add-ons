@@ -28,6 +28,11 @@ A ticket lives in `.work/tickets/<id>/`:
 
 - `plan.md` is a list of steps. Each step has a `Files:` line, a `Test:` line and a `Risk:` line.
   Every `Files:` entry must fall inside Touch. A plan cannot add a path the spec does not list.
+- `next.md` is optional, and nothing in crew writes it: you do, by hand. One `key: value` per line
+  says who the ticket waits on and what happens next: `waiting-on:` (`owner`, `agent`, `external`
+  or a ticket id), `next:`, `reason:`, `revisit:` (a `YYYY-MM-DD` date) and `superseded-by:` (a
+  ticket id). It is not part of the contract: approval does not hash it and `validate` never reads
+  it, so you can edit it at any step without approving again.
 
 Check the contract at any time:
 
