@@ -1165,10 +1165,10 @@ registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json
 
 **Cross-session messages (T-0032).** DERIVED on `rush/g3d-bridge` (release/1.2.0 plus the T-0030
 port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
-(`:95`) is the closed grammar, `compose` (`:102`) builds the line `ring` prints (`cmd_ring`, `:277`),
+(`:95`) is the closed grammar, `compose` (`:102`) builds the line `ring` prints (`cmd_ring`, `:292`),
 `parse` (`:116`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
-`cmd_receive` (`:314`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
-`_confirm` (`:295`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
+`cmd_receive` (`:329`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
+`_confirm` (`:310`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
 result ending in `next_step` (`:132`), the remote shell-quoted whole. Apart from L-0636's
 `ring --to` it writes nothing, and it builds only on `crew_coord`'s public names (`Channel`,
 `safe`, `peer`, `run_git`, the exit codes); `CHANNEL_RE` (`:91`) restates `crew_coord._CHANNEL_RE`,
@@ -1177,13 +1177,13 @@ untrusted-data rules. JUDGEMENT: `kind` and `ref` change no behaviour on purpose
 always re-reads the record, so a lying hint costs a fetch, not an action.
 
 **Unanswered doorbells (L-0636).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `crew_bridge.py
-ring --to <label>` (`cmd_ring_to`, `:161`) appends one `rang` line (`rang_line`, `:155`) through
-`crew_coord.Channel.write`, on `RecordChannel` (`:143`), which remembers the tip of its last fetch
-because `write` hands `change` only the files. `pending` (`cmd_pending`, `:242`) reads `unknown` for
-a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:193`: a
+ring --to <label>` (`cmd_ring_to`, `:163`) appends one `rang` line (`rang_line`, `:157`) through
+`crew_coord.Channel.write`, on `RecordChannel` (`:145`), which remembers the tip of its last fetch
+because `write` hands `change` only the files. `pending` (`cmd_pending`, `:257`) reads `unknown` for
+a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:203`: a
 line that is not a whole `log_line` entry, or a `rang` line without its fields, is `unknown`), then
 keeps each ring of this session id, or this machine and worktree, that no later line by a holder
-other than the ringer and this session follows (`pending_rings`, `:224`). `crew_coord.cmd_status`
+other than the ringer and this session follows (`pending_rings`, `:239`). `crew_coord.cmd_status`
 reads only `claims/`, so the new event cannot disturb it. JUDGEMENT: matching on machine and
 worktree as well as the session id is what lets the resume step after `/clear` still see a ring.
 

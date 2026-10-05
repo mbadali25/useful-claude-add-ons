@@ -177,8 +177,16 @@ def cmd_ring_to(chan, top, kind, ref, label):
             rung["line"] = compose(chan.channel, tip, kind, ref)
         except crew_coord.UsageError as exc:
             return "usage", f"usage: {exc}"
-        log = files.get(crew_coord.LOG, b"")
-        if log and not log.endswith(b"\n"):
+        # The log must read whole before a ring is added: a ring appended to a
+        # missing, empty or corrupt log would hide the rings that went with it.
+        if crew_coord.LOG not in files:
+            return "unknown", (f"unknown - {chan.ref} has no {crew_coord.LOG}, so rings recorded there could "
+                               "have gone with it; nothing was rung")
+        entries, why = read_log(files[crew_coord.LOG])
+        if entries is None:
+            return "unknown", f"unknown - {why} on {chan.ref}; nothing was rung"
+        log = files[crew_coord.LOG]
+        if not log.endswith(b"\n"):
             log += b"\n"
         files[crew_coord.LOG] = log + rang_line(me, label, tip, ref).encode("utf-8") + b"\n"
         return "ok", ""
@@ -203,10 +211,15 @@ def read_log(blob):
         text = blob.decode("utf-8")
     except UnicodeDecodeError:
         return None, "log.jsonl is not UTF-8"
+    if not text:
+        return None, "log.jsonl is empty, though every write to the channel appends to it"
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()  # the newline that ends the last entry
     entries = []
-    for number, line in enumerate(text.split("\n"), 1):
+    for number, line in enumerate(lines, 1):
         if not line.strip():
-            continue
+            return None, f"log.jsonl line {number} is blank"
         try:
             entry = json.loads(line)
         except ValueError:

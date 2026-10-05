@@ -2675,7 +2675,9 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   channel log (holder, label, announced tip, time, machine, worktree) in one
   commit on the fetched tip, through the same no-force write path as a claim;
   a push that still fails after the retries prints `unknown - could not push`
-  (exit 3) and no doorbell. Without `--to`, `ring` writes nothing.
+  (exit 3) and no doorbell. So does a channel whose `log.jsonl` is missing,
+  empty or unreadable: a ring added there would hide the rings that went
+  with it, so nothing is written. Without `--to`, `ring` writes nothing.
 
   ```
   python3 hooks/scripts/crew_bridge.py ring    --channel <c> --remote origin --to <label>
@@ -2688,8 +2690,8 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   since the doorbell at <time> (<age> ago) [peer-written]`, exit 3; with
   none, `no pending doorbells`, exit 0. Nothing turns a pending ring into
   consent: no timeout, no retry, no "delivered" state, however old it is. A
-  failed fetch, a channel that does not exist, a channel with no
-  `log.jsonl`, and a log line that is not a whole entry (every key
+  failed fetch, a channel that does not exist, a channel with no or an empty
+  `log.jsonl`, a blank line in it, and a log line that is not a whole entry (every key
   `crew_coord.py` writes) are all `unknown`, never `no pending doorbells`:
   an incomplete line is never read as a peer moving the record. `/crew:autopilot`
   prints it in `status` and in its resume step and reports the lines to you;

@@ -237,6 +237,42 @@ def test_a_channel_without_a_log_is_unknown(world, capsys):
     assert code == 3 and lines[0].startswith("unknown")
 
 
+def _replace_log(seed, bare, text):
+    """Point the channel at a commit whose log.jsonl is `text`, or with no log when None."""
+    entries = ""
+    if text is not None:
+        blob = subprocess.run(["git", "-C", str(seed), "hash-object", "-w", "--stdin"], input=text, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        entries = f"100644 blob {blob}\tlog.jsonl\n"
+    tree = subprocess.run(["git", "-C", str(seed), "mktree"], input=entries, check=True, capture_output=True,
+                          text=True).stdout.strip()
+    sha = git(seed, "commit-tree", tree, "-p", channel_tip(bare), "-m", "log replaced")
+    git(seed, "push", "-q", "origin", f"{sha}:{REF}")
+    return sha
+
+
+@pytest.mark.parametrize("text", ["", "\n", "{x}\n\n{y}\n"], ids=["empty", "one-blank-line", "blank-line-inside"])
+def test_an_empty_log_or_a_blank_line_is_unknown(world, capsys, text):
+    bare, work, seed, _ = world
+    if text == "{x}\n\n{y}\n":
+        line = json.dumps({"at": T0.isoformat(timespec="seconds"), "event": "claim", "ticket": "k",
+                           "holder": "peer", "detail": ""}, sort_keys=True)
+        text = f"{line}\n\n{line}\n"
+    _replace_log(seed, bare, text)
+    code, lines = pending(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown")
+
+
+@pytest.mark.parametrize("text", [None, "", "{not json\n"], ids=["no-log", "empty-log", "corrupt-log"])
+def test_ring_to_refuses_to_write_over_a_missing_or_unreadable_log(world, capsys, text):
+    bare, work, seed, _ = world
+    sha = _replace_log(seed, bare, text)
+    code, lines = ring_to(work, capsys)
+    assert code == 3 and lines[0].startswith("unknown")
+    assert not any(line.startswith("crew-doorbell/") for line in lines)
+    assert channel_tip(bare) == sha
+
+
 def test_a_resumed_session_in_this_worktree_still_sees_its_ring(world, capsys, monkeypatch):
     _, work, _, _ = world
     assert ring_to(work, capsys)[0] == 0
