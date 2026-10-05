@@ -106,17 +106,27 @@ def test_command_names_exact_cli(name, snippets):
 # T-0010's approval branch, T-0012's `goal`, T-0019's `assign` and T-0020's
 # `focus` have about 5 lines each. T-0010 took 10: its approve exception and
 # the questions.md shape round 2 asked for (owner decision, 2026-09-27), which
-# leaves T-0012, T-0019 and T-0020 10 lines between them. Past this, detail
-# moves into crew_autopilot.py output (or a backing skill, which is the
-# owner's call).
-AUTOPILOT_MAX_LINES = 110
+# leaves T-0012, T-0019 and T-0020 10 lines between them. T-0020 took 7 (its
+# section 6: a heading, two blank lines and 5 lines, on a file at 109), so
+# T-0012 and T-0019 have 3. Past this, detail moves into
+# crew_autopilot.py output (or a backing skill, which is the owner's call).
+AUTOPILOT_MAX_LINES = 117
 
 
-def test_autopilot_command_at_most_110_lines():
+def test_autopilot_command_at_most_117_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 
-    assert (lines <= AUTOPILOT_MAX_LINES, MAX_LINES - AUTOPILOT_MAX_LINES) == (True, 10), (
+    assert (lines <= AUTOPILOT_MAX_LINES, MAX_LINES - AUTOPILOT_MAX_LINES) == (True, 3), (
         f"autopilot.md: {lines} lines, budget {AUTOPILOT_MAX_LINES}")
+
+
+def test_autopilot_command_names_the_sleep_and_wake_calls():
+    """L-0652: section 0 names both exact CLI calls inside the budget."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [call for call in ("crew_autopilot.py sleep --root .",
+                              "crew_autopilot.py wake --root .", "`sub=sleep`", "`sub=wake`")
+            if call not in flat] == []
 
 
 IMPLEMENT_APPROVAL_TEXT = (

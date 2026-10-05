@@ -109,7 +109,7 @@ def _git_fields(top, args, data=None, literal=False):
     if literal:
         env["GIT_LITERAL_PATHSPECS"] = "1"
     try:
-        done = subprocess.run(["git", "-C", top] + args, capture_output=True, env=env,
+        done = subprocess.run([crew_common.require_tool("git"), "-C", top] + args, capture_output=True, env=env,
                               timeout=GIT_TIMEOUT, check=False, input=data,
                               stdin=None if data is not None else subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:

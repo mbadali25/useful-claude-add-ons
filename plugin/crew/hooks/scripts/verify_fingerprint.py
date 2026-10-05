@@ -67,6 +67,8 @@ import os
 import subprocess
 import sys
 
+import crew_common
+
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
@@ -127,7 +129,7 @@ def _head(root):
     none. A repo with no commits yet is a real state, not an error."""
     try:
         out = subprocess.run(
-            ("git", "rev-parse", "HEAD"), cwd=root, capture_output=True,
+            (crew_common.require_tool("git"), "rev-parse", "HEAD"), cwd=root, capture_output=True,
             text=True, check=False, stdin=subprocess.DEVNULL)
     except OSError:
         return "no-git"
@@ -251,7 +253,7 @@ def _index_entries(root):
     """
     try:
         out = subprocess.run(
-            ("git", "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
+            (crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
             cwd=root, capture_output=True, text=True, check=False,
             stdin=subprocess.DEVNULL)
     except OSError:
@@ -291,7 +293,7 @@ def _sub_changed(root):
                  ("ls-files", "--others", "--exclude-standard")):
         try:
             done = subprocess.run(
-                ("git", "-c", "core.quotePath=false") + args, cwd=root,
+                (crew_common.require_tool("git"), "-c", "core.quotePath=false") + args, cwd=root,
                 capture_output=True, text=True, check=False,
                 stdin=subprocess.DEVNULL)
         except OSError:

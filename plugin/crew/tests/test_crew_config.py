@@ -55,9 +55,11 @@ def test_default_config_matches_the_committed_template():
     A byte-for-byte comparison, not just a dict equality, so a formatting
     change (key order, indent width) that would still round-trip equal is
     also caught -- the template is meant to be exactly what a fresh
-    `json.dumps(default_config(), indent=2) + "\\n"` produces.
+    `json.dumps(template_config(), indent=2) + "\\n"` produces. Since T-0050
+    that is `default_config()` minus the personal keys, so a template default
+    never shadows the owner's global value.
     """
-    expected = json.dumps(crew_config.default_config(), indent=2) + "\n"
+    expected = json.dumps(crew_config.template_config(), indent=2) + "\n"
     with open(_TEMPLATE_PATH, encoding="utf-8") as handle:
         actual = handle.read()
     assert actual == expected
@@ -71,7 +73,7 @@ def test_default_global_config_matches_the_committed_template():
     walkthrough offering a key the writer refuses, or refusing one the
     template advertises. Byte-for-byte for the same reason as above.
     """
-    expected = json.dumps(crew_config.default_global_config(), indent=2) + "\n"
+    expected = json.dumps(crew_config.global_template_config(), indent=2) + "\n"
     with open(_GLOBAL_TEMPLATE_PATH, encoding="utf-8") as handle:
         actual = handle.read()
     assert actual == expected
@@ -157,7 +159,7 @@ def test_default_config_matches_crew_setup_skill_md_inline_copy():
         "rather than deleting the check."
     )
     doc_config = json.loads(fences[0])
-    assert doc_config == crew_config.default_config()
+    assert doc_config == crew_config.template_config()
 
 
 def test_default_config_pm_block_matches_crew_state():
@@ -351,8 +353,43 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
     # merging main 34d9f267.
     assert "tickets.baseBranch" in declared
-    # 132 with both, measured after merging main into T-0013.
-    assert len(declared) == 132
+    # 132 with T-0013's two machine keys (`resume.typeDelaySeconds`,
+    # `resume.readyTimeoutSeconds`), measured after merging main into T-0013.
+    # 133 with T-0066: `git.forbiddenTrailers` on top of those 132, measured
+    # by running this test after merging main edb2b8ff.
+    # 136 with T-0053's repo-only `autopilot.sleep.schedule`,
+    # `autopilot.sleep.approval` and `autopilot.sleep.questions` on top of
+    # those 133, measured by running this test after merging main 86d96fa1.
+    assert "git.forbiddenTrailers" in declared
+    assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
+            "autopilot.sleep.questions"} <= declared
+    # 137 with T-0017's `context.autoClear.wrapUp` on top of those 136,
+    # measured by running this test on T-0017-build after merging main
+    # a27c5e38 through T-0016-build.
+    assert "context.autoClear.wrapUp" in declared
+    # 138 with T-0074's repo-only `autopilot.maxAutoReplans` on top of those
+    # 137, measured by running this test on T-0074-build after merging main
+    # 8c0843ca.
+    assert "autopilot.maxAutoReplans" in declared
+    # Still 138 with T-0050 (batch 6): the personal `autopilot` keys stay
+    # declared here (this is the defaults layer); only `template_config()`
+    # omits them.
+    # 141 with T-0011's repo-only ship phase (batch 7): `autopilot.ship`,
+    # `autopilot.knownFailures` (an empty list, so one leaf) and
+    # `autopilot.ciTimeoutMinutes` on top of those 138.
+    assert {"autopilot.ship", "autopilot.knownFailures",
+            "autopilot.ciTimeoutMinutes"} <= declared
+    assert len(declared) == 141
+
+
+def test_forbidden_trailers_is_global_settable_and_defaults_empty():
+    """T-0066: `git.forbiddenTrailers` is in BOTH layers, default `[]` (the
+    list is the switch; empty means off). Global-settable because the owner
+    who forbids a trailer forbids it on every repo of the machine, and
+    `is_global_path` requires a global key to be a repo key too."""
+    assert crew_config.is_global_path("git.forbiddenTrailers")
+    assert crew_config.default_config()["git"] == {"forbiddenTrailers": []}
+    assert crew_config.default_global_config()["git"] == {"forbiddenTrailers": []}
 
 
 def test_tickets_base_branch_is_repo_only_and_null_by_default():
@@ -984,12 +1021,12 @@ def test_heal_writes_the_repo_file_not_the_global_one(tmp_path, monkeypatch):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "missing" in message
     assert global_path.read_bytes() == before
     written = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
     # The repo file gets built-in defaults, NOT the global tracker override --
-    # heal_config calls default_config(), never resolve_config().
+    # heal_config calls template_config() (T-0050), never resolve_config().
     assert written["tracker"] == "files"
 
 
@@ -1699,7 +1736,8 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines",
                               "context.autoClear.onlyRepos",
-                              "context.autoClear.onlySessions"]
+                              "context.autoClear.onlySessions",
+                              "context.autoClear.wrapUp"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
@@ -2014,6 +2052,7 @@ def _repo_bytes(root):
     ("context.autoClear.onlySessions", ["y"]),
     ("autopilot.frobnicate", 1),
     ("context.autoClear.enabled", True),
+    ("context.autoClear.wrapUp", True),
     ("resume.auto", True),
     # `0 == False` in Python; the readers test `is False`, so 0 vetoes nothing.
     ("context.autoClear.enabled", 0),
@@ -2441,7 +2480,8 @@ def test_null_at_the_repo_layer_means_inherit_or_clear(tmp_path):
         "guards.forcePush": "inherits the machine-global value",
         "pm.authority": "inherits the machine-global value",
         "context.autoClear.enabled": "clears the veto",
-        "autopilot.mode": "unset"}
+        # T-0050: personal, so global-settable; a repo null is silent.
+        "autopilot.mode": "inherits the machine-global value"}
     assert "scope.mode" in str(caught.value)
 
 
@@ -2941,15 +2981,16 @@ def test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer(
 
 def test_a_repo_only_key_in_the_machine_file_does_not_block_a_write(tmp_path):
     # JUDGEMENT (review round 3): a repo-only key in the machine file is
-    # pruned by `filter_global` on every read, so it cannot take effect; the
-    # owner's own machine file holds `autopilot.mode` ahead of T-0070.
-    gpath = _global_file(tmp_path, {"autopilot": {"mode": "plan"}})
+    # pruned by `filter_global` on every read, so it cannot take effect. The
+    # owner's machine file held `autopilot.mode` ahead of T-0070; T-0050 made
+    # that key personal (global-settable), so `tracker` stands in for it.
+    gpath = _global_file(tmp_path, {"tracker": "jira"})
 
     merged, _ = crew_config.write_global_config({"notify.chatId": "1"},
                                                 str(gpath))
 
-    assert merged["autopilot"] == {"mode": "plan"}
-    assert crew_config.filter_global(merged)[0].get("autopilot") is None
+    assert merged["tracker"] == "jira"
+    assert crew_config.filter_global(merged)[0].get("tracker") is None
 
 
 def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):

@@ -5,7 +5,12 @@
 #   events: phase | gate | review | waiting | done
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
-[ -f .crew/config.json ] || exit 0
+# L-0680: the repo config is the resolved one (_common.sh's crew_repo_config_dir,
+# T-0096): a linked worktree with none of its own reads the main checkout's; own
+# files win whole; `unknown` reads only the own .crew/. Writes stay here.
+crew_repo_config_dir .
+CREW_CFG="$CREW_CFG_DIR/config.json"
+[ -f "$CREW_CFG" ] || exit 0
 
 # No hook_once claim here on purpose: Notification can fire many times per
 # session, and a duplicate ping is a safe failure -- a suppressed one is not.
@@ -16,11 +21,11 @@ EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
 # sends. A command calling this script by hand passes no payload and sends.
 
 CREW_PY=$(crew_py) || exit 0
-read_cfg() { "$CREW_PY" - "$1" << 'PY' 2>/dev/null
+read_cfg() { "$CREW_PY" - "$CREW_CFG" "$1" << 'PY' 2>/dev/null
 import json,sys
-try: c=json.load(open(".crew/config.json")).get("notify",{})
+try: c=json.load(open(sys.argv[1])).get("notify",{})
 except Exception: sys.exit(0)
-k=sys.argv[1]
+k=sys.argv[2]
 v=c
 for part in k.split("."):
     if not isinstance(v,dict): sys.exit(0)

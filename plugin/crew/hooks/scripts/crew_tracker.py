@@ -28,12 +28,17 @@ collapses into a safe-looking value, and every write below refuses on it.
 - obsidian: files, plus the Kanban board in the vault (below).
 - jira, sdp: `delegated`, with the sync command to run, at the two boundaries
   only (`in-progress`, `done`) and naming the target status; every other move
-  pushes nothing. A script cannot call an MCP tool; the model running the
-  lifecycle command can.
+  pushes nothing -- `needs-owner`, `cancelled` and `superseded` included
+  (T-0037: the owner closes a cancelled Jira or SDP item by hand). A script
+  cannot call an MCP tool; the model running the lifecycle command can.
 
-A move backwards by `STATUS_ORDER` -- `done` back to `in-progress` -- is
-refused unless `--reopen` is passed, and so is a move from a status crew does
-not know, because whether it goes backwards cannot be told.
+Beside the lifecycle order sit T-0037's three words: `needs-owner` (open,
+waiting on the owner, Backlog lane) and the closed words `cancelled` and
+`superseded` (Done lane, checked). A move backwards by `STATUS_ORDER` --
+`done` back to `in-progress` -- is refused unless `--reopen` is passed, and so
+is any move out of `done`, `cancelled` or `superseded`, and a move from a
+status crew does not know, because whether it goes backwards cannot be told.
+`needs-owner` to or from any open word is never backwards.
 
 ## Writes
 
@@ -105,7 +110,13 @@ TAKEN = "id taken"
 # `obsidian.columns` key of the lane each one lands in. Table-driven on
 # purpose: a new status is a row here, not a branch in the code. A status
 # absent from this table maps to no lane and is refused with nothing written.
+# T-0037 added three rows off the linear order: `needs-owner` is open and waits
+# on the owner; `cancelled` and `superseded` are closed and terminal. This is
+# the vocabulary's one owner -- every other closed list is held to
+# CLOSED_STATUSES by test_status_vocabulary.py.
 STATUS_ORDER = ("direction", "ready", "spec", "planned", "in-progress", "review", "done")
+OWNER_STATUSES = ("needs-owner",)  # T-0037: open, the ticket waits on an owner decision
+CLOSED_STATUSES = ("cancelled", "superseded")  # T-0037: closed; leaving one needs --reopen
 LANE_FOR_STATUS = {
     "direction": "backlog",
     "ready": "backlog",
@@ -114,6 +125,9 @@ LANE_FOR_STATUS = {
     "in-progress": "inProgress",
     "review": "review",
     "done": "done",
+    "needs-owner": "backlog",
+    "cancelled": "done",
+    "superseded": "done",
 }
 DEFAULT_COLUMNS = {
     "backlog": "Backlog",
@@ -554,7 +568,8 @@ def _decode(data, label):
 def _git_out(root, *args):
     """`(returncode, stdout stripped)`, or `(None, "")` when git could not run."""
     try:
-        done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False,
+        done = subprocess.run([crew_common.require_tool("git"), *args], cwd=root, capture_output=True,
+                              text=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None, ""
@@ -672,9 +687,15 @@ def _backwards(ticket, current, status):
     """Why moving from `current` to `status` needs --reopen, or None."""
     if current == status:
         return None
+    if current in CLOSED_STATUSES or (current == "done" and status not in STATUS_ORDER):
+        return f"{ticket} is {current}; moving it to {status} needs --reopen"
+    if current in OWNER_STATUSES:
+        return None
     if current not in STATUS_ORDER:
         return (f"could not tell whether {current} -> {status} goes backwards ({current!r} is not a "
                 f"status crew knows); pass --reopen if the move is meant")
+    if status not in STATUS_ORDER:
+        return None
     if STATUS_ORDER.index(status) < STATUS_ORDER.index(current):
         return f"{ticket} is {current}; moving it back to {status} needs --reopen"
     return None
@@ -1017,7 +1038,7 @@ def _inside(parent, path):
 def _git_ignored(repo, path):
     """True/False from `git check-ignore`, None when git could not say."""
     try:
-        done = subprocess.run(["git", "check-ignore", "-q", "--", path], cwd=repo,
+        done = subprocess.run([crew_common.require_tool("git"), "check-ignore", "-q", "--", path], cwd=repo,
                               capture_output=True, text=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=10)
     except (OSError, subprocess.SubprocessError):
@@ -1777,7 +1798,7 @@ def create(root, ticket, title):
 
 def move(root, ticket, status, reopen=False):
     """Move the ticket to `status` in every half of the configured tracker.
-    A move backwards by STATUS_ORDER needs `reopen`."""
+    A move backwards by STATUS_ORDER, or out of a closed word, needs `reopen`."""
     info = resolve(root)
     stop = _gate(info)
     if stop:
@@ -1840,7 +1861,8 @@ def main(argv=None):
     parser.add_argument("--title")
     parser.add_argument("--to", dest="status")
     parser.add_argument("--reopen", action="store_true",
-                        help="allow a move backwards by STATUS_ORDER (done -> in-progress)")
+                        help="allow a move backwards by STATUS_ORDER (done -> in-progress), "
+                             "or out of done, cancelled or superseded")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)

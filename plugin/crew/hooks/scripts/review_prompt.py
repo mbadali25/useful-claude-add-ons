@@ -53,6 +53,7 @@ import subprocess
 import sys
 
 import ci_receipt
+import crew_common
 import crew_standards
 import merged_main
 import recurring_findings
@@ -196,7 +197,8 @@ def _plan_block(root, ticket):
 
 def _head(root):
     try:
-        return subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True,
+        return subprocess.run([crew_common.require_tool("git"), "-C", root, "rev-parse", "HEAD"],
+                              capture_output=True,
                               text=True, check=False, timeout=30,
                               stdin=subprocess.DEVNULL).stdout.strip()
     except (OSError, subprocess.SubprocessError):

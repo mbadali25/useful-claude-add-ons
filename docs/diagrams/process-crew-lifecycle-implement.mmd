@@ -7,6 +7,8 @@
 %% base at branch cut, so /crew:implement step 1 may report `kept`, and a `tickets.baseBranch` naming no commit
 %% exits 1 "could not tell". Cites :28, :33 re-read on the merged tree.
 %% --
+%% Re-drawn for T-0066 (crew 1.0.328, merging origin/main c9263465, then edb2b8ff, 155fe6d8 and e9364a70, which left implement.md unchanged): implement.md step 2 gained a line (T-0066)
+%%    and main changed four lines in place; node cites re-read on this tree (:59, :69, :88-91, :94, :106-110, :111-114, :115).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -15,7 +17,8 @@
 %%     move --to in-progress (:36, `--reopen` on a successor plan :37); :41 steps
 %%     in order, test first; :59 changed-file list; :69 verify; :89-112 step 6:
 %%     tests, then docs, then crew_refresh_check.py (:96) and the commands its
-%%     lines name, committed, until `fresh` or a `stop`; then spec.md header
+%%     lines name, committed, until `fresh` (current AND committed since T-0063:
+%%     `fresh-uncommitted` means commit the listed paths) or a `stop`; then spec.md header
 %%     `status: review`, which keeps the approval (:107-109), and crew_tracker.py
 %%     move --to review (:110-111); then /crew:review last (:112). :114-118
 %%     step 7: done is /crew:done's.
@@ -34,17 +37,21 @@ flowchart TB
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
         im0 -- yes --> im1["scope_base --record (kept if activate<br/>recorded; exit 1 could not tell), then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
         im1 --> im2["steps in order, test first,<br/>scope-guard on every write<br/>:38-42"]
-        im2 --> im3a["changed-file list, verify<br/>:57, :67"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:93"}
+        im2 --> im3a["changed-file list, verify<br/>:59, :69"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:88-91"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:94"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
+        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
+        rf3 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> sc1["required standards self-check<br/>:105-109"]
-        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:110-113"]
+        rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
+        sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-113"]
         im4 --> im5["then /crew:review last<br/>:114"]
     end
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
 
     stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+%% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375); T-0063's edits re-applied here.
+%% New rf3 node and its two edges (implement.md:99, re-read with grep -n on batch-7-build after the merge). rf1 :94 holds.

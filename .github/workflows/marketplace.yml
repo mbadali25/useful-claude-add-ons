@@ -84,12 +84,28 @@ jobs:
       # green (L-0577).
       - name: Windows shard fan-in suite
         run: python3 scripts/_test/windows-shards.py
-      # The UPDATE.md mirrors are generated, so the only thing keeping them
+      # scripts/ci-select.py decides which heavy suites a PR runs in
+      # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
+      # (C-0001). A wrong answer there is a suite skipped on a PR that needed
+      # it, so this always runs, whatever the PR changes.
+      # One case collects pytest-crew.yml's whole combined run to measure its
+      # sys.path, and fails on a collection error (an incomplete
+      # measurement), so it needs that job's test dependencies.
+      - name: Install the combined run's test dependencies
+        run: python -m pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests
+      - name: CI suite selector suite
+        run: python3 scripts/_test/ci-select.py
+      # The UPDATE.md mirrors and the root README's "What's new" (the newest
+      # CHANGELOG.md entries) are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
       # carry a "generated" comment that says they are current.
-      - name: UPDATE.md mirrors are current
+      - name: Generated README blocks are current
         run: python3 scripts/sync-updates.py --check
+      # Must-block: a "What's new" that is not the newest two changelog
+      # entries fails --check. Must-allow: a fresh render passes (L-1518).
+      - name: sync-updates suite
+        run: python3 scripts/_test/sync-updates.py
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
       # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and

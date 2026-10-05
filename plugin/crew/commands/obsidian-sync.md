@@ -62,11 +62,12 @@ Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
 
 | INDEX status | Lane (`obsidian.columns` key) |
 |---|---|
-| `direction`, `ready` | `backlog` |
+| `direction`, `ready`, `needs-owner` | `backlog` |
 | `spec`, `planned` | `ready` |
 | `in-progress` | `inProgress` |
 | `review` | `review` |
 | `done` | `done` (checked, below `**Complete**`) |
+| `cancelled`, `superseded` (closed; leaving one needs `--reopen`) | `done` (checked) |
 
 Any other status maps to no lane and is refused with nothing written: say which
 value you found and stop. Guessing a lane moves a card a human is looking at.

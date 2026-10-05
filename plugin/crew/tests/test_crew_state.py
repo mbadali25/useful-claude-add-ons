@@ -397,6 +397,47 @@ def test_table_row_title_saying_done_does_not_close_an_open_status_cell(tmp_path
     assert crew_state.read_work(str(root))["ticket"] == "T-0001"
 
 
+# --- T-0037: `cancelled` and `superseded` are closed words; `needs-owner` is open ---
+
+def _first_open(tmp_path, body):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(body, encoding="utf-8", newline="\n")
+    return crew_state.read_work(str(root))["ticket"]
+
+
+def test_cancelled_row_is_not_the_open_ticket(tmp_path):
+    """A cancelled INDEX row read as OPEN, so the brief named it the current ticket."""
+    assert _first_open(tmp_path, "| T-0001 | cancelled | low | r | t |\n"
+                                 "| T-0002 | open | low | r | t |\n") == "T-0002"
+
+
+def test_superseded_row_is_not_the_open_ticket(tmp_path):
+    assert _first_open(tmp_path, "T-0001 | Superseded | low | r | t\n"
+                                 "T-0002 | spec | low | r | t\n") == "T-0002"
+
+
+def test_prose_cancelled_colon_closes(tmp_path):
+    for index, line in enumerate(("- Cancelled: T-0001", "1. superseded: T-0001",
+                                  "- CANCELLED: T-0001", "* Superseded : T-0001")):
+        got = _first_open(tmp_path / f"case{index}", f"# Work\n\n{line}\n- T-0002 in progress\n")
+        assert got == "T-0002", line
+
+
+def test_needs_owner_row_is_open(tmp_path):
+    assert _first_open(tmp_path, "| T-0001 | needs-owner | low | r | t |\n") == "T-0001"
+
+
+def test_title_saying_cancelled_does_not_close_an_open_row(tmp_path):
+    """The `test_table_row_title_saying_done...` shape, for the new words."""
+    assert _first_open(tmp_path, "T-0001 | open | low | r | cancelled: superseded flag cleanup\n") == "T-0001"
+
+
+def test_cancel_the_flag_prose_stays_open(tmp_path):
+    """No colon, no label: `Cancel` / `Superseded` leading open work is still open."""
+    for index, line in enumerate(("- Cancel the T-8 flag", "- Superseded config keys in T-8 need removal")):
+        assert _first_open(tmp_path / f"case{index}", f"# Work\n\n{line}\n") == "T-8", line
+
+
 def test_table_row_with_leading_and_trailing_pipes(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / ".work" / "INDEX.md").write_text(

@@ -86,8 +86,8 @@ def test_route_unknown_word_refuses(tmp_path, token):
         "", True, True)
 
 
-@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012"),
-                                         ("focus", "T-0020")])
+# T-0020 landed `focus`: test_crew_autopilot_focus.py holds its routing.
+@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012")])
 def test_route_unavailable_names_its_ticket(tmp_path, name, ticket):
     root = make_repo(tmp_path, mode="off")
 
@@ -153,6 +153,23 @@ def test_route_cli_prints_one_line(tmp_path, capsys, text, line):
 
     out = capsys.readouterr().out
     assert (code, out.startswith(line), out.count("\n")) == (0, True, 1)
+
+
+@pytest.mark.parametrize("text,line", [
+    ("sleep", "sub=sleep stop=0 ticket= reason="),
+    ("wake", "sub=wake stop=0 ticket= reason="),
+    ("sleep T-0001", "sub=sleep stop=1 ticket= reason=/crew:autopilot sleep takes no other word"),
+    ("wake now", "sub=wake stop=1 ticket= reason=/crew:autopilot wake takes no other word"),
+    ("wake T-1", "sub=wake stop=1 ticket= reason=/crew:autopilot wake takes no other word"),
+])
+def test_route_args_sleep_and_wake_take_no_ticket(tmp_path, capsys, text, line):
+    """L-0652: `sleep` and `wake` route, and a second word after either stops."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="T-1")
+
+    code = crew_autopilot.main(["route", "--root", str(root), "--args", text])
+
+    assert (code, capsys.readouterr().out) == (0, line + "\n")
 
 
 def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
@@ -1170,3 +1187,15 @@ def test_status_at_open_questions_reads_the_same_under_every_questions_policy(tm
 
     assert (texts[1:] == texts[:1] * 2, "action=" in texts[0],
             "phase: open-questions, stopped" in texts[0]) == (True, False, True)
+
+
+def test_status_renders_needs_owner_within_the_line_budget(tmp_path):
+    """T-0037: the `needs-owner` stop names the owner, in at most STATUS_MAX_LINES."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status="needs-owner")
+
+    code, lines = _lines(root, "--ticket", T)
+
+    assert (code, _field(lines, "phase").startswith("phase: needs-owner"),
+            _field(lines, "waiting on").split(" - ")[0], len(lines) <= crew_autopilot.STATUS_MAX_LINES) == (
+        0, True, "waiting on: owner", True)

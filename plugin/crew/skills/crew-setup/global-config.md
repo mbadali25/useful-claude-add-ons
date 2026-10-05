@@ -45,6 +45,19 @@ column. Run it even when nothing needs changing.
   the filter is overridable per repo. One project may legitimately want a
   different reviewer, and step 1's `source` column is what shows which layer
   a value actually came from.
+- **The personal `autopilot` keys combine per key, not by precedence**
+  (T-0050). `autopilot.mode`, `maxPhases`, `deploy`, `approval` and
+  `questions` may be set here as the owner's default for every repo. Where
+  both layers set one, the STRICTER wins (`off` over `plan`, `human` over
+  `risk` over `self`, `none` over `nonprod` over `all`, the smaller
+  `maxPhases`); a layer that is silent (absent or `null`) imposes nothing, so
+  a global `self` reaches every repo that does not say otherwise and can never
+  widen one that said `human`. `--explain` names the layer holding a value
+  down. `scope.allowCliApproval` stays repo-only for now.
+- **Every crew write is backed up first.** The previous bytes go to
+  `~/.claude/crew/backups/` (newest 20 per file kept), and a failed backup
+  refuses the write (exit 4). `/crew:config --backups --global|--repo` lists
+  them, `--restore <stamp>` puts one back.
 - **`graph.obsidian.*` no longer exists.** Removed in 0.16.13 -- the code graph
   lives on the filesystem as `graph.json` and there is no vault export to
   consent to. A global config still carrying the key is not misconfigured,
@@ -172,6 +185,22 @@ there everywhere; making them say so once per repository was the friction that
 produced this split. A repo that genuinely wants its memory in `.crew/` still
 overrides `memory.mode` in its own config.
 
+**`autopilot.mode`, `autopilot.approval`, `autopilot.questions`,
+`autopilot.maxPhases` and `autopilot.deploy`** — the owner's personal
+autopilot defaults. Ask only when the user wants autopilot on more than one
+repo. Say the rule before the values: the stricter of the two layers wins, so
+these can only ever be a CEILING a repo may narrow, never a grant a repo cannot
+refuse. Read each `!` line back: `mode` `plan` lets `/crew:autopilot` drive
+tickets in-session; `approval` `self` lets it approve every plan itself (and
+`risk` only `risk: low` ones), still only where the repo's own
+`scope.allowCliApproval` is exactly `true`; `questions` the same for open
+questions; `deploy` `nonprod` or `all` lets it deploy without asking. Then run
+`--explain --all` and read each `shadow:` finding out: an existing repo whose
+file spells a personal key at its default (every repo `/crew:init` set up
+before T-0050 says `"mode": "off"`) holds the global value down. Removing it is
+the owner's call, one key at a time: `crew_config.py --root <repo> --unset
+autopilot.mode --repo`, then `--apply` after a yes.
+
 **`shellRoute.mode` and `shellRoute.distro`**, on native Windows only. Which
 shell is fast is a fact about the machine. Run `crew_shell.py probe --write`,
 and `measure --write` when the state is `usable`, then offer `auto` (default),
@@ -211,7 +240,15 @@ Read that back. Then, and only then, add `--apply` to the same command to
 write it. A refused key exits 2 and names the key; that is the guard working,
 not a bug to route around.
 
-## 4. Say what this did not do
+## 4. Say what this did not do, and what was saved
+
+- Name the backup the write took: the dry run's file was copied to
+  `~/.claude/crew/backups/` before it was replaced (`--backups --global` lists
+  it), and `--restore <stamp> --global --apply` puts it back.
+- The owner's profile (`~/.claude/crew/profile.json`, plus
+  `<memory.vaultPath>/crew/profile.json` when the vault path is set) now holds
+  the values just written. A lost or corrupt config is rebuilt from it with
+  `--rebuild --global` or `--rebuild --repo`, a dry run until `--apply`.
 
 - The machine layer did not touch any `.crew/config.json`; a repo change is
   the menu's repo layer, through `--set --repo`. The repo layer still wins over

@@ -26,6 +26,10 @@ step, no API restrictions. **Only scan assets you own or have written permission
 
 Both fetch the latest prebuilt binary and community templates. PDF reports need
 `wkhtmltopdf` (installed by bootstrap.sh; `winget install wkhtmltopdf` on Windows).
+Where `api.github.com` is refused (a Claude Code cloud session, some corporate proxies) they
+fall back to git tags and git for the version lookup and the templates. `bootstrap.sh` skips
+any tool already on PATH, so it is safe to re-run; `GIZMODUCK_BOOTSTRAP_FORCE=1 ./bootstrap.sh`
+reinstalls everything.
 
 If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
 template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.

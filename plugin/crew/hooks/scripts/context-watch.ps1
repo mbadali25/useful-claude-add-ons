@@ -26,6 +26,102 @@
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
+function Get-CrewHandoffPath($Value) {
+  # The handoff note's path relative to the cwd (the checkout root):
+  # context.handoffPath, or .work/HANDOFF.md when it is unset or leaves the
+  # checkout -- absolute, `..`, or through a link -- or names a directory (the
+  # checkout itself, `notes/`), with a warning on stderr. Forward slashes.
+  # Twin of crew_state.handoff_path (crew_freshness.contained_path), stricter
+  # on links: 5.1 cannot resolve one as realpath does, so any link between the
+  # root and the target reads as leaving. In a linked worktree inheriting the
+  # main checkout's config (L-0680) an absolute value would name the main
+  # checkout's file. Copied verbatim into handoff-read.ps1, handoff-write.ps1
+  # and context-watch.ps1; test_worktree_config_shell.py holds the copies equal.
+  $default = '.work/HANDOFF.md'
+  if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $default }
+  # PowerShell's file cmdlets read `\` as a separator on every OS (on POSIX
+  # too, where the .NET path APIs do not), so the containment check below must
+  # see the path those cmdlets will use: `..\main\x` is `../main/x`.
+  $sep = [System.IO.Path]::DirectorySeparatorChar
+  if ($sep -ne '\') { $Value = $Value.Replace('\', '/') }
+  $inside = $false
+  try {
+    $base = [System.IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd('\', '/')
+    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, $Value))
+    $cmp = if ($env:OS -eq 'Windows_NT' -and $IsLinux -ne $true) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $inside = $full.StartsWith($base + [System.IO.Path]::DirectorySeparatorChar, $cmp)
+    for ($at = $full; $inside -and $at.Length -gt $base.Length; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if ($item -and $item.LinkType) { $inside = $false }
+    }
+  } catch { $inside = $false }
+  if (-not $inside) {
+    $script:CrewHandoffPathLeft = $true   # context-watch.ps1 says so in its message
+    [Console]::Error.WriteLine("crew: context.handoffPath leaves this checkout - using $default")
+    return $default
+  }
+  # A directory (`notes/`, an existing folder) cannot hold the note.
+  if ($Value.EndsWith('/') -or $Value.EndsWith([string]$sep) -or (Test-Path -LiteralPath $full -PathType Container)) {
+    [Console]::Error.WriteLine("crew: context.handoffPath names a directory - using $default")
+    return $default
+  }
+  # Forward slashes on every OS, as the bash twin prints it. Only Windows can
+  # have a `\` left here; converting after the check is safe because the check
+  # above already saw `\` as the separator it is to the cmdlets.
+  $rel = $full.Substring($base.Length + 1)
+  if ($sep -eq '\') { $rel = $rel.Replace('\', '/') }
+  return $rel
+}
+
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
@@ -43,6 +139,7 @@ if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
 if (-not $sessionKey) { $sessionKey = "nosession" }
 $marker     = ".crew/.handoff-requested-$sessionKey"
 $sentMarker = ".crew/.autoclear-sent-$sessionKey"
+$escalated  = ".crew/.wrapup-escalated-$sessionKey"  # T-0017
 
 # auto-clear.ps1 logs its own refusals/sends to .crew/.autoclear.log (see its
 # own Write-CrewAutoClearNote) and writes the same line to [Console]::Error --
@@ -117,6 +214,207 @@ function Invoke-ContextWatchAutoClear([string]$SessionId) {
   }
 }
 
+# BYTE-FOR-BYTE the resolver in role-write-guard.ps1, asserted by the tests.
+function Resolve-CrewPython {
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
+  }
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
+  #
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
+  #
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
+  #
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
+  #
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
+      return $real
+    }
+  }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
+  return ''
+}
+
+# T-0017: the python that runs crew_autocycle's wrap-up verbs, or '' when the
+# wrap-up is not configured here. Checked natively FIRST -- machine `wrapUp`
+# and `enabled` exactly true, no repo `false` for either -- so an unarmed
+# machine never probes for a python and its output is unchanged. No python:
+# '' too, and the caller sends today's message (auto-clear.ps1 still refuses
+# the clear: both are the refusing direction).
+function Get-CrewWrapUpPython($RepoAutoClear) {
+  $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+  try {
+    $machine = Get-Content -LiteralPath (Join-Path $userHome ".claude/crew/config.json") -Raw -ErrorAction Stop |
+      ConvertFrom-Json -ErrorAction Stop
+  } catch { return '' }
+  $auto = if ($machine -is [System.Management.Automation.PSCustomObject]) { $machine.context.autoClear } else { $null }
+  if ($auto -isnot [System.Management.Automation.PSCustomObject]) { return '' }
+  if (-not (($auto.wrapUp -is [bool]) -and $auto.wrapUp -and ($auto.enabled -is [bool]) -and $auto.enabled)) { return '' }
+  if ($RepoAutoClear -is [System.Management.Automation.PSCustomObject]) {
+    if (($RepoAutoClear.wrapUp -is [bool]) -and -not $RepoAutoClear.wrapUp) { return '' }
+    if (($RepoAutoClear.enabled -is [bool]) -and -not $RepoAutoClear.enabled) { return '' }
+  }
+  return (Resolve-CrewPython)
+}
+
+# The lines a crew_autocycle wrap-up verb prints; nothing on any failure.
+function Invoke-CrewWrapUpVerb([string]$Py, [string[]]$VerbArgs) {
+  try {
+    & $Py (Join-Path $PSScriptRoot "crew_autocycle.py") @VerbArgs 2>$null |
+      ForEach-Object { ([string]$_).TrimEnd("`r") }
+  } catch { }
+}
+
 # Loop safety, layer 1: Claude Code is already continuing because of a stop
 # hook -- do not pile on more feedback. Layer 2 is the once-per-crossing
 # marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
@@ -137,7 +435,15 @@ if ($d.stop_hook_active -eq $true) {
 # -- still requires a fully initialised crew repo. Unchanged from before F4:
 # a `.crew/` directory with no config.json gets no warnings and writes no
 # marker, exactly as a repo that never ran `/crew:init` always has.
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
+# L-0680: the resolved repo config (Get-CrewRepoConfigDir, T-0096): a linked
+# worktree with none of its own reads the main checkout's, own files win whole,
+# `unknown` reads only the own .crew/. The marker stays in this .crew/.
+# $cfgShown is the name a message gives it: the main checkout's full path when
+# it is inherited, `.crew/config.json` when it is this checkout's own.
+$repoCfg  = Get-CrewRepoConfigDir '.'
+$cfgPath  = Join-Path $repoCfg.Dir 'config.json'
+$cfgShown = if ($repoCfg.Source -eq 'main') { $cfgPath } else { '.crew/config.json' }
+if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) { exit 0 }
 
 if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 
@@ -147,12 +453,12 @@ if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 # once-per-crossing gate for this hook, reset by handoff-read.ps1 at this
 # session's next SessionStart -- that stays.
 
-$cfg = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context
+$cfg = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).context
 if ($null -eq $cfg -or $cfg.enabled -eq $false) { exit 0 }
 # $null test, not truthiness: warnAt 0 is a legal "always fire" and 0 is falsy.
 $warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.5 }
 $configured = if ($cfg.budgetTokens) { [long]$cfg.budgetTokens } else { 0 }
-$handoff    = if ($cfg.handoffPath) { $cfg.handoffPath } else { ".work/HANDOFF.md" }
+$handoff    = Get-CrewHandoffPath $cfg.handoffPath
 # Absent means TRUE since 0.19.52, so this cannot be a bare `-eq $true`:
 # that reads an unset key as false and would put this flavour one
 # behind the .sh on every config written before the change.
@@ -302,8 +608,34 @@ if (Test-Path $marker) {
     # wrap-up, so that crossing is over. Re-arm for the next one.
     # -Force: pwsh on Linux/macOS treats dotfiles as hidden and will not
     # remove them without it; harmless on Windows.
-    Remove-Item -LiteralPath $marker, $sentMarker -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $marker, $sentMarker, $escalated -Force -ErrorAction SilentlyContinue
     exit 0
+  }
+  # T-0017: an armed wrap-up whose results are not on disk is fed back to the
+  # model ONCE, never on stop_hook_active (that exits above). CreateNew makes
+  # exactly one flavour escalate when both run; a session whose clear was
+  # already sent is not nagged about it. Same rules as context-watch.sh.
+  if (-not (Test-Path -LiteralPath $sentMarker)) {
+    $wrapPy = Get-CrewWrapUpPython $cfg.autoClear
+    if ($wrapPy) {
+      $armed = @(Invoke-CrewWrapUpVerb $wrapPy @("wrapup-armed", "--root=$((Get-Location).Path)", "--session=$sessionId"))
+      if ($armed.Count -gt 0 -and $armed[0] -eq "on") {
+        $wrapWhy = @(Invoke-CrewWrapUpVerb $wrapPy @("wrapup-check", "--root=$((Get-Location).Path)"))
+        $wrapWhy = if ($wrapWhy.Count -gt 0 -and $wrapWhy[0]) { $wrapWhy[0] } else { "the wrap-up check gave no answer" }
+        $escalate = $false
+        if ($wrapWhy -ne "ok") {
+          try {
+            $claim = [System.IO.File]::Open((Join-Path (Get-Location).Path $escalated), [System.IO.FileMode]::CreateNew)
+            $claim.Close()
+            $escalate = $true
+          } catch { }
+        }
+        if ($escalate) {
+          [Console]::Error.WriteLine("crew wrap-up incomplete: $wrapWhy. Fix exactly that, run /crew:handoff --wrap-up again, end the turn.")
+          exit 2
+        }
+      }
+    }
   }
   # This crossing was already asked about. Never block twice for it; the
   # handoff may have been written since, which is all auto-clear wants to know.
@@ -350,10 +682,10 @@ try { & "$PSScriptRoot/notify.ps1" waiting "context $pctH% - writing handoff" 2>
 # Report the absolute numbers, not only the percentage. A budgetTokens that does
 # not match the model in use is otherwise invisible - it just makes the gate
 # fire early forever, and a warning that is always on is one nobody reads.
-$budgetNote = " Set context.budgetTokens in .crew/config.json to pin it."
+$budgetNote = " Set context.budgetTokens in $cfgShown to pin it."
 if ($how -eq "configured+observed") {
   $budgetNote = @"
- context.budgetTokens in .crew/config.json says a smaller window,
+ context.budgetTokens in $cfgShown says a smaller window,
 but this session has already held more than that - and observed usage cannot
 exceed the real window, so the larger figure wins. That pin is stale; set it to
 null to let crew work the window out from the model.
@@ -367,7 +699,7 @@ the id alone is not trusted. Pin it with context.budgetTokens if you prefer.
 "@.TrimEnd()
 } elseif ($how -eq "configured") {
   $budgetNote = @"
- That came from .crew/config.json. Remove it to let crew work the
+ That came from $cfgShown. Remove it to let crew work the
 window out from the model and this session's own usage.
 "@.TrimEnd()
 }
@@ -380,6 +712,15 @@ This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction.
 "@
 }
+$leftNote = ""
+if ($script:CrewHandoffPathLeft) {
+  $leftNote = @"
+
+context.handoffPath in $cfgShown leaves this checkout, so the handoff goes
+to $handoff here instead.
+"@
+}
+$note += $leftNote
 
 # Name the rule that fired. A percentage alone cannot explain why an 800k
 # reading on a 1M window said nothing and 900k did.
@@ -396,12 +737,25 @@ short by a percentage tuned for a small one.
 "@.TrimEnd()
 }
 
+# T-0017: armed, the warning IS the wrap-up procedure, and supersedes both
+# messages below; the text comes from crew_autocycle, as in the .sh flavour.
+# Unarmed, no python, or any error: today's message, unchanged.
+$wrapPy = Get-CrewWrapUpPython $cfg.autoClear
+if ($wrapPy) {
+  $wrapMsg = @(Invoke-CrewWrapUpVerb $wrapPy @("wrapup-message", "--root=$((Get-Location).Path)",
+                                                "--session=$sessionId", "--pct=$pctH"))
+  if ($wrapMsg.Count -gt 0 -and $wrapMsg[0]) {
+    [Console]::Error.WriteLine(($wrapMsg -join "`n"))
+    exit 2
+  }
+}
+
 if ($autoWrapUp) {
 [Console]::Error.WriteLine(@"
 You are at roughly $pctH% of the context budget. Reach a stopping point
 now: finish or safely abandon the change in flight, write $handoff per the
 crew-context skill, update the ticket, then tell the user the session is
-ready to clear. Do not start new work.
+ready to clear. Do not start new work.$leftNote
 "@)
 } else {
 [Console]::Error.WriteLine(@"

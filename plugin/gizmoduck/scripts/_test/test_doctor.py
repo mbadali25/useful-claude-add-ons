@@ -71,3 +71,28 @@ def test_key_value_never_appears_in_doctor_output_at_all():
     result = _run(with_key=True)
     assert _SECRET not in result.stdout
     assert _SECRET not in result.stderr
+
+
+def _run_home(home):
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    return subprocess.run([sys.executable, str(_SCRIPT), "doctor"],
+                          capture_output=True, text=True, check=False, env=env)
+
+
+def test_an_empty_templates_directory_is_not_ok(tmp_path):
+    # C-0008: `nuclei -update-templates` can exit 0 leaving only an empty
+    # ~/nuclei-templates; doctor must not call that OK.
+    (tmp_path / "nuclei-templates").mkdir()
+    result = _run_home(tmp_path)
+    assert "!! templates:" in result.stdout
+    assert "holds no templates" in result.stdout
+    assert result.returncode != 0
+
+
+def test_a_templates_directory_with_a_template_is_ok(tmp_path):
+    (tmp_path / "nuclei-templates" / "http").mkdir(parents=True)
+    (tmp_path / "nuclei-templates" / "http" / "x.yaml").write_text("id: x\n")
+    result = _run_home(tmp_path)
+    assert "OK templates:" in result.stdout

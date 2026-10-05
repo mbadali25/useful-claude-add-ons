@@ -21,6 +21,54 @@ be wrong can be closed on evidence.
   `sabotage_tracker.py` (the 20 run by hand in PR #341); (g) empty the harness allowlists in
   `plugin/crew/tests/test_crew_ticket.py` (`_HARNESS_FOLLOW_UP`, `_REGEX_ANCHORED`).
 
+- **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
+  chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
+  being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
+  (`plugin/crew/tests/test_wrapup.py` drives the hooks with fixtures only). (b) Harness follow-up, its
+  own harness-only tooling PR (T-0087, no feature work beside it): the 23 hand sabotages of
+  T-0017's PR (the 22 of its first round plus "a rename source onto the handoff is not counted",
+  red on `test_check_counts_the_source_of_a_rename_onto_the_handoff`) as `plugin/crew/tests/sabotage_wrapup.py` (drafted outside the repo as the build
+  session's `sabotage_t0017.py`: label, target, find, replace, named test), registered in
+  `plugin/crew/tests/sabotage.py`, with `test_every_wrapup_sabotage_anchor_is_present_exactly_once`. (c) Real Windows: the python
+  resolution `context-watch.ps1` and `auto-clear.ps1` now carry (`Resolve-CrewPython`) ran only under
+  Linux pwsh with `OS=Windows_NT`.
+
+- **T-0016 follow-ups (auto-clear binds to the session's own terminal).** (a) Measure the session
+  record on native Windows and macOS (`entrypoint`, `kind`, `procStart`'s format, the record path):
+  until then Windows' allowlist is the Linux `{"cli"}` and `procStart` is unchecked there and on macOS
+  (`plugin/crew/docs/session-record-spike.md`, "Not measured"). (b) A live end-to-end run: a `claude -p`
+  child in a parent's tmux pane with auto-clear armed, and an interactive `script -qc claude` child
+  (its record was not captured by the spike). (c) Harness follow-up, its own tooling PR (T-0087): the
+  49 hand sabotages of T-0016's PR as `plugin/crew/tests/sabotage_autoclear_binding.py`, registered in
+  `sabotage.py`, with an anchor-present-once test. (d) The sh flavour still runs the hook-anchored
+  checks (`crew_autocycle.py`'s `pane_pid not in ancestors()`, `resolve_target(ancestors(), ...)`)
+  before the owner proof because their lines are sabotage anchors; once (c) lands they can be folded
+  into `prove_target`.
+
+- **T-0096 follow-ups (review of #398, NITs deferred on purpose).** (1) The stand-down and the
+  auto-clear veto treat a could-not-tell resolver (`unknown`) as an absent file in every flavour:
+  `crew_incident_active` (`plugin/crew/hooks/scripts/_common.sh`), promote-gate.ps1's
+  `Test-CrewIncidentActive`, `auto-clear.ps1`'s `$repoCfg`, and their Python halves
+  (`crew_incident.py`, `crew_autocycle.py`) through `crew_common.repo_config_file`. Decide
+  fail-closed across Python and shell together, not one flavour at a time. (2) A `.crew/` that
+  cannot be searched (no execute permission, a broken mount) makes its files look absent, so it
+  reads as `own` with nothing or falls through to `main`, in all three resolvers:
+  `crew_common.repo_config_dir` (`os.path.lexists`), `_common.sh`'s `crew_repo_config_dir`
+  (`-e`/`-L`) and `Get-CrewRepoConfigDir` (`Get-Item -ErrorAction SilentlyContinue`). Decide
+  whether that is `unknown`, in all three at once.
+- **T-0052 follow-up: route split approval through the /crew:approve harness path (owner
+  2026-10-04).** `crew_split.py confirm` reads the context hook's turn record, so a session can
+  schedule its own plain-text "yes" (`send_later`, a routine) and pass it: the owner accepted
+  that as a documented limit (`plugin/crew/hooks/scripts/crew_split.py` module docstring,
+  `plugin/crew/README.md` "Splitting a ticket"). The fix is a `split:<id>` receipt written by
+  the UserPromptSubmit approval hook, as T-0012's `goal:<slug>` is; it extends a blocking hook,
+  so it is a harness change and lands alone.
+- **T-0052 follow-up (harness PR, T-0087): register `crew_split.py`'s sabotage.** Add
+  `plugin/crew/tests/sabotage_split.py` with `SPLIT_MUTATIONS` (the list T-0058 and T-0059 append
+  to) and its one import line in `plugin/crew/tests/sabotage.py`'s sum, plus an anchor-presence
+  test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
+  ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
+  body) and could not commit them.
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
@@ -57,6 +105,21 @@ be wrong can be closed on evidence.
   list, read the way `autoClear.onlyRepos` is, would let an owner arm it for chosen repos only.
   Excluded from T-0006 by its spec. There is deliberately no `startup` trigger and no flag for
   one (owner decision 2026-09-25), so that is not a follow-up.
+- **L-0582 follow-ups (review metrics resolve the main checkout's `.crew/`).** (a) Harness,
+  for a separate tooling PR (T-0087): `plugin/crew/hooks/scripts/review_metrics.py:89-96`
+  `metrics_path` - the L-0578 WRITER - still calls `crew_common._main_checkout` and joins
+  `.crew/metrics.md` itself. It should return `crew_common.metrics_md_path(root)`, and then
+  `plugin/crew/tests/test_metrics_location.py`'s lint drops its `review_metrics.py` ALLOWED entry.
+  Until then the review-round FIX of L-0582 does not reach it: a linked worktree whose common dir
+  is not named `.git` (main made with `git init --separate-git-dir`, or a worktree of a bare
+  repository) has its rows written to the lane's own `.crew/metrics.md`, where every reader now
+  says `could not tell`. The same tooling PR adds L-0582's six hand-run mutations to
+  `plugin/crew/tests/sabotage_limit_worktree.py`. (b) Spec exclusions, still on `root`:
+  `plugin/crew/hooks/scripts/crew_metrics.py:138-139` `metrics_path`, the `metrics.jsonl` writer
+  `/crew:done` runs, so from a lane its rows land in the lane's copy, which `/crew:status` now names
+  as `not counted`; and `plugin/crew/hooks/scripts/crew_migrate.py:507`, the one-time migration of
+  the checkout it is pointed at (likely correct as is, re-check if a lane can run it). Neither is
+  filed as a ticket yet.
 - **crew: native-Windows process identity for auto-resume `clear` binding** (Toolhelp32 snapshot +
   GetProcessTimes) - T-0042 left `clear` waiting there with "this session's process could not be
   identified" (`plugin/crew/hooks/scripts/crew_resume.py::session_process` returns None when
@@ -254,6 +317,17 @@ never asked. That is the wrong default for a least-privilege story and should
 at minimum be loud.
 
 ## Correctness and verification gaps
+
+### CONFIG.md §10/§11 tables
+
+Found by T-0066 (2026-10-03, crew 1.0.185) while re-measuring the two headings:
+`len(leaf_paths(default_global_config()))` is 73 and the repo-only remainder is 57.
+§10's table omits `shellRoute.mode` / `shellRoute.distro`, which §11's table lists although
+both are global-settable; §11 also lists `verify.stopBudgetSeconds`, which is not a
+`default_config()` leaf, and omits `cloud.*` (3), `environments.nonProd`,
+`production.databases` / `.hosts` and `scope.mode` / `.allowCliApproval`. Only the headings
+and the new `git.forbiddenTrailers` row were changed there; the table rows are out of that
+ticket's scope.
 
 ### 4. ~~`vault_guard.py` blocks every edit to a vault's own `CLAUDE.md`~~ — DONE
 
@@ -4207,6 +4281,9 @@ owner-only `via=autopilot` refusal itself): `autopilot.approval|questions: human
 same-family high-risk merge refusal and the known-fixture CI list; **T-0012** `mode: backlog`, goal decomposition,
 `crew_ticket.py mint`, `.work/autopilot/<slug>.json`, per-run ticket/token caps and consuming
 `resume: /crew:autopilot --goal <slug>` (autopilot stops on that line today).
+**T-0011 shipped in crew 1.0.349:** `autopilot.ship: pr|merge`, the same-family high-risk merge
+refusal and `autopilot.knownFailures` (`plugin/crew/hooks/scripts/crew_autopilot.py::ship_decision`). It merges with `gh pr merge <n> --merge
+--match-head-commit <HEAD>`, a merge commit, per D-028, and refuses a base branch with a merge queue.
 
 ### crew 1.1.x: platform-native routing - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
 Owner request, filed next to the 1.1.0 autopilot item above because both are "1.0 stops short of this on purpose."
