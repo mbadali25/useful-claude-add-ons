@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:20: Batch PR #498 merge review: 1 FIX (#364's /crew:split PLUGINS.md row dropped), 2 NIT; #416 _route change PASS (270 line-break probes none), #420 live sleep/wake PASS. Coordinator fixed FIX + stale comment/README line, version re-set last -> 48700b59 (route suites 518 passed). CI re-running; merge when green.
 - 00:20: L-1518 PR #499 opened at c726f8a1 (README 916->426 lines, What's new generated from CHANGELOG), CI pending
 - 00:15: Batch PR #498 at d2432c3b, CI green, crew 1.0.345: lands #364 T-0052, #416 T-0057, #420 L-0662. Left out: #366 (also stacked on unmerged #353 T-0011), #407 (own CI red: nesting-depth tests interpreter-dependent; reverted out; sent back for fixed depth bound). Merge-resolution review spawned (T-0057 _route change, L-0662 live sleep/wake).
 - 00:14: batch 5 PR #498 head d2432c3b green (28/28 + skip): lands #364 T-0052, #416 T-0057, #420 L-0662 at crew 1.0.345; #366 left out (stacked on draft #353 T-0011), #407 dropped by revert merge (deep-JSON tests red by interpreter; own head red too)
