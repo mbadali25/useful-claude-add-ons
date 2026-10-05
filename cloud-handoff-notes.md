@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:46 UTC
+Last updated: 2026-10-05 05:48 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 10:30: #478 T-0081 fixes pushed 46e5ee76 (isolated held-check test, tracker sabotage 87/87 PASS; main merged; inode-0 could-not-tell test; NITs), all Windows green. Re-check started.
 - 10:20: #401 L-0673 fixes pushed 5e4dc6f7 (log_complete ordering, int seconds, verify.md 1-114 restored, reasons complete, wording), all Windows green. Re-check started.
 - 10:15: #507 C-0009 re-check 0 BLOCK 0 FIX. #504 already merged by owner's other session (05:35, main ffcb6ee3). Builder: merge main + 3 NITs (pwsh_version timeout, changelog wording, SystemExit), then merge #507.
 - 10:05: #507 C-0009 fixes pushed f19a8f8d (pwsh sha256 + startup check, VERSION_ID safe, pytest pin in py-libs self-heals, wording, NITs), main merged, CI green. Re-check started.
