@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.0.375**: In-flight markers, one runner drives a ticket at a time. A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by every worktree of one clone: the runner (`autopilot`, `lane`, `session`), a token, the holder ...
-- **repository**: One cloud setup script also installs pwsh, mermaid-cli and gizmoduck's scanners. `scripts/cloud-env-setup.sh` is now the one setup script for a cloud session: besides the CI linters it installs PowerShell 7, mermaid-cli and gizmoduck's scanners, and lists every tool as ok or MISSING at the end.
+- **repository**: PRs run only the heavy CI suites their changes reach. A pull request that changes only plain documentation, or only one plugin or skill, now skips the Pytest, Pylint, Shell suites and MCP servers work it cannot affect; every suite still runs on push to main, on workflow_dispatch and on any schedule.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
