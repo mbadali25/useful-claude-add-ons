@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
+
+- **Summary.** On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST
+  twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now
+  the deploy they dispatch, so every pre-deploy check runs for them; before, both passed unchecked.
+- **How it reads them.** Only when containment matches nothing and `.crew/verify.json` declares a
+  dispatch deploy: the new `_promote_dispatch.py` reads the command and each declared deploy with
+  T-0009's reader through the new `crew_dispatch.dispatch_read` (no second parser). A dispatch of a
+  declared workflow is the deploy of the one environment whose declared literal inputs all appear
+  with the same value; a declared `$(...)` value is not compared. Workflow names compare as file
+  names.
+- **New refusals, in repos that declare a dispatch deploy.** A dispatch-shaped command crew cannot
+  read (a variable, a substitution, double quotes, a pipe, `--json`, `--input`, `-F k=@file`, a
+  workflow id or display name) is could-not-tell and blocks, as does a declared workflow whose
+  inputs fit no environment or several. A repo with no dispatch deploy sees no change.
+- **Not yet:** the PowerShell tool stays containment-only (L-0664). Symbolic refs stay unresolved
+  (T-0505). Five mutations in `promote_tree_mutations.py`, each red on a named case.
+
 ### Added — `crew` 1.1.4: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While

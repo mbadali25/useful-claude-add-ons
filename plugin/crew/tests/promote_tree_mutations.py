@@ -21,7 +21,9 @@ _SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 SH = os.path.join(_SCRIPTS, "promote-gate.sh")
 PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
 TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
+DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
+_D = "tests/test_promote_gate_dispatch.py::"
 
 PROMOTE_TREE_MUTATIONS = (
     # Retargeted after review r1: the dirty-worktree case is now also caught by
@@ -150,4 +152,26 @@ PROMOTE_TREE_MUTATIONS = (
      '  catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }\n',
      '  catch { exit 0 }\n',
      _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[ps1]"),
+    # T-0062: promote-gate reads a workflow dispatch with T-0009's reader.
+    ("promote-gate.sh no longer reads an unmatched command as a dispatch", SH,
+     '    "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \\\n',
+     '    true) \\\n',
+     _D + "test_the_rest_spelling_of_a_prod_deploy_is_gated"),
+    ("_promote_dispatch.py reads a dispatch it cannot read as no match", DISPATCH,
+     '    if kind == "unsure":\n        raise Block(',
+     '    if kind == "unsure":\n        return []\n        raise Block(',
+     _D + "test_a_dispatch_the_gate_cannot_read_is_could_not_tell"
+     "[gh workflow run deploy.yml -f environment=$E]"),
+    ("_promote_dispatch.py picks the environment by workflow alone", DISPATCH,
+     '        if scope_inputs.get(name) != value:\n',
+     '        if False:\n',
+     _D + "test_the_rest_spelling_of_a_dev_deploy_runs"),
+    ("_promote_dispatch.py drops the committed map's declared dispatches", DISPATCH,
+     '        ("the committed .crew/verify.json", committed_envs()),\n',
+     '        ("the committed .crew/verify.json", None),\n',
+     _D + "test_a_dispatch_deploy_removed_from_the_working_map_still_matches"),
+    ("promote-gate.sh reads the dispatch helper's failure as empty output", SH,
+     '    || block "the command could not be read as a workflow dispatch',
+     '    || true "the command could not be read as a workflow dispatch',
+     _D + "test_the_helper_failing_blocks"),
 )

@@ -569,6 +569,12 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
 <li><strong>"no all-pass row for sha X"</strong> where X is the worktree's sha: the upstream environment passed a
   different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
   not carry over.</li>
+<li><strong>"PROMOTION BLOCKED (workflow dispatch): the gate could not tell ..."</strong> (T-0062, Bash tool):
+  the command is a <code>gh workflow run</code> or <code>gh api .../dispatches</code> and the map declares a dispatch
+  deploy, but crew cannot read the line with certainty (a variable, a substitution, double quotes,
+  a pipe, <code>--json</code>, <code>--input</code>, <code>-F k=@file</code>, a workflow id or display name), or a declared workflow
+  fits no single environment. Spell it as the declared deploy is - plain literal words, the
+  workflow's file name, the declared inputs with their declared values.</li>
 <li><strong>"the command names commit '...', but the tree it runs from ... is at ..."</strong>: a literal
   <code>ref=&lt;sha&gt;</code> that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.</li>
 <li><strong>"changes directory after it starts"</strong> (a later <code>cd</code>, <code>bash -c 'cd ...'</code>, <code>env -C</code>, <code>make -C</code>),

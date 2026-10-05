@@ -406,7 +406,9 @@ the checks are declared, not remembered.
 | `requireHuman` | Stop and get explicit approval before deploying |
 
 **Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`
-reads `.crew/verify.json` and blocks a matching `deploy` command - but that
+reads `.crew/verify.json` and blocks a matching `deploy` command (on the Bash
+tool also a `gh workflow run` or `gh api .../dispatches` of a declared deploy
+workflow, read by T-0009's reader; one it cannot read blocks) - but that
 hook only runs inside a Claude Code session that has the crew plugin active.
 A fresh session without it (a teammate who never installed crew, a different
 machine, any tool other than Claude Code) can run the same `deploy` command

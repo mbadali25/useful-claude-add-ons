@@ -970,6 +970,61 @@ def _not_literal(why, word, unseen):
                               "what": "a workflow-dispatch line"}
 
 
+def _read_line(text, shell, helpers, fed=(), problem=None):
+    """`dispatch_answer`'s reading steps, in its order and with its reasons:
+    the trigger, the grammar, the lexer's reach, `problem` (an unreadable
+    `environments` block, or None), then the parser. `("none", why, None)`,
+    `("unsure", why, (word, unseen))` or `("read", why, scopes)`.
+    `dispatch_answer` keeps its own copy of the steps, which T-0009's suite
+    reads by source; test_promote_dispatch_reader.py holds the two to the same
+    answer on one table of lines."""
+    found = dispatch_trigger(text, helpers, shell, fed)
+    if found is None:
+        return "none", "the line sends no workflow dispatch", None
+    word = dispatch_first_non_literal(text, shell)
+    if word is not None:
+        return "unsure", f"`{word}` is not a plain literal", (word, False)
+    if found[1]:
+        return "unsure", (
+            f"it runs `{found[0]}` in a way crew does not follow -- a nested "
+            "shell or eval, xargs, parallel or find -exec, another name for "
+            "gh, or a command word made at run time"), (None, True)
+    if problem:
+        return "unsure", f"the environments block cannot be read: {problem}", \
+            (None, False)
+    shaped, scopes = 0, []
+    for argv in _dispatch_grammar(text, shell)[1]:
+        argv = helpers[0](argv, {}, [], {"cd": False})
+        if argv and _gh_name(argv[0]) and _dispatch_shape(argv):
+            shaped += 1
+            scopes += dispatch_scopes(argv[1:])
+    reads = next((s["reads"] for s in scopes if s["reads"]), None)
+    if reads is not None:
+        return "unsure", (f"gh reads `{reads}` from stdin or a file, which "
+                          "crew never reads"), (reads, False)
+    if not shaped:
+        # The reader found a dispatch the literal reading does not run as
+        # one (`. gh ...` in PowerShell): the two disagree, so neither is
+        # believed.
+        return "unsure", ("crew's two readings of this line disagree about "
+                          "which command sends the dispatch"), (None, True)
+    return "read", "the line's dispatches are read", scopes
+
+
+def dispatch_read(text, shell, helpers=None):
+    """T-0062's entry point: the dispatches `text` sends, read exactly as
+    `dispatch_answer` reads them, without `environments.workflows` and
+    without classifying -- so promote-gate, whose list of deploy workflows is
+    `.crew/verify.json`, reads a dispatch with this reader and no second one.
+
+    `("none", why, [])`: no dispatch-shaped command. `("unsure", why, [])`:
+    a dispatch-shaped line crew cannot read with certainty (could not tell).
+    `("read", why, scopes)`: every dispatch on the line, each in
+    `dispatch_scopes`' shape; empty for `--help` and a `gh api` GET."""
+    kind, why, extra = _read_line(text, shell, helpers or _gate_helpers())
+    return kind, why, extra if kind == "read" else []
+
+
 def dispatch_answer(text, shell, envs, fed=(), helpers=None):
     """THE one public road to a dispatch's environment (T-0045, T-0072):
     `(state, why, scope)` for the dispatches bash (or PowerShell, `shell`)

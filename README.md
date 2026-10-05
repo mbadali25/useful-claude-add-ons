@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.4**: Promote-gate gates a workflow dispatch of a declared deploy, in either spelling. On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now the deploy they dispatch, so every pre-deploy check runs for them; before, both passed unchecked.
 - **crew 1.1.4**: Environment-scoped workflow deploys in the cloud guard. While `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin, `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches` (also `--method POST`, `-XPOST`, or fields/`--input` with no method), are judged when `<wf>` ...
-- **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

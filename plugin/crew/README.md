@@ -2905,6 +2905,36 @@ working map and, when that is dirty, the committed map alike (L-1503):
 - if the comparison itself fails, the command blocks rather than skipping
   that environment
 
+**A workflow dispatch of a declared deploy is that deploy, in either spelling
+(T-0062, the Bash tool).** When containment matches nothing and a declared
+`deploy` is a GitHub workflow dispatch, `promote-gate.sh` reads the command
+with T-0009's dispatch reader (`crew_dispatch.dispatch_read`, through
+`_promote_dispatch.py`; no second parser). `gh workflow run deploy.yml -f
+ref=<sha> -f environment=production` (inputs reordered) and `gh api -X POST
+repos/<o>/<r>/actions/workflows/deploy.yml/dispatches -f ref=main -f
+'inputs[environment]=production'` both reach the environment whose declared
+dispatch names `deploy.yml` and whose declared literal inputs all appear with
+the same value; extra inputs are allowed, and a declared input whose value is a
+`$(...)` or backtick substitution is not compared. Workflow names compare as
+file names, a leading `.github/workflows/` dropped. Blocked:
+
+- a declared workflow whose inputs fit no environment, or more than one
+- **could not tell**, naming why: a dispatch-shaped line the reader refuses (a
+  variable, a substitution, double quotes, a pipe, `--json`, `--input`,
+  `-F k=@file`, a nested shell, an alias of `gh`), a command input it cannot
+  name, an input given two values, a workflow named by id or display name,
+  and a declared dispatch the reader itself cannot read. The spelling that
+  passes is plain literal words, as the declared deploy is written
+
+A dispatch of a workflow file no declared deploy names, `--help`, a GET and
+every command in a repo that declares no dispatch deploy pass untouched. The
+committed map's dispatches are matched too while the map is dirty, and an
+open incident turns each block into a skip row. The PowerShell tool stays
+containment-only until L-0664. Not seen: `curl`, a script file, `gh run
+rerun`, a `gh alias` set by an earlier command, and symbolic refs (`--ref
+<branch>`, `inputs[ref]=<branch>`), as T-0505 decided; a literal sha anywhere
+in the command must still be the tree's HEAD.
+
 So a clean worktree deploys while the main checkout is dirty, and a clean main
 checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
 `.work/PROMOTIONS.md`, the approval markers and `.crew/.deploy-in-flight` are
@@ -3188,7 +3218,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on Bash also a workflow dispatch of a declared deploy workflow, either spelling; T-0062) unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
