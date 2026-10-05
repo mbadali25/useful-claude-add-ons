@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""crew_ticket_state.py -- derived ticket statuses, read-only (L-0639).
+"""crew_ticket_state.py -- derived ticket statuses, read-only (L-0639, L-0640).
 
 One question per call, for one ticket, and nothing acts on the answer yet
 (L-0550's autopilot stops and L-0551's owner list are the consumers):
@@ -11,9 +11,12 @@ One question per call, for one ticket, and nothing acts on the answer yet
     parse_depends_on(spec_text)  -> (ids, problem): the optional
                                     `depends-on: T-1, T-2` line under the
                                     spec header; ([], None) when absent.
-    view(top, ticket)            -> {"ticket", "gate", "gate_source",
+    read_next(folder)            -> (fields, problems) from the ticket
+                                    folder's optional next.md (L-0640).
+    view(top, ticket, today=None) -> {"ticket", "gate", "gate_source",
                                     "depends_on", "dependencies", "blocked",
-                                    "needs_replan", "derived", "problems"}
+                                    "needs_replan", "derived", "next",
+                                    "revisit_due", "problems"}
 
 `blocked` and `needs-replan` are DERIVED, never typed: `blocked` from the
 `depends-on:` line and each dependency's state, `needs-replan` from the review
@@ -34,11 +37,22 @@ dependency: its INDEX status cell; a closing word (`cancelled`,
 row, the dependency's spec header (`done`/`merged` closed, a closing word
 named, anything else or no spec `unknown`).
 
+next.md (L-0640) is local state nothing in crew writes: one `key: value` per
+line, key case-insensitive, blank and `#` lines skipped, unknown keys ignored.
+`waiting-on` is owner | agent | external | a ticket id, `revisit` is
+YYYY-MM-DD, `superseded-by` a ticket id, `next` and `reason` free text clipped
+to NEXT_TEXT_MAX. A bad, empty or repeated value is a problem and that field
+is None; a next.md that cannot be read (or resolves outside the ticket folder)
+is a problem and every field is None -- cannot tell, never "nothing asked".
+`revisit_due` is True on or after the date, False before it, None without one.
+It is not part of the contract: the approval digest never reads it.
+
 Writes no file and starts no process of its own; the ledger read goes
 through `review_ledger.status`, which asks git for the common dir.
 """
 from __future__ import annotations
 
+import datetime
 import os
 import re
 
@@ -59,6 +73,18 @@ CANNOT_TELL = "cannot tell"
 LEDGER_NOT_REPLAN = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
                      review_ledger.ACCEPTED)
 
+# next.md (L-0640).
+NEXT_KEYS = ("waiting-on", "next", "reason", "revisit", "superseded-by")
+WAITING_ON_WORDS = ("owner", "agent", "external")
+NEXT_TEXT_MAX = 200
+NEEDS_OWNER_NO_NEXT = "needs-owner: cannot tell what is asked (no next: in next.md)"
+SUPERSEDED_NO_SUCCESSOR = ("superseded: cannot tell what replaced it (no superseded-by: in "
+                           "next.md, and no split-into: or superseded-by: line under the spec header)")
+
+_NEXT_LINE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*?)\s*$")
+_REVISIT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# The successor line under a spec header (T-0037, T-0052; crew_autopilot._SUCCESSOR).
+_SPEC_SUCCESSOR_RE = re.compile(r"^(?:split-into|superseded-by)\s*:\s*\S", re.IGNORECASE)
 # The header's field block: the `key: value` pairs that end line 1, set off
 # from the title by the template's column gap (two or more spaces, or a tab).
 _FIELD_BLOCK_RE = re.compile(r"(?:\s{2,}|\t)((?:[A-Za-z][\w-]*:[ \t]*\S+[ \t]*)+)$")
@@ -204,6 +230,99 @@ def dependency_state(top, dep):
                        f"spec header says `{header or 'nothing'}`")
 
 
+def _is_ticket_id(value):
+    """A plain ticket id with a letter and a digit (`owner` is not one)."""
+    try:
+        crew_ticket.check_ticket(value)
+    except crew_ticket.TicketError:
+        return False
+    return bool(re.search(r"[A-Za-z]", value) and re.search(r"\d", value))
+
+
+def _next_value(key, value):
+    """`(value, problem)` for one known next.md key; value None on a problem."""
+    if value == "":
+        return None, f"next.md: {key}: is empty"
+    if key == "waiting-on":
+        if value.lower() in WAITING_ON_WORDS:
+            return value.lower(), None
+        if _is_ticket_id(value):
+            return value, None
+        return None, (f"next.md: waiting-on: {value!r} is not one of "
+                      f"{', '.join(WAITING_ON_WORDS)} or a ticket id")
+    if key == "revisit":
+        try:
+            if not _REVISIT_RE.match(value):
+                raise ValueError(value)
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            return None, f"next.md: revisit: {value!r} is not a YYYY-MM-DD date"
+        return value, None
+    if key == "superseded-by":
+        if _is_ticket_id(value):
+            return value, None
+        return None, f"next.md: superseded-by: {value!r} is not a ticket id"
+    return value[:NEXT_TEXT_MAX], None
+
+
+def read_next(folder):
+    """`(fields, problems)` from `folder`/next.md; see the module docstring.
+    `fields` has every key of NEXT_KEYS, None when unset. Reads only."""
+    fields = dict.fromkeys(NEXT_KEYS)
+    path = os.path.join(folder, "next.md")
+    if not os.path.lexists(path):
+        return fields, []
+    home, real = os.path.realpath(folder), os.path.realpath(path)
+    try:
+        inside = os.path.commonpath([home, real]) == home
+    except ValueError:
+        inside = False
+    if not inside:
+        return fields, [f"next.md: {CANNOT_TELL}, it resolves outside the ticket folder "
+                        "and is not read"]
+    try:
+        with open(path, "rb") as handle:
+            text = handle.read().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        return fields, [f"next.md: {CANNOT_TELL}, it could not be read ({exc})"]
+    problems, seen, repeated = [], {}, []
+    for number, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _NEXT_LINE_RE.match(line)
+        if match is None:
+            problems.append(f"next.md line {number}: not a `key: value` line")
+            continue
+        key = match.group(1).lower()
+        if key not in NEXT_KEYS:
+            continue
+        if key in seen:
+            if key not in repeated:
+                repeated.append(key)
+            continue
+        seen[key] = match.group(2)
+    for key in repeated:
+        problems.append(f"next.md: {key}: given more than once, so it is unset")
+    for key, raw in seen.items():
+        if key in repeated:
+            continue
+        fields[key], problem = _next_value(key, raw)
+        if problem:
+            problems.append(problem)
+    return fields, problems
+
+
+def _spec_names_successor(spec_text):
+    """True when a `split-into:`/`superseded-by:` line sits above the first `##`."""
+    for line in (spec_text or "").splitlines()[1:]:
+        if line.startswith("##"):
+            break
+        if _SPEC_SUCCESSOR_RE.match(line.strip()):
+            return True
+    return False
+
+
 def _needs_replan(top, ticket, problems):
     try:
         status = review_ledger.status(top, ticket)
@@ -226,9 +345,11 @@ def _needs_replan(top, ticket, problems):
     return None
 
 
-def view(top, ticket):
-    """The derived statuses of one ticket. Read-only; see the module docstring."""
+def view(top, ticket, today=None):
+    """The derived statuses of one ticket. Read-only; see the module docstring.
+    `today` (a datetime.date, default the local date) decides `revisit_due`."""
     crew_ticket.check_ticket(ticket)
+    today = today or datetime.date.today()
     problems = []
     found, cell, why = _index_cell(top, ticket)
     if why:
@@ -257,7 +378,17 @@ def view(top, ticket):
                     for dep in (ids or []) for state, reason in [dependency_state(top, dep)]]
     blocked = None if ids is None else any(d["state"] != "closed" for d in dependencies)
     needs_replan = _needs_replan(top, ticket, problems)
+    fields, next_problems = read_next(crew_ticket.ticket_dir(top, ticket))
+    problems.extend(next_problems)
+    revisit_due = (None if fields["revisit"] is None
+                   else datetime.date.fromisoformat(fields["revisit"]) <= today)
+    if gate == "needs-owner" and fields["next"] is None:
+        problems.append(NEEDS_OWNER_NO_NEXT)
+    if gate == "superseded" and fields["superseded-by"] is None \
+            and not _spec_names_successor(text):
+        problems.append(SUPERSEDED_NO_SUCCESSOR)
     derived = [name for name, on in (("blocked", blocked), ("needs-replan", needs_replan)) if on]
     return {"ticket": ticket, "gate": gate, "gate_source": source, "depends_on": ids,
             "dependencies": dependencies, "blocked": blocked, "needs_replan": needs_replan,
-            "derived": derived, "problems": problems}
+            "derived": derived, "next": fields, "revisit_due": revisit_due,
+            "problems": problems}

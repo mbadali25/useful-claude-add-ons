@@ -1,5 +1,7 @@
 """crew_ticket_state.py (L-0639): derived `blocked` and `needs-replan`, gating
-statuses, and the could-not-tell rule. Must-block cases first, then must-allow."""
+statuses, and the could-not-tell rule; next.md (L-0640). Must-block cases first,
+then must-allow."""
+import datetime
 import json
 import os
 
@@ -271,6 +273,8 @@ def test_view_is_read_only(tmp_path):
     root = _repo(tmp_path, "| T-0002 | open | low | r | t |\n")
     _spec(root, T, line2="depends-on: T-0002")
     _ledger(root, T, json.dumps({"state": review_ledger.NEEDS_REPLAN, "rounds": []}))
+    (root / ".work" / "tickets" / T / "next.md").write_text(
+        "waiting-on: owner\nnext: answer Q1\nrevisit: 2026-10-01\n", encoding="utf-8")
     walks = [str(root), os.path.join(crew_ticket.common_dir(str(root)), "crew")]
 
     def snapshot():
@@ -285,3 +289,161 @@ def test_view_is_read_only(tmp_path):
     before = snapshot()
     _view(root)
     assert snapshot() == before
+
+
+# --- next.md (L-0640): must-block --------------------------------------------
+
+TODAY = datetime.date(2026, 10, 5)
+
+
+def _next(folder, text):
+    (folder / "next.md").write_bytes(text.encode("utf-8") if isinstance(text, str) else text)
+
+
+def _next_view(root, ticket=T):
+    return crew_ticket_state.view(str(root), ticket, today=TODAY)
+
+
+def test_needs_owner_without_next_says_cannot_tell(tmp_path):
+    root = _repo(tmp_path, f"| {T} | needs-owner | low | r | t |\n")
+    _next(_spec(root, T), "waiting-on: owner\n")
+    got = _next_view(root)
+    assert "needs-owner: cannot tell what is asked (no next: in next.md)" in got["problems"]
+
+
+def test_needs_owner_without_next_md_says_cannot_tell(tmp_path):
+    root = _repo(tmp_path, f"| {T} | needs-owner | low | r | t |\n")
+    _spec(root, T)
+    assert "needs-owner: cannot tell what is asked (no next: in next.md)" in \
+        _next_view(root)["problems"]
+
+
+def test_superseded_without_successor_is_reported(tmp_path):
+    root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
+    _next(_spec(root, T), "reason: replaced\n")
+    got = _next_view(root)
+    assert any(p.startswith("superseded: cannot tell what replaced it") for p in got["problems"])
+
+
+def test_bad_waiting_on_is_reported(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "waiting-on: someone\n")
+    got = _next_view(root)
+    assert got["next"]["waiting-on"] is None
+    assert any("waiting-on" in p and "someone" in p for p in got["problems"])
+
+
+@pytest.mark.parametrize("value", ["2026-13-01", "5 Oct 2026", "2026-10-5", "soon"])
+def test_bad_revisit_date_is_listed(tmp_path, value):
+    root = _repo(tmp_path, f"| {T} | hold | low | r | t |\n")
+    _next(_spec(root, T), f"revisit: {value}\n")
+    got = _next_view(root)
+    assert (got["revisit_due"], got["next"]["revisit"]) == (None, None)
+    assert any("revisit" in p and value in p for p in got["problems"])
+
+
+def test_duplicate_key_is_reported(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "next: answer Q1\nNext: answer Q2\n")
+    got = _next_view(root)
+    assert got["next"]["next"] is None
+    assert any("next" in p and "more than once" in p for p in got["problems"])
+
+
+def test_unreadable_next_md_is_reported(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), b"waiting-on: owner\nnext: \xff\xfe broken\n")
+    got = _next_view(root)
+    assert set(got["next"].values()) == {None}
+    assert any("next.md" in p and "cannot tell" in p for p in got["problems"])
+
+
+def test_next_md_symlink_out_of_the_folder_is_refused(tmp_path):
+    root = _repo(tmp_path)
+    folder = _spec(root, T)
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("waiting-on: owner\nnext: from outside\n", encoding="utf-8")
+    try:
+        os.symlink(outside, folder / "next.md")
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create a symlink here")
+    got = _next_view(root)
+    assert set(got["next"].values()) == {None}
+    assert any("next.md" in p and "outside" in p for p in got["problems"])
+
+
+def test_line_that_is_not_key_value_is_reported(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "waiting on the owner\n")
+    assert any("not a `key: value` line" in p for p in _next_view(root)["problems"])
+
+
+def test_empty_value_is_reported(tmp_path):
+    root = _repo(tmp_path, f"| {T} | needs-owner | low | r | t |\n")
+    _next(_spec(root, T), "next:\n")
+    got = _next_view(root)
+    assert got["next"]["next"] is None
+    assert any("next.md: next: is empty" in p for p in got["problems"])
+
+
+# --- next.md (L-0640): must-allow --------------------------------------------
+
+def test_next_md_fields_are_read(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "# a comment\n\nWaiting-On: owner\nnext: answer Q1 in spec.md\n"
+                          "reason: waits on the vendor\nrevisit: 2026-11-01\n"
+                          "superseded-by: T-0009\nowner-note: ignored\n")
+    got = _next_view(root)
+    assert got["next"] == {"waiting-on": "owner", "next": "answer Q1 in spec.md",
+                           "reason": "waits on the vendor", "revisit": "2026-11-01",
+                           "superseded-by": "T-0009"}
+    assert (got["revisit_due"], got["problems"]) == (False, [])
+
+
+def test_long_free_text_is_clipped_for_display(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "next: " + "x" * 300 + "\n")
+    assert len(_next_view(root)["next"]["next"]) == crew_ticket_state.NEXT_TEXT_MAX
+
+
+def test_no_next_md_has_no_problems(tmp_path):
+    root = _repo(tmp_path)
+    _spec(root, T)
+    got = _next_view(root)
+    assert (got["problems"], got["revisit_due"], set(got["next"].values())) == ([], None, {None})
+
+
+def test_hold_revisit_in_the_future_is_not_due(tmp_path):
+    root = _repo(tmp_path, f"| {T} | hold | low | r | t |\n")
+    _next(_spec(root, T), "reason: vendor fix\nrevisit: 2026-10-06\n")
+    got = _next_view(root)
+    assert (got["gate"], got["revisit_due"], got["problems"]) == ("hold", False, [])
+
+
+@pytest.mark.parametrize("day", ["2026-10-05", "2026-01-31"])
+def test_hold_revisit_today_is_due(tmp_path, day):
+    root = _repo(tmp_path, f"| {T} | hold | low | r | t |\n")
+    _next(_spec(root, T), f"revisit: {day}\n")
+    assert _next_view(root)["revisit_due"] is True
+
+
+def test_waiting_on_a_ticket_id(tmp_path):
+    root = _repo(tmp_path)
+    _next(_spec(root, T), "waiting-on: L-0641\n")
+    got = _next_view(root)
+    assert (got["next"]["waiting-on"], got["problems"]) == ("L-0641", [])
+
+
+def test_needs_owner_with_next_has_no_problem(tmp_path):
+    root = _repo(tmp_path, f"| {T} | needs-owner | low | r | t |\n")
+    _next(_spec(root, T), "waiting-on: owner\nnext: pick option A or B\n")
+    assert _next_view(root)["problems"] == []
+
+
+@pytest.mark.parametrize("line", ["split-into: T-0002, T-0003", "superseded-by: T-0009"])
+def test_superseded_with_a_spec_successor_line_is_not_reported(tmp_path, line):
+    """T-0037/T-0052's successor line under the spec header still names it."""
+    root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
+    _spec(root, T, header="status: superseded   risk: low", line2=line)
+    assert _next_view(root)["problems"] == []
+

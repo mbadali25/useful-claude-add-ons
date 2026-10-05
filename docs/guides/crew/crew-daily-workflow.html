@@ -324,6 +324,11 @@ work.</p>
 <ul>
 <li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
   Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>
+<li><code>next.md</code> is optional, and nothing in crew writes it: you do, by hand. One <code>key: value</code> per line
+  says who the ticket waits on and what happens next: <code>waiting-on:</code> (<code>owner</code>, <code>agent</code>, <code>external</code>
+  or a ticket id), <code>next:</code>, <code>reason:</code>, <code>revisit:</code> (a <code>YYYY-MM-DD</code> date) and <code>superseded-by:</code> (a
+  ticket id). It is not part of the contract: approval does not hash it and <code>validate</code> never reads
+  it, so you can edit it at any step without approving again.</li>
 </ul>
 <p>Check the contract at any time:</p>
 <pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/crew_ticket.py validate --ticket T-0042

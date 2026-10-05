@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.3**: Derived `blocked` and `needs-replan`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
+- **crew 1.1.3**: Derived `blocked` and `needs-replan`, and `next.md`. A spec can name the tickets it waits on with a `depends-on:` line, and crew can now tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan. An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
 - **crew 1.1.0 — C-0006**: Version-free guide file names. crew moves to the 1.1 line, and its seven guides drop the version from their file names: `crew-guide`, `crew-quickstart` and so on (HTML, DOCX and PDF), so no future release needs a rename.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
