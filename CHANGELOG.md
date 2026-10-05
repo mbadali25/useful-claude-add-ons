@@ -118,7 +118,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   test_review_names_the_train_exit`, and `test_crew_train.py`'s import test back to equality.
   `sabotage_train.py` (registered in `sabotage.py`): S1-S15 for `crew_train.py`, R1-R6 for the gate
   round (R4 budget first, R5/R6 the train before the pre-review checks and the self-check) and
-  P1-P5 for the brief, all 26 RED. Six more `test_review_run_train.py` cases: a spent budget
+  P1-P6 for the brief (P6 from the port review: a null replayed list is UNREADABLE), all RED. Six more `test_review_run_train.py` cases: a spent budget
   never acquires (real ledger and patched), the train answers before the pre-review checks and
   the self-check, the Claude second call and `--probe` never ask it.
 - **Not here.** S16-S19 (L-0520's PYTHON-set rows) and S20-S33 (L-0558's) were drafted
@@ -145,9 +145,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   entries, and the two `/dev/zero` entries as Linux-only. On another host an entry is not applied: it
   prints `PLATFORM-ONLY, NOT EXERCISED (...)` and the last line counts it. On its own platform, a skip
   fails.
-- **Per-entry timeout.** 900 s by default (`SABOTAGE_ENTRY_TIMEOUT`). Each entry runs in its own
-  session (a kill-on-close job object on Windows). An overrun is `COULD-NOT-TELL`, and anything the
-  entry leaves running is killed before the next entry starts.
+- **Per-entry timeout.** T-0080's bound, which main shipped meanwhile: 600 s by default
+  (`CREW_SABOTAGE_TIMEOUT_S`) under the `CREW_SABOTAGE_MEM_MB` memory cap, both applied by this
+  runner. Each entry runs in its own session (a kill-on-close job object on Windows; where no job
+  object can be made the entry is `COULD-NOT-TELL`, since a child that outlives pytest could not be
+  reached). An overrun is `COULD-NOT-TELL`, and anything the entry leaves running is killed before
+  the next entry starts.
 - **Re-aimed.** `the frozen artifact path is stored with native separators` could not fail on POSIX.
   `the schema 5 migration lands install.policy above the floor` could not fail anywhere: its test
   stopped reading the value in 0.20.15. Each now has a test that can fail. The bash deadline entry has

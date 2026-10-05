@@ -414,7 +414,9 @@ def _catch_up_block(root, ticket):
         return [CATCH_UP_TITLE, f"UNREADABLE: {review_checks.one_line(str(why))};" + unknown]
     out, bad = [], []
     for number, row in enumerate(rows, 1):
-        replayed = row.get("rerere_replayed") or []
+        # Review of b956da24 (L-0526 port), BLOCK: catch_up writes null when it
+        # could not tell what the merge left; that is UNREADABLE, never "none".
+        replayed = row.get("rerere_replayed") if isinstance(row, dict) else None
         if not isinstance(replayed, list) or not all(isinstance(p, str) for p in replayed):
             bad.append(f"UNREADABLE: merge log row {number}: rerere_replayed is not a list of "
                        "paths;" + unknown)

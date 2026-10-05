@@ -37,6 +37,9 @@ import sabotage_bound
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _COLLECTED_ENV = "SABOTAGE_COLLECTED_FILE"
+# Windows needs a job object to reach a grandchild once pytest has exited
+# (taskkill /T walks only a live tree); without one an entry is COULD-NOT-TELL.
+_NEEDS_JOB = os.name == "nt"
 # The entry running right now, as (proc, job). It is in its own session or job,
 # so a signal sent to sabotage.py's process group no longer reaches it:
 # sabotage.py's signal handler calls kill_current() before it restores.
@@ -110,6 +113,14 @@ PLATFORM_MUTATIONS = (
      "lock_extend() {\n  return 0\n}\n",
      "tests/test_verify_gate_lock_window.py::"
      "test_the_deadline_is_republished_during_a_run_not_only_once[sh]"),
+    # Review of d0b7fd8e (L-0608 port), FIX: an entry no job object held on
+    # Windows gets a verdict although a grandchild may have outlived it.
+    ("an entry no job object held still gets a verdict",
+     os.path.join(_HERE, "sabotage_platform.py"),
+     '    if report.get("uncontained"):\n',
+     "    if False:\n",
+     "tests/test_sabotage_harness.py::"
+     "test_an_entry_no_job_object_could_hold_is_could_not_tell"),
 )
 
 
@@ -216,7 +227,8 @@ def _new_job(proc):
 def _kill_tree(proc, job):
     """Kill everything the entry started. POSIX: the entry's own session, which
     still reaches a grandchild after pytest has exited. Windows: the job, or
-    taskkill /T when there is none. Known gaps: a POSIX grandchild that calls
+    taskkill /T when there is none (that entry is COULD-NOT-TELL: taskkill
+    cannot reach a child whose parent has exited). Known gaps: a POSIX grandchild that calls
     setsid itself, and a Windows grandchild started between Popen and the job
     assignment (pytest's startup is far longer than that window)."""
     if job is not None:
@@ -306,6 +318,8 @@ def run_target(target, timeout=None, cwd=CREW, extra=("--run-slow",),
     with open(log, encoding="utf-8", errors="replace") as handle:
         output = handle.read()
     report = None if timed_out else junit_outcome(junit)
+    if report is not None and job is None and _NEEDS_JOB:
+        report["uncontained"] = True
     collected = read_collected(collected_path)
     for name in (junit, collected_path, log):
         try:
@@ -327,6 +341,8 @@ def verdict(code, report, collected, timed_out, seconds):
         return f"COULD-NOT-TELL -- timed out after {seconds:.0f}s", False
     if report is None:
         return f"COULD-NOT-TELL -- no test report (exit {code})", False
+    if report.get("uncontained"):
+        return "COULD-NOT-TELL -- no job object held the entry's tree", False
     if code == 1:
         unrun = (len(set(collected) - set(report["names"]))
                  if collected is not None else None)

@@ -813,6 +813,20 @@ def test_an_entry_leaves_no_process_behind(tmp_path, monkeypatch, tail,
         assert _gone_within(pid), pid
 
 
+def test_an_entry_no_job_object_could_hold_is_could_not_tell(tmp_path, monkeypatch):
+    """Review of d0b7fd8e (L-0608 port), FIX: on Windows taskkill /T cannot reach
+    a grandchild once pytest has exited, so without a job object the entry is
+    could-not-tell, never a verdict."""
+    monkeypatch.setattr(sabotage_platform, "_NEEDS_JOB", True)
+    monkeypatch.setattr(sabotage_platform, "_new_job", lambda _proc: None)
+    result = sabotage_platform.run_target(
+        _write_probe(tmp_path, "def test_red():\n    assert False\n"),
+        timeout=120, cwd=str(tmp_path), extra=())
+
+    assert _V(*[result[i] for i in (0, 2, 3, 5, 4)]) == (
+        "COULD-NOT-TELL -- no job object held the entry's tree", False)
+
+
 def test_the_summary_names_the_platform_only_count():
     assert sabotage_platform.summary(True, 3, "linux") == (
         "\nSABOTAGE SUITE: PASS (3 platform-only, not exercised on linux)")
