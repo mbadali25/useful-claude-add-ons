@@ -936,12 +936,17 @@ def test_an_open_predecessor_does_not_hide_an_unreadable_slice_under_it(tmp_path
 
 import itertools  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
 
-_ENTRIES = ("absent", "valid", "valid+sha", "intbase", "intbase+sha", "listbase",
-            "listbase+sha")
-_LIVES = ("OPEN", "CLOSED", "M-declared", "M-default", "M-wrong", "unreadable", "unknown")
-_SHAPES = {  # last slice's declared bases, slice 1 first
-    "1": ("main",), "2>1": ("main", 1), "3>2>1": ("main", 1, 2),
-    "3>1,2main": ("main", "main", 1), "3main": ("main", 1, "main")}
+# Malformed entries: a base that is not a branch name (int, list), a branch
+# that is not the one the plan derives, a merge_sha that is not a full SHA.
+_MALFORMED = ("intbase", "listbase", "badbranch", "badsha")
+_ENTRIES = ("absent", "valid", "valid+sha") + _MALFORMED
+_LIVES = ("OPEN", "CLOSED", "M-declared", "M-default", "M-wrong", "M-nodest", "unreadable",
+          "unknown")
+# Every valid arrangement of declared bases for 1-3 slices (slice 1 first).
+_SHAPES = {"-".join(map(str, b)): b for b in
+           [("main",), ("main", "main"), ("main", 1)]
+           + [("main", b2, b3) for b2 in ("main", 1) for b3 in ("main", 1, 2)]}
+_FOUND = {"M-default": "main", "M-wrong": "develop", "M-nodest": None}
 _STOP = "stop"
 
 
@@ -957,7 +962,7 @@ def _declared(bases, j):
 def _oracle_allowed(bases, facts, k):
     """frozenset of destinations slice k may merge into, or _STOP."""
     entry_k = facts[k][0]
-    if entry_k.startswith(("intbase", "listbase")):
+    if entry_k in _MALFORMED:
         return _STOP
     # Slice k's branch is derived from slice 1's: recorded without it, it
     # cannot be checked.
@@ -978,14 +983,14 @@ def _oracle_status(bases, facts, j):
     entry, live = facts[j]
     if entry == "absent":
         return "NONE"
-    if entry.startswith(("intbase", "listbase")):
+    if entry in _MALFORMED:
         return _STOP
     allowed_j = _oracle_allowed(bases, facts, j)
     if allowed_j == _STOP or live in ("unreadable", "unknown"):
         return _STOP
     if live in ("OPEN", "CLOSED"):
         return _STOP if entry.endswith("+sha") else live
-    found = {"M-declared": _declared(bases, j), "M-default": "main", "M-wrong": "develop"}[live]
+    found = _FOUND.get(live, _declared(bases, j))
     return "MERGED" if found in allowed_j else _STOP
 
 
@@ -1018,12 +1023,13 @@ def _world(bases, facts):
     shipped, gh = [], {}
     for j, (entry, live) in facts.items():
         if entry != "absent":
-            base = {"intbase": 5, "listbase": ["main"]}.get(entry.split("+")[0],
-                                                           _declared(bases, j))
-            shipped.append({"slice": j, "pr": 10 + j, "branch": _branch(j), "base": base,
-                            "merge_sha": "c" * 40 if entry.endswith("+sha") else None})
-        found = {"M-declared": _declared(bases, j), "M-default": "main",
-                 "M-wrong": "develop"}.get(live, _declared(bases, j))
+            base = {"intbase": 5, "listbase": ["main"]}.get(entry, _declared(bases, j))
+            shipped.append({"slice": j, "pr": 10 + j,
+                            "branch": "elsewhere" if entry == "badbranch" else _branch(j),
+                            "base": base,
+                            "merge_sha": "c" * 40 if entry.endswith("+sha") else
+                            "abc" if entry == "badsha" else None})
+        found = _FOUND.get(live, _declared(bases, j))
         state = {"OPEN": "OPEN", "CLOSED": "CLOSED", "unknown": "QUEUED"}.get(live, "MERGED")
         gh[_branch(j)] = None if live == "unreadable" else {"state": state,
                                                             "baseRefName": found}
@@ -1041,8 +1047,12 @@ def test_merged_slice_decision_matches_the_oracle(monkeypatch, shape):
     monkeypatch.setattr(crew_ship, "read_pr", lambda top, branch: (
         dict(world[branch], number=1) if world.get(branch) else None))
     per_slice = list(itertools.product(_ENTRIES, _LIVES))
+    # Slice 1's recorded branch is the anchor every other slice's branch is
+    # derived from, so it cannot be "not the derived branch"; a different
+    # slice 1 branch shows up as later slices' badbranch instead.
+    first = [(e, live) for e, live in per_slice if e != "badbranch"]
     wrong = []
-    for combo in itertools.product(per_slice, repeat=len(bases)):
+    for combo in itertools.product(first, *[per_slice] * (len(bases) - 1)):
         facts = dict(enumerate(combo, start=1))
         ctx, gh = _world(bases, facts)
         world.clear()
