@@ -83,17 +83,18 @@ SECRET_PATTERNS = (
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
     # A password in a URL: `scheme://user:pass@host`. `<`, `>`, `{`, `}` and
     # `$` cannot appear in either half, so `user:<password>@` is a placeholder.
-    ("url-credentials", re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@<>{}$]+:[^\s/@<>{}$]+@")),
+    ("url-credentials", re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@<>{}$]+:[^\s/@<>{}$]+@")),
     ("authorization-header", re.compile(
         r"(?i)\bauthorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic|token|digest)\s+"
         r"(?![<$%{])[A-Za-z0-9._~+/=-]{8,}")),
     # A quoted literal assigned to a credential-named key, spaces and all (a
     # passphrase is still a password). A value starting `$`, `<`, `{` or `%`
     # is a placeholder, and backticks are not quotes, so
-    # ``token from env `ORDERS_API_TOKEN` `` stays allowed.
+    # ``token from env `ORDERS_API_TOKEN` `` stays allowed. Any length counts
+    # (`"abc"` is still a password); a value of only `*`, `x` or `.` is a mask.
     ("assigned-literal", re.compile(
         r"(?i)[\w.-]*(?:password|passwd|secret|token|api[_-]?key)[\w.-]*[\"']?\s*[:=]\s*"
-        r"([\"'])(?![$<{%])(?:(?!\1).){4,}\1")),
+        r"([\"'])(?![$<{%])(?![*xX.]+\1)(?:(?!\1).)+\1")),
     # The same, unquoted (YAML, .env): a value of 8+ characters holding a
     # letter AND a digit and no `/` -- prose (`Token: undocumented - needs a
     # human`) and secret-manager paths (`secret: orders/prod2/api`) pass.

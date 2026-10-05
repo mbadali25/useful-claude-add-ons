@@ -236,6 +236,8 @@ _SECRETS = [
     ("assigned-literal", 'password="' + "abc12" + '"', "abc12"),
     ("assigned-literal", 'password = "' + "correct horse" + ' battery staple"', "battery staple"),
     ("assigned-literal", "secret: '" + "two words" + "'", "two words"),
+    ("assigned-literal", 'password = "' + "abc" + '"', "abc"),
+    ("url-credentials", "HTTPS://orders:" + "s3cretPw9" + "@api.example.com/v1", "s3cretPw9"),
     ("assigned-unquoted", "password: " + _HUNTER, _HUNTER),
     ("assigned-unquoted", "api_key: " + "abcdef" + "123456789", "abcdef123456789"),
 ]
@@ -260,6 +262,8 @@ def test_lint_refuses_secret_shaped_strings(tmp_path, name, line, secret):
     "password: <set in env>",
     "api_key: ${API_KEY}",
     'password = "${DB_PASSWORD}"',
+    'password = "********"',
+    "password: 'xxx'",
     "Authorization: Bearer <token>",
     "Authorization: Bearer <orders-api-token>",
     "Authorization: Bearer ${ORDERS_API_TOKEN}",
