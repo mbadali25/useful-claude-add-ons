@@ -528,7 +528,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   reading the closed refusal as a false positive.</p>
 </li>
 <li><strong>"the python probe timed out" (the PowerShell scope guard, completion audit, approval hook and
-  verify gate, crew 1.1.8, L-0690).</strong> The probe gives each candidate 3 s and the whole walk 8 s; when
+  verify gate, crew 1.1.3, L-0690).</strong> The probe gives each candidate 3 s and the whole walk 8 s; when
   it runs out of time, or kills a candidate at its bound, it says "the python probe timed out" (could
   not tell) instead of "no usable python", with the same exit code. Whenever the probe finds nothing,
   <code>python probe:</code> lines follow on stderr: a summary (<code>found</code>, <code>not-found</code>, <code>rejected</code> or
