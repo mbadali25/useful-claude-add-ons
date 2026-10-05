@@ -1385,7 +1385,7 @@ REVIEW_FIX_MUTATIONS = (
         # FIX2: a receipt naming no bundle is superseded.
         "--supersede-accepted takes a receipt with no bundle",
         REVIEW_LEDGER,
-        '    if not isinstance(receipt.get("bundle_sha256"), str) or not _SHA256_RE.match(\n'
+        '    if not isinstance(receipt.get("bundle_sha256"), str) or not _SHA256_RE.fullmatch(\n'
         '            receipt["bundle_sha256"]):\n',
         "    if False:\n",
         ("tests/test_review_reject_accepted.py::"

@@ -310,6 +310,8 @@ REFUSALS = {
     # surrogate the success line could not print) is unreadable.
     "receipt_bundle_surrogate": (_receipt("bundle_sha256", "\udc80"), None),
     "receipt_bundle_not_hex": (_receipt("bundle_sha256", "x" * 64), None),
+    # Round 4: `$` matches before a final newline; fullmatch does not.
+    "receipt_bundle_trailing_newline": (_receipt("bundle_sha256", "a" * 64 + "\n"), None),
     "superseded_dict": (_with(lambda data: data.__setitem__("superseded", {})), None),
     "superseded_string": (_with(lambda data: data.__setitem__("superseded", "x")), None),
     "round_one_receipt_round_bool": (
