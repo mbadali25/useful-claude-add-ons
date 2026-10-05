@@ -348,3 +348,17 @@ def test_an_unreadable_config_survives_the_line_cut(tmp_path, monkeypatch):
     line = crew_config.format_inert(crew_config.inert_settings(str(root)), "1.0.0")
 
     assert "could not tell (global config" in line and "more" in line, line
+
+
+def test_a_dropped_machine_key_holding_a_dot_is_named_with_its_value(tmp_path, monkeypatch):
+    """T-0070 port review r6 BLOCK: a machine-file key the global filter
+    drops, holding a `.`, is named with its own value, never the sentinel."""
+    _global(tmp_path, monkeypatch, contents={"scope": {"bad.key": 1}})
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+
+    entries = crew_config.inert_settings(str(root))
+    line = crew_config.format_inert(entries, "1.0.0")
+
+    assert [(e["key"], e["value"]) for e in entries if e["kind"] == "global-ignored"] == [
+        ("scope.bad.key", 1)], entries
+    assert "scope.bad.key=1 (global, not read)" in line

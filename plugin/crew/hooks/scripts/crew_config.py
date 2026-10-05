@@ -2245,13 +2245,6 @@ def _known_leaf(dotted, known):
     return any(".".join(parts[:i]) in known for i in range(1, len(parts) + 1))
 
 
-def _expand(dotted, value):
-    """`(path, value)` for every leaf under `value`, which sits at `dotted`."""
-    if isinstance(value, dict) and value:
-        return [(f"{dotted}.{p}", _dig(value, tuple(p.split(".")))) for p in leaf_paths(value)]
-    return [(dotted, value)]
-
-
 def inert_settings(root, path=None):
     """Every setting the installed crew does not act on, sorted by key.
 
@@ -2331,12 +2324,25 @@ def inert_settings(root, path=None):
     for dropped in ignored:
         if dropped in _INERT_SKIP:
             continue  # `schema` has its own --check-global finding
-        for dotted, value in _expand(dropped, _dig(global_raw, tuple(dropped.split(".")))):
+        for dotted, value in _dropped_leaves(global_raw, dropped):
             entries[(dotted, "global")] = {"key": dotted, "value": value,
                                            "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
                                            "kind": "global-ignored", "layer": "global"}
     # A could-not-tell first: a line cut at `+N more` must still say it.
     return [entries[k] for k in sorted(entries, key=lambda k: (k[1] != "unreadable", k))]
+
+
+def _dropped_leaves(raw, dropped):
+    """`(dotted, value)` for every leaf of `raw` at or under the dotted name
+    `dropped`, matched on key TUPLES joined, so a key holding a `.` reads its
+    own value, never the _MISSING sentinel. A dropped name with no leaf (an
+    empty block) is itself, with its value when it can be read."""
+    found = [(".".join(parts), value) for parts, value in _leaf_items(raw)
+             if ".".join(parts) == dropped or ".".join(parts).startswith(dropped + ".")]
+    if found:
+        return found
+    value = _dig(raw, tuple(dropped.split(".")))
+    return [(dropped, None if value is _MISSING else value)]
 
 
 def _leaf_items(node, prefix=()):
