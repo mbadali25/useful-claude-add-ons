@@ -56,8 +56,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### crew 1.1.12 — L-0518 (tooling half): one locked read authorizes a gate skip; a gate that cannot run is exit 2
 
 - **Summary.** `/crew:review` can no longer spend a round with no self-check when a successor plan
-  is approved mid-run, and a broken incident file makes a review "not run" instead of looking like
-  FINDINGS.
+  is approved mid-run, and an error escaping the incident lookup or a skip log that cannot be
+  written makes a review "not run" instead of looking like FINDINGS.
 - **What changed.** F2: `review_run.run` skips the pre-review and standards gates only for a spent
   budget, read without the lock; it now passes that decision to `review_ledger.reserve(...,
   gated=False)`, which refuses under the lock with `GATE_CHANGED` (exit 2, nothing spent) when the
