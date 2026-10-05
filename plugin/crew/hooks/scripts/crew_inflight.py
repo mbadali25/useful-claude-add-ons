@@ -327,22 +327,29 @@ def _win_ancestors():  # pragma: no cover - exercised on Windows only
             kernel.CloseHandle(snap)
     except (OSError, AttributeError, ValueError):
         return None
-    # th32ParentProcessID is the pid the parent HAD: once it exits, that pid can
-    # be reused by a later process, which then reads as the parent. A real
-    # parent started no later than its child, so the walk stops at a link whose
-    # process started after the one below it, or whose start cannot be read
-    # (could not tell is not "same process") (review NIT carry).
-    chain, pid, below = [], os.getppid(), _pid_start(os.getpid())
+    return walk_parents(parents, _pid_start, os.getppid(), os.getpid()) or None
+
+
+def walk_parents(parents, starts, first, me):
+    """[(pid, name)] from `first` upward through `parents` ({pid: (ppid,
+    name)}, a Toolhelp snapshot), asking `starts(pid)` for creation times.
+    th32ParentProcessID is the pid the parent HAD: once it exits, that pid
+    can be reused by a later process, which then reads as the parent. A real
+    parent started no later than its child, so the walk stops at a link whose
+    process started after the one below it, or whose start (or `me`'s) cannot
+    be read - could not tell is not "same process" (review NIT carry). Pure:
+    no OS call but through `starts`."""
+    chain, pid, below = [], first, starts(me)
     for _ in range(64):
         if pid not in parents or pid in (p for p, _ in chain):
             break
-        start = _pid_start(pid)
+        start = starts(pid)
         if start is None or below is None or start > below:
             break
         ppid, name = parents[pid]
         chain.append((pid, name))
         pid, below = ppid, start
-    return chain or None
+    return chain
 
 
 def _name(raw):

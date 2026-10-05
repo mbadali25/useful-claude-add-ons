@@ -1024,6 +1024,30 @@ def test_windows_walk_keeps_the_real_parent():
     assert [pid for pid, _name in chain[:1]] == [os.getppid()], chain
 
 
+# Pure walk (review NIT): a snapshot {pid: (ppid, name)} and creation times.
+_SNAP = {20: (30, "bash.exe"), 30: (40, "claude.exe"), 40: (1, "explorer.exe")}
+
+
+def test_walk_parents_follows_real_parents():
+    """Must-allow: each parent started no later than its child."""
+    starts = {10: 500, 20: 400, 30: 300, 40: 100}.get
+    assert crew_inflight.walk_parents(_SNAP, starts, 20, 10) == [
+        (20, "bash.exe"), (30, "claude.exe"), (40, "explorer.exe")]
+
+
+@pytest.mark.parametrize("starts,kept", [
+    ({10: 500, 20: 400, 30: 450, 40: 100}, [20]),   # 30 reused: born after its child 20
+    ({10: 500, 20: 600}, []),                       # the first link already postdates me
+    ({10: 500, 20: 400, 40: 100}, [20]),            # 30's start cannot be read
+    ({20: 400, 30: 300}, []),                       # my own start cannot be read
+], ids=["reused-parent", "reused-first-link", "unreadable-start", "unreadable-me"])
+def test_walk_parents_stops_at_a_reused_or_unreadable_link(starts, kept):
+    """Must-block: a parent that started after its child is a reused pid, and
+    could not tell is not the same process; the walk stops before either."""
+    chain = crew_inflight.walk_parents(_SNAP, starts.get, 20, 10)
+    assert [pid for pid, _name in chain] == kept
+
+
 def test_windows_claude_pid_ancestor_is_the_holder(monkeypatch):
     _windows(monkeypatch, [(os.getppid(), "bash.exe"), (4242, "claude.exe")],
              {4242: 100, os.getpid(): 900})
