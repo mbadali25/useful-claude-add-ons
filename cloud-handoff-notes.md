@@ -51,7 +51,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 08:20 UTC
+Last updated: 2026-10-05 08:38 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -110,6 +110,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 09:00: #510 fixes pushed, head 2e734044 (dfe316f6 broke CI: runner checkout under /opt made realpath turn 'rm' into /opt/... - fixed). CI green except check (bump). md5 /usr/local/bin+/opt unchanged throughout. Re-review spawned; batch 9 builder told to merge 2e734044 and hold version commit.
 - 08:50: #512 (C-0006) review at 2514bd58: 0 BLOCK / 0 FIX. At land: merge main after batch 9, move C-0006 CHANGELOG entry back to top of [Unreleased], carry NIT crew-guide.py:257 (git ls-files for 'is committed'), version-only commit crew 1.1.0, graphify update. Minted C-0018 (pre-existing guide .md link 404s + T-0500/0501/0504 handoff docs name crew-1.0-*). Next free C-0019.
 - 08:40: #512 reworked: all 7 guide families version-free (crew-<name>.*, 21 files), head 2514bd58, no bump. Review spawned. Still pending: #510 fixes, batch 9 (holding version commit).
 - 08:30: #512 = C-0006 draft (b575a2f5). Owner: version-free guide names for all 7 -> builder reworking. #510 review: 0 BLOCK / 3 FIX (fresh-Windows Strawberry Perl not on PATH -> nikto FAILED; .sh exit-code half untested; sudo-stub guard prefix-only + no tripwire). Fixer spawned; batch 9 builder told to hold version commit for new #510 head. Not ours: #511, #508 (other session; #508 touches CI selection).
