@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.0.351, gizmoduck 0.5.9 — batch 9: T-0081, T-0049, C-0015, C-0017
+### crew 1.0.352, gizmoduck 0.5.9 — batch 9: T-0081, T-0049, C-0015, C-0017
 
 - **Summary.** Three changes in one update: a crew vault write refuses a directory on its path that
   was swapped for another real directory after the checks, one runner drives a crew ticket at a time

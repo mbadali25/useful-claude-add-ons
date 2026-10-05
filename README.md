@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.0.351, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
+- **crew 1.0.352, gizmoduck 0.5.9**: Three changes in one update: a crew vault write refuses a directory on its path that was swapped for another real directory after the checks, one runner drives a crew ticket at a time through in-flight markers, and gizmoduck's bootstrap and doctor stop trusting what they cannot check: links in the templates dir, a nikto that exits 0 without running, and testssl without `hexdump`.
 - **crew 1.0.351, notify 1.1.2**: Notifications that failed, repeated, or said only "missing". Chat notifications now go through when the bot token was saved with a trailing space or newline, a missing setting is named along with where to set it, a refused send says Telegram's reason, and the notify skill's dispatcher no longer posts the same message again after a restart.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
