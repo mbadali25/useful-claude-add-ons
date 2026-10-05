@@ -281,7 +281,7 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>136 leaves, repo template"]
+        DEF["<b>default_config()</b><br/>crew_config.py:245<br/>141 leaves, repo template"]
         GLB[("<b>~/.claude/crew/config.json</b><br/>read_global_config()<br/><i>never raises</i>")]
         RES{"which .crew/?<br/>own, else the main<br/>checkout's (a lane)"}
         REPO[("<b>.crew/config.json</b> - schema 7<br/>crew_state.load_config()")]
@@ -289,7 +289,7 @@ flowchart TB
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>75 leaves across 19 blocks"]
+        TMPL["<b>default_global_config()</b><br/>crew_config.py:432<br/>81 leaves across 20 blocks"]
         PRUNE["<b>_prune()</b><br/>keeps only keys present<br/>in the template"]
         FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
     end
@@ -320,11 +320,11 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 136 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1134 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
+| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 141 leaves (executed on batch-7-build after merging T-0011, whose three repo-only ship keys made main's 138 into 141) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1133 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
 | `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours; the .ps1 copies at notify.ps1:290, handoff-read.ps1:186, handoff-write.ps1:286, context-watch.ps1:29). Still own-file only: the verify gate, the scope and completion wrappers. |
-| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 75 leaves (executed, this pass) across 19 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
+| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 81 leaves (executed, batch-7-build) across 20 blocks: autopilot (T-0050's five personal keys), qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
 | `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:699 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
 | `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored) |
 | `NULLS` | without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:676 drops a repo null ONLY where the global layer supplies a real value. |
@@ -379,9 +379,9 @@ flowchart TB
 
     subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
         direction TB
-        S1["<b>75 global-settable</b> leaves<br/>across nineteen blocks"]
-        S2["<b>58 repo-only</b> leaves<br/>(set difference, executed)"]
-        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>133 / 75 / 58"]
+        S1["<b>81 global-settable</b> leaves<br/>across twenty blocks"]
+        S2["<b>60 repo-only</b> leaves<br/>(set difference, executed)"]
+        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>141 / 81 / 60"]
         S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus<br/>is excluded from the global template"]
         S1 --- S2 --- S3 --- S4
     end
@@ -391,9 +391,9 @@ flowchart TB
 |---|---|
 | `A2` | The WRITE path additionally rejects VALUES the READ path only reports. |
 | `A3` | resolve_config NEVER raises - a malformed file must not wedge every session on the machine. |
-| `S1` | 75 global-settable leaves, across nineteen blocks: qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto; T-0013: typeDelaySeconds, readyTimeoutSeconds), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
-| `S2` | 58 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.deploy (T-0072) and autopilot.approval/questions (T-0010) among them. Whole blocks absent from the global template: autopilot, cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, CONFIG.md §20; deploy added by T-0072, approval + questions by T-0010) |
-| `S3` | Counts are executed, not read by eye. 133 repo-template / 75 global / 58 repo-only on T-0066 after merging main e9364a70 (132 / 74 / 58 on main after T-0013, 131 / 73 / 58 on T-0066 after main c9263465, 130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
+| `S1` | 81 global-settable leaves, across twenty blocks: autopilot (T-0050: mode, maxPhases, deploy, approval, questions - personal, the stricter layer wins), qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto; T-0013: typeDelaySeconds, readyTimeoutSeconds), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
+| `S2` | 60 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.maxAutoReplans (T-0074), autopilot.sleep.* (T-0053) and autopilot.ship/knownFailures/ciTimeoutMinutes (T-0011) among them. Whole blocks absent from the global template (autopilot is partly global since T-0050): cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tickets, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, CONFIG.md §20; deploy added by T-0072, approval + questions by T-0010, ship + knownFailures + ciTimeoutMinutes by T-0011) |
+| `S3` | Counts are executed, not read by eye. 141 repo-template / 81 global / 60 repo-only on batch-7-build after merging T-0011 (133 / 75 / 58 on T-0066 after merging main e9364a70, 132 / 74 / 58 on main after T-0013, 131 / 73 / 58 on T-0066 after main c9263465, 130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
 | `S4` | Consent is not capability. context.autoClear.unsafeFocus is excluded from the global template on purpose (AUTOCLEAR_CONSENT_KEYS, crew_state.py:746) - a Wayland focus-typing risk accepted once must not arm for every repo. |
 
 - **Source:** `data-flow-crew-config-split.mmd`
@@ -1066,12 +1066,12 @@ flowchart TB
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
         dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
-        dn5 -- "stale / unknown" --> dnx
+        dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
         dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
         ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
         ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
@@ -1106,6 +1106,8 @@ flowchart TB
         im3 --> rf1{"crew_refresh_check.py<br/>:94"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
+        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
+        rf3 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
         sc1 --> im4["spec.md 'status: review',<br/>move --to review<br/>:111-113"]

@@ -58,12 +58,12 @@ to this ticket, and rerun.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket "$1"
 ```
 
-Read-only. Any `stale` or `unknown` line refuses done: name the artifact and
-what the line says — `refresh with <command>` (a drifted README diagram embed included), or
-`stop` with its reason (a missing tool, a scope base that hides the change, broken embed markers). **Do not run the refresh here — a write now
-stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh,
-commit, then `/crew:review $1` again, then rerun this command. Documents read
-`not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
+Read-only. Any `stale`, `unknown` or `fresh-uncommitted` line refuses done: name the artifact and what the line says — `refresh
+with <command>` (a drifted README diagram embed included), or `stop` with its reason (a missing tool, a scope base that hides the change, broken embed markers). **Do not run the refresh here
+— a write now stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh, commit, then `/crew:review $1` again,
+then rerun this command. On `fresh-uncommitted` the artifacts are current but the files its `uncommitted:` line lists are not
+committed: commit them in `/crew:implement $1` step 6 (no byte of the review bundle's working state changes, so check 1's receipt
+stays current). Documents read `not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
 
 ## Report — forbidden trailers (never refuses)
 

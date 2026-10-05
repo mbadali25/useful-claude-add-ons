@@ -33,7 +33,13 @@ README embeds of the diagrams:
            path (anything outside `GRAPH_NONCODE_PATHS` and `graph.out`).
            Refresh: `graphify update .` where the repo tracks GRAPH_REPORT.md
            beside the graph, else `graphify . --no-viz --code-only` -- the
-           choice `_read_graph`'s `reportTracked` already encodes.
+           choice `_read_graph`'s `reportTracked` already encodes. graphify
+           leaves graph.json and its `built_at_commit` untouched when the
+           topology did not change, so a graph behind by sha is still
+           `fresh` when graphify's own `<graph.out>/manifest.json` records
+           the current MD5 (`ast_hash`) of every committed code path that
+           moved since then (T-0063, `_manifest_confirms`). A manifest that
+           is missing or does not parse leaves the sha answer.
   diagram-embeds  (T-0035) each README whose generated `crew-diagrams`
            section differs from what `crew_diagrams.py embed` writes now,
            judged over every diagram whatever the ticket reached: a drifted
@@ -82,10 +88,18 @@ a subject that does not name it is not caught -- the limit of reading
 subjects. `--json` carries `base_source`, so a caller need not parse prose
 to tell a recorded base from a fallback.
 
-## Four values, and the unknowns stay unknown
+## Five values, and the unknowns stay unknown
 
-`fresh`, `stale`, `unknown`, and `not applicable` for a repo with no graph
-file. An anchor that is absent (codemap) or names no commit here, a map that
+`fresh`, `fresh-uncommitted`, `stale`, `unknown`, and `not applicable` for a
+repo with no graph file. `fresh` means current AND committed (T-0063):
+an artifact whose refresh is right but whose own file -- the map, the diagram
+source or a same-stem render, anything under `graph.out` -- has uncommitted
+changes is `fresh-uncommitted`, and so is the whole answer when any path
+under REFRESH_ARTIFACT_PATHS is modified, staged, or untracked and not
+ignored, owned by an in-scope artifact or not (`uncommitted` lists them).
+It refuses as `stale` does, and the fix is a commit, not a refresh.
+Precedence is `unknown` > `stale` > `fresh-uncommitted` > `fresh`; a listing
+git cannot give is `unknown`, never clean. An anchor that is absent (codemap) or names no commit here, a map that
 cites no path, a diff git could not run, a graph with no `built_at_commit`,
 graphify missing on this machine, a scope base that hides or may hide the
 change, an artifact dir that cannot be listed, an artifact that cannot be read,
@@ -197,6 +211,7 @@ file even under `--no-optional-locks`. Standard library only.
 import argparse
 import errno
 import fnmatch
+import hashlib
 import io
 import json
 import os
@@ -227,6 +242,7 @@ from crew_freshness import (
 )
 
 FRESH = "fresh"
+FRESH_UNCOMMITTED = "fresh-uncommitted"
 STALE = "stale"
 UNKNOWN = "unknown"
 NOT_APPLICABLE = "not applicable"
@@ -426,6 +442,43 @@ def _judge(root, sha, reached, untracked):
     if pending:
         return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True
     return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True
+
+
+def _committed_moves(root, sha, reached, untracked):
+    """The paths of `reached` that changed since `sha`, when every one of
+    them is committed; else None -- nothing moved, git could not answer, or
+    an uncommitted change among them, `_judge`'s "commit, then refresh"
+    case, which no other evidence may confirm (T-0063). A flag, not
+    `_judge`'s prose, so the graph's manifest check reads no reason text."""
+    moved = _moved_in_tree(root, sha, reached)
+    if not moved or any(p in untracked for p in reached):
+        return None
+    dirty = _moved_in_tree(root, "HEAD", moved)
+    return None if dirty is None or dirty else moved
+
+
+def _uncommitted(top, dirs, untracked):
+    """Sorted paths under `dirs` that differ between HEAD and the working
+    tree -- modified or staged -- plus the members of `untracked` (never an
+    ignored file) under them; None when git could not answer, which is
+    never read as clean (T-0063)."""
+    moved = _moved_in_tree(top, "HEAD", dirs)
+    if moved is None:
+        return None
+    new = [p for p in untracked if any(_reaches(d, p) for d in dirs)]
+    return sorted(set(moved) | set(new))
+
+
+def _owned(item, uncommitted, diagrams, graph_out):
+    """The uncommitted paths that are `item`'s own refreshed file: its map,
+    its diagram source or a same-stem render beside it, or the graph dir."""
+    kind, name = item["kind"], item["name"]
+    if kind == "codemap":
+        return [p for p in uncommitted if p == f".crew/codemap/{name}.md"]
+    if kind == "diagram":
+        return [p for p in uncommitted if p.rsplit("/", 1)[0] == diagrams
+                and os.path.splitext(p.rsplit("/", 1)[-1])[0] == name]
+    return [p for p in uncommitted if _reaches(graph_out, p)] if kind == "graph" else []
 
 
 def _reaches(entry, path):
@@ -1270,6 +1323,43 @@ def _embeds(top):
     return found
 
 
+def _manifest_confirms(root, graph_dir, paths):
+    """`(True, "")` when graphify's `<graph.out>/manifest.json` records, for
+    every one of `paths`, an existing file whose MD5 is its `ast_hash` (keyed
+    repo-relative, or absolute as graphify writes outside a root); `(False,
+    why)` otherwise, `why` non-empty only when the manifest is missing or not
+    usable. Read, never written. Safe because graphify saves the manifest
+    only after a successful graph.json write or a same-topology confirmation:
+    re-read in graphify 0.9.65 (watch.py:1965 after the no-cluster write or
+    its same-graph check, :2010 on the same-topology path, :2178 after
+    to_json and the replace; cli.py:4304 on "no incremental changes",
+    :4427 after write_json_atomic, :4611 after to_json, which exits first
+    when it refuses; the skill runbooks' save_manifest runs after their
+    build) and again in 0.9.74 at shifted lines, same order (T-0063)."""
+    text = read_text(os.path.join(graph_dir, "manifest.json"))
+    if text is None:
+        return False, "graphify's manifest.json is missing or unreadable, so not usable"
+    try:
+        manifest = json.loads(text)
+    except ValueError:
+        return False, "graphify's manifest.json does not parse, so not usable"
+    if not isinstance(manifest, dict):
+        return False, "graphify's manifest.json is not an object, so not usable"
+    for rel in paths:
+        path = os.path.join(root, *rel.split("/"))
+        entry = manifest.get(rel, manifest.get(path))
+        if not isinstance(entry, dict) or not os.path.isfile(path):
+            return False, ""
+        try:
+            with open(path, "rb") as handle:
+                digest = hashlib.md5(handle.read(), usedforsecurity=False).hexdigest()
+        except OSError:
+            return False, ""
+        if entry.get("ast_hash") != digest:
+            return False, ""
+    return True, ""
+
+
 def _graph(root, info, graph_out, code, untracked, which):
     command = ("graphify update ." if info["reportTracked"]
                else "graphify . --no-viz --code-only")
@@ -1286,7 +1376,19 @@ def _graph(root, info, graph_out, code, untracked, which):
         return _entry("graph", graph_out, UNKNOWN,
                       "graph.json carries no built_at_commit, so its provenance is unknown",
                       command, refreshable=True)
-    status, reason, refreshable = _judge(root, info["builtAt"], code, untracked)
+    sha = info["builtAt"]
+    status, reason, refreshable = _judge(root, sha, code, untracked)
+    moved = _committed_moves(root, sha, code, untracked) if status == STALE else None
+    if moved:
+        # T-0063: graphify leaves graph.json and its built_at_commit alone
+        # when the topology did not change, so the sha alone reads stale for
+        # ever. Its manifest says whether it saw these exact bytes.
+        confirmed, why = _manifest_confirms(root, os.path.dirname(info["path"]), moved)
+        if confirmed:
+            return _entry("graph", graph_out, FRESH, "graphify's manifest records the "
+                          "current content of every changed code path (topology unchanged "
+                          f"since {sha[:12]})", command)
+        reason += f"; {why}" if why else ""
     return _entry("graph", graph_out, status, reason, command, refreshable)
 
 
@@ -1344,6 +1446,8 @@ def _unconfirmed(result, stop, reason):
     reason; an artifact already unknown keeps its own, and a missing graph
     file stays not applicable -- no base changes either."""
     for item in result["artifacts"]:
+        if item["status"] == FRESH_UNCOMMITTED:
+            item["status"] = FRESH  # measured as fresh; demoted with the rest below
         if item["status"] in (FRESH, STALE):
             item.update(status=UNKNOWN, refreshable=False,
                         reason=f"{stop} - measured {item['status']} against it, "
@@ -1354,16 +1458,17 @@ def _unconfirmed(result, stop, reason):
 
 def _unmeasured(reason, stop, source):
     return {"status": UNKNOWN, "reason": reason, "stop": stop, "base_source": source,
-            "artifacts": [], "documents": NOT_MEASURED}
+            "artifacts": [], "documents": NOT_MEASURED, "uncommitted": []}
 
 
 def ticket_freshness(root, ticket, which=shutil.which):
     """`{"status", "reason", "stop", "base_source", "artifacts": [{"kind",
     "name", "status", "reason", "command", "refreshable"}], "documents": "not
-    measured"}`.
+    measured", "uncommitted": [path, ...]}`.
 
     `status` is `unknown` if any artifact is unknown, else `stale` if any is
-    stale, else `fresh` -- unless the scope base cannot be trusted, which is
+    stale, else `fresh-uncommitted` if any artifact is or `uncommitted` is
+    not empty, else `fresh` -- unless the scope base cannot be trusted, which is
     `unknown` whatever the artifacts say, and then so is every artifact that
     was measured against it. A recorded base is doubted as a fallback is when
     a commit behind it names the ticket. `stop` is None, or the short reason
@@ -1398,7 +1503,8 @@ def ticket_freshness(root, ticket, which=shutil.which):
     info = _read_graph(top, cfg)
     graph_out = _relative(top, os.path.dirname(info["path"]))
     diagrams = contained_path(top, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT)
-    own = refresh_artifact_paths(top, cfg) + [".work"]
+    dirs = refresh_artifact_paths(top, cfg)
+    own = dirs + [".work"]
     changed = {p for p in every
                if not _bookkeeping(p) and not any(_reaches(o, p) for o in own)}
     code = sorted(p for p in changed if not _is_noncode(p, graph_out))
@@ -1410,10 +1516,21 @@ def ticket_freshness(root, ticket, which=shutil.which):
     if graph:
         artifacts.append(graph)
 
+    dirty = _uncommitted(top, dirs, untracked)
+    for item in artifacts:
+        owned = _owned(item, dirty or [], _relative(top, diagrams), graph_out)
+        if item["status"] == FRESH and owned:
+            item.update(status=FRESH_UNCOMMITTED, reason=item["reason"] + (
+                f"; its refreshed file is uncommitted ({_few(owned)}): commit it"))
     statuses = {a["status"] for a in artifacts}
-    overall = UNKNOWN if UNKNOWN in statuses else STALE if STALE in statuses else FRESH
+    overall = (UNKNOWN if UNKNOWN in statuses else STALE if STALE in statuses
+               else FRESH_UNCOMMITTED if FRESH_UNCOMMITTED in statuses or dirty else FRESH)
     result = {"status": overall, "reason": f"scope base {base[:12]} ({why})", "stop": None,
-              "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED}
+              "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED,
+              "uncommitted": dirty or []}
+    if dirty is None:
+        result.update(status=UNKNOWN, stop="git could not list uncommitted refresh artifacts",
+                      reason=f"git could not list uncommitted refresh artifacts ({why})")
     if source == scope_base.RECORDED:
         doubt = _named_behind(top, base, ticket)
         if doubt:
@@ -1441,6 +1558,8 @@ def _render(ticket, result):
     top = f"refresh-check {ticket}: {result['status']} - {result['reason']}"
     if result.get("stop"):
         top += f"; stop - {result['stop']}"
+    elif result["status"] == FRESH_UNCOMMITTED:
+        top += "; commit the refreshed artifacts, then re-run"
     lines = [top]
     for item in result["artifacts"]:
         line = f"  {item['kind']} {item['name']}: {item['status']} - {item['reason']}"
@@ -1451,8 +1570,12 @@ def _render(ticket, result):
         elif item["status"] == STALE:
             line += "; stop - needs judgement, report it"
         lines.append(line)
+    if result.get("uncommitted"):
+        lines.append(f"  uncommitted: {_few(result['uncommitted'])} - commit these, then re-run")
     if not result["artifacts"]:
         if result["status"] in (FRESH, STALE):
+            lines.append("  no codemap, diagram or graph cites a path this ticket changed")
+        elif result["status"] == FRESH_UNCOMMITTED:
             lines.append("  no codemap, diagram or graph cites a path this ticket changed")
         else:
             lines.append(f"  not measured - {result.get('stop') or result['reason']}")
@@ -1461,7 +1584,7 @@ def _render(ticket, result):
 
 
 def main(argv):
-    """Exit 0 fresh, 1 stale or unknown, 2 usage error."""
+    """Exit 0 fresh, 1 fresh-uncommitted, stale or unknown, 2 usage error."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
