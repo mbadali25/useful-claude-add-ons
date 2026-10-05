@@ -89,7 +89,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   errors, concurrent corrections), five cases in `test_review_prompt.py`, and sixteen mutations in
   `sabotage_review.py`, each red on its named test through `sabotage.py`'s runner. Harness only
   (T-0087): no feature path rides along.
-||||||| e84a8bfe9
 
 ### crew 1.1.0 — C-0006: version-free guide file names
 
@@ -240,7 +239,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this change.** GPG or checksum verification for dependency-check and ZAP (C-0015.5).
 - **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap_version.py` and `test_doctor.py`: each
   guard has must-block and must-allow cases, each sabotaged to confirm it goes red.
-||||||| 23fb9d91
 
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
