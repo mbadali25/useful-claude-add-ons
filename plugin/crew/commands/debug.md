@@ -92,6 +92,8 @@ Produce this, and nothing that edits the tree:
   sentences. Plus the failing test that should exist before it lands.
 - **Confidence, and what would raise it** — if the cause is inferred rather
   than demonstrated, say which observation is missing.
+- **Not verified** — each claim above you inferred rather than reproduced or
+  read at `path:line`, named plainly.
 
 ## Deferred — and where it went
 

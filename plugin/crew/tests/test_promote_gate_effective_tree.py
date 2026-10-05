@@ -44,12 +44,18 @@ _PS1 = _SCRIPTS / "promote-gate.ps1"
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = crew_fixtures.resolve_pwsh()
 
+# Rule time (L-1503): every .ps1 case is `slow` - deselected from the
+# promote/verify rule's default run, run by CI's `-m slow` jobs
+# (crew-shell-matrix (ubuntu-latest), crew-windows-slow) - except the one
+# parity case on FLAVOURS_DEFAULT. Every .sh case runs by default.
+_NEEDS_PWSH = pytest.mark.skipif(_PWSH is None,
+                                 reason="no PowerShell 7 on this machine")
 FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(
         _BASH is None, reason="no MSYS/POSIX bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        _PWSH is None, reason="no PowerShell 7 on this machine")),
+    pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.slow]),
 ]
+FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=_NEEDS_PWSH)]
 
 _WT_NAME = "deploy-worktree-t0505"
 
@@ -173,7 +179,7 @@ def _cd(flavour, path):
 
 # --- must-allow -------------------------------------------------------------
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
 def test_a_clean_worktree_deploys_while_the_main_checkout_is_dirty(flavour, repo):
     """The TSS repro: payload cwd = a clean worktree, main checkout dirty."""
     repo.dirty_main()
@@ -519,7 +525,8 @@ def test_a_policy_block_names_the_tree_it_judged(flavour, repo):
     assert _WT_NAME in err and repo.wt_sha in err, err
 
 
-@pytest.mark.skipif(_PWSH is None, reason="no PowerShell 7 on this machine")
+@_NEEDS_PWSH
+@pytest.mark.slow
 def test_powershell_directory_changes_are_case_insensitive(repo):
     repo.dirty_main()
     code, err = run_gate("ps1", repo, f"SET-LOCATION {repo.wt}; deploy-dev",

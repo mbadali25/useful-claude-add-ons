@@ -34,6 +34,48 @@ function Try-Install {
   }
 }
 
+# Returns the newest stable release tag (e.g. v3.11.1) of GitHub repo $Repo
+# (owner/repo). Twin of bootstrap.sh's resolve_latest_tag - same order, same
+# filter. The REST API (releases/latest) is tried first, as before. Some
+# networks answer api.github.com with a 403 while still serving git and the
+# versioned releases/download/<tag>/ assets, so on an API failure this falls
+# back to `git ls-remote --tags`. Only plain X.Y.Z (optionally v-prefixed)
+# tags count there: rc/beta/alpha/pre tags, ZAP's w2026-... weekly tags and
+# oddities like nuclei's `v.1.0.0` are skipped, and the highest version wins.
+# When both lookups fail it throws an error naming the tool, which
+# Try-Install catches like any other install failure.
+function Resolve-LatestTag {
+  param(
+    [Parameter(Mandatory)][string]$Repo,
+    [Parameter(Mandatory)][string]$Tool
+  )
+  try {
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" `
+            -TimeoutSec 60 -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
+    if ($rel.tag_name) { return [string]$rel.tag_name }
+  } catch {
+    # fall through to git tags
+  }
+  Write-Host ">> ${Tool}: GitHub API lookup failed - trying git tags of github.com/$Repo"
+  $tags = @()
+  if (Get-Command git -ErrorAction SilentlyContinue) {
+    $tags = & {
+      $ErrorActionPreference = "Continue"
+      $env:GIT_HTTP_LOW_SPEED_LIMIT = "1000"; $env:GIT_HTTP_LOW_SPEED_TIME = "30"
+      git ls-remote --tags --refs "https://github.com/$Repo.git" 2>$null
+    }
+  }
+  $best = $tags |
+    ForEach-Object { ($_ -split "refs/tags/", 2)[-1] } |
+    Where-Object { $_ -match '^v?\d+\.\d+\.\d+$' } |
+    Sort-Object { [version]($_.TrimStart("v")) } |
+    Select-Object -Last 1
+  if ($best) { return [string]$best }
+  throw ("${Tool}: could not determine the latest version - both the GitHub API " +
+         "(api.github.com/repos/$Repo/releases/latest) and " +
+         "'git ls-remote --tags https://github.com/$Repo.git' failed or found no stable tag.")
+}
+
 function Test-WingetAvailable {
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw "winget is not available on this machine"
@@ -47,21 +89,30 @@ function Install-Nuclei {
 
   $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
 
-  $rel = Invoke-RestMethod "https://api.github.com/repos/projectdiscovery/nuclei/releases/latest" `
-          -Headers @{ "User-Agent" = "nuclei-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "projectdiscovery/nuclei" -Tool "nuclei"
   $num = $ver.TrimStart("v")
   $zip = "nuclei_${num}_windows_${arch}.zip"
-  $url = "https://github.com/projectdiscovery/nuclei/releases/download/$ver/$zip"
+  $sums = "nuclei_${num}_checksums.txt"
+  $base = "https://github.com/projectdiscovery/nuclei/releases/download/$ver"
+  $url = "$base/$zip"
 
   # Download straight into the (AV-excluded) install dir instead of %TEMP% -
   # %TEMP% is the most common malware drop location on Windows, so staging a
   # security tool's download through it defeats the point of excluding the
   # tool's own directory. See docs/antivirus-exclusions.md section 5.
   $tmp = Join-Path $BinDir $zip
-  Invoke-WebRequest -Uri $url -OutFile $tmp -Headers @{ "User-Agent" = "nuclei-bootstrap" }
+  $sumsPath = Join-Path $BinDir $sums
+  Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 1800 -Headers @{ "User-Agent" = "nuclei-bootstrap" }
+  Invoke-WebRequest -Uri "$base/$sums" -OutFile $sumsPath -TimeoutSec 60 -Headers @{ "User-Agent" = "nuclei-bootstrap" }
+  try {
+    # Twin of bootstrap.sh's verify_sha256: refuse on a missing line or a mismatch.
+    Assert-Sha256 -File $tmp -SumsFile $sumsPath
+  } catch {
+    Remove-Item -Force $tmp, $sumsPath -ErrorAction SilentlyContinue
+    throw
+  }
   Expand-Archive -Path $tmp -DestinationPath $BinDir -Force
-  Remove-Item $tmp
+  Remove-Item $tmp, $sumsPath
 
   Add-ToUserPath $BinDir
 
@@ -88,14 +139,101 @@ function Update-NucleiTemplates {
   # worse outcome than a loud bootstrap failure the operator actually sees.
   $BinDir = Join-Path $ToolsDir "nuclei"
   $nuclei = Join-Path $BinDir "nuclei.exe"
+  #
+  # Success is judged by templates actually being on disk, not by the exit
+  # code: where api.github.com is refused, `nuclei -update-templates` exits 0
+  # having downloaded nothing (measured on Linux in the Claude Code cloud
+  # sandbox, nuclei v3.11.1). Twin of bootstrap.sh: only when NO templates are
+  # on disk is the same release cloned with git; a failed update over
+  # existing templates keeps them.
+  if (-not (Test-Path $nuclei)) {
+    Write-Host "!! the nuclei engine is not installed ($nuclei), so there is nothing to fetch" -ForegroundColor Red
+    Write-Host "!! templates for. Fix the nuclei install above and re-run." -ForegroundColor Red
+    exit 1
+  }
   Write-Host ">> downloading Nuclei community templates..."
-  & $nuclei -update-templates -silent
-  if ($LASTEXITCODE -ne 0) {
+  $tdir = Join-Path $HOME "nuclei-templates"
+  & {
+    $ErrorActionPreference = "Continue"
+    & $nuclei -update-templates -silent
+  }
+  $updateRc = $LASTEXITCODE
+  if (Test-NucleiTemplatesPresent $tdir) {
+    if ($updateRc -ne 0) {
+      Write-Host "!! nuclei -update-templates failed (exit $updateRc); keeping the existing templates in $tdir" -ForegroundColor Yellow
+    }
+    return
+  }
+  Write-Host ">> no templates in $tdir after nuclei -update-templates (exit $updateRc) - trying git clone"
+  try {
+    Install-NucleiTemplatesClone -Dir $tdir
+  } catch {
+    Write-Host "!! $($_.Exception.Message)" -ForegroundColor Red
+  }
+  if (-not (Test-NucleiTemplatesPresent $tdir)) {
     Write-Host "!! template download failed. The engine is installed but has no templates," -ForegroundColor Red
     Write-Host "!! so a scan would report zero findings on every target." -ForegroundColor Red
     Write-Host "!! Re-run 'nuclei -update-templates' once the network allows it." -ForegroundColor Red
     exit 1
   }
+  Write-Host ">> nuclei templates cloned to $tdir"
+}
+
+# Clones the newest stable nuclei-templates release and moves it to $Dir -
+# only if $Dir is missing or holds no files. Twin of bootstrap.sh's
+# clone_nuclei_templates: the clone goes to a sibling temp dir first, only
+# empty directories under $Dir are removed, and if any file remains the clone
+# is discarded and $Dir is left exactly as it was.
+function Install-NucleiTemplatesClone {
+  param([Parameter(Mandatory)][string]$Dir)
+  $tag = Resolve-LatestTag -Repo "projectdiscovery/nuclei-templates" -Tool "nuclei templates"
+  $parent = Split-Path -Parent $Dir
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  $tmp = Join-Path $parent ("{0}.gizmoduck-clone.{1}" -f (Split-Path -Leaf $Dir), [guid]::NewGuid().ToString("N").Substring(0, 8))
+  try {
+    & {
+      $ErrorActionPreference = "Continue"
+      $env:GIT_HTTP_LOW_SPEED_LIMIT = "1000"; $env:GIT_HTTP_LOW_SPEED_TIME = "30"
+      git -c advice.detachedHead=false clone -q --depth 1 --branch $tag `
+        https://github.com/projectdiscovery/nuclei-templates.git $tmp 2>&1 | Out-Host
+    }
+    if ($LASTEXITCODE -ne 0) { throw "git clone of nuclei-templates $tag failed" }
+    if (Test-Path -LiteralPath $Dir) {
+      if (Get-ChildItem -LiteralPath $Dir -Recurse -Force -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "$Dir holds files but no templates - not replacing it. Move them aside and re-run."
+      }
+      # Only empty directories are left; remove them deepest first, never a file.
+      Get-ChildItem -LiteralPath $Dir -Recurse -Force -Directory | Sort-Object { $_.FullName.Length } -Descending |
+        ForEach-Object { [System.IO.Directory]::Delete($_.FullName, $false) }
+      [System.IO.Directory]::Delete($Dir, $false)
+    }
+    Move-Item -LiteralPath $tmp -Destination $Dir
+  } finally {
+    # Our own temp clone, never the user's directory.
+    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
+  }
+}
+
+# Checks $File against its line in $SumsFile (sha256sum format), matching the
+# exact file-name field. Throws on a missing line or a mismatch.
+function Assert-Sha256 {
+  param([Parameter(Mandatory)][string]$File, [Parameter(Mandatory)][string]$SumsFile)
+  $name = Split-Path -Leaf $File
+  $want = $null
+  foreach ($line in (Get-Content -LiteralPath $SumsFile)) {
+    $f = $line -split '\s+', 2
+    if ($f.Count -eq 2 -and ($f[1] -ceq $name -or $f[1] -ceq "*$name")) { $want = $f[0].ToLowerInvariant(); break }
+  }
+  if (-not $want) { throw "${name}: no checksum line in $(Split-Path -Leaf $SumsFile) - refusing to install it" }
+  $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant()
+  if ($got -ne $want) { throw "${name}: sha256 mismatch (expected $want, got $got) - refusing to install it" }
+  Write-Host ">> ${name}: sha256 OK"
+}
+
+function Test-NucleiTemplatesPresent([string]$Dir) {
+  if (-not (Test-Path $Dir)) { return $false }
+  return [bool](Get-ChildItem -Path $Dir -Recurse -Filter *.yaml -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
 }
 
 function Add-ToUserPath {
@@ -289,9 +427,7 @@ function Install-Semgrep {
 }
 
 function Install-DependencyCheck {
-  $rel = Invoke-RestMethod "https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest" `
-          -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "jeremylong/DependencyCheck" -Tool "dependency-check"
   $num = $ver.TrimStart("v")
   $zip = "dependency-check-${num}-release.zip"
   $url = "https://github.com/jeremylong/DependencyCheck/releases/download/$ver/$zip"
@@ -366,9 +502,7 @@ function Install-Zap {
   # is NOT the docker `zaproxy/zap-stable` image: Docker is not installed on
   # the operator machine and using it here was explicitly ruled out. Do not
   # "fix" this back to a docker run.
-  $rel = Invoke-RestMethod "https://api.github.com/repos/zaproxy/zaproxy/releases/latest" `
-          -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "zaproxy/zaproxy" -Tool "OWASP ZAP"
   $num = $ver.TrimStart("v")
   $zip = "ZAP_${num}_Crossplatform.zip"
   $url = "https://github.com/zaproxy/zaproxy/releases/download/$ver/$zip"

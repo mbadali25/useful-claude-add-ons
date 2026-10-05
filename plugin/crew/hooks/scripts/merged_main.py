@@ -56,7 +56,7 @@ def _is_ancestor(root, older, newer):
     """True, False, or None when git could not answer."""
     try:
         done = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", older, newer], cwd=root,
+            [crew_common.require_tool("git"), "merge-base", "--is-ancestor", older, newer], cwd=root,
             capture_output=True, timeout=crew_common.GIT_TIMEOUT, check=False,
             stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):

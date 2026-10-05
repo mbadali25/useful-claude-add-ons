@@ -49,8 +49,12 @@ _GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
 
 
 def _git(root, *args):
+    argv = ("git", "-c", "core.fsmonitor=false") + args
     try:
-        done = subprocess.run(("git", "-c", "core.fsmonitor=false") + args, cwd=root, capture_output=True, text=True,
+        # The git which() resolves, never the bare name (L-1508): the argv
+        # keeps its literal shape, which sabotage_migrate.py anchors on.
+        done = subprocess.run((crew_common.require_tool(argv[0]),) + argv[1:],
+                              cwd=root, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=10, check=False,
                               stdin=subprocess.DEVNULL, env=_GIT_ENV)
     except (OSError, subprocess.SubprocessError):
@@ -114,16 +118,25 @@ def _ticket_lines(root):
         return ["tickets  none (.work/tickets/ absent)"]
     dirs = sorted(n for n in names if os.path.isdir(os.path.join(folder, n)))
     files = [n for n in names if n.endswith(".md")]
-    open_ids = []
+    open_ids, owner_ids = [], []
     for line in (read_text(os.path.join(root, ".work", "INDEX.md")) or "").splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) > 1 and cells[1].lower() in ("open", "in-progress", "in progress", "review"):
             open_ids.append(cells[0])
+        elif len(cells) > 1 and cells[1].lower() == "needs-owner":
+            # T-0037: open, but waiting on the owner -- its own line. The
+            # closed words (cancelled, superseded) appear on neither.
+            owner_ids.append(cells[0])
     lines = [f"tickets  {len(dirs)} ticket dir(s), {len(files)} legacy file(s)"]
     if open_ids:
-        shown = ", ".join(open_ids[:5]) + (f" (+{len(open_ids) - 5})" if len(open_ids) > 5 else "")
-        lines.append(f"open     {shown}")
+        lines.append(f"open     {_first_five(open_ids)}")
+    if owner_ids:
+        lines.append(f"owner    {_first_five(owner_ids)} (needs-owner)")
     return lines
+
+
+def _first_five(ids):
+    return ", ".join(ids[:5]) + (f" (+{len(ids) - 5})" if len(ids) > 5 else "")
 
 
 def _review_lines(root):
@@ -181,12 +194,30 @@ def _codemap_line(root, cfg):
 
 
 def _metrics_line(root):
-    for name in ("metrics.jsonl", "metrics.md"):
-        text = read_text(os.path.join(root, ".crew", name))
+    """One line: the metrics file in the main checkout's `.crew/` from a linked
+    worktree (L-0582), `could not tell` when git cannot name it, and this
+    worktree's own stranded copies named as not counted, on the same line so
+    the 40-line budget is unchanged."""
+    crew_dir, problem = crew_common.metrics_crew_dir(root)
+    if problem:
+        return f"metrics  could not tell ({' '.join(problem.split())}) - nothing read"
+    own = os.path.normcase(os.path.realpath(os.path.join(root, ".crew")))
+    shown = None if os.path.normcase(os.path.realpath(crew_dir)) == own else crew_dir
+    line = "metrics  none recorded"
+    for name in crew_common.METRICS_NAMES:
+        path = os.path.join(crew_dir, name)
+        text = read_text(path)
         if text is not None:
-            rows = sum(1 for line in text.splitlines() if line.strip())
-            return f"metrics  .crew/{name}: {rows} row(s)"
-    return "metrics  none recorded"
+            rows = sum(1 for row in text.splitlines() if row.strip())
+            label = path if shown else f".crew/{name}"
+            line = f"metrics  {label}: {rows} row(s)"
+            break
+    if shown and line.endswith("none recorded"):
+        line += f" in the main checkout's {shown}"
+    stranded = crew_common.stranded_metrics_copies(root)
+    if stranded:
+        line += f"; this worktree's own {', '.join(stranded)} not counted"
+    return line
 
 
 def _memory_lines(root, budget):

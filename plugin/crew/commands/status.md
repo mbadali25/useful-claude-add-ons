@@ -28,12 +28,12 @@ summary above or below it, and do not pad it with advice.
 | `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (CONFIG.md §20) | `could not tell (...)` when the check failed |
 | `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
-| `tickets` / `open` | `.work/tickets/`, `.work/INDEX.md` | - |
+| `tickets` / `open` / `owner` | `.work/tickets/`, `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | - |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
-| `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |
+| `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` - in a linked worktree, the main checkout's `.crew/`, named by its path; this worktree's own copies, if any, are named on the same line as `not counted` | `could not tell (...)` when git cannot name the main checkout; nothing is read, and the worktree's own copy is never the fallback |
 | `handoff` | `.work/HANDOFF.md` present | - |
 | `migrate` | a backup under `.crew/backups/` whose apply never finished | - |
 | `memory` | `crew_context.py --stats`, only with `--memory` | hook not installed |

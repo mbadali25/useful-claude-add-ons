@@ -436,11 +436,11 @@ def test_heal_config_recreates_a_missing_config(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "missing" in message
     assert "/crew:init" in message
     written = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    assert written == crew_config.default_config()
+    assert written == crew_config.template_config()
     assert not (root / ".crew" / "config.json.broken").exists()
 
 
@@ -452,7 +452,7 @@ def test_heal_config_treats_an_empty_file_like_a_missing_one(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "missing" in message
     assert not (root / ".crew" / "config.json.broken").exists()
 
@@ -479,11 +479,11 @@ def test_heal_config_recreates_an_empty_object(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "empty" in message
     assert not (root / ".crew" / "config.json.broken").exists()
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written == crew_config.default_config()
+    assert written == crew_config.template_config()
 
 
 def test_heal_config_recreates_an_object_that_is_only_whitespace_keys(tmp_path):
@@ -510,13 +510,13 @@ def test_heal_config_backs_up_a_malformed_config_before_recreating(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "malformed" in message
     assert "config.json.broken" in message
     backup = root / ".crew" / "config.json.broken"
     assert backup.read_text(encoding="utf-8") == broken_text
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written == crew_config.default_config()
+    assert written == crew_config.template_config()
 
 
 def test_heal_config_backs_up_valid_json_that_is_not_an_object(tmp_path):
@@ -528,7 +528,7 @@ def test_heal_config_backs_up_valid_json_that_is_not_an_object(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert "malformed" in message
     assert (root / ".crew" / "config.json.broken").read_text(
         encoding="utf-8") == "[1, 2, 3]"
@@ -589,7 +589,7 @@ def test_main_recreates_a_missing_config_and_reports_it(
     # platform-sync runs in the same pass, so platform is no longer all-null
     # by the time the file is read back -- everything else must still match
     # the defaults heal_config wrote.
-    default = crew_config.default_config()
+    default = crew_config.template_config()
     for key, value in default.items():
         if key == "platform":
             continue
@@ -625,7 +625,7 @@ def test_main_backs_up_and_recreates_a_malformed_config(
         encoding="utf-8") == "{ not json, half-edited"
     written = _cfg(root)
     assert written["tracker"] == "files"
-    # heal_config writes default_config(), so the recreated file is born
+    # heal_config writes template_config() (T-0050), so the recreated file is born
     # current -- SCHEMA_CURRENT, not a literal that goes stale on a bump.
     assert written["schema"] == crew_state.SCHEMA_CURRENT
 
@@ -684,7 +684,7 @@ def test_a_second_corruption_gets_its_own_backup(tmp_path):
 
     cfg, message = crew_platform.heal_config(str(root))
 
-    assert cfg == crew_config.default_config()
+    assert cfg == crew_config.template_config()
     assert (root / ".crew" / "config.json.broken").read_text(
         encoding="utf-8") == "first incident", "the first backup is kept"
     second = root / ".crew" / "config.json.broken.2"

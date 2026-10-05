@@ -143,7 +143,11 @@ docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
 and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes <code>NEEDS_REPLAN</code>. Each round's findings go into a
+the ticket becomes <code>NEEDS_REPLAN</code>. Under <code>/crew:autopilot</code>, a final round with a
+BLOCK stops for you unless you set <code>autopilot.maxAutoReplans</code> (default <code>0</code>, off):
+then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
+and FIX line, approves it under <code>autopilot.approval</code> and reviews again, at most
+that many successor plans per ticket. Each round's findings go into a
 <code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding; you approve or reject
 each proposed standard, and nothing is added to a standards file on its own.</p>
 <p>With parallel lanes in one clone, arm its <strong>merge train</strong> once (<code>crew_train.py arm</code>, L-0520).
@@ -164,7 +168,13 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
 <p>With the train armed, landing is part of done: <code>crew_train.py check-land --ticket T-0091 --pr
 &lt;n&gt;</code> refuses unless T-0091 holds the train, <code>git merge-tree</code> against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
-<code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (crew never merges). After the
+<code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (the train never merges; only
+autopilot's ship step does, under <code>autopilot.ship</code>). When it
+refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
+past the base's, refresh the artifacts, commit, gate the merged head, review it again if
+<code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
+passed is the tree that lands. After the review, a re-anchor changes only the
+<code>anchor:</code> sha and regenerates the rules; its provenance goes in the ticket's <code>notes.md</code>. After the
 merge, <code>crew_train.py release --ticket T-0091 --merged &lt;merge sha&gt;</code> frees the train and tells every
 overlapping lane to merge the base now.</p>
 <h2 id="what-each-hook-does-in-order">What Each Hook Does, in Order</h2>
@@ -275,6 +285,11 @@ reasons unrelated to the change under test. Outside that image the visual rule r
 <td><code>/crew:plan &lt;id&gt;</code> for a successor plan; no third round</td>
 </tr>
 <tr>
+<td><code>/crew:autopilot</code> stops at <code>auto-replan-cap</code> naming <code>autopilot.maxAutoReplans (&lt;n&gt;) reached</code></td>
+<td>the ticket already has that many successor plans on its review ledger, yours included</td>
+<td>read the listed plans and decide: accept, fix, or redesign; raising the cap is your call, up to 5 (a larger value reads as 5, with a warning)</td>
+</tr>
+<tr>
 <td><code>/crew:done</code> fails the completion audit</td>
 <td>a path outside scope changed, including one a shell command wrote</td>
 <td>file it to <code>TODO.md</code>, not to this ticket, then rerun</td>
@@ -321,7 +336,18 @@ set to <code>self</code> (or <code>risk</code>, for a <code>risk: low</code> spe
 <code>crew_autopilot.py approve</code>. It writes what every approval route writes: <code>approval.json</code> (marked
 <code>approved_via: "autopilot"</code>), <code>scope-tickets.json</code> on a ticket's first approval, and, for a
 distinct successor plan under a spent review budget, the review ledger moved
-NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-approves. The
+NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-approves. Inside an
+<code>autopilot.sleep.schedule</code> window, <code>autopilot.sleep.approval</code> stands in for <code>autopilot.approval</code>
+(T-0053), and a receipt written asleep stops standing when the window ends if the day value would
+not have approved it: in the morning that ticket waits for <code>/crew:approve &lt;id&gt;</code>.
+<code>/crew:autopilot sleep</code> starts sleep mode now, until the window's end (12 hours with no window),
+and <code>/crew:autopilot wake</code> ends it now (L-0652); they write only
+<code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code>. Until L-1504 a manual sleep only
+tightens: outside the window it applies a night value only where it is stricter than the day
+value. <code>sleep</code> needs <code>scope.allowCliApproval: true</code> and an override stricter than its day value, or the
+window open. Autopilot's one other ledger writer is <code>crew_autopilot.py auto-reject</code> (T-0074), only with
+<code>autopilot.maxAutoReplans</code> set: it moves the ledger REVIEWED -&gt; NEEDS_REPLAN after a final round
+with a BLOCK. The
 approval is a step you take, not a lock.</p>
 <p><code>crew_ticket.py status --ticket T-0042</code> prints one of three states:</p>
 <ul>
@@ -359,8 +385,9 @@ the paths in six lines or fewer. It never blocks the continuation it caused.</p>
 <p>A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the <code>anchor:</code> or provenance sha moved forward to a commit on this branch) or a
 regeneration (<code>.claude/rules/</code> as <code>crew_instructions.py rules</code> writes them, the graph after a code
-change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
-a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
+change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path,
+a file whose git mode changed, or one removed from the index but left on disk (<code>git rm --cached</code>:
+the commit deletes it) never passes. A map claim edited without a re-anchor is listed with
 <code>[anchor did not move]</code>, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
 cannot be read, a short anchor is ambiguous (two commits share it), the artifact dirs
 cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
@@ -382,7 +409,9 @@ are outside it.</p>
 until you approve again.</p>
 <h3 id="after-two-review-rounds-a-successor-plan">After Two Review Rounds: A Successor Plan</h3>
 <p>If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
-not count), it moves to <code>NEEDS_REPLAN</code>.
+not count), it moves to <code>NEEDS_REPLAN</code>. With <code>autopilot.maxAutoReplans</code> at 1 or more, autopilot
+does this itself for a final round with a BLOCK (<code>auto-reject</code>), then writes and approves the
+successor plan under <code>autopilot.approval</code>; the cap counts every successor plan on the ledger.
 Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.</p>
