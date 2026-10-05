@@ -28,8 +28,9 @@ self-check's grep is an example starting grep, not the definition.
 ## PWSH-16 An external program is resolved to an Application that is proven to run, never to whatever name lookup returns first
 
 **Rule.** Refines GEN-01 (an unknown must not collapse into the safe-looking value). To find
-an external program (`python`, `bash`, `git`, `pwsh`), take candidates only from
-`Get-Command <name> -All -CommandType Application`. Never use a bare
+an external program (`python`, `bash`, `git`, `pwsh`), take candidates only of command type
+Application: `Get-Command <name> -All -CommandType Application`, or `Get-Command -All` with
+each result's `CommandType` checked before its path is used. Never use a bare
 `(Get-Command <name>).Source`: a profile `function` or `alias` of the same name comes earlier
 in PowerShell's command precedence, wins the lookup, and has no `.Source`. Location alone
 never makes a candidate believed. A documented exclusion of a launcher that runs in the wrong
@@ -68,8 +69,9 @@ cover the resolution code the change touches. A resolver the diff leaves alone i
 re-answered for, and a change that touches no resolution code answers `n/a`.
 
 **Self-check.**
-1. Does every lookup of an external program filter on `-CommandType Application`? Pass: yes,
-   with no bare `(Get-Command x).Source` left in the diff.
+1. Does every lookup of an external program keep only Application results (with
+   `-CommandType Application`, or by checking each result's `CommandType`)? Pass: yes, with
+   no bare `(Get-Command x).Source` left in the diff.
 2. Is every candidate executed and proven (exit code plus a structured answer) before it is
    trusted? Is any exclusion by location a documented wrong-environment launcher, not a guess?
    Pass: yes to both, with a test that puts a broken candidate ahead of a working same-named

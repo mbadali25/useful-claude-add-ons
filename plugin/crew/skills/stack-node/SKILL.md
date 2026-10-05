@@ -35,7 +35,8 @@ Playwright work is `stack-angular`'s and `stack-web`'s; `stack-web` also owns th
 - **Types are erased at run time.** `as Foo` and a generic on `JSON.parse` check nothing; parse
   input from the network, a file or a child at the boundary and refuse the wrong shape.
 - **ESM and CommonJS differ by file**: `"type"` in `package.json` and the `.mjs`/`.cjs`
-  extensions decide how a file loads, and the interop rules changed across Node majors.
+  extensions decide how a file loads. A `.js` file with no `"type"` above it is ambiguous, and
+  Node 22.7+ guesses from its syntax (an `import` makes it ESM), so set `"type"` explicitly.
 - **`new Date("2026-01-02")` is UTC midnight; `new Date("2026-01-02T00:00:00")` is local
   time.** Store and compare instants in UTC with an explicit offset.
 - **Integers above 2^53 lose precision in `JSON.parse`** (`9007199254740993` reads back as
@@ -78,7 +79,9 @@ summary line. A change to a child-process or HTTP path needs a test that drives 
 
 Use the repository's package manager in place of `npm` (`pnpm test`, `yarn test`), and drop
 the `tsc` command in a plain-JavaScript repo. Yarn Plug'n'Play creates no `node_modules/.bin`,
-so there the second command is `yarn tsc --noEmit`. Nothing in this repo writes rules into
+so there the second command becomes `sh -c 'command -v yarn >/dev/null 2>&1 && yarn tsc
+--version >/dev/null 2>&1 || { echo "TOOL MISSING: yarn or its TypeScript is not available,
+so the type check DID NOT RUN." >&2; exit 77; }; yarn tsc --noEmit'`. Nothing in this repo writes rules into
 `verify.json` on a skill's behalf (see `crew-verification`) - add by hand.
 
 ## LSP

@@ -86,13 +86,14 @@ IEnumerable interface or its generic counterpart." The `ConvertFrom-Json` page, 
 `-NoEnumerate`: "Setting this parameter causes arrays to be sent as a single object instead of
 sending every element separately."
 
-### PWSH-04 Decode and encode bytes explicitly at every native-process boundary (research id inferred)
+### PWSH-04 Decode and encode bytes explicitly, in the encoding both sides use, at every native-process boundary (research id inferred)
 
 Counted: 1 (crew-0.19.92, BLOCK: stdin read with `[Console]::In.ReadToEnd()` decoded through
 the OEM codepage).
 
-Read raw bytes, strip a BOM, and decode as UTF-8 explicitly. Set
-`[Console]::OutputEncoding` and `$OutputEncoding` before piping to a native program. This
+Read raw bytes, strip a BOM, and decode in the encoding the producer actually writes. Set
+`[Console]::OutputEncoding` and `$OutputEncoding` to the encoding the consumer expects before
+piping to it. For the cited case, JSON exchanged with Python, both sides are UTF-8. This
 standard does not assert 5.1's redirection default, because the documentation pages
 contradict each other and no 5.1 host was measured. PowerShell source (`.ps1`, `.psm1`,
 `.psd1`) that Windows PowerShell 5.1 must read is saved as UTF-8 with a BOM only when it holds a
