@@ -478,7 +478,7 @@ def bundle_problems(manifest):
     for row in rows:
         try:
             data = review_checks.read_regular(row["path"], _part_base(row["path"]))
-        except (OSError, KeyError, TypeError) as exc:
+        except (OSError, KeyError, TypeError, ValueError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
         whole.update(data)
@@ -559,6 +559,8 @@ def _manifest_problem(manifest):
             if not ((isinstance(path, str) and path) or (not path and isinstance(name, str)
                                                          and name)):
                 return "a part has no non-empty path or name"
+            if any(isinstance(v, str) and "\0" in v for v in (path, name)):
+                return "a part's path or name holds a NUL"
     for key in ("bundle_sha256", "head", "base"):
         if manifest.get(key) is not None and not isinstance(manifest[key], str):
             return f"{key} is not a string"

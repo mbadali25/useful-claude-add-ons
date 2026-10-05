@@ -21,6 +21,7 @@ import crew_standards as cs
 import crew_ticket
 import review_checks as rc
 import review_ledger as rl
+import review_run
 import scope_base
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 from test_review_checks import _FAKE
@@ -553,7 +554,9 @@ def test_claude_output_that_is_not_a_regular_file_is_incomplete(tmp_path, kind):
 
 
 _MALFORMED = {"list": [], "parts-null": {"parts": [None]}, "parts-str": {"parts": "x"},
-              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5"}
+              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5",
+              # Review of f4fc3bf8: a JSON-escaped NUL is a non-empty path.
+              "nul-path": {"parts": [{"path": "a\u0000b", "name": "x"}]}}
 
 
 @pytest.mark.parametrize("case", ["symlink"] + sorted(_MALFORMED))
@@ -586,3 +589,11 @@ def test_an_unreadable_manifest_at_finish_is_incomplete(tmp_path, case):
             (review or {}).get("prereview", {}).get("result")) == (
         3, False, "INCOMPLETE", "not-recorded"), done.stderr
     assert any("the manifest" in r and expected in r for r in review["reasons"]), review["reasons"]
+
+
+def test_a_part_path_the_os_refuses_is_a_bundle_problem():
+    """Review of f4fc3bf8: a path the OS refuses (an embedded NUL raises
+    ValueError) is a problem with that part, never an escape from finish."""
+    problems = review_run.bundle_problems({"parts": [{"path": "a\0b", "name": "x"}]})
+
+    assert len(problems) == 1 and "could not be read" in problems[0], problems

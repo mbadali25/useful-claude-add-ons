@@ -386,6 +386,16 @@ PREREVIEW_MUTATIONS = (
      '        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))\n'
      '    except KeyError as exc:',
      _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
+    ('a NUL in a manifest part path passes the check (S3d)', RUN,
+     '            if any(isinstance(v, str) and "\\0" in v for v in (path, name)):\n',
+     '            if False:\n',
+     _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
+    ('a part path the OS refuses escapes bundle_problems (S3e)', RUN,
+     '        except (OSError, KeyError, TypeError, ValueError) as exc:\n'
+     '            problems.append(f"bundle part',
+     '        except (OSError, KeyError, TypeError) as exc:\n'
+     '            problems.append(f"bundle part',
+     _R + "test_a_part_path_the_os_refuses_is_a_bundle_problem"),
     ('a malformed manifest object is used as is (S3c)', RUN,
      '    problem = _manifest_problem(manifest)\n',
      '    problem = None\n',
