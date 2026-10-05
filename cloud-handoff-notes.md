@@ -25,6 +25,8 @@ main = c89d488e (#507 C-0009 merged; #504 by owner's other session), crew 1.0.34
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | c39dc4e6: BLOCK + 2 FIX + 2 NIT fixed (22 sabotages red), CI green 28/28; also pins combined run to gizmoduck pytest.ini | focused re-check running; re-check, land ALONE; first notes push after merge proves the skip path |
 | T-0045 #500 (was #407, closed) | `T-0045-v2-build` f031d5bd | all tests green incl. Windows; Marketplace + verify-gate red ONLY on check-marketplace content-without-bump (by design, verified in log) | rebuild review 0 BLOCK 0 FIX (byte-identical new files) -> batch 6 member |
+| Batch 8 | `batch-8-build` (builder 11:50) | #433 T-0105, #462 L-0678, #401 L-0673, #451 T-0108 (gizmoduck), #344 T-0035 (localgpu), #362 T-0051 (since 1.0.378 -> batch ver) | merge review, CI, merge |
+| Batch 9 (next) | - | #478 T-0081 (final re-check), #395 T-0049 (2 FIX), C-0002..C-0014 follow-ups as they come, sweep round 2 (#341 #342 #346 #363 #366) | after batch 8 |
 | Spec wave A (building, no bump, for batches) | #478 T-0081, #462 L-0678, #433 T-0105, #401 L-0673, #451 T-0108 | 5 builders started 05:35-05:45 (T-0108: owner A, Nuclei verify-or-mark) | review each, then batch 8/9 |
 | Spec wave A queued | #417+#424 L-0661+L-0663 (harness, alone) | not started (CI capacity) | next |
 | Spec runners-up | T-0106 (after T-0105), T-0502 (after L-0673), L-0689 then L-0665 (promote-gate), T-0103 + L-0675 (after batch 7) | - | later |
@@ -50,7 +52,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 06:09 UTC
+Last updated: 2026-10-05 06:11 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +111,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:50: #362 T-0051 re-review 0 BLOCK 0 FIX (L-0680 routing preserved both flavours; hostile-home 295 passed). Batch 8 builder started with 6: #433 #462 #401 #451 #344 #362; crew 1.0.350, gizmoduck +1, localgpu +1; NITs carried. #478/#395 -> batch 9.
 - 11:45: #395 T-0049 re-review 0 BLOCK 2 FIX: no test for ps unresolvable (sabotage turns live marker stale, stays green); 2 stale codemap cites. Sent to sweep agent with pure-walk must-block NIT + main merge.
 - 11:35: #501 C-0001 final re-check 0 BLOCK 0 FIX at fa387f47. Conflicts with main c89d488e only in CHANGELOG/README -> builder merging main only, then merge. Minted C-0014 (ext modules, stdlib shadow, in-function sys.path inserts).
 - 11:25: Windows sweep r1: hypothesis WRONG (no exit-2304); #344 green (0684aa55 require_tool reviewed by coordinator: ToolNotFound is OSError -> could-not-tell) -> batch 8 ready; #395 green, #362 red only on since=1.0.378 (batch version commit resets) -> re-reviews started (notify design clash; crew_inflight refactor).
