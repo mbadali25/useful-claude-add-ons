@@ -106,6 +106,9 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0035 | review_ledger per-slice budget: `open_slice`, `_spent` and summary counting slices. **Without it a T-0059 sliced ticket stops after slice 1** (`next-slice` refuses, writes nothing) | G2 report | harness-alone (T-0087) | H lane, priority |
 | C-0036 | `crew_ticket.validate` reports `PR slices:` problems (autopilot checks them today, validate does not) | G2 report | harness-alone | H lane |
 | C-0037 | Unattended launcher: a git ssh key named by `core.sshCommand -i <path>` outside `~/.ssh` is not denied (README lists it as an accepted risk) | G2 report | none | needs ticket |
+| C-0038 | Vacuous sabotage entry "an edit to scope_guard.py runs no pytest rule" (`sabotage_refresh.py`): GREEN on main a555ff37 too, because several rules map scope_guard.py | H1 report | none | H lane |
+| C-0039 | `crew_train.py` reads state.json / merge log non-blocking, regular files only (today only the harness callers refuse a FIFO) | H1 report | feature PR | needs ticket |
+| C-0040 | Rejoin the PowerShell probe carriers and bash twins after L-0690, so the other nine `.ps1` hooks and `_common.sh` report timeouts too | H1 report | L-0690 on main | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary

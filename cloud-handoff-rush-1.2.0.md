@@ -31,7 +31,7 @@ Last updated: 2026-10-05T16:19Z
 - **Structure:** groups -> `release/1.2.0` (feature lanes) -> one PR to `main`. Harness lanes go to
   `main` alone (CLAUDE.md T-0087): **H1 -> H3 -> release/1.2.0 -> H2**. H2 is last and sets crew
   **1.2.0**.
-- **Versions:** no bump when a source PR folds into a group; every merge into `release/1.2.0` or
+- **Versions:** ONE counter shared by release groups and H lanes on main (assigned at landing, in landing order); no bump when a source PR folds into a group; every merge into `release/1.2.0` or
   `main` takes the next free 1.1.x in the LAST commit; re-merge => re-bump (the drift check dates a
   version from its first commit). Other plugins bump their own patch.
 - **New tickets** minted by this rush start at **C-0020**, recorded in `pending-tickets.md`.
