@@ -32,7 +32,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   crew_tracker sabotage mutations go red (`sabotage.py`, SABOTAGE SUITE: PASS). Mutations for the
   new branches follow in L-0672.
 
-### Added — `crew` 1.0.375: in-flight markers, one runner drives a ticket at a time (T-0049)
+### Added — `crew`: in-flight markers, one runner drives a ticket at a time (T-0049)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/crew_inflight.py` keeps one
   marker per ticket at `<git-common-dir>/crew/inflight/<ticket>.json`, shared by

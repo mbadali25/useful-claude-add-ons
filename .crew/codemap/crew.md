@@ -852,7 +852,7 @@ JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
 
-**In-flight markers (T-0049, crew 1.0.375).** DERIVED at `3e6ff1e9`. `next_phase`
+**In-flight markers (T-0049).** DERIVED at `3e6ff1e9`. `next_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:1349`) takes `runner`; when set, and only after `_phase`
 returned no stop, `_inflight` (`:1316`, called at `:1368`) lazy-imports `crew_inflight` and asks its
 `next_stop` (`crew_inflight.py:574`), which reads `holds(root, ticket, runner=runner)`: `free`/`mine` return None (the plain result), `elsewhere` is
