@@ -338,6 +338,24 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
+**GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
+environment's `github` entry out of `.crew/verify.json` (`_environment`, `:496`; `entries`, `:224`),
+validates each against a closed key set (`KEYS`, `:99`) and value grammar (`VALUE`, `:96`;
+`entry_problem`, `:186`; the ref as a branch name, `_ref_problem`, `:125`), requires `deploy` to be
+exactly the entries' prefixes (`check`, `:542`; `prefix`, `:237`), and applies L-1503's promote-gate
+rule, refusing when EITHER gate refuses: twin keys under Python's or .NET's fold and an empty key at
+any depth (`_no_twins`, `:289`; the 27 .NET-only pairs, `_DOTNET_ONLY_FOLDS`, `:265`), bad names,
+a null, non-string or ConvertFrom-Json date-time `deploy` (`_is_dotnet_date`, `:347`), a list or
+object `requireHuman` (`gate_problem`, `:384`) and JSON nested past a fixed 200 levels, scanned iteratively (`_MAX_DEPTH`, `:423`; `_depth`, `:426`)
+are `gate-refuses-map`; each dispatch is printed with `gated-as:` - every environment whose
+`deploy` matches it literally, ignoring case under either gate's fold, either way round, after CR
+stripping (`gate_matches`, `:407`; `simulate_gate`, `:478`, is the agreement tables' entry point).
+It prints the dispatch for HEAD (`dispatch`, `:245`), runs only `git rev-parse HEAD`, the git
+`crew_common.require_tool` resolves (`_head`, `:528`), and writes nothing; no hook calls it yet,
+and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
+mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
+the anchor; the anchor was not moved for it.
+
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
 `_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2789`, called at `:2838`, and only at
@@ -946,36 +964,41 @@ first line is a sabotage anchor; `route_args` (`:1622`) stops a second word at `
 L-0655.
 
 **T-0020 (`/crew:autopilot focus`, an explicit scope lock on one ticket; versionless, joins a
-batch).** DERIVED on T-0020-build after its merge of origin/main `8479a837` and the explicit-focus
-rework (owner decision, 2026-10-05), line numbers taken by `grep -n` in that tree; this file's
-anchor stays main's, and the other `crew_autopilot.py` citations in this section were not re-taken
-(T-0020 moves every line below its insertions). Focus is explicit: `focus_path`
-(`plugin/crew/hooks/scripts/crew_autopilot.py:2016`) is `<git-common-dir>/crew/autopilot-focus.json`
-(`FOCUS_FILE`, `:2013`), a JSON object keyed by worktree top-level; `_focus_marker` (`:2024`) reads
-it and returns why it could not (does not parse or cannot be read, not an object, or this
-worktree's entry not a ticket id), never an empty mapping in its place. `focus_state` (`:2045`)
-reports `focus` from the marker only, `unknown` beside it, and the active-ticket pointer
-separately (`pointer`, never the `.work/INDEX.md` fallback). `focus_guard` (`:2063`) lets
-`status`, `focus off` and `NO_TICKET` (`:295`, L-0652's `sleep`/`wake`) through; an `unknown`
-marker refuses everything else (JUDGEMENT: could-not-tell kept as its own value, acted on
-closed, per CLAUDE.md "Lessons"); no entry is no focus; focused on T-A it refuses all but
-`focus T-A` when the pointer names anything else, and otherwise all but `run`/`focus` with no
-ticket or T-A. `route` (`:1925`) calls it after resolving the subcommand and before the
-`AVAILABLE` check (`:1949`; `--goal` at `:1942`), `route_args` (`:1962`) guards the ticket word
-(`:1989`), and `resume_target` appends its refusal to the handoff/pointer disagreement (`:1051`).
-`focus_set` (`:2115`) writes the marker first (`_write_marker`, `:2106`, which removes the file
-when no entry is left) and calls `crew_ticket.activate` (`:2153`, its one call) only when the
-pointer names another ticket or none; `focus_off` (`:2158`) drops only the marker entry and
-calls no `crew_ticket.deactivate` (AST-pinned). `next_phase` asks `_drift` (`:902`) first
-(`:873`): an `unknown` marker stops as `drift`; else only when focused on this ticket, approved,
-and ahead of a phase the loop would run (`POLICY_PHASES`, `:899`), it runs
-`completion_audit.audit` read-only, and a failure or a raise stops as `drift` (`FIXED_STOPS`,
-`:259`; `WAITING`, `:2229`). `findings_target` (`:2187`) and `focus_text` (`:2202`, every output
-ends with `FOCUS_REMINDER`, `:1999`); `main` registers `focus` at `:2582` and runs it at
-`:2619`. `plugin/crew/commands/autopilot.md` section 6 (`:112-117`). Tests:
-`plugin/crew/tests/test_crew_autopilot_focus.py`;
-`test_crew_autopilot_policy.py::test_approve_is_the_only_writing_subcommand` lists `focus` in
-`WRITERS`.
+batch).** DERIVED on T-0020-build after its merge of origin/main `47f71e93` (batch 6), with the
+explicit-focus rework (owner decision, 2026-10-05) and the re-review fixes, line numbers taken by
+`grep -n` in that tree; this file's anchor stays main's, and the other `crew_autopilot.py`
+citations in this section were not re-taken (T-0020 moves every line below its insertions).
+Focus is explicit: `focus_path` (`plugin/crew/hooks/scripts/crew_autopilot.py:2049`) is
+`<git-common-dir>/crew/autopilot-focus.json` (`FOCUS_FILE`, `:2046`), a JSON object keyed by
+worktree top-level; `_focus_marker` (`:2072`) reads it and returns why it could not -- not a
+file, does not parse or cannot be read, not an object, or this worktree's entry not a ticket
+(INDEX-shaped or naming a `.work/tickets/` folder) -- each reason ending with `_focus_remedy`
+(`:2064`), the POSIX and PowerShell removal commands for the exact path, never an empty mapping
+in its place. `focus_state` (`:2126`) reports `focus` from the marker only, `unknown` beside it,
+and the active-ticket pointer separately (`pointer`, never the `.work/INDEX.md` fallback).
+`focus_guard` (`:2144`) lets `status`, `focus off` and `NO_TICKET` (`:299`, L-0652's
+`sleep`/`wake`) through; an `unknown` marker refuses everything else without offering `focus
+off` (JUDGEMENT: could-not-tell kept as its own value, acted on closed, per CLAUDE.md
+"Lessons"); no entry is no focus; focused on T-A it refuses all but `focus T-A` when the pointer
+names anything else, and otherwise all but `run`/`focus` with no ticket or T-A. `route`
+(`:1958`) calls it after resolving the subcommand and before the `AVAILABLE` check (`:1982`;
+`--goal` at `:1975`), `route_args` (`:1995`) guards the ticket word (`:2022`), and
+`resume_target` appends its refusal to the handoff/pointer disagreement (`:1055`). `focus_set`
+(`:2200`) and `focus_off` (`:2259`) do the marker's read-modify-write inside `_focus_lock`
+(`:2099`, `crew_config_files.Lock` on `<marker>.lock`, `FOCUS_LOCK_WAIT` `:2057`; a lock not
+taken refuses, nothing written), re-reading the marker inside it; `_write_marker` (`:2187`)
+removes the file when no entry is left. `focus_set` calls `crew_ticket.activate` (`:2254`, its
+one call) only when the pointer names another ticket or none; `focus_off` calls no
+`crew_ticket.deactivate` (AST-pinned) and refuses an unknown marker rather than delete it.
+`next_phase` asks `_drift` (`:906`) first (`:877`): an `unknown` marker stops as `drift`; else
+only when focused on this ticket, approved, and ahead of a phase the loop would run
+(`POLICY_PHASES`, `:903`), it runs `completion_audit.audit` read-only, and a failure or a raise
+stops as `drift` (`FIXED_STOPS`, `:263`; `WAITING`, `:2343`). `findings_target` (`:2301`) and
+`focus_text` (`:2316`, every output ends with `FOCUS_REMINDER`, `:2032`); `main` registers
+`focus` at `:2696` and runs it at `:2733`. `plugin/crew/commands/autopilot.md` section 6
+(`:112-117`). Tests: `plugin/crew/tests/test_crew_autopilot_focus.py` (two-process lock race
+included); `test_crew_autopilot_policy.py::test_approve_is_the_only_writing_subcommand` lists
+`focus` in `WRITERS`.
 
 **T-0010 (approval and questions policies, DERIVED on T-0010-solo, crew 1.0.50 on T-0077's main).**
 `approval_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1263`) refuses a `policy: unknown`
@@ -2049,8 +2072,20 @@ Added after this note's anchor; read in full at the L-0677 build head. The only 
   calls `review_metrics.record` right after `review_ledger.record` accepts the round and before
   review.json (`plugin/crew/hooks/scripts/review_run.py`, grep `review_metrics.record`), one row
   per round into the MAIN checkout's file (`crew_common._main_checkout`), nothing when git cannot
-  name it. Readers (`crew_state.read_metrics`, `crew_standards.metric`) still read `<root>/.crew/`,
-  so from a linked worktree they do not see it yet - JUDGEMENT: a follow-up reader change.
+  name it. Readers resolve the same file since L-0582: DERIVED (at the commit adding this text)
+  `crew_common.metrics_crew_dir` (`plugin/crew/hooks/scripts/crew_common.py:200`) returns the
+  main checkout's `.crew/` from a linked worktree, `root`'s own otherwise, and `(None, problem)`
+  when git cannot tell - including a linked worktree whose common dir is not named `.git`
+  (`--separate-git-dir`, or a bare repository's worktree: `crew_common._metrics_main`, `crew_common.py:217`), which
+  `_main_checkout` itself still reads as "own" for the repo config; `crew_state.read_metrics` (`plugin/crew/hooks/scripts/crew_state.py:313`)
+  turns a problem into the verdict `could not tell: <why>` with `rate` None, `crew_standards.metric`
+  (`plugin/crew/hooks/scripts/crew_standards.py:840`) exits 1 before any read or `--record`
+  write, and `crew_status._metrics_line` (`plugin/crew/hooks/scripts/crew_status.py:197`) prints
+  `metrics  could not tell (...)` and names a lane's own `metrics.jsonl`/`metrics.md` as not
+  counted (`crew_common.stranded_metrics_copies`, `crew_common.py:247`). None falls back to the
+  worktree's own copy. `review_metrics.metrics_path` still joins the path itself (one AST-allowed
+  site in `plugin/crew/tests/test_metrics_location.py`'s lint) - JUDGEMENT: delegating it is a
+  harness edit for a tooling PR. `crew_metrics.py`'s `metrics.jsonl` WRITER still uses `root`.
 - `.crew/endpoints.json` and its lock file `.crew/endpoints.json.oslock`
   (created on first use, never deleted); see above.
 
@@ -4289,3 +4324,7 @@ to that branch's content commits. This section does not move the file's `anchor:
   `plugin/crew/tests/test_worktree_config_shell.py:745` and its two siblings.
 - **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
   `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).
+
+**Re-anchored `42effe14` -> `69de978c` on 2026-10-04 (T-0041 feature half, crew version set at landing, after merging origin/main into T-0041-build).** `69de978c` changes .crew/verify.json, plugin/crew/README.md, plugin/crew/agents/{explorer,researcher,security}.md, plugin/crew/commands/{done,debug}.md, plugin/crew/hooks/scripts/_test/validate-prompts.py, plugin/crew/skills/{crew-best-practices,crew-brainstorm,crew-plan}/SKILL.md and the new plugin/crew/tests/test_verify_before_stating.py: inserted lines only, plus `**Unverified**` renamed in place in researcher.md, the crew-best-practices description (`:3`) and `.crew/verify.json:554` gaining a comma before a rule appended last. Every body citation of the form `<changed file>:N` in this note was listed by script against each file's first inserted line (verify.json 554, README 2804, explorer 55, researcher 70, security 143, debug 95, done 86, validate-prompts 106, crew-best-practices 76, crew-brainstorm 41, crew-plan 73); every hit was a line number of another file or a dated provenance position, so no body citation moved. One body fact is new and not yet written into the sections above: `validate-prompts.py` now also runs `check_verification_rule()` (`plugin/crew/hooks/scripts/_test/validate-prompts.py:345`, called from `main` at `:381`), which fails when an `agents/*.md` (reviewer exempt by name at `:116`) or `crew-best-practices` loses "Verify before you state", or when explorer, researcher, security, `done.md` or `debug.md` loses its `**Not verified` report section (DERIVED, read at this anchor). No suite was executed for this note.
+
+**L-0582 (2026-10-04, on `62889e15`, the merge of origin/main `ce235468`; the crew version is set at landing).** Only the `.crew/metrics.md` writers bullet was re-derived, at the commit adding this note, by reading the four cited functions. The anchor stays `42effe14`: the rest of this map was not re-verified against the files main changed since, so moving it would claim a check nobody ran. Batch 6 merge: the `crew_common.py` and `crew_status.py` citations in that bullet were re-taken by content on the merged tree (`crew_state.py:313`, `crew_standards.py:840` unmoved).

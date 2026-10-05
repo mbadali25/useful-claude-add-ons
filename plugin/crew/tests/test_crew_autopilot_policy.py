@@ -162,7 +162,15 @@ def test_approval_without_a_config_file_denies(tmp_path):
     assert got["allow"] is False
 
 
-@pytest.mark.parametrize("value", ["Self", "auto", "yes", True, None, 1, ["self"]])
+def test_approval_null_is_silent_and_reads_the_default(tmp_path):
+    """T-0050: a repo `null` is a silent layer (the machine value, else the
+    default `risk`), not a bad value."""
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval=None)), T)
+
+    assert (got["policy"], got["warnings"]) == ("risk", [])
+
+
+@pytest.mark.parametrize("value", ["Self", "auto", "yes", True, 1, ["self"]])
 def test_approval_bad_value_reads_human(tmp_path, value):
     got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval=value)), T)
 
@@ -291,7 +299,7 @@ def test_questions_do_not_depend_on_allow_cli_approval(tmp_path):
     assert got["action"] == "take"
 
 
-@pytest.mark.parametrize("value", ["Self", "take", True, None])
+@pytest.mark.parametrize("value", ["Self", "take", True])
 def test_questions_bad_value_reads_human(tmp_path, value):
     got = crew_autopilot.question_policy(str(_repo(tmp_path, questions=value, risk="low")), T)
 

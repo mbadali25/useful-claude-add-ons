@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     os.pardir, os.pardir, os.pardir, "hooks", "scripts",
 ))
+import crew_backup  # pylint: disable=wrong-import-position
 import crew_common  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
 
@@ -1344,6 +1345,17 @@ def run(root, derived, force=False):
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
+    # T-0050: the timestamped backup, beside the one-time `.v1.bak` above.
+    # No backup, no write: the upgrade reports and stops with the file as it was.
+    try:
+        crew_backup.backup(cfg_path)
+    except crew_backup.BackupError as exc:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return {"status": "config backup failed", "report": f"{exc}\n",
+                "notes": notes, "conflicts": []}
     os.replace(tmp_path, cfg_path)
 
     head = _head(root)
@@ -1421,6 +1433,9 @@ def main(argv=None):
 
     out = run(args.root, derived, force=args.force)
     print(out["status"])
+    if out["status"] == "config backup failed":
+        print(out["report"], end="", file=sys.stderr)
+        return 4
     if out["status"] == "already current":
         # No UPGRADE.md is written on this path (see run()) -- the report
         # exists only in `out`, so this is the only place either diagnostic

@@ -93,6 +93,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
    the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
 4. If `notify.provider` is not `none`:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
+5. Report: each of the four checks and its result, then **Not verified:** every verify rule that exited 77 (a
+   missing tool, not a pass), any suite that did not run on this OS, `drift-detection.sh` (skipped by
+   default), and anything checked only by reading. Write "Nothing" only when that is true.
 
 ## Landing through the merge train
 
@@ -103,18 +106,15 @@ prints `armed: yes` (L-0520; parallel lanes in one clone). Crew never merges:
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py" check-land --ticket "$1" --pr <PR>
 ```
 
-It refuses unless this ticket holds the train, `git merge-tree` is clean, the
-base has not moved in Touch paths, and HEAD carries checks 1 and 2. On
-`LAND_OK` run the `gh pr merge <PR> --merge --match-head-commit <sha>` it
-printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
-refusal names `crew_train.py catch-up` (a merge, never a rebase). Land in this
-order, so the tree the gate passed is the tree that lands: catch up (resolve any
-conflict), bump the version one past the base's, refresh the artifacts, commit,
-gate the merged head, review it again if `review_ledger.py --check-receipt`
-reads stale, then rerun this command. After the review, a re-anchor
-changes only the sha on the `anchor:` line (or a diagram's header) and
-regenerates the rules; its provenance sentence goes in the ticket's `notes.md`,
-since any other byte in a code map, rules file or diagram is read as unreviewed.
+It refuses unless this ticket holds the train, `git merge-tree` is clean, the base has not moved in Touch
+paths, and HEAD carries checks 1 and 2. On `LAND_OK` run the `gh pr merge <PR> --merge --match-head-commit <sha>`
+it printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A refusal names
+`crew_train.py catch-up` (a merge, never a rebase). Land in this order, so the tree the gate passed is the
+tree that lands: catch up (resolve any conflict), bump the version one past the base's, refresh the artifacts,
+commit, gate the merged head, review it again if `review_ledger.py --check-receipt` reads stale, then rerun
+this command. After the review, a re-anchor changes only the sha on the `anchor:` line (or a diagram's header)
+and regenerates the rules; its provenance sentence goes in the ticket's `notes.md`, since any other byte in a
+code map, rules file or diagram is read as unreviewed.
 
 Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing" is the reason nobody
 trusts a notification channel — the same line `/crew:work` opened with. <!-- deliberate -->

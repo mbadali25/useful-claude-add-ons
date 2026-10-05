@@ -477,7 +477,10 @@ def test_save_writes_each_layer_once(tmp_path, monkeypatch):
     code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
                      apply=True, global_path=gpath)
 
-    assert (code, sorted(calls)) == (0, ["config.json", "global.json"])
+    # T-0050: Save also refreshes the owner's profile once per layer written.
+    assert (code, sorted(c for c in calls if c != "profile.json")) == (
+        0, ["config.json", "global.json"])
+    assert calls.count("profile.json") == 2
 
 
 def test_save_with_machine_changes_only_leaves_the_repo_file(tmp_path, monkeypatch):
@@ -488,7 +491,8 @@ def test_save_with_machine_changes_only_leaves_the_repo_file(tmp_path, monkeypat
 
     menu.save(root, {"machine": _MACHINE_SET}, apply=True, global_path=gpath)
 
-    assert (calls, open(repo_file, "rb").read()) == (["global.json"], before)
+    assert ([c for c in calls if c != "profile.json"],
+            open(repo_file, "rb").read()) == (["global.json"], before)
 
 
 def test_save_validates_both_layers_before_writing_either(tmp_path, capsys):
