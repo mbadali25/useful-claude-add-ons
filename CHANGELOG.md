@@ -22,12 +22,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   "could not tell".
 - **Behaviour change.** On POSIX, a vault or directory whose file system reports inode 0 now refuses
   the write ("could not tell"), as Windows already did for a file id of 0.
-- **Tests.** Eight new tests in `plugin/crew/tests/test_crew_tracker.py` (board, middle-directory and
+- **Tests.** Nine new tests in `plugin/crew/tests/test_crew_tracker.py` (board, middle-directory and
   note swaps for a byte-identical copy, natively on POSIX and Windows; the handle walk's different
-  component; zero inode on the vault and a component; a missing or short record on both walks; the
-  record itself; a vault-root board still written). Three existing tests now also assert which
-  check refused, so the sabotage mutations aimed at the link, vault and zero-file-id checks stay
-  killed behind the new match. The committed mutations for the new branches follow in L-0672.
+  component; inode 0 seen by the walk on the vault and a component, and recorded at check time; a
+  missing or short record on both walks; the record itself; a vault-root board still written).
+  Four existing tests now also assert which check refused (link swap, vault replaced, zero file id,
+  and the `[replaced]` case, which turns the new match off so `_pinned_check`'s held comparison is
+  tested alone; the end-to-end swap is kept as `[replaced-full]`). With those, all 87 committed
+  crew_tracker sabotage mutations go red (`sabotage.py`, SABOTAGE SUITE: PASS). Mutations for the
+  new branches follow in L-0672.
 
 ### crew 1.0.349 — batch 7: T-0020, T-0011, T-0063
 
