@@ -45,6 +45,16 @@ only as `tightenOnly` outside the scheduled window: owner decision 2026-10-04
 stricter than the day value, because the session can run the CLI itself. An
 `awake` record while the schedule is asleep or cannot tell is `tightenOnly`
 too, so neither `wake` nor a planted file can loosen a value.
+
+L-0654: `deploy`, a fourth key, `null` or exactly `nonprod` or `none`
+(DEPLOY_OVERRIDES). `resolve` reads it (`read_deploy`; `all` or anything
+else is refused with a warning, and the day value stands) and
+`deploy_overlay` applies it: asleep, a valid override replaces the day
+value of `autopilot.deploy` (stricter-only under `tightenOnly`), and then an
+effective `all` reads as `nonprod` -- production never runs unattended
+asleep. Awake, off or `unknown`, the day value stands. `deploy_allowed`
+reads the result through `crew_autopilot._settings_at`, and its reason
+names the sleep state when that changed the answer.
 """
 import datetime
 import re
@@ -60,7 +70,10 @@ MANUAL_SLEEP_HOURS = 12
 # (review round 2 FIX-2).
 MANUAL_MAX = datetime.timedelta(hours=24)
 MANUAL_MAX_REAL = datetime.timedelta(hours=25)
-KEYS = ("schedule",) + OVERRIDES
+KEYS = ("schedule",) + OVERRIDES + ("deploy",)
+DEPLOY_OVERRIDES = ("nonprod", "none")
+# crew_autopilot.DEPLOY_VALUES' order, loosest last (a test holds the two equal).
+DEPLOY_ORDER = ("none", "nonprod", "all")
 OFF, AWAKE, ASLEEP, UNKNOWN = "off", "awake", "asleep", "unknown"
 # What an override crew cannot read counts as: the strictest policy, the
 # first of crew_autopilot.STRICTNESS (a test holds the two equal).
@@ -246,7 +259,9 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
     `overrides` holds each key's override (`read_overrides`), whatever the
     state. `manual` is `read_manual`'s `found` (L-0652); a valid record adds
     `until` and `by` and wins over the schedule (module docstring)."""
-    got = dict(_scheduled(block, when, policies), source="schedule")
+    deploy, refused = read_deploy(block)
+    got = dict(_scheduled(block, when, policies), source="schedule", deploy=deploy)
+    got["warnings"] = got["warnings"] + ([refused] if refused else [])
     record = read_manual(manual, when) if manual is not None else {"kind": "none"}
     if record["kind"] == "none":
         return got
@@ -266,6 +281,39 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
     if got["state"] in (ASLEEP, UNKNOWN):
         return dict(got, state=AWAKE, tightenOnly=True)
     return dict(got, state=AWAKE)
+
+
+def read_deploy(block):
+    """`(override, warning)` for `autopilot.sleep.deploy` (L-0654): None for
+    null or a block that is not an object, the value when it is exactly one
+    of DEPLOY_OVERRIDES, else None with a warning -- the day value stands, and
+    production is never unattended asleep."""
+    value = block.get("deploy") if isinstance(block, dict) else None
+    if value is None or (isinstance(value, str) and value in DEPLOY_OVERRIDES):
+        return value, ""
+    return None, (f"autopilot.sleep.deploy is {render(value)}, not null, nonprod or none; the "
+                  "day value of autopilot.deploy stands, and production never runs unattended "
+                  "asleep")
+
+
+def deploy_overlay(deploy, sleep, day):
+    """The effective `autopilot.deploy` for `resolve`'s answer `sleep`, given
+    the day value `deploy` (already one of DEPLOY_ORDER). Notes the day value
+    in `day["deploy"]`; when sleep changed it, adds `deploy` to
+    `sleep["applied"]` and a `deployNote` for `deploy_allowed`'s reason."""
+    day["deploy"] = deploy
+    if sleep.get("state") != ASLEEP:
+        return deploy
+    value, override = deploy, sleep.get("deploy")
+    if override in DEPLOY_OVERRIDES and not (
+            sleep.get("tightenOnly") and DEPLOY_ORDER.index(override) > DEPLOY_ORDER.index(deploy)):
+        value = override
+    value = "nonprod" if value == "all" else value
+    if value != deploy:
+        sleep["applied"] = list(sleep.get("applied") or []) + ["deploy"]
+        sleep["deployNote"] = (f" (asleep {sleep.get('schedule') or sleep.get('source', '')}; "
+                               f"day value {deploy})")
+    return value
 
 
 def _scheduled(block, when, policies):

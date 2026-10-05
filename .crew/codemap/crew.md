@@ -4826,3 +4826,13 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   file stop; a stopped goal is a fall-through line; none or only done ones leave the order as it was.
   A usable ticket handoff still wins, with `running_goal_note` as its `disagreement:` line; status
   prints `(from goal-file, goal <slug>)` on its ticket line.
+
+## The sleep deploy override, nonprod only (L-0654, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_sleep.py`: `read_deploy` (`autopilot.sleep.deploy`,
+  `null|nonprod|none`, anything else refused with a warning) feeds `resolve`'s `deploy`;
+  `deploy_overlay` applies it asleep and reads an effective `all` as `nonprod`, noting
+  `day["deploy"]` and a `deployNote`. `crew_autopilot._settings_at` returns its answer as
+  `deploy`; `_decide` pins the note and `deploy_allowed` appends it to the reason.
+- JUDGEMENT. Inert until T-0045 dispatches a deploy; `unknown` leaves the day value (main's
+  behaviour), as the spec chose.

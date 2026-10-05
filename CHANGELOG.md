@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.24: sleep deploy override, `nonprod` only; production always waits while asleep (L-0654)
+
+- **Summary.** While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.
+- **What changed.** New repo key `autopilot.sleep.deploy` (`null`, `nonprod` or `none`; `all` or anything else is refused with a warning and the day value stands). While asleep, a valid value replaces `autopilot.deploy` (stricter-only for a manual sleep outside the window), and an effective `all` reads as `nonprod`. Awake, off or `unknown`, the day value stands. `deploy-allowed`'s reason names the sleep state when it changed the answer; the incident check, the one-root rule, the layer probes and every could-not-tell `ask` run first, as before. Inert until T-0045 dispatches a deploy.
+- **Tests.** `test_crew_autopilot_sleep.py`: must-allow nonprod asleep, the must-block cases, awake production unchanged, and a hand-written state x day value x override x class matrix; the 324-case deploy matrix is unchanged.
+
 ### Changed — crew 1.1.23: bare `/crew:autopilot` finds a running goal when there is no usable handoff (L-0659)
 
 - **Summary.** A session that died without writing a handoff no longer loses its autopilot goal: a bare `/crew:autopilot` resumes the one running goal before falling back to the active ticket.

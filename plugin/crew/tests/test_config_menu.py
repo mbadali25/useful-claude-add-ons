@@ -1776,3 +1776,14 @@ def test_sleep_overrides_offer_the_three_policies_and_unset(tmp_path):
         assert (rows[path]["writable"],
                 sorted(map(repr, (c["value"] for c in rows[path]["choices"])))) == (
             True, sorted(map(repr, ("human", "self", "risk", None)))), path
+
+
+def test_sleep_deploy_offers_nonprod_none_and_unset_never_all(tmp_path):
+    """L-0654: `autopilot.sleep.deploy` is null, `nonprod` or `none`; `all` is
+    never offered, since production never runs unattended asleep."""
+    root, gpath = _repo(tmp_path)
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+    row = rows["autopilot.sleep.deploy"]
+
+    assert (row["writable"], sorted(map(repr, (c["value"] for c in row["choices"])))) == (
+        True, sorted(map(repr, (None, "nonprod", "none"))))

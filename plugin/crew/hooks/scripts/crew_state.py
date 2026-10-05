@@ -1136,7 +1136,7 @@ AUTONOMOUS_STOPS = (
 # T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
+                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None, "deploy": None},
                       "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
                       # L-0541: a goal run's caps (crew_autopilot_backlog.py).
                       "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}

@@ -146,7 +146,7 @@ def test_resolve_reads_a_bad_override_as_strictest_and_keeps_the_other():
         {"approval": crew_sleep.STRICTEST, "questions": "self"}, True)
 
 
-@pytest.mark.parametrize("key", ["deploy", "reviewPolicy", "notifyHold"])
+@pytest.mark.parametrize("key", ["reviewPolicy", "notifyHold"])  # L-0654 landed `deploy`
 def test_resolve_names_a_key_this_version_does_not_have(key):
     got = crew_sleep.resolve(_night(**{key: "x"}), NIGHT, crew_autopilot.POLICIES)
 
@@ -316,7 +316,7 @@ def test_a_raising_clock_is_unknown_with_day_values(tmp_path, monkeypatch):
         (False, "stop", "risk", "risk", "unknown"), True)
 
 
-@pytest.mark.parametrize("key", ["deploy", "reviewPolicy"])
+@pytest.mark.parametrize("key", ["reviewPolicy"])  # L-0654 landed `deploy`
 def test_an_unknown_sleep_key_has_no_other_effect(tmp_path, clock, key):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=_night(approval=None, questions=None, **{key: "self"}))
@@ -386,7 +386,9 @@ def test_taken_line_written_asleep_is_invalid_by_day(tmp_path, clock):
 
 # --- other policies and directions ----------------------------------------------
 
-@pytest.mark.parametrize("deploy", ["none", "nonprod", "all"])
+# L-0654: with no `sleep.deploy`, sleep leaves `none` and `nonprod` alone; a day
+# `all` is the one value sleep changes (test_sleep_deploy_matrix).
+@pytest.mark.parametrize("deploy", ["none", "nonprod"])
 def test_deploy_allowed_ignores_sleep(tmp_path, clock, deploy):
     root = _repo(tmp_path, sleep=_night())
     config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
@@ -433,7 +435,8 @@ def test_settings_cli_prints_the_sleep_line(tmp_path, clock, capsys, sleep, now,
     data = json.loads(capsys.readouterr().out)
 
     assert (lines[2], data["day"], data["sleep"]["state"]) == (
-        line, {"approval": "risk", "questions": "risk"}, line.split()[0][len("sleep="):])
+        line, {"approval": "risk", "questions": "risk", "deploy": "none"},  # L-0654: day.deploy
+        line.split()[0][len("sleep="):])
 
 
 def test_settings_cli_prints_unknown_for_an_unreadable_config(tmp_path, capsys):
@@ -1440,3 +1443,154 @@ def test_the_25_real_hour_backstop_holds_where_a_clock_change_is_two_hours(troll
 
     assert (got["kind"], "25 real" in got["warning"], kept["kind"]) == (
         "untrusted", True, "valid")
+
+
+# --- L-0654: the sleep deploy override, nonprod only ---------------------------------
+
+import crew_config  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+import crew_state  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+
+
+def _deploy_repo(tmp_path, monkeypatch, deploy="none", sleep=MISSING, prod=True):
+    """A repo and machine layer armed for production (T-0072's rows), with
+    `autopilot.deploy` = `deploy` and `autopilot.sleep` = `sleep`."""
+    root = tmp_path / "repo"
+    repo = {"autopilot": {"mode": "plan", "deploy": deploy},
+            "guards": {"cloudGuard": "block"},
+            "environments": {"nonProd": ["dev", "qa"], "prodUnattended": prod}}
+    if sleep is not MISSING:
+        repo["autopilot"]["sleep"] = sleep
+    _write(root / ".crew" / "config.json", json.dumps(repo))
+    machine = tmp_path / "machine" / "config.json"
+    _write(machine, json.dumps({"guards": {"cloudGuard": "block"},
+                                "environments": {"prodUnattended": prod}}))
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(machine))
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(machine))
+    return str(root)
+
+
+def _asks(root, cls, env=None):
+    return crew_autopilot.deploy_allowed(root, env or ("qa" if cls == "nonProd" else "live"), cls)
+
+
+def test_asleep_allows_nonprod(tmp_path, monkeypatch, clock):
+    clock(NIGHT)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": "22:00-07:00",
+                                                        "deploy": "nonprod"})
+
+    got = _asks(root, "nonProd")
+
+    assert (got["verdict"], got["deploy"], "asleep 22:00-07:00; day value none" in got["reason"]) == (
+        "allow", "nonprod", True)
+
+
+@pytest.mark.parametrize("when,schedule", [(DAY, "22:00-07:00"), (NIGHT, "25:00-07:00")],
+                         ids=["awake", "unknown"])
+def test_the_override_needs_the_sleep_state(tmp_path, monkeypatch, clock, when, schedule):
+    clock(when)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": schedule, "deploy": "nonprod"})
+
+    assert _asks(root, "nonProd")["verdict"] == "ask"
+
+
+def test_asleep_production_never_allows(tmp_path, monkeypatch, clock):
+    clock(NIGHT)
+    root = _deploy_repo(tmp_path, monkeypatch, "all", {"schedule": "22:00-07:00"})
+
+    got = _asks(root, "prod")
+    nonprod = _asks(root, "nonProd")
+
+    assert (got["verdict"], got["deploy"], "day value all" in got["reason"],
+            nonprod["verdict"]) == ("ask", "nonprod", True, "allow")
+
+
+@pytest.mark.parametrize("value", ["all", True, ["nonprod"], "NonProd", 1])
+def test_a_refused_sleep_deploy_keeps_the_day_value(tmp_path, monkeypatch, clock, value):
+    clock(DAY)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": "22:00-07:00",
+                                                        "deploy": value})
+    awake = crew_autopilot.settings(root)
+    clock(NIGHT)
+    asleep = crew_autopilot.settings(root)
+
+    assert (asleep["deploy"], awake["deploy"],
+            any("autopilot.sleep.deploy" in w and "never runs unattended asleep" in w
+                for w in asleep["warnings"]),
+            _asks(root, "prod")["verdict"], _asks(root, "nonProd")["verdict"]) == (
+        "none", "none", True, "ask", "ask")
+
+
+def test_asleep_with_an_incident_still_refuses(tmp_path, monkeypatch, clock):
+    clock(NIGHT)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": "22:00-07:00",
+                                                        "deploy": "nonprod"})
+    _write(os.path.join(root, ".crew", "incident.json"), "{}")
+
+    assert _asks(root, "nonProd")["verdict"] == "refuse"
+
+
+def test_asleep_with_a_layer_that_cannot_be_told_asks(tmp_path, monkeypatch, clock):
+    clock(NIGHT)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": "22:00-07:00",
+                                                        "deploy": "nonprod"})
+    _write(crew_config.GLOBAL_CONFIG_PATH, "{not json")
+
+    assert _asks(root, "nonProd")["verdict"] == "ask"
+
+
+def test_awake_production_is_unchanged(tmp_path, monkeypatch, clock):
+    clock(DAY)
+    root = _deploy_repo(tmp_path, monkeypatch, "all", {"schedule": "22:00-07:00",
+                                                       "deploy": "nonprod"})
+
+    got = _asks(root, "prod")
+
+    assert (got["verdict"], got["deploy"], "asleep" in got["reason"]) == ("allow", "all", False)
+
+
+# state x day value x override x class -> verdict, written out by hand.
+_MATRIX = {
+    # awake: the day value alone
+    ("awake", "none", None): ("ask", "ask"), ("awake", "none", "nonprod"): ("ask", "ask"),
+    ("awake", "nonprod", None): ("allow", "ask"), ("awake", "nonprod", "none"): ("allow", "ask"),
+    ("awake", "all", None): ("allow", "allow"), ("awake", "all", "nonprod"): ("allow", "allow"),
+    # asleep: the override, then `all` reads as `nonprod`
+    ("asleep", "none", None): ("ask", "ask"), ("asleep", "none", "nonprod"): ("allow", "ask"),
+    ("asleep", "nonprod", None): ("allow", "ask"), ("asleep", "nonprod", "none"): ("ask", "ask"),
+    ("asleep", "all", None): ("allow", "ask"), ("asleep", "all", "nonprod"): ("allow", "ask"),
+    ("asleep", "all", "none"): ("ask", "ask"),
+    # unknown: neither rule, the day value stands (all included)
+    ("unknown", "none", "nonprod"): ("ask", "ask"), ("unknown", "nonprod", "none"): ("allow", "ask"),
+    ("unknown", "all", "nonprod"): ("allow", "allow"),
+}
+
+
+@pytest.mark.parametrize("state,day,override", sorted(_MATRIX, key=str))
+def test_sleep_deploy_matrix(tmp_path, monkeypatch, clock, state, day, override):
+    clock(DAY if state == "awake" else NIGHT)
+    sleep = {"schedule": "25:00-07:00" if state == "unknown" else "22:00-07:00"}
+    if override is not None:
+        sleep["deploy"] = override
+    root = _deploy_repo(tmp_path, monkeypatch, day, sleep)
+
+    got = (_asks(root, "nonProd")["verdict"], _asks(root, "prod")["verdict"])
+
+    assert got == _MATRIX[(state, day, override)]
+
+
+def test_deploy_order_matches_crew_autopilot():
+    assert crew_sleep.DEPLOY_ORDER == crew_autopilot.DEPLOY_VALUES
+
+
+def test_a_manual_sleep_outside_the_window_never_loosens_deploy(tmp_path, monkeypatch, clock):
+    clock(DAY)
+    root = _deploy_repo(tmp_path, monkeypatch, "none", {"schedule": "22:00-07:00",
+                                                        "deploy": "nonprod"})
+    sleep = {"state": "asleep", "tightenOnly": True, "deploy": "nonprod", "applied": []}
+    day = {}
+
+    got = crew_sleep.deploy_overlay("none", sleep, day)
+    tighter = crew_sleep.deploy_overlay("all", dict(sleep, deploy="none"), {})
+
+    assert (got, day, tighter, _asks(root, "nonProd")["verdict"]) == (
+        "none", {"deploy": "none"}, "none", "ask")

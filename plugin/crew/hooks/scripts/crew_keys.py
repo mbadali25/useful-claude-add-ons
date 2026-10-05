@@ -41,6 +41,7 @@ import crew_guards
 import crew_notify
 import crew_platform
 import crew_shell
+import crew_sleep
 import crew_state
 import crew_ticket
 import crew_tracker
@@ -501,6 +502,13 @@ KEY_META = {
                                       "keeps the day value; anything else counts as human, "
                                       "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
                                       "1.0.332", _S + "crew_sleep.py"),
+    "autopilot.sleep.deploy": _row("`autopilot.deploy` inside the sleep window (L-0654): null "
+                                   "keeps the day value, `nonprod` or `none` replaces it; "
+                                   "anything else, `all` included, is refused with a warning. "
+                                   "Asleep, an effective `all` reads as `nonprod`: production "
+                                   "never runs unattended asleep.", "branch",
+                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.24",
+                                   _S + "crew_sleep.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",

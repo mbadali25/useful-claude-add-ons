@@ -414,7 +414,9 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `autopilot.maxTokensPerSession`, on top of those 143, measured by running
     # this test on rush/g6b-goals-sleep.
     assert {"autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"} <= declared
-    assert len(declared) == 145
+    # 146 with L-0654's `autopilot.sleep.deploy`, measured the same way.
+    assert "autopilot.sleep.deploy" in declared
+    assert len(declared) == 146
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

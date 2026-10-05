@@ -1857,7 +1857,7 @@ def _settings_at(top):
     warnings += sleep.pop("warnings")
     policies, sleep["applied"] = _overlay(day, sleep)
     return {"mode": mode if armed else "off", "armed": armed, "maxPhases": limit, **_backlog().caps(block, warnings),
-            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
+            "saw": mode, "deploy": crew_sleep.deploy_overlay(deploy, sleep, day), "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
             "maxAutoReplans": replans,
             "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
@@ -2013,6 +2013,7 @@ def _decide(top, env_name, env_class, machine_path):
             return "ask", problem, None
     current = _settings_at(top)
     deploy = current["deploy"]
+    _PINNED.deploy_note = current["sleep"].get("deployNote", "")  # L-0654: deploy_allowed's reason
     if not current["armed"]:
         return "ask", "autopilot.mode is not plan", deploy
     if deploy == "none":
@@ -2079,6 +2080,7 @@ def deploy_allowed(root, env_name, env_class):
             verdict, reason = "refuse", f"could not tell whether an emergency is active: {problem}"
         else:
             verdict, reason, deploy = _decide(top, env_name, env_class, machine_path)
+            reason += getattr(_PINNED, "deploy_note", "") if deploy else ""
     except Exception as exc:  # pylint: disable=broad-except
         # A crash cannot tell whether production is allowed: it asks.
         verdict, reason = "ask", _crash_reason(exc)

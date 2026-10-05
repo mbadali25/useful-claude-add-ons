@@ -754,7 +754,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 149 keys are settable in the machine-global file (generated; 62 are repo-only, section 11).
+87 of 150 keys are settable in the machine-global file (generated; 63 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -882,7 +882,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-62 of 149 keys are repo-only (generated; 87 are global-settable, section 10).
+63 of 150 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -945,6 +945,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.deploy` | repo | `null` \| `nonprod` \| `none` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
@@ -2967,6 +2968,7 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
 | `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
 | `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
+| `autopilot.sleep.deploy` | `null` | `crew_sleep.deploy_overlay`, from `crew_autopilot._settings_at` (L-0654): `autopilot.deploy` inside the window, which `deploy_allowed` reads | `null` keeps the day value; exactly `nonprod` or `none` replaces it while asleep (stricter-only for a manual sleep outside the window). `all`, or anything else, is refused with a warning and the day value stands. Asleep, an effective `all` reads as `nonprod`: **production never runs unattended asleep**. Awake, off or `unknown`, the day value stands, `all` included. |
 | `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
@@ -2995,7 +2997,12 @@ every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
 exclusive, and a start later than the end crosses midnight (`22:00-07:00` is
 asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
 or `autopilot.sleep.questions` replaces the day value, so an unattended run
-keeps going where the day setting would stop. The window is re-resolved from
+keeps going where the day setting would stop. `autopilot.sleep.deploy`
+(L-0654) does the same for `autopilot.deploy`, but only as `nonprod` or
+`none`, and asleep an effective `all` reads as `nonprod`: production never
+runs unattended asleep, and `deploy_allowed`'s reason names the sleep state
+when it changed the answer (`autopilot.deploy=nonprod allows nonProd (asleep
+22:00-07:00; day value none)`). The window is re-resolved from
 the clock on every policy read, never cached, so a run that crosses 07:00 is
 back on the day values at its next decision. A window can be as long as
 23h59 (`00:00-23:59`; only start equal to end is refused), and a night

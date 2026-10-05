@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>149 keys</strong>: 87 settable in the machine-global file, 62 repo-only.</p>
+<p><strong>150 keys</strong>: 87 settable in the machine-global file, 63 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1712,6 +1712,14 @@ the plugin.</p>
 <td><code>null</code> | <code>human</code> | <code>self</code> | <code>risk</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
 <td>1.0.332</td>
 <td><code>autopilot.questions</code> inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.sleep.deploy</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>nonprod</code> | <code>none</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
+<td>1.1.24</td>
+<td><code>autopilot.deploy</code> inside the sleep window (L-0654): null keeps the day value, <code>nonprod</code> or <code>none</code> replaces it; anything else, <code>all</code> included, is refused with a warning. Asleep, an effective <code>all</code> reads as <code>nonprod</code>: production never runs unattended asleep.</td>
 </tr>
 <tr>
 <td><code>autopilot.ship</code></td>

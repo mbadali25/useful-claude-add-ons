@@ -223,7 +223,8 @@
     "sleep": {
       "schedule": null,
       "approval": null,
-      "questions": null
+      "questions": null,
+      "deploy": null
     },
     "ship": "merge",
     "knownFailures": [],
