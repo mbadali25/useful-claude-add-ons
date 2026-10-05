@@ -42,8 +42,10 @@ Playwright work is `stack-angular`'s and `stack-web`'s; `stack-web` also owns th
   `...992`). Keep large ids as strings, or use `BigInt` deliberately.
 - **`process.exit()` can cut off buffered output** to a pipe; set `process.exitCode` and let
   the event loop drain instead.
-- **`npm ci` installs the lockfile; `npm install` may rewrite it.** CI and reviews use `npm ci`,
-  and a lockfile change in a feature change is a dependency change - say which packages moved.
+- **Install from the lockfile without rewriting it**, with the repository's own package
+  manager: `npm ci` (needs `package-lock.json`), `pnpm install --frozen-lockfile`, or
+  `yarn install --immutable`. A lockfile change in a feature change is a dependency change -
+  say which packages moved.
 
 ## Standards
 
@@ -67,14 +69,15 @@ summary line. A change to a child-process or HTTP path needs a test that drives 
   "paths": ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.js", "**/*.mjs", "**/*.cjs", "package.json"],
   "run": [
     "sh -c 'command -v npm >/dev/null 2>&1 || { echo \"TOOL MISSING: npm is not on PATH, so the test suite DID NOT RUN. This is a missing tool, not a passing or failing check. Install Node.js to check locally.\" >&2; exit 77; }; npm test'",
-    "sh -c 'T=node_modules/.bin/tsc; [ -x \"$T\" ] || { echo \"TOOL MISSING: node_modules/.bin/tsc is not installed, so the type check DID NOT RUN. Run npm ci to check locally.\" >&2; exit 77; }; \"$T\" --noEmit'"
+    "sh -c 'T=node_modules/.bin/tsc; [ -x \"$T\" ] || { echo \"TOOL MISSING: node_modules/.bin/tsc is not installed, so the type check DID NOT RUN. Install dependencies from the lockfile to check locally.\" >&2; exit 77; }; \"$T\" --noEmit'"
   ],
   "reach": "local",
   "why": "the repo's tests and the TypeScript compiler catch a broken change before a human reviews the diff"
 }
 ```
 
-Drop the `tsc` command in a plain-JavaScript repo. Nothing in this repo writes rules into
+Use the repository's package manager in place of `npm` (`pnpm test`, `yarn test`), and drop
+the `tsc` command in a plain-JavaScript repo. Nothing in this repo writes rules into
 `verify.json` on a skill's behalf (see `crew-verification`) - add by hand.
 
 ## LSP

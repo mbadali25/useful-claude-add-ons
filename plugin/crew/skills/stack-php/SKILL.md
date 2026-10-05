@@ -30,12 +30,16 @@ already uses: a framework's query builder, escaping helper or container wins ove
   it in `array_values()`.
   `array_merge()` renumbers integer keys; `+` keeps the left side's keys and drops the
   right side's duplicates.
-- **SQL values go through bound parameters**, never concatenation, even after an escaping
-  call; identifiers come from an allow-list. Use `charset=utf8mb4` in a MySQL/MariaDB DSN.
+- **SQL values go through the driver's bound parameters** (PDO/mysqli prepared statements)
+  or, where the framework offers no binding, its placeholder API (WordPress's
+  `$wpdb->prepare`) - never concatenation, even after an escaping call; identifiers come
+  from an allow-list. Use `charset=utf8mb4` in a MySQL/MariaDB DSN.
   (Candidate PHP-01 in `references/candidates.md`.)
 - **Output is escaped for its context at the point it is echoed** - HTML text and
-  attributes with `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`, URLs with
-  `rawurlencode`, JavaScript with `json_encode` and the `JSON_HEX_*` flags. (Candidate PHP-P2.)
+  attributes with `htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`; each value
+  placed inside a URL (a path segment, a query value) with `rawurlencode`, never the whole
+  URL, and the assembled URL then escaped for its HTML attribute; JavaScript with
+  `json_encode` and the `JSON_HEX_*` flags. (Candidate PHP-P2.)
 - **`unserialize()` instantiates objects.** Data another party can write is decoded with
   `json_decode`. (Candidate PHP-P1.)
 - **`strict_types=1` is per file** and governs calls made from that file; a file without

@@ -89,11 +89,13 @@ Public change sets (message text only):
 Source: https://www.php.net/manual/en/function.unserialize.php: "Do not pass untrusted
 user input to unserialize() regardless of the options value of allowed_classes."
 
-All four reviews found the same defect: attacker-influenced data reaching `unserialize`. Two
-fixes do what this rule asks (slimstat drops `maybe_unserialize`, and Luna moves cookies to
-JSON). The other two only harden the call (AskMyDocs restricts `allowed_classes`, and
-WP-Butler limits it to `stdClass`), which the manual says is not enough for untrusted input.
-Public verdict: 4 findings of the defect, admitted on public stand-ins. That does not count
+Two reviews plainly found attacker-influenced data reaching `unserialize`, and their fixes do
+what this rule asks: slimstat drops `maybe_unserialize`, and Luna moves cookies to JSON. The
+other two (AskMyDocs, which restricts `allowed_classes` on a queued job, and WP-Butler, which
+limits stored payloads to `stdClass`) found unrestricted `unserialize` calls and hardened
+them. From the commit messages alone, who could write that data could not be determined. The
+public pass's verdict was "admitted on public stand-ins (4)". On this reading it is 2 clear
+findings plus 2 whose input provenance is unknown. Either way, public change sets do not count
 under the owner's decision.
 
 ### PHP-P2 Escape output for its context at every echo of request or stored data

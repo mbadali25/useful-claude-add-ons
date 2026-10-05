@@ -69,8 +69,8 @@ self-check (the `crew-standards` skill). `PWSH-NN` is the owner's research `POWE
   to whatever name lookup returns first (its command-resolution half; StrictMode is not gated)
 
 Candidates (exit status and `$null`, literal matching, forced collections, explicit bytes at a
-native boundary, the StrictMode half, PWSH-20 as overlay material) are in
-`references/candidates.md`: guidance, promoted when a third reviewed change set earns one.
+native boundary, the StrictMode half) are in `references/candidates.md`: guidance, promoted
+when a third reviewed change set earns one. PWSH-20 is listed there as overlay material only.
 
 ## Verification
 

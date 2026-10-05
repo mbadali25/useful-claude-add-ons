@@ -103,6 +103,11 @@ entry records that Node 22's `fetch` already strips `Authorization` on a cross-o
 redirect, measured on Node 22.22.1, so that fix left redirects unchanged. A client on another
 HTTP stack checks its own redirect behaviour.
 
+Source: this repository's CHANGELOG, "Security - mcp-servers 0.2.1: the Graph token goes only
+to the configured Graph origin (T-0090)". It records the defect and the fix, but not a review
+that found it. Verdict: candidate. The available evidence does not establish a reviewed change
+set.
+
 ## Research rules not written here
 
 NODE-01 to -07 and -09 to -18 are the owner's research ids. The spec's re-count gives -06 2,
