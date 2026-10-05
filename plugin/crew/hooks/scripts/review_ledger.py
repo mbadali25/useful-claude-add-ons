@@ -808,6 +808,19 @@ def _receipt_binds_review_json(receipt, latest, root, ticket):
     return problem is None and now == digest
 
 
+def _auto_receipt_readable(receipt, latest):
+    """Whether an auto receipt carries everything --auto-accept writes: the
+    fixed name, the reviewer, the review.json hash, a findings list and a
+    follow-up ticket (reviews of 55135844 FIX2 and d6522b1e FIX). Whether it
+    still stands on today's files is receipt_stands' question, not this one."""
+    digest, follow_up = receipt.get("review_json_sha256"), receipt.get("follow_up")
+    return (receipt.get("accepted_by") == AUTO_BY and isinstance(digest, str)
+            and _SHA256_RE.fullmatch(digest) is not None
+            and isinstance(receipt.get("findings"), list)
+            and isinstance(follow_up, str) and bool(follow_up.strip())
+            and _receipt_names_the_reviewer(receipt, latest))
+
+
 def _receipt_names_the_reviewer(receipt, latest):
     """The auto receipt's provider and model family are the row's, both
     present: the receipt carries the family the guard checked, never another."""
@@ -919,10 +932,7 @@ def _supersede(data, ticket, by):
         unreadable = not isinstance(receipt.get("accepted_by"), str) or not receipt[
             "accepted_by"].strip()
     elif receipt["kind"] == AUTO_KIND:
-        digest = receipt.get("review_json_sha256")
-        unreadable = (receipt.get("accepted_by") != AUTO_BY or not isinstance(digest, str)
-                      or not _SHA256_RE.fullmatch(digest)
-                      or not _receipt_names_the_reviewer(receipt, latest))
+        unreadable = not _auto_receipt_readable(receipt, latest)
     else:
         unreadable = False
     if unreadable:
@@ -997,13 +1007,18 @@ def correct_acceptance(root, ticket, by, reason):
         # is the acceptance that stands; an older one is history.
         latest = (data.get("rounds") or [None])[-1]
         number = receipt.get("round")
+        # Two conditions, not one: pylint's R0916 caps an if at five (review of
+        # d6522b1e, BLOCK).
+        not_that_round = (f"{ticket}'s receipt is for round {number!r}, and the latest round "
+                          "is not that round completed with FINDINGS: no acceptance stands "
+                          "to correct")
         if (not isinstance(number, int) or isinstance(number, bool)
-                or not isinstance(latest, dict) or latest.get("status") != "completed"
+                or not isinstance(latest, dict)):
+            raise LedgerError(not_that_round)
+        if (latest.get("status") != "completed"
                 or latest.get("verdict") != "FINDINGS" or latest.get("round") != number
                 or type(latest.get("round")) is not int):  # pylint: disable=unidiomatic-typecheck
-            raise LedgerError(f"{ticket}'s receipt is for round {number!r}, and the latest "
-                              "round is not that round completed with FINDINGS: no acceptance "
-                              "stands to correct")
+            raise LedgerError(not_that_round)
         # Review of 55135844, FIX1: the receipt must be bound to that round's
         # own bundle and base, or it is not the round's acceptance.
         if (receipt.get("bundle_sha256") != latest.get("bundle_sha256")

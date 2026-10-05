@@ -1247,7 +1247,7 @@ REVIEW_FIX_MUTATIONS = (
         "    if not isinstance(receipt, dict) or receipt.get(\"kind\") not in SUPERSEDABLE:\n",
         "    if not isinstance(receipt, dict):\n",
         ("tests/test_review_reject_accepted.py::"
-         "test_supersede_is_refused_and_changes_nothing"),
+         "test_an_unknown_receipt_kind_is_named_as_unknown"),
     ),
     (
         # (e) A receipt for an older round than the latest is superseded.

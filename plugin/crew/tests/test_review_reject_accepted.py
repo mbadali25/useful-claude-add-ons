@@ -98,7 +98,7 @@ def _auto_accepted(repo):
     # What --auto-accept writes beside the kind (review of 55135844, FIX2).
     _edit(repo, lambda data: data["receipt"].update(
         kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY, provider="codex", model_family="gpt",
-        review_json_sha256="b" * 64, ignored_lines=0, findings=[]))
+        review_json_sha256="b" * 64, ignored_lines=0, findings=[], follow_up="L-0001"))
 
 
 def _auto(change):
@@ -337,6 +337,13 @@ REFUSALS = {
         _auto(lambda data: data["receipt"].pop("review_json_sha256")), None),
     "auto_receipt_review_json_hash_not_hex": (
         _auto(lambda data: data["receipt"].__setitem__("review_json_sha256", "x" * 64)), None),
+    # Review of d6522b1e, FIX: no findings list, no follow-up.
+    "auto_receipt_no_findings": (_auto(lambda data: data["receipt"].pop("findings")), None),
+    "auto_receipt_findings_string": (
+        _auto(lambda data: data["receipt"].__setitem__("findings", "x")), None),
+    "auto_receipt_no_follow_up": (_auto(lambda data: data["receipt"].pop("follow_up")), None),
+    "auto_receipt_blank_follow_up": (
+        _auto(lambda data: data["receipt"].__setitem__("follow_up", " ")), None),
     "auto_receipt_no_provider": (_auto(lambda data: data["receipt"].pop("provider")), None),
     "auto_receipt_other_family": (
         _auto(lambda data: data["receipt"].__setitem__("model_family", "claude")), None),
@@ -363,6 +370,19 @@ REFUSALS = {
     "superseded_non_dict_row": (
         _with(lambda data: data.__setitem__("superseded", [{"by": "x"}, 3])), None),
 }
+
+
+def test_an_unknown_receipt_kind_is_named_as_unknown(repo):
+    """The verdict check refuses an unknown kind too, so this pins the kind
+    check's own refusal: it says the kind is none the ledger knows."""
+    _receipt("kind", "superseded-by-hand")(repo)
+    before = _bytes(repo)
+
+    result = _supersede(repo)
+
+    assert result.returncode == 1
+    assert "receipt is not one of clean, owner-accepted, auto-accepted" in result.stderr
+    assert _bytes(repo) == before
 
 
 @pytest.mark.parametrize("case", sorted(REFUSALS))
