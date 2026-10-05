@@ -125,17 +125,20 @@ def generated_header(text):
 
 def _sections(lines):
     """[(heading line number, [lines])] for each `### ` entry. A heading
-    inside a ``` or ~~~ fence is an example, not an entry or a section end."""
+    inside a ``` or ~~~ fence is an example, not an entry or a section end,
+    and a fenced line is no part of an entry's body: an anchor or `Auth:`
+    line in an example is not evidence for the call the entry documents."""
     found, fence = [], None
     for number, line in enumerate(lines, 1):
         marker = line.lstrip()[:3]
         if fence is None and marker in ("```", "~~~"):
             fence = marker
-        elif fence is not None and marker == fence:
-            fence = None
-        elif fence is not None:
-            pass
-        elif line.startswith("### "):
+            continue
+        if fence is not None:
+            if marker == fence:
+                fence = None
+            continue
+        if line.startswith("### "):
             found.append((number, []))
         elif line.startswith("## ") or line.startswith("# "):
             if found and found[-1][1] is not None:

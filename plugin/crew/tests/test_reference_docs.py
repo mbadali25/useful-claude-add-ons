@@ -166,6 +166,17 @@ def test_a_fenced_example_entry_is_not_an_entry(tmp_path):
     assert any("no `### ` entry" in p for p in problems), problems
 
 
+def test_an_anchor_or_auth_line_only_in_a_fenced_example_is_no_evidence(tmp_path):
+    entry = ("### POST https://ssapi.shipstation.com/orders/createorder\n"
+             "Example:\n```\n`src/client.py:12`\nAuth: none\n```\n"
+             "Response: 200 `{ orderId }`\n")
+
+    problems = _problems(tmp_path, _doc(entry))
+
+    assert (any("no `path:line` anchor" in p for p in problems),
+            any("no `Auth:` line" in p for p in problems)) == (True, True), problems
+
+
 def test_a_fence_inside_an_entry_does_not_end_it(tmp_path):
     entry = ENTRY.replace("Retries: 3", "```\n## not a section\n### not an entry\n```\nRetries: 3")
 

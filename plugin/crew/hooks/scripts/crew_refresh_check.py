@@ -139,9 +139,10 @@ judgement. They are never reported `fresh`.
 
 REFRESH_ARTIFACT_PATHS is what the refreshes write: the code map, the
 diagrams dir, `graph.out`, `.claude/rules/` (generated from the code map) and
-`docs/reference/` (T-0036: the integrations refresh writes a FILE there, and
-the allowance admits only paths strictly under a dir, so the whole dir).
-It is defined here and nowhere else. `scope_guard.py` and
+the one FILE `docs/reference/integrations.md` (T-0036: the integrations
+refresh writes only that file, so only that file is admitted -- never the
+rest of `docs/reference/`; REFRESH_ARTIFACT_FILES names the entries that
+match exactly instead of as a dir). It is defined here and nowhere else. `scope_guard.py` and
 `completion_audit.py` read it through `refresh_artifact_paths` /
 `is_refresh_artifact` to let an APPROVED ticket write those paths without
 naming them in Touch -- the refresh `/crew:implement` step 6 demands would
@@ -266,20 +267,24 @@ _FEW = 4
 # What `/crew:implement` step 6's refreshes write, as (config key, default):
 # `/crew:onboard --refresh` writes the code map and the `.claude/rules/` file
 # generated from it, `/crew:diagram` the diagrams dir, graphify `graph.out`,
-# `/crew:reference --integrations` a file in `docs/reference/` (T-0036; the
-# fixed dir `reference.md` writes, so no config key).
+# `/crew:reference --integrations` the one file `docs/reference/integrations.md`
+# (T-0036; the fixed path `reference.md` writes, so no config key). That entry
+# is a FILE, matched exactly (REFRESH_ARTIFACT_FILES): the rest of
+# `docs/reference/` is no refresh's output and stays judged against Touch.
 # The ONE definition (module docstring): the scope guard and the completion
 # audit let an approved ticket write these without naming them in Touch.
 # A keyed entry is read from crew config exactly as `crew_freshness` reads it
 # (`_diagrams_dir`, `_read_graph`: a wrong-typed or empty value is the
 # default, and `contained_path` keeps it inside the repository).
 REFERENCE_DIR = "docs/reference"
+REFERENCE_INTEGRATIONS = f"{REFERENCE_DIR}/integrations.md"
+REFRESH_ARTIFACT_FILES = (REFERENCE_INTEGRATIONS,)
 REFRESH_ARTIFACT_PATHS = (
     (None, ".crew/codemap"),
     ("docs.diagramsDir", DIAGRAMS_DIR_DEFAULT),
     ("graph.out", GRAPH_OUT_DEFAULT),
     (None, ".claude/rules"),
-    (None, REFERENCE_DIR),
+    (None, REFERENCE_INTEGRATIONS),
 )
 
 # Moved by every release, whatever the ticket: a version bump invalidates no
@@ -546,8 +551,9 @@ def refresh_artifact_paths(root, cfg=None):
 
 
 def is_refresh_artifact(rel, dirs):
-    """True when repo-relative `rel` lies strictly UNDER one of `dirs`,
-    compared whole segment by whole segment -- `.crew/codemapX/a.md` is not
+    """True when repo-relative `rel` lies strictly UNDER one of `dirs`, or IS
+    one of them that REFRESH_ARTIFACT_FILES names as a file, compared whole
+    segment by whole segment -- `.crew/codemapX/a.md` is not
     under `.crew/codemap`, and a dir named `**` is a literal name, never a
     glob. Case folds only where the filesystem does (`os.path.normcase`).
 
@@ -560,8 +566,13 @@ def is_refresh_artifact(rel, dirs):
     if any(p in ("", ".", "..") for p in parts):
         return False
     folded = [os.path.normcase(p) for p in parts]
+    files = {os.path.normcase(f) for f in REFRESH_ARTIFACT_FILES}
     for directory in dirs:
         stem = [os.path.normcase(p) for p in directory.split("/")]
+        if os.path.normcase(directory) in files:
+            if folded == stem:
+                return True
+            continue
         if len(folded) > len(stem) and folded[:len(stem)] == stem:
             return True
     return False
@@ -1397,7 +1408,11 @@ def _references(root, changed, untracked):
     if body is None:
         return [_entry("reference", name, UNKNOWN, "the doc could not be read, so what it "
                        "cites cannot be told", command, refreshable=False)] if changed else []
-    cited = [c for c in dict.fromkeys(_CITATION_RE.findall(body)) if "/" in c or "." in c]
+    # Every `path:line` anchor the lint accepts, extensionless ones included
+    # (`Dockerfile:12`), plus every path-shaped citation as a code map's.
+    anchored = [m.group(1) for m in crew_reference.ANCHOR_RE.finditer(body)]
+    cited = list(dict.fromkeys(anchored + [c for c in _CITATION_RE.findall(body)
+                                           if "/" in c or "." in c]))
     if not cited:
         return [_entry("reference", name, UNKNOWN, "cites no path, so which changes reach "
                        "it cannot be told", command, refreshable=True)] if changed else []

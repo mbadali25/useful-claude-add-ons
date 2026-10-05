@@ -420,11 +420,11 @@ def _approved_paths(root, cfg=None):
     return crew_refresh_check.refresh_artifact_paths(str(root))
 
 
-def test_refresh_artifact_paths_default_to_the_five_documented_dirs(tmp_path):
+def test_refresh_artifact_paths_default_to_the_four_dirs_and_the_one_file(tmp_path):
     root, _start = _repo(tmp_path)
 
     assert _approved_paths(root) == [".crew/codemap", "docs/diagrams", "graphify-out",
-                                     ".claude/rules", "docs/reference"]
+                                     ".claude/rules", "docs/reference/integrations.md"]
 
 
 def test_refresh_artifact_paths_follow_the_configured_dirs(tmp_path):
@@ -434,7 +434,7 @@ def test_refresh_artifact_paths_follow_the_configured_dirs(tmp_path):
                                    "graph": {"out": "out/graph"}})
 
     assert paths == [".crew/codemap", "design/mmd", "out/graph", ".claude/rules",
-                     "docs/reference"]
+                     "docs/reference/integrations.md"]
 
 
 def test_a_configured_dir_naming_the_repo_root_is_never_an_artifact_dir(tmp_path):
@@ -442,7 +442,7 @@ def test_a_configured_dir_naming_the_repo_root_is_never_an_artifact_dir(tmp_path
 
     paths = _approved_paths(root, {"docs": {"diagramsDir": "."}, "graph": {"out": "./"}})
 
-    assert paths == [".crew/codemap", ".claude/rules", "docs/reference"]
+    assert paths == [".crew/codemap", ".claude/rules", "docs/reference/integrations.md"]
 
 
 def test_an_artifact_dir_reached_through_a_link_is_dropped(tmp_path):
@@ -469,6 +469,19 @@ def test_an_artifact_dir_reached_through_a_link_is_dropped(tmp_path):
 ])
 def test_is_refresh_artifact_matches_whole_segments_only(rel, expected):
     dirs = [".crew/codemap", "docs/diagrams", "graphify-out", ".claude/rules", "**"]
+
+    assert crew_refresh_check.is_refresh_artifact(rel, dirs) is expected
+
+
+@pytest.mark.parametrize("rel,expected", [
+    ("docs/reference/integrations.md", True),
+    ("docs/reference/api.md", False),
+    ("docs/reference/flows/order-sync.md", False),
+    ("docs/reference/integrations.md/x.md", False),
+    ("docs/reference", False),
+])
+def test_the_reference_entry_admits_the_integrations_file_alone(rel, expected):
+    dirs = [".crew/codemap", "docs/reference/integrations.md"]
 
     assert crew_refresh_check.is_refresh_artifact(rel, dirs) is expected
 
@@ -1418,6 +1431,17 @@ def test_a_reference_doc_whose_presence_cannot_be_told_is_unknown(tmp_path, monk
     item = _artifact(_check(root), "reference", "integrations")
 
     assert (item["status"], item["refreshable"]) == ("unknown", False), item
+
+
+def test_an_extensionless_anchor_reaches_the_reference_doc(tmp_path):
+    root, start = _repo(tmp_path)
+    _commit(root, "Dockerfile", "FROM scratch\n")
+    _reference(root, _INTEGRATIONS, start, ["Dockerfile", "src/other.py"])
+    _commit(root, "Dockerfile", "FROM alpine\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], "Dockerfile" in item["reason"]) == ("stale", True), item
 
 
 def test_api_and_features_docs_are_not_judged(tmp_path):
