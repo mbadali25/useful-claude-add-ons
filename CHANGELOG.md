@@ -154,7 +154,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `8ad90da2`; a reviewer's later checkout measured 619 to 0). `dos` and `fuzz` are not used as
   evidence: Nuclei's own `.nuclei-ignore` already hides most of them.
 
-### Added — `crew` 1.0.362: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
+### Added — `crew`: diagrams embedded in the READMEs they describe, with embed drift in the refresh check and the marketplace gate (T-0035)
 
 - **What changed.** `plugin/crew/hooks/scripts/crew_diagrams.py embed --root .`
   writes every diagram under `docs.diagramsDir` into the README nearest its
