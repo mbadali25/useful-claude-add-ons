@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T16:57Z
+Last updated: 2026-10-05T17:00Z
 
 ## >>> RESUME HERE
 
@@ -94,6 +94,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T17:00Z MERGED #541 (G1) into release/1.2.0 at 3dbc033b, crew 1.1.2 (30/30 CI green; the two timing flakes passed on re-run). Lander landing G3 as crew 1.1.5.
 - 2026-10-05T16:57Z H3 group review r6 CLEAN, CI green on 86de0d81. Set crew 1.1.3 (415c2644, version only; gates pass); version-only Codex check running; then merge #540 to main. H1 reassigned to 1.1.4 (must merge main after H3). Open H3 follow-up: crew-providers SKILL.md / kimi_probe docstring still say /crew:review cannot launch Kimi (feature half, T-0028 (c)).
 - 2026-10-05T16:43Z #541 on 195b6290: G1 Windows hostile-name failures (test_graph_ignore nested repo, test_refresh_check .PEM name) -> lander. Not G1's: test_ps1_python_probe near-deadline (L-0609 wallclock flake), test_review_ledger concurrent-claims _queue.Empty (Windows timing); watch whether they recur on the next head.
 - 2026-10-05T16:25Z Owner will publish the L-0540 seed (.work/tickets/L-0540/seed/: 22 tests, 137 sabotage entries, harness-half.patch). When it appears, build L-0540 in an H lane.
