@@ -16,6 +16,9 @@
     python3 crew_autopilot.py sleep --root . [--by <text>]
     python3 crew_autopilot.py wake --root .
     python3 crew_autopilot.py auto-reject --root . --ticket <id>
+    python3 crew_autopilot.py focus --root . [--ticket <id> | --off |
+                                    --findings --ticket <id>]
+    python3 crew_autopilot.py ship --root . --ticket <id> [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -28,8 +31,10 @@ only other writers: each writes or removes only
 `<git-common-dir>/crew/autopilot-sleep.json`, the manual sleep state
 (`crew_sleep`'s docstring; `sleep` only where `scope.allowCliApproval` is
 exactly true).
-`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
-T-0072's `deploy-allowed` write no file. `approve` writes exactly what
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
+T-0072's `deploy-allowed` and T-0011's `ship` write no file. `ship` is the one
+action outside the checkout: it pushes the ticket's branch, opens its PR and
+may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, `/crew:approve` included,
 all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
 ramp's list, on a ticket's first approval; and, when the review ledger is
@@ -38,7 +43,37 @@ NEEDS_REPLAN -> IN_REVIEW (the successor continuation). `auto-reject` writes onl
 the review ledger, through `review_ledger.reject`: REVIEWED -> NEEDS_REPLAN, with
 `rejected.by` the constant AUTO_REJECT_BY. Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
-keeps its own bytecode setting.
+keeps its own bytecode setting. T-0020's `focus` is a script subcommand that
+writes too, and approves nothing: `focus --ticket` writes this worktree's entry
+in `<git-common-dir>/crew/autopilot-focus.json` and, when the active-ticket
+pointer names another ticket or none, re-points it (`crew_ticket.activate`,
+which records `.crew/.scope-base`); `focus --off` drops only the marker entry
+(below).
+
+## focus -- a scope lock on one ticket (T-0020)
+
+Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
+<id>` writes this worktree's entry in the focus marker (`focus_path`), and
+`focus off` is the only thing that drops it. The active-ticket pointer alone is
+never a focus, so with no marker entry `route` answers exactly as without
+T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
+cannot be read, is not a file, or holds an entry that is not a ticket is
+`unknown` -- could-not-tell, its own value, never "no focus" -- and
+`focus_guard` then refuses everything but `status`, `sleep` and `wake`, `next`
+stops as `drift`, and `focus off` refuses rather than delete it; each such
+message ends with the removal command for the marker's path
+(`_focus_remedy`). `focus` and `focus off` hold `_focus_lock` around the
+marker's read-modify-write, so two worktrees cannot drop each other's entry. While
+focused, `focus_guard` refuses `run` of any other ticket (named, or from the
+handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
+`focus <id>` while the pointer disagrees with the focus; `sleep` and `wake`
+always run (L-0652). Once the focused ticket's plan is approved, every `next`
+runs the completion audit's own `audit(root, ticket)` (read-only): a changed
+path outside Touch, or an audit that could not run, stops as `drift`.
+`findings_target` names where an out-of-scope finding goes: `TODO.md` when the
+approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
+`focus` output ends with FOCUS_REMINDER: Claude Code's built-in `/focus` only
+toggles the display.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -69,12 +104,25 @@ force says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
+  folder only in the main checkout       folder-elsewhere    stop, naming the copy
+  no folder here, main checkout unknown  folder-elsewhere    stop (cannot tell)
   no direction.md                        brainstorm          stop
+  INDEX rows here and in main differ     direction-approval  stop (index-disagreement)
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
   INDEX status `needs-owner` (T-0037)    needs-owner         stop (names open questions)
+  INDEX `done` and spec header `done`    (the ship rows below)
   INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
-  spec header done/cancelled/superseded  closed              stop (quotes split-into:)
+  spec header cancelled/superseded       closed              stop (quotes split-into:)
+  spec header `status: done`, unarmed    closed              stop
+  ... armed, detached HEAD or gh failure ship                stop (cannot tell)
+  ... PR merged at this HEAD (full SHA)  closed              stop
+  ... PR merged, HEAD differs/unreadable ship                stop, new branch and PR
+  ... PR open, `autopilot.ship: pr`      closed              stop, merge by hand
+  ... PR closed unmerged, other state    ship                stop
+  ... working tree differs from HEAD     ship                stop
+  ... receipt no longer stands           ship                stop
+  ... no PR, or open under `merge`       ship                crew_autopilot.py ship
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
@@ -88,6 +136,8 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
+  artifacts fresh-uncommitted            commit-refresh      git add, git commit -- <paths>
+                                                             (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
@@ -100,6 +150,33 @@ is the `auto-replan-cap` stop and names every successor plan. A NEEDS_REPLAN
 that autopilot's own reject of the current plan's latest round wrote, whose
 round still passes the policy's round checks and is still allowed, is `replan`
 without a stop. `status` reads neither route (`policy=False`).
+
+The INDEX row (T-0063) is this checkout's; with none, the main checkout's --
+the first record of `git worktree list --porcelain` -- and `index_source`
+(`--json` only) names the file that answered. Rows in both whose cells differ
+stop as `index-disagreement`; a listing that fails is could-not-tell, kept in
+the reason. The ticket folder is never read from the main checkout: one only
+there stops, naming the `cp -r` to make, since the scope guard reads Touch
+from this checkout's folder.
+
+## ship (T-0011)
+
+`ship_decision` is the rule, with no I/O: `autopilot.ship` anything but
+exactly `merge` opens the PR and stops. `merge` needs every required check
+`pass`, or `fail` named EXACTLY in `autopilot.knownFailures`; pending or none
+reported yet waits (stopping at `ciTimeoutMinutes`); an unreadable or unknown
+state, `skipping` or an unlisted failure stops. A `high` or unknown risk whose
+completed rounds are all `claude` or carry no `model_family` stops before CI
+is read. `ship` refuses a dirty working tree (before the push and again before
+the merge), takes HEAD once right after the push and holds the PR's head and
+this checkout's HEAD to it before and after every poll and right before the
+merge, re-reads the settings, risk and review families (with the hash of the
+ledger bytes they came from) on every poll, stops on a green that lands past
+the deadline, re-checks the review receipt after CI against that same ledger
+hash, refuses a base branch with a merge queue (or one it cannot read), binds
+the merge to the HEAD it checked, and dequeues a PR gh queued anyway.
+The rule and the gh/git adapter (`_run_gh`, the only code that runs gh, and
+`read_checks`, which parses gh 2.46's text rows) are in crew_ship.py.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -118,7 +195,10 @@ names no commit, a refresh re-anchors it, and the line carries a command);
 every other `unknown` -- a missing tool, no or a fallback scope base, a check
 that raised -- stops, as `/crew:implement` step 6 does. When the module
 cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008
-not landed)" -- never skipped.
+not landed)" -- never skipped. `fresh-uncommitted`
+(T-0063) is `commit-refresh`, before review and after an accepted one alike:
+it commits exactly the paths the check lists, which leaves the working state
+-- the review bundle -- byte for byte as it was.
 
 ## resume -- which ticket
 
@@ -136,7 +216,7 @@ A ticket that differs from this worktree's active-ticket pointer stops, naming
 both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
-Exit 0 always, but for `approve` and `questions-check` (above); the answer is
+Exit 0 always (`ship` included), but for `approve` and `questions-check` (above); the answer is
 in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
 
@@ -160,20 +240,25 @@ not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
 import datetime
+import hashlib
 import importlib
 import json
 import os
 import re
+import shlex
 import stat
 import sys
 import threading
+import time
 
 if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
     sys.dont_write_bytecode = True
 
+import completion_audit
 import crew_common
 import crew_config
+import crew_ship
 import crew_sleep
 import crew_state
 import crew_ticket
@@ -188,6 +273,9 @@ FRESH = "fresh"
 STALE = "stale"
 UNKNOWN = "unknown"
 UNSETTLED = "unsettled"
+# T-0063: every artifact current, a refreshed file not yet committed.
+FRESH_UNCOMMITTED = "fresh-uncommitted"
+UNCOMMITTED = "uncommitted"
 # T-0008's reason for the one `unknown` a refresh settles: the anchor names no
 # commit here (a squash merge dropped it), and re-anchoring is the refresh.
 ORPHANED_ANCHOR = "names no commit"
@@ -226,8 +314,12 @@ FIXED_STOPS = (
     ("failed-validate", "crew_ticket.validate reports a problem in spec.md or plan.md"),
     ("direction-unknown", "no .work/INDEX.md table row says whether direction.md is "
                           "approved"),
+    ("index-disagreement", "the worktree's and the main checkout's .work/INDEX.md rows for "
+                           "the ticket disagree"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
+    ("drift", "explicitly focused and approved: a changed path is outside the ticket's Touch "
+              "(completion_audit.audit), or the audit could not run"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
     ("auto-replan-cap", "autopilot.maxAutoReplans successor plans are already on the "
@@ -260,15 +352,283 @@ HUMAN_STOPS = (
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
 SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
-AVAILABLE = frozenset({"status", "run", "sleep", "wake"})
+AVAILABLE = frozenset({"status", "run", "focus", "sleep", "wake"})
 # L-0652: the subcommands that take no ticket, not even a second word.
 NO_TICKET = frozenset({"sleep", "wake"})
-ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+ARRIVES = {"assign": "T-0019", "goal": "T-0012"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
 # The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
 _INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+
+# --- ship (T-0011) -------------------------------------------------------------
+# The pure merge rule and the gh/git adapter live in crew_ship.py (batch 7: this
+# module passed pylint's 3400-line cap); what reads the review ledger stays here.
+SHIP_POLICIES = ("pr", "merge")
+POLL_SECONDS = 30
+_sleep = time.sleep
+_clock = time.monotonic
+
+
+def _ledger_hash(top, ticket):
+    """sha256 of the review ledger's bytes, or None when it cannot be read."""
+    try:
+        with open(review_ledger.ledger_path(top, ticket), "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except (OSError, ValueError):
+        return None
+
+
+def _families(top, ticket):
+    """The `model_family` of every completed round under the current plan,
+    or None when the ledger cannot be read."""
+    ledger = review_ledger.status(top, ticket)
+    if ledger["state"] == review_ledger.UNKNOWN:
+        return None
+    return [r.get("model_family") for r in _current_rounds(ledger)
+            if isinstance(r, dict) and r.get("status") == "completed"]
+
+
+def _ship_gate(top, ticket):
+    """What a merge rests on, read from disk again on every poll: the
+    settings, the spec's risk, the completed rounds' review families and the
+    hash of the ledger bytes those families came from. CI can run for an
+    hour, and in that time the owner may disarm autopilot, change `ship` or
+    `knownFailures`, or the ledger may move to a successor plan - so nothing
+    read before the wait is trusted after it. `stop` is a reason, or None."""
+    config = settings(top)
+    spec = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")) or ""
+    ledger = _ledger_hash(top, ticket)
+    families = _families(top, ticket)
+    gate = {"config": config, "risk": crew_ticket.parse_risk(spec)["risk"],
+            "families": families, "ledger": ledger, "stop": None}
+    if not config["armed"]:
+        gate["stop"] = "autopilot.mode is not armed any more - a person ships it"
+    if families is None or ledger is None or _ledger_hash(top, ticket) != ledger:
+        gate["stop"] = ("the review ledger is unreadable, or changed while it was read, so "
+                        "the review families cannot be told")
+    return gate
+
+
+def ship_command(ticket):
+    return f"crew_autopilot.py ship --ticket {ticket}"
+
+
+def _ship_phase(top, ticket, answer, why):
+    """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
+    this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
+    left, and a stop for every state that cannot be read. Unarmed, it is
+    `closed` without asking gh: shipping is autopilot's alone."""
+    config = settings(top)
+    if not config["armed"]:
+        return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
+                      "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
+                      "merges")
+    branch = crew_ship._branch(top)
+    if not branch:
+        return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
+                      "unreadable - a human checks out the ticket's branch")
+    pr = crew_ship.read_pr(top, branch)
+    if pr is None:
+        return answer("ship", True, f"could not read the PR state for {branch} (gh pr view "
+                      "failed: gh missing, not authenticated, no remote, or an answer that "
+                      "is not a PR) - a human looks")
+    state = pr["state"]
+    if state == "MERGED":
+        return crew_ship.merged_phase(top, branch, pr, answer)
+    if state == "OPEN" and config["ship"] != "merge":
+        return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
+                      f"({pr.get('url')}; autopilot.ship is {config['ship']})")
+    if state not in ("NONE", "OPEN"):
+        return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
+                      "open or merged - a person decides")
+    tree = crew_ship._tree_stop(top)
+    if tree:
+        return answer("ship", True, f"{tree}: a push carries only commits, so what was "
+                      "reviewed would not be what ships - a human decides")
+    ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok:
+        return answer("ship", True, f"the review receipt no longer stands ({message}): "
+                      "shipping would put unreviewed commits in the PR - a human decides")
+    return answer("ship", False, f"{why}; " + ("no PR yet" if state == "NONE" else
+                                               f"PR #{pr['number']} open, merging when green"),
+                  ship_command(ticket))
+
+
+def _ship_result(ticket, action, stop, reason, pr=None, checks=None, families=None):
+    return {"ticket": ticket, "action": action, "stop": stop, "reason": reason,
+            "pr": (pr or {}).get("url") or (f"#{pr['number']}" if pr and pr.get("number")
+                                           else ""),
+            "checks": checks, "families": families}
+
+
+def _head_stop(top, branch, head, where):
+    """The reason the PR's head or this checkout's HEAD is no longer `head`,
+    or "": the checks, the receipt and the merge must all be about one
+    commit."""
+    local = git_out(top, "rev-parse", "HEAD")
+    if local != head:
+        return (f"this checkout's HEAD moved {where} ({local or 'unreadable'} vs {head}): "
+                "the checks read are not for what was reviewed - never merged")
+    now = crew_ship.read_pr(top, branch)
+    if now is None or now.get("state") != "OPEN" or now.get("headRefOid") != head:
+        return (f"the PR's head is not the commit ship pushed {where} "
+                f"({(now or {}).get('headRefOid') or (now or {}).get('state', 'unreadable')} "
+                f"vs {head}): the checks read are not for what was reviewed - never merged")
+    return ""
+
+
+def _wait_for_ci(top, ticket, branch, pr, head):
+    """Poll the required checks until `crew_ship.ship_decision` says merge, or return
+    the stop. `(result, decision, checks, gate)`: `result` is a finished
+    `_ship_result` when it stopped, else None."""
+    gate = _ship_gate(top, ticket)
+    if gate["stop"]:
+        return _ship_result(ticket, "stop", True, gate["stop"], pr, None,
+                            gate["families"]), None, None, gate
+    minutes = gate["config"]["ciTimeoutMinutes"]
+    deadline = _clock() + minutes * 60
+    while True:
+        moved = _head_stop(top, branch, head, "before a poll")
+        checks = crew_ship.read_checks(top, pr["number"])
+        moved = moved or _head_stop(top, branch, head, "while the checks were read")
+        gate = _ship_gate(top, ticket)
+        families = gate["families"]
+        if moved:
+            return _ship_result(ticket, "stop", True, moved, pr, checks,
+                                families), None, checks, gate
+        if gate["stop"]:
+            return _ship_result(ticket, "stop", True, gate["stop"], pr, checks,
+                                families), None, checks, gate
+        decision = crew_ship.ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
+                                 gate["config"]["knownFailures"])
+        # Read after the checks, not before: a green that arrives past the
+        # deadline is a stop, the same as a pending one.
+        late = _clock() >= deadline
+        if decision["action"] == "merge" and not late:
+            return None, decision, checks, gate
+        if decision["action"] not in ("merge", "wait"):
+            opened = decision["action"] == "open-pr"
+            return _ship_result(ticket, "open-pr" if opened else "stop", not opened,
+                                decision["reason"], pr, checks, families), None, checks, gate
+        if late:
+            return _ship_result(ticket, "stop", True, f"{decision['reason']} after "
+                                f"{minutes} min (autopilot.ciTimeoutMinutes) - never merged",
+                                pr, checks, families), None, checks, gate
+        _sleep(min(POLL_SECONDS, deadline - _clock()))
+
+
+def _pre_merge_stop(top, ticket, branch, pr, head, gate):
+    """Every check between CI turning green and the merge call, or ""."""
+    # The receipt was checked before the push; commits made while CI ran
+    # would ship unreviewed without this second look.
+    stands, why = review_ledger.check_receipt(top, ticket)
+    if not stands:
+        return (f"the review receipt no longer stands ({why}) after waiting on CI - never "
+                "merged")
+    if _ledger_hash(top, ticket) != gate["ledger"]:
+        return ("the review ledger changed after the review families were read: the "
+                "receipt checked is not the one the families came from - never merged")
+    moved = _head_stop(top, branch, head, "after CI")
+    if moved:
+        return moved
+    tree = crew_ship._tree_stop(top)
+    if tree:
+        return f"{tree} - never merged"
+    queue = crew_ship.read_merge_queue(top, pr["number"])
+    if queue is not False:
+        return (("the base branch has a merge queue, or the PR is in one" if queue else
+                 "could not tell whether the base branch has a merge queue") + ": a queue "
+                "picks its own merge method and keeps merging after ship stops - a person "
+                "merges")
+    # Last, right before the call: the ledger and this checkout's HEAD again.
+    if _ledger_hash(top, ticket) != gate["ledger"]:
+        return "the review ledger changed just before the merge - never merged"
+    local = git_out(top, "rev-parse", "HEAD")
+    if local != head:
+        return (f"this checkout's HEAD moved just before the merge ({local or 'unreadable'} "
+                f"vs {head}) - never merged")
+    return ""
+
+
+def ship(root, ticket):
+    """Push the branch, open its PR if none, then under `ship: merge` poll
+    the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
+    `crew_ship.ship_decision` from a gate read afresh each poll, and on `merge` - once
+    the receipt still stands on the same ledger the families came from, the
+    PR's head and this checkout's HEAD are still the commit pushed, the tree
+    is clean and no merge queue is involved - run exactly `crew_ship.merge_argv`. A
+    merge that leaves the PR not MERGED in a queue is dequeued and stops.
+    Runs only when `next` names `ship` -- which it never does unarmed. Every
+    answer names the PR, the checks and the review families it rested on."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    # Unarmed, `next` names `closed` (see `_ship_phase`), so this refuses too.
+    phase = next_phase(top, ticket)
+    if phase["phase"] != "ship" or phase["stop"]:
+        return _ship_result(ticket, "stop", True, f"next names {phase['phase']}"
+                            f"{' (stop)' if phase['stop'] else ''}, not ship: {phase['reason']}")
+    branch = crew_ship._branch(top)
+    default = crew_ship._default_branch(top)
+    if not branch or not default or branch == default:
+        return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
+                            f"the default branch is {default or 'unreadable'}, and ship "
+                            "pushes only a ticket branch that is not it")
+    tree = crew_ship._tree_stop(top)
+    if tree:
+        return _ship_result(ticket, "stop", True, f"{tree} - nothing pushed")
+    pushed, detail = crew_ship._push(top, branch)
+    if not pushed:
+        return _ship_result(ticket, "stop", True, f"git push -u origin {branch} failed: "
+                            f"{detail}")
+    # The one commit everything after rests on, taken once, before any check
+    # is read: a commit that lands later is a stop, never re-sampled.
+    head = git_out(top, "rev-parse", "HEAD")
+    if not head:
+        return _ship_result(ticket, "stop", True, "could not read this checkout's HEAD "
+                            "after pushing")
+    pr = crew_ship.read_pr(top, branch)
+    if pr is not None and pr["state"] == "NONE":
+        created = crew_ship._run_gh(top, ["pr", "create", "--head", branch, "--fill"])
+        if created is None or created[0] != 0:
+            return _ship_result(ticket, "stop", True, "gh pr create failed: "
+                                + ((created[2] or created[1]).strip() if created else
+                                   "gh could not run"))
+        pr = crew_ship.read_pr(top, branch)
+    if pr is None or pr["state"] != "OPEN":
+        return _ship_result(ticket, "stop", True, "could not read an open PR for "
+                            f"{branch} after pushing ({(pr or {}).get('state', 'unreadable')})",
+                            pr)
+    if pr.get("headRefOid") != head:
+        return _ship_result(ticket, "stop", True, "the PR's head is not the commit ship "
+                            f"pushed ({pr.get('headRefOid')} vs {head}) - never merged", pr)
+    stopped, decision, checks, gate = _wait_for_ci(top, ticket, branch, pr, head)
+    if stopped:
+        return stopped
+    families = gate["families"]
+    why = _pre_merge_stop(top, ticket, branch, pr, head, gate)
+    if why:
+        return _ship_result(ticket, "stop", True, why, pr, checks, families)
+    merged = crew_ship._run_gh(top, crew_ship.merge_argv(pr["number"], head))
+    after = crew_ship.read_pr(top, branch)
+    if merged is not None and merged[0] == 0 and after is not None \
+            and after.get("state") == "MERGED":
+        return _ship_result(ticket, "merged", False, decision["reason"], pr, checks, families)
+    failed = ("gh pr merge --merge failed: " + ((merged[2] or merged[1]).strip() if merged
+                                                 else "gh could not run")
+              if merged is None or merged[0] != 0 else
+              "gh pr merge exited 0 but the PR reads "
+              f"{(after or {}).get('state', 'unreadable')}, not MERGED")
+    queue = crew_ship.read_merge_queue(top, pr["number"])
+    if queue is not False:
+        outcome = crew_ship._dequeue(top, after if isinstance(after, dict) and after.get("id") else pr)
+        return _ship_result(ticket, "stop", True, f"{failed}; " + (
+            "the PR is in a merge queue, or its base branch has one" if queue else
+            "could not tell whether gh handed the PR to a merge queue")
+            + f" - a queue merges with its own method after ship stops, so ship dequeued "
+            f"it: {outcome}. A person merges", pr, checks, families)
+    return _ship_result(ticket, "stop", True, f"{failed} - a human looks", pr, checks,
+                        families)
 
 
 def _rel(top, path):
@@ -281,19 +641,33 @@ def _rel(top, path):
         return path.replace("\\", "/")
 
 
-def _index_rows(top):
-    """[(ticket, line)] for every INDEX.md line naming a ticket, in order."""
+def _rel_inside(top, path):
+    """`path` relative to `top` when it lies inside it, `/`-separated as every
+    evidence line is; else whole and exactly as given (T-0063: an INDEX.md read
+    from the main checkout is named in full, the same string `index_source`
+    carries -- never re-slashed, which on Windows made the evidence and the
+    reason name a path `index_source` did not)."""
+    rel = _rel(top, path)
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return path
+    return rel
+
+
+def _index_rows(top, index_path=None):
+    """[(ticket, line)] for every line naming a ticket in `index_path` (this
+    checkout's `.work/INDEX.md` by default), in order."""
     rows = []
-    for line in (read_text(os.path.join(top, ".work", "INDEX.md")) or "").splitlines():
+    path = index_path or os.path.join(top, ".work", "INDEX.md")
+    for line in (read_text(path) or "").splitlines():
         found = crew_state._TICKET_RE.search(line)  # pylint: disable=protected-access
         if found:
             rows.append((found.group(1), line))
     return rows
 
 
-def _index_status(top, ticket):
+def _index_status(top, ticket, index_path=None):
     """The status cell of `ticket`'s INDEX.md table row, lower-cased, or None."""
-    for found, line in _index_rows(top):
+    for found, line in _index_rows(top, index_path):
         if found != ticket or line.count("|") < 2:
             continue
         cells = [c.strip() for c in line.split("|")]
@@ -303,6 +677,77 @@ def _index_status(top, ticket):
     return None
 
 
+def _main_checkout(top):
+    """`(path, why)` (T-0063): the main checkout of the linked worktree `top`,
+    the first record of `git worktree list --porcelain`. `(None, "")` when
+    `top` is the main checkout -- `.git` a directory needs no subprocess --
+    so there is nothing else to read. `(None, why)` when the listing failed,
+    its first record is bare, or that path cannot be read: could-not-tell,
+    never "no row there"."""
+    if os.path.isdir(os.path.join(top, ".git")):
+        return None, ""
+    out = git_out(top, "worktree", "list", "--porcelain")
+    if out is None:
+        return None, "git worktree list failed, so the main checkout cannot be named"
+    record = out.replace("\r\n", "\n").split("\n\n", 1)[0].splitlines()
+    if not record or not record[0].startswith("worktree "):
+        return None, "git worktree list named no main checkout"
+    path = record[0][len("worktree "):]
+    if "bare" in record[1:]:
+        return None, f"the first worktree, {path}, is a bare repository: no main checkout"
+    if not os.path.isdir(path):
+        return None, f"the main checkout {path} cannot be read"
+    path = os.path.realpath(path)
+    if os.path.normcase(path) == os.path.normcase(os.path.realpath(top)):
+        return None, ""
+    return path, ""
+
+
+def _index_row(top, ticket):
+    """`{"status", "source", "other", "why", "paths"}` (T-0063): this
+    checkout's INDEX row for `ticket`, else the main checkout's. `source` is
+    the INDEX.md that answered, None when none did. Rows in both whose cells
+    differ are `status` None with `other` holding both `(path, cell)`. `why`
+    is a could-not-tell about the main checkout; `paths` every file asked."""
+    here = os.path.join(top, ".work", "INDEX.md")
+    local = _index_status(top, ticket)
+    main, why = _main_checkout(top)
+    there = os.path.join(main, ".work", "INDEX.md") if main else None
+    row = {"status": local, "source": here if local is not None else None, "other": None,
+           "why": why, "paths": [here] + ([there] if there else [])}
+    if not there:
+        return row
+    found = _index_status(top, ticket, there)
+    if found is None and os.path.lexists(there) and read_text(there) is None:
+        row["why"] = f"{there} exists but could not be read"
+    elif local is not None and found is not None and found != local:
+        row.update(status=None, source=None, other=((here, local), (there, found)))
+    elif local is None and found is not None:
+        row.update(status=found, source=there)
+    return row
+
+
+def _main_folder(top, ticket):
+    """`(there, why)`: `there` is `<main>/.work/tickets/<id>/` when only the
+    main checkout holds it -- named, never read: the scope guard reads Touch
+    from this checkout. `why` is set when this checkout has no folder and
+    the main checkout could not be named: could-not-tell, never "absent"."""
+    if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        return None, ""
+    main, why = _main_checkout(top)
+    there = crew_ticket.ticket_dir(main, ticket) if main else None
+    return (there if there and os.path.isdir(there) else None), why
+
+
+def _folder_elsewhere(top, ticket, there, why=""):
+    if not there:
+        return (f"{ticket} has no .work/tickets/ folder here, and autopilot could not tell "
+                f"whether the ticket folder is in the main checkout: {why}")
+    return (f"{ticket}'s folder is only in the main checkout ({there}); copy it here first: "
+            f"cp -r {shlex.quote(there)} {shlex.quote(crew_ticket.ticket_dir(top, ticket))} "
+            "- autopilot never reads a ticket's contract from another checkout")
+
+
 def _is_open(ticket, line):
     table = crew_state._table_status(line, ticket)  # pylint: disable=protected-access
     if table is not None:
@@ -310,15 +755,28 @@ def _is_open(ticket, line):
     return not crew_state._DONE_RE.search(line)  # pylint: disable=protected-access
 
 
+def _open_index_rows(top):
+    """[(ticket, from_main)] for every open INDEX.md ticket whose
+    `.work/tickets/<id>/` exists HERE, in order, once each: this checkout's
+    rows, then the main checkout's for tickets with no row here (T-0063)."""
+    main, _why = _main_checkout(top)
+    rows = [(ticket, line, False) for ticket, line in _index_rows(top)]
+    here = {ticket for ticket, _line, _main in rows}
+    if main:
+        rows += [(ticket, line, True) for ticket, line in
+                 _index_rows(top, os.path.join(main, ".work", "INDEX.md")) if ticket not in here]
+    seen = {}
+    for ticket, line, from_main in rows:
+        if ticket not in seen and _is_open(ticket, line) \
+                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+            seen[ticket] = from_main
+    return list(seen.items())
+
+
 def open_index_tickets(top):
     """Every open INDEX.md ticket whose `.work/tickets/<id>/` exists, in order,
     once each. Unlike `crew_state.read_work`, this does not stop at the first."""
-    seen = []
-    for ticket, line in _index_rows(top):
-        if ticket not in seen and _is_open(ticket, line) \
-                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
-            seen.append(ticket)
-    return seen
+    return [ticket for ticket, _from_main in _open_index_rows(top)]
 
 
 def _successor(folder):
@@ -415,6 +873,9 @@ def _refresh_state(root, ticket):
     status = result.get("status")
     if status == FRESH:
         return {"state": FRESH, "command": "", "reason": result.get("reason", "")}
+    if status == FRESH_UNCOMMITTED:
+        return {"state": UNCOMMITTED, "command": "", "reason": result.get("reason", ""),
+                "paths": [p for p in result.get("uncommitted") or [] if isinstance(p, str)]}
     pending = [a for a in result.get("artifacts") or [] if a.get("status") in (STALE, UNKNOWN)]
     named = [f"{a.get('kind')} {a.get('name')}: {a.get('status')} - {a.get('reason')}"
              + (f" (refresh: {a.get('command')})" if _settles(a) else " (a refresh cannot "
@@ -461,24 +922,41 @@ def _phase(root, ticket, policy=True):
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
 
+    source = None
+
     def answer(phase, stop, reason, command=""):
         return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
-                "command": command, "evidence": list(evidence)}
+                "command": command, "evidence": list(evidence), "index_source": source}
 
+    there, why = _main_folder(top, ticket)
+    if there or why:
+        return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there, why))
     direction = os.path.join(folder, "direction.md")
     evidence.append(_rel(top, direction))
     if not os.path.isfile(direction):
         return answer("brainstorm", True, f"no {_rel(top, direction)}: needs "
                       "/crew:brainstorm - a human dialogue", "/crew:brainstorm")
-    evidence.append(".work/INDEX.md")
-    status = _index_status(top, ticket)
+    row = _index_row(top, ticket)
+    status, source = row["status"], row["source"]
+    evidence.append(_rel_inside(top, source) if source else ".work/INDEX.md")
+    if status is not None and row["why"]:
+        # QA F2: this checkout's row answered, but the main checkout's could
+        # not be read, so the two were never compared -- said, never agreement.
+        evidence.append(f"main checkout's INDEX not compared: {row['why']}")
+    if row["other"]:
+        (here, mine), (main, theirs) = row["other"]  # pylint: disable=unpacking-non-sequence
+        return answer("direction-approval", True, f"index-disagreement: {here} says "
+                      f"`{mine}` and the main checkout's {main} says `{theirs}` for "
+                      f"{ticket} - the human makes them agree")
     if status == "direction":
         return answer("direction-approval", True, "INDEX.md status is `direction`: "
                       "direction.md waits for the owner's yes in /crew:brainstorm")
     if status is None:
+        asked = " or ".join(_rel_inside(top, path) for path in row["paths"])
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
-                      f"direction is approved: .work/INDEX.md has no table row for {ticket} "
-                      "(Jira and ServiceDesk Plus modes write none). The human adds "
+                      f"direction is approved: {asked} has no table row for {ticket}"
+                      + (f" ({row['why']})" if row["why"] else "")
+                      + " (Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
     if status == NEEDS_OWNER:
         questions = _open_questions(folder)
@@ -487,6 +965,11 @@ def _phase(root, ticket, policy=True):
                                                     if questions else "no open question recorded - the "
                                                     "owner says what is needed"))
     if status in INDEX_DONE:
+        spec_text = read_text(os.path.join(folder, "spec.md")) if status == "done" else None
+        if spec_text is not None and _header_status(spec_text) == "done":
+            evidence.append(_rel(top, os.path.join(folder, "spec.md")))
+            return _ship_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
+                               "and spec.md's header is `status: done`")
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
                       "re-driven, whatever spec.md's header says" + _successor(folder))
     if status not in DIRECTION_APPROVED:
@@ -498,9 +981,11 @@ def _phase(root, ticket, policy=True):
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
     header = None if contract["spec.md"] is None else _header_status(
         crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
+    if header == "done":
+        return _ship_phase(top, ticket, answer, "spec.md header is `status: done`")
     if header in HEADER_CLOSED:
         return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
-                      "in this ticket (ship is T-0011)" + _successor(folder))
+                      "in this ticket" + _successor(folder))
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -810,6 +1295,8 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
+    if refresh["state"] == UNCOMMITTED:
+        return _commit_refresh(ticket, answer, refresh["paths"])
     if not ok and refresh["state"] != FRESH:
         command = refresh["command"] if refresh["state"] == STALE else ""
         return answer("refresh", not command,
@@ -824,6 +1311,31 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
+def _commit_refresh(ticket, answer, paths):
+    """T-0063: every artifact is current but its refresh is uncommitted. The
+    commit names exactly those paths -- `git commit -- <paths>` commits only
+    them, so anything else already staged stays staged and out of it (QA
+    F1); it changes no byte of the working state, which is what the review
+    bundle is, so a receipt stays current and the same phase applies before
+    review and after an accepted one. A path that is not printable is never
+    put in a command or a reason line (QA F3): it stops, shown escaped."""
+    if not paths:
+        return answer("commit-refresh", True, "the refresh check says fresh-uncommitted "
+                      "and names no path to commit - a human looks")
+    shown = ", ".join(completion_audit.shown(p) for p in paths[:4]) + (
+        f" (+{len(paths) - 4} more)" if len(paths) > 4 else "")
+    if any(not p.isprintable() for p in paths):
+        return answer("commit-refresh", True, f"refreshed artifacts are uncommitted: {shown}; "
+                      "a path holds a character that is not printable, so no command is "
+                      "printed for it - a human commits them")
+    quoted = " ".join(shlex.quote(p) for p in paths)
+    command = (f"git add -- {quoted} && "
+               f'git commit -m "{ticket}: commit refreshed artifacts" -- {quoted}')
+    return answer("commit-refresh", False, f"refreshed artifacts are uncommitted: {shown}; "
+                  "the review bundle is the working state, so this commit leaves any "
+                  "receipt current", command)
+
+
 def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
                policy=True):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
@@ -835,10 +1347,14 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    A focused, approved ticket whose tree has drifted outside Touch stops as
+    `drift` first (`_drift`). `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
     rerun = result.pop("refunded_rerun", False)
+    drift = _drift(root, ticket, result)
+    if drift is not None:
+        return drift
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -858,6 +1374,45 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))
     return result
+
+
+# `next`'s phases that stop yet are not a stop for the loop: the T-0010 policy
+# may approve or answer and go round again, so drift is judged before them.
+POLICY_PHASES = ("approve", "open-questions")
+
+
+def _drift(root, ticket, result):
+    """`next`'s drift stop (T-0020), or None. Judged only when this worktree is
+    focused on `ticket` and its plan is approved (before approval the audit
+    fails every path, and spec and plan write only `.work/`, which it skips),
+    and only ahead of a phase the loop would run. `completion_audit.audit` is
+    read-only; an audit that raised, or could not be imported, stops: it is
+    never a pass."""
+    if result["stop"] and result["phase"] not in POLICY_PHASES:
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    state = focus_state(top)
+    if state["unknown"]:
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: whether {ticket} is focused, and so whether its tree must stay inside "
+            f"Touch, could not be told: {state['unknown']}"))
+    if state["focus"] != ticket:
+        return None
+    try:
+        if crew_ticket.accepted(top, ticket)["status"] != "approved":
+            return None
+        ok, lines = importlib.import_module("completion_audit").audit(top, ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        return dict(result, phase="drift", stop=True, command="", reason=(
+            f"drift: the audit could not run ({_failure(exc)}), so whether {ticket}'s tree "
+            "stays inside Touch cannot be told"))
+    if ok:
+        return None
+    shown = " ".join(" ".join(str(line).split()) for line in list(lines)[:2]) or (
+        "the completion audit failed and gave no reason")
+    return dict(result, phase="drift", stop=True, command="", reason=(
+        f"drift: {shown} - revert them, or file the finding (crew_autopilot.py focus "
+        f"--findings --ticket {ticket}) and amend Touch through /crew:plan"))
 
 
 HANDOFF_ABSENT = "no .work/HANDOFF.md"
@@ -940,6 +1495,9 @@ def resume_target(root, ticket=None, policy=True):
     hint, source, why = "", "argument", ""
     if ticket:
         crew_ticket.check_ticket(ticket)
+        there, missing_why = _main_folder(top, ticket)
+        if there or missing_why:
+            return stopped(source, _folder_elsewhere(top, ticket, there, missing_why))
         if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
     else:
@@ -957,7 +1515,8 @@ def resume_target(root, ticket=None, policy=True):
             ticket, source = active, "active-ticket"
         else:
             fallthrough.append("no active-ticket entry for this worktree")
-            candidates = open_index_tickets(top)
+            rows = _open_index_rows(top)
+            candidates = [found for found, _from_main in rows]
             if len(candidates) > 1:
                 return stopped(".work/INDEX.md", "several open tickets and no pointer: "
                                + ", ".join(candidates)
@@ -965,7 +1524,8 @@ def resume_target(root, ticket=None, policy=True):
             if not candidates:
                 return stopped(".work/INDEX.md", "no open ticket with a .work/tickets/ "
                                "folder - start one with /crew:brainstorm")
-            ticket, source = candidates[0], ".work/INDEX.md"
+            ticket = candidates[0]
+            source = ".work/INDEX.md (main checkout)" if rows[0][1] else ".work/INDEX.md"
     active, where, broken = crew_ticket.resolve_active(top)
     if broken:
         return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "
@@ -974,7 +1534,8 @@ def resume_target(root, ticket=None, policy=True):
         return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
-                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
+                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}."
+                       + _also(focus_guard(top, "run", ticket)))
     disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
@@ -1039,20 +1600,23 @@ def _unreadable_machine_autopilot():
 
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
-    "questions", "maxAutoReplans", "warnings"}`. Read through
+    "questions", "maxAutoReplans", "ship", "knownFailures", "ciTimeoutMinutes",
+    "warnings"}`. Read through
     `crew_config.resolve_config`, which reads both layers: the autopilot keys
     with a `crew_state.PERSONAL_KEYS` row are personal (T-0050), so where
     `.crew/config.json` and the machine-global file both set one the stricter
     value wins, and a silent layer imposes nothing (`crew_guards.
-    effective_personal`); `maxAutoReplans` and `sleep` are repo-only
-    (`crew_state.REPO_ONLY_AUTOPILOT`). `scope.allowCliApproval`, which
-    `crew_ticket.cli_approval_allowed` reads, is still the repo file's alone.
+    effective_personal`); `maxAutoReplans`, `sleep` and T-0011's three ship keys
+    are repo-only (`crew_state.REPO_ONLY_AUTOPILOT`). `scope.allowCliApproval`,
+    which `crew_ticket.cli_approval_allowed` reads, is still the repo file's alone.
     `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
     `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
     `questions` must be one of POLICIES, else `human`; `maxAutoReplans` (T-0074)
     must be a non-negative int, else 0 (off), and reads at most
-    MAX_AUTO_REPLANS.
+    MAX_AUTO_REPLANS; `ship` is exactly one of SHIP_POLICIES, else `pr` (the
+    non-merging direction); `knownFailures` a list of strings, else `[]`;
+    `ciTimeoutMinutes` a positive int, else 60.
 
     A `.crew/config.json` or machine-global file that is present but
     unreadable, or an `autopilot` value in either that is not an object, is
@@ -1073,6 +1637,8 @@ def settings(root):
                 "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None,
                           "overrides": {key: None for key in crew_sleep.OVERRIDES},
                           "applied": []},
+                "ship": "pr", "knownFailures": [],
+                "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
                               "approves or takes an answer) and autopilot reads as off")]}
@@ -1119,6 +1685,22 @@ def _settings_at(top):
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
                         "for this key; move it to .crew/config.json")
+    ship = block.get("ship", crew_state.AUTOPILOT_DEFAULTS["ship"])
+    if not _exact(ship, SHIP_POLICIES):
+        warnings.append(f"autopilot.ship is {ship!r}, not 'pr' or 'merge'; reading it as "
+                        "'pr' (open the PR, never merge)")
+        ship = "pr"
+    known = block.get("knownFailures", [])
+    if not isinstance(known, list) or not all(isinstance(k, str) for k in known):
+        warnings.append(f"autopilot.knownFailures is {known!r}, not a list of check names; "
+                        "using [] (no failing check is excused)")
+        known = []
+    timeout = block.get("ciTimeoutMinutes")
+    default_timeout = crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"]
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+        warnings.append(f"autopilot.ciTimeoutMinutes is {timeout!r}, not a positive "
+                        f"integer; using {default_timeout}")
+        timeout = default_timeout
     day = {}
     for key in ("approval", "questions"):
         day[key], warning = _policy_setting(block, key)
@@ -1130,6 +1712,7 @@ def _settings_at(top):
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
             "maxAutoReplans": replans,
+            "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
             "day": day, "sleep": sleep, "warnings": warnings}
 
 
@@ -1877,12 +2460,16 @@ def _existing_ticket(top, token):
         return False
 
 
-def route(root, first):
+def route(root, first, ticket=""):
     """`{"sub", "stop", "reason"}` for the command's first argument. First
     match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
     (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
     Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
-    is refused here rather than driven as a ticket."""
+    is refused here rather than driven as a ticket. Then T-0020's
+    `focus_guard`, before the AVAILABLE check, so `assign` and `goal` are
+    refused under an explicit focus whether or not they have landed. `ticket` is the word
+    after the subcommand when `route_args` knows it (FOCUS_OFF for `focus
+    off`); a bare id is its own ticket."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     token = first or ""
     if token in SUBCOMMANDS:
@@ -1890,12 +2477,16 @@ def route(root, first):
     elif token == "":
         sub = "run"
     elif token == GOAL_FLAG:
+        refusal = focus_guard(top, "goal")
         return {"sub": "run", "stop": True,
-                "reason": f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
+                "reason": refusal or f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
     elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
-        sub = "run"
+        sub, ticket = "run", token
     else:
         return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}
+    refusal = focus_guard(top, sub, ticket)
+    if refusal:
+        return {"sub": sub, "stop": True, "reason": refusal}
     if sub not in AVAILABLE:
         return {"sub": sub, "stop": True,
                 "reason": f"{AUTOPILOT} {sub} arrives with {ARRIVES.get(sub, 'a later ticket')}"}
@@ -1911,21 +2502,381 @@ def route_args(root, text):
     word after a subcommand, or a bare ticket id itself. The command passes
     `$ARGUMENTS` whole because Claude Code numbers positional arguments from
     `$0` and leaves an out-of-range `$N` literal. A second word that is not a
-    ticket, or a third word, stops; it is never read as a ticket."""
+    ticket, or a third word, stops; it is never read as a ticket -- except
+    `focus off`, exactly, which sets `off` (T-0020): the only route to
+    `focus --off`, so focus is released only when the owner's own arguments
+    say so. A ticket is held to `focus_guard` once it is known."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
-    got = dict(route(top, words[0] if words else ""), ticket="")
+    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    off = words[:1] == ["focus"] and rest == [FOCUS_OFF]
+    got = dict(route(top, words[0] if words else "", FOCUS_OFF if off else ""), ticket="")
+    if got["sub"] == "focus":
+        got["off"] = off
     if got["stop"]:
         return got
-    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
     if words[:1] and words[0] in NO_TICKET and rest:
         return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
+    if off:
+        return got
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
                                        or _existing_ticket(top, rest[0]))):
         return dict(got, stop=True, reason=NOT_A_TICKET)
+    refusal = focus_guard(top, got["sub"], rest[0]) if rest else None
+    if refusal:
+        return dict(got, stop=True, reason=refusal)
     return dict(got, ticket=rest[0] if rest else "")
+
+
+# --- focus (T-0020) -------------------------------------------------------------
+
+FOCUS_OFF = "off"
+FOCUS_RELEASE = f"{AUTOPILOT} focus off"
+FOCUS_REMINDER = ("reminder: Claude Code's built-in /focus only toggles the display (just "
+                  "your prompt, summary, and response); it does not scope work, and only "
+                  "you can type it")
+FOCUS_SCOPE_OFF = ("the scope guard is off: writes outside Touch are not refused as they "
+                   "happen; autopilot's drift stop still applies")
+FINDINGS_TODO = "TODO.md"
+FINDINGS_FILE = "out-of-scope.md"
+FINDINGS_WHY = "the scope guard exempts nothing outside Touch"
+
+
+def _also(text):
+    return f" {text}" if text else ""
+
+
+FOCUS_FILE = "autopilot-focus.json"
+
+
+def focus_path(root):
+    """`<git-common-dir>/crew/autopilot-focus.json`, the explicit focus marker,
+    or None outside git. A JSON object keyed by worktree top-level, as the
+    active-ticket pointer is, so a focus is this worktree's only."""
+    state = crew_ticket.state_dir(root)
+    return os.path.join(state, FOCUS_FILE) if state else None
+
+
+FOCUS_LOCK_WAIT = 5.0
+
+
+# PowerShell reads U+2018..U+201B as single quotes too.
+_PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
+# C0, DEL and C1 controls (a terminal acts on C1 too), the PowerShell quotes,
+# and the bidi embedding/override/isolate controls U+202A..U+202E and
+# U+2066..U+2069 (they reorder what a person reads): the JSON form instead.
+_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f-\x9f\u2018-\u201b\u202a-\u202e\u2066-\u2069]|\s{2,}")
+
+
+def _posix_quoted(path):
+    return "'" + path.replace("'", "'\\''") + "'"
+
+
+def _ps_quoted(path):
+    for mark in _PS_QUOTES:
+        path = path.replace(mark, mark * 2)
+    return "'" + path + "'"
+
+
+def _paste_safe(path):
+    """Whether `path` survives into a printed command unchanged: no control
+    character (C0, DEL or C1), no bidi control, no run of whitespace (`_one_line` would collapse it), no
+    quote PowerShell also reads, and the POSIX command parses back to exactly
+    `rm -- <path>`."""
+    if _UNSAFE_PATH.search(path):
+        return False
+    rm_part = f"rm -- {_posix_quoted(path)}"
+    try:
+        return shlex.split(rm_part) == ["rm", "--", path] and _one_line(rm_part) == rm_part
+    except ValueError:
+        return False
+
+
+def _remove_by_hand(path, effect):
+    """`effect`, then paste-ready removal commands for `path` (POSIX and
+    PowerShell) when it is paste-safe, else the path as JSON and "remove
+    this file by hand", with no command that could name another file."""
+    if not _paste_safe(path):
+        # JSON escapes control characters; a run of spaces is escaped too, so
+        # `_one_line`'s collapse cannot change the path it names.
+        shown = re.sub(r" {2,}", lambda run: "\\u0020" * len(run.group()), json.dumps(path))
+        return f"{effect}: remove this file by hand: {shown}"
+    return (f"{effect}: rm -- {_posix_quoted(path)} (POSIX shell) or "
+            f"Remove-Item -LiteralPath {_ps_quoted(path)} (PowerShell)")
+
+
+def _focus_remedy(path):
+    """The way out of an unknown marker, naming its exact path: `focus off`
+    refuses to touch a file it cannot read, so the human removes it."""
+    return _remove_by_hand(path, "removing it drops EVERY worktree's focus, not only this one's")
+
+
+def _focus_marker(top):
+    """(path, mapping, unknown). `unknown` is "" or why the marker could not be
+    read -- not a file, a file that does not parse (or cannot be read), one
+    that is not an object, or this worktree's entry not a ticket (an
+    INDEX-shaped id, or one with a `.work/tickets/` folder) -- ending with
+    `_focus_remedy`. An unknown is never read as "no focus"."""
+    path = focus_path(top)
+    if not path:
+        return None, {}, ""
+    if os.path.lexists(path) and not os.path.isfile(path):
+        return path, None, f"the focus marker {path} is not a file; {_focus_remedy(path)}"
+    data, state = crew_ticket._read_json(path)  # pylint: disable=protected-access
+    if state == "corrupt" or (state == "ok" and not isinstance(data, dict)):
+        return path, None, f"the focus marker {path} does not parse; {_focus_remedy(path)}"
+    mapping = data if state == "ok" else {}
+    entry = mapping.get(top)
+    if entry is not None and not (isinstance(entry, str) and (
+            _INDEX_ID.fullmatch(entry) or _existing_ticket(top, entry))):
+        return path, None, (f"the focus marker {path} names {entry!r}, not a ticket; "
+                            f"{_focus_remedy(path)}")
+    return path, mapping, ""
+
+
+class _FocusLockError(Exception):
+    """The marker's lock could not be taken; nothing was written."""
+
+
+class _focus_lock:  # pylint: disable=invalid-name,too-few-public-methods
+    """`<marker>.lock`, crew_config_files.Lock's exclusive create with a
+    bounded wait, around every read-modify-write of the marker: two worktrees
+    running `focus` at once would otherwise both read the old mapping and the
+    later write would drop the other's entry while both report success. A
+    lock that cannot be taken raises _FocusLockError; nothing writes
+    unlocked."""
+
+    def __init__(self, path):
+        import crew_config_files  # pylint: disable=import-outside-toplevel
+        self.path, self.files = path, crew_config_files
+        self.lock = crew_config_files.Lock(path, FOCUS_LOCK_WAIT)
+
+    def __enter__(self):
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self.lock.__enter__()
+        except (self.files.Busy, OSError) as exc:
+            raise _FocusLockError(
+                f"refused: the focus marker's lock {self.path}.lock could not be taken "
+                f"({exc}); nothing written. If no focus command is running, a process "
+                "died holding it; " + _remove_by_hand(
+                    self.path + ".lock", "removing the lock releases it")) from exc
+        return self
+
+    def __exit__(self, *exc):
+        self.lock.__exit__(*exc)
+
+
+def focus_state(root):
+    """`{"focus", "unknown", "pointer", "broken", "why", "scope_mode"}` for this
+    worktree. `focus` is the explicit focus marker's ticket, set only by
+    `focus <id>` (owner decision, 2026-10-05): the active-ticket pointer alone
+    is never a focus. `unknown` is "" or why the marker could not be read --
+    could-not-tell, its own value, with `focus` None beside it. `pointer` is
+    the active-ticket pointer's ticket (never the `.work/INDEX.md` fallback);
+    `broken`/`why` are its state. `scope_mode` is
+    `crew_ticket.configured_mode`'s value."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    active, where, broken = crew_ticket.resolve_active(top)
+    mode, _why = crew_ticket.configured_mode(top)
+    _path, mapping, unknown = _focus_marker(top)
+    return {"focus": None if unknown else mapping.get(top), "unknown": unknown,
+            "pointer": active if where == "active-ticket" and not broken else None,
+            "broken": bool(broken), "why": where if broken else "", "scope_mode": mode}
+
+
+def focus_guard(root, sub, ticket=""):
+    """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`)
+    may run under this worktree's focus, else the refusal, naming the focused
+    ticket and `/crew:autopilot focus off`. `status`, `focus off` and the
+    NO_TICKET subcommands (L-0652's `sleep` and `wake`, which neither start nor
+    switch work) always run. No marker entry: no focus, everything runs. A
+    marker that could not be read refuses everything else -- whether focus is
+    on cannot be told, so nothing may start or switch work. Focused on T-A: a
+    pointer naming anything but T-A refuses all but `focus T-A` (which
+    re-points it); else `run` with no ticket or T-A, and `focus` alone or
+    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a
+    subcommand this does not know -- is refused."""
+    if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
+        return None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    state = focus_state(top)
+    if state["unknown"]:
+        return ("whether focus is on could not be told, so only status, sleep and wake run "
+                f"until the human repairs or removes the marker: {state['unknown']}")
+    focus = state["focus"]
+    if focus is None:
+        return None
+    if sub == "focus" and ticket in ("", focus):
+        return None
+    if state["pointer"] != focus:
+        names = (f"is broken ({state['why']})" if state["broken"]
+                 else f"names {state['pointer'] or 'no ticket'}")
+        return (f"focus is on {focus}, but this worktree's active-ticket pointer {names}: "
+                f"type {AUTOPILOT} focus {focus} to re-point it, or {FOCUS_RELEASE}")
+    if sub == "run" and ticket in ("", focus):
+        return None
+    what = (f"{AUTOPILOT} {sub} {ticket}" if ticket else f"{AUTOPILOT} {sub}").strip()
+    return (f"focus is on {focus}: {what} would start or switch to other work, which focus "
+            f"refuses. Type {FOCUS_RELEASE} first")
+
+
+def _scope_line(mode):
+    if mode == "off":
+        return f"scope.mode=off: {FOCUS_SCOPE_OFF}"
+    return (f"scope.mode={mode}: the scope guard and the completion audit judge every write "
+            "against the active ticket's Touch")
+
+
+def _write_marker(path, mapping):
+    """Write `mapping`, or remove the file when it is empty, so a released
+    focus leaves the common dir as it was."""
+    if mapping:
+        crew_ticket._write_json(path, mapping)  # pylint: disable=protected-access
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
+def _unknown_refusal(head, unknown):
+    return f"{head}: {unknown}"
+
+
+def focus_set(root, ticket):
+    """(ok, line). Writes this worktree's entry in the focus marker, then, only
+    when the active-ticket pointer names another ticket or none, points it at
+    `ticket` through `crew_ticket.activate` -- marker first, so a failed
+    activate leaves a focus the guard refuses on (pointer mismatch), never a
+    switch without one. The marker's read-modify-write holds `_focus_lock`,
+    and the focus-on-another-ticket check is made again inside it. `activate`
+    checks the id's shape only, so the folder is checked here. Refuses,
+    writing nothing, an unreadable marker, a lock it cannot take, a broken
+    pointer and a focus on another ticket; the same ticket again, already
+    pointed at, writes nothing. On a re-point `line` also carries activate's
+    scope-base line, an unknown or a fallback included, never dropped."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    path = focus_path(top)
+    if not path:
+        return False, "refused: there is no git common dir to keep the focus marker in"
+    state = focus_state(top)
+    if state["unknown"]:
+        return False, _unknown_refusal(
+            "refused: whether focus is on could not be told, so nothing is written",
+            state["unknown"])
+    if state["broken"]:
+        return False, (f"refused: the active-ticket pointer is broken ({state['why']}); "
+                       "the human repairs it (crew_ticket.py activate --ticket <id>)")
+    if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        return False, (f"refused: {ticket} has no .work/tickets/{ticket}/ folder, and a "
+                       "focus on it would be a broken pointer")
+    if state["focus"] not in (None, ticket):
+        return False, (f"refused: focus is on {state['focus']}; type {FOCUS_RELEASE} "
+                       "first")
+    if state["focus"] == ticket and state["pointer"] == ticket:
+        return True, f"focus={ticket} (already; nothing written)"
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "refused: whether focus is on could not be told, so nothing is written",
+                    unknown)
+            if mapping.get(top) not in (None, ticket):
+                return False, (f"refused: focus is on {mapping[top]}; type "
+                               f"{FOCUS_RELEASE} first")
+            if mapping.get(top) != ticket:
+                _write_marker(path, dict(mapping, **{top: ticket}))
+    except _FocusLockError as exc:
+        return False, str(exc)
+    line = f"focus={ticket} (this worktree only: {top})"
+    if state["pointer"] == ticket:
+        return True, line
+    # activate also records `.crew/.scope-base` (T-0061); its line -- a
+    # could-not-tell or a fallback included -- is the caller's to see.
+    message = crew_ticket.activate(top, ticket)[2]
+    was = state["pointer"] or "no ticket"
+    return True, f"{line}\nactive ticket: {was} -> {ticket}\n{message}".rstrip("\n")
+
+
+def focus_off(root):
+    """(ok, line). Drops this worktree's focus marker entry and no other,
+    under `_focus_lock`, and leaves the active-ticket pointer as it is: the
+    pointer was never the focus. A marker that could not be read is refused,
+    never deleted and never read as released (fail-closed): its line ends
+    with the removal command for the human."""
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return False, f"refused: {root} is not a git repository"
+    path = focus_path(top)
+    if not path:
+        return True, "focus=none (nothing was set)"
+    try:
+        with _focus_lock(path):
+            _path, mapping, unknown = _focus_marker(top)
+            if unknown:
+                return False, _unknown_refusal(
+                    "focus=unknown - focus off does not clear a marker it cannot read",
+                    unknown)
+            was = mapping.get(top)
+            if was is not None:
+                _write_marker(path, {key: value for key, value in mapping.items()
+                                     if key != top})
+    except _FocusLockError as exc:
+        return False, str(exc)
+    after = focus_state(top)
+    if after["unknown"]:
+        return False, _unknown_refusal("focus=unknown - focus off could not clear it",
+                                       after["unknown"])
+    if after["focus"] is not None:
+        return False, f"focus={after['focus']} - focus off could not clear it"
+    return True, f"focus=none (released {was})" if was else "focus=none (nothing was set)"
+
+
+def focus_show(root):
+    """(True, line): `focus=<id>`, `focus=none` or `focus=unknown <why>`."""
+    state = focus_state(root)
+    if state["unknown"]:
+        return True, f"focus=unknown {state['unknown']}"
+    return True, f"focus={state['focus'] or 'none'}"
+
+
+def findings_target(root, ticket):
+    """`{"path", "reason"}`: where an out-of-scope finding is filed while
+    focused. `TODO.md` only when `ticket`'s APPROVED Touch covers it; else the
+    ticket's own `.work/tickets/<id>/out-of-scope.md`, which the scope guard
+    always allows and the audit skips."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    approval = crew_ticket.accepted(top, ticket)
+    touch = (approval.get("touch") or []) if approval.get("status") == "approved" else []
+    if crew_ticket.in_touch(FINDINGS_TODO, touch):
+        return {"path": FINDINGS_TODO, "reason": f"{ticket}'s approved Touch covers TODO.md"}
+    return {"path": f".work/tickets/{ticket}/{FINDINGS_FILE}",
+            "reason": f"TODO.md is not in {ticket}'s approved Touch, and {FINDINGS_WHY}"}
+
+
+def focus_text(root, ticket="", off=False, findings=False):
+    """(code, text) for the `focus` CLI: the answer, the scope.mode line, and
+    FOCUS_REMINDER last, whatever happened. Exit 1 on a refusal or a crash."""
+    try:
+        if findings:
+            got = findings_target(root, ticket)
+            ok, line = True, f"findings={got['path']} reason={got['reason']}"
+        elif off:
+            ok, line = focus_off(root)
+        elif ticket:
+            ok, line = focus_set(root, ticket)
+        else:
+            ok, line = focus_show(root)
+        mode = focus_state(root)["scope_mode"]
+        lines = line.splitlines() + [_scope_line(mode)]
+    except Exception as exc:  # pylint: disable=broad-except
+        ok, lines = False, [f"refused: {_failure(exc)}"]
+    return (0 if ok else 1), "\n".join(_one_line(text) for text in lines + [FOCUS_REMINDER])
 
 
 # Who acts when `next` stops at each phase it names. A phase not here -- a
@@ -1934,7 +2885,9 @@ WAITING = {phase: "owner" for phase in (
     "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
     "done", "auto-replan", "auto-replan-cap", NEEDS_OWNER)}
+WAITING["ship"] = "owner"
 WAITING["closed"] = "nobody"
+WAITING["drift"] = "owner"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -1975,6 +2928,9 @@ def _waiting(top, result, bare):
         return f"unknown (phase {phase!r} is not one status maps)"
     if who == "nobody":
         return "nobody - the ticket is closed"
+    if phase == "drift":
+        return ("owner - reverts the paths outside Touch, or amends Touch and approves "
+                "again")
     if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
         return "reviewer - a round is reserved with no result"
     if not result.get("stop"):
@@ -2267,6 +3223,20 @@ def _cli_deploy(args):
                              "root": None}), report
 
 
+def _ship_text(result):
+    checks = result["checks"]
+    families = result["families"]
+    return "\n".join([
+        _one_line(_line(action=result["action"], stop=int(result["stop"]),
+                        pr=result["pr"] or "", reason=result["reason"])),
+        _one_line("checks: " + (", ".join(f"{c.get('name')}={c.get('state')}" for c in checks)
+                                if checks else "(none read)" if checks is None
+                                else "(none reported)")),
+        _one_line("families: " + (", ".join(crew_ship._family(f) or "unknown" for f in families)
+                                  if families else "(not read)" if families is None
+                                  else "(none)"))])
+
+
 def main(argv):
     # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
     # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
@@ -2282,8 +3252,17 @@ def main(argv):
     for name in ("sleep", "wake"):
         sub.add_parser(name).add_argument("--root", default=".")
     sub.choices["sleep"].add_argument("--by", default="cli")
-    for name in ("next", "approve", "questions-check", "auto-reject"):
+    ship_action = sub.add_parser("ship")
+    ship_action.add_argument("--json", action="store_true")
+    ship_action.add_argument("--root", default=".")
+    for name in ("next", "approve", "questions-check", "auto-reject", "ship"):
         sub.choices[name].add_argument("--ticket", required=True)
+    focus = sub.add_parser("focus")
+    focus.add_argument("--root", default=".")
+    focus.add_argument("--ticket", default="")
+    focus_how = focus.add_mutually_exclusive_group()
+    focus_how.add_argument("--off", action="store_true")
+    focus_how.add_argument("--findings", action="store_true")
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
     given = sub.choices["route"].add_mutually_exclusive_group()
@@ -2308,14 +3287,29 @@ def main(argv):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only but for approve's receipt and sleep/wake's state: git must not refresh the index's
-    # stat cache.
+    # Read-only but for approve's receipt, sleep/wake's state and ship's push: git must not
+    # refresh the index's stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check", "auto-reject"):
         return _policy_main(args)
     if args.action in ("sleep", "wake"):
         return _manual_main(args)
-    if args.action == "status":
+    if args.action == "focus":
+        if (args.off and args.ticket) or (args.findings and not args.ticket):
+            sys.stdout.write("refused: focus takes --ticket <id>, --off, or --findings "
+                             f"--ticket <id>\n{FOCUS_REMINDER}\n")
+            return 2
+        code, text = focus_text(args.root, args.ticket, args.off, args.findings)
+        sys.stdout.write(text + "\n")
+        return code
+    if args.action == "ship":
+        try:
+            result = ship(args.root, args.ticket)
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell whether it is safe to merge: a stop, never silence.
+            result = _ship_result(args.ticket, "stop", True, _failure(exc))
+        text = _ship_text(result)
+    elif args.action == "status":
         try:
             result = status(args.root, args.ticket or None)
             text = status_text(result)
@@ -2328,8 +3322,10 @@ def main(argv):
         text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
     elif args.action == "route":
         result = route_args(args.root, args.args or "")
-        text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
-                     reason=result["reason"])
+        fields = {"sub": result["sub"], "stop": int(result["stop"]), "ticket": result["ticket"]}
+        if "off" in result:
+            fields["off"] = int(result["off"])
+        text = _line(**fields, reason=result["reason"])
     elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"

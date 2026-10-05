@@ -621,8 +621,12 @@ PERSONAL_KEYS = {
 # (T-0074) and `sleep` (T-0053) reached main after T-0050 was written and were
 # repo-only there; they stay repo-only until a ticket decides how their two
 # layers combine (`sleep` is a block, and `maxAutoReplans` 0 is a valid "off"
-# that the `int-min` rule would read as unrecognised).
-REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep"})
+# that the `int-min` rule would read as unrecognised). T-0011's `ship`,
+# `knownFailures` and `ciTimeoutMinutes` (batch 7) are repo-only by their spec:
+# whether a checkout's PRs merge unattended, and which of its checks may fail,
+# are facts about that checkout.
+REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
+                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes"})
 
 
 def personal_rank(dotted, value):
