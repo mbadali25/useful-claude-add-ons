@@ -9,6 +9,56 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed - `crew` 1.0.346: cloud-guard bash tests no longer flake with exit 2304 on Windows (L-1512)
+
+- Windows CI ended `cloud-guard.sh`'s own bash.exe with SIGKILL, twice, on PRs that never touched
+  the guard: `test_must_block_bash[aws-s3-rm-recursive] - assert 2304 == 0` (job 111538994343, 0.8s
+  into a run bounded at 120s, empty stderr) and `test_identity_bash[aws-read-known-profile-
+  other-cloud-pinned-ok]` on #356. 2304 is `9 << 8`, how msys2-runtime's `pinfo::exit` reports a
+  process no Cygwin parent started that died of signal 9. Not the test's subprocess timeout (it
+  raises, and never fired), not the wrapper's own status path (it prints, and exits 2), not a fork
+  failure (it prints too). Cygwin raises no SIGKILL itself, the other workers were running pwsh-only
+  cases at that second, and the hook's tree had one sender: the python probe in `crew_py_strict`,
+  which after every candidate exited ran `kill -9 -- "-$watchdog" "-$pid"` at a watchdog that was
+  still alive. How Cygwin's delivery landed that on the hook's own bash.exe is modelled, not
+  observed on a Windows host. A hook killed that way is a PreToolUse status other than 0 or 2, so
+  the agent would have run the command unjudged.
+- The probe (`crew_py_strict`, its byte copy in `role-write-guard.sh`, and `crew_py`) makes no kill
+  call on the normal path. Its watchdog is the builtin `read -t` in a process substitution, on a
+  pipe the probe holds, and the probe writes `done` there once its candidate has exited: that line
+  alone stands the watchdog down, and a timeout, EOF without it, or an error kills, as before.
+  Positive because bash 3.2 (macOS) answers a timed-out `read -t` with 1, the status EOF gives, so a
+  watchdog deciding on the status (review round 1) never killed a hung candidate there. Nothing is
+  signalled after a clean exit, not even the reaped candidate's group: a child it left behind is no
+  longer killed (under MSYS a native one never was), and one holding stdout is bounded by the hook's
+  own timeout. No `sleep` process is forked per probe, so the bound holds on a host without `sleep`.
+- The strict probe (`crew_py_strict` and its copy) no longer waits for EOF on the candidate's stdout
+  (review round 2): a candidate that exited 0 but left a child holding stdout kept `real=$(...)`
+  waiting for that child - 40s against role-write-guard's 10s hook timeout, the same non-blocking
+  fail-open. The candidate's stdout is now a process substitution that reads one line, bounded by
+  the probe's `read -t`, and prints it; the child holds that pipe and is not killed. Not a temp
+  file: that made every hook's python depend on `mktemp`, and two suites that make `mktemp` fail on
+  purpose (auto-clear's notify path, verify-gate's 34d) went red.
+- `test_cloud_guard.py`'s `run_hook` read a killed hook's empty stdout as `allow`. A hook ended by a
+  signal (`-N` on POSIX, `N << 8` from Git Bash on Windows) is now `could not tell`, and the failure
+  names the signal instead of a bare `assert 2304 == 0`.
+- Tests: `test_python_probe_signals.py` drives each probe copy with `kill` shadowed by a spy that
+  logs every call - an answering or failing candidate makes no kill call; a hung one is still killed
+  and is no python, also with `read` answering a timeout the bash 3.2 way; a candidate leaving a
+  child on its stdout returns within 5s. In `test_cloud_guard.py`, a `BASH_ENV` that turns every
+  kill at a live target into `kill -9 $$` reproduces the Windows failure on Linux (red before the
+  fix: the hook died with no output), one that kills the hook outright must read as could-not-tell,
+  and a `python3` leaving a child on its stdout for 30s must not keep the guard from denying inside
+  hooks.json's 15s. Sabotaged: main's `_common.sh` turns six cases red (the four
+  `crew_py_strict`/`crew_py` clean-path cases, the leftover-child case of `crew_py_strict`, and the
+  `BASH_ENV` one); a group kill after the clean exit turns four red; deciding on `read`'s status
+  turns the two bash-3.2 cases of those functions red; the pipe capture put back turns the
+  leftover-child probe case and the guard's 15s case red; dropping the signal decode turns the
+  could-not-tell case red. The `obsidian-vault` plugin carries the same probe in three hooks and is
+  not changed here (L-1516).
+
+
+
 ### Changed — repository: the README shows the two latest updates and links to the changelog (L-1518)
 
 - **Summary.** The README's "What's new" is now two lines, the newest two changelog
