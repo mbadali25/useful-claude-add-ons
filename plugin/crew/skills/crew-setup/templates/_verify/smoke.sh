@@ -26,7 +26,9 @@ echo "SMOKE target: $ENV -> $BASE"
 # cause is in the log. Exit 77 is SKIP (a missing tool or environment), not a
 # failure - the same convention crew's verify gate uses. The output goes to a
 # temp file, not a $(...) capture, so a background process the check leaves
-# holding the pipe cannot hold the runner open.
+# holding the pipe cannot hold the runner open. Each tail line starts
+# `FAIL <name> |`: crew's verify gate relays only lines starting `FAIL` or
+# `SMOKE:` from a failed smoke run, so an indented line would never reach it.
 PASS=0; FAIL=0; SKIP=0
 check() { local n="$1" out rc f; shift
   f="$(mktemp)" || { echo "FAIL $n: cannot create a temp file"; FAIL=$((FAIL+1)); return; }
@@ -34,7 +36,7 @@ check() { local n="$1" out rc f; shift
   out="$(tail -n 5 "$f")"; rm -f "$f"
   if [ "$rc" -eq 0 ]; then echo "PASS $n"; PASS=$((PASS+1))
   elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1))
-  else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'
+  else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | while IFS= read -r l; do printf 'FAIL %s | %s\n' "$n" "$l"; done
     FAIL=$((FAIL+1)); fi; }
 
 # setup (ephemeral, never prod)

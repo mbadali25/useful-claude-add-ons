@@ -280,3 +280,17 @@ def test_diagram_case_fails_on_no_sources_even_without_mmdc(tmp_path):
     proc = _case(repo, env, PATH=_path_without_mmdc(tmp_path))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "no .mmd files" in proc.stdout
+
+
+def test_smoke_tail_survives_the_verify_gate_filter(tmp_path):
+    """crew's verify gate, with no .crew/verify.json, relays only the lines of a
+    failed smoke run that start `FAIL` or `SMOKE:` (verify-gate.sh, verify-gate.ps1).
+    The cause must be among them."""
+    repo, env = _repo(tmp_path)
+    # The cause is printed by the check, not part of its command line, which
+    # the FAIL line already shows.
+    _add_case(repo, "breaks", 'echo "the cause" >&2\nexit 2\n')
+    _smoke_with(repo, 'check "breaks" bash _verify/cases/breaks.sh')
+    proc = _run(["_verify/smoke.sh"], repo, env)
+    relayed = [ln for ln in proc.stdout.splitlines() if ln.startswith(("FAIL", "SMOKE:"))]
+    assert any("the cause" in ln for ln in relayed), relayed

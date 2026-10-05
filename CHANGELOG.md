@@ -16,7 +16,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   no reason.
 - **Runners.** `templates/_verify/smoke.sh`'s `check()` and `run-all.sh`'s `run()` capture the
   check's output (into a temp file, so a background child cannot hold the runner open): a failure
-  prints `FAIL <name>: <command>` and the last 5 lines, indented; exit 77
+  prints `FAIL <name>: <command>` and the last 5 lines, each as `FAIL <name> | <line>` (crew's
+  verify gate relays only `FAIL` and `SMOKE:` lines of a failed smoke run); exit 77
   prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure. `smoke.sh`'s last
   line adds the skip count and still starts `SMOKE: `.
 - **`templates/cases/diagrams-render.sh`** (new; setup copies it into `_verify/cases/` only in a
