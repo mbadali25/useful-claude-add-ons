@@ -255,7 +255,7 @@ def main():
     for name in guide_names():
         for ext in ("html", "docx", "pdf"):
             report(os.path.isfile(os.path.join(guides_dir, f"crew-{name}.{ext}")),
-                   f"crew-{name}.{ext} is committed")
+                   f"crew-{name}.{ext} is present")
     versioned = sorted(f for f in os.listdir(guides_dir)
                        if re.match(r"crew-\d+\.\d+-", f))
     report(not versioned, "no versioned crew-<major>.<minor>-* guide file remains",
