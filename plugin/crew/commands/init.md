@@ -18,6 +18,9 @@ Arguments: $ARGUMENTS
 - `--audit --all-repos DIR` — `qa_audit.py --all-repos DIR`: one line per crew checkout
 - no argument — resume at the first phase not marked `done`
 
+Phase 1 also runs `crew_gitignore.py apply --root .` (phases.md): language ignore patterns, added
+without asking, only inside its managed block of `.gitignore`.
+
 ## Web phase (inside Phase 6, Browser tests)
 
 When the repo has a `playwright.config.*`, an `angular.json`, or a

@@ -106,7 +106,7 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `schema` | repo | `7` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Config schema version; `/crew:upgrade` migrates an older one. |
+| `schema` | repo | `7` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Config schema version; `/crew:migrate` upgrades an older one. |
 | `tier` | repo | `0` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Setup tier recorded by `/crew:init`. |
 | `roles` | repo | `["explorer", "reviewer"]` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects list of role names) | 0.11.0 or earlier | Optional roles installed in this repo. |
 | `tracker` | repo | `"files"` | `files` \| `obsidian` \| `jira` \| `sdp` | 0.11.0 or earlier | Where tickets live; `crew_tracker.resolve` answers `could not tell` when two configs disagree. |

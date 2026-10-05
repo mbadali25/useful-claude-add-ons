@@ -342,6 +342,13 @@ when the repo file carried one.
 
 This is the only key in the file handled outside the merge.
 
+A repo config with no `schema`, or one below `SCHEMA_CURRENT` (1-6), is brought forward by
+`/crew:migrate`'s upgrade stage (`crew_upgrade.upgrade_config`, the code `/crew:upgrade` ran
+before T-0038 removed it). It rewrites `.crew/config.json` in place, in the same apply that
+writes `.crew/crew.json`: the original is copied into the backup first and `--rollback` restores
+it byte-identical. A block the upgrade cannot migrate is a conflict, and nothing is written. A
+`schema` that is present but not an integer, or is 0 or less, is refused, as is one above 7.
+
 ---
 
 ## 5. `pm.authority`

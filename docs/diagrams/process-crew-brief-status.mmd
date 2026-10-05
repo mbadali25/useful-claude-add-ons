@@ -1,15 +1,18 @@
-%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@5cdfb775 on 2026-10-04. Verify before trusting.
 %% Anchors: plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% Purpose: What /crew:status reads when run on demand, and the one place it differs from the SessionStart hooks: it checks a fixed handoff path and applies no stale rule.
 %% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :200-224 report lines.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:215),
+%% Re-anchored a54ca704 -> 5cdfb775 (T-0039): crew_status.py gained the `gitignore` line after codemap
+%%    (crew_gitignore.summary, read-only); collect() moved :211-240 -> :224-254 and the HANDOFF check
+%%    :231 -> :245 (re-read with grep -n). status.md:14 holds.
+%% /crew:status: commands/status.md:14 -> crew_status.py; :224-254 report lines.
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:245),
 %% not context.handoffPath, and does not apply the stale rule.
 %% Note st2: git header, config file, roster, tracker (crew_tracker.resolve, :67), tickets,
-%%    review ledgers, verify, shell (Windows only, T-0040), codemap freshness, metrics,
-%%    handoff, interrupted migrate :211-240
+%%    review ledgers, verify, shell (Windows only, T-0040), codemap freshness, gitignore
+%%    (T-0039), metrics, handoff, interrupted migrate :224-254
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... handoff<br/>:211-240"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... gitignore,<br/>handoff :224-254"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:245),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

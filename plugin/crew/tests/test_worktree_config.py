@@ -201,7 +201,9 @@ ALLOWED = {
     # crew_autoclear_setup.py: the writer's own two files, plus the T-0106
     # --scan-root walk, which reads (never writes) each candidate's two files.
     "crew_autoclear_setup.py": (3, "the writer's own two files, the read-only scan"),
-    "crew_migrate.py": (7, "the writer and its labels, plus the PM journal archive join"),
+    "crew_migrate.py": (9, "the writer and its labels, plus the PM journal archive join; T-0038 "
+                        "adds CONFIG_REL, the upgrade stage's own in-place target, and the "
+                        "re-run's read of the crew.json it wrote"),
     "verify_fingerprint.py": (1, "a fingerprint input list, not a read of the config"),
     "webtest_rules.py": (1, "a secret-file glob, not a read of the config"),
     "crew_route.py": (1, "a message label naming the repo layer"),
