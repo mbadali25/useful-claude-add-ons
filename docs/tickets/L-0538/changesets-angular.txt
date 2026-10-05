@@ -1,0 +1,61 @@
+# L-0538 change-set count for the Angular research rules (taken 2026-10-05, orchestrator, for cloud hand-off)
+#
+# Repos read: solomon/aws-managed-services (AMS) at 7848e99d, solomon/aws-shared-infrastructure (ASI) at 17e4db3.
+# These are private Bitbucket repos on the owner's Linux host; a cloud session cannot open them, so this file is the record.
+# Change set = the branch/PR a commit reached the default branch through: the oldest merge on
+#   git log --merges --ancestry-path <sha>..HEAD  (tail -1).
+# A commit counts only if its own message records a review finding (Codex/QA/review round/finding id).
+# Columns: rule | sha | repo | review marker in message? | change set (merge subject) | subject
+
+ANGULAR-01 | e18a5332 | AMS | Round four | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: a destroyed page must not open a document
+ANGULAR-02 | 82c84eef | AMS | Round three | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: check the download answer against the pin, not only the request
+ANGULAR-02 | 8956cdb4 | AMS | NO | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: close the two paths that unpinned the revision on screen
+ANGULAR-02 | fb12529b | AMS | Round five | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: leaving a page must not cancel the work it started
+ANGULAR-03 | e18a5332 | AMS | Round four | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: a destroyed page must not open a document
+ANGULAR-03 | fb12529b | AMS | Round five | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: leaving a page must not cancel the work it started
+ANGULAR-03 | 2bfee978 | AMS | Round six | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: an account nobody can read is not an account
+ANGULAR-03 | 861e98e4 | AMS | NO | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: assert the abandoned download is aborted, not just disbelieved
+ANGULAR-04 | 8956cdb4 | AMS | NO | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: close the two paths that unpinned the revision on screen
+ANGULAR-04 | 2bfee978 | AMS | Round six | Merged in fix/change-ticket-app-link (pull request #430) | drata-insights: an account nobody can read is not an account
+ANGULAR-04 | 9e4294eb | AMS | NO | Merged in feat/drata-insights-section-preview (pull request #380) | fix(drata-insights): stop the focus handshake polling a rendered-but-absent token
+ANGULAR-05 | 6b97739 | ASI | Codex review, tasks 14-20, Important #3 | merge: plans 3+4 frontend -- the schedules page and the admin panel | fix(admin): add a route-level roles:manage guard for /admin
+ANGULAR-05 | b5b012a | ASI | final-review-2026-08-05.md, | Merge remote-tracking branch 'origin/main' into fix/post-deploy-hardening | fix(auth): stop hasRolesManageGuard's /me from firing before auth resolves
+ANGULAR-06 | 84693f3 | ASI | independent code review | Merged in feature/aws-operations-serverless-migration (pull request #95) | fix(aws-operations): resolve blocking findings from independent code review
+ANGULAR-06 | ee5ad15 | ASI | Fix round 2, F3 | merge: plans 3+4 frontend -- the schedules page and the admin panel | fix(admin): deny hasRolesManageGuard to /login, not to the guarded LANDING_ROUTE
+ANGULAR-07 | d1c39e6 | ASI | Codex review, tasks 14-20, Critical + Impo | merge: plans 3+4 frontend -- the schedules page and the admin panel | fix(admin): a failed /principals read must never permit a role-overwriting write
+ANGULAR-07 | a65df55 | ASI | Fix round 2, F2 | merge: plans 3+4 frontend -- the schedules page and the admin panel | fix(admin): do not render Remove at all under a failed /principals read
+ANGULAR-07 | 36ffb7c | ASI | Fix round 3 on task | Merged in feat/instance-power-and-scheduling (pull request #120) | fix(frontend): stop letting a stale power_cycle_manager cache block the power control
+ANGULAR-07 | f774865 | ASI | (I2) | Merged main into feat/instance-scoped-roles | fix(frontend): reject delimiter-only instance input instead of widening (I2)
+ANGULAR-07 | 14d24e8d | AMS | QA blocked #480 | Merge remote-tracking branch 'origin/fix/ta-work-queue-clickable' into feat/ta-a | trusted-advisor-report: cover the work-queue and annotation-only templates, and let two te
+ANGULAR-08 | 20bf35cd | AMS | QA/security fix round | Merge remote-tracking branch 'origin/fix/ta-resource-names-and-detail-design' in | ta-portal: PR #506 QA/security fix round - ARN regions, throttling, token forgery, fix-car
+ANGULAR-10 | 69da7611 | AMS | NO | Merge remote-tracking branch 'origin/main' into feat/ta-portal-ui-v2 | trusted-advisor-report: mount the findings table in a spec, fix the nav aria target (SDP #
+ANGULAR-11 | 18e179db | AMS | NO | Merged in fix/admin-role-select-display (pull request #27) | fix: admin role selects showed Administrator regardless of stored role
+ANGULAR-12 | 69da7611 | AMS | NO | Merge remote-tracking branch 'origin/main' into feat/ta-portal-ui-v2 | trusted-advisor-report: mount the findings table in a spec, fix the nav aria target (SDP #
+ANGULAR-12 | 14d24e8d | AMS | QA blocked #480 | Merge remote-tracking branch 'origin/fix/ta-work-queue-clickable' into feat/ta-a | trusted-advisor-report: cover the work-queue and annotation-only templates, and let two te
+ANGULAR-12 | 975a3ac0 | AMS | NO | Merged main into feat/security-ops-dashboard-triage-console-wave | fix(terraform-workspace-management): sync the deployed artifact with its source, and gate 
+ANGULAR-14 | 975a3ac0 | AMS | NO | Merged main into feat/security-ops-dashboard-triage-console-wave | fix(terraform-workspace-management): sync the deployed artifact with its source, and gate 
+ANGULAR-16 | e57ebd7d | AMS | NO | Merged in fix/angular-cve-21-2-23-v2 (pull request #324) | fix(frontend): upgrade Angular to 21.2.23 across three modules, closing four CVEs
+ANGULAR-17 | 8cd162ed | AMS | NO | Merge origin/main into feat/trusted-advisor-portal (SDP #6651) | trusted-advisor-report: one red design system and a safe /api/me cache (SDP #6651)
+ANGULAR-18 | d1f0d44 | ASI | Review findings (round 1) | Merge remote-tracking branch 'origin/main' into feat/report-data-as-of | fix(frontend): reject naive timestamps in DataAsOf, make its own tests deterministic
+
+# Tally (distinct change sets with a review marker; vault notes and CLAUDE.md lines are not change sets):
+# ANGULAR-01: 1 (AMS PR #430)                                  -> candidate
+# ANGULAR-02: 1 (AMS PR #430)                                  -> candidate
+# ANGULAR-03: 1 (AMS PR #430)                                  -> candidate
+# ANGULAR-04: 1 (AMS PR #430; 9e4294eb PR #380 has no review marker) -> candidate
+# ANGULAR-05: 2 (ASI plans 3+4; ASI post-deploy-hardening)     -> candidate
+# ANGULAR-06: 2 (ASI PR #95; ASI plans 3+4)                    -> candidate
+# ANGULAR-07: 3 (ASI plans 3+4: d1c39e6+a65df55; ASI PR #120: 36ffb7c; ASI instance-scoped-roles: f774865 "(I2)")
+#             + AMS PR #480 (14d24e8d, "QA blocked #480"; its last FIX item is a select blanked by whitespace,
+#             which is a weak fit for this rule - do not rely on it)  -> SHIPS as NG-07
+# ANGULAR-08: 1 (AMS PR #506)                                  -> candidate
+# ANGULAR-09: 0 (vault only)                                   -> candidate
+# ANGULAR-10: 0 (69da7611 has no review marker)                -> candidate
+# ANGULAR-11: 0 (18e179db has no review marker; the two ASI recurrences are vault-only, not located as commits)
+# ANGULAR-12: 1 (AMS PR #480)                                  -> candidate
+# ANGULAR-13: 0 (CLAUDE.md + vault)                            -> candidate
+# ANGULAR-14: 0 (975a3ac0 no review marker; THD vault-only)    -> candidate
+# ANGULAR-15: 0 (vault + configuration)                        -> candidate
+# ANGULAR-16: 0 (e57ebd7d is a CVE upgrade, no review marker)  -> candidate
+# ANGULAR-17: 0 (8cd162ed no review marker)                    -> candidate
+# ANGULAR-18: 1 (ASI report-data-as-of, "Review findings (round 1)") -> candidate (and JavaScript, not Angular)
