@@ -509,10 +509,19 @@ def holder(top, branch):
     return next((path for path, name in found.items() if name == branch), "")
 
 
+def _ledger(top, ticket):
+    """review_ledger.status, refusing a ledger it cannot read (`UNKNOWN`):
+    could-not-tell is never read as "no round reserved" or "no receipt"."""
+    got = review_ledger.status(top, ticket)
+    if got.get("state") == review_ledger.UNKNOWN:
+        raise WaveError(f"{ticket}'s review ledger is unreadable ({got.get('path')})")
+    return got
+
+
 def _reserved_round(top, ticket):
     """The latest round's number while it is reserved and unrecorded, else
     None. What a relaunch hands back to the lane instead of reserving."""
-    rounds = review_ledger.status(top, ticket).get("rounds") or []
+    rounds = _ledger(top, ticket).get("rounds") or []
     last = rounds[-1] if rounds else {}
     return last.get("round") if last.get("status") == "reserved" else None
 
@@ -520,7 +529,7 @@ def _reserved_round(top, ticket):
 def _receipt_mark(top, ticket):
     """[kind, round, accepted_at] of the ledger's receipt, or None: what
     `collect` compares to spot an owner-accepted receipt written mid-lane."""
-    receipt = review_ledger.status(top, ticket).get("receipt")
+    receipt = _ledger(top, ticket).get("receipt")
     if not isinstance(receipt, dict):
         return None
     return [receipt.get("kind"), receipt.get("round"), receipt.get("accepted_at")]
@@ -579,8 +588,8 @@ def start(root, slug):
             lane = {"set": slug, "ticket": ticket, "state": "pending", "base": base,
                     "version": versions.get(ticket, UNKNOWN), "worktree": None,
                     "step": "pending", "reason": ""}
+            receipts.setdefault(ticket, _receipt_mark(top, ticket))  # an unreadable ledger stops first
             write_lane(top, slug, ticket, lane)
-            receipts.setdefault(ticket, _receipt_mark(top, ticket))
         if ticket not in lanes:
             lanes.append(ticket)
         lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
@@ -701,6 +710,12 @@ POLICY_TEXT = {
 }
 
 
+# Every place crew's version is declared (CLAUDE.md: a plugin with its own plugin.json
+# bumps in both, and PLUGINS.md's version claim is checked against it).
+VERSION_FILES = ("plugin/crew/.claude-plugin/plugin.json, .claude-plugin/marketplace.json and "
+                 "plugin/PLUGINS.md's `<!-- claim: plugin-version:crew -->` line")
+
+
 def lane_prompt(root, slug, ticket, resume_round=None):
     """The one prompt every lane runs, rendered with absolute script paths
     (`${CLAUDE_PLUGIN_ROOT}` is a command-file substitution, not a variable a
@@ -717,15 +732,13 @@ def lane_prompt(root, slug, ticket, resume_round=None):
     version = lane.get("version") or UNKNOWN
     if version == "-":
         bump = ("3. version: this ticket touches no plugin/crew/ path; leave "
-                "plugin/crew/.claude-plugin/plugin.json and .claude-plugin/marketplace.json alone.")
+                f"{VERSION_FILES} alone.")
     elif version == UNKNOWN:
         bump = ("3. version: the wave could not tell this lane's version, so leave "
-                "plugin/crew/.claude-plugin/plugin.json and .claude-plugin/marketplace.json "
-                "alone and say so in step 8's reason.")
+                f"{VERSION_FILES} alone and say so in step 8's reason.")
     else:
-        bump = (f"3. version: set crew's version to {version} in "
-                "plugin/crew/.claude-plugin/plugin.json and .claude-plugin/marketplace.json, "
-                "and commit it.")
+        bump = (f"3. version: set crew's version to {version} in {VERSION_FILES}, "
+                "all in one commit.")
     if resume_round is not None:
         resume = (f"Resume: round {resume_round} is already reserved and unrecorded, so do "
                   "not reserve another; run the reviewer for it and record it with "
@@ -744,7 +757,8 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         f"1. lane-init: {script('crew_wave.py')} lane-init --root . --main {main} --set {slug} "
         f"--ticket {ticket}. If it prints `refused:` or exits non-zero, go to step 8 with "
         "--state failed and that reason.",
-        f"2. implement: follow /crew:implement {ticket} here; commit on the ticket branch.",
+        f"2. implement: follow /crew:implement {ticket} here up to, not including, its last "
+        "step's `/crew:review` (step 5 is the only review); commit on the ticket branch.",
         bump,
         f"4. refresh: {script('crew_refresh_check.py')} --root . --ticket {ticket}; run each "
         "refresh command it names (/crew:onboard --refresh, /crew:diagram refresh, graphify "

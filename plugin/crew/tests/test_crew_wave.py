@@ -622,6 +622,16 @@ def test_relaunch_resumes_reserved_round_without_new_reservation(tmp_path):
     assert (len(launch), "--resume-round 1" in launch[0], _rounds(root)) == (1, True, 1)
 
 
+def test_relaunch_with_an_unreadable_ledger_stops_and_reserves_nothing(tmp_path):
+    # The neighbour of collect's case: an unreadable ledger is not "no round reserved".
+    root = _started(tmp_path)
+    _write(review_ledger.ledger_path(str(root), "T-1"), "{not json")
+
+    got = _cli("start", "--root", root, "--set", "s")
+
+    assert (got.returncode, "launch T-1" in got.stdout, "unreadable" in got.stderr) == (1, False, True)
+
+
 def test_relaunch_skips_terminal_lanes(tmp_path):
     root = _started(tmp_path)
     crew_wave.lane_done(str(root), "s", "T-1", "clean", "done checks passed")
@@ -694,6 +704,18 @@ def test_lane_prompt_names_every_step_in_order(tmp_path):
              "completion_audit.py --check --ticket T-1 --root .", "crew_wave.py lane-done"]
     at = [text.find(mark) for mark in marks]
     assert (min(at) >= 0, at == sorted(at)) == (True, True)
+
+
+def test_lane_prompt_bumps_every_version_place_and_reviews_once(tmp_path):
+    # Codex review (rush g0): PLUGINS.md's version claim was missing, and step 2's
+    # /crew:implement ends in its own /crew:review, spending a round before step 5.
+    root = _started(tmp_path)
+    _set_lane(root, "T-1", version="1.0.61")
+    text = _prompt(root)
+
+    step3 = next(line for line in text.splitlines() if line.startswith("3."))
+    step2 = next(line for line in text.splitlines() if line.startswith("2."))
+    assert ("plugin/PLUGINS.md" in step3, "not including" in step2) == (True, True)
 
 
 def test_lane_prompt_starts_with_lane_init(tmp_path):
@@ -882,6 +904,18 @@ def test_collect_flags_owner_accepted_receipt_written_during_lane(tmp_path):
     got = _state_of(_collect(root), "T-1")
 
     assert (got["state"], "accepted without the owner" in got["reason"]) == ("failed", True)
+
+
+def test_collect_unreadable_review_ledger_reads_unknown_never_clean(tmp_path):
+    # Codex review (rush g0): a corrupt ledger's status has no receipt, which read as
+    # "nothing accepted", so a lane file saying clean stayed clean and was landed.
+    root = _started(tmp_path)
+    _write(review_ledger.ledger_path(str(root), "T-1"), "{not json")
+    _set_lane(root, "T-1", state="clean", version="1.0.61")
+
+    got = _collect(root)
+
+    assert (_state_of(got, "T-1")["state"], got["land"]) == ("unknown", [])
 
 
 def test_collect_text_sections_in_order(tmp_path):
