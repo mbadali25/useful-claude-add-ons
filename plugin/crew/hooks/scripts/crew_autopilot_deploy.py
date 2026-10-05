@@ -18,9 +18,11 @@ other answer passes through), and it answers:
     crashing, or `deploy_allowed` answering anything but exactly `allow`
     (its reason and every non-empty `report` are printed);
   - `deploy` (no stop), `/crew:promote <env>`, for the first target with no
-    row for the sha. Targets are the `github` environments in file order,
-    nonProd before prod, so production is named only once every nonProd
-    target has an all-pass row;
+    row for the sha. Targets are the `github` environments (a `github` key
+    holding anything, null included) in file order: nonProd, then those
+    whose class cannot be told, then prod, so production is named only once
+    every earlier target has an all-pass row. A target's problem stops only
+    when it is the next target: a later one never blocks an earlier deploy;
   - `closed`, naming each environment and the sha, when every target has an
     all-pass row.
 """
@@ -34,12 +36,16 @@ PROMOTIONS = os.path.join(".work", "PROMOTIONS.md")
 
 def _row(top, env, sha):
     """'pass', 'fail' or None: the newest row for `env` and `sha`, read as
-    promote-gate reads it (L-0665)."""
+    promote-gate reads it (L-0665). Raises ValueError when the file exists
+    and cannot be read: whether a row exists cannot be told."""
+    path = os.path.join(top, PROMOTIONS)
     try:
-        with open(os.path.join(top, PROMOTIONS), encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     except FileNotFoundError:
         return None
+    except OSError as exc:
+        raise ValueError(f"promotions-unreadable: {path}: {exc}") from exc
     newest = None
     for line in text.splitlines():
         if "|" not in line:
@@ -50,9 +56,34 @@ def _row(top, env, sha):
     return newest
 
 
+_ABSENT = object()
+_ORDER = {"nonProd": 0, None: 1, "prod": 2}
+
+
+def _target(top, envs, env, cfg, sha):
+    """`(class or None, problem or None)` for one `github` environment: why
+    autopilot may not drive it, said only when it is the next target."""
+    try:
+        entry = crew_ghdeploy.validated(envs, env)[0]
+    except crew_ghdeploy.Refused as exc:
+        return None, f"{env}: `crew_ghdeploy.py check` refuses it ({exc.reason}): {exc}"
+    try:
+        klass = crew_ghdeploy.classify(top, env, crew_ghdeploy.dispatch(entry, env, sha))
+    except crew_ghdeploy.Refused as exc:
+        return None, f"class {exc.reason}: {env}: {exc}"
+    if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:  # pylint: disable=protected-access
+        return klass, f"require-human-target: {env} has requireHuman: true, which autopilot never drives"
+    if not entry.get("shaInput"):
+        return klass, (f"no-sha-input: {env}'s github entry has no shaInput, so the workflow "
+                       "would deploy its branch tip, not the merged sha")
+    return klass, None
+
+
 def _targets(top, sha):
-    """`[(env, class)]` for every `github` environment, nonProd first, or
-    raises ValueError naming why a target cannot be told."""
+    """`[(env, class, problem)]` for every `github` environment (a `github`
+    key holding anything, null included), in file order with nonProd first,
+    then those whose class cannot be told, then prod. Raises ValueError for
+    a map that cannot be read."""
     path = os.path.join(top, ".crew", "verify.json")
     if not os.path.lexists(path):
         return []
@@ -61,27 +92,9 @@ def _targets(top, sha):
             envs = crew_ghdeploy.load_map(fh.read())
     except (OSError, crew_ghdeploy._MapRefused) as exc:  # pylint: disable=protected-access
         raise ValueError(f"verify-json-unreadable: {path}: {exc}") from exc
-    found = []
-    for env, cfg in envs.items():
-        if crew_ghdeploy._get_ci(cfg, "github", None) is None:  # pylint: disable=protected-access
-            continue
-        try:
-            entry = crew_ghdeploy.validated(envs, env)[0]
-        except crew_ghdeploy.Refused as exc:
-            raise ValueError(f"{env}: `crew_ghdeploy.py check` refuses it ({exc.reason}): {exc}") \
-                from exc
-        if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:  # pylint: disable=protected-access
-            raise ValueError(f"require-human-target: {env} has requireHuman: true, which "
-                             "autopilot never drives")
-        if not entry.get("shaInput"):
-            raise ValueError(f"no-sha-input: {env}'s github entry has no shaInput, so the "
-                             "workflow would deploy its branch tip, not the merged sha")
-        try:
-            klass = crew_ghdeploy.classify(top, env, crew_ghdeploy.dispatch(entry, env, sha))
-        except crew_ghdeploy.Refused as exc:
-            raise ValueError(f"class {exc.reason}: {env}: {exc}") from exc
-        found.append((env, klass))
-    return sorted(found, key=lambda pair: pair[1] != "nonProd")
+    found = [(env,) + _target(top, envs, env, cfg, sha) for env, cfg in envs.items()
+             if crew_ghdeploy._get_ci(cfg, "github", _ABSENT) is not _ABSENT]  # pylint: disable=protected-access
+    return sorted(found, key=lambda target: _ORDER.get(target[1], 1))
 
 
 def after_merge(top, branch, pr, answer, deploy, allowed):
@@ -108,8 +121,11 @@ def deploy_phase(top, closed, answer, allowed, sha):
         return answer("closed", True, f"{closed['reason']}; no environment in "
                       ".crew/verify.json has a github entry, so promotion is a person's")
     done = []
-    for env, klass in targets:
-        row = _row(top, env, sha)
+    for env, klass, problem in targets:
+        try:
+            row = _row(top, env, sha)
+        except ValueError as exc:
+            return answer("deploy-target", True, f"{exc} - a person promotes")
         if row == "pass":
             done.append(env)
             continue
@@ -117,6 +133,8 @@ def deploy_phase(top, closed, answer, allowed, sha):
             return answer("failed-deploy", True, f"{env}'s newest .work/PROMOTIONS.md row for "
                           f"{sha[:7]} is not all-pass: autopilot never re-deploys; a person "
                           "rolls back or fixes forward")
+        if problem:
+            return answer("deploy-target", True, f"{problem} - a person promotes")
         verdict = allowed(top, env, klass)
         report = f" [{verdict['report']}]" if verdict.get("report") else ""
         if verdict.get("verdict") != "allow":

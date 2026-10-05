@@ -190,9 +190,10 @@ GHDEPLOY_MUTATIONS = (
     # (L-0689): with one-way containment a trailing newline on the command can
     # no longer change a match (the declared text is still inside it), so the
     # mutation was green by construction and proved nothing.
-    ("ghdeploy: a blank command still matches", GH,
-     "    if _blank(command):\n        return []\n", "",
-     _S.format(25)),
+    # "a blank command still matches" is deleted, not re-anchored (L-0689):
+    # with one-way containment a blank command holds no non-empty declared
+    # text, so `_blank`'s early return cannot change a match - green by
+    # construction.
     ("ghdeploy: an empty deploy string matches every command", GH,
      "if any(dep and _matches(", "if any(_matches(",
      _S.format(13)),
@@ -691,25 +692,24 @@ GHDEPLOY_MUTATIONS = (
      _G + "test_the_rule_applies_only_to_a_github_entry_with_a_sha_input"),
     # --- autopilot's deploy phase (L-0649): one per refusing branch ----------
     ("autopilot deploy: a requireHuman target is driven", APD,
-     '        if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:',
-     '        if False:',
+     '    if crew_ghdeploy._get_ci(cfg, "requireHuman", False) is True:',
+     '    if False:',
      _A + "test_deploy_target_stops[require-human-target]"),
     ("autopilot deploy: an entry with no shaInput is driven", APD,
-     '        if not entry.get("shaInput"):\n',
-     "        if False:\n",
+     '    if not entry.get("shaInput"):\n',
+     "    if False:\n",
      _A + "test_deploy_target_stops[no-sha-input]"),
     ("autopilot deploy: a class the classifier refuses is driven", APD,
-     "        except crew_ghdeploy.Refused as exc:\n            raise ValueError(f\"class",
-     "        except crew_ghdeploy.Refused:\n            klass = \"nonProd\"\n"
-     "        except ZeroDivisionError as exc:\n            raise ValueError(f\"class",
+     '        return None, f"class {exc.reason}: {env}: {exc}"\n',
+     '        klass = "nonProd"\n',
      _A + "test_deploy_target_stops[class-unknown]"),
     ("autopilot deploy: an unreadable map reads as no github environment", APD,
      '        raise ValueError(f"verify-json-unreadable: {path}: {exc}") from exc\n',
      "        return []\n",
      _A + "test_deploy_target_stops[verify-json-unreadable]"),
     ("autopilot deploy: an entry check refuses is driven", APD,
-     "            entry = crew_ghdeploy.validated(envs, env)[0]\n",
-     "            entry = crew_ghdeploy.entries(cfg)[0]\n",
+     "        entry = crew_ghdeploy.validated(envs, env)[0]\n",
+     "        entry = crew_ghdeploy.entries(cfg)[0]\n",
      _A + "test_deploy_target_stops[entry-refused]"),
     ("autopilot deploy: deploy_allowed's ask proceeds", APD,
      '        if verdict.get("verdict") != "allow":\n',
@@ -733,7 +733,19 @@ GHDEPLOY_MUTATIONS = (
      '    if closed.get("phase") != "closed":\n',
      _A + "test_deploy_none_default_is_closed_unchanged"),
     ("autopilot deploy: prod is not held back until every nonProd passes", APD,
-     '    return sorted(found, key=lambda pair: pair[1] != "nonProd")\n',
+     "    return sorted(found, key=lambda target: _ORDER.get(target[1], 1))\n",
      "    return found\n",
      _A + "test_prod_under_all_is_named_only_after_every_nonprod_passes"),
+    ("autopilot deploy: a later unsafe target blocks an earlier deploy", APD,
+     '        if problem:\n            return answer("deploy-target"',
+     '        if problem or any(t[2] for t in targets):\n            return answer("deploy-target"',
+     _A + "test_a_later_unsafe_target_does_not_block_an_earlier_one"),
+    ("autopilot deploy: github null reads as no github", APD,
+     '             if crew_ghdeploy._get_ci(cfg, "github", _ABSENT) is not _ABSENT]',
+     '             if crew_ghdeploy._get_ci(cfg, "github", None) is not None]',
+     _A + "test_github_null_is_deploy_target"),
+    ("autopilot deploy: an unreadable PROMOTIONS.md reads as no row", APD,
+     '        raise ValueError(f"promotions-unreadable: {path}: {exc}") from exc\n',
+     "        return None\n",
+     _A + "test_an_unreadable_promotions_file_is_deploy_target"),
 )

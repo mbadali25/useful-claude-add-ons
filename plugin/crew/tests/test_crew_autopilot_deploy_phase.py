@@ -289,3 +289,35 @@ def test_a_crash_reading_the_targets_is_deploy_target(tmp_path, monkeypatch):
     got = _after(root)
     assert (got["phase"], got["stop"]) == ("deploy-target", True)
     assert "RuntimeError" in got["reason"]
+
+
+
+def test_a_later_unsafe_target_does_not_block_an_earlier_one(tmp_path, monkeypatch):
+    """L-0649 r1: staging is eligible; production later needs a human. The
+    phase names staging; production's problem stops only once it is next."""
+    envs = {"staging": _env("staging"), "production": _env("prod", requireHuman=True)}
+    root = _repo(tmp_path, monkeypatch, envs=envs)
+    got = _after(root, deploy="all")
+    assert (got["phase"], got["command"]) == ("deploy", "/crew:promote staging")
+    root = _repo(tmp_path / "b", monkeypatch, envs=envs,
+                 rows=[("staging", "pass", "pass", "pass")])
+    got = _after(root, deploy="all")
+    assert (got["phase"], got["stop"]) == ("deploy-target", True)
+    assert "require-human-target: production" in got["reason"]
+
+
+def test_github_null_is_deploy_target(tmp_path, monkeypatch):
+    """L-0649 r1: `github: null` is an entry `check` refuses, never "no
+    github environment"."""
+    root = _repo(tmp_path, monkeypatch, envs={"staging": dict(_env("staging"), github=None)})
+    got = _after(root)
+    assert (got["phase"], got["stop"]) == ("deploy-target", True)
+    assert "github-shape" in got["reason"]
+
+
+def test_an_unreadable_promotions_file_is_deploy_target(tmp_path, monkeypatch):
+    root = _repo(tmp_path, monkeypatch)
+    (tmp_path / "repo" / ".work" / "PROMOTIONS.md").mkdir()
+    got = _after(root)
+    assert (got["phase"], got["stop"]) == ("deploy-target", True)
+    assert "promotions-unreadable" in got["reason"]

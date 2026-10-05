@@ -381,6 +381,10 @@ def test_dispatch_matches_promote_gate(tmp_path):
     proc = _check(root)
     assert proc.returncode == 0, proc.stdout
     command = proc.stdout.splitlines()[0][len("dispatch: "):]
+    # The gates match by containment (L-0689: one way), so the dispatch must
+    # hold the declared prefix literally; T-0062's dispatch reader would
+    # otherwise still reach staging and hide a dispatch that drifted from it.
+    assert command.startswith(_PREFIX), command
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
 
     gate = subprocess.run(
