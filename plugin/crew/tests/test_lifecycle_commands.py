@@ -399,6 +399,23 @@ def test_a_failed_create_stops_before_the_folder(name):
     assert (create != -1, stop != -1, folder != -1, create < stop < folder) == (True, True, True, True)
 
 
+def test_fix_mints_through_mcp_under_jira_and_sdp():
+    """T-0071 #5: fix.md step 1 read the tracker kind nowhere, minted a local
+    T-#### under Jira and SDP, and stopped on `create`'s delegated exit 3. The
+    kind is resolved first, and the MCP create and its key come before any
+    write under `.work/tickets/`."""
+    text = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+    step = text[text.find("## 1. Direction"):text.find("## 2.")]
+
+    resolve = step.find(f"{_TRACKER} resolve --root .")
+    jira = step.find("**Jira and ServiceDesk Plus**")
+    first_write = step.find("`.work/tickets/")
+
+    assert (resolve != -1, jira != -1, -1 < resolve < first_write, "through MCP" in step,
+            "use its key as `<id>`" in step, "`.work/tickets/<KEY>/`" in step,
+            "not a failure to stop on" in step, "`could not tell`" in step) == (True,) * 8
+
+
 # T-0085: the build-time standards reach the commands that apply them. Exact
 # strings, matched on whitespace-normalised text, and one ordering control: the
 # stamp sits before the review, so a self-check moved after `/crew:review $1`

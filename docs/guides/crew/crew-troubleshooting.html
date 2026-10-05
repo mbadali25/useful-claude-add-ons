@@ -298,8 +298,10 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
   printed on a <code>review: FINDINGS kept; ...</code> line and kept in <code>review.json</code>'s <code>ignored_text</code> (<code>ignored_lines</code> is their count). A
   stray line beside <code>CLEAN</code>, a misformatted contract line (<code>- FIX|...</code>, <code>fix|...</code>, a <code>|</code> table row)
-  or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
-  INCOMPLETE <code>reviewer</code>.
+  or a line matching the shortfall wording list ("skipped", "truncated", "could not review") is
+  still INCOMPLETE <code>reviewer</code>. That list cannot catch every admission: one it misses ("I only
+  inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
+  ignored lines.
   <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
   <code>review: round N was a tool failure (...); refunded</code>. Only the failed round is given back: the
   rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
@@ -408,7 +410,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
 <li><strong>Symptom: which tickets still need my approval?</strong>
   <strong>Check:</strong> <code>/crew:status --approvals</code>. It prints one ready-to-paste <code>/crew:approve &lt;id&gt;</code> line, with a
-  <code>  why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  <code>why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
   current or spec-only tickets (<code>nothing needs approval</code> when there are none). Approving a ticket
   it does not list changes nothing.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
@@ -736,6 +738,10 @@ refuses).</p>
 <li><strong>Another repo owns it.</strong>
   <code>obsidian: could not update: id taken: T-0060 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0060.md), not this one (https://example.invalid/other/app): give this repo its own obsidian.boardDir</code>
   <strong>Fix:</strong> two repos share one board. Give each repo its own <code>obsidian.boardDir</code>.</li>
+<li><strong>An older crew wrote the note's id lowercased.</strong>
+  <code>obsidian: could not update: T-0042 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0042.md), not this one (https://example.invalid/Team/App): give this repo its own obsidian.boardDir; the note may carry this repo's id as an older crew wrote it (lowercased): if the card is this repo's, change the line to 'repo-id: https://example.invalid/Team/App'</code>
+  <strong>Fix:</strong> since T-0071 an origin keeps the case of its user and path. If the
+  card is yours, change the note's <code>repo-id:</code> line to the id it names.</li>
 <li><strong>Nobody can tell who owns it.</strong>
   <code>obsidian: could not update: id taken: could not tell whose card T-0042 is (no T-0042.md note names its repo-id); if it is this repo's, put 'repo-id: https://example.invalid/other/app' in T-0042.md</code>
   <strong>Fix:</strong> if the card is yours, add the line it names to the note (see "The
@@ -799,6 +805,55 @@ as if it were absent.</p>
   repo-only</code> means the machine file may not set it, so it takes effect nowhere.</li>
 <li><strong>Fix:</strong> move a repo-only key into the repo's <code>.crew/config.json</code>, correct a typo, or wait for
   (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.</li>
+</ul>
+<h2 id="graph-refresh-refused-secrets-denylisted-path">Graph Refresh Refused: Secrets-Denylisted Path</h2>
+<p>graphify reads every file its ignore rules do not exclude and records the symbols it finds in
+<code>graph.json</code>. For a file git tracks, <code>.gitignore</code> does not stop it: only <code>.graphifyignore</code> does.
+So crew checks, before it names or runs a graph build, that the root <code>.graphifyignore</code> excludes
+every file the secrets denylist matches.</p>
+<ul>
+<li><strong>Symptom: <code>refresh-check</code> prints <code>graph graphify-out: unknown - graphify would read N
+  secrets-denylisted path(s) .graphifyignore does not exclude: ...; stop - a refresh cannot settle
+  this</code>,</strong> or <code>/crew:status</code> prints <code>graph-ignore  UNCOVERED</code>.
+  <strong>Check:</strong> which files, and from which source.</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_graph_ignore.py&quot; --root . --check --json
+</code></pre>
+<p>The denylist is the built-in patterns (<code>.env</code>, <code>.env.*</code> but not <code>.env.example</code>, <code>*.pem</code>,
+  <code>*.key</code>, <code>*.p12</code>, <code>*.pfx</code>, <code>id_rsa*</code>, <code>id_ed25519*</code>), <code>.claude/secrets-denylist</code> if it exists,
+  and every in-repo <code>Read(...)</code> rule in <code>permissions.deny</code> of <code>.claude/settings.json</code> and
+  <code>.claude/settings.local.json</code>. <code>sources</code> in the JSON names which ones were read.
+  <strong>Fix:</strong> add the missing patterns, then check again.</p>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_graph_ignore.py&quot; --root . --write
+</code></pre>
+<p>It appends the missing patterns, then any flagged path they still miss (the denylist ignores
+  case, <code>.graphifyignore</code> does not, so <code>.ENV</code> gets <code>/.ENV</code>), under one marked block, and leaves
+  every existing line as it was. Commit <code>.graphifyignore</code>, then re-run the refresh check.
+  If it prints <code>line N (`!pattern`) re-includes denylisted &lt;path&gt;; remove that line or accept the
+  exposure</code> and exits 1, your own <code>!</code> line is the reason: <code>--write</code> never overrides it. Delete the
+  line, or keep it and accept that graphify reads that file. A path that is not one line of plain
+  text (a name holding a line break or other control character) is never written either; it stays
+  named, escaped, by <code>--check</code>: rename the file or exclude it by hand.</p>
+<ul>
+<li>
+<p><strong>Symptom: <code>denylist coverage unknown: &lt;reason&gt;</code></strong> (the refresh check) or <code>graph-ignore  unknown</code>
+  (<code>/crew:status</code>).
+  <strong>Check:</strong> the reason names it: git missing, a settings file that does not parse, an unreadable
+  <code>.claude/secrets-denylist</code> or <code>.graphifyignore</code>, a nested <code>.graphifyignore</code> (only the root one is
+  evaluated, and a nested one could re-include a file with <code>!</code>), a nested repository or submodule
+  <code>.graphifyignore</code> does not exclude, a symlink that resolves outside the repository or not at
+  all, or a deny-all <code>Read</code> rule.
+  <strong>Fix:</strong> repair what it names. An unknown is never read as covered, so no refresh is named until
+  it is fixed.</p>
+</li>
+<li>
+<p><strong>Symptom: a graph was built before the fix</strong> (by hand, or by graphify's post-commit hook, which
+  bypasses crew).
+  <strong>Fix:</strong> treat that graph as holding text from the secret files. Delete the graph output
+  directory (<code>graphify-out/</code> by default), run <code>--write</code>, check that <code>--check</code> exits 0, then
+  rebuild. Commit the rebuild if the output is tracked. The crew-graph skill's <strong>Tainted graph</strong>
+  section has the same steps.</p>
+</li>
 </ul>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires

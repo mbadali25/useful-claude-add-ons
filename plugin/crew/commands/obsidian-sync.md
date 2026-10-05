@@ -71,7 +71,11 @@ Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
 
 Any other status maps to no lane and is refused with nothing written: say which
 value you found and stop. Guessing a lane moves a card a human is looking at.
-The table lives in `crew_tracker.py` as `LANE_FOR_STATUS`; this is a copy.
+`read` reports such a word as `could not tell`, not a disagreement; for a word
+the owner retired (`approved`, `merged`, `closed`, `new`, `parked`) it and
+`move` name the crew word to write by hand (`; the crew word is done`) - a hint,
+never a lane. The tables live in `crew_tracker.py` as `LANE_FOR_STATUS` and
+`RETIRED_STATUSES`; this is a copy.
 
 ## The board file format — the module owns it
 

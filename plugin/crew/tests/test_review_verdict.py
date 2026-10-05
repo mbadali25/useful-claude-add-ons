@@ -253,6 +253,20 @@ def test_parse_a_contract_like_stray_line_is_incomplete(stray):
     assert any("match no part of the contract" in r for r in result["reasons"]), result
 
 
+def test_parse_a_shortfall_admission_the_wording_list_misses_is_recovered_and_reported():
+    """L-0604: `_SHORTFALL` is a wording net and cannot be complete, so an
+    admission it misses is harmless prose beside a finding -- FINDINGS, with
+    the line in `ignored` for a person to read. R5 (crew-qa-standards'
+    review.md) and `crew_standards.proposals`' docstring say exactly that; a
+    parser that starts catching this line must update them too."""
+    admission = "I only inspected one of the nine files"
+
+    result = rv.parse(f"FIX|x.py:1|bad|repro\n{admission}", 0)
+
+    assert (result["verdict"], result["reasons"], result["ignored"]) == (
+        rv.FINDINGS, [], [admission])
+
+
 @pytest.mark.parametrize("acks,exit_code,timed_out", [
     ("READ|part-001-of-002.patch\n", 0, False),
     (ACKS, 1, False),
