@@ -97,20 +97,27 @@ origin/main `a555ff37`:
 - **Merge train.** L-0532, L-0533 and L-0534 touch the same SKILL.md, README, PLUGINS.md, CHANGELOG and BUDGETS
   lines. Whichever lands first, the others merge main and re-measure. `_STACK_SETS` is a directory listing, so
   sibling sets do not conflict in the tests.
+- **The 120-line cap.** Every stack skill is at most 120 lines (`plugin/crew/tests/test_stack_skills.py:73`, `:142`);
+  `stack-dotnet` is 95 now, and seventeen candidate lines plus the Standards pointer and conventions do not fit.
+  Default taken: the candidate list and the conventions go to `plugin/crew/skills/stack-dotnet/references/candidates.md`,
+  and SKILL.md keeps the `## Standards` pointer, a one-line link to the candidates file and the test-framework and
+  `Result` defaults.
 - The next free crew patch version is set at land.
 
 ## Size and split
-One new Markdown set (about 150-250 lines for three rules), about 60 lines of tests, about 40 lines in
-`stack-dotnet/SKILL.md`, a few lines in each doc. No production code. No harness path in this PR (the sabotage
+One new Markdown set (about 150-250 lines for three rules), about 60 lines of tests, about 15 lines in
+`stack-dotnet/SKILL.md` and about 40 in its new `references/candidates.md`, a few lines in each doc. No production code. No harness path in this PR (the sabotage
 entries are the separate tooling-only PR). No further split.
 
 ## Touch
 - `plugin/crew/skills/crew-standards/references/dotnet.md` - new, the DOTNET set
 - `plugin/crew/skills/crew-standards/SKILL.md` - the stack-sets bullet names the DOTNET set
-- `plugin/crew/skills/stack-dotnet/SKILL.md` - `## Standards` pointer, `## Candidate standards (not gated)`,
-  conventions list, test-framework and Result guidance; `description:` mentions the set
+- `plugin/crew/skills/stack-dotnet/SKILL.md` - `## Standards` pointer, a link to the candidates, test-framework and
+  Result guidance; `description:` mentions the set (stays within 120 lines)
+- `plugin/crew/skills/stack-dotnet/references/candidates.md` - new: `## Candidate standards (not gated)` and the
+  conventions list
 - `plugin/crew/tests/test_crew_standards.py` - `_ADMITTED_DOTNET`, `_DOTNET_FINDINGS`, the parse, applies-to and
-  finding-count tests; the elision test parametrized over `_STACK_SETS`
+  finding-count tests; the elision test parametrized over `_STACK_SETS` (unless a sibling slice already did it)
 - `plugin/crew/README.md`
 - `plugin/PLUGINS.md` - `crew-standards` and `stack-dotnet` rows, version
 - `CHANGELOG.md`
@@ -147,9 +154,11 @@ Commands from the repo root; pytest through the heavy-run wrapper on a memory-bo
   test names are in the PR body for the tooling-only follow-up to commit.
 - [ ] `.work/tickets/L-0535/changesets-dotnet.txt` and `quote-check-dotnet.txt` exist and every shipped citation
   and quote is in them, found.
-- [ ] `stack-dotnet/SKILL.md` names `crew-standards/references/dotnet.md`, lists the admitted ids with names, lists
-  every other research rule as a candidate with its count, states the conventions with no id, and states the
-  test-framework and `Result` defaults. `grep -n "references/dotnet.md\|Candidate standards" plugin/crew/skills/stack-dotnet/SKILL.md`
+- [ ] `stack-dotnet/SKILL.md` names `crew-standards/references/dotnet.md`, lists the admitted ids with names, links
+  `references/candidates.md`, and states the test-framework and `Result` defaults; it stays within 120 lines
+  (`python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_stack_skills.py -q`). `references/candidates.md`
+  lists every other research rule with `(<N>` count and the conventions with no id; no id is in both.
+  `grep -n "references/dotnet.md\|candidates.md" plugin/crew/skills/stack-dotnet/SKILL.md`
 - [ ] Existing suites: `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_standards.py plugin/crew/tests/test_review_run_standards.py plugin/crew/tests/test_stack_skills.py plugin/crew/tests/test_lifecycle_commands.py -q`
 - [ ] `python3 scripts/check-tooling-pr.py` prints `tooling-pr: OK` (no harness path in the diff).
 - [ ] Docs: README `:795`, PLUGINS.md rows, `crew-standards/SKILL.md`, `.crew/codemap/crew.md` name the DOTNET set;

@@ -8,7 +8,7 @@ Handed to a cloud session on 2026-10-05 by owner instruction. Do not pick up loc
 - **INDEX status:** spec (direction and spec approved for hand-off 2026-10-05; plan to be written by the implementing session)
 - **Branch:** `L-0535-build`, new from origin/main `a555ff37`; docs only, no implementation yet
 - **Files here:** `docs/tickets/L-0535/direction.md`, `docs/tickets/L-0535/spec.md`
-- **Size:** 0 production lines. One new set file (`crew-standards/references/dotnet.md`, about 150-250 lines for the three provisionally admitted rules), about 60 test lines, about 40 lines in `stack-dotnet/SKILL.md`, doc rows.
+- **Size:** 0 production lines. One new set file (`crew-standards/references/dotnet.md`, about 150-250 lines for the three provisionally admitted rules), about 60 test lines, about 15 lines in `stack-dotnet/SKILL.md` plus a new `stack-dotnet/references/candidates.md` (stack skills are capped at 120 lines), doc rows.
 - **Harness:** no. `plugin/crew/tests/sabotage*.py` is a harness path and is kept out; the DOTNET sabotage entries go in a separate tooling-only PR (or ride along if L-0539 has merged first).
 
 ## Dependencies and work order
