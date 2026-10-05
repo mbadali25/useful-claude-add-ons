@@ -1602,6 +1602,13 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     return [files, _board_write(paths, columns, edit)]
 
 
+def _folder_doubt(root, ticket):
+    """The read note for a ticket folder whose place cannot be told (both
+    live and in Complete/, or a failed probe), or None."""
+    _, where, why = crew_common.locate_ticket(root, ticket)
+    return f"could not tell where {ticket}'s folder lives: {why}" if where == crew_common.COULD_NOT_TELL else None
+
+
 def _obsidian_read(root, settings, ticket):
     files = _files_read(root, ticket)
     here = repo_id(root)
@@ -1623,7 +1630,9 @@ def _obsidian_read(root, settings, ticket):
         status = files.get("status")
         notes = [f"archived; INDEX status {status}"]
         notes += [f"whose note could not tell: {detail}"] if owner == UNKNOWN else []
-        disagree = status not in ARCHIVE_STATUSES
+        folder_doubt = _folder_doubt(root, ticket)
+        notes += [folder_doubt] if folder_doubt else []
+        disagree = status not in ARCHIVE_STATUSES or bool(folder_doubt)
         notes += ([f"INDEX status {status} is not closed"] if status is not None and disagree
                   else ["INDEX status could not tell"] if status is None else [])
         return [files, _result("obsidian", READ, "; ".join(notes),
@@ -1642,6 +1651,10 @@ def _obsidian_read(root, settings, ticket):
     notes = [f"INDEX status {status} expects {expected}"] if disagree else []
     notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []
     _, folder_where, _ = crew_common.locate_ticket(root, ticket)
+    folder_doubt = _folder_doubt(root, ticket)
+    if folder_doubt:
+        disagree = True
+        notes += [folder_doubt]
     if crew_common.COMPLETE in (where, folder_where):
         # The archive stopped part-way: the folder (moved first) or the note
         # is in Complete/ while the card is still on the board.

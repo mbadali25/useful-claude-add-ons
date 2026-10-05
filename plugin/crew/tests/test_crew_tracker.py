@@ -2957,6 +2957,20 @@ def test_a_two_name_note_replaced_after_the_check_is_not_removed(tmp_path, monke
     assert (crew_tracker.exit_code(got), (_board_dir(vault) / f"{CARD}.md").is_file()) == (1, True), got
 
 
+@pytest.mark.parametrize("archived_note", [False, True])
+def test_a_read_surfaces_a_ticket_folder_in_both_places(tmp_path, archived_note):
+    if archived_note:
+        root, _vault = _archived_obsidian(tmp_path)
+        (root / ".work" / "tickets" / CARD).mkdir(parents=True)
+    else:
+        root, _vault = _done_obsidian(tmp_path)
+        (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], "folder lives" in (got["reason"] or "")) == (True, True), got
+
+
 def test_an_archived_read_with_an_open_index_row_disagrees(tmp_path):
     root, _vault = _archived_obsidian(tmp_path)
     (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", "review"), encoding="utf-8",
