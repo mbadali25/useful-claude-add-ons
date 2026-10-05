@@ -138,7 +138,10 @@ _STRIP_NAMES = frozenset((
     # environment-set config can name a credential helper.
     "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
     "GIT_CONFIG_COUNT", "GITLAB_TOKEN", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
-    "GIT_SSH", "GIT_SSH_COMMAND", "TERRAFORM_CONFIG"))
+    "GIT_SSH", "GIT_SSH_COMMAND", "TERRAFORM_CONFIG",
+    # Pointers that move a CLI's config (and its stored token) away from the
+    # default path the stores deny: gh's own, and every XDG-config tool's.
+    "GH_CONFIG_DIR", "XDG_CONFIG_HOME"))
 
 # The launched session and the probe load the user's settings and the sealed
 # `--settings` only: a cloned repo's `.claude/settings.json` and

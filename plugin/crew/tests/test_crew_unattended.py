@@ -1309,3 +1309,10 @@ def test_sealed_env_resets_git_credential_helpers_and_drops_terraform_config():
                          "Expiration": "e"}, "eu-west-1", "/tmp/sealed")
     assert ("TERRAFORM_CONFIG" not in env, env["GIT_CONFIG_COUNT"], env["GIT_CONFIG_KEY_0"],
             env["GIT_CONFIG_VALUE_0"]) == (True, "1", "credential.helper", "")
+
+
+def test_stripped_env_drops_config_dir_pointers():
+    """T-0044 port review r6 BLOCK: GH_CONFIG_DIR and XDG_CONFIG_HOME move a
+    CLI's stored token away from the denied default path."""
+    assert cu.stripped_env({"GH_CONFIG_DIR": "/x", "XDG_CONFIG_HOME": "/y",
+                            "PATH": "/b"}) == {"PATH": "/b"}
