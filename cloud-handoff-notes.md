@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:47 UTC
+Last updated: 2026-10-05 00:56 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 00:56: L-1508 PR B #496 (harness-only, lands alone) green at 1a264e2a: 9 harness files run require_tool(git), allowlist emptied of harness, 20 new tests, 13/13 sites sabotage-red; crew 1.0.413 placeholder; ready for review
 - 00:47: #407 47061a7a: fixed 200-level nesting bound (3.11/3.12/3.13 green locally) + cp1252 stdout fix (root cause of 8588ab74 Windows reds); NOT merged with main efcf4666 (main reverted #407 in 5ee34bc0; revert-of-revert was denied, owner decision needed); CI running
 - 00:46: L-1512 #497 round 2 at e8a3fb48 - strict probe reads one line via procsub (no EOF wait), pylint C0305 fixed, merged main efcf4666, crew 1.0.412 last; CI running, Windows not yet started
 - 01:05: #499 re-review at 860718db: 0 BLOCK 0 FIX (NITs left: 'batch N' inside a normal title; bullet-less normal entry with #### renders the subheading; no real heading has either shape). Aed63c4d run cancelled by push (aggregator reports cancelled as FAIL - not real). Waiting on CI 860718db, then merge.
