@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T18:47Z
+Last updated: 2026-10-05T19:07Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T19:07Z L-0540 watcher fired falsely (empty baseline; L-0540-build is still #402's Oct 4 docs commit 0cca3aef, no seed). Re-armed with a checked baseline (bxp88jg0u). L-0688 is already on main (#405), so only the seed blocks L-0540.
 - 2026-10-05T18:47Z MERGED #542 (H1) into main at 7cb44221, crew 1.1.4 (30/30 CI incl. all Windows shards; Codex CLEAN). Closed source PRs #418 #461 #422 #333 #340 #331 #343 #406 #490 (heads are ancestors of main). #402 L-0540 still waits on the owner's seed.
 - 2026-10-05T18:34Z #542 H1 lander fixed the 5 Windows failures, all on the test side (UTF-8 decode in _cli, byte pipes in _classify, probe ignores the skipped-extension twin); head 28e95dab, crew 1.1.4, fix-range Codex CLEAN. Coordinator read the diff: no assertion dropped. Waiting for CI, then merge to main.
 - 2026-10-05T18:30Z MERGED #543 (G3) into release/1.2.0 at 2c911427, crew 1.1.5 (30/30 CI, Codex group r6 CLEAN). G0 lander told release moved: re-merge, keep crew 1.1.6. Source PRs for G3 close when release reaches main. Next free 1.1.7.
