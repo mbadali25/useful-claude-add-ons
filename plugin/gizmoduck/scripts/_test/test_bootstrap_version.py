@@ -1,0 +1,185 @@
+"""Tests for bootstrap.sh's resolve_latest_tag and already_installed (C-0008).
+
+Some networks - the Claude Code cloud sandbox among them - answer
+api.github.com with a 403 while git and the versioned
+releases/download/<tag>/ assets still work. resolve_latest_tag tries the API
+first, falls back to `git ls-remote --tags`, keeps only plain X.Y.Z tags, and
+names the tool when both fail.
+
+bootstrap.sh is SOURCED (it returns before installing anything when sourced),
+and `curl`, `git` and `sudo` are stubs placed first on PATH, so nothing here
+touches the network or the machine. Every stub logs its argv, which is how
+the tests prove a fallback was (or was not) taken.
+"""
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+_BOOTSTRAP = Path(__file__).resolve().parents[2] / "bootstrap.sh"
+_BASH = shutil.which("bash")
+
+pytestmark = pytest.mark.skipif(_BASH is None, reason="bash not available")
+
+_STUB = """#!/usr/bin/env bash
+echo "{name} $*" >> "$STUB_LOG"
+{body}
+"""
+
+_CURL_BODY = """
+case "${STUB_CURL_MODE:-fail}" in
+  ok)   printf '{\\n  "url": "x",\\n  "tag_name": "v9.9.9",\\n  "name": "v9.9.9"\\n}\\n' ;;
+  *)    echo "curl: (22) The requested URL returned error: 403" >&2; exit 22 ;;
+esac
+"""
+
+_GIT_BODY = """
+if [[ "${STUB_GIT_MODE:-fail}" == ok && "$1" == ls-remote ]]; then
+  cat "$STUB_GIT_TAGS"
+else
+  echo "fatal: unable to access: The requested URL returned error: 403" >&2
+  exit 128
+fi
+"""
+
+_SUDO_BODY = "exit 0\n"
+
+
+def _sha(i: int) -> str:
+    return f"{i:040x}"
+
+
+@pytest.fixture
+def stubs(tmp_path):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name, body in (("curl", _CURL_BODY), ("git", _GIT_BODY), ("sudo", _SUDO_BODY)):
+        p = bindir / name
+        p.write_text(_STUB.format(name=name, body=body), newline="\n")
+        p.chmod(0o755)
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    tags = tmp_path / "tags.txt"
+    return {"bin": bindir, "log": log, "tags": tags, "tmp": tmp_path}
+
+
+def _run(stubs, script, curl="fail", git="fail", tags=(), extra_env=None):
+    stubs["tags"].write_text(
+        "".join(f"{_sha(i)}\trefs/tags/{t}\n" for i, t in enumerate(tags, 1)))
+    env = {
+        "PATH": f"{stubs['bin']}{os.pathsep}{os.environ.get('PATH', '')}",
+        "HOME": str(stubs["tmp"]),
+        "STUB_LOG": str(stubs["log"]),
+        "STUB_GIT_TAGS": str(stubs["tags"]),
+        "STUB_CURL_MODE": curl,
+        "STUB_GIT_MODE": git,
+    }
+    env.update(extra_env or {})
+    proc = subprocess.run(
+        [_BASH, "-c", f'source "$0"; {script}', str(_BOOTSTRAP)],
+        capture_output=True, text=True, env=env, timeout=30)
+    return proc, stubs["log"].read_text()
+
+
+def test_sourcing_installs_nothing(stubs):
+    proc, log = _run(stubs, "true", curl="ok", git="ok")
+    assert proc.returncode == 0, proc.stderr
+    assert log == "", f"sourcing bootstrap.sh ran commands: {log!r}"
+    assert ">> installing" not in proc.stdout
+
+
+def test_api_ok_uses_api_and_never_asks_git(stubs):
+    proc, log = _run(stubs, "resolve_latest_tag acme/tool tool",
+                     curl="ok", git="ok", tags=["v1.0.0"])
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "v9.9.9"
+    assert "curl -fsSL https://api.github.com/repos/acme/tool/releases/latest" in log
+    assert "git " not in log
+
+
+def test_api_fails_then_highest_git_tag_is_used(stubs):
+    tags = ["v1.2.0", "v1.10.0", "v1.9.3", "v1.10.0^{}", "v.1.0.0", "w2026-09-30", "svn_2.4"]
+    proc, log = _run(stubs, "resolve_latest_tag acme/tool tool", tags=tags, git="ok")
+    assert proc.returncode == 0, proc.stderr
+    # 1.10.0 > 1.9.3 only under version order, not plain string order.
+    assert proc.stdout.strip() == "v1.10.0"
+    assert "git ls-remote --tags --refs https://github.com/acme/tool.git" in log
+    assert "GitHub API lookup failed" in proc.stderr
+
+
+def test_unprefixed_and_prefixed_tags_compare_by_number(stubs):
+    proc, _ = _run(stubs, "resolve_latest_tag acme/tool tool",
+                   tags=["9.0.0", "v10.0.0", "2.0.0"], git="ok")
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "v10.0.0"
+
+
+@pytest.mark.parametrize("pre", ["v3.0.0-rc1", "v3.0.0-beta.2", "v3.0.0-alpha",
+                                 "v3.0.0rc1", "v3.0.0-pre", "3.0.0.dev1"])
+def test_prerelease_tags_are_skipped(stubs, pre):
+    proc, _ = _run(stubs, "resolve_latest_tag acme/tool tool",
+                   tags=["v2.5.1", pre, "v2.4.0"], git="ok")
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "v2.5.1"
+
+
+def test_only_prerelease_tags_is_a_failure_not_a_prerelease(stubs):
+    proc, _ = _run(stubs, "resolve_latest_tag acme/tool tool",
+                   tags=["v3.0.0-rc1", "v3.0.0-beta"], git="ok")
+    assert proc.returncode == 1
+    assert proc.stdout.strip() == ""
+
+
+def test_both_fail_gives_clear_error_naming_the_tool(stubs):
+    proc, log = _run(stubs, "resolve_latest_tag acme/tool 'Widget Scanner'")
+    assert proc.returncode == 1
+    assert proc.stdout.strip() == ""
+    assert "Widget Scanner: could not determine the latest version" in proc.stderr
+    assert "api.github.com/repos/acme/tool/releases/latest" in proc.stderr
+    assert "git ls-remote --tags https://github.com/acme/tool.git" in proc.stderr
+    assert "curl " in log and "git ls-remote" in log
+
+
+def test_both_fail_stays_isolated_in_try_install_and_downloads_nothing(stubs):
+    script = ('try_install "nuclei" install_nuclei; '
+              'echo "FAILED=${FAILED[*]}"; echo "after=still-running"')
+    # FORCE: the skip-if-present branch must not hide this on a machine that
+    # already has nuclei.
+    proc, log = _run(stubs, script, extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert proc.returncode == 0, proc.stderr
+    assert "FAILED=nuclei" in proc.stdout
+    assert "after=still-running" in proc.stdout
+    assert "nuclei: could not determine the latest version" in proc.stderr
+    assert "!! nuclei: install failed - continuing with the rest" in proc.stderr
+    assert "sudo " not in log, f"a download/install ran with no version: {log!r}"
+
+
+def test_git_fallback_version_reaches_the_download_url(stubs):
+    # sudo is a no-op stub, so the download command is logged, never run; all
+    # that matters is which tag the asset URL was built from.
+    script = 'try_install "nuclei" install_nuclei'
+    proc, log = _run(stubs, script, git="ok", tags=["v3.11.1", "v3.12.0-rc1", "v3.9.0"],
+                     extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "releases/download/v3.11.1/nuclei_3.11.1_linux_" in log, log
+
+
+def test_already_installed_skips(stubs):
+    fake = stubs["bin"] / "nuclei"
+    fake.write_text("#!/usr/bin/env bash\necho nuclei-fake\n", newline="\n")
+    fake.chmod(0o755)
+    proc, log = _run(stubs, "install_nuclei")
+    assert proc.returncode == 0, proc.stderr
+    assert "nuclei: already installed" in proc.stdout
+    assert log == "", f"a present tool was reinstalled: {log!r}"
+
+
+def test_force_reinstalls_a_present_tool(stubs):
+    fake = stubs["bin"] / "nuclei"
+    fake.write_text("#!/usr/bin/env bash\necho nuclei-fake\n", newline="\n")
+    fake.chmod(0o755)
+    proc, log = _run(stubs, "install_nuclei", curl="ok",
+                     extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
+    assert "already installed" not in proc.stdout
+    assert "releases/download/v9.9.9/" in log

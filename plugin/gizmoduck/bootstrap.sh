@@ -29,7 +29,64 @@ try_install() {
   fi
 }
 
+# Prints the newest stable release tag (e.g. v3.11.1) of GitHub repo $1
+# (owner/repo) on stdout; $2 is the tool name for messages.
+#
+# The REST API (releases/latest) is tried first, as before. Some networks -
+# the Claude Code cloud sandbox among them - answer api.github.com with a 403
+# while still serving git and the versioned releases/download/<tag>/ assets,
+# so on an API failure this falls back to `git ls-remote --tags`. Only plain
+# X.Y.Z (optionally v-prefixed) tags count there: rc/beta/alpha/pre tags,
+# ZAP's w2026-... weekly tags and oddities like nuclei's `v.1.0.0` are
+# skipped, and the highest by version order wins. A tag is not proof a
+# release with assets exists, but the download that follows fails loudly if
+# it doesn't. When both lookups fail it says so naming the tool and returns
+# 1, leaving try_install's isolation to carry on with the rest.
+resolve_latest_tag() {
+  local repo="$1" tool="$2" ver=""
+  ver=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+        | grep '"tag_name"' | head -1 | cut -d'"' -f4) || ver=""
+  if [[ -n "$ver" ]]; then
+    printf '%s\n' "$ver"
+    return 0
+  fi
+  echo ">> ${tool}: GitHub API lookup failed - trying git tags of github.com/${repo}" >&2
+  ver=$(git ls-remote --tags --refs "https://github.com/${repo}.git" 2>/dev/null \
+        | sed -n 's#^.*refs/tags/##p' \
+        | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
+        | awk '{ n = $0; sub(/^v/, "", n); print n, $0 }' \
+        | sort -V -k1,1 | tail -1 | cut -d' ' -f2) || ver=""
+  if [[ -n "$ver" ]]; then
+    printf '%s\n' "$ver"
+    return 0
+  fi
+  echo "!! ${tool}: could not determine the latest version - both the GitHub API" >&2
+  echo "!!   (api.github.com/repos/${repo}/releases/latest) and" >&2
+  echo "!!   'git ls-remote --tags https://github.com/${repo}.git' failed or found no stable tag." >&2
+  return 1
+}
+
+# Idempotency: a tool whose command is already on PATH is reported and
+# skipped, so re-running this script (or a cloud session's setup script
+# running it on every start) does not re-download hundreds of MB. Set
+# GIZMODUCK_BOOTSTRAP_FORCE=1 to reinstall/upgrade everything anyway.
+already_installed() {
+  local name="$1" cmd="$2" path
+  [[ "${GIZMODUCK_BOOTSTRAP_FORCE:-}" == 1 ]] && return 1
+  path=$(command -v "$cmd" 2>/dev/null) || return 1
+  echo ">> ${name}: already installed (${path}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 reinstalls"
+  return 0
+}
+
 install_prereqs() {
+  local missing=0 c
+  for c in curl unzip git python3 pip3 wkhtmltopdf; do
+    command -v "$c" >/dev/null 2>&1 || missing=1
+  done
+  if [[ $missing == 0 && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    echo ">> prerequisites: already installed - skipping apt-get"
+    return 0
+  fi
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -y
     sudo apt-get install -y curl unzip git python3 python3-pip wkhtmltopdf
@@ -37,6 +94,7 @@ install_prereqs() {
 }
 
 install_nuclei() {
+  already_installed nuclei nuclei && return 0
   local arch
   case "$(uname -m)" in
     x86_64|amd64) arch=amd64 ;;
@@ -45,12 +103,7 @@ install_nuclei() {
   esac
 
   local ver
-  ver=$(curl -fsSL https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  if [[ -z "$ver" ]]; then
-    echo "Could not determine latest Nuclei version"
-    return 1
-  fi
+  ver=$(resolve_latest_tag projectdiscovery/nuclei "nuclei") || return 1
   local num="${ver#v}"
   local zip="nuclei_${num}_linux_${arch}.zip"
 
@@ -88,14 +141,17 @@ update_nuclei_templates() {
 }
 
 install_nmap() {
+  already_installed nmap nmap && return 0
   sudo apt-get install -y nmap
 }
 
 install_nikto() {
+  already_installed nikto nikto && return 0
   sudo apt-get install -y nikto
 }
 
 install_testssl() {
+  already_installed testssl.sh testssl.sh && return 0
   local dir=/opt/testssl.sh
   if [[ -d "$dir/.git" ]]; then
     sudo git -C "$dir" pull --ff-only
@@ -108,6 +164,7 @@ install_testssl() {
 }
 
 install_trivy() {
+  already_installed trivy trivy && return 0
   # Official install script (documented at trivy.dev) - resolves the latest
   # release and puts the binary on the given path itself.
   curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
@@ -115,10 +172,12 @@ install_trivy() {
 }
 
 install_checkov() {
+  already_installed checkov checkov && return 0
   pip3 install --user --upgrade checkov
 }
 
 install_semgrep() {
+  already_installed semgrep semgrep && return 0
   # Semgrep is the only source-reading tool here, and the only one that can
   # see a check that is MISSING - an authorization gate nobody wrote has no
   # signature, no CVE and no misconfigured resource to find.
@@ -126,13 +185,9 @@ install_semgrep() {
 }
 
 install_depcheck() {
+  already_installed dependency-check dependency-check && return 0
   local ver
-  ver=$(curl -fsSL https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  if [[ -z "$ver" ]]; then
-    echo "Could not determine latest Dependency-Check version"
-    return 1
-  fi
+  ver=$(resolve_latest_tag jeremylong/DependencyCheck "dependency-check") || return 1
   local num="${ver#v}"
   local zip="dependency-check-${num}-release.zip"
 
@@ -150,6 +205,7 @@ install_depcheck() {
 }
 
 install_sqlmap() {
+  already_installed sqlmap sqlmap && return 0
   # git clone is sqlmap's own documented install method - there is no PyPI
   # package (spec 13.9: no --report-json either, but that's a routine.py
   # adapter concern, not a bootstrap one).
@@ -176,18 +232,15 @@ install_zap() {
     sudo apt-get install -y openjdk-17-jre
   fi
 
+  already_installed "OWASP ZAP" zap.sh && return 0
+
   # The Crossplatform zip ships both zap.sh and zap.bat plus the Automation
   # Framework add-on, so the same download works for bootstrap.ps1 too. This
   # is a plain unzip, not the docker `zaproxy/zap-stable` image - Docker is
   # not installed on the operator machine and using it here was explicitly
   # ruled out (do not "fix" this back to a docker run).
   local ver
-  ver=$(curl -fsSL https://api.github.com/repos/zaproxy/zaproxy/releases/latest \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-  if [[ -z "$ver" ]]; then
-    echo "Could not determine latest ZAP version"
-    return 1
-  fi
+  ver=$(resolve_latest_tag zaproxy/zaproxy "OWASP ZAP") || return 1
   local num="${ver#v}"
   local zip="ZAP_${num}_Crossplatform.zip"
 
@@ -201,6 +254,15 @@ install_zap() {
   sudo chmod +x "/opt/ZAP_${num}/zap.sh"
   sudo ln -sf "/opt/ZAP_${num}/zap.sh" /usr/local/bin/zap.sh
 }
+
+# Sourced rather than executed (the test suite does this to reach
+# resolve_latest_tag): stop here, defining the functions and installing nothing.
+# `return` outside a function succeeds only in a sourced file, which is a
+# sturdier test than comparing BASH_SOURCE with $0 (`bash -c 'source "$0"' f`
+# makes those equal while sourcing).
+if (return 0 2>/dev/null); then
+  return 0
+fi
 
 try_install "prerequisites"      install_prereqs
 try_install "nuclei"             install_nuclei

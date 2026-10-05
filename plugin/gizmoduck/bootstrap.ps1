@@ -34,6 +34,47 @@ function Try-Install {
   }
 }
 
+# Returns the newest stable release tag (e.g. v3.11.1) of GitHub repo $Repo
+# (owner/repo). Twin of bootstrap.sh's resolve_latest_tag - same order, same
+# filter. The REST API (releases/latest) is tried first, as before. Some
+# networks answer api.github.com with a 403 while still serving git and the
+# versioned releases/download/<tag>/ assets, so on an API failure this falls
+# back to `git ls-remote --tags`. Only plain X.Y.Z (optionally v-prefixed)
+# tags count there: rc/beta/alpha/pre tags, ZAP's w2026-... weekly tags and
+# oddities like nuclei's `v.1.0.0` are skipped, and the highest version wins.
+# When both lookups fail it throws an error naming the tool, which
+# Try-Install catches like any other install failure.
+function Resolve-LatestTag {
+  param(
+    [Parameter(Mandatory)][string]$Repo,
+    [Parameter(Mandatory)][string]$Tool
+  )
+  try {
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" `
+            -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
+    if ($rel.tag_name) { return [string]$rel.tag_name }
+  } catch {
+    # fall through to git tags
+  }
+  Write-Host ">> ${Tool}: GitHub API lookup failed - trying git tags of github.com/$Repo"
+  $tags = @()
+  if (Get-Command git -ErrorAction SilentlyContinue) {
+    $tags = & {
+      $ErrorActionPreference = "Continue"
+      git ls-remote --tags --refs "https://github.com/$Repo.git" 2>$null
+    }
+  }
+  $best = $tags |
+    ForEach-Object { ($_ -split "refs/tags/", 2)[-1] } |
+    Where-Object { $_ -match '^v?\d+\.\d+\.\d+$' } |
+    Sort-Object { [version]($_.TrimStart("v")) } |
+    Select-Object -Last 1
+  if ($best) { return [string]$best }
+  throw ("${Tool}: could not determine the latest version - both the GitHub API " +
+         "(api.github.com/repos/$Repo/releases/latest) and " +
+         "'git ls-remote --tags https://github.com/$Repo.git' failed or found no stable tag.")
+}
+
 function Test-WingetAvailable {
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw "winget is not available on this machine"
@@ -47,9 +88,7 @@ function Install-Nuclei {
 
   $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
 
-  $rel = Invoke-RestMethod "https://api.github.com/repos/projectdiscovery/nuclei/releases/latest" `
-          -Headers @{ "User-Agent" = "nuclei-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "projectdiscovery/nuclei" -Tool "nuclei"
   $num = $ver.TrimStart("v")
   $zip = "nuclei_${num}_windows_${arch}.zip"
   $url = "https://github.com/projectdiscovery/nuclei/releases/download/$ver/$zip"
@@ -289,9 +328,7 @@ function Install-Semgrep {
 }
 
 function Install-DependencyCheck {
-  $rel = Invoke-RestMethod "https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest" `
-          -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "jeremylong/DependencyCheck" -Tool "dependency-check"
   $num = $ver.TrimStart("v")
   $zip = "dependency-check-${num}-release.zip"
   $url = "https://github.com/jeremylong/DependencyCheck/releases/download/$ver/$zip"
@@ -366,9 +403,7 @@ function Install-Zap {
   # is NOT the docker `zaproxy/zap-stable` image: Docker is not installed on
   # the operator machine and using it here was explicitly ruled out. Do not
   # "fix" this back to a docker run.
-  $rel = Invoke-RestMethod "https://api.github.com/repos/zaproxy/zaproxy/releases/latest" `
-          -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
-  $ver = $rel.tag_name
+  $ver = Resolve-LatestTag -Repo "zaproxy/zaproxy" -Tool "OWASP ZAP"
   $num = $ver.TrimStart("v")
   $zip = "ZAP_${num}_Crossplatform.zip"
   $url = "https://github.com/zaproxy/zaproxy/releases/download/$ver/$zip"
