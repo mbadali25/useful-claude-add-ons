@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-05T11:38Z
+Last updated: 2026-10-05T11:40Z
 
 ## >>> RESUME HERE
 
@@ -84,6 +84,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-05T11:40Z G7 research done (scratchpad g7/research/, public evidence only). G7 language sets HELD pending owner: do public change sets count toward the 3-reviewed-change-sets bar? Also: TERRAFORM set name too long for loader (2-6 chars).
 - 2026-10-05T11:38Z Owner decisions: diff ticket list (awaiting list); T-0030 1-of-3 is the T-0030/31/32 family; SQL+PHP ship thin, C-0020 minted; trailers Claude-Session only.
 - 2026-10-05T11:22Z Owner approved: landing order H1 -> H3 -> release -> H2; L-0515 nothing to build (folded into L-0520); T-0033 question to owner only if the builder finds one.
 - 2026-10-05T11:22Z Owner asked the other landing session to stay out of #324-#538.
