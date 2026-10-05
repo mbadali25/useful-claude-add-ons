@@ -1416,4 +1416,21 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_reject_accepted.py::"
          "test_status_shows_a_malformed_history_as_it_is"),
     ),
+    (
+        # Review of 7351594b: a float latest round passes as the receipt's.
+        "--correct-acceptance takes a float latest round",
+        REVIEW_LEDGER,
+        '                or type(latest.get("round")) is not int):'
+        '  # pylint: disable=unidiomatic-typecheck\n',
+        '                or False):\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of 7351594b: an old accepter it cannot print is corrected.
+        "--correct-acceptance takes an old accepter it cannot print",
+        REVIEW_LEDGER,
+        '            _one_line_arg(was, "accepted_by")\n',
+        "            pass\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
 )

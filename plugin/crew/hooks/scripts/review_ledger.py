@@ -976,7 +976,7 @@ def correct_acceptance(root, ticket, by, reason):
         if (not isinstance(number, int) or isinstance(number, bool)
                 or not isinstance(latest, dict) or latest.get("status") != "completed"
                 or latest.get("verdict") != "FINDINGS" or latest.get("round") != number
-                or isinstance(latest.get("round"), bool)):
+                or type(latest.get("round")) is not int):  # pylint: disable=unidiomatic-typecheck
             raise LedgerError(f"{ticket}'s receipt is for round {number!r}, and the latest "
                               "round is not that round completed with FINDINGS: no acceptance "
                               "stands to correct")
@@ -984,6 +984,13 @@ def correct_acceptance(root, ticket, by, reason):
         if not isinstance(was, str) or not was.strip():
             raise LedgerError(f"{ticket}'s receipt names no accepter ({was!r}): could not "
                               "tell what is being corrected")
+        try:
+            _one_line_arg(was, "accepted_by")
+        except LedgerError as exc:
+            # Review of 7351594b: an old name that spans lines or cannot be
+            # written would break the success line after the write.
+            raise LedgerError(f"{ticket}'s recorded accepter cannot be printed as one line "
+                              f"({exc}): could not tell what is being corrected") from exc
         history = data.get("acceptance_corrections", [])
         if not _is_dict_list(history):
             raise LedgerError(f"{ticket}'s `acceptance_corrections` is not a list of "

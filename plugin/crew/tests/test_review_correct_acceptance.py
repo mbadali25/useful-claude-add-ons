@@ -256,6 +256,13 @@ def _auto_kind(repo):
     _edit(repo, lambda data: data["receipt"].update(kind=rl.AUTO_KIND, accepted_by=rl.AUTO_BY))
 
 
+def _set_latest_round(value):
+    def build(repo):
+        _accepted(repo)
+        _edit(repo, lambda data: data["rounds"][-1].__setitem__("round", value))
+    return build
+
+
 def _accepted_then_reserved(repo):
     """A new round reserved after the acceptance: the state is IN_REVIEW and
     the old receipt is still in the file, but no longer stands."""
@@ -308,6 +315,11 @@ REFUSALS = {
     "state_reviewed": (_set("state", rl.REVIEWED), {}),
     "receipt_for_an_older_round": (_set_receipt("round", 0), {}),
     "receipt_round_bool": (_set_receipt("round", True), {}),
+    # Review of 7351594b: a float latest round, and an old accepter that
+    # spans lines or cannot be written as UTF-8.
+    "latest_round_float": (_set_latest_round(1.0), {}),
+    "accepted_by_newline": (_set_receipt("accepted_by", "a peer\nBLOCK|x"), {}),
+    "accepted_by_line_separator": (_set_receipt("accepted_by", "a peer\u2028x"), {}),
     "by_fullwidth_auto": (_accepted, {"by": "\uff41\uff55\uff54\uff4f: x"}),
     "by_zero_width_auto": (_accepted, {"by": "\u200bauto: x"}),
     "by_bom_auto": (_accepted, {"by": "\ufeffAuTo: x"}),
