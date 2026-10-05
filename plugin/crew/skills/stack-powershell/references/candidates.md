@@ -30,9 +30,11 @@ string-matched against the raw learn.microsoft.com page (`view=powershell-7.5`) 
 Counted: 1 (crew-0.19.92). 6 public change sets, which do not count.
 
 After every native command whose outcome matters, read `$LASTEXITCODE` immediately: not
-after a cmdlet, `Invoke-Expression`, or a pipeline that may have closed early. Reset it before
-a sequence that relies on it. Treat `$null` as failure, because it means the program never
-ran, and `exit $LASTEXITCODE` on `$null` exits 0. By default `try`/`catch` does not observe a
+after a cmdlet, `Invoke-Expression`, or a pipeline that may have closed early. A launch that
+fails (a missing or unstartable program) leaves the previous value in place, so a stale 0 reads
+as a pass. Set `$LASTEXITCODE = $null` before each invocation, and catch its launch error.
+Treat `$null` afterwards as failure, because it means the program never ran, and
+`exit $LASTEXITCODE` on `$null` exits 0. By default `try`/`catch` does not observe a
 native non-zero exit, so check it as well. In PowerShell 7.4 and later,
 `$PSNativeCommandUseErrorActionPreference = $true` with `$ErrorActionPreference = 'Stop'` makes
 it catchable, but a script that must also run on 5.1 cannot rely on that.
