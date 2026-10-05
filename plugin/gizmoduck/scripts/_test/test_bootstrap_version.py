@@ -912,7 +912,7 @@ def test_no_override_and_no_flag_is_silent(stubs):
 def test_the_sudo_stub_refuses_real_install_paths(stubs):
     # The net under every install test: with the overrides ignored, nothing
     # may reach /usr/local/bin or /opt.
-    proc, log = _run(stubs, "sudo mkdir -p /opt/gizmoduck-should-not-exist; echo rc=$?")
+    proc, _ = _run(stubs, "sudo mkdir -p /opt/gizmoduck-should-not-exist; echo rc=$?")
     assert "rc=97" in proc.stdout, proc.stdout + proc.stderr
     assert not os.path.exists("/opt/gizmoduck-should-not-exist")
     assert "refusing real path /opt/gizmoduck-should-not-exist" in proc.stderr
