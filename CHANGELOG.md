@@ -13,6 +13,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 - **Summary.** Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
 - **Ported to release/1.2.0 (feature rush, PR #342).** Merged onto the T-0012 and T-0049 ports. Autopilot's inert-key warnings are `crew_config.autopilot_inert_warnings` (keeps `crew_autopilot.py` under pylint's 3400-line cap); with T-0012's goal landed, `maxTicketsPerRun` and `mode: backlog` are attributed to L-0541.
+- **Port review round 1.** `--approvals` prints each `/crew:approve <id>` alone,
+  its reason on a `  why:` line under it: the old `/crew:approve T-1  (no approval)`
+  parsed as a group of three ids, so the advertised paste did not approve. A
+  linked worktree with no INDEX of its own reads the main checkout's rows (as
+  the walk already did) instead of saying `could not tell`.
 - **What changed.** `crew_config.inert_settings(root)` names every setting the
   installed crew does not act on: a resolved key outside `default_config()`
   (not `platform.*` or `schema`; keys under an open table such as `dev.roles`
@@ -22,8 +27,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   characters, `+N more`, emitted with `memory.inject` off too), an `inert` line
   in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
   `crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
-  anything. `/crew:status --approvals` prints one `/crew:approve <id>  (<why>)`
-  line per open ticket whose spec and plan validate and whose approval is
+  anything. `/crew:status --approvals` prints one `/crew:approve <id>` line (its
+  `  why: <why>` on the line under it) per open ticket whose spec and plan validate and whose approval is
   missing, stale or unaccepted, and leaves merged, current and spec-only
   tickets out (`nothing needs approval` when there are none, `could not tell
   (<reason>)` when `.work/INDEX.md` is missing, unreadable or not UTF-8). A

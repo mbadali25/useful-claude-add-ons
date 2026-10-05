@@ -51,7 +51,7 @@ case is reported as zero.
 
 Prints only the open tickets whose spec and plan exist and validate and whose
 approval is missing, stale or unaccepted, one ready-to-paste
-`/crew:approve <id>  (<why>)` line each, then a count of any whose spec and
+`/crew:approve <id>` line each with `  why: <why>` under it, then a count of any whose spec and
 plan do not validate. Merged, current and spec-only tickets are left out;
 none pending prints `nothing needs approval`, and a missing or unreadable
 `.work/INDEX.md` prints `could not tell (<reason>)`. Read-only like the rest.

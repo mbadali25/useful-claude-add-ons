@@ -316,9 +316,17 @@ def _index_unreadable(root):
     """Why `.work/INDEX.md` cannot be read as UTF-8, or None when it can. The
     approvals walk reads INDEX through a reader that turns every failure into
     "no tickets", so an unknown would print as "nothing needs approval"."""
-    import crew_ticket  # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel
+    import crew_autopilot
+    import crew_ticket
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     path = os.path.join(top, ".work", "INDEX.md")
+    if not os.path.lexists(path):
+        # A linked worktree starts with no INDEX of its own: the walk reads the
+        # main checkout's rows for tickets whose folders are here (T-0063).
+        main, _why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
+        if main and os.path.abspath(main) != os.path.abspath(top):
+            path = os.path.join(main, ".work", "INDEX.md")
     try:
         with open(path, "rb") as fh:
             fh.read().decode("utf-8")
@@ -336,7 +344,10 @@ def approvals_lines(root):
     if unknown:
         return [f"could not tell ({unknown})"]
     pending, invalid = pending_approvals(root)
-    lines = [f"/crew:approve {ticket}  ({why})" for ticket, why in pending]
+    # The paste line alone: `/crew:approve T-1  (why)` would read as a group of
+    # three ids. The reason goes on its own line under it.
+    lines = [row for ticket, why in pending
+             for row in (f"/crew:approve {ticket}", "  why: " + " ".join(str(why).split()))]
     if invalid:
         one = len(invalid) == 1
         lines.append(f"{len(invalid)} {'ticket' if one else 'tickets'} with a spec and plan "

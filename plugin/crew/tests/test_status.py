@@ -470,15 +470,43 @@ def test_status_approvals_lists_only_what_needs_you(tmp_path):
     done = _run(root, "--approvals")
     assert done.returncode == 0, done.stderr
     lines = done.stdout.splitlines()
-    assert [l.split("  (")[0] for l in lines[:3]] == [
-        "/crew:approve T-1", "/crew:approve T-2", "/crew:approve T-3"], lines
-    assert lines[0].endswith("(no approval)")
-    assert lines[1].startswith("/crew:approve T-2  (stale: ")
-    assert lines[2].startswith("/crew:approve T-3  (unaccepted: ")
-    assert lines[3:] == [
+    # Each paste line is the command alone (T-0070 port review BLOCK: a reason
+    # on the same line parsed as a group of three ids); its reason follows.
+    assert lines[0:6:2] == ["/crew:approve T-1", "/crew:approve T-2", "/crew:approve T-3"], lines
+    assert lines[1] == "  why: no approval"
+    assert lines[3].startswith("  why: stale: ")
+    assert lines[5].startswith("  why: unaccepted: ")
+    assert lines[6:] == [
         "1 ticket with a spec and plan that do not validate is not listed: T-7"]
     for absent in ("T-4", "T-5", "T-6"):
         assert absent not in done.stdout
+
+
+def test_status_approvals_paste_line_approves_one_ticket(tmp_path):
+    """The printed line, pasted whole, is the approval hook's single form."""
+    import approval_hook  # pylint: disable=import-outside-toplevel
+    root = _approvals_repo(tmp_path)
+    lines = _run(root, "--approvals").stdout.splitlines()
+
+    got = [approval_hook.parse(line) for line in lines if line.startswith("/crew:approve")]
+    assert [(r.kind, r.ids) for r in got] == [
+        (approval_hook.SINGLE, (t,)) for t in ("T-1", "T-2", "T-3")]
+
+
+def test_status_approvals_reads_the_main_index_from_a_linked_worktree(tmp_path):
+    """T-0070 port review FIX: a linked worktree with no INDEX of its own reads
+    the main checkout's rows, never `could not tell (no .work/INDEX.md)`."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    shutil.rmtree(wt / ".work", ignore_errors=True)
+    shutil.copytree(root / ".work" / "tickets" / "T-1", wt / ".work" / "tickets" / "T-1")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert lines[:2] == ["/crew:approve T-1", "  why: no approval"], lines
 
 
 def test_status_approvals_says_nothing_needs_approval(tmp_path):

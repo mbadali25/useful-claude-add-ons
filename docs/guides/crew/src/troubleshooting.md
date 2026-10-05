@@ -246,8 +246,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
   `emergency.standDown` while the bash gate reads the inherited one.
 - **Symptom: which tickets still need my approval?**
-  **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>  (<why>)`
-  line per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>` line, with a
+  `  why: <why>` line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
   current or spec-only tickets (`nothing needs approval` when there are none). Approving a ticket
   it does not list changes nothing.
 - **Symptom: an edit inside Touch is still refused.**
