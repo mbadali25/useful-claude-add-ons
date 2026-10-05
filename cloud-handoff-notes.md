@@ -20,7 +20,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 - Plan after batch 7: Windows re-run sweep of the 7 red PRs; C-0002..C-0005, C-0007; then crew 1.1.0 + guide rename (C-0006) last. C-0006 ENDS this rush; the next rush (owner 2026-10-05) takes the remaining new draft PRs / spec-draft waves.
 
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 01:20]
-main = abddc302 (batch 7 #505 merged), crew 1.0.349.
+main = c89d488e (#507 C-0009 merged; #504 by owner's other session), crew 1.0.349.
 | Item | Where | State | Next |
 |---|---|---|---|
 | C-0001 per-component CI skip (TOP PRIORITY, owner) | #501 `C-0001-build` c2a133b7 | CI green 29/29; scripts/ci-select.py + 25-case suite, 12 sabotages red | c39dc4e6: BLOCK + 2 FIX + 2 NIT fixed (22 sabotages red), CI green 28/28; also pins combined run to gizmoduck pytest.ini | focused re-check running; re-check, land ALONE; first notes push after merge proves the skip path |
@@ -50,7 +50,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 05:56 UTC
+Last updated: 2026-10-05 05:57 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -109,6 +109,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 11:05: MERGED #507 C-0009 -> c89d488e (one setup script: pwsh w/ sha256, mermaid, mcp deps, gizmoduck optional, apt sandbox, pytest/ruff pins). Env setting: 'bash scripts/cloud-env-setup.sh'.
 - 10:55: #501 C-0001 fixes pushed fa387f47 (module/package-name uniqueness via real collect-only sys.path dump; namespace pkgs may repeat; select.outputs outside if: refused), main merged, CI green 28/28. 27 sabotages red. Final re-check started.
 - 10:45: C-0008 #506 green at 885e5f7b (git-tag lookup, trivy sha256 fallback, templates-on-disk + clone, apt sandbox helper, skip-if-present, doctor; ps1 twins). Gizmoduck 0.5.8 (skipped 0.5.7). Review started (supply-chain checksums, version = main+1).
 - 10:35: #401 L-0673 re-check 0 BLOCK 0 FIX at 5e4dc6f7 -> batch 8 (ready: #433, #451, #462, #401). NITs folded into C-0010.
