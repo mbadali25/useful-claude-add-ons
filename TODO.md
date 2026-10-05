@@ -4,6 +4,12 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Split `plugin/crew/hooks/scripts/crew_autopilot.py` (over `.pylintrc`'s 3400 lines).** L-0509's
+  merge of main 3d4b4b5d took it to 3435 lines; it carries a module-level
+  `# pylint: disable=too-many-lines`, as `crew_config.py` does, rather than a split chosen to clear
+  a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
+  ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
+
 - **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
   every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
   read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`

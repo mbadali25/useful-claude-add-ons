@@ -238,6 +238,7 @@ dispatch, passes the class from T-0005's classifier, proceeds only on the exact
 verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
 not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
+# pylint: disable=too-many-lines  # over 3400 once L-0509 met main 3d4b4b5d; the split is owed (TODO.md)
 import argparse
 import datetime
 import hashlib
