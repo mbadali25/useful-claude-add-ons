@@ -1615,11 +1615,17 @@ def _obsidian_read(root, settings, ticket):
         owner, detail, _ = _card_owner(paths, here, label)
         if owner == FOREIGN:
             return [files, _result("obsidian", UNREADABLE, _foreign(paths, ticket, detail, here))]
-        # UNKNOWN keeps its doubt in the result, as the live branch below does.
-        doubt = f"; whose note could not tell: {detail}" if owner == UNKNOWN else ""
-        return [files, _result("obsidian", READ,
-                               f"archived; INDEX status {files.get('status')}{doubt}",
-                               lane=f"{crew_common.ARCHIVE_DIR}/", archived=True, disagree=False)]
+        # UNKNOWN keeps its doubt in the result, as the live branch below does,
+        # and Complete/ agrees with INDEX only when INDEX says closed.
+        status = files.get("status")
+        notes = [f"archived; INDEX status {status}"]
+        notes += [f"whose note could not tell: {detail}"] if owner == UNKNOWN else []
+        disagree = status not in ARCHIVE_STATUSES
+        notes += ([f"INDEX status {status} is not closed"] if status is not None and disagree
+                  else ["INDEX status could not tell"] if status is None else [])
+        return [files, _result("obsidian", READ, "; ".join(notes),
+                               lane=f"{crew_common.ARCHIVE_DIR}/", archived=True,
+                               disagree=disagree)]
     owner, detail = None, None
     if not problem:
         owner, detail, _ = _card_owner(paths, here, label)
@@ -1677,7 +1683,8 @@ def _files_archive(root, ticket):
     if where == crew_common.COMPLETE:
         return _result(backend, UNCHANGED, f"{done_rel} already archived")
     if where == crew_common.COULD_NOT_TELL:
-        return _result(backend, FAILED, f"could not tell where {ticket} lives: {why}")
+        return _result(backend, FAILED, f"could not tell where {ticket} lives: {why}"
+                       + _empty_claim_hint(root, ticket))
     if where == crew_common.ABSENT:
         return _result(backend, FAILED, f"no folder for {ticket} at {live_rel}")
     archive = os.path.join(crew_common.tickets_root(root), crew_common.ARCHIVE_DIR)
@@ -1692,6 +1699,20 @@ def _files_archive(root, ticket):
     except OSError as exc:
         return _result(backend, FAILED, f"{live_rel}: {exc.strerror or exc}; nothing moved")
     return _result(backend, UPDATED, f"{live_rel} -> {done_rel}")
+
+
+def _empty_claim_hint(root, ticket):
+    """When both folders exist and `Complete/<ID>` is EMPTY, the name
+    `_rename_dir_no_replace` may have claimed before a crash stopped its
+    rename -- or someone else's empty folder. Which cannot be told, so it is
+    never removed here; the refusal says so and names the fix."""
+    claim = os.path.join(crew_common.tickets_root(root), crew_common.ARCHIVE_DIR, ticket)
+    try:
+        empty = (not os.path.islink(claim) and os.path.isdir(claim) and not os.listdir(claim))
+    except OSError:
+        return ""
+    return (f"; {crew_common.ARCHIVE_DIR}/{ticket} is an empty folder (an interrupted archive "
+            "leaves one): remove it and rerun" if empty else "")
 
 
 def _rename_dir_no_replace(src, dst):
@@ -1716,25 +1737,31 @@ def _rename_dir_no_replace(src, dst):
 def _rename_file_no_replace(src, dst, src_dir_fd=None, dst_dir_fd=None):
     """Rename file `src` to `dst`, raising FileExistsError when `dst` exists,
     atomically: a hard link cannot replace (EEXIST), then the old name goes.
-    Windows' rename never replaces. A filesystem with no hard links falls
-    back to a re-check and rename, the one remaining window."""
+    Windows' rename never replaces. A filesystem with no hard links raises
+    its own OSError: a check-then-rename would leave a window in which a note
+    created meanwhile is replaced, so the move is refused instead. A crash
+    between the link and the unlink leaves two names of one file, which
+    `_finish_note_link` completes on the next run."""
     if os.name == "nt":
         os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
         return
-    try:
-        os.link(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd,
-                follow_symlinks=False)
-    except OSError as exc:
-        no_links = (errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EMLINK, errno.EXDEV)
-        if isinstance(exc, FileExistsError) or exc.errno not in no_links:
-            raise
-        try:
-            os.stat(dst, dir_fd=dst_dir_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
-            return
-        raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), dst) from exc
+    os.link(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, follow_symlinks=False)
     os.unlink(src, dir_fd=src_dir_fd)
+
+
+def _finish_note_link(paths):
+    """A note left under both names by a crash between `_rename_file_no_replace`'s
+    link and unlink is ONE file (same device and inode, a regular file, not a
+    link): drop the live name, so the archive can complete. Two different
+    files are left alone for `_note_where` to call could-not-tell."""
+    try:
+        live = os.lstat(paths["note"])
+        done = os.lstat(paths["archivedNote"])
+    except OSError:
+        return
+    if (stat.S_ISREG(live.st_mode) and (live.st_dev, live.st_ino) == (done.st_dev, done.st_ino)):
+        with contextlib.suppress(OSError):
+            os.unlink(paths["note"])
 
 
 def _rename_note(paths):
@@ -1799,6 +1826,8 @@ def _obsidian_archive_checks(root, settings, ticket):
     paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
     if not problem and here is None:
         problem = _no_identity(root)
+    if not problem:
+        _finish_note_link(paths)
     board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
     if not problem:
         _, why = remove_card(board, ticket)

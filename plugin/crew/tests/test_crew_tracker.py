@@ -2816,6 +2816,60 @@ def test_rename_note_never_replaces_a_note_that_appears_after_the_check(tmp_path
             theirs.read_text(encoding="utf-8")) == ("could not update", live, "theirs\n")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows' rename never replaces")
+def test_rename_note_refuses_where_hard_links_are_unavailable(tmp_path, monkeypatch):
+    """Review round 2: no check-then-rename fallback; refusing beats a window."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    paths, _problem = crew_tracker._vault_paths(  # pylint: disable=protected-access
+        str(root), crew_tracker.resolve(str(root))["settings"],
+        crew_tracker._note_names({"board": "Board.md"}, CARD))  # pylint: disable=protected-access
+
+    def no_link(*_args, **_kwargs):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(crew_tracker.os, "link", no_link)
+
+    got = crew_tracker._rename_note(paths)  # pylint: disable=protected-access
+
+    assert (got["state"], (_board_dir(vault) / f"{CARD}.md").is_file(),
+            (_board_dir(vault) / ARCHIVED / f"{CARD}.md").exists()) == ("could not update", True, False)
+
+
+def test_an_empty_claim_a_crash_left_is_named_never_removed(tmp_path):
+    """An empty Complete/<ID> may be an interrupted archive's claim or someone
+    else's folder: which cannot be told, so it is kept and the fix is named."""
+    root, _vault = _done_obsidian(tmp_path)
+    (root / ".work" / "tickets" / ARCHIVED / CARD).mkdir(parents=True)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), (root / ".work" / "tickets" / ARCHIVED / CARD).is_dir(),
+            any("remove it and rerun" in (r.get("reason") or "") for r in got["results"])) == (
+        1, True, True), got
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-unlink move is POSIX only")
+def test_archive_completes_a_note_left_under_both_names(tmp_path):
+    root, vault = _done_obsidian(tmp_path)
+    (_board_dir(vault) / ARCHIVED).mkdir()
+    os.link(_board_dir(vault) / f"{CARD}.md", _board_dir(vault) / ARCHIVED / f"{CARD}.md")
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), (_board_dir(vault) / f"{CARD}.md").exists(),
+            (_board_dir(vault) / ARCHIVED / f"{CARD}.md").is_file()) == (0, False, True), got
+
+
+def test_an_archived_read_with_an_open_index_row_disagrees(tmp_path):
+    root, _vault = _archived_obsidian(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(DONE_ROW.replace("done", "review"), encoding="utf-8",
+                                             newline="\n")
+
+    got = crew_tracker.read(str(root), CARD)["results"][1]
+
+    assert (got["disagree"], "is not closed" in got["reason"]) == (True, True), got
+
+
 @pytest.mark.parametrize("kind,key", [("jira", "ABC-12"), ("sdp", "SDP-40219")])
 def test_a_synced_tracker_refuses_to_move_or_create_an_archived_ticket(tmp_path, kind, key):
     root = make_repo(tmp_path)
