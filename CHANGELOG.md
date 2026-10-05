@@ -9,6 +9,28 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `crew`: the CI receipt lists a command the gate could not judge as UNKNOWN, never PASS (L-0673)
+
+- **Summary.** The CI verify-gate receipt's per-command list now shows UNKNOWN for a command the gate
+  could not judge or never finished, and says when the list is partial because the gate died.
+- **What changed.** `ci_receipt.parse_log` reads T-0082's
+  `verify-gate: COULD NOT TELL (<reason>): <cmd>` line as the state UNKNOWN, and a command the gate
+  named failed with no elapsed line after it (a gate killed mid-rule) is listed UNKNOWN with
+  `seconds` null instead of being dropped. The receipt records `log_complete`, false when the log
+  ends before the `verify-gate: <N>s total across` line; with a non-zero gate exit the job summary
+  says the list is partial. `/crew:verify` gains "A rule passes only on a completion record": the
+  reasons a rule reads "could not tell", that it fails the turn, and that it never advances the
+  marker.
+- **What did not change.** What `build` and `check` accept: `pass`, the gate state and rc, the
+  outstanding entries and the clean-tree test. No new receipt schema version; nothing reads
+  `commands[].state` for a decision.
+- **Tests.** `test_ci_receipt.py`: a could-not-tell line (including a reason holding `): `) reads
+  UNKNOWN; a log without the total line keeps each parsed state, lists the in-flight command
+  UNKNOWN and marks the receipt and summary partial; a real `verify-gate.sh --all` on a rule exiting
+  130 lists it UNKNOWN. Sabotage-tested by hand: dropping the UNKNOWN branch (back to the PASS/FAIL
+  default), dropping the in-flight entry, forcing `log_complete` true, and matching the command only
+  by the regex each turned a test red.
+
 ### crew 1.0.348 — batch 6: T-0045, T-0041, L-0582, T-0050
 
 - **Summary.** Four crew changes in one update: a check for GitHub Actions deploy entries, agents that

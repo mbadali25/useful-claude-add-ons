@@ -36,36 +36,32 @@ If the repo has no meaningful tests, do not fabricate a map. Say so, and hand of
 to a smoke-harness ticket (`/crew:brainstorm`) — a map pointing at checks that cannot fail is worse than
 no map, because the gate turns green and everyone relaxes.
 
-**Running the whole map, unbudgeted.** The Stop gate spends a budget
-(`verify.stopBudgetSeconds`, default 60) cheapest-first and DEFERS what does
-not fit, printing `deferred to /crew:verify: <cmd> (<n>s)` for each one. Those
-were not checked.
+**Running the whole map, unbudgeted.** The Stop gate spends a budget (`verify.stopBudgetSeconds`,
+default 60) cheapest-first and DEFERS what does not fit, printing
+`deferred to /crew:verify: <cmd> (<n>s)` for each one. Those were not checked.
 
-**`seconds` prices the RULE, and is charged ONCE.** A rule runs whole or
-defers whole, however many commands its `run` holds -- so a rule with
-`"seconds": 40` and three commands costs 40 against the budget, not 120. This
-sentence exists because the unit was left unstated when the budget was
-introduced ("run matched rules in ascending seconds"), and the first
-implementation read it per command and split rules in half.
+**`seconds` prices the RULE, and is charged ONCE.** A rule runs whole or defers whole, however many
+commands its `run` holds -- so a rule with `"seconds": 40` and three commands costs 40 against the
+budget, not 120. This sentence exists because the unit was left unstated when the budget was
+introduced ("run matched rules in ascending seconds"), and the first implementation read it per
+command and split rules in half.
 
-**A command named by more than one source carries the STRONGEST obligation of
-any of them.** `always` is unconditional; a rule with no `seconds` is
-unconditional-until-priced; only a rule that states `seconds` is deferrable.
-Naming a command in `always` and also in a 90s rule therefore RUNS it -- the
-merge resolves toward running, never toward deferring.
+**A command named by more than one source carries the STRONGEST obligation of any of them.**
+`always` is unconditional; a rule with no `seconds` is unconditional-until-priced; only a rule that
+states `seconds` is deferrable. Naming a command in `always` and also in a 90s rule therefore RUNS
+it -- the merge resolves toward running, never toward deferring.
 
-**The obligation attaches to the RULE, so `run` order is never disturbed and
-nothing is charged twice.** A rule is unconditional when it states no cost or
-when any command it names is unconditional, and it then runs WHOLE, in its own
-`run` order, charged its `seconds` once. Two consequences worth knowing when
-you write a map:
+**The obligation attaches to the RULE, so `run` order is never disturbed and nothing is charged
+twice.** A rule is unconditional when it states no cost or when any command it names is
+unconditional, and it then runs WHOLE, in its own `run` order, charged its `seconds` once. Two
+consequences worth knowing when you write a map:
 
-* `run: ["prepare", "check"]` keeps `prepare` first even when `check` is in
-  `always`. Where a command runs is part of what the rule means; being
-  mandatory only decides whether it can be deferred.
-* putting one command of a rule in `always` makes the WHOLE rule
-  unconditional, because half a rule is not something anyone can say ran. If
-  you want just one check unconditional, give it a rule of its own.
+* `run: ["prepare", "check"]` keeps `prepare` first even when `check` is in `always`. Where a
+  command runs is part of what the rule means; being mandatory only decides whether it can be
+  deferred.
+* putting one command of a rule in `always` makes the WHOLE rule unconditional, because half a rule
+  is not something anyone can say ran. If you want just one check unconditional, give it a rule of
+  its own.
 
 To run everything with no budget:
 
@@ -92,37 +88,32 @@ since the recorded anchor, and flag rules whose target files no longer exist.
 
 ## The per-rule record replaces the single marker
 
-Stop used to keep exactly one baseline (`.crew/.verify-verified-at`) and one
-fingerprint (`.crew/.verify-gate.fingerprint`), both written ONLY when every
-matched rule ran clean. A rule priced over the Stop budget on its own — this
-repo's own `rules[8]` at 185s against a 60s default — was deferred on EVERY
-Stop, so neither ever advanced again: the baseline froze, and every OTHER
-rule re-matched and re-ran from that same old commit, forever.
+Stop used to keep exactly one baseline (`.crew/.verify-verified-at`) and one fingerprint
+(`.crew/.verify-gate.fingerprint`), both written ONLY when every matched rule ran clean. A rule
+priced over the Stop budget on its own — this repo's own `rules[8]` at 185s against a 60s default —
+was deferred on EVERY Stop, so neither ever advanced again: the baseline froze, and every OTHER rule
+re-matched and re-ran from that same old commit, forever.
 
-`.crew/.verify-gate.record.json` (machine-local, never tracked) now carries
-per-rule status alongside the two markers. A rule that is PERMANENTLY over
-budget on its own — chronic, not a fluke of this turn's ordering — no longer
-blocks the baseline; it is named in the record instead, and reported EVERY
-turn ("NOT VERIFIED ON THIS TREE") until it actually runs clean, which only
-`--all` can do. A rule that fits alone but lost to this turn's contention
-(acute) still blocks the baseline exactly as before — that case is genuinely
-unverified for THIS commit, not permanently unverifiable.
+`.crew/.verify-gate.record.json` (machine-local, never tracked) now carries per-rule status
+alongside the two markers. A rule that is PERMANENTLY over budget on its own — chronic, not a fluke
+of this turn's ordering — no longer blocks the baseline; it is named in the record instead, and
+reported EVERY turn ("NOT VERIFIED ON THIS TREE") until it actually runs clean, which only `--all`
+can do. A rule that fits alone but lost to this turn's contention (acute) still blocks the baseline
+exactly as before — that case is genuinely unverified for THIS commit, not permanently unverifiable.
 
 ## `--price` (operator only, never from Stop)
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --price [path] [--force]
     pwsh ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]
 
-Times every rule in a verify.json-shaped map with no budget and writes
-`seconds` (ceil, min 1) for the ones that have none. Defaults to
-`.crew/verify.json`; pass a path to price a different file. Never overwrites
-an existing `seconds` unless `--force`/`-PriceForce` is given, and never
-writes 0 — a rule that ran in under a second still costs 1.
+Times every rule in a verify.json-shaped map with no budget and writes `seconds` (ceil, min 1) for
+the ones that have none. Defaults to `.crew/verify.json`; pass a path to price a different file.
+Never overwrites an existing `seconds` unless `--force`/`-PriceForce` is given, and never writes 0 —
+a rule that ran in under a second still costs 1.
 
-**`.crew/verify.json` in this repo is TRACKED**, so `--price` against it
-dirties a committed file. It is never reachable from the Stop hook and is
-never invoked automatically by this command either — run it by hand, review
-the diff, and commit the pricing separately.
+**`.crew/verify.json` in this repo is TRACKED**, so `--price` against it dirties a committed file.
+It is never reachable from the Stop hook and is never invoked automatically by this command either —
+run it by hand, review the diff, and commit the pricing separately.
 
 ## `--stamp-reach` (operator only, L-0562)
 
@@ -219,8 +210,17 @@ reasoned about.
 
 ## Exit 77 is SKIP
 
-Following `_verify/smoke.sh` and GNU automake's convention, a command exiting
-77 means "skipped, environment absent" — not a pass, not a fail. The gate
-reports it (`SKIP (rc 77, environment absent)`), never fails the turn on it,
-and never records it as verified: it is listed with the deferred/chronic
-rules until it actually runs and exits 0.
+Following `_verify/smoke.sh` and GNU automake's convention, a command exiting 77 means "skipped,
+environment absent" — not a pass, not a fail. The gate reports it
+(`SKIP (rc 77, environment absent)`), never fails the turn on it, and never records it as verified:
+it is listed with the deferred/chronic rules until it actually runs and exits 0.
+
+## A rule passes only on a completion record
+
+Each command runs in a wrapper that writes the command's exit status to a completion record when it
+ends, and only a record holding 0 is a pass. The gate prints `VERIFY FAILED` and then
+`verify-gate: COULD NOT TELL (<reason>): <cmd>` when it cannot tell: the wrapper ended before
+writing the record, the record is missing or unreadable, the status is above 128 (a signal, or the
+rule's own status), or the gate itself was signalled while the command ran. Could not tell fails the
+turn like a failure and never advances the marker or the rule's record entry. The CI receipt lists
+such a command as UNKNOWN, and calls its list partial when the log ends before the total line.

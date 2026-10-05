@@ -355,6 +355,12 @@ The command log carries status `unknown` for such a rule; the record sync leaves
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
 rule is not ended by the gate.
 
+The CI receipt (`ci_receipt.py`, L-0673) lists such a command as `UNKNOWN`, never `PASS`, and so a
+command the gate named failed but never finished (a gate killed mid-rule). A log that ends before
+the `verify-gate: <N>s total across` line records `log_complete: false`; when the gate also exited
+non-zero, the job summary says the list is partial. The list is informative only: what the receipt
+accepts did not change.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it

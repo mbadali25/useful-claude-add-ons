@@ -2376,6 +2376,12 @@ a VERIFIED receipt where the local gate is UNVERIFIED or UNKNOWN; any other
 receipt answer leaves the local verdict standing. The Stop hook does not consult
 it: that would put network calls in a hook that runs every turn.
 
+The receipt's per-command list is informative only. A command reads PASS, FAIL,
+SKIP or UNKNOWN; UNKNOWN is a `COULD NOT TELL` line, or a command named failed with
+no elapsed line after it (L-0673). `log_complete` is false when the log ends before
+the gate's total line, and with a non-zero gate exit the job summary calls the
+list partial.
+
 ### Linters
 
 Path-scoped rules in `verify.json`, per the `crew-lint` skill: `ruff` for Python,
