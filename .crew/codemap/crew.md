@@ -4433,6 +4433,13 @@ to that branch's content commits. This section does not move the file's `anchor:
   `plugin/crew/hooks/scripts/handoff-write.ps1:388`, `plugin/crew/hooks/scripts/context-watch.ps1:434`.
   `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
   shadows the caller's identical one.
+- **JUDGEMENT (T-0051, batch 8).** The two bullets above no longer hold for notify:
+  T-0051 made `notify.sh` and `notify.ps1` thin wrappers around `crew_notify.py`, so
+  `notify.ps1` carries no `Get-CrewRepoConfigDir` (six copies remain, `PS_COPIES` in
+  `plugin/crew/tests/test_worktree_config_shell.py` names notify.ps1's removal) and
+  `crew_notify.py` reads the config itself. Its dedupe state is written to
+  `<git-common-dir>/crew/notify`, shared by every worktree, not kept in the lane. The
+  `notify.*` line cites above are pre-T-0051 and were not re-derived.
 - **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
   (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:396`):
   there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`

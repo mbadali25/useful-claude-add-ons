@@ -162,7 +162,9 @@ missing resolver (`_common.sh` failed to source) also counts as armed. Routed: t
 `crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
 in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
 veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
-`context-watch` in both flavours, whose writes stay in the worktree and whose
+`context-watch` in both flavours, whose writes stay in the worktree (except notify's:
+since T-0051 `crew_notify.py` writes its dedupe state to `<git-common-dir>/crew/notify`,
+shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
 names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
 `.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot

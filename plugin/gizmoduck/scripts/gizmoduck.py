@@ -172,8 +172,11 @@ NUCLEI_ATTACK_FLAGS = frozenset({"it", "include-templates", "dast", "fuzz", "dts
 NUCLEI_CONFIG_FLAGS = frozenset({"config", "tp", "profile"})
 NUCLEI_STRICT_FLAGS = (NUCLEI_RATE_FLAGS | NUCLEI_TAG_FLAGS | NUCLEI_ATTACK_FLAGS
                        | NUCLEI_CONFIG_FLAGS)
-# Pinned beside every -rl gizmoduck emits: `-rl N` means N per -rld, and a
-# config file's rate-limit-duration would otherwise stretch or shrink it.
+# Pinned beside every -rl gizmoduck emits: `-rl N` means N per -rld. The pin
+# does not outrank a config file: Nuclei lets a config's rate-limit-duration
+# beat a command-line -rld. What protects routine scans is the strict refusal
+# of -config/-tp/-profile (NUCLEI_CONFIG_FLAGS) in a manifest's `extra`; an
+# ad-hoc `scan --extra` carrying a config file is the caller's to answer for.
 NUCLEI_RATE_DURATION = "1s"
 
 
