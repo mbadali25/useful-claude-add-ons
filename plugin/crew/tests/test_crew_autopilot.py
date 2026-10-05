@@ -1250,7 +1250,8 @@ def test_autopilot_defaults_are_the_config_block():
     assert crew_config.default_config()["autopilot"] == {
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
-        "sleep": {"schedule": None, "approval": None, "questions": None}}
+        "sleep": {"schedule": None, "approval": None, "questions": None},
+        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
 
 
 # --- step 6: the command -----------------------------------------------------

@@ -1131,8 +1131,13 @@ AUTONOMOUS_STOPS = (
 # `human|self|risk`: `risk` acts only on a spec header saying `risk: low`, any
 # other value reads `human`, approval also needs `scope.allowCliApproval: true`
 # (crew_autopilot.approval_policy). `sleep` (T-0053): crew_sleep.py's window. `maxAutoReplans` (T-0074): 0 off.
+# T-0011's ship phase after `/crew:done`: `ship` is `pr` (push and open the PR)
+# or `merge` (also `gh pr merge <n> --merge` once every required check passes or
+# fails only on a name EXACTLY in `knownFailures`); anything else reads as `pr`.
+# A check still pending after `ciTimeoutMinutes` stops; it never merges.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None}}
+                      "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
+                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

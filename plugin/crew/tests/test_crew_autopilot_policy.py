@@ -679,7 +679,10 @@ def _files(root):
 READ_ONLY_RUNS = (("next", "--ticket", T), ("resume",), ("settings",), ("stops",),
                   ("route", "--args", f"status {T}"), ("status",),
                   ("questions-check", "--ticket", T),
-                  ("deploy-allowed", "--env", "staging", "--class", "nonProd"))
+                  ("deploy-allowed", "--env", "staging", "--class", "nonProd"),
+                  # T-0011's `ship` writes no file: here `next` does not name
+                  # `ship`, so it refuses before any push or gh call.
+                  ("ship", "--ticket", T))
 
 
 def _main(root, action, *rest):

@@ -65,7 +65,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
 No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
-  named and commit it. `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. Then `LAST=<c>`, `N+=1`, again.
+  named and commit it. `auto-replan`: run its `auto-reject` line, report every line verbatim, send them as `review.md` step 5's notification. A `replan` that does not stop: `/crew:plan` writes a successor plan whose steps quote every BLOCK and FIX line of the rejected round verbatim, each with a neighbouring-case check, and differs from every plan approved before. `phase=ship` (T-0011): print the lines of `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py ship --root . --ticket <ticket>`; `stop=1` stops. Then `LAST=<c>`, `N+=1`, again.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below.
 - any other `stop=1` - print the phase, the reason and the command the human types (may be
   empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer
@@ -96,7 +96,7 @@ A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
+`failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.
@@ -106,7 +106,7 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 ## 5. Context runs low, and the report
 
 When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with
-`resume: /crew:autopilot <ticket>` as its resume line, then stop. Report the ticket and its source, each phase run with its command, every
+`resume: /crew:autopilot <ticket>` as its resume line, then stop. Report the ticket and its source, each phase run with its command, the PR, every
 `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
 
 ## 6. focus - a scope lock on one ticket (T-0020)

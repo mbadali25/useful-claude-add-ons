@@ -291,7 +291,9 @@ T-0013's `resume.typeDelaySeconds` and `resume.readyTimeoutSeconds` in both laye
 Re-executed on T-0066's branch after merging main `155fe6d8` (crew 1.0.342), which changed no config key: 133 / 75 / 58 / 0 -
 `git.forbiddenTrailers` in both layers on top of T-0013's 132 (131 / 73 / 58 / 0 on its earlier
 merge of `c9263465`). Re-executed on T-0053's branch after merging main `86d96fa1`: 136 / 75 / 61 / 0 -
-T-0053's three repo-only `autopilot.sleep` keys on top of those 133. `plugin/crew/tests/test_crew_config.py` asserts 136. T-0004's `CHANGELOG.md` entry
+T-0053's three repo-only `autopilot.sleep` keys on top of those 133. Re-executed on `batch-7-build` after merging T-0011 (#353) onto main `47f71e93`, which asserts 138: 141 / 81 / 60 / 0 -
+T-0011's `autopilot.ship`, `autopilot.knownFailures` (an empty list, one leaf) and `autopilot.ciTimeoutMinutes`, repo-only
+(`crew_state.REPO_ONLY_AUTOPILOT`). `plugin/crew/tests/test_crew_config.py` asserts 141. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1045` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:703-704` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:692-693` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -830,6 +832,28 @@ under that constant, refusing with exit 2 and no write otherwise. Tests `plugin/
 JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted gap for one
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
+
+**Ship (T-0011, crew 1.0.366).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
+with `grep -n`); the line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
+(spec header `status: done`, or INDEX `done` with that header), armed, `_phase` hands off to
+`_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:610`): unarmed is `closed` without
+asking gh; a detached HEAD, an unreadable `read_pr` (`:416`), a PR closed unmerged, a working tree
+that differs from HEAD (`_clean_tree` `:522`, `git status --porcelain --untracked-files=all`) or
+a receipt that no longer stands stops at `ship`; MERGED is `closed` only when the PR's
+`headRefOid` and local HEAD are the same full SHA (`_merged_phase`, `:591`; a later
+commit or an unreadable head stops at `ship`), and OPEN under `autopilot.ship: pr` is `closed`. `ship` (`:747`) refuses the default branch and a dirty tree before
+`git push -u origin <branch>`, takes HEAD once right after the push, opens the PR when none, and
+under `merge` polls in `_wait_for_ci` (`:674`): `_head_stop` (`:658`) holds local HEAD and the
+PR's `headRefOid` to the pushed commit before and after each `read_checks` (`:437`; a row that
+is not exactly `_CHECK_FIELDS` (`:347`) = 5 tab-separated fields is unreadable, measured from gh
+v2.46.0's source), and `_ship_gate` (`:557`) re-reads the settings, the spec's risk, the review
+families and `_ledger_hash` (`:538`) every poll into `ship_decision` (`:286`, the pure rule;
+`SAME_FAMILY` `:272`). `_pre_merge_stop` (`:714`) re-checks the receipt, the ledger hash, both
+heads, the tree and `read_merge_queue` (`:476`), then the ledger hash and local HEAD once more;
+the merge is `merge_argv` (`:360`), `gh pr merge <n> --merge --match-head-commit <head>`. A merge
+call that leaves the PR not MERGED with a queue on (or unreadable) runs `_dequeue` (`:497`), the
+one GraphQL mutation, and stops. Tests: `plugin/crew/tests/test_crew_autopilot_ship.py`; no
+`SHIP_MUTATIONS` in `sabotage_autopilot.py` on this branch (a harness-only follow-up, T-0087).
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:708`) asks `review_ledger.receipt_stands`
