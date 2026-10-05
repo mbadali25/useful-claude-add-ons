@@ -251,3 +251,17 @@ def test_the_inert_cli_escapes_control_characters(tmp_path, capsys):
     root = crew_fixtures.make_repo(tmp_path, config=INERT_HOSTILE, git=False)
     assert crew_config.main(["--root", str(root), "--inert"]) == 0
     assert_inert_escaped(capsys.readouterr().out)
+
+
+def test_a_personal_key_is_judged_by_the_value_in_force(tmp_path, monkeypatch):
+    """T-0070 port review FIX: a personal key resolves by T-0050's ratchet, not
+    repo precedence, so a global `autopilot.mode: backlog` that holds a repo
+    `plan` down is the value in force and is named, from the global layer."""
+    _global(tmp_path, monkeypatch, contents={"autopilot": {"mode": "backlog"}})
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"mode": "plan"}}, git=False)
+    assert crew_config.resolve_config(str(root))["autopilot"]["mode"] == "backlog"
+
+    hits = [e for e in crew_config.inert_settings(str(root)) if e["key"] == "autopilot.mode"]
+
+    assert [(e["value"], e["ticket"], e["layer"]) for e in hits] == [
+        ("backlog", "L-0541", "global")], hits

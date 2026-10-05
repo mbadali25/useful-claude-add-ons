@@ -2267,11 +2267,25 @@ def inert_settings(root, path=None):
     repo_cfg = without_null_shadows(repo_raw, global_kept)
     merged = crew_state.merge_defaults(default_config(), global_kept)
     merged = crew_state.merge_defaults(merged, repo_cfg)
+    # T-0050's personal keys do not resolve by precedence: the value in force
+    # is resolve_config's, and its layer is the one that supplied it.
+    personal = {}
+    for dotted in PERSONAL_PATHS:
+        parts = dotted.split(".")
+        block = merged.get(parts[0])
+        if isinstance(block, dict) and len(parts) == 2:
+            row = _personal_row(repo_cfg, global_kept, dotted)
+            block[parts[1]] = copy.deepcopy(row["effective"])
+            personal[dotted] = ("global" if row["heldDownBy"] == "global"
+                                or row["repo"] is None else "repo")
     known = set(leaf_paths(default_config()))
     entries = {}
 
     def layer(parts):
-        return "repo" if _dig(repo_raw, parts) is not _MISSING else "global"
+        dotted = ".".join(parts)
+        if dotted in personal:
+            return personal[dotted]
+        return "repo" if _dig(repo_cfg, parts) is not _MISSING else "global"
 
     for dotted in leaf_paths(merged):
         if dotted.split(".")[0] in _INERT_SKIP:

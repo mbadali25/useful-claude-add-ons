@@ -345,10 +345,30 @@ def _index_unreadable(root):
     return None if found else "no .work/INDEX.md"
 
 
+def _index_note(root):
+    """A linked worktree whose main checkout has no `.work/INDEX.md`: said, so
+    `nothing needs approval` is read as "nothing in THIS checkout's INDEX",
+    never as a verdict on rows the main checkout does not have. None when
+    there is nothing to say (or `_index_unreadable` already said it)."""
+    # pylint: disable=import-outside-toplevel
+    import crew_autopilot
+    import crew_ticket
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    main, why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
+    if why or not main or os.path.abspath(main) == os.path.abspath(top):
+        return None
+    there = os.path.join(main, ".work", "INDEX.md")
+    if os.path.lexists(there):
+        return None
+    return (f"note: the main checkout ({main}) has no .work/INDEX.md, so only this "
+            "checkout's rows were read")
+
+
 def approvals_lines(root):
     unknown = _index_unreadable(root)
     if unknown:
         return [f"could not tell ({unknown})"]
+    note = _index_note(root)
     pending, invalid = pending_approvals(root)
     # The paste line alone: `/crew:approve T-1  (why)` would read as a group of
     # three ids. The reason goes on its own line under it.
@@ -359,7 +379,7 @@ def approvals_lines(root):
         lines.append(f"{len(invalid)} {'ticket' if one else 'tickets'} with a spec and plan "
                      f"that do not validate {'is' if one else 'are'} not listed: "
                      + ", ".join(invalid))
-    return lines or ["nothing needs approval"]
+    return (lines or ["nothing needs approval"]) + ([note] if note else [])
 
 
 def collect(root, memory=False):

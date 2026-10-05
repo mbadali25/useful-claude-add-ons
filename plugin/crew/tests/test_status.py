@@ -528,6 +528,25 @@ def test_status_approvals_cannot_tell_when_the_main_index_is_unreadable(tmp_path
     assert "is not UTF-8" in lines[0], lines
 
 
+def test_status_approvals_names_a_main_checkout_with_no_index(tmp_path):
+    """T-0070 port review r3: a linked worktree whose main checkout has no
+    INDEX says so under its answer, so `nothing needs approval` never reads as
+    a verdict on rows the main checkout does not have."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                           encoding="utf-8")
+    (root / ".work" / "INDEX.md").unlink()
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert lines[0] == "nothing needs approval", lines
+    assert lines[1].startswith("note: the main checkout (") and "no .work/INDEX.md" in lines[1]
+
+
 def test_status_approvals_says_nothing_needs_approval(tmp_path):
     root = make_repo(tmp_path, config={})
     (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
