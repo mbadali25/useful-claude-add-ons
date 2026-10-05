@@ -1690,6 +1690,12 @@ def _files_archive(root, ticket):
     archive = os.path.join(crew_common.tickets_root(root), crew_common.ARCHIVE_DIR)
     try:
         os.makedirs(archive, exist_ok=True)
+        # A Complete/ that is a link (or resolves elsewhere) would carry the
+        # ticket out of the repository: refused, never followed.
+        if os.path.islink(archive) or os.path.realpath(archive) != os.path.join(
+                os.path.realpath(crew_common.tickets_root(root)), crew_common.ARCHIVE_DIR):
+            return _result(backend, FAILED, f"{_TICKETS_REL}/{crew_common.ARCHIVE_DIR} is a link "
+                           "or resolves elsewhere; nothing moved")
         # Never shutil.move: a cross-device move would copy. And never a bare
         # os.rename on POSIX: it replaces an empty directory that appeared
         # since the check. `_rename_dir_no_replace` claims the name first.
@@ -1715,22 +1721,57 @@ def _empty_claim_hint(root, ticket):
             "leaves one): remove it and rerun" if empty else "")
 
 
+_RENAME_NOREPLACE = 1  # linux/fs.h
+_AT_FDCWD = -100
+
+
+def _renameat2_noreplace(src, dst, src_dir_fd=None, dst_dir_fd=None):
+    """Linux `renameat2(..., RENAME_NOREPLACE)`: one atomic rename that fails
+    EEXIST rather than replace. True when it renamed; FileExistsError when
+    `dst` exists; False when this kernel, libc or filesystem has no such call
+    (the caller then uses its own fallback). Any other failure raises."""
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        libc = ctypes.CDLL(None, use_errno=True)
+        call = libc.renameat2
+    except (OSError, AttributeError):
+        return False
+    call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
+                     ctypes.c_uint]
+    rc = call(_AT_FDCWD if src_dir_fd is None else src_dir_fd, os.fsencode(src),
+              _AT_FDCWD if dst_dir_fd is None else dst_dir_fd, os.fsencode(dst), _RENAME_NOREPLACE)
+    if rc == 0:
+        return True
+    err = ctypes.get_errno()
+    if err in (errno.ENOSYS, errno.EINVAL):
+        return False
+    raise OSError(err, os.strerror(err), dst)
+
+
 def _rename_dir_no_replace(src, dst):
     """Rename directory `src` to `dst`, raising FileExistsError when `dst`
-    exists, with no window in which another process's `dst` is replaced.
-    Windows' rename never replaces. On POSIX the name is claimed with an
-    atomic `mkdir` first and the rename then replaces only that empty
-    directory we made; if anything was put inside it meanwhile the rename
-    fails (ENOTEMPTY) and the claim is released."""
+    exists. Windows' rename never replaces; Linux uses `renameat2`'s
+    RENAME_NOREPLACE. Elsewhere on POSIX the name is claimed with an atomic
+    `mkdir` first and the rename replaces that empty directory; a claim
+    another process swapped for its own empty one in between is the one
+    window left there, and on failure the claim is removed only while it is
+    still the directory we made."""
     if os.name == "nt":
         os.rename(src, dst)
         return
+    if _renameat2_noreplace(src, dst):
+        return
     os.mkdir(dst)
+    mine = os.lstat(dst)
     try:
         os.rename(src, dst)
     except OSError:
         with contextlib.suppress(OSError):
-            os.rmdir(dst)
+            now = os.lstat(dst)
+            if (now.st_dev, now.st_ino) == (mine.st_dev, mine.st_ino):
+                os.rmdir(dst)
         raise
 
 
@@ -1745,8 +1786,23 @@ def _rename_file_no_replace(src, dst, src_dir_fd=None, dst_dir_fd=None):
     if os.name == "nt":
         os.rename(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
         return
+    if _renameat2_noreplace(src, dst, src_dir_fd, dst_dir_fd):
+        return
     os.link(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, follow_symlinks=False)
     os.unlink(src, dir_fd=src_dir_fd)
+
+
+def _moved_away(fd, inner):
+    """Why the open `Complete/` (`inner`) is no longer `<boardDir>/Complete`
+    (`fd`'s entry, not followed), or None while it still is."""
+    try:
+        here = os.stat(crew_common.ARCHIVE_DIR, dir_fd=fd, follow_symlinks=False)
+        held = os.fstat(inner)
+    except OSError as exc:
+        return f"the archive folder could not be re-checked ({exc.strerror or exc})"
+    if (here.st_dev, here.st_ino) != (held.st_dev, held.st_ino):
+        return "the archive folder was moved or replaced"
+    return None
 
 
 def _finish_note_link(paths):
@@ -1779,6 +1835,9 @@ def _rename_note(paths):
                     os.mkdir(crew_common.ARCHIVE_DIR, dir_fd=fd)
                 inner = os.open(crew_common.ARCHIVE_DIR, _DIR_FLAGS, dir_fd=fd)
                 try:
+                    moved = _moved_away(fd, inner)
+                    if moved:
+                        return _result("obsidian-note", FAILED, f"{dest}: {moved}")
                     if _exists_at(name, inner):
                         return _result("obsidian-note", FAILED, f"could not tell which note is "
                                        f"{os.path.basename(name)[:-3]}'s: {dest} already exists")
@@ -1787,6 +1846,10 @@ def _rename_note(paths):
                     except FileExistsError:
                         return _result("obsidian-note", FAILED, f"could not tell which note is "
                                        f"{os.path.basename(name)[:-3]}'s: {dest} already exists")
+                    moved = _moved_away(fd, inner)
+                    if moved:
+                        return _result("obsidian-note", FAILED, f"{dest}: {moved} during the "
+                                       "move; the note may have left the vault")
                 finally:
                     os.close(inner)
             else:

@@ -2763,9 +2763,13 @@ def test_archive_never_renames_over_a_destination_that_appears(tmp_path, monkeyp
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows' rename never replaces a directory")
-def test_archive_never_replaces_an_empty_destination_that_appears(tmp_path, monkeypatch):
+@pytest.mark.parametrize("renameat2", [True, False], ids=["renameat2", "mkdir-claim"])
+def test_archive_never_replaces_an_empty_destination_that_appears(tmp_path, monkeypatch,
+                                                                   renameat2):
     """Port review of L-0509: POSIX rename replaces an EMPTY directory, so a
     destination created after the check must still not be renamed over."""
+    if not renameat2:
+        monkeypatch.setattr(crew_tracker, "_renameat2_noreplace", lambda *_a, **_k: False)
     root, _vault = _done_obsidian(tmp_path)
     real = crew_tracker.crew_common.locate_ticket
     dest = root / ".work" / "tickets" / ARCHIVED / CARD
@@ -2827,12 +2831,26 @@ def test_rename_note_refuses_where_hard_links_are_unavailable(tmp_path, monkeypa
 
     def no_link(*_args, **_kwargs):
         raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(crew_tracker, "_renameat2_noreplace", lambda *_a, **_k: False)
     monkeypatch.setattr(crew_tracker.os, "link", no_link)
 
     got = crew_tracker._rename_note(paths)  # pylint: disable=protected-access
 
     assert (got["state"], (_board_dir(vault) / f"{CARD}.md").is_file(),
             (_board_dir(vault) / ARCHIVED / f"{CARD}.md").exists()) == ("could not update", True, False)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_archive_refuses_a_complete_folder_that_is_a_link(tmp_path):
+    root, _vault = _done_obsidian(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    os.symlink(outside, root / ".work" / "tickets" / ARCHIVED)
+
+    got = crew_tracker.archive(str(root), CARD)
+
+    assert (crew_tracker.exit_code(got), list(outside.iterdir()),
+            (root / ".work" / "tickets" / CARD / "spec.md").is_file()) == (1, [], True), got
 
 
 def test_an_empty_claim_a_crash_left_is_named_never_removed(tmp_path):

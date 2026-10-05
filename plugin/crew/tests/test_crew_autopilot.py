@@ -1680,6 +1680,21 @@ def test_autopilot_resume_could_not_tell_stops(tmp_path):
         "invalid", True, True)
 
 
+def test_route_takes_a_could_not_tell_id_as_a_ticket_not_a_typo(tmp_path):
+    """L-0509 port review: both folders present is the phase step's stop,
+    with its why, never `not a ticket`."""
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _two_tickets(tmp_path)
+    (root / ".work" / "tickets" / "fix-login").mkdir()
+    (root / ".work" / "tickets" / "fix-login" / "direction.md").write_text("x\n", encoding="utf-8")
+    both_places(root, "fix-login")
+
+    got = crew_autopilot.route_args(str(root), "run fix-login")
+
+    assert (got.get("ticket"), got.get("reason") == crew_autopilot.NOT_A_TICKET) == (
+        "fix-login", False), got
+
+
 def test_autopilot_bare_resume_keeps_a_could_not_tell_open_ticket(tmp_path):
     from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
     root = _two_tickets(tmp_path)

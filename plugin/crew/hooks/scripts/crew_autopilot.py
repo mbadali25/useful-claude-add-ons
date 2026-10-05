@@ -2514,12 +2514,13 @@ def stops():
 
 def _existing_ticket(top, token):
     """Whether `token` is a plain ticket id naming a ticket folder, live or
-    `Complete/`. Could-not-tell is False here: every caller refuses a token
-    that is not a ticket, and the step that takes an id stops naming why."""
+    `Complete/`, or one whose place cannot be told: that is taken as a ticket
+    so the phase step stops naming why, never refused as "not a ticket"."""
     try:
-        return _found(_where(top, crew_ticket.check_ticket(token))[1])
+        where = _where(top, crew_ticket.check_ticket(token))[1]
     except crew_ticket.TicketError:
         return False
+    return not crew_common.reserved_id(token) and where != crew_common.ABSENT
 
 
 def route(root, first, ticket=""):
