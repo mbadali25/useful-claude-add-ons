@@ -2004,3 +2004,13 @@ def test_level_two_step_check_does_not_cross_a_line():
     _, problems = crew_split.parse_slices(plan)
 
     assert not any("## Step 6" in p for p in problems), problems
+
+
+
+def test_base_slice_zero_refused():
+    """T-0059 port review FIX: `Base: slice 0` is not an earlier slice."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5", base="slice 0"))
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("Base: slice 0 is not an earlier" in p for p in problems), problems

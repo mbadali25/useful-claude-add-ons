@@ -323,11 +323,29 @@ def absent_sources(top):
         except OSError:
             why = None
         else:
-            if crew_state.read_metrics(top).get("tickets") == 0:
+            if crew_state.read_metrics(top).get("tickets") == 0 and not _row_like(path):
                 why = "no review recorded in .crew/metrics.md yet"
     if why:
         absent["findings-rate"] = absent["tickets-too-large"] = why
     return absent
+
+
+def _row_like(path):
+    """True when metrics.md holds a line shaped like a review row (five or more
+    `|` cells, not the header, not a `---` separator): read_metrics skips one
+    whose counts do not parse, so `tickets: 0` beside it is a malformed
+    source -- unknown -- never "no review recorded"."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return True
+    for line in lines:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+            continue
+        return True
+    return False
 
 
 def triggers(measures, stage):
@@ -1229,7 +1247,7 @@ def _base_problems(slices, step_files):
         base = piece["base"]
         if base is None:
             problems.append(f"slice {piece['n']}: Base: must be `main` or `slice <k>`")
-        elif base != MAIN_BASE and base >= piece["n"]:
+        elif base != MAIN_BASE and not 1 <= base < piece["n"]:
             problems.append(f"slice {piece['n']}: Base: slice {base} is not an earlier "
                             "slice")
         if base != MAIN_BASE or i == 0:
