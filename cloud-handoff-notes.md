@@ -21,7 +21,7 @@ A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md`
 ### In flight at handoff (verify each on GitHub first)  [refreshed 2026-10-05 00:50]
 | Item | Where | State | Next |
 |---|---|---|---|
-| #499 L-1518 README "What's new" | `L-1518-build` 9fac87a2 | merged main (batch 5) + coordinator FIX: parser skipped batch `###` headings (README showed 1.0.344). 15/15 suite, sabotage-tested | focused re-review of 9fac87a2, CI green, then merge alone (repo tooling, no bump) |
+| #499 L-1518 README "What's new" | `L-1518-build` 860718db | merged main (batch 5) + coordinator FIX: parser skipped batch `###` headings (README showed 1.0.344). Re-review of 9fac87a2 found 3 FIX, fixed in aed63c4d + 860718db; 20/20 suite, sabotage-tested | re-review of 860718db, CI green, then merge alone (repo tooling, no bump) |
 | #497 L-1512 cloud-guard 2304 | `L-1512-build` 108d5da0 | `build (3.12)` failed (job 111569933122) | builder fixing; then focused re-check, land alone |
 | #407 T-0045 | `T-0045-build` 8588ab74 | 6 Windows jobs red | builder merging main + root-causing; batch 6 once green |
 | #496 L-1508 PR B (harness) | `L-1508b-build` 4807695e | only verify-gate ran | builder getting full CI; then review; lands ALONE |
@@ -44,7 +44,7 @@ Live log of the cloud session working ALL open PRs (session
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status
 and dependencies are in `pending-tickets.md`. The previous session's log is kept at the bottom.
 
-Last updated: 2026-10-05 00:40 UTC
+Last updated: 2026-10-05 00:42 UTC
 
 ## Standing rules (owner, 2026-10-03, restated 2026-10-04)
 
@@ -103,6 +103,7 @@ NOTE: a PR that conflicts with main gets NO pull_request CI (only "Verify gate r
 
 ## Log (newest first)
 
+- 01:00: #499 re-review of 9fac87a2: 0 BLOCK 3 FIX (hyphen/no-dash batch heading dropped parts; batch with own bullet showed ticket list; cut list ended '....'). Fixed + NITs in aed63c4d, then 860718db (batch-mode false positive, self-found). 20/20, sabotage red 5/19. Re-review of 860718db running.
 - 00:50: MERGED batch PR #498 -> efcf4666 (crew 1.0.345); #364/#416/#420 show merged. #499: merged main, resolved CHANGELOG (L-1518 on top), found + fixed parser skipping batch ### headings (9fac87a2, 15/15, sabotage red 2/15); focused re-review running. Builders re-woken: #497 build(3.12) red, #407 6 Windows red, #496 only verify-gate ran. LANDPREP: sync-updates step added.
 - 00:32: #499 L-1518 at c726f8a1, CI green: README 916->426 lines; generated 'What's new' (2 newest CHANGELOG entries via Summary bullet) + link; UPDATE.md kept for sub-READMEs; 13-case suite. Cost: every PR adding a changelog entry must re-run sync-updates.py (land-prep step). Review spawned.
 - 00:31: L-1518 PR #499 CI green at c726f8a1
