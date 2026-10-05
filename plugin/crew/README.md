@@ -1326,7 +1326,8 @@ Six keys added by schema 6, in **two vocabularies**: four are
 `block` | `ask` | `allow`, shipping as `block`; the two production-access keys
 are `none` | `read` | `full`, shipping as `none`. Since then `guards.roleWrites`
 (see §18 of CONFIG.md) and, with the cloud guard, `guards.cloudDestructive`,
-`guards.sqlDestructive` and the `guards.cloudGuard` switch. The command keys
+`guards.sqlDestructive`, `guards.deployWorkflow` and the `guards.cloudGuard`
+switch. The command keys
 below govern something **only while `guards.cloudGuard` is `report` or
 `block`** — it ships `off`; see [Cloud guard](#cloud-guard).
 
@@ -1340,9 +1341,11 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.prodServer` | `ssh`/`plink`/`scp` aimed at a `production.hosts` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.deployWorkflow` | `gh workflow run` / `gh api .../dispatches` of a workflow listed in `environments.workflows`; `allow` covers nonProd only | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
 | `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `environments.workflows` | **repo-only** map of workflow globs to `input:<name>` or a fixed environment, naming the deploy workflows `guards.deployWorkflow` judges (default `{}`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -1402,6 +1405,7 @@ below: it makes the line one crew could not tell.
 | `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
+| `gh workflow run <wf>` and `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when `<wf>` matches an `environments.workflows` key | `guards.deployWorkflow` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
 | `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.sqlDestructive` |
 | a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.prodDatabase` / `guards.prodServer` |
@@ -1486,6 +1490,86 @@ terraform "$file"`). A PowerShell line follows the same command-word rule:
 `git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
 not.
 
+**Workflow dispatches (T-0009).** `environments.workflows` is a repo-only map
+from a workflow glob (fnmatch, case-insensitive, against the argument as
+written) to where its environment comes from: `input:<name>` (the dispatch
+input) or a fixed environment name.
+
+```json
+"environments": {
+  "nonProd": ["dev", "qa", "staging"],
+  "workflows": {"deploy.yml": "input:environment", "deploy-prod.yml": "production"}
+}
+```
+
+A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.deployWorkflow`
+finding, and so is the REST call it makes, `gh api` with method POST (`-X
+POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
+classifier. The input comes from `-f`/`-F`/`--raw-field`/`--field` (`<name>=v`
+for `gh workflow run`, `inputs[<name>]=v` for the REST form, whose top-level
+`ref` is the branch and never an input), and every occurrence must agree.
+Under `ask` (in **both** layers — the ratchet), a nonProd environment runs
+unattended and is logged as `env:nonProd:<name>`; production runs unattended
+only with `environments.prodUnattended` true in both layers, and says so on
+screen. **`allow` covers nonProd only**: production without `prodUnattended`,
+and an environment crew cannot identify, still ask when attended and are
+refused unattended. Unknown is: no input given (the workflow's default is not
+read), conflicting values, a second workflow argument, and no workflow named
+(gh prompts). A workflow matching no key is **not judged**, as before; so with
+`workflows` at `{}` no `gh` line is judged at all. `environments.workflows`
+does not engage the terraform layer. A deploy command also declared in
+`.crew/verify.json` still passes through `promote-gate.sh`, whose
+`requireHuman` is independent of `prodUnattended`.
+
+**The dispatch grammar.** A line that sends a dispatch is judged only when
+every word on it is a plain literal (letters, digits and `_./:=@%+,-`) or one
+whole single-quoted word, and its only operators are `;`, `&&`, `||`, `&`, a
+newline, `>`/`>>`/`&>`/`&>>` to a plain word, and `2>&1`. Anything else on it
+is **could not tell**: asked about when someone is attending, refused
+unattended at every setting, and approved one command at a time by the marker
+the refusal names, which covers those exact bytes and nothing else. So is a
+dispatch the guard does not follow — inside `bash -c`, `eval` or `pwsh -c`,
+behind `xargs`, `parallel` or `find -exec`, through an alias or a copy of `gh`
+made on the line, or a command word made at run time — and gh reading its
+inputs from stdin or a file. Crew never reads stdin. A command word made at run
+time is judged by the shape of what follows it, not by what the line mentions:
+`$X $Y run deploy.yml`, `$C` alone (bash may split it into a whole dispatch),
+`xargs -I CMD CMD workflow run ...`, `Start-Process $x -ArgumentList
+'workflow run ...'` and an alias pointed at a run-time value all ask, while
+`$X pr create` does not. So does every dispatch while the machine-global
+config's `environments` block is malformed. A PowerShell launcher or alias
+line (`Start-Process`, `saps`, `Set-Alias`, `New-Alias`, an `alias:` path)
+holding gh, `workflow` or a word made at run time is could not tell unless
+every parameter on it is a full, value-taking name: a switch (`-NoNewWindow`,
+`-Wait`, `-Force`), an abbreviation (`-Fi`) or a parameter alias (`-Args`)
+refuses it, even on a line that sends nothing (`Start-Process $exe -Wait`).
+gh and `workflow` must be in the same command to count, so `alias g=gh; echo
+workflow` is not judged, while an `alias` or `hash -p` pointing at gh makes
+that name gh for the rest of the line — the commands after it, or the whole
+line when a loop, a function or a `trap` on it can run earlier text later.
+An alias counts only when its value's last command runs gh (`alias g='env
+gh'` does, `alias g='echo gh'` does not). In PowerShell a comma inside one
+whole single-quoted word is text (`-f 'environment=staging,west'`); a bare
+comma makes an array and is refused. Refused, and how to write it instead:
+
+| Refused | Write instead |
+|---|---|
+| `--json` / `--input -` with a body on stdin, `-F name=@file` | `-f name=value` fields |
+| `"Deploy Staging"` (double quotes) | `'Deploy Staging'` |
+| `repos/{owner}/{repo}/...` unquoted, `-f inputs[environment]=x` | quote the word: `'repos/{owner}/{repo}/...'`, `-f 'inputs[environment]=x'` |
+| `... \| tee log`, `echo x \| gh ...` | `... > log` |
+| `-f environment=$ENV`, `${ENV}`, `$(...)` | the literal value |
+| `bash -c 'gh workflow run ...'` | the `gh` command itself |
+| `Start-Process -NoNewWindow $x ...`, `-Fi`, `-Args`, `Set-Alias -Force g gh` | full parameter names and no switches, or `gh workflow run ...` directly |
+
+A literal `gh workflow run ... --help` (or `-h`) prints help and dispatches
+nothing, so it is not judged; `-f environment=--help` is a value, and after
+`--` a `--help` is a second workflow argument. Other `gh` commands (`gh pr
+create --title "..."`) are never gated. `crew_dispatch.dispatch_answer` is the
+one entry point a caller (autopilot, the promote path) uses, and it answers
+`nonProd`, `prod`, `unknown` or `unlisted`.
+
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
@@ -1523,9 +1607,13 @@ runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
 calls. For the terraform name specifically: a name built at run time from
 parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
 PowerShell string concatenation) and a wildcard that keeps fewer than three
-letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+letters of it (`t*`) are not read as terraform. For workflow dispatches: a
+spelling of a deploy workflow not listed as a key (its display name or numeric
+id — list every spelling you use), the workflow YAML (`environment:` keys,
+`${{ inputs.* }}`), `gh run rerun`, and a dispatch sent with `curl`. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
-(the environment layer and the sidecar), and the `cloud-guard.sh` section of
+(the environment layer and the sidecar), `tests/test_cloud_guard_deploy.py`
+(workflow dispatches), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.
 
 #### What the guard does not catch

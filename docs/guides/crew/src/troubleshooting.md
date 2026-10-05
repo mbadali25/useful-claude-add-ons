@@ -72,7 +72,8 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `UserPromptSubmit` | `approval-hook.sh` | records or refuses a `/crew:approve <id>` receipt | always records; enforcement depends on `scope.mode` | n/a |
 | `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
 | `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands and wrong-identity commands | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh`, environment layer (T-0005) | a terraform apply judged by its target environment, and a destroy never applied unattended | `environments.nonProd` (repo only; globs naming non-production workspaces), `environments.prodUnattended` (both layers; true only when **both** say `true`) | `[]`, `false` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
 | `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
 | `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
@@ -444,7 +445,23 @@ it *would* refuse before enforcing with `"block"`.
   the command they simulate, because nothing in `_terraform_destructive`/`_aws_destructive`/the
   `Remove-Az*` matcher inspects those flags. This is a known gap, not a config bug — there is no key
   that special-cases them. If you need to run one of these unattended, use `report` mode while
-  testing, or approve the one-shot marker the deny message names.
+  testing, or approve the one-shot marker the deny message names. A literal `gh workflow run ...
+  --help` (or `-h`) is the exception: gh prints help and dispatches nothing, so the line is not
+  judged at all; terraform's `--help` still is.
+
+- **A workflow dispatch is refused as "could not tell" although it looks fine.** With
+  `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
+  when every word on it is a plain literal (letters, digits, `_./:=@%+,-`) or one whole
+  single-quoted word, joined only by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain
+  word and `2>&1`. A pipe, any `<`, double quotes, `$`, a glob, `bash -c '...'`, `xargs`, a
+  command word built at run time (`$X $Y run ...`, `Start-Process $x`, an alias to a variable), gh
+  reading stdin or a file (`--json`, `--input`, `-F k=@f`), and a malformed `environments` block
+  in either config layer make the line could-not-tell: it asks when you are there and is denied
+  unattended at every setting. **Fix:** write the literal form —
+  `-f environment=staging` instead of a `--json` body, `'Deploy Staging'` instead of
+  `"Deploy Staging"`, `> log` instead of `| tee log`, the value instead of `$ENV` — or approve the
+  one command with the marker the refusal names (it covers those exact bytes only). Other `gh`
+  commands (`gh pr create --title "..."`) are never gated.
 
 - **An "unpinned" repo makes an ordinary destructive command ask or deny, even when it is obviously
   fine.** With no `cloud.*` pins, a read-only command (`aws s3 ls`, `az group list`) runs unchecked
@@ -588,6 +605,9 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
+| `guards.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
+| `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
+| `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
 | `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
 | `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
@@ -597,6 +617,12 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `notify.provider` | both layers (a repo null inherits the global one) | `telegram`/`teams`/`none` | a repo `none` opts out even when the global file names a provider: no `question` ping, no `deploy` result (`crew_notify.py config --root .` says so) |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
 | `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |
+
+**A destroy is never applied unattended**, at any setting: `destroy`, `apply -destroy`, `-replace`,
+`workspace delete`, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
+asks when you are there and is denied unattended — `terraformApply: allow` and
+`environments.prodUnattended` included. The full decision table is in `plugin/crew/CONFIG.md`
+(`environments.*`).
 
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
 where both speak. A **ratcheted** key (marked above) can only be *narrowed* by the repo relative to

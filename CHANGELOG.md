@@ -9,6 +9,116 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — `crew` 1.1.4: environment-scoped workflow deploys in the cloud guard (T-0009)
+
+- **`guards.deployWorkflow` and `environments.workflows`.** While
+  `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
+  `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches` (also
+  `--method POST`, `-XPOST`, or fields/`--input` with no method), are judged
+  when `<wf>` matches a key of the new repo-only `environments.workflows` map
+  (`{"deploy.yml": "input:environment", "deploy-prod.yml": "production"}`).
+  Both forms go through one classifier. `deployWorkflow` ships `block` (its
+  floor) and ratchets, so upgrading grants nothing: a repo that lists
+  workflows gets **a new refusal** for every listed dispatch until
+  `deployWorkflow: ask` is set in **both** layers. Under `ask`, a nonProd
+  environment runs unattended and is logged as `env:nonProd:<name>`;
+  production does only with `environments.prodUnattended` true in both layers.
+- **`allow` covers nonProd only for a deploy.** Production without
+  `prodUnattended` in both layers, and an unknown environment, still ask when
+  attended and are denied unattended, whatever `deployWorkflow` says.
+- **The dispatch grammar: judged only when every word is a plain literal.**
+  A dispatch line is classified only when every word on it is a
+  `[A-Za-z0-9_./:=@%+,-]` word or one whole single-quoted word, joined only
+  by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain word and
+  `2>&1` — T-0005's literal-word allowlist, extended to `gh`. Everything else
+  is **could not tell**, asked when attended and denied unattended at every
+  setting: a pipe, any `<` form, any other `N>&M`, `<(`/`>(`, double quotes,
+  `$'...'`, a backslash, `$`, a backquote, a glob or brace, `~`; a dispatch
+  inside `bash -c`/`eval`/`pwsh -c`, behind `xargs`/`parallel`/`find -exec`,
+  through an alias or copy of `gh` made on the line, or from a command word
+  made at run time; gh reading stdin or a file (`--json`, `--input`,
+  `-F k=@f` — **stdin is never read**); and every dispatch-shaped line while
+  the `environments` block does not validate. A single-quoted workflow name
+  holding a character that does not show (a control, a line or paragraph
+  separator, a bidi or zero-width mark, a blank other than a plain space) is
+  could-not-tell too, never `unlisted`. Review rounds 1 and 2 found
+  nine ways past a parser that read the lexer's output (a filter or `<` on
+  stdin, `0>&3`, a variable, a bracket glob, a script piped into bash, a
+  marker that covered another file): each is now a must-block row, watched
+  red on `b979d640` first, with a sabotage entry on T-0009's branch (the
+  sabotage entries land separately, as harness work).
+- **A command word made at run time is read by its argv's shape** (review
+  round 3): `$X $Y run deploy.yml` with both words built at run time, `$C`
+  alone (bash may split it into a whole dispatch), an `xargs -I CMD CMD` or
+  `parallel {}` placeholder, `Start-Process $x -ArgumentList 'workflow run
+  ...'` (or `-FilePath $x`), `gh $w run ...` in PowerShell, and an alias
+  (`Set-Alias`, `New-Alias`, `alias:`) pointed at a run-time value are
+  could-not-tell, where they used to be judged only if the raw line happened
+  to name `gh` and `workflow`. `$X pr create` is still not gated. An xargs
+  placeholder dispatch now asks as `[deployWorkflow]` instead of cloudGuard's
+  unconditional "unreadable" refusal. A malformed `environments` block in the
+  **machine-global** layer now engages the gate and makes every dispatch
+  could-not-tell, as a malformed repo block does; the terraform layer's
+  reading of it is unchanged.
+- **PowerShell launchers and aliases need full parameter names** (review
+  round 4). A `Start-Process`/`saps`, `Set-Alias`/`New-Alias` or `alias:`
+  path line holding gh, `workflow` or a run-time word is could-not-tell
+  unless every parameter on it is a full, value-taking name: a switch
+  (`-NoNewWindow`, `-Wait`, `-Force`), an abbreviation (`-Fi`), a parameter
+  alias (`-Args`, `-PSPath`) or `-RedirectStandardInput` used to hide the
+  target and now refuses the line — so `Start-Process $exe -Wait ...` asks
+  though it may send nothing. A trusted launcher passes gh only its
+  positional values and `-ArgumentList` (`-WindowStyle Hidden` no longer
+  reads as gh's first argument), and a module-qualified or en-dash spelling
+  is read as the command it is. **gh and `workflow` must be in the same
+  command:** `alias g=gh; echo workflow` is no longer refused, while `alias
+  g=gh`, `alias g='env gh'` and `hash -p /usr/bin/gh g` make `g` gh for the
+  rest of the line, and `New-Item -Path alias: -Name g -Value gh` and
+  `alias:\g` are read as aliases.
+- **Review round 5.** Two dispatches the line leaves unknown (`gh workflow
+  run; gh workflow run deploy.yml`) are asked about instead of refused as an
+  internal error; a marker covers every dispatch judged on the line, so a
+  config edit reclassifying a second one does not carry an approval across;
+  a bash alias or `hash -p` counts only for the commands after it (the whole
+  line under a loop, a function or a `trap`, and a name it copied counts as
+  gh inside `trap '...'`), and only when the alias value's last command runs
+  gh (`alias g='echo gh'` is not judged; `alias g='$x'` is could-not-tell);
+  a PowerShell comma inside one whole single-quoted word is text.
+- **BREAKING for the dispatch forms that ran in T-0009's first build:** a
+  `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
+  double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of
+  `gh` now ask (denied unattended). Write `-f` fields, `'Deploy Staging'`,
+  `'repos/{owner}/{repo}/...'` and `> log` instead (README "The dispatch
+  grammar").
+- **Unknown on a literal line:** no input given, conflicting values, a second
+  workflow argument, no workflow named.
+- **`--help` settled.** A standalone `-h`/`--help` before `--` prints help
+  and sends nothing, so the line is not judged; `-f environment=--help` is a
+  value and `-- --help` is a second workflow argument. Terraform's `--help`
+  is unchanged.
+- **Markers cover exact bytes.** A dispatch marker is keyed on the whole
+  command text — plus, when classified, the workflow key and environment — so
+  an approval of `--json < prod-one.json` covers neither `< prod-two.json` nor
+  a config edit inside the 15 minutes.
+- **One road in.** `crew_dispatch.dispatch_answer(text, shell, envs)` returns
+  `(state, why, scope)`, `state` in `nonProd | prod | unknown | unlisted`,
+  could-not-tell being `unknown` with `op: line-not-literal`; the hook's
+  `_classify` reaches the parser only through it (T-0045, T-0072).
+- **Unchanged:** a workflow matching no key is not judged, and with
+  `workflows` at `{}` no `gh` line is. Other `gh` commands are never gated.
+  `environments.workflows` does not engage the terraform layer. Not seen: an
+  unlisted spelling of a deploy workflow, the workflow YAML, `gh run rerun`,
+  `gh alias`, `curl`.
+- **Docs:** the troubleshooting guide now documents T-0005's
+  `environments.nonProd`, `environments.prodUnattended` (both layers) and the
+  destroy rule, beside the dispatch grammar; its HTML is
+  rebuilt (DOCX and PDF were not: LibreOffice could not load the source here).
+- **Ported onto release/1.2.0 (PR #336).** The dispatch reader is its own module,
+  `hooks/scripts/crew_dispatch.py`: merged with main's T-0047 wrapper reading it took
+  `crew_guards.py` past `.pylintrc`'s 3400-line ceiling, and the section imports
+  `crew_guards` one way only. `sabotage_cloud.py`'s T-0009 mutations are harness work
+  (T-0087) and are not in this port.
+
 ### Fixed — crew 1.0.351, notify 1.1.2: notifications that failed, repeated, or said only "missing"
 
 - **Summary.** Chat notifications now go through when the bot token was saved with a trailing space

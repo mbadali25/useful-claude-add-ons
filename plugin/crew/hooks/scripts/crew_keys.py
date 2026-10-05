@@ -406,6 +406,8 @@ KEY_META = {
                              "`/crew:gate`).", "0.19.30"),
     "guards.cloudDestructive": _rat("Destructive cloud CLI commands.", "1.0.25"),
     "guards.sqlDestructive": _rat("Destructive SQL.", "1.0.25"),
+    "guards.deployWorkflow": _rat("A `gh workflow run` or `gh api .../dispatches` of a "
+                                  "workflow `environments.workflows` lists.", "1.1.4"),
     "guards.prodDatabase": _rat("How much of a declared production database crew may "
                                 "reach.", "0.19.30"),
     "guards.prodServer": _rat("How much of a declared production host crew may reach.",
@@ -429,6 +431,9 @@ KEY_META = {
                                  "list of globs"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
+    "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
+                                   "or `input:<name>`.", "1.1.4", _S + "crew_config.py",
+                                   "object of glob to string"),
     # --- change requests
     "change.requester": _unv("Who requests the change.", "0.19.31", _S + "crew_change.py",
                              "string or null"),
@@ -528,10 +533,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("guards.deployWorkflow", "T-0009", "new key",
-            "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
-    _coming("environments.workflows", "T-0009", "new key",
-            "Deploy workflows per environment.", "{}", "repo"),
     _coming("autopilot.maxLanes", "T-0029", "new key",
             "Parallel lanes one autopilot wave may run; may only lower the limit.",
             "the resolved pm.maxDispatches", "repo"),
