@@ -147,6 +147,18 @@ def parse(data):
 HUB_REFUSAL = "refused - a lane does not message a peer; report the question to the main session"
 
 
+def _present(path):
+    """True, False, or None when whether `path` exists cannot be told:
+    `os.path.lexists` reads a permission error as absent."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return None
+    return True
+
+
 def lane_state(top):
     """('main' | 'lane' | 'not-lane' | 'unknown', why): whether `top` is a wave
     lane by T-0029's marker. Anything that cannot be read is 'unknown'."""
@@ -159,7 +171,10 @@ def lane_state(top):
     if here == os.path.normcase(main):
         return "main", ""
     autopilot = os.path.join(main, ".work", "autopilot")
-    if not os.path.lexists(autopilot):
+    present = _present(autopilot)
+    if present is None:
+        return "unknown", f"whether {autopilot} exists could not be told"
+    if not present:
         return "not-lane", ""
     try:
         slugs = sorted(os.listdir(autopilot))
@@ -167,7 +182,12 @@ def lane_state(top):
         return "unknown", f"{autopilot} could not be listed ({type(exc).__name__})"
     for slug in slugs:
         lanes = os.path.join(autopilot, slug, "lanes")
-        if not crew_wave.SLUG_RE.match(slug) or not os.path.lexists(lanes):
+        if not crew_wave.SLUG_RE.match(slug):
+            continue  # crew_wave writes no other name
+        present = _present(lanes)
+        if present is None:
+            return "unknown", f"whether {lanes} exists could not be told"
+        if not present:
             continue
         try:
             names = sorted(os.listdir(lanes))
@@ -184,7 +204,13 @@ def lane_state(top):
                 return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is {state}: "
                                    "whether it names this worktree cannot be told")
             named = lane.get("worktree")
-            if isinstance(named, str) and os.path.normcase(os.path.realpath(named)) == here:
+            if named is None and lane["state"] != "running":
+                continue  # pending (lane-init not run yet), or ended before it ran
+            if not isinstance(named, str) or not named:
+                return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is "
+                                   f"{lane['state']} with no readable worktree: whether it names this "
+                                   "worktree cannot be told")
+            if os.path.normcase(os.path.realpath(named)) == here:
                 return "lane", ""
     return "not-lane", ""
 

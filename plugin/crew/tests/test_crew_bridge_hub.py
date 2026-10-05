@@ -8,6 +8,7 @@ repository under tmp_path is the remote holding the channel. The validator
 cases run `_test/validate-prompts.py` on a COPY of the prompt tree.
 """
 import io
+import json
 import os
 import pathlib
 import re
@@ -18,6 +19,7 @@ import sys
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_bridge
 import crew_wave
+import pytest
 from test_crew_bridge import CHANNEL, _channel_commit, bell, git
 from test_crew_wave import _isolated, _started
 
@@ -86,6 +88,43 @@ def test_ring_where_a_lane_file_is_unreadable_is_unknown_not_not_a_lane(tmp_path
     other.write_text('{"state": "no-such-state"}', encoding="utf-8")
     code, lines = run(plain, ["ring"], capsys)
     assert code == 3 and lines[0].startswith("unknown")
+
+
+@pytest.mark.parametrize("lane", [{"state": "running"}, {"state": "running", "worktree": ""},
+                                  {"state": "running", "worktree": 7}, {"state": "clean", "worktree": ["x"]}],
+                         ids=["running-no-worktree", "running-empty", "running-number", "clean-list"])
+def test_a_lane_file_without_a_readable_worktree_is_unknown(tmp_path, capsys, lane):
+    root, _, _ = _hub(tmp_path)
+    plain = _isolated(root, name="maybe-a-lane")
+    _lane_file(root).write_text(json.dumps(lane), encoding="utf-8")
+    code, lines = run(plain, ["ring"], capsys)
+    assert code == 3 and lines[0].startswith("unknown")
+
+
+@pytest.mark.parametrize("which", ["autopilot", "lanes"])
+def test_a_marker_directory_that_cannot_be_looked_up_is_unknown(tmp_path, capsys, monkeypatch, which):
+    root, _, _ = _hub(tmp_path)
+    plain = _isolated(root, name="maybe-a-lane")
+    base = os.path.join(os.path.realpath(str(root)), ".work", "autopilot")
+    target = base if which == "autopilot" else os.path.join(base, "s", "lanes")
+    real = os.lstat
+
+    def denied(path, *args, **kwargs):
+        if os.fspath(path) == target:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(crew_bridge.os, "lstat", denied)
+    code, lines = run(plain, ["ring"], capsys)
+    assert code == 3 and lines[0].startswith("unknown")
+
+
+def test_a_pending_lane_without_a_worktree_names_no_worktree(tmp_path, capsys):
+    # `start` writes pending lane files with no worktree; lane-init adds it.
+    root = _started(tmp_path)
+    tip = _remote(tmp_path, root)
+    plain = _isolated(root, name="not-a-lane")
+    assert run(plain, ["ring"], capsys) == (0, [bell(tip)])
 
 
 # --- must-allow --------------------------------------------------------------------

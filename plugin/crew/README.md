@@ -2671,9 +2671,11 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   lane — exit 1, `refused - a lane does not message a peer; report the
   question to the main session` — judged by T-0029's lane marker: a lane file
   `.work/autopilot/<slug>/lanes/<id>.json` in the main checkout whose
-  `worktree` is this worktree. A marker that cannot be read (a lanes
-  directory or lane file that is unreadable or corrupt) refuses as `unknown`,
-  exit 3, never as "not a lane". The main checkout, and a linked worktree no
+  `worktree` is this worktree. A marker that cannot be read (a directory
+  whose existence cannot be looked up, a lanes directory or lane file that is
+  unreadable or corrupt, a `running` lane with no readable `worktree`)
+  refuses as `unknown`, exit 3, never as "not a lane"; a `pending` lane,
+  whose `lane-init` has not run, names no worktree yet. The main checkout, and a linked worktree no
   lane file names, ring as usual: being a linked worktree alone proves
   nothing. `receive` and `pending` are not restricted. The wave's lane prompt
   tells a lane to return a question for another session in its report, for
