@@ -833,7 +833,7 @@ JUDGEMENT: the policy is read before `reject` takes the ledger lock (an accepted
 session per ticket), and the constant can be typed by hand with `review_ledger.py --reject --by`,
 the forge-local-state threat README's "Scope and approval" already states.
 
-**Ship (T-0011, crew 1.0.366).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
+**Ship (T-0011, crew 1.0.348).** DERIVED on T-0011's merge of main `155fe6d8` (re-derived
 with `grep -n`); the line numbers in this paragraph are that commit's, not the anchor's. After `/crew:done`
 (spec header `status: done`, or INDEX `done` with that header), armed, `_phase` hands off to
 `_ship_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:610`): unarmed is `closed` without

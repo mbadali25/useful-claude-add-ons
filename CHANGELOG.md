@@ -61,9 +61,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the writers), `plugin/PLUGINS.md`, the user guide, the crew code map, the generated rules, and
   `.crew/verify.json`'s autopilot rule.
 
-### Added — `crew` 1.0.366: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
+### Added — `crew`: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
 
-- Bumped `1.0.323 -> 1.0.366`. New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
+- New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
   phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
   and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
   110-line budget (110).

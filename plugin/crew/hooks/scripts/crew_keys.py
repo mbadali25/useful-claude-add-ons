@@ -459,16 +459,16 @@ KEY_META = {
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",
-                           crew_autopilot.SHIP_POLICIES, "1.0.366"),
+                           crew_autopilot.SHIP_POLICIES, "1.0.348"),
     "autopilot.knownFailures": _row("Required checks whose `fail` does not block a merge, "
                                     "matched by exact name; anything but a list of "
                                     "strings reads as `[]`, with a warning.", "branch",
-                                    None, "1.0.366", _S + "crew_autopilot.py",
+                                    None, "1.0.348", _S + "crew_autopilot.py",
                                     type_="list of check names"),
     "autopilot.ciTimeoutMinutes": _row("Minutes `ship` waits for the required checks; "
                                        "still pending, or green only after it, stops. "
                                        "Anything but a positive integer reads as 60, "
-                                       "with a warning.", "branch", None, "1.0.366",
+                                       "with a warning.", "branch", None, "1.0.348",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
     # --- tickets
