@@ -598,6 +598,21 @@ def test_merge_argv_is_merge_commit_without_admin(monkeypatch):
         [["gh", "pr", "merge", "7", "--merge", "--match-head-commit", SHA]], [])
 
 
+def test_gh_and_push_run_the_resolved_tool_or_fail_closed(monkeypatch):
+    """L-1508 (batch 7): gh and git run as the path `shutil.which` finds; a
+    tool that is not on PATH is gh "could not run" and a failed push."""
+    ran = []
+    monkeypatch.setattr(crew_ship.subprocess, "run", lambda argv, **_kw: (
+        ran.append(argv) or subprocess.CompletedProcess(argv, 0, "", "")))
+    monkeypatch.setattr(crew_ship.crew_common, "resolve_tool", lambda name: "/found/" + name)
+    resolved = (crew_ship._run_gh(".", ["pr", "view"]), crew_ship._push(".", BRANCH))  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_ship.crew_common, "resolve_tool", lambda name: None)
+    missing = (crew_ship._run_gh(".", ["pr", "view"]), crew_ship._push(".", BRANCH)[0])  # pylint: disable=protected-access
+
+    assert (resolved, [argv[0] for argv in ran], missing) == (
+        ((0, "", ""), (True, "")), ["/found/gh", "/found/git"], (None, False))
+
+
 def test_push_argv_never_forces():
     assert crew_ship.push_argv(BRANCH) == ["git", "push", "-u", "origin", BRANCH]
 
