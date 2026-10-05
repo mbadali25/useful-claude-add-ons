@@ -21,8 +21,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **`config.json` is the one file migrate overwrites, and rollback restores it.** The original is
   copied into the backup first; the manifest marks it `existed` with its `originalSha256`. The
   in-process undo and `--rollback` write the original bytes back - never remove it - and rollback
-  refuses when the file was edited since apply, when the backed-up original does not match the
-  manifest, or when the manifest's config entry lacks `existed`/`originalSha256`.
+  refuses when the file was edited since apply (the in-process undo leaves a landed file edited in
+  between as it is and names it on stderr and in the manifest note), when the backed-up original
+  does not match the manifest, or when the manifest's config entry lacks `existed`/`originalSha256`.
 - **The codemap half moved to `/crew:onboard --refresh`.** Migrate does no graph build, reconcile,
   `UPGRADE.md` or `codemap.v1.bak`. The per-hop report text, the QA-audit re-run (old step 5c) and
   the "did not do" list moved to `skills/crew-setup/upgrade-report.md`, which migrate reads.
@@ -45,7 +46,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `id_ed25519*`), the optional tracked `.claude/secrets-denylist`, and every in-repo `Read(...)`
   deny rule in `.claude/settings.json` and `.claude/settings.local.json` - and lists every file on
   disk (tracked, untracked or ignored) it matches that the root `.graphifyignore` does not exclude,
-  judged by git's own matcher in a scratch repository. `--check` exits 0 covered, 1 uncovered
+  judged by git's own matcher in a scratch repository. Each source is matched on its own, so a `!`
+  line in `.claude/secrets-denylist` narrows only that file's patterns, never a built-in one.
+  `--check` exits 0 covered, 1 uncovered
   (paths only, never content), 2 unknown; `--write` appends the missing patterns, then each path
   they still miss as an anchored literal (the denylist match ignores case, `.graphifyignore`'s
   does not, so `.ENV` gets `/.ENV`), under one marked block, atomically, through a symlinked

@@ -25,6 +25,10 @@ The union, in this order, of:
   settings   every `Read(<pattern>)` in `permissions.deny` of
              `.claude/settings.json` and `.claude/settings.local.json`.
 
+Each source is matched on its own and the matches are unioned, so a `!` line
+in the file narrows only the file's own patterns: `!.env` there never
+re-includes what a built-in or a settings rule denies.
+
 ## Read(...) rules, per the Claude Code permissions documentation
 
 Source: https://code.claude.com/docs/en/permissions, "Read and Edit", read
@@ -270,23 +274,27 @@ def _settings_patterns(root, rel):
 
 
 def denylist(root):
-    """`(patterns, sources, skipped, unknown)`. Never raises: a failure is
-    the `unknown` reason, and `patterns` is then not to be trusted."""
-    patterns, sources, skipped = list(BUILTIN_PATTERNS), ["built-in"], []
+    """`(groups, sources, skipped, unknown)`: `groups` holds one pattern list
+    per source (built-in, the file, the settings), each matched on its own so
+    a `!` line narrows only its own source. Never raises: a failure is the
+    `unknown` reason, and `groups` is then not to be trusted."""
+    groups, sources, skipped = [list(BUILTIN_PATTERNS)], ["built-in"], []
     try:
         text = _read(root, DENYLIST_FILE)
         if text is not None:
-            patterns += [line for line in text.splitlines() if line.strip()]
+            groups.append([line for line in text.splitlines() if line.strip()])
             sources.append(DENYLIST_FILE)
+        settings = []
         for rel in SETTINGS_FILES:
             found, skip = _settings_patterns(root, rel)
             if found or skip:
                 sources.append(rel)
-            patterns += found
+            settings += found
             skipped += skip
+        groups.append(settings)
     except _Unknown as exc:
-        return patterns, sources, skipped, str(exc)
-    return patterns, sources, skipped, None
+        return groups, sources, skipped, str(exc)
+    return groups, sources, skipped, None
 
 
 def _toplevel(root, git):
@@ -340,9 +348,10 @@ def _link_target(top, path, full):
     return rel + "/" if os.path.isdir(real) else rel
 
 
-def _judge(top, paths, patterns, lines, git):
+def _judge(top, paths, groups, lines, git):
     """`(denied, uncovered)` for the candidates `paths` under the denylist
-    `patterns` and the `.graphifyignore` `lines`. Raises _Unknown."""
+    `groups` (a path is denied when any one group denies it) and the
+    `.graphifyignore` `lines`. Raises _Unknown."""
     plain, opaque, links = _split(top, paths)
     own = {p: p + "/" if os.path.isdir(full) else p for p, full in links.items()}
     excluded = _ignored(sorted(opaque + list(own.values())), lines, git)
@@ -355,7 +364,8 @@ def _judge(top, paths, patterns, lines, git):
     judged = {path: (query, _link_target(top, path, links[path]))
               for path, query in own.items() if query not in excluded}
     queries = set(plain).union(*judged.values())
-    hits = _ignored(sorted(queries), patterns, git, fold_case=True)
+    hits = set().union(*(_ignored(sorted(queries), group, git, fold_case=True)
+                         for group in groups))
     files = sorted(hits.intersection(plain))
     through = {path for path, pair in judged.items() if hits.intersection(pair)}
     uncovered = (set(files) - _ignored(files, lines, git)) | through
@@ -438,7 +448,7 @@ def coverage(root, git="git"):
     `status` is covered, uncovered or unknown; unknown whenever any step
     could not answer, never covered."""
     root = os.path.abspath(root)
-    patterns, sources, skipped, why = denylist(root)
+    groups, sources, skipped, why = denylist(root)
     result = {"status": UNKNOWN, "uncovered": [], "denied": 0, "reason": why,
               "sources": sources, "skipped": skipped}
     if why:
@@ -451,7 +461,7 @@ def coverage(root, git="git"):
                                 f"excludes, and only the root one is evaluated: "
                                 f"{listed(nested)}")
             return result
-        denied, uncovered = _judge(top, paths, patterns, _ignore_lines(top), git)
+        denied, uncovered = _judge(top, paths, groups, _ignore_lines(top), git)
     except _Unknown as exc:
         result["reason"] = str(exc)
         return result
@@ -539,7 +549,7 @@ def write(root, git="git"):
     _Unknown when the denylist cannot be built, or when a `!` line exists
     and which paths it re-includes cannot be judged."""
     root = os.path.abspath(root)
-    patterns, _sources, _skipped, why = denylist(root)
+    groups, _sources, _skipped, why = denylist(root)
     if why:
         raise _Unknown(why)
     top = _toplevel(root, git)
@@ -550,15 +560,15 @@ def write(root, git="git"):
     lines = _ignore_lines(top)
     present = {line.strip() for line in lines}
     missing = []
-    for pattern in patterns:
+    for pattern in (p for group in groups for p in group):
         if pattern.startswith("!") or pattern.strip() in present or pattern in missing:
             continue
         missing.append(pattern)
     try:
         paths = candidates(top, git)[0]
-        keep_open = _reincluded(_judge(top, paths, patterns, lines, git)[1], lines, git)
+        keep_open = _reincluded(_judge(top, paths, groups, lines, git)[1], lines, git)
         missing = _spare(keep_open, lines, missing, git)
-        missing += _literals(_judge(top, paths, patterns, lines + missing, git)[1],
+        missing += _literals(_judge(top, paths, groups, lines + missing, git)[1],
                              lines, keep_open)
     except _Unknown as exc:
         if any(line.lstrip().startswith("!") for line in lines):

@@ -744,6 +744,39 @@ def test_crash_mid_apply_on_a_pre_0_20_repo_restores_config_json(v1_repo, monkey
         ".crew/config.json", before, True)
 
 
+@pytest.mark.parametrize("edited", [".crew/config.json", "created"])
+def test_crash_mid_apply_leaves_a_file_edited_since_it_landed(v1_repo, monkeypatch, capsys, edited):
+    """Group review (g1-ports): the in-process undo checks, as --rollback
+    does, that a landed file still holds what apply wrote; one edited in
+    between is left as it is and named, never overwritten or removed."""
+    plan = crew_migrate.build_plan(v1_repo)
+    target = plan["writes"][0]["path"] if edited != "created" else plan["writes"][1]["path"]
+    full = os.path.join(v1_repo, *target.split("/"))
+    real = os.replace
+    backups = os.path.join(v1_repo, ".crew", "backups") + os.sep
+    calls = {"target": 0}
+
+    def flaky(src, dst):
+        if not dst.startswith(backups) and src.endswith(crew_migrate.TMP_SUFFIX):
+            calls["target"] += 1
+            if calls["target"] == len(plan["writes"]):
+                with open(full, "wb") as fh:
+                    fh.write(b"edited by someone else\n")
+                raise OSError("injected crash")
+        return real(src, dst)
+    monkeypatch.setattr(crew_migrate.os, "replace", flaky)
+
+    with pytest.raises(OSError, match="injected crash"):
+        crew_migrate.apply_plan(plan)
+
+    with open(full, "rb") as fh:
+        kept = fh.read()
+    others = [w["path"] for w in plan["writes"][:-1] if w["path"] != target and not w.get("replaces")]
+    assert (len(plan["writes"]) > 2, kept, target in capsys.readouterr().err,
+            [p for p in others if os.path.exists(os.path.join(v1_repo, *p.split("/")))]) == (
+        True, b"edited by someone else\n", True, [])
+
+
 def test_pre_0_20_rollback_restores_config_json_byte_identical(v1_repo, capsys):
     before = _bytes_only(_snapshot(v1_repo))
     backup = _applied_backup(v1_repo, capsys)

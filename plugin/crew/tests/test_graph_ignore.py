@@ -75,6 +75,30 @@ def test_uncovered_denylisted_file_is_named(tmp_path, capsys):
     assert (code, "config/env.php" in out) == (1, True), out
 
 
+@pytest.mark.parametrize("carve", ["!.env", "!*.pem", "!/.env"])
+def test_a_denylist_file_negation_never_cancels_a_built_in(tmp_path, capsys, carve):
+    """Group review (g1-ports): each source is matched on its own, so a `!`
+    line in `.claude/secrets-denylist` cannot re-include a built-in secret."""
+    root = _repo(tmp_path, {".env": "PW=1\n", "x.pem": "KEY\n",
+                            ".claude/secrets-denylist": f"{carve}\n"})
+
+    code, out = _check(root, capsys)
+
+    assert (code, ".env" in out, "x.pem" in out) == (1, True, True), out
+
+
+def test_a_denylist_file_negation_still_narrows_its_own_patterns(tmp_path, capsys):
+    """The must-allow side: the file's `!` line carves out of the file's own
+    `config/*`, so `config/public.php` is not denied and needs no cover."""
+    root = _repo(tmp_path, {"config/env.php": "<?php $pw = 'x';\n", "config/public.php": "<?php\n",
+                            ".claude/secrets-denylist": "config/*\n!config/public.php\n",
+                            ".graphifyignore": "config/env.php\n"})
+
+    code, out = _check(root, capsys)
+
+    assert code == 0, out
+
+
 def test_a_backslash_escaped_line_does_not_count_as_covering(tmp_path, capsys):
     """Review round 3: git reads `\\!secret.pem` as the literal `!secret.pem`;
     graphify keeps the backslash and still reads the file."""

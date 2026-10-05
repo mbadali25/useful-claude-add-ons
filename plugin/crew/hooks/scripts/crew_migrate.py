@@ -732,7 +732,8 @@ def apply_plan(plan):
     staged as a sibling temp file; (3) manifest -> `committing`; (4) one
     `os.replace` per target; (5) manifest -> `applied`. An exception in (2)-(4)
     undoes whatever landed and removes the temps before re-raising, so the tree
-    is the old one. A hard kill in (4) leaves the manifest at `committing`,
+    is the old one; a landed file edited since it landed is left as it is and
+    named, as `--rollback` would refuse it. A hard kill in (4) leaves the manifest at `committing`,
     which every later run reports, and `--rollback` finishes the undo.
 
     Every target is resolved inside the repository before it is touched, its
@@ -788,19 +789,38 @@ def apply_plan(plan):
         manifest["state"] = "applied"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
     except BaseException:
-        for item, path in landed:
-            if item.get("replaces"):
-                atomic_write(path, item["original"])
-            else:
-                _remove(path)
+        left = _undo_landed(landed)
         for _, path in staged:
             _remove(path + TMP_SUFFIX)
         _prune_dirs(root, manifest["createdDirs"])
         manifest["state"] = "rolled-back"
         manifest["note"] = "apply raised; undone in-process"
+        if left:
+            manifest["note"] += "; edited since apply, left as is: " + ", ".join(left)
+            print("crew migrate: edited since apply, not removed or restored; resolve by hand:\n  "
+                  + "\n  ".join(left), file=sys.stderr)
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         raise
     return backup
+
+
+def _undo_landed(landed):
+    """Undo each landed write whose file still holds the bytes apply wrote,
+    as `--rollback` does: restore a replaced config.json, remove a created
+    file. A file edited since it landed is left as it is -- restoring or
+    removing it would lose that edit -- and its path is returned."""
+    left = []
+    for item, path in landed:
+        current = _read_bytes(path)
+        if current is None and not item.get("replaces"):
+            continue
+        if current is None or _sha(current) != _sha(item["data"]):
+            left.append(item["path"])
+        elif item.get("replaces"):
+            atomic_write(path, item["original"])
+        else:
+            _remove(path)
+    return left
 
 
 def _manifest_target(write):
