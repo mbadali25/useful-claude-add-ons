@@ -659,8 +659,9 @@ def start(root, slug):
     record, rstate = _read_json(start_path(top, slug))
     if rstate == "missing":
         record = {}
-    elif rstate != "ok" or not isinstance(record, dict) or not isinstance(record.get("lanes", []), list):
-        # Never rebuilt from nothing: its lanes would drop out of collect's report.
+    elif rstate != "ok" or not isinstance(record, dict) or not isinstance(record.get("lanes"), list):
+        # Never rebuilt from nothing: its lanes would drop out of collect's report. A record
+        # with no `lanes` is not "nothing started" (group review r2, rush g0).
         raise WaveError(f"{start_path(top, slug)} is unreadable; it was left as it is -- the owner "
                         "repairs or removes it")
     receipts = record.get("receipts", {})
