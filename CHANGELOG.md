@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — `crew` 1.1.4: autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge (L-0649)
+### Added — `crew` 1.1.16: autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge (L-0649)
 
 - **Summary.** With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR
   merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>`
@@ -23,7 +23,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `deploy: none` (the default) nothing changes. `next` stays read-only: no `gh`, no
   `crew_ghdeploy.py` subcommand. `settings` no longer says nothing dispatches a deploy.
 
-### Fixed — `crew` 1.1.4: promote-gate no longer matches a fragment of a declared deploy (L-0689)
+### Fixed — `crew` 1.1.16: promote-gate no longer matches a fragment of a declared deploy (L-0689)
 
 - **Summary.** Both promote gates treated a command as a declared deploy when either text contained
   the other, so `git rev-parse HEAD`, `HEAD` or `development` matched a declared
@@ -40,7 +40,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   ends each with CRLF and `$(...)` strips only the last, so in Git Bash `cd <dir> && <declared>`
   with a further record (`$(git rev-parse HEAD)`) blocked as a directory that does not resolve.
 
-### Fixed — `crew` 1.1.4: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
+### Fixed — `crew` 1.1.16: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
 
 - **Summary.** Both promote gates decided `requires` from the FIRST row matching the upstream and the
   sha, so a failure followed by a fixed re-run stayed blocked, and a pass followed by a later failure
@@ -48,7 +48,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   "the newest row is not all-pass". No row still blocks as before. A `not-run` row written by
   `crew_ghdeploy.py record` is revoked by promote's later all-pass row for the same sha.
 
-### Added — `crew` 1.1.4: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
+### Added — `crew` 1.1.16: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
 
 - **Summary.** When a command matches an environment with `github` entries, both promote gates bind
   each dispatch in it to the entry it runs (of the entries whose canonical prefix is in the command
@@ -61,7 +61,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   flavours, reading the command's inputs with T-0009's reader. An environment with no `github` key,
   or an entry without `shaInput`, decides as before.
 
-### Added — `crew` 1.1.4: promote-gate.ps1 gates a workflow dispatch of a declared deploy too (L-0664)
+### Added — `crew` 1.1.16: promote-gate.ps1 gates a workflow dispatch of a declared deploy too (L-0664)
 
 - **Summary.** On the PowerShell tool, a command no declared `deploy` contains is now read as a
   workflow dispatch by the same helper and reader as the Bash flavour (`_promote_dispatch.py
@@ -72,7 +72,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   python, a command naming `gh` with `workflow` or `dispatches` blocks when a declared deploy names
   them too ("This is not a pass"); any other command behaves as before. promote-gate.sh is unchanged.
 
-### Added — `crew` 1.1.4: `crew_ghdeploy.py record` and the `/crew:promote` github sequence (L-0647)
+### Added — `crew` 1.1.16: `crew_ghdeploy.py record` and the `/crew:promote` github sequence (L-0647)
 
 - **Summary.** `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`: a detail line with
   no pipe character, and on anything but pass the previous all-pass sha, the last 40 lines of the
@@ -87,7 +87,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `github-deploy.md`. No automatic rollback: the record names the previous good sha and a person
   chooses. The troubleshooting guide gains "The run could not be identified".
 
-### Added — `crew` 1.1.4: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job (L-0646)
+### Added — `crew` 1.1.16: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job (L-0646)
 
 - **Summary.** `watch` follows the identified run with `gh run watch` in slices that fit the Bash
   tool's limit (exit 75: call again), then reads `gh run view`. A green run is not a deploy: pass
@@ -98,7 +98,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   verdict and its reason go into the state file. Each call, run views included, ends inside the Bash
   tool's 600-second limit; a status `gh` does not report as running or completed is unknown.
 
-### Added — `crew` 1.1.4: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
+### Added — `crew` 1.1.16: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
 
 - **Summary.** After the dispatch, `identify` finds the one run it created: a run of `gh run list`
   that was not in `prepare`'s snapshot, is a `workflow_dispatch` on the ref, was created no earlier
@@ -109,7 +109,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   writes no run id, as is a `run list` answer that arrives after `identifySeconds` (each call is
   bounded by the time left) or a run with no URL. Its only `gh` call is `run list`.
 
-### Added — `crew` 1.1.4: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
+### Added — `crew` 1.1.16: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
 
 - **Summary.** Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's
   classifier which environment the dispatch deploys to, and confirms the actor, the sha on the remote
@@ -126,7 +126,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   is dispatched as written and queried by its branch name. `check` and `prepare` now
   share one entry validator (`validated`).
 
-### Added — `crew` 1.1.4: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
+### Added — `crew` 1.1.16: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
 
 - **Summary.** On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST
   twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now
@@ -146,7 +146,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not yet:** symbolic refs stay unresolved (T-0505); the PowerShell tool is L-0664's, below.
   Five mutations in `promote_tree_mutations.py`, each red on a named case.
 
-### Added — `crew` 1.1.4: environment-scoped workflow deploys in the cloud guard (T-0009)
+### Added — `crew` 1.1.16: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While
   `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
