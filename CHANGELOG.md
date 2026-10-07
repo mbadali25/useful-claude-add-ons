@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.1.21: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
+### Fixed — crew 1.1.14: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
 
 - **Summary.** Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi
   probe read any `.git` above the temporary directory as a repository, so every Kimi probe and
@@ -24,7 +24,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   there: `.kimi-code`, `.agents` or `.mcp.json` at that root, or `AGENTS.md`, `agents.md` or
   `.kimi-code/AGENTS.md` in any directory from it down to the temporary directory.
 
-### Added — crew 1.1.21: `/crew:graph`, one command for the code graph (L-0667)
+### Added — crew 1.1.14: `/crew:graph`, one command for the code graph (L-0667)
 
 - **Summary.** Crew has one command for the code graph: `/crew:graph --status` says in one line
   whether the graph is current, and `/crew:graph --refresh` runs the refresh this repo sanctions
@@ -42,7 +42,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and carries the graphify line in a new `runs` field; `/crew:autopilot`'s refresh list, the
   crew-graph skill (a Refresh section), the README and the guide say so. crew now has 37 commands.
 
-### Added — crew 1.1.21: the main session is the hub, lanes never ring a peer (L-0637)
+### Added — crew 1.1.14: the main session is the hub, lanes never ring a peer (L-0637)
 
 - **Summary.** A wave lane can no longer ring another session; it hands a question for another
   session back to the main session, which files it in the record and rings.
@@ -57,7 +57,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   states the hub rule. Limit, in the README: a lane offered `SendMessage` by Claude Code can still
   call it; no hook blocks the tool.
 
-### Added — crew 1.1.21: an unanswered doorbell reads `could not tell` (L-0636)
+### Added — crew 1.1.14: an unanswered doorbell reads `could not tell` (L-0636)
 
 - **Summary.** A session that rang a peer now sees, after a `/clear` too, every ring the peer has
   not answered by moving the record, as `could not tell`, and never as agreement.
@@ -72,7 +72,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   lines to the owner; a pending ring is not a stop. Limit, in the README: any later line by a holder
   other than the ringer and this session clears a ring, a third session's too.
 
-### Added — crew 1.1.21: cross-session messages are a doorbell, never an instruction (T-0032)
+### Added — crew 1.1.14: cross-session messages are a doorbell, never an instruction (T-0032)
 
 - **Summary.** Sessions sharing a coordination channel can now ring each other over Claude Code's
   messaging bridge, and an inbound message is classified as a doorbell or untrusted data before
