@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T15:38Z
+Last updated: 2026-10-07T15:58Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T15:58Z G3b #551 crew-windows-wallclock red twice (old+new head): test_context_watch_python_resolver crew_py_strict 11.3s > 8s deadline; G2 wallclock passes, no .sh diff G2..G3b. Investigator started (root-cause, no bound loosening), then re-stack G5/G1b.
 - 2026-10-07T15:38Z Re-stack done: G2 7b84845c (1.1.10, + _dead_pid fix), G3b 987f63ad (1.1.11), G5 7c5c73d6 (1.1.12), G1b bdc957d2 (1.1.13, gizmoduck 0.5.11 for drift window). Full crew on G1b 16333/0. #551/#552 retitled; opened #555 (G1b), subscribed.
 - 2026-10-07T15:36Z h5 ready: rush/h5-ghdeploy-state ac645dcf (C-0060 one line, Codex r2 CLEAN, harness suites green; based on ad36bec5 -> merge main + re-set version at landing). G4 ready except bookkeeping test: 8d7f9374 (verify rule split under 60s budget: 50s + 16s). Order: waves 2-5 (G2,G3b,G5,G1b) -> h5 -> FF release -> G4 -> G3c -> G3d -> G6a -> G6b -> H2.
 - 2026-10-07T15:20Z MERGED WAVE 1 #554 (release -> main) at c996c7f1, main crew 1.1.9 (Windows 6/6 re-run passed once per owner; MCP merge 500 twice, gh api merge OK). 18 source PRs auto-closed as merged; #376 closed with link; #516/#517 stay open until H2 (harness halves). Next: G2 #550 (with pid-reuse test fix) -> release -> wave 2.
