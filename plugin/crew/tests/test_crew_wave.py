@@ -268,6 +268,16 @@ def test_set_cli_refuses_deps_given_twice_for_one_ticket(tmp_path):
     assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
 
 
+def test_set_cli_refuses_deps_for_a_ticket_the_set_does_not_name(tmp_path):
+    # Group review r1 (rush g0): `--tickets T-1 --deps T-2=T-3` wrote T-1 and dropped the dependency.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "--deps", "T-2=T-3")
+
+    assert (done.returncode != 0, "T-2" in done.stderr, crew_wave.read_set(str(root), "s")) == (
+        True, True, (None, "missing"))
+
+
 def test_set_cli_refuses_a_ticket_named_twice(tmp_path):
     # Group review r7 (rush g0): a duplicate became a later wave of itself and two clean lines.
     root = _repo(tmp_path)
@@ -721,6 +731,31 @@ def test_start_refuses_a_corrupt_start_record_and_leaves_it(tmp_path):
     with open(path, encoding="utf-8") as handle:
         kept = handle.read()
     assert (got.returncode, "unreadable" in got.stderr, kept) == (1, True, "{broken")
+
+
+def _receipts(root, value):
+    path = crew_wave.start_path(str(root), "s")
+    with open(path, encoding="utf-8") as handle:
+        record = json.load(handle)
+    record["receipts"] = value
+    _write(path, json.dumps(record))
+    return path
+
+
+@pytest.mark.parametrize("value", ["x", [["owner-accepted", 1, "t"]], {"T-1": "x"}, {"T-1": [1]}, None])
+def test_start_refuses_a_malformed_receipts_map_and_leaves_it(tmp_path, value):
+    # Group review r1 (rush g0): start did dict(...) on whatever receipts held.
+    root = _started(tmp_path)
+    path = _receipts(root, value)
+    with open(path, encoding="utf-8") as handle:
+        before = handle.read()
+
+    got = _cli("start", "--root", root, "--set", "s")
+
+    with open(path, encoding="utf-8") as handle:
+        kept = handle.read()
+    assert (got.returncode, "receipts map" in got.stderr, "Traceback" in got.stderr, kept) == (
+        1, True, False, before)
 
 
 def test_lane_init_checks_out_an_existing_branch(tmp_path):
@@ -1307,6 +1342,25 @@ def test_collect_unreadable_review_ledger_reads_unknown_never_clean(tmp_path):
     assert (_state_of(got, "T-1")["state"], got["land"]) == ("unknown", [])
 
 
+@pytest.mark.parametrize("value", ["x", [1], {"T-1": "x"}, {"T-1": [1, 2]}, None])
+@pytest.mark.parametrize("owner_accepted", [False, True])
+def test_collect_malformed_receipts_map_reads_unknown_never_clean(tmp_path, value, owner_accepted):
+    # Group review r1 (rush g0): a truthy non-map passed as a baseline (clean), or raised.
+    root = _started(tmp_path)
+    if owner_accepted:
+        _write(review_ledger.ledger_path(str(root), "T-1"), json.dumps({
+            "ticket": "T-1", "budget": 2, "refused": [], "state": "ACCEPTED",
+            "rounds": [{"round": 1, "status": "completed", "verdict": "FINDINGS"}],
+            "receipt": {"kind": "owner-accepted", "round": 1, "verdict": "FINDINGS",
+                        "accepted_by": "someone", "accepted_at": "2026-09-27T00:00:00+00:00"}}))
+    _set_lane(root, "T-1", state="clean", version="1.0.61")
+    _receipts(root, value)
+
+    got = _collect(root)
+
+    assert (_state_of(got, "T-1")["state"], got["land"]) == ("unknown", [])
+
+
 def test_collect_text_sections_in_order(tmp_path):
     root = _started(tmp_path)
 
@@ -1467,6 +1521,30 @@ def test_cleanup_keeps_everything_after_a_failed_fetch(tmp_path):
     got = _cleaned(root)["T-1"]
 
     assert (got["removed"], "could not tell" in got["reason"], os.path.exists(wt)) == (False, True, True)
+
+
+def test_cleanup_reads_the_default_branch_from_the_remote_not_a_guess(tmp_path):
+    # Group review r1 (rush g0): with no origin/HEAD, origin/main was assumed; a lane merged only
+    # into main was removed although the remote's default had moved to a branch without it.
+    root, wt = _landed(tmp_path)
+    bare = tmp_path / "origin.git"
+    git(root, "push", "-q", "origin", "HEAD~1:refs/heads/trunk")
+    git(bare, "symbolic-ref", "HEAD", "refs/heads/trunk")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "origin/trunk" in got["reason"], os.path.exists(wt),
+            _has_branch(root, "T-1-wave")) == (False, True, True, True)
+
+
+def test_cleanup_keeps_everything_when_the_remote_head_cannot_be_told(tmp_path):
+    root, wt = _landed(tmp_path)
+    git(tmp_path / "origin.git", "symbolic-ref", "HEAD", "refs/heads/no-such-branch")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "default branch is unknown" in got["reason"], os.path.exists(wt)) == (
+        False, True, True)
 
 
 def test_cleanup_never_force_deletes_a_branch(tmp_path):

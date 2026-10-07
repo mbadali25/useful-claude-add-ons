@@ -199,6 +199,11 @@ def write_set(root, slug, tickets, deps=None):
     only when given: absent means "read INDEX.md", `[]` means none."""
     check_slug(slug)
     deps = deps or {}
+    stray = sorted(set(deps) - set(tickets))
+    if stray:
+        # A dependency the set does not carry would be dropped without a word (group review r1).
+        raise WaveError(f"--deps names {', '.join(stray)}, which this set does not; "
+                        "nothing written")
     rows = []
     for ticket in tickets:
         _plain_id(ticket)
@@ -622,6 +627,18 @@ def _launch(top, slug, ticket, resume):
     return f"launch {ticket}: {LAUNCH} prompt: the output of `{command}`"
 
 
+def _valid_receipts(receipts):
+    """True for start.json's `receipts`: {ticket id: None or [kind, round,
+    accepted_at]}, as `_receipt_mark` writes it. Anything else is no baseline."""
+    if not isinstance(receipts, dict):
+        return False
+    for ticket, mark in receipts.items():
+        if not isinstance(ticket, str) or not (
+                mark is None or (isinstance(mark, list) and len(mark) == 3)):
+            return False
+    return True
+
+
 def start_path(top, slug):
     return os.path.join(top, ".work", "autopilot", check_slug(slug), "start.json")
 
@@ -646,7 +663,12 @@ def start(root, slug):
         # Never rebuilt from nothing: its lanes would drop out of collect's report.
         raise WaveError(f"{start_path(top, slug)} is unreadable; it was left as it is -- the owner "
                         "repairs or removes it")
-    receipts = dict(record.get("receipts") or {})
+    receipts = record.get("receipts", {})
+    if not _valid_receipts(receipts):
+        raise WaveError(f"{start_path(top, slug)} holds a receipts map that is not ticket -> "
+                        "[kind, round, accepted_at] or null; it was left as it is -- the owner "
+                        "repairs or removes it")
+    receipts = dict(receipts)
     lanes = list(record.get("lanes") or [])
     versions = dict(result["land"])
     started = list(lanes)
@@ -945,6 +967,8 @@ def _lane_row(top, slug, ticket, started, marks):
         return dict(row, reason="the wave was not started (no readable start.json)")
     if ticket not in started:
         return dict(row, state="later", reason="not in a started wave")
+    if marks is None:
+        return dict(row, reason="start.json's receipts map is unreadable; no receipt baseline")
     lane, state = read_lane(top, slug, ticket)
     if state != "ok":
         return dict(row, reason=f"its lane file is {state}")
@@ -971,7 +995,9 @@ def collect(root, slug):
     record, rstate = _read_json(start_path(top, slug))
     ok = rstate == "ok" and isinstance(record, dict) and isinstance(record.get("lanes"), list)
     started = record["lanes"] if ok else None
-    marks = (record.get("receipts") or {}) if ok else {}
+    marks = record.get("receipts", {}) if ok else {}
+    if ok and not _valid_receipts(marks):
+        marks = None  # no baseline: every started lane reads unknown, never clean (r1)
     ids = [row["id"] for row in data["tickets"]]
     problems = []
     # A lane that was started stays in the report even if the set file was rewritten without it;
@@ -1029,12 +1055,18 @@ def collect_text(result):
 # --- cleanup: merged lanes' worktrees (Step 11) --------------------------------------------------
 
 def _default_ref(top):
-    """`origin/<default>`, or None when it cannot be told."""
-    code, out = _git(top, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
-    if code == 0 and out:
-        return out
-    code, _ = _git(top, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main")
-    return "origin/main" if code == 0 else None
+    """`origin/<default>` as the remote says it now, or None when it cannot be
+    told. Neither a local origin/HEAD nor a guessed origin/main proves it: the
+    default may have moved since (group review r1, rush g0), so "cannot tell"
+    keeps the lane."""
+    code, out = _git(top, "ls-remote", "--symref", "origin", "HEAD")
+    heads = [line[len("ref: "):].split("\t")[0] for line in out.splitlines()
+             if line.startswith("ref: ") and line.endswith("\tHEAD")] if code == 0 else []
+    if len(heads) != 1 or not heads[0].startswith("refs/heads/"):
+        return None
+    name = heads[0][len("refs/heads/"):]
+    code, _ = _git(top, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{name}")
+    return f"origin/{name}" if code == 0 and name else None
 
 
 def _merged(top, commit, ref):
