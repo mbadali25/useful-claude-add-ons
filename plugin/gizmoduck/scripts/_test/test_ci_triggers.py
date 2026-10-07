@@ -692,10 +692,12 @@ def _bb_run(script_items, env):
 
 
 def _bb_pr_trust_items():
+    """The secret-visibility check and the draft check - never the docs-only
+    check between them, which these tests are not exercising."""
     files, _ = render()
     bb = yaml.safe_load(files["bitbucket-pipelines.yml"])
     (pr,) = [s["step"] for s in bb["pipelines"]["pull-requests"]["**"]]
-    return [x for x in pr["script"] if "write-capable secret" in x]
+    return [x for x in pr["script"] if "write-capable secret" in x or "Tier 1 skips draft PRs" in x]
 
 
 def _fake_bin(tmp_path, draft="false", curl_rc=0):

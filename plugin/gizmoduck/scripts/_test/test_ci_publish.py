@@ -208,6 +208,26 @@ def test_bitbucket_pr_step_fails_when_the_destination_cannot_be_fetched(repo):
     assert p.returncode == 2 and "SCANNED" not in p.stdout
 
 
+def test_bitbucket_pr_step_passes_a_docs_only_fork_pr_with_no_read_token(repo):
+    """A fork's pull request never gets GIZMODUCK_BB_READ_TOKEN. Docs-only
+    detection needs no secret at all, so it must be decided - and a
+    docs-only PR passed - before the draft check that DOES need the token
+    ever runs; otherwise a docs-only fork PR fails for a reason that has
+    nothing to do with what it changed."""
+    bb = _bb()
+    (pr,) = [s["step"] for s in bb["pipelines"]["pull-requests"]["**"]]
+    script = "\n".join(pr["script"])
+    repo.branch("feature/x")
+    repo.write("README.md", "docs change")
+    repo.commit("docs change")
+
+    p = repo.run(script + "\necho SCANNED", BITBUCKET_PR_DESTINATION_BRANCH="main", BITBUCKET_PR_ID="7")
+
+    assert p.returncode == 0 and "SCANNED" not in p.stdout, p.stdout + p.stderr
+    assert "check PASS - no scannable changes" in p.stdout
+    assert "GIZMODUCK_BB_READ_TOKEN" not in p.stdout
+
+
 # --------------------------------------------------------------------------
 # the self-commit
 # --------------------------------------------------------------------------
@@ -406,10 +426,11 @@ def test_github_inventory_comment_skips_a_fork_pull_request():
     assert not runs(_gh_inventory()["jobs"]["comment"], ev)
 
 
-def _endpoint_event(name, ref="refs/heads/main", deployment_ref=None):
+def _endpoint_event(name, ref="refs/heads/main", deployment_ref=None, ref_type="branch"):
     ev = plain(name)
     ev["ctx"]["github"]["ref"] = ref
-    ev["ctx"]["github"]["ref_name"] = ref.split("refs/heads/", 1)[-1]
+    ev["ctx"]["github"]["ref_name"] = ref.split("refs/heads/", 1)[-1].split("refs/tags/", 1)[-1]
+    ev["ctx"]["github"]["ref_type"] = ref_type
     if deployment_ref:
         ev["ctx"]["github"]["event"]["deployment"] = {"ref": deployment_ref}
     ev["ctx"]["needs"] = {"scan": {"result": "success"}, "scan-bootstrap": {"result": "skipped"}}
@@ -429,6 +450,17 @@ def test_github_scan_report_is_committed_only_off_the_default_branch_and_never_b
     _, gh = render()
     job = gh[ci_render.ENDPOINTS_FILE]["jobs"]["publish-report"]
     assert runs(job, ev) is publishes
+
+
+def test_github_scan_report_is_not_committed_for_a_manual_run_on_a_tag():
+    """A `workflow_dispatch` run on a tag falls to `github.ref_name` for its
+    branch, and a tag's short name can equal a branch name (release/1) -
+    checking it out and pushing HEAD there would create/overwrite that
+    branch. `github.ref_type` is 'tag' here, never 'branch'."""
+    _, gh = render()
+    job = gh[ci_render.ENDPOINTS_FILE]["jobs"]["publish-report"]
+    ev = _endpoint_event("workflow_dispatch", "refs/tags/release/1", ref_type="tag")
+    assert not runs(job, ev)
 
 
 def test_github_scan_report_is_not_committed_when_no_scan_ran():
@@ -454,11 +486,29 @@ def test_no_publishing_job_or_step_can_see_a_secret():
     steps = [bb["pipelines"]["default"][0]["step"], bb["pipelines"]["branches"]["main"][0]["step"]]
     for items in bb["pipelines"]["custom"].values():
         steps += [i["step"] for i in items if "step" in i]
-    assert len(steps) == 6    # inventory x2, then publish-report / publish-sweep, each also in its bootstrap twin
+    # inventory x2, then publish-sweep, also in its bootstrap twin. The
+    # full-tier report commit is no longer an ordinary step here (see
+    # test_bitbucket_endpoint_scan_after_script_purges_every_secret) - it
+    # moved into gizmoduck-endpoint-scan's after-script so it still runs
+    # when the gate blocks.
+    assert len(steps) == 4
     for step in steps:
         body = "\n".join(step["script"])
         assert not _SECRET_REF.search(body) and "deployment" not in step, step.get("name")
         assert "unset " + " ".join(ci_render.TRUSTED_SECRETS) in body
+
+
+def test_read_token_is_unset_from_every_secret_free_commit_step():
+    """GIZMODUCK_BB_READ_TOKEN is a repository variable (not a deployment
+    variable), so it is visible in every step regardless of stage - a
+    "secret-free" commit step must unset it explicitly or it is not."""
+    bb = _bb()
+    steps = [bb["pipelines"]["default"][0]["step"], bb["pipelines"]["branches"]["main"][0]["step"]]
+    for items in bb["pipelines"]["custom"].values():
+        steps += [i["step"] for i in items if "step" in i]
+    assert steps
+    for step in steps:
+        assert "unset GIZMODUCK_BB_READ_TOKEN" in "\n".join(step["script"]), step.get("name")
 
 
 def test_every_self_commit_is_skip_ci_and_marked():
@@ -491,4 +541,65 @@ def test_the_weekly_results_branch_gets_the_report_and_main_does_not(repo):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "[skip ci]" in repo.origin_log("gizmoduck-results")[0]
     assert repo.git_at(repo.origin, "show", "gizmoduck-results:security-scan-report.md") == "# Security scan report"
+    assert repo.origin_log("main") == ["seed"]
+
+
+def test_the_weekly_results_branch_can_be_updated_more_than_once(repo):
+    """Every prior commit on the results branch carries the self-commit
+    mark, and a new week's report always differs (a fresh run URL) - the
+    loop guard used to read that as a loop and refuse every run after the
+    first."""
+    bb = _bb()
+    (step,) = [i["step"] for i in bb["pipelines"]["custom"]["security-weekly"] if "step" in i]
+    script = "\n".join(step["script"])
+    repo.write("gizmoduck-out/endpoints/security-scan-report.md", "# Security scan report\nweek 1\n")
+    p1 = repo.run(script, GIZMODUCK_RESULTS_BRANCH="gizmoduck-results", BITBUCKET_BRANCH="main")
+    assert p1.returncode == 0, p1.stdout + p1.stderr
+
+    repo.write("gizmoduck-out/endpoints/security-scan-report.md", "# Security scan report\nweek 2\n")
+    p2 = repo.run(script, GIZMODUCK_RESULTS_BRANCH="gizmoduck-results", BITBUCKET_BRANCH="main")
+
+    assert p2.returncode == 0, p2.stdout + p2.stderr
+    assert "loop guard" not in p2.stdout
+    assert len(repo.origin_log("gizmoduck-results")) == 2
+    assert repo.git_at(repo.origin, "show", "gizmoduck-results:security-scan-report.md") == \
+        "# Security scan report\nweek 2"
+
+
+# --------------------------------------------------------------------------
+# the full-tier report survives a blocked/failed gate (BB after-script)
+# --------------------------------------------------------------------------
+
+def _bb_endpoint_scan_after_script_commit_item():
+    bb = _bb()
+    (step,) = [s["step"] for s in bb["definitions"]["steps"]
+              if s["step"].get("name", "").startswith("gizmoduck tier 2: staging endpoint scan")]
+    (item,) = [x for x in step["after-script"] if "Commit security-scan-report.md" in x]
+    return item
+
+
+def test_bitbucket_endpoint_scan_after_script_purges_every_secret_before_committing():
+    body = _bb_endpoint_scan_after_script_commit_item()
+    unset_line = next(ln for ln in body.splitlines() if ln.strip().startswith("unset "))
+    assert " ".join(ci_render.TRUSTED_SECRETS) in unset_line and "GIZMODUCK_BB_READ_TOKEN" in unset_line
+    assert _SECRET_REF.search(body) is None
+
+
+def test_bitbucket_endpoint_scan_after_script_commits_even_though_the_step_it_belongs_to_would_fail(repo):
+    """The after-script runs unconditionally in Bitbucket regardless of the
+    step's own exit code - simulated here by simply invoking it after the
+    report has been generated, exactly as Bitbucket would after a blocked
+    gate left the main script non-zero."""
+    item = _bb_endpoint_scan_after_script_commit_item()
+    repo.branch("feature/x")
+    repo.git("push", "-q", "origin", "feature/x")
+    out_dir = repo.work.parent / "scan-out"
+    out_dir.mkdir()
+    (out_dir / "security-scan-report.md").write_text("# Security scan report\n", encoding="utf-8")
+
+    p = repo.run(item, GIZMODUCK_OUT=str(out_dir), BITBUCKET_CLONE_DIR=str(repo.work),
+                 BITBUCKET_BRANCH="feature/x")
+
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "[skip ci]" in repo.origin_log("feature/x")[0]
     assert repo.origin_log("main") == ["seed"]

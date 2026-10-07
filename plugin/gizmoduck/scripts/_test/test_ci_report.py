@@ -105,6 +105,34 @@ def test_unclaimed_targets_are_listed_and_every_finding_counted_once():
     assert rep["unattributed"] == 1
 
 
+def test_one_target_claimed_by_two_endpoint_rows_is_counted_on_only_one_of_them():
+    """GET /api/orders and POST /api/orders share one scan_url (the fixture's
+    orders-api module) and so one scanned target, endpoint-ep-0001-1, which
+    carries a single Critical. Displaying that Critical's count on both rows
+    would make the report look like two Criticals when there is one."""
+    r = rows(build())
+    get = r[("orders-api", "GET /api/orders")]
+    post = r[("orders-api", "POST /api/orders")]
+    with_counts = [row for row in (get, post) if row["counts"] is not None]
+    without_counts = [row for row in (get, post) if row["counts"] is None]
+    assert len(with_counts) == 1 and with_counts[0]["counts"]["critical"] == 1
+    assert len(without_counts) == 1 and any("counted once" in m for m in without_counts[0]["missing"])
+    # The grand total still counts the finding exactly once either way - this
+    # bug was in the per-row display, not the summary.
+    assert build()["totals"]["critical"] == 1
+
+
+def test_targets_scanned_excludes_allowed_targets_with_no_completed_coverage():
+    """One allowed target, an empty manifest, and no findings file: nothing
+    ran, so "targets scanned" must be 0, not the 1 allowed name."""
+    rep = ci_report.build(ci_inventory.build(str(FIXTURE), ci_inventory.settings(None)),
+                          {"allowed": [{"name": "staging", "url": ORDERS, "kind": "base"}],
+                           "refused": [], "skipped": []}, {"cells": []}, None, None)
+    assert rep["targets"] == 0
+    text = ci_report.render(rep, META)
+    assert "| 0 | 0 | 0 | n/a | 0 | " in text
+
+
 def test_no_baseline_means_new_is_not_applicable():
     rep = build(baseline=None)
     assert rep["totals"]["new"] is None
@@ -135,6 +163,30 @@ def test_header_carries_date_commit_and_artifact_links():
 def test_render_is_pure():
     assert ci_report.render(build(), META) == ci_report.render(build(), dict(META))
     assert "\r" not in ci_report.render(build(), META)
+
+
+def test_a_newline_bearing_module_path_cannot_forge_a_heading(tmp_path):
+    evil = tmp_path / "weird\n\n# Forged Heading\n\nname"
+    evil.mkdir()
+    (evil / "package.json").write_text("{}", encoding="utf-8")
+    modules = ci_inventory.build(str(tmp_path), ci_inventory.settings(None))
+    rep = ci_report.build(modules, TARGETS, MANIFEST, parsed(FINDINGS), parsed(BASELINE))
+    text = ci_report.render(rep, META)
+    assert "\n# Forged Heading\n" not in text
+    assert "## weird" in text
+
+
+def test_a_backtick_bearing_endpoint_still_renders_as_a_code_span():
+    findings = [dict(f, target="endpoint-ep-0001-1") for f in FINDINGS[:1]]
+    modules = ci_inventory.build(str(FIXTURE), ci_inventory.settings(None))
+    for m in modules:
+        for r in m["rows"]:
+            if r["endpoint"] == "/api/orders" and r["method"] == "GET":
+                r["endpoint"] = "/api/orders/`x`"
+    rep = ci_report.build(modules, TARGETS, MANIFEST, parsed(findings), parsed(BASELINE))
+    text = ci_report.render(rep, META)
+    assert "`` GET /api/orders/`x` ``" in text
+    assert "| `GET /api/orders/`x`` |" not in text
 
 
 def test_nothing_but_counts_and_redacted_urls_is_written():

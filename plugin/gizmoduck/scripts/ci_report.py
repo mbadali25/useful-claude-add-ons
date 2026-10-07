@@ -32,6 +32,7 @@ request or response - so the file is safe to commit.
 """
 import json
 import os
+import re
 import urllib.parse
 
 import ci_gate
@@ -105,7 +106,13 @@ def build(modules, targets_doc, manifest, findings, baseline):
             return "UNVERIFIED", missing or ["no coverage cell ran"]
         return ("scanned", []) if not missing else ("partial", missing)
 
+    # Computed once per target, not once per row: a target's coverage does not
+    # depend on which endpoint row is asking, and "targets scanned" below must
+    # agree with what each row says.
+    status_by_target = {name: coverage(name) for name in by_name}
+
     claimed = set()
+    first_seen = {}
     out_modules = []
     for m in modules:
         rows = []
@@ -121,23 +128,56 @@ def build(modules, targets_doc, manifest, findings, baseline):
                              "missing": ["no scanned target matches this endpoint"], "counts": None})
                 continue
             claimed.add(name)
-            status, missing = coverage(name)
+            status, missing = status_by_target[name]
+            what = (r["method"] + " " if r["method"] else "") + r["endpoint"]
+            if name in first_seen:
+                # A second endpoint row can legitimately share one scanned
+                # target (GET and POST at the same path, say): its findings
+                # are counted once, on the row that first claimed the
+                # target - never re-displayed here as though they were a
+                # second, independent set of findings.
+                rows.append({"endpoint": r, "target": name, "status": status,
+                             "missing": missing + [f"counted once, under {first_seen[name]}"], "counts": None})
+                continue
+            first_seen[name] = what
             rows.append({"endpoint": r, "target": name, "status": status, "missing": missing,
                          "counts": _counts(per_target[name], base_keys) if status != "UNVERIFIED" else None})
         out_modules.append({"path": m["path"], "mode": m["mode"], "rows": rows})
     others = []
     for name in sorted(set(by_name) - claimed):
-        status, missing = coverage(name)
+        status, missing = status_by_target[name]
         others.append({"target": name, "url": by_name[name], "status": status, "missing": missing,
                        "counts": _counts(per_target[name], base_keys) if status != "UNVERIFIED" else None})
     every = [f for fs in per_target.values() for f in fs] + unattributed
+    # "Targets scanned": targets with actual coverage, never the count of
+    # names the guard merely allowed - an allowed target with no completed
+    # cell is UNVERIFIED, not a scan.
+    targets_scanned = sum(1 for name in by_name if status_by_target[name][0] != "UNVERIFIED")
     return {"modules": out_modules, "others": others, "totals": _counts(every, base_keys),
             "unattributed": len(unattributed), "baseline": base_keys is not None,
-            "findings_present": findings is not None, "targets": len(by_name)}
+            "findings_present": findings is not None, "targets": targets_scanned}
 
 
 def _cell(text):
-    return str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|")
+    # `<` is neutralised so an embedded HTML/script tag from a module path or
+    # detected endpoint text is never live Markdown when this file is viewed
+    # rendered.
+    return str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|").replace("<", "&lt;")
+
+
+def _code(text):
+    """`text` as an inline code span, always - never a bare backtick pair
+    that a backtick already in `text` (a path segment, a detected endpoint)
+    would prematurely close. Choose a fence one backtick longer than any run
+    already present, padding with a space when the text itself starts or
+    ends with one."""
+    text = _cell(str(text))
+    if "`" not in text:
+        return f"`{text}`"
+    longest = max(len(run) for run in re.findall(r"`+", text))
+    fence = "`" * (longest + 1)
+    pad = " " if text[:1] == "`" or text[-1:] == "`" else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
 
 
 def _n(counts, key):
@@ -197,7 +237,7 @@ def render(report, meta):
         lines += [f"{report['unattributed']} finding(s) matched no scanned target; they are in the totals above "
                   "and in the full report.", ""]
     for m in report["modules"]:
-        lines += [f"## {m['path']}", ""]
+        lines += [f"## {_cell(m['path'])}", ""]
         if not m["rows"]:
             lines += ["**UNVERIFIED** - the inventory lists no endpoint for this module.", ""]
             continue
@@ -207,7 +247,7 @@ def render(report, meta):
             what = (e["method"] + " " if e["method"] else "") + e["endpoint"]
             status = r["status"] + (f" ({'; '.join(r['missing'])})" if r["missing"] else "")
             c = r["counts"]
-            lines.append(f"| `{_cell(what)}` | {_cell(status)} | {_n(c, 'critical')} | {_n(c, 'high')} | "
+            lines.append(f"| {_code(what)} | {_cell(status)} | {_n(c, 'critical')} | {_n(c, 'high')} | "
                          f"{_n(c, 'medium')} | {_n(c, 'new')} |")
         lines.append("")
     if report["others"]:
@@ -218,7 +258,7 @@ def render(report, meta):
         for o in report["others"]:
             status = o["status"] + (f" ({'; '.join(o['missing'])})" if o["missing"] else "")
             c = o["counts"]
-            lines.append(f"| `{_cell(o['target'])}` | `{_cell(o['url'])}` | {_cell(status)} | {_n(c, 'critical')} | "
+            lines.append(f"| {_code(o['target'])} | {_code(o['url'])} | {_cell(status)} | {_n(c, 'critical')} | "
                          f"{_n(c, 'high')} | {_n(c, 'medium')} | {_n(c, 'new')} |")
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"

@@ -110,7 +110,7 @@ jobs:
             git add -- $GIZMODUCK_PUBLISH_FILES
             if git diff --cached --quiet; then
               echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
-            elif git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
+            elif [ "${GIZMODUCK_PUBLISH_ALLOW_REPEAT:-}" != "true" ] && git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
               echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
               echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
               exit 1

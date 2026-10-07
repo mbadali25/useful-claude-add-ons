@@ -114,21 +114,31 @@ def settings(config=None, output=None, roots=None, exclude=None, declaration=Non
 # discovery
 # --------------------------------------------------------------------------
 
-def _entries(path):
+def _entries(path, rel=None):
     """Sorted (name, is_dir, is_file) for a directory's entries, symlinks
-    excluded; bounded."""
+    excluded; bounded.
+
+    A directory this cannot fully read - permission denied, a scandir error
+    partway through, or more entries than `_MAX_DIR_ENTRIES` - makes
+    discovery under it INCOMPLETE, never an empty (and so passing) result:
+    raise `InventoryError` naming the path rather than returning `[]`. An
+    empty list here used to be indistinguishable from "no entries", so a
+    directory nobody could read silently dropped every module below it and
+    the stale check still passed."""
+    label = path if rel is None else rel
     out = []
     try:
         with os.scandir(path) as it:
             for n, entry in enumerate(it):
                 if n >= _MAX_DIR_ENTRIES:
-                    break
+                    raise InventoryError(f"{label}: more than {_MAX_DIR_ENTRIES} entries - "
+                                         f"discovery is bounded and cannot be complete here")
                 if entry.is_symlink():
                     continue
                 out.append((entry.name, entry.is_dir(follow_symlinks=False),
                             entry.is_file(follow_symlinks=False)))
-    except OSError:
-        return []
+    except OSError as exc:
+        raise InventoryError(f"{label}: cannot read directory ({exc.strerror or exc})") from exc
     return sorted(out)
 
 
@@ -147,14 +157,14 @@ def _walk_modules(path, rel, depth, conf, below):
     """Append to `below` every outermost qualifying directory under `path`."""
     if depth > _MAX_MODULE_DEPTH:
         return
-    for name, is_dir, _ in _entries(path):
+    for name, is_dir, _ in _entries(path, rel):
         if not is_dir or name.startswith(".") or name in ci_detect._SKIP_DIRS:
             continue
         child_rel = name if rel == "." else f"{rel}/{name}"
         if _excluded(child_rel, conf["exclude"]):
             continue
         child = os.path.join(path, name)
-        if _qualifies(_entries(child), conf["declaration"]):
+        if _qualifies(_entries(child, child_rel), conf["declaration"]):
             below.append(child_rel)
         else:
             _walk_modules(child, child_rel, depth + 1, conf, below)
@@ -172,7 +182,7 @@ def discover_modules(root, conf):
         _walk_modules(base, r, 1, conf, below)
         if below:
             found.update(below)
-        elif _qualifies(_entries(base), conf["declaration"]):
+        elif _qualifies(_entries(base, r), conf["declaration"]):
             found.add(r)
     ordered = sorted(found)
     # Outermost wins across overlapping roots too.
@@ -360,15 +370,26 @@ def build(root, conf, config=None):
 # --------------------------------------------------------------------------
 
 def _cell(text):
-    text = str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|")
+    # `<` is neutralised so an embedded HTML/script tag is never live Markdown;
+    # `\r`/`\n` so a module path or declared value can never inject a line of
+    # its own (a forged heading, say) into the generated document.
+    text = str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|").replace("<", "&lt;")
     return text
 
 
 def _code(text):
-    text = str(text)
-    if "`" in text or "\n" in text:
-        return _cell(text)
-    return f"`{_cell(text)}`"
+    """`text` as an inline code span, always - never a bare, unquoted `_cell`
+    fallback. A code span's content is literal in Markdown (no HTML, no
+    further Markdown), so the fence must always close: choose a run of
+    backticks one longer than any run already in the text, padding with a
+    space when the text itself starts or ends with a backtick."""
+    text = _cell(str(text))
+    if "`" not in text:
+        return f"`{text}`"
+    longest = max(len(run) for run in re.findall(r"`+", text))
+    fence = "`" * (longest + 1)
+    pad = " " if text[:1] == "`" or text[-1:] == "`" else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
 
 
 def render(modules, conf):
@@ -408,7 +429,7 @@ def render(modules, conf):
                   f"`{conf['declaration']}` or a project marker (csproj, package.json, pyproject.toml, "
                   "main.tf, ...).", ""]
     for m in modules:
-        lines.append(f"## {m['path']}")
+        lines.append(f"## {_cell(m['path'])}")
         lines.append("")
         if m["mode"] == "declared":
             meta = ", ".join(x for x in (m["kind"], m["status"]) if x)

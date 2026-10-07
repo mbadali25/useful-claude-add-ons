@@ -27,6 +27,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`gizmoduck` 0.8.1: inventory fails closed on unreadable directories; F2 review fixes.**
+  `ci_inventory.py`'s directory walk returned an empty entry list on a permission error, a
+  scandir error partway through, or hitting the 20,000-entry bound - so an unreadable subtree
+  silently dropped every module below it and the stale check still passed, and which module
+  survived the entry bound depended on filesystem enumeration order. All three now raise,
+  naming the path, and fail the inventory/check/report CLI commands rather than passing on an
+  incomplete result; `security-scan-report.md`'s "Targets scanned" count is fixed the same way,
+  counting only targets with completed coverage instead of every name the guard allowed.
+  Module paths and endpoint text are now safely encoded in both generated files - `<` is
+  neutralised so embedded HTML is never live Markdown, and a value containing a backtick gets a
+  longer code-span fence instead of silently losing its quoting. One scanned target claimed by
+  two endpoint rows (GET and POST at the same path, say) now has its findings displayed once,
+  not once per row. Bitbucket: `GIZMODUCK_BB_READ_TOKEN` (a repository variable, visible to
+  every step regardless of stage) is now unset alongside the deployment-scoped secrets in every
+  "secret-free" commit step; the PR check decides docs-only before the read-token-dependent
+  draft check, so a docs-only fork PR passes instead of failing for lack of a token forks never
+  get; the weekly results branch can be updated more than once (the loop guard no longer treats
+  every week's legitimately different report as a loop); a manual endpoint run dispatched from a
+  tag no longer publishes to a same-named branch; and the full-tier report is now committed from
+  the endpoint-scan step's after-script (which always runs) instead of a later ordinary step
+  Bitbucket never reaches once the gate has blocked.
 - **`gizmoduck` 0.8.0: a docs-only PR no longer leaves the required tier-1 `gate` check
   unreported.** `gizmoduck-pr.yml` had `paths-ignore` for documentation, so a docs-only PR never
   ran the workflow and branch protection requiring its `gate` waited forever. The workflow now

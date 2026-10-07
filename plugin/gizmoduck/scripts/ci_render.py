@@ -271,6 +271,13 @@ fi"""
 # matches the committed file commits nothing, and one that still differs while
 # HEAD is already a self-commit refuses rather than committing again - that
 # means the generator is not deterministic here, and a loop is the result.
+#
+# GIZMODUCK_PUBLISH_ALLOW_REPEAT opts out of that refusal. The weekly results
+# branch (GIZMODUCK_RESULTS_BRANCH) receives a NEW report every week, with a
+# different run URL and date each time, on top of last week's self-commit -
+# so HEAD there is always a self-commit and the content always legitimately
+# differs. Without the opt-out the loop guard fires every week but the first,
+# which is not a loop; it is the branch working as designed.
 SELF_COMMIT_SH = """\
 branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
 if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
@@ -281,7 +288,7 @@ else
   git add -- $GIZMODUCK_PUBLISH_FILES
   if git diff --cached --quiet; then
     echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
-  elif git log -1 --format=%B | grep -qF '@@MARK@@'; then
+  elif [ "${GIZMODUCK_PUBLISH_ALLOW_REPEAT:-}" != "true" ] && git log -1 --format=%B | grep -qF '@@MARK@@'; then
     echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
     echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
     exit 1
@@ -924,11 +931,21 @@ def _gh_publish_report_job(cfg, branch):
     for. `contents: write` is this job's alone; its `if:` (and the self-commit
     script, again, at runtime) keeps it off the default branch and off the
     weekly sweep - the sweep's report stays an artifact. It holds no secret,
-    runs no scanner and executes nothing from the repository."""
+    runs no scanner and executes nothing from the repository.
+
+    A manual `workflow_dispatch` run is not necessarily on a branch:
+    `github.ref_name` (the fallback `branch` falls to when there is no
+    workflow_run/deployment context) is also a TAG's short name, and
+    checking that out and pushing `HEAD:refs/heads/<name>` would create a
+    branch named after the tag. `deployment_status` and `workflow_run` never
+    hit that fallback - they name an actual branch - so the check is scoped
+    to workflow_dispatch alone."""
     b = f"({branch})"
     cond = ("always() && (needs.scan.result == 'success' || needs.scan.result == 'failure' || "
             "needs.scan-bootstrap.result == 'success' || needs.scan-bootstrap.result == 'failure') && "
-            f"github.event_name != 'schedule' && github.event_name != 'pull_request' && {_gh_not_default(b, cfg)}")
+            f"github.event_name != 'schedule' && github.event_name != 'pull_request' && "
+            f"(github.event_name != 'workflow_dispatch' || github.ref_type == 'branch') && "
+            f"{_gh_not_default(b, cfg)}")
     script = "\n".join([
         f'if [ ! -f /tmp/gizmoduck-report/{REPORT_MD} ]; then',
         f'  echo "gizmoduck: the scan left no {REPORT_MD} - nothing to commit (see the run artifacts)"',
@@ -1130,7 +1147,7 @@ else
 fi"""
 
 
-_BB_PR_TRUST = """\
+_BB_PR_SECRETS = """\
 # A pull request is untrusted code: no secret may be visible to it - not a
 # write-capable secret, and not NVD_API_KEY or the scan auth header either.
 # They belong to the gizmoduck-trusted deployment environment, which only the
@@ -1142,10 +1159,15 @@ for v in @@SECRETS@@; do
     exit 1
   fi
 done
-unset @@SECRETS@@
+unset @@SECRETS@@""".replace("@@SECRETS@@", " ".join(TRUSTED_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV)
+
+
+_BB_PR_DRAFT_CHECK = """\
 # Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
 # is read from the pull request with the read-only GIZMODUCK_BB_READ_TOKEN. A
 # state this step cannot read fails the check - a draft is never guessed at.
+# This runs AFTER the docs-only check: a fork's pull request never gets this
+# token either, and a docs-only fork PR must still pass without needing it.
 if [ -z "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
   echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not available (a fork's pull request never gets secured variables),"
   echo "so this check cannot tell a draft apart or read its baseline - failing rather than scanning blind."
@@ -1159,8 +1181,7 @@ case "$draft" in
   true) echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"; exit 0 ;;
   false) ;;
   *) echo "gizmoduck: could not read whether pull request ${BITBUCKET_PR_ID:-?} is a draft - failing closed"; exit 1 ;;
-esac""".replace("@@SECRETS@@", " ".join(TRUSTED_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV) \
-    .replace("@@BB_FULL@@", BB_FULL)
+esac""".replace("@@BB_FULL@@", BB_FULL)
 
 
 _BB_TRUSTED_REF = """\
@@ -1281,12 +1302,19 @@ fi""".replace("@@CHANGED@@", CHANGED_SH)
 
 
 def _bb_minimal_exports(cfg):
+    """The environment for a commit step that runs outside the trusted
+    deployment stage. TRUSTED_SECRETS are deployment variables and so are
+    already absent here; GIZMODUCK_BB_READ_TOKEN is not - it is a repository
+    variable, visible to every step of the pipeline regardless of stage - so
+    it must be unset explicitly or a "secret-free" step is not."""
     pairs = [("GIZMODUCK_DEFAULT_BRANCH", cfg["default_branch"]), ("GIZMODUCK_SOURCE_REPO", cfg["source_repo"]),
              ("GIZMODUCK_REF", cfg["gizmoduck_ref"])]
     return "\n".join(['export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"'] +
                      [f"export {k}={shlex.quote(v)}" for k, v in pairs] +
                      ["# No secret is used here, and none should be visible (they are deployment variables).",
-                      f"unset {' '.join(TRUSTED_SECRETS)}"])
+                      f"unset {' '.join(TRUSTED_SECRETS)}",
+                      "# ...and this one is a repository variable, so it is visible everywhere - unset it too.",
+                      "unset GIZMODUCK_BB_READ_TOKEN"])
 
 
 def _bb_plain_step(anchor, name, script_items, max_time=15):
@@ -1303,8 +1331,19 @@ def _bb_report_after_script(cfg, tier, block_at):
     """Runs even when the step failed (after-script), so a blocked or
     UNVERIFIED scan still leaves its security-scan-report.md in the
     artifacts. The weekly sweep may also upload it to Downloads - opt-in, from
-    the default branch only, with the token only a trusted run holds."""
-    return [_bb_exports(cfg, ENDPOINT_OUT, tier, block_at), f"""\
+    the default branch only, with the token only a trusted run holds.
+
+    The full tier also commits {REPORT_MD} on the branch the scan ran for,
+    HERE rather than in a later, ordinary step: an ordinary step never runs
+    once a step in the same stage has failed (Bitbucket does not continue a
+    stage past a failed step), so a blocked or failed gate - exactly the run
+    whose report matters most - used to leave the commit undone even though
+    the report itself had just been generated. An after-script always runs.
+    It is not "a step outside the trusted stage" the way the docs-only and
+    inventory publishers are; it purges every trusted secret from its own
+    environment before touching git, achieving the same guarantee from
+    inside the stage instead of by being outside it."""
+    script = [_bb_exports(cfg, ENDPOINT_OUT, tier, block_at), f"""\
 mkdir -p "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
 {CLI} scan-report --repo "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT" --commit "$BITBUCKET_COMMIT" \\
   --branch "${{BITBUCKET_BRANCH:-}}" --tier "$GIZMODUCK_TIER" \\
@@ -1320,6 +1359,23 @@ if [ "$GIZMODUCK_TIER" = "sweep" ] && [ "${{GIZMODUCK_REPORT_DOWNLOADS:-}}" = "t
 "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" \\
 || echo "gizmoduck: uploading {REPORT_MD} to Downloads failed - it is still in this run's artifacts"
 fi"""]
+    if tier != "sweep":
+        script.append(f"""\
+# Commit {REPORT_MD} on this branch (never the default branch) - here, in the
+# after-script, so it still happens when the gate above blocked or failed.
+# Every trusted secret is unset first: this after-script shares its
+# environment with the trusted step it belongs to, and none of them is
+# needed to commit a Markdown file.
+unset {' '.join(TRUSTED_SECRETS)} GIZMODUCK_BB_READ_TOKEN
+if [ -f "$GIZMODUCK_OUT/{REPORT_MD}" ]; then
+  command -v git >/dev/null 2>&1 || {{ apt-get update -y && apt-get install -y git; }}
+  cp "$GIZMODUCK_OUT/{REPORT_MD}" "$BITBUCKET_CLONE_DIR/{REPORT_MD}"
+  cd "$BITBUCKET_CLONE_DIR"
+  export GIZMODUCK_PUBLISH_BRANCH="${{BITBUCKET_BRANCH:-}}" GIZMODUCK_PUBLISH_FILES={REPORT_MD} \\
+    GIZMODUCK_PUBLISH_WHAT={REPORT_MD}
+{SELF_COMMIT_SH}
+fi""")
+    return script
 
 
 def _bb_inventory_steps(cfg):
@@ -1340,20 +1396,14 @@ def _bb_inventory_steps(cfg):
 def _bb_publish_steps(cfg):
     """Secret-free steps after the trusted stage: a step outside a deployment
     stage gets no deployment variable, so the self-commit runs with no secret
-    in its environment."""
-    report = _bb_plain_step(
-        "gizmoduck-publish-report",
-        f"gizmoduck: commit {REPORT_MD} on this branch (no secrets; never the default branch)",
-        [_bb_minimal_exports(cfg), f"""\
-if [ ! -f "gizmoduck-out/endpoints/{REPORT_MD}" ]; then
-  echo "gizmoduck: the scan left no {REPORT_MD} - nothing to commit (see the run artifacts)"
-  exit 0
-fi
-command -v git >/dev/null 2>&1 || {{ apt-get update -y && apt-get install -y git; }}
-cp "gizmoduck-out/endpoints/{REPORT_MD}" {REPORT_MD}
-export GIZMODUCK_PUBLISH_BRANCH="${{BITBUCKET_BRANCH:-}}" GIZMODUCK_PUBLISH_FILES={REPORT_MD} \\
-  GIZMODUCK_PUBLISH_WHAT={REPORT_MD}
-{SELF_COMMIT_SH}"""])
+    in its environment.
+
+    The full tier's {REPORT_MD} commit is NOT here - it used to be, as an
+    ordinary step after the trusted stage, but Bitbucket never runs an
+    ordinary step once a step earlier in the same stage has failed, so a
+    blocked or failed gate (exactly the run whose report matters most) left
+    it uncommitted. It is `gizmoduck-endpoint-scan`'s after-script now
+    (`_bb_report_after_script`), which runs regardless."""
     sweep = _bb_plain_step(
         "gizmoduck-publish-sweep",
         f"gizmoduck: weekly {REPORT_MD} to a results branch (opt-in; never the default branch)",
@@ -1386,17 +1436,25 @@ else
 fi
 cp "gizmoduck-out/endpoints/{REPORT_MD}" "$work/{REPORT_MD}"
 cd "$work"
+# A new report every week, on top of last week's self-commit: HEAD here is
+# always a self-commit and the content always legitimately differs - that
+# is this branch working as designed, not the loop the guard exists for.
 export GIZMODUCK_PUBLISH_BRANCH="$GIZMODUCK_RESULTS_BRANCH" GIZMODUCK_PUBLISH_FILES={REPORT_MD} \\
-  GIZMODUCK_PUBLISH_WHAT="weekly {REPORT_MD}"
+  GIZMODUCK_PUBLISH_WHAT="weekly {REPORT_MD}" GIZMODUCK_PUBLISH_ALLOW_REPEAT=true
 {SELF_COMMIT_SH}"""])
-    return report, sweep
+    return (sweep,)
 
 
 def _bb_code_items(cfg, tier, block_at, stage_cmd, title, pr_check=False):
     items = [_bb_exports(cfg, CODE_OUT, tier, block_at)]
-    items.append(_BB_PR_TRUST if pr_check else _BB_TRUSTED_REF)
     if pr_check:
-        items.append(_BB_PR_CHANGED)
+        # Secret check first (cheap, no dependency), THEN docs-only (so a
+        # docs-only fork PR - which never gets GIZMODUCK_BB_READ_TOKEN - can
+        # pass before anything needs that token), THEN the draft check that
+        # does need it.
+        items += [_BB_PR_SECRETS, _BB_PR_CHANGED, _BB_PR_DRAFT_CHECK]
+    else:
+        items.append(_BB_TRUSTED_REF)
     items += [BOOTSTRAP_SH, _bb_baseline_download("code"), stage_cmd,
               *_bb_tail("code", title, insights=True, trusted=not pr_check)]
     return items
@@ -1497,7 +1555,9 @@ def bitbucket(cfg):
 #   {default}: verify-only - `check` fails while {INVENTORY_MD} is stale; nothing is
 #             pushed (a default branch commonly refuses pushes from Pipelines).
 #   custom: {BB_FULL} commits the scan's {REPORT_MD} on the branch it ran on (never
-#             {default}) from a step outside the trusted stage - it holds no secret.
+#             {default}), from the endpoint-scan step's after-script (so a blocked or
+#             failed gate still leaves it committed) after that after-script unsets
+#             every trusted secret.
 #   custom: {BB_WEEKLY} keeps its report in artifacts; optional: Downloads
 #             (GIZMODUCK_REPORT_DOWNLOADS=true) or a results branch (GIZMODUCK_RESULTS_BRANCH,
 #             never {default} or release/*). Never a commit to {default}.
@@ -1535,8 +1595,10 @@ pipelines:
             - step: *gizmoduck-full-code
             # If this pipeline also deploys staging, put the deploy step here so the
             # endpoint scan runs against what was just deployed.
+            # security-scan-report.md is committed in this step's after-script (it
+            # runs even when the gate above blocks), never as a later ordinary step -
+            # Bitbucket does not run one of those once a step in this stage has failed.
             - step: *gizmoduck-endpoint-scan
-      - step: *gizmoduck-publish-report
     {BB_WEEKLY}:
       - stage:
           name: gizmoduck tier 3 (trusted)
@@ -1560,9 +1622,6 @@ pipelines:
             - step:
                 <<: *gizmoduck-endpoint-scan
                 image: ubuntu:24.04
-      - step:
-          <<: *gizmoduck-publish-report
-          image: ubuntu:24.04
     {BB_WEEKLY}-bootstrap:
       - stage:
           name: gizmoduck tier 3 (trusted, inline bootstrap)

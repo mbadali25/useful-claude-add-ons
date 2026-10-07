@@ -138,6 +138,105 @@ def test_a_module_with_no_endpoint_is_unverified(repo):
     assert "**UNVERIFIED** - no endpoint declared or detected" in text
 
 
+# --------------------------------------------------------------------------
+# fail-closed discovery: a directory this cannot fully read is never a
+# silent, passing empty result (BLOCK, ci_inventory.py:130)
+# --------------------------------------------------------------------------
+
+def test_an_unreadable_directory_fails_discovery_closed_instead_of_dropping_the_module(repo, monkeypatch):
+    """Root can read anything a real chmod would block, so the repro forces
+    os.scandir to raise - exactly the alternative the finding names."""
+    blocked = os.path.normpath(os.path.join(str(repo), "orders-api"))
+    real_scandir = ci_inventory.os.scandir
+
+    def fake_scandir(path):
+        if os.path.normpath(os.fspath(path)) == blocked:
+            raise PermissionError(13, "Permission denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr(ci_inventory.os, "scandir", fake_scandir)
+
+    with pytest.raises(ci_inventory.InventoryError, match=re.escape("orders-api") + ".*cannot read directory"):
+        ci_inventory.build(str(repo), conf())
+    # The stale check must fail closed too - never silently pass on an
+    # incomplete discovery.
+    with pytest.raises(ci_inventory.InventoryError):
+        ci_inventory.check(str(repo), conf())
+
+
+def test_a_scandir_error_partway_through_a_directory_also_fails_closed(repo, monkeypatch):
+    blocked = os.path.normpath(str(repo))
+    real_scandir = ci_inventory.os.scandir
+
+    class _BoomIter:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __iter__(self):
+            raise OSError("stat failed mid-read")
+
+    def fake_scandir(path):
+        if os.path.normpath(os.fspath(path)) == blocked:
+            return _BoomIter()
+        return real_scandir(path)
+
+    monkeypatch.setattr(ci_inventory.os, "scandir", fake_scandir)
+
+    with pytest.raises(ci_inventory.InventoryError, match="cannot read directory"):
+        ci_inventory.discover_modules(str(repo), conf())
+
+
+def test_more_entries_than_the_bound_fails_closed_rather_than_depending_on_readdir_order(tmp_path):
+    """The 20,000-entry cap used to be applied before sorting, so which
+    module survived depended on filesystem enumeration order. It must now
+    fail closed instead of silently keeping (or dropping) an arbitrary one."""
+    monkeypatch_bound = ci_inventory._MAX_DIR_ENTRIES
+    try:
+        ci_inventory._MAX_DIR_ENTRIES = 5
+        for i in range(6):
+            (tmp_path / f"sibling-{i}").mkdir()
+        (tmp_path / "sibling-3" / "package.json").write_text("{}", encoding="utf-8")
+        with pytest.raises(ci_inventory.InventoryError, match="more than 5 entries"):
+            ci_inventory.discover_modules(str(tmp_path), conf())
+    finally:
+        ci_inventory._MAX_DIR_ENTRIES = monkeypatch_bound
+
+
+# --------------------------------------------------------------------------
+# safe Markdown encoding (FIX, ci_inventory.py:411)
+# --------------------------------------------------------------------------
+
+def test_a_newline_bearing_module_path_cannot_forge_a_heading(repo):
+    """A directory name may legally hold a raw newline on Linux; the
+    generated heading must never let it start a new document line."""
+    evil = repo / "weird\n\n# Forged Heading\n\nname"
+    evil.mkdir()
+    (evil / "package.json").write_text("{}", encoding="utf-8")
+    text = ci_inventory.generate(str(repo), conf())
+    assert "\n# Forged Heading\n" not in text
+    assert "## weird" in text
+
+
+def test_an_html_bearing_declared_name_is_neutralised(repo):
+    decl = repo / "billing-portal" / "public-endpoint.md"
+    decl.write_text(decl.read_text(encoding="utf-8").replace(
+        'name: "Billing Portal"', 'name: "<img src=x onerror=alert(1)>"'), encoding="utf-8")
+    text = ci_inventory.generate(str(repo), conf())
+    assert "<img" not in text and "&lt;img" in text
+
+
+def test_a_backtick_bearing_value_still_renders_as_a_code_span(repo):
+    decl = repo / "billing-portal" / "public-endpoint.md"
+    decl.write_text(decl.read_text(encoding="utf-8").replace(
+        "https://billing.example.test", "https://billing.example.test/`x`"), encoding="utf-8")
+    text = ci_inventory.generate(str(repo), conf())
+    assert "`` https://billing.example.test/`x` ``" in text   # a longer fence, never a bare fallback
+    assert "| https://billing.example.test/`x` |" not in text   # never emitted unquoted
+
+
 @pytest.mark.parametrize("front,needle", [
     ('name: "x"\n', "missing required frontmatter key `url`"),
     ('url: "https://a.example.test"\n', "missing required frontmatter key `name`"),
