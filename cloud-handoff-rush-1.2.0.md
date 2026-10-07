@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T10:48Z
+Last updated: 2026-10-07T10:49Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T10:49Z G3b lander done: head 04da6c64 (1.1.8 provisional), contains release 2c911427, r1 BLOCK (case-insensitive config.json scan) + r2 BLOCK/2 FIX fixed with sabotage-verified tests; Windows run 37604277431 all 16 green. Queue: G0 -> retire(main) -> G7 -> G2 -> G3b.
 - 2026-10-07T10:48Z G2 lander done: head f77e8d1b (1.1.12 provisional), merged release 2c911427 (14 doc/config conflicts, both kept), full crew suite 16538 passed + wallclock 29, Windows all green (fixed os.kill(pid,0)=Ctrl+C on Windows in unattended cleanup). Group review ran 4 rounds before the owner rule reached it; r4 fixes unreviewed. Landing queue: G0 -> retire(main) -> G7 -> G2. G6a/G6b told to merge f77e8d1b.
 - 2026-10-07T10:47Z G7 lander done: head b4eb4ec0 (1.1.11 provisional), merged release 2c911427, full crew suite 13562 passed/0 failed, Windows all green, r1 BLOCK (.PS1 case) fixed, r2 FIX rejected with pwsh 7.6.6 measurement. G7 is next to land after G0 + retire; it re-merges release and takes its final version then. G0 0e196503: 28/28 real checks green, shell-matrix rollup queued.
 - 2026-10-07T10:32Z G4: T-0009 not separable (8/10 tickets build on crew_dispatch.py). Stacked harness PR impossible: check-tooling-pr diffs vs origin/main. Owner approved RETIRE-THEN-READD: H-lane rush/h4-cloud-retire (main, harness-only, C-0047 part 1) retires the 28 orphaned sabotage_cloud.py entries, recorded in docs/tickets/C-0047/retired-entries.md; release merges main; G4 lands green; H2 re-adds anchored to new code. G4 lander does retire first, then r2 fixes on rush/g4-deploy.
