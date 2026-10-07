@@ -30,9 +30,13 @@ WAVE_MUTATIONS = (
      "    if not found:\n        return None\n    ids = _ID_RE.findall(found.group(1))\n",
      "    if not found:\n        return []\n    ids = _ID_RE.findall(found.group(1))\n",
      _W + "test_plan_refuses_unknown_dependencies[title]"),
+    # G0's port added an OPEN_STATUSES allowlist (review round 2), which refuses
+    # `direction` too, so dropping the named check alone left it refused: the
+    # mutation opens both.
     ("WAVE: a direction-status ticket is eligible", WAVE,
-     '    if status == "direction":\n',
-     "    if False:\n",
+     '    if status == "direction":\n        return line, f"{ticket} is INDEX status direction: its '
+     'direction is not approved"\n    if status not in OPEN_STATUSES:',
+     '    if status not in OPEN_STATUSES | {"direction"}:',
      _W + "test_plan_refuses_direction_status_ticket"),
     ("WAVE: a relaunch reserves a fresh review round", WAVE,
      "        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))\n",
