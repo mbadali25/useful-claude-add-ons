@@ -27,6 +27,14 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_state
 import crew_unattended as cu
 
+# crew_unattended refuses native Windows at its first check (platform), before
+# anything is read or sealed, and every case here drives the POSIX chain
+# through POSIX shell shims and POSIX paths. The native-Windows behaviour is
+# tested in test_crew_unattended_windows.py, which runs on every platform.
+pytestmark = pytest.mark.skipif(os.name == "nt", reason=(
+    "POSIX-only chain: native Windows refuses at the platform check "
+    "(test_crew_unattended_windows.py)"))
+
 IDENT = "arn:aws:sts::111111111111:assumed-role/ReadOnlyAccess/"
 DEV_IDENT = "arn:aws:sts::222222222222:assumed-role/DevWriter/"
 ARN = IDENT + "crew-unattended"
@@ -974,7 +982,10 @@ def test_refuses_non_claude(world, capsys, command):
 
 
 @pytest.mark.parametrize("flag", ["--settings", "--settings=/x.json",
-                                  "--setting-sources", "--setting-sources=user"])
+                                  "--setting-sources", "--setting-sources=user",
+                                  # Group review (G2) BLOCK: processes outside the sandbox.
+                                  "--mcp-config", "--mcp-config=/x.json",
+                                  "--strict-mcp-config", "--plugin-dir", "--plugin-dir=/p"])
 def test_refuses_a_command_that_replaces_the_sealed_settings(world, capsys, flag):
     code = world.run(command=("claude", flag, "x"))
     assert code != 0 and not world.execs
@@ -999,8 +1010,8 @@ def _assert_sealed_child(world, argv, env, profile, region):
     with open(argv[2], encoding="utf-8") as fh:
         settings = json.load(fh)
     # Project and local settings never load in the sealed session.
-    assert argv[3:5] == ["--setting-sources", "user"]
-    assert argv[5:] == ["--resume"]
+    assert argv[3:6] == ["--setting-sources", "user", "--strict-mcp-config"]
+    assert argv[6:] == ["--resume"]
     # launch-strips-aws-env
     assert env.get("AWS_PROFILE") is None
     assert env["AWS_ACCESS_KEY_ID"] == KEY
@@ -1086,6 +1097,8 @@ def test_must_launch(world, capsys, case):
     assert not [k for k in version["env"] if k.startswith("AWS_")]
     assert probe["argv"][probe["argv"].index("--settings") + 1] == argv[2]
     assert probe["argv"][probe["argv"].index("--setting-sources") + 1] == "user"
+    # Group review (G2) BLOCK: no MCP server starts in the probe or the session.
+    assert "--strict-mcp-config" in probe["argv"] and "--mcp-config" not in probe["argv"]
     assert probe["argv0"] == file_
     assert not set(FOREIGN_CREDENTIAL_ENV) & set(probe["env"])
 
@@ -1244,7 +1257,7 @@ def test_launch_execs_the_real_fake_claude(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     got = json.loads(dump.read_text(encoding="utf-8"))
     assert got["argv"][1] == "--settings"
-    assert got["argv"][3:] == ["--setting-sources", "user", "--resume"]
+    assert got["argv"][3:] == ["--setting-sources", "user", "--strict-mcp-config", "--resume"]
     # Started from `elsewhere`, the session runs in --root: what was probed.
     assert os.path.realpath(got["cwd"]) == os.path.realpath(str(repo))
     assert got["env"]["AWS_SESSION_TOKEN"] == TOKEN

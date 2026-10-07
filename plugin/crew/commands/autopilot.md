@@ -99,7 +99,7 @@ Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 
 ## 5. Context runs low, and the report
 
-When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resume: /crew:autopilot <ticket>` as its resume line, then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`. Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p> --reason "<r>"` (it decides what pings). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
+When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resume: /crew:autopilot <ticket>` as its resume line, then stop. At every stop after the claim, first run section 2's `crew_inflight.py release --root . --ticket <ticket>`. Then, at every stop, `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_notify.py run-stop --root . --ticket <ticket> --phase <p>` (it decides what pings; never pass the stop reason on a command line - it can quote ticket text). Report the ticket and its source, each phase run with its command, the PR, every `self-approved`, `auto-rejected` and `taken:` line, every successor plan, where `next` stopped, why, and the command the human types next.
 
 ## 6. focus - a scope lock on one ticket (T-0020)
 

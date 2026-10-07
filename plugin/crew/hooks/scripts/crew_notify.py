@@ -203,6 +203,25 @@ def _read_json(path):
     return data if isinstance(data, dict) else {}
 
 
+def _read_stops(path):
+    """`(stops, readable)`: a missing file is `({}, True)`; one that is there
+    and does not parse to an object is `({}, False)`."""
+    if not os.path.lexists(path):
+        return {}, True
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}, False
+    return (data, True) if isinstance(data, dict) else ({}, False)
+
+
+def _stop_entry_ok(entry):
+    return (isinstance(entry, dict) and isinstance(entry.get("at"), (int, float))
+            and not isinstance(entry.get("at"), bool) and isinstance(entry.get("ids"), list)
+            and all(isinstance(i, str) for i in entry["ids"]))
+
+
 def _write_json(path, data):
     """Temp file + os.replace: a reader never sees half a file. Every value is
     redacted on the way out, so no secret reaches the state directory."""
@@ -987,13 +1006,26 @@ def stop_outcome(root, gate, refused, payload_bytes):
                 _say("stops lock busy; this verdict is not counted")
                 return "busy"
             now = time.time()
-            stops = {name: entry for name, entry in _read_json(path).items()
-                     if isinstance(entry, dict) and isinstance(entry.get("at"), (int, float))
-                     and isinstance(entry.get("ids"), list) and now - entry["at"] < PRUNE_SECONDS}
+            raw_stops, readable = _read_stops(path)
+            mine = raw_stops.get(key)
+            # A history that is there and cannot be read (or this key's entry
+            # out of shape) cannot say whether this refusal is the second:
+            # unknown, never a fresh streak.
+            unknown = not readable or (mine is not None and not _stop_entry_ok(mine))
+            stops = {name: entry for name, entry in raw_stops.items()
+                     if _stop_entry_ok(entry) and now - entry["at"] < PRUNE_SECONDS}
             if not refused:
                 stops.pop(key, None)
                 _write_json(path, stops)
                 return "cleared"
+            if unknown:
+                stops[key] = {"ids": [ident], "first": ident, "at": now}
+                _write_json(path, stops)
+                _say("stops.json is unreadable or out of shape: whether this refusal is "
+                     "the second cannot be told; pinging, and the streak restarts here")
+                return send(root, "blocker", f"{gate} gate refused (refusal history "
+                            "unreadable)", ticket=ticket, unblock="/crew:status",
+                            kind="gate", dedupe=ident)
             entry = stops.get(key) or {}
             seen = entry.get("ids") or []
             if ident in seen:

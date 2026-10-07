@@ -408,6 +408,38 @@ def test_stop_outcome_never_raises_on_garbage(tmp_path, telegram):
     assert words == ["counted", "sent", "deduped"]
 
 
+@pytest.mark.parametrize("history", ["{torn", "[]", "null"], ids=["not-json", "list", "null"])
+def test_unreadable_refusal_history_pings_never_restarts_silently(tmp_path, telegram, history):
+    """Group review (G2) FIX: a stops.json that is there and unreadable cannot
+    say whether this refusal is the second; it pings once and restarts the
+    streak, never `counted` as though it were the first."""
+    root = _blocker_repo(tmp_path)
+    _state(root).mkdir(parents=True, exist_ok=True)
+    (_state(root) / "stops.json").write_text(history, encoding="utf-8")
+
+    word = crew_notify.stop_outcome(str(root), "verify", True, _stop_payload("p-1"))
+    stops = json.loads((_state(root) / "stops.json").read_text(encoding="utf-8"))
+
+    assert (word, len(telegram.requests), stops[f"verify|s-1|{TICKET}"]["ids"]) == (
+        "sent", 1, ["prompt:p-1"])
+
+
+def test_out_of_shape_entry_for_this_key_pings(tmp_path, telegram):
+    root = _blocker_repo(tmp_path)
+    _state(root).mkdir(parents=True, exist_ok=True)
+    (_state(root) / "stops.json").write_text(json.dumps(
+        {f"verify|s-1|{TICKET}": {"ids": "p-0", "at": "now"}}), encoding="utf-8")
+
+    assert crew_notify.stop_outcome(str(root), "verify", True, _stop_payload("p-1")) == "sent"
+
+
+def test_missing_refusal_history_is_a_fresh_streak(tmp_path, telegram):
+    root = _blocker_repo(tmp_path)
+
+    assert (crew_notify.stop_outcome(str(root), "verify", True, _stop_payload("p-1")),
+            telegram.requests) == ("counted", [])
+
+
 def test_stop_unknown_gate_is_refused(tmp_path, telegram):
     root = _blocker_repo(tmp_path)
 
