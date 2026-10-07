@@ -561,7 +561,12 @@ inside them (a machine write since the preview refuses, exit 2, nothing deleted;
 the file to a fresh `.crew/config.json.bak-<UTC>` (`_free_backup`, `:585`) with `move_aside` and
 compares the moved bytes with the held ones - a changed file is moved straight back with
 `move_no_clobber`, never over a file saved in the gap (exit 2; exit 1 when a new file appeared);
-a `Displaced` move exits 1 naming the backup, the config path and the kept `*.moving` name - and
+a `Displaced` move exits 1 naming the backup, the config path and the kept `*.moving` name; an
+`OSError` goes to `_delete_os_error` with the stage the apply reached (T-0103, DERIVED,
+`plugin/crew/hooks/scripts/crew_config_menu.py`): before the move exit 2 "left in place", from the
+move on the two names are probed, each trusted only when `os.path.samestat` says it is the config's
+inode taken before the move (`_identity`, `_same`): the backup is named as the original with exit 1,
+the file back at its path exits 2, and anything else says it could not tell and names both - and
 prints three restore lines (`restore_lines` `:773`, `command_forms` `:756`: sh `shlex.quote`, cmd
 double-quoted with forward slashes and a `%` warning, PowerShell `&` with single quotes).
 `restore_repo_config` (`:962`) accepts exactly what `_valid_backup` (`:946`, location, name, then
@@ -612,7 +617,7 @@ they disagree:
   everything routed through `crew_config.py` (the guards, the verify gate,
   `/crew:config`, `/crew:model`) still reads `config.json` only, and
   `apply_migrate_to_repo`'s own docstring
-  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:501-507`) names
+  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:679-685`) names
   the specific consequence for auto-clear: "`crew_status.py` reads it
   [`crew.json`] only to report the migration schema... converting
   `crew.json` alone [does nothing for autoClear behaviour, which
@@ -680,6 +685,15 @@ and gets nothing created.
   helper, "so a repo onboarded standalone gets the identical question"),
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
+- DERIVED (T-0106): `apply-migrate --scan-root <dir>` (repeatable,
+  `--scan-depth`, default 3) walks each root read-only
+  (`scan_opted_in_repos` in `crew_autoclear_setup.py`) for repos whose
+  `.crew/config.json` or `.crew/crew.json` still carries `enabled: true`,
+  without descending into a candidate, a dot-directory, `node_modules` or a
+  symlink; finds join `proposedOnlyRepos`, unreadable ones are their own
+  list (`widening.scan.unreadable`). `--yes-widen` raises `WideningRefused`
+  (exit 1, nothing written) for an unreadable candidate or an empty
+  proposal. Each `apply-migrate` note starts with its file.
 
 ### Which terminal: the session's own process (T-0016, crew 1.0.333)
 
@@ -2485,8 +2499,8 @@ not moved because the rest of this map was not re-checked against main's later c
   one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()`
   confirmed at a specific line this pass; called with subcommands
-  (`plan-windows-default`, `apply-migrate`) from the three sites named
-  above.
+  (`plan-windows-default`, `apply-migrate [--scan-root <dir>]
+  [--scan-depth <n>] [--yes-widen]`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1325` — `ticket_freshness`,
@@ -2558,7 +2572,12 @@ not moved because the rest of this map was not re-checked against main's later c
 
 - `crew_context.py` -> `obsidian-vault`'s CLI, via `crew_recall.py` (module
   docstring only, **not read**: "crew does not search vaults itself...
-  calls that plugin's read-only contract and nothing else").
+  calls that plugin's read-only contract and nothing else"). Since L-0675 the
+  call carries `--project=<names>` from `crew_recall.projects` (the repo's
+  `memory.recall.projects`, else the main checkout's folder from
+  `--git-common-dir`), and an exit 2 is retried once without it inside the same
+  `CLI_TIMEOUT_SECONDS` deadline (DERIVED,
+  `plugin/crew/hooks/scripts/crew_recall.py`, `recall`).
 - `crew_memory.py` -> `~/.claude/obsidian/config.json` (via `crew_recall.obsidian_config_path`)
   and the crew config's `memory.vaultPath`; read-only (T-0084, section above).
 - `crew_autoclear_setup.py` -> `~/.claude/crew/config.json` (the

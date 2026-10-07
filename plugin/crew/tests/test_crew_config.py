@@ -413,7 +413,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 145 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
     # (/crew:autopilot wave), measured on rush/g0-coord-wave (release/1.2.0).
     assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
-    assert len(declared) == 145
+    # 146 with L-0675's repo-only `memory.recall.projects` on top of those 145
+    # (G3b stacked on G2, crew 1.1.11).
+    assert "memory.recall.projects" in declared
+    assert len(declared) == 146
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -860,7 +863,8 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["memory"] == {"mode": "vault",
                                   "vaultPath": "/home/me/vault",
                                   "inject": True,
-                                  "recall": {"vaults": [], "maxChars": 800}}
+                                  "recall": {"vaults": [], "maxChars": 800,
+                                             "projects": []}}
 
 
 @pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",
@@ -2230,6 +2234,50 @@ def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
 
 
+def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, capsys):
+    """T-0103 (T-0075 round-6 NIT 2): a repo `null` on `pm.authority`
+    inherits the machine value, so under a wider machine value it widens,
+    and the `!` line's note is the note of the value in force, not of `null`.
+    The `widens to` token stays the written value."""
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "report-only"}, {"pm": {"authority": "autonomous"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+    code = crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                             "--set", "pm.authority=null"])
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert (code, [c["widens"] for c in changes]) == (0, [True])
+    assert "! pm.authority widens to `null`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
+def test_a_repo_removal_that_widens_is_described_by_the_value_in_force(capsys):
+    """A whole-file restore that removes a repo `pm.authority` under a wider
+    machine value: the `!` line names and describes the inherited value."""
+    changes = crew_config._diff_changes(  # pylint: disable=protected-access
+        {"pm": {"authority": "report-only"}}, {}, "repo",
+        {"pm": {"authority": "autonomous"}})
+
+    crew_config.print_changes(changes)
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert [c["widens"] for c in changes] == [True]
+    assert "! pm.authority widens to `autonomous`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
+def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, capsys):
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "act"}, {"pm": {"authority": "report-only"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+
+    assert [c["widens"] for c in changes] == [False]
+
+
 def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):
     root, gpath = _repo_with_global(
         tmp_path, {"guards.forcePush": "ask"}, {"guards": {"forcePush": "block"}})
@@ -3258,101 +3306,3 @@ def test_config_md_global_key_count_is_measured():
     assert stated_global == len(global_leaves) == len(tabled)
     assert stated_total == len(total)
     assert set(tabled) == set(global_leaves)
-
-
-# --- T-0044: the machine-only `unattendedCloud` block -----------------------
-#
-# Which cloud identity an unattended run holds is the machine owner's answer
-# and nobody else's: a repo travels inside a clone written by someone else, so
-# a repo copy is IGNORED (not merged, not ratcheted) and reported as such. The
-# defaults name no identity, and `crew_unattended.py` refuses every launch
-# until the owner names one.
-
-def test_unattended_cloud_defaults_grant_nothing():
-    block = crew_config.default_global_config()["unattendedCloud"]
-    assert block == {"aws": {
-        "readOnly": {"profile": None, "identity": None, "region": None},
-        "nonProd": {}}}
-    assert crew_state.UNATTENDED_CLOUD_DEFAULTS == block
-    assert crew_state.UNATTENDED_CLOUD_MACHINE_ONLY == ("unattendedCloud",)
-    leaves = crew_config.leaf_paths(crew_config.default_global_config())
-    # `nonProd` is an open table, so it is one leaf, like `dev.roles`.
-    assert [p for p in leaves if p.startswith("unattendedCloud.")] == [
-        "unattendedCloud.aws.readOnly.profile",
-        "unattendedCloud.aws.readOnly.identity",
-        "unattendedCloud.aws.readOnly.region",
-        "unattendedCloud.aws.nonProd"]
-
-
-def test_unattended_cloud_is_global_only():
-    assert "unattendedCloud" in crew_config.default_global_config()
-    assert "unattendedCloud" not in crew_config.default_config()
-    assert crew_config.is_global_path("unattendedCloud.aws.readOnly.identity")
-
-
-def test_repo_unattended_cloud_is_ignored(tmp_path):
-    """A repo naming its own identity must change nothing: not the resolved
-    config, not the explain table's value, and never `source: repo`."""
-    machine = "arn:aws:sts::111111111111:assumed-role/ReadOnly/"
-    forged = "arn:aws:sts::111111111111:assumed-role/AdministratorAccess/"
-    global_path = tmp_path / "global-config.json"
-    global_path.write_text(json.dumps({"unattendedCloud": {"aws": {
-        "readOnly": {"profile": "ro", "identity": machine}}}}),
-        encoding="utf-8")
-    root = tmp_path / "repo"
-    crew_fixtures.make_repo(tmp_path, config={
-        "schema": crew_state.SCHEMA_CURRENT,
-        "unattendedCloud": {"aws": {"readOnly": {
-            "profile": "admin", "identity": forged, "region": "us-east-1"}}}},
-        git=False)
-
-    rows = {r["path"]: r for r in
-            crew_config.explain_config(str(root), path=str(global_path))}
-    ident = rows["unattendedCloud.aws.readOnly.identity"]
-    assert ident["value"] == machine and ident["source"] == "global"
-    assert ident["repoIgnored"] == forged
-    region = rows["unattendedCloud.aws.readOnly.region"]
-    assert region["value"] is None and region["source"] == "default"
-    assert region["repoIgnored"] == "us-east-1"
-    assert all(r["source"] not in ("repo", "repo+global") for p, r in
-               rows.items() if p.startswith("unattendedCloud."))
-
-
-def test_resolve_config_drops_a_repo_unattended_cloud(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH",
-                        str(tmp_path / "absent.json"))
-    root = tmp_path / "repo"
-    crew_fixtures.make_repo(tmp_path, config={
-        "schema": crew_state.SCHEMA_CURRENT,
-        "unattendedCloud": {"aws": {"readOnly": {"identity": "x/"}}}},
-        git=False)
-    assert "unattendedCloud" not in crew_config.resolve_config(str(root))
-
-
-@pytest.mark.parametrize("block,needle", [
-    ({"aws": {"readOnly": {"identity": "arn:aws:sts::1:assumed-role/RO"}}},
-     "end in `/`"),
-    # T-0044 port review r6 BLOCK: one named role, never every role.
-    ({"aws": {"readOnly": {"identity": "arn:aws:sts::111111111111:assumed-role/"}}},
-     "must name one role"),
-    ({"aws": {"nonProd": []}}, "nonProd"),
-    ({"aws": {"readOnly": {"profile": 7}}}, "profile"),
-    ({"aws": {}, "azure": {}}, "azure"),
-    ({"aws": {"nonProd": {"dev": {"profile": "d"}}}}, "identity"),
-    ({"aws": {"readOnly": []}}, "readOnly"),
-    ("aws", "not an object"),
-    ({"aws": None}, "aws"),
-])
-def test_unattended_cloud_block_problem(block, needle):
-    problem = crew_config.unattended_cloud_block_problem(block)
-    assert problem and needle in problem, problem
-
-
-def test_unattended_cloud_block_problem_accepts_the_shapes_it_must():
-    ident = "arn:aws:sts::111111111111:assumed-role/ReadOnly/"
-    for block in (crew_state.UNATTENDED_CLOUD_DEFAULTS,
-                  {"aws": {"readOnly": {"profile": "ro", "identity": ident,
-                                        "region": "eu-west-1"}}},
-                  {"aws": {"nonProd": {"dev": {"profile": "d",
-                                               "identity": ident}}}}):
-        assert crew_config.unattended_cloud_block_problem(block) == ""

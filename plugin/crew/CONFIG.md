@@ -189,10 +189,14 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
-leaves. `leaf_paths(default_config())` yields **141**, so **60** are repo-only.
-For all 141, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **83**
+leaves. `leaf_paths(default_config())` yields **144**, so **61** are repo-only.
+For all 144, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on the L-0675 build branch (release/1.2.0 e84a8bfe): its repo-only
+`memory.recall.projects` moves 83 / 143 / 60 to 83 / 144 / 61; this paragraph
+said 81 / 141 / 60 until then, behind T-0051's two keys in both layers.
+Earlier: measured with `leaf_paths`
 on batch-7-build after merging T-0011: its three repo-only `autopilot.ship`,
 `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes` move 81 / 138 / 57
 to 81 / 141 / 60. 81 / 138 / 57 was measured
@@ -754,7 +758,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 149 keys are settable in the machine-global file (generated; 62 are repo-only, section 11).
+87 of 150 keys are settable in the machine-global file (generated; 63 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -850,6 +854,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `unattendedCloud.aws.nonProd` | machine-only | None (checked in `hooks/scripts/crew_unattended.py`) | `{}` |
 <!-- generated:config-keys-global end -->
 
+To find the repos to list in `context.autoClear.onlyRepos`, `/crew:migrate`'s
+`apply-migrate --scan-root <dir>` looks for the ones that opted in under 0.20.x (T-0106).
+
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
@@ -882,7 +889,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-62 of 149 keys are repo-only (generated; 87 are global-settable, section 10).
+63 of 150 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -909,6 +916,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.inject` | repo | not validated - read by `hooks/scripts/crew_context.py` (expects boolean) | `true` |
 | `memory.recall.vaults` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of vault names) | `[]` |
 | `memory.recall.maxChars` | repo | positive integer (coerced in `hooks/scripts/crew_recall.py`) | `800` |
+| `memory.recall.projects` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of project names) | `[]` |
 | `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
 | `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
 | `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |

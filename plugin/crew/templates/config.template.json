@@ -79,7 +79,8 @@
     "inject": true,
     "recall": {
       "vaults": [],
-      "maxChars": 800
+      "maxChars": 800,
+      "projects": []
     }
   },
   "verifyGate": true,
