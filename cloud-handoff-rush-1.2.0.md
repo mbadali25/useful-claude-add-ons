@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T09:42Z
+Last updated: 2026-10-07T09:43Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T09:43Z Owner: agent cap raised to 10. Builders started: G3c (1.1.13; L-0633 review, L-0634 loop), G3d (1.1.14; L-0637 loop, L-0667, then L-0708 #547), G6a (1.1.15; T-0027 confirm, then L-0550, L-0666, T-0067, L-0551, L-0687, L-0670). All merge latest G0 (+G2 for G6a) first. 10/10 agents busy. G6b waits for a slot.
 - 2026-10-07T09:42Z Owner: #547 L-0708 (spec-only: kimi_probe asks git rev-parse instead of any .git) added to a later group -> G3d (not harness; no group touches kimi files). Built by the G3d builder after its 4 tickets; sabotage_kimi.py must-allow entry -> H2.
 - 2026-10-07T09:13Z G0 Codex group r1 on 477aedbc: BLOCK 1 (wave cleanup trusts local origin/HEAD or guesses main -> may delete unmerged lane), FIX 2 (write_set drops deps keys outside --tickets; start.json receipts map unvalidated). Fixer started (8 agents = cap).
 - 2026-10-07T09:10Z Codex logged in (device auth, 3rd code). G0 #546 whole-group Codex r1 running on 477aedbc. Landers started (6 agents + G0 review = 7): G4 (1.1.7), G3b (1.1.8), G1b (1.1.9, merge release), G5 (1.1.10), G7 (1.1.11), G2 (1.1.12); provisional, final in landing order. G3c/G3d/G6a/G6b builders wait for a free slot (and G0 landing).
