@@ -60,6 +60,21 @@ FIXTURE_GIT_PINS = (("commit.gpgsign", "false"), ("tag.gpgsign", "false"),
                     ("maintenance.auto", "false"), ("gc.auto", "0"))
 
 
+def isolated_home_env(home, base=None):
+    """A copy of `base` (default `os.environ`) whose home directory is `home`,
+    created empty, for a crew script run as a SUBPROCESS.
+
+    conftest's `_no_real_global_config` patches `GLOBAL_CONFIG_PATH` in this
+    process only. A spawned script recomputes it from `~`, so without this it
+    reads the machine's real `~/.claude/crew/config.json`: an owner with
+    `autopilot.mode=plan` there turned `mode: off` into `mode: plan` (L-0704).
+    `expanduser` reads HOME on POSIX and USERPROFILE on Windows; both are set."""
+    os.makedirs(str(home), exist_ok=True)
+    env = dict(os.environ if base is None else base)
+    env["HOME"] = env["USERPROFILE"] = str(home)
+    return env
+
+
 def fixture_git_env(environ):
     """The GIT_CONFIG_COUNT/KEY/VALUE variables that pin FIXTURE_GIT_PINS on
     top of `environ`, APPENDED after any entries it already carries -- never

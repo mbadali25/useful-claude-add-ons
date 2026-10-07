@@ -25,6 +25,7 @@ import crew_autopilot
 import crew_state
 import crew_ticket
 import review_ledger
+from crew_fixtures import isolated_home_env
 from review_fixtures import git
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
 
@@ -835,6 +836,7 @@ def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
 
     done = subprocess.run([sys.executable, _SCRIPT, "next", "--root", str(root), "--ticket", T],
                           capture_output=True, text=True, check=False, timeout=60,
+                          env=isolated_home_env(tmp_path / "isolated-home"),
                           stdin=subprocess.DEVNULL)
 
     assert (done.returncode, done.stdout.startswith("phase=approve stop=1 command=/crew:approve "),
@@ -1699,10 +1701,11 @@ def test_next_runner_writes_nothing(tmp_path):
 def test_cli_next_runner(tmp_path):
     root = _approved(tmp_path)
     args = [sys.executable, "-B", _SCRIPT, "next", "--root", str(root), "--ticket", T]
+    env = isolated_home_env(tmp_path / "isolated-home")
 
     def run(*extra):
         return subprocess.run(args + list(extra), capture_output=True, text=True, check=False,
-                              timeout=60, stdin=subprocess.DEVNULL)
+                              timeout=60, env=env, stdin=subprocess.DEVNULL)
 
     plain, free, bad = run(), run("--runner", "autopilot"), run("--runner", "robot")
 

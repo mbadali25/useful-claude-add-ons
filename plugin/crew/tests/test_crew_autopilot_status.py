@@ -24,6 +24,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_ticket
 import review_ledger
+from crew_fixtures import isolated_home_env
 from scope_fixtures import approve_as_user, make_repo
 from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _index, _ledger, _round,
                                  _snapshot, _spec_text, _ticket, _two_tickets, _write)
@@ -222,9 +223,15 @@ def _corrupt_ledger(root):
     _write(path, "{not json")
 
 
+def _home_env(root, base=None):
+    """The environment for a spawned status script: an empty home beside `root`,
+    so the machine's real `~/.claude/crew/config.json` is never read (L-0704)."""
+    return isolated_home_env(os.path.join(os.path.dirname(str(root)), "isolated-home"), base)
+
+
 def _lines(root, *args):
     done = subprocess.run([sys.executable, _SCRIPT, "status", "--root", str(root), *args],
-                          capture_output=True, text=True, check=False,
+                          capture_output=True, text=True, check=False, env=_home_env(root),
                           stdin=subprocess.DEVNULL)
     return done.returncode, done.stdout.splitlines()
 
@@ -918,8 +925,7 @@ def _documented(heading, plugin, arguments):
 def test_status_as_the_command_runs_it_writes_no_bytecode(tmp_path):
     root = _approved(tmp_path / "repo")
     plugin = _plugin_copy(tmp_path)
-    env = {k: v for k, v in os.environ.items()
-           if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+    env = _home_env(root, _bytecode_env())
     outs = [subprocess.run(_documented(heading, plugin, "status"), cwd=str(root), env=env,
                            capture_output=True, text=True, check=False,
                            stdin=subprocess.DEVNULL).stdout
@@ -947,8 +953,9 @@ def test_status_direct_cli_writes_no_bytecode(tmp_path):
     script = os.path.join(str(plugin), "hooks", "scripts", "crew_autopilot.py")
 
     out = subprocess.run([sys.executable, script, "status", "--root", str(root)],
-                         cwd=str(root), env=_bytecode_env(), capture_output=True, text=True,
-                         check=False, stdin=subprocess.DEVNULL).stdout
+                         cwd=str(root), env=_home_env(root, _bytecode_env()),
+                         capture_output=True, text=True, check=False,
+                         stdin=subprocess.DEVNULL).stdout
 
     assert ("ticket: " in out, _bytecode(plugin)) == (True, [])
 
