@@ -761,4 +761,23 @@ TRACKER_MUTATIONS = (
      '        found[label + "DirIds"] = _component_ids(found, label)\n',
      '        found[label + "DirIds"] = [found["vaultId"]] * len(_components(found, label))\n',
      _TESTS + "test_vault_paths_records_every_component_identity"),
+    # C-0021: L-0530's retired INDEX words. `read` says could-not-tell for a
+    # word outside the vocabulary, and a hint is text only, never a status.
+    ("L-0530: read reports a disagreement for an INDEX word crew does not know", TRACKER,
+     "    elif status not in LANE_FOR_STATUS:  # L-0530: name the word, never map it\n"
+     "        disagree = COULD_NOT_TELL\n",
+     "    elif status not in LANE_FOR_STATUS:  # L-0530: name the word, never map it\n"
+     "        disagree = True\n",
+     _TESTS + "test_read_unknown_status_has_no_hint"),
+    ("L-0530: move applies a retired word's hint as the status it writes", TRACKER,
+     "    if status not in LANE_FOR_STATUS:\n        return _report(info, [_result(kind, FAILED, "
+     "f\"status {status} maps to no lane",
+     "    status = RETIRED_STATUSES.get(status, status)\n"
+     "    if status not in LANE_FOR_STATUS:\n        return _report(info, [_result(kind, FAILED, "
+     "f\"status {status} maps to no lane",
+     _TESTS + "test_move_to_retired_status_hints_and_writes_nothing"),
+    ("L-0530: read applies a retired word's hint as the INDEX status", TRACKER,
+     '    status = files.get("status")\n    if status is None:',
+     '    status = RETIRED_STATUSES.get(files.get("status"), files.get("status"))\n    if status is None:',
+     _TESTS + "test_retired_hint_is_text_only"),
 )

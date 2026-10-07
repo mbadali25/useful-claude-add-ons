@@ -1734,8 +1734,8 @@ Obsidian vault). A CLI the commands call, not a hook.
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
   tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:70`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
-  `plugin/crew/tests/tracker_fixtures/`, 103 mutations by `len()` after L-0672 (81 before T-0077, 87 at
-  `8cabe586`, then eleven for T-0071 by L-0669 and five for T-0081 by L-0672; re-measure with
+  `plugin/crew/tests/tracker_fixtures/`, 106 mutations by `len()` after C-0021 (81 before T-0077, 87 at
+  `8cabe586`, then eleven for T-0071 by L-0669, five for T-0081 by L-0672 and three for L-0530 by C-0021; re-measure with
   `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_tracker as s; print(len(s.TRACKER_MUTATIONS))"`) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
   owner tests skip without it); one `.crew/verify.json` rule, rule 30 (`:363-371`; `:316-323` on T-0094's merge of `8ab733d7`; `:315-322` since T-0010's rule 29 went in above it and T-0075's rule-7 paths landed; `:309-316` on T-0010-solo at `d7c7c75c`; `:307-314` on main at `3648f59a`; `:305-312` on T-0075's branch before its rule-7 paths, `:303-310` after T-0018 landed, `:301-308` before).
