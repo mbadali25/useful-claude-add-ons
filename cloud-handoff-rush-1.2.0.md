@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T22:30Z
+Last updated: 2026-10-07T23:25Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T23:25Z H2b built at 6601d151: 393 entries on main, all RED; 115 deferred in docs/tickets/H2b/deferred.patch, all RED on a scratch merge. L-0651 (k) unresolved (needs a new must-block test). Codex review of H2b started.
 - 2026-10-07T22:30Z Owner OK'd building H2b in parallel. A builder started on rush/h2b-sabotage from main cb17abdf. Entries anchored on G3c/G6b code are held back. No version bump, no PR until G6b lands.
 - 2026-10-07T22:17Z WAVE 8 H2a MERGED #564 to main at cb17abdf (crew 1.1.17). Release fast-forwarded to main. Closed #516 and #517 as landed. Next: G3c (1.1.18).
 - 2026-10-07T21:56Z H2a opened #564 to main, head a93cd9b8, crew 1.1.17. Moved L-0682 tests to test_config_files.py (pylint cap). Local gates clean. Waiting on CI.
