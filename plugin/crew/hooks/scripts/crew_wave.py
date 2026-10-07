@@ -426,12 +426,15 @@ def _channel_files(top, channel, channels, remote=None):
     if configured:
         cfg = crew_config.resolve_config(top).get("coord")
         remote = (cfg.get("remote") if isinstance(cfg, dict) else None) or "origin"
-        if not isinstance(remote, str):  # a malformed config value never crashes the plan (L-0633 r2)
-            return None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name"
-    if (remote, channel) in channels:
-        return channels[(remote, channel)]
+    # A malformed config value (a JSON object, say) is unknown, never a crash:
+    # it is not hashable as a cache key (L-0633 r2).
+    key = (remote if isinstance(remote, str) else repr(remote), channel)
+    if key in channels:
+        return channels[key]
     listed = crew_coord.run_git(top, ["remote"])
-    if listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
+    if not isinstance(remote, str):
+        got = (None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name")
+    elif listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
         got = (None, f"{crew_coord.safe(remote)!r}{' (coord.remote)' if configured else ''} "
                      "is not a configured remote")
     else:
@@ -444,7 +447,7 @@ def _channel_files(top, channel, channels, remote=None):
         else:
             files = chan.read(tip)
             got = (files, None) if files is not None else (None, f"could not read crew-coord/{channel}")
-    channels[(remote, channel)] = got
+    channels[key] = got
     return got
 
 
