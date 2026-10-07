@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T09:57Z
+Last updated: 2026-10-07T09:58Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T09:58Z G0 fixer done: r1 BLOCK (remote HEAD via ls-remote --symref, unknown keeps lanes) + 2 FIX + r2's 1 BLOCK ({} start.json relaunch) fixed, sabotage-verified, 570 coord+wave passed, gates clean. Head 0e196503 (1.1.6 last). No r3 (owner rule). Waiting CI -> merge #546.
 - 2026-10-07T09:57Z Owner rule: per-PR Codex review only; group PR needs no Codex review once a builder adds the PR (coordinator recommended a merge-only review; owner chose no group review). G0: finish r1 fixes, no further rounds. All 10 agents told. Agent cap 10; Codex runs don't count.
 - 2026-10-07T09:43Z Owner: agent cap raised to 10. Builders started: G3c (1.1.13; L-0633 review, L-0634 loop), G3d (1.1.14; L-0637 loop, L-0667, then L-0708 #547), G6a (1.1.15; T-0027 confirm, then L-0550, L-0666, T-0067, L-0551, L-0687, L-0670). All merge latest G0 (+G2 for G6a) first. 10/10 agents busy. G6b waits for a slot.
 - 2026-10-07T09:42Z Owner: #547 L-0708 (spec-only: kimi_probe asks git rev-parse instead of any .git) added to a later group -> G3d (not harness; no group touches kimi files). Built by the G3d builder after its 4 tickets; sabotage_kimi.py must-allow entry -> H2.
