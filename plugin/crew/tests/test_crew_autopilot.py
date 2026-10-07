@@ -2637,7 +2637,7 @@ def test_ship_gate_rereads_the_hold_on_every_poll(tmp_path, row, words):
 
     stop = crew_autopilot._ship_gate(str(root), T)["stop"]  # pylint: disable=protected-access
 
-    assert (words in stop) if words else stop is None, stop
+    assert (words in (stop or "")) if words else stop is None, stop
 
 
 def test_superseded_spec_tbd_line_yields_to_next_md(tmp_path):
