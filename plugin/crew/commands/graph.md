@@ -13,25 +13,30 @@ runs the mechanical parts through one script and reports what it printed.
 ## --status (read-only)
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph.py status --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph.py" status --root .
 ```
+
+On Git Bash without `python3`, use `python` or `py -3` with the same arguments
+(here and below). If none resolves, say so and stop.
 
 It prints one line:
 `graph=<fresh|stale|unknown|absent> built_at=<sha|none> pair=<agree|disagree|unknown|untracked> ignore=<covered|uncovered|unknown> command=<line>`.
 `command` is the graphify line `--refresh` would run here: `graphify update .`
 where the repo tracks `GRAPH_REPORT.md` beside the graph, else
-`graphify . --no-viz --code-only`. Quote the line; it writes nothing.
+`graphify . --no-viz --code-only`; `unknown` when git cannot say whether the
+report is tracked (then `--refresh` refuses). Quote the line; it writes nothing.
 
 ## --refresh
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph.py refresh --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph.py" refresh --root .
 ```
 
 It stops at the first step that fails, and a stop is reported verbatim, never
 worked around:
 
-1. `graphify` not on PATH - exit 2. Offer the install the skill describes; never install it.
+1. `graphify` not on PATH - exit 2 (on native Windows, where the job may run in WSL, a
+   `command not found` from the route is the same exit 2). Offer the skill's install; never install it.
 2. The secrets denylist (`crew_graph_ignore.py`): uncovered is exit 1 and names
    the files and `crew_graph_ignore.py --write`; unknown is exit 2. Nothing is built.
 3. The sanctioned command above, from the repo root (on native Windows through

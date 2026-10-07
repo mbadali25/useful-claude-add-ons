@@ -478,15 +478,20 @@ def _inside_a_repository(path):
     sandbox mounts) no longer refuses on its own: only when Kimi Code, which
     stops at any `.git`, would read a project file there."""
     here = os.path.realpath(path)
-    said = _git_says(here)
-    if said:
-        return said
-    return _kimi_project_files(path)
+    said = _git_says(here) or _kimi_project_files(path)
+    _LAST_ANSWER.update(path=path, why=said)
+    return said
+
+
+# `probe` keeps `if _inside_a_repository(base):` as it was (a sabotage anchor);
+# the refusal reads the answer that `if` acted on, not a second ask whose
+# answer may differ (L-0708 review round 1).
+_LAST_ANSWER = {"path": None, "why": ""}
 
 
 def _repository_refusal(base):
-    """The refusal `probe` prints when `_inside_a_repository(base)` is truthy."""
-    why = _inside_a_repository(base)
+    """The refusal `probe` prints when `_inside_a_repository(base)` was truthy."""
+    why = _LAST_ANSWER["why"] if _LAST_ANSWER["path"] == base else _inside_a_repository(base)
     if why == IN_A_REPOSITORY:
         return f"the temporary directory {base} is inside a repository; set TMPDIR outside it"
     if " holds a .git " in why:

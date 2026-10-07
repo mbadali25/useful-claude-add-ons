@@ -177,8 +177,10 @@ def test_status_reads_a_report_git_cannot_list_as_unknown(tmp_path, capsys, monk
         return None if args[:1] == ("ls-files",) else real(cwd, *args)
 
     monkeypatch.setattr(crew_graph, "_git", failing)
+    line = _status(root, capsys)[1]
 
-    assert "pair=unknown" in _status(root, capsys)[1]
+    assert ("pair=unknown" in line, line.rstrip("\n").endswith("command=unknown")) == \
+        (True, True), line
 
 
 # --- refresh: must-allow ----------------------------------------------------------------
@@ -317,6 +319,30 @@ def test_refresh_report_git_cannot_list_exits_2(tmp_path, monkeypatch):
     code, out = _refresh(root, tool)
 
     assert (code, tool.calls, "nothing built" in out) == (2, [], True), out
+
+
+def test_refresh_on_windows_reads_a_missing_graphify_from_the_route(tmp_path):
+    """Review round 2: the job may run in WSL, whose PATH is not the host's,
+    so the host's `which` is not asked; the route's exit 127 is graphify missing."""
+    root = _repo(tmp_path)
+    tool = _Tool(code=127, output="bash: line 1: graphify: command not found\n")
+    lines = []
+
+    code = crew_graph.refresh(root, which=lambda _name: None, run=tool, out=lines.append,
+                              windows=True)
+
+    assert (code, len(tool.calls), "graphify missing" in "\n".join(lines)) == (2, 1, True), lines
+
+
+def test_refresh_on_windows_runs_graphify_only_the_route_has(tmp_path):
+    root = _repo(tmp_path)
+    tool = _Tool()
+    lines = []
+
+    code = crew_graph.refresh(root, which=lambda _name: None, run=tool, out=lines.append,
+                              windows=True)
+
+    assert (code, tool.calls) == (0, ["graphify update ."]), lines
 
 
 def test_refresh_never_stages_or_commits(tmp_path):

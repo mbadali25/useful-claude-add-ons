@@ -47,6 +47,8 @@ AGREE, DISAGREE, PAIR_UNKNOWN, UNTRACKED = "agree", "disagree", "unknown", "untr
 # `- 25610 nodes · 55448 edges · 1044 communities (848 shown, 196 thin omitted)`.
 _SUMMARY_LINE = re.compile(r"^- (\d+) nodes · (\d+) edges(?: ·|$)")
 _TIMEOUT = 3600
+# bash's "command not found"; the code a job route reports when graphify is absent there.
+MISSING = 127
 
 
 def _git(cwd, *args):
@@ -201,9 +203,13 @@ def status(root):
     cover = crew_graph_ignore.coverage(top)
     reasons = [r for r in (pair_why if pair in (DISAGREE, PAIR_UNKNOWN) else "",
                            cover["reason"] or "") if r]
+    # The command depends on whether the report is tracked; when git cannot
+    # say, refresh refuses, so no command is named (review round 2).
+    command = (crew_refresh_check.graph_command(info) if _report_tracked(top, info) is not None
+               else "unknown")
     return {"graph": graph_state(top, info), "built_at": (info["builtAt"] or "none")[:12],
-            "pair": pair, "ignore": cover["status"],
-            "command": crew_refresh_check.graph_command(info), "reasons": reasons}, None
+            "pair": pair, "ignore": cover["status"], "command": command,
+            "reasons": reasons}, None
 
 
 def render_status(result):
@@ -223,6 +229,9 @@ def _run_graphify(command, top):
         except subprocess.TimeoutExpired:
             captured["out"] = f"timed out after {_TIMEOUT}s"
             return 124
+        except OSError as exc:  # the route's program itself could not start
+            captured["out"] = f"{argv[0]} could not start ({type(exc).__name__}: {exc})"
+            return MISSING
         captured["out"] = crew_shell.decode(done.stdout) + crew_shell.decode(done.stderr)
         return done.returncode
 
@@ -247,9 +256,13 @@ def _changed(top, graph_dir):
     return paths
 
 
-def refresh(root, which=shutil.which, run=_run_graphify, out=print):
-    """The refusal chain in the module docstring. Returns the exit code."""
-    if not which("graphify"):
+def refresh(root, which=shutil.which, run=_run_graphify, out=print, windows=None):
+    """The refusal chain in the module docstring. Returns the exit code. On
+    native Windows the job may run in WSL, whose PATH is not this one, so
+    graphify's absence is read from the route's exit 127 instead of
+    `which` (review round 2)."""
+    windows = crew_shell.on_windows() if windows is None else windows
+    if not windows and not which("graphify"):
         out("crew-graph: graphify missing - nothing built; the crew-graph skill "
             "says how to install it (package graphifyy)")
         return UNKNOWN
@@ -277,6 +290,11 @@ def refresh(root, which=shutil.which, run=_run_graphify, out=print):
         return UNKNOWN
     command = crew_refresh_check.graph_command(info)
     code, output = run(command, top)
+    if code == MISSING and (windows or not which("graphify")):
+        out(f"crew-graph: graphify missing where `{command}` ran (exit {MISSING}) - nothing "
+            "built; the crew-graph skill says how to install it (package graphifyy)")
+        out(output.rstrip("\n"))
+        return UNKNOWN
     if code != 0:
         out(f"crew-graph: failed - `{command}` exited {code}; its output:")
         out(output.rstrip("\n"))

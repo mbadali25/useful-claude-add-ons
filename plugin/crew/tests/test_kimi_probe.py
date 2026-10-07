@@ -658,6 +658,21 @@ def test_l0708_any_other_git_answer_is_could_not_tell(fake, home, monkeypatch, t
     assert "could not be told" in result["reason"] and named in result["reason"], result
 
 
+def test_l0708_the_refusal_names_the_answer_the_check_acted_on(fake, home, monkeypatch,
+                                                                tmp_path):
+    """Review round 1: a timeout followed by a clean second ask still names the
+    timeout; the refusal never asks again."""
+    (tmp_path / "top" / ".git").mkdir(parents=True)
+    scratch = _tmp_under(monkeypatch, tmp_path / "top")
+    answers = iter(["git rev-parse did not answer within 10s", ""])
+    monkeypatch.setattr(kimi_probe, "_git_says", lambda _here: next(answers))
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made, "did not answer within 10s" in result["reason"]) == \
+        ("unknown", [], [], True), result
+
+
 def test_l0708_only_the_exact_not_a_repository_answer_allows(fake, home, monkeypatch, tmp_path):
     (tmp_path / "top" / ".git").mkdir(parents=True)
     _tmp_under(monkeypatch, tmp_path / "top")
