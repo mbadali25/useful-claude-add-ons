@@ -94,19 +94,20 @@ Recovery. `claim` and `recover` record `{worktree: {holder, tickets}}` in
 `<git-common-dir>/crew/coord-identity.json` (temp file + os.replace; this
 script writes it, never Claude's Write tool). `recover` adopts a `working`
 claim only if ALL hold: the claim's machine is this host, its worktree is this
-worktree, the identity file names the claim's holder for that ticket, the
-claim's heartbeat_at is older than the TTL, and the holder's pid is PROVABLY
-gone on a platform whose check was measured (Linux; Windows per the T-0030
-spike, elevated, on one host). The heartbeat is the deciding signal: a live
-holder's loop keeps it fresh, so a fresh heartbeat is presented whatever the
-pid reads. The pid check can only refuse: a pid whose check cannot tell reads
-ALIVE. On Linux, gone counts only from the PID namespace recorded at claim
+worktree, the identity file names the claim's holder for that ticket, and
+the holder's pid is PROVABLY gone on a platform whose check was measured
+(Linux; Windows per the T-0030 spike, elevated, on one host). A provably gone
+pid is adopted at once, heartbeat fresh or not (owner decision, rush g0).
+Where the end cannot be proven, nothing is adopted: a fresh heartbeat means
+the old session may still be running, and past the TTL the claim is presented
+for the owner. The pid check can only refuse: a pid whose check cannot tell
+is never read as gone. On Linux, gone counts only from the PID namespace recorded at claim
 time (`holder.pidns`), and one is recorded only when CLAUDE_PID was visible
 from it: under bubblewrap's --unshare-pid, which Claude Code's sandbox uses,
 a live pid is invisible and reads gone, and bubblewrap reuses namespace ids,
 so a sandbox's namespace never vouches for a `gone`. Anything else -- another
-machine, a fresh heartbeat, a live pid, a pid reused with a different start
-time, a missing or corrupt identity file, another worktree, a check that
+machine, a live pid, a pid reused with a different start time, a pid whose
+end cannot be proven, a missing or corrupt identity file, another worktree, a check that
 cannot tell -- is presented as `yours from a previous session - needs the
 owner: <reason>` and never adopted. `status` lists those
 first. The identity file is read and rewritten under an exclusive lock
@@ -150,6 +151,7 @@ from collections import namedtuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import crew_common  # pylint: disable=wrong-import-position
 import crew_ticket  # pylint: disable=wrong-import-position
 
 EXIT_OK = 0
@@ -264,7 +266,7 @@ def run_git(root, args, input_bytes=None, env=None):
     full_env.update(_GIT_ENV)
     full_env.update(env or {})
     try:
-        done = subprocess.run(["git", "-C", root] + list(args), input=input_bytes,
+        done = subprocess.run([crew_common.require_tool("git"), "-C", root] + list(args), input=input_bytes,
                               capture_output=True, check=False, timeout=120, env=full_env,
                               stdin=None if input_bytes is not None else subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -807,11 +809,12 @@ def _local_path(url):
     `[user@]host:path`). A file:// URL is the local path it names, read as
     git's parse_connect_url reads it (connect.c, git v2.53.0): the whole URL
     percent-decoded, then everything after the authority, or the authority
-    itself when it is a drive (`file://C:/x`); a Windows `/C:/x` loses its
-    leading '/'. (None, why) for a file:// URL whose authority is not empty
-    or `localhost`, or whose path is not percent-encoded UTF-8: which
-    directory that names cannot be told here, and a guess would give one
-    repository two keys. Whitespace is kept: it is part of a local path."""
+    itself when it is a drive (`file://C:/x`, and on Windows `file://C:\\x`);
+    a Windows `/C:/x` loses its leading '/'. (None, why) for a file:// URL
+    whose authority is not empty or `localhost`, or whose path is not
+    percent-encoded UTF-8: which directory that names cannot be told here,
+    and a guess would give one repository two keys. Whitespace is kept: it
+    is part of a local path."""
     text = url or ""
     found = _SCHEME_RE.match(text)
     if found and found.group(1).lower() == "file":
@@ -820,7 +823,10 @@ def _local_path(url):
             authority, path = (urllib.parse.unquote_to_bytes(p).decode("utf-8") for p in (authority, path))
         except UnicodeDecodeError:
             return None, "origin's file:// URL is not percent-encoded UTF-8"
-        if re.fullmatch(r"[A-Za-z]:", authority):
+        # git (has_dos_drive_prefix) reads a drive after `file://` as the path's start. On
+        # Windows a backslash may follow the drive, and the authority runs on through it
+        # (`file://C:\x\r.git`): that is the path `C:\x\r.git`, never a host.
+        if re.fullmatch(r"[A-Za-z]:", authority) or (os.name == "nt" and re.match(r"[A-Za-z]:", authority)):
             path, authority = authority + path, ""
         if authority.lower() not in ("", "localhost"):
             return None, (f"origin's file:// URL names the host {safe(authority, 80)!r}, and which directory "

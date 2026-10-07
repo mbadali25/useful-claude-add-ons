@@ -12,6 +12,7 @@ or ~/.claude. `sabotage_wave.py`'s WAVE_MUTATIONS prove these can fail.
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -257,6 +258,61 @@ def test_set_cli_writes_the_set(tmp_path):
         0, [{"id": "T-1", "deps": []}, {"id": "T-2", "deps": ["T-1"]}])
 
 
+def test_set_cli_refuses_deps_given_twice_for_one_ticket(tmp_path):
+    # Group review r10 (rush g0): `T-1=T-2` then `T-1=none` stored none.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "T-2",
+                "--deps", "T-1=T-2", "--deps", "T-1=none")
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
+def test_set_cli_refuses_deps_for_a_ticket_the_set_does_not_name(tmp_path):
+    # Group review r1 (rush g0): `--tickets T-1 --deps T-2=T-3` wrote T-1 and dropped the dependency.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "--deps", "T-2=T-3")
+
+    assert (done.returncode != 0, "T-2" in done.stderr, crew_wave.read_set(str(root), "s")) == (
+        True, True, (None, "missing"))
+
+
+def test_set_cli_refuses_a_ticket_named_twice(tmp_path):
+    # Group review r7 (rush g0): a duplicate became a later wave of itself and two clean lines.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "T-1")
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
+def test_a_set_file_naming_a_ticket_twice_is_corrupt(tmp_path):
+    root = _repo(tmp_path)
+    _write(root / ".work" / "autopilot" / "s.json",
+           json.dumps({"schema": 1, "set": "s", "tickets": [{"id": "T-1"}, {"id": "T-1"}]}))
+
+    assert crew_wave.read_set(str(root), "s") == (None, "corrupt")
+
+
+def test_plan_refuses_a_ticket_named_twice(tmp_path):
+    root = _repo(tmp_path)
+
+    with pytest.raises(crew_wave.WaveError):
+        crew_wave.plan(str(root), tickets=["T-1", "T-1"])
+
+
+@pytest.mark.parametrize("deps", ["T-1=", "T-1=,", "T-1= ", "T-1=T-2,", "T-1=,T-2", "T-1=T-2,,T-3", "T-1"],
+                         ids=["empty", "comma", "space", "trailing", "leading", "double", "no-equals"])
+def test_set_cli_refuses_a_dependency_list_that_is_not_none_or_ids(tmp_path, deps):
+    # Group review r5 (rush g0): `T-1=` parsed as no dependencies and skipped the unknown refusal.
+    root = _repo(tmp_path)
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-1", "--deps", deps)
+
+    assert (done.returncode != 0, crew_wave.read_set(str(root), "s")) == (True, (None, "missing"))
+
+
 # --- step 3: plan ------------------------------------------------------------------
 
 def _set(root, slug, tickets, deps=None):
@@ -412,6 +468,64 @@ def test_plan_orders_landing_by_provisional_version(tmp_path):
     assert got["land"] == [["T-1", "1.0.51"], ["T-2", "-"], ["T-3", "1.0.52"]]
 
 
+def _head_version(root, version):
+    """Commit crew's plugin.json at `version` on HEAD only; origin/main stays."""
+    _write(root / "plugin" / "crew" / ".claude-plugin" / "plugin.json",
+           json.dumps({"name": "crew", "version": version}))
+    git(root, "commit", "-qam", "head version")
+
+
+def test_plan_never_lowers_the_checkouts_own_version(tmp_path):
+    # Group review (rush g0): run from a release branch whose HEAD declares more than
+    # origin/main, the lanes were told to set main's next patch - a downgrade.
+    root = _repo(tmp_path)
+    _origin_version(root, "1.1.3")
+    _head_version(root, "1.1.6")
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("plugin/crew/a/**",)), ("T-2", ("plugin/crew/b/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "1.1.7"], ["T-2", "1.1.8"]]
+
+
+def test_plan_bumps_from_origin_main_when_it_is_ahead(tmp_path):
+    root = _repo(tmp_path)
+    _origin_version(root, "1.0.50")
+    _head_version(root, "1.0.70")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(root, "reset", "-q", "--hard", "HEAD~1")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "1.0.71"]]
+
+
+def test_plan_landing_version_unknown_when_head_has_none(tmp_path):
+    root = _repo(tmp_path)
+    _origin_version(root, "1.0.50")
+    git(root, "rm", "-q", "plugin/crew/.claude-plugin/plugin.json")
+    git(root, "commit", "-qm", "no plugin.json on HEAD")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", "unknown"]]
+
+
+@pytest.mark.parametrize("version", ["1.1.6", 116, None, ["1.1.6"]], ids=["string", "number", "null", "list"])
+def test_plan_landing_version_unknown_when_a_version_is_not_a_string(tmp_path, version):
+    # Group review r2 (rush g0): a JSON number reached re.fullmatch and raised TypeError.
+    root = _repo(tmp_path)
+    _write(root / "plugin" / "crew" / ".claude-plugin" / "plugin.json",
+           json.dumps({"name": "crew", "version": version}))
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "plugin")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
+    _set(root, "s", ["T-1"])
+
+    expected = "1.1.7" if version == "1.1.6" else "unknown"
+    assert crew_wave.plan(str(root), slug="s")["land"] == [["T-1", expected]]
+
+
 def test_plan_landing_version_unknown_without_origin(tmp_path):
     root = _repo(tmp_path)
     _wave(root, [_row("T-1")], [("T-1", ("plugin/crew/**",))])
@@ -474,7 +588,13 @@ def _lane(root, ticket, slug="s"):
 
 
 def _set_lane(root, ticket, **fields):
+    """Rewrite a lane file; a state only lane-init reaches gets lane-init's branch
+    and a worktree when the test names none."""
     lane, _ = _lane(root, ticket)
+    if fields.get("state") in crew_wave.SET_UP:
+        fields.setdefault("branch", crew_wave.branch_for(ticket))
+        if lane.get("worktree") is None:
+            fields.setdefault("worktree", str(root / ".claude" / "worktrees" / ticket))
     lane.update(fields)
     crew_wave.write_lane(str(root), "s", ticket, lane)
 
@@ -613,9 +733,66 @@ def test_start_refuses_a_corrupt_start_record_and_leaves_it(tmp_path):
     assert (got.returncode, "unreadable" in got.stderr, kept) == (1, True, "{broken")
 
 
+def _receipts(root, value):
+    path = crew_wave.start_path(str(root), "s")
+    with open(path, encoding="utf-8") as handle:
+        record = json.load(handle)
+    record["receipts"] = value
+    _write(path, json.dumps(record))
+    return path
+
+
+@pytest.mark.parametrize("value", ["x", [["owner-accepted", 1, "t"]], {"T-1": "x"}, {"T-1": [1]}, None])
+def test_start_refuses_a_malformed_receipts_map_and_leaves_it(tmp_path, value):
+    # Group review r1 (rush g0): start did dict(...) on whatever receipts held.
+    root = _started(tmp_path)
+    path = _receipts(root, value)
+    with open(path, encoding="utf-8") as handle:
+        before = handle.read()
+
+    got = _cli("start", "--root", root, "--set", "s")
+
+    with open(path, encoding="utf-8") as handle:
+        kept = handle.read()
+    assert (got.returncode, "receipts map" in got.stderr, "Traceback" in got.stderr, kept) == (
+        1, True, False, before)
+
+
 def test_lane_init_checks_out_an_existing_branch(tmp_path):
     root = _started(tmp_path)
     git(root, "branch", "T-1-wave")
+    wt = _isolated(root)
+
+    ok, _ = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, git(wt, "branch", "--show-current")) == (True, "T-1-wave")
+
+
+def _old_branch(root):
+    """`T-1-wave` one commit past HEAD, as an earlier wave could leave it."""
+    git(root, "branch", "T-1-wave")
+    git(root, "worktree", "add", "-q", str(root.parent / "old"), "T-1-wave")
+    _write(root.parent / "old" / "old.txt", "old wave\n")
+    git(root.parent / "old", "add", "old.txt")
+    git(root.parent / "old", "commit", "-qm", "old wave")
+    git(root, "worktree", "remove", str(root.parent / "old"))
+
+
+def test_lane_init_refuses_an_earlier_waves_branch(tmp_path):
+    # Group review r10 (rush g0): a new set's lane checked out an old T-1-wave and its commits.
+    root = _started(tmp_path)
+    _old_branch(root)
+    wt = _isolated(root)
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, "already exists" in reason, _lane(root, "T-1")[0]["state"]) == (False, True, "pending")
+
+
+def test_lane_init_resumes_this_lanes_own_branch(tmp_path):
+    root = _started(tmp_path)
+    _old_branch(root)
+    _set_lane(root, "T-1", state="running")
     wt = _isolated(root)
 
     ok, _ = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
@@ -698,10 +875,39 @@ def test_relaunch_never_restarts_a_started_lane_whose_file_is_missing(tmp_path):
 
 def test_collect_keeps_a_started_lane_dropped_from_the_set_file(tmp_path):
     # Codex review round 6 (rush g0): rewriting the set hid a launched lane from the batch.
+    # Since group review r8 `set` refuses to rewrite a started set; a hand edit still can.
     root = _started(tmp_path)
-    crew_wave.write_set(str(root), "s", ["T-1"])
+    _write(root / ".work" / "autopilot" / "s.json",
+           json.dumps({"schema": 1, "set": "s", "tickets": [{"id": "T-1"}]}))
 
     assert "T-2" in {row["ticket"] for row in _collect(root)["lanes"]}
+
+
+def test_relaunch_never_launches_a_ticket_the_wave_did_not_start(tmp_path):
+    # Group review r9 (rush g0): T-1 running, its approval gone stale, so the replan dropped
+    # it and launched T-2, whose Touch overlaps it, beside it.
+    root = _started(tmp_path, tickets=(("T-1", ("src/**",)), ("T-2", ("src/app.py",))))
+    assert [line.split(":")[0] for line in _cli("start", "--root", root, "--set", "s").stdout.splitlines()
+            if line.startswith("launch")] == ["launch T-1"]
+    spec = root / ".work" / "tickets" / "T-1" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
+
+    out = _cli("start", "--root", root, "--set", "s").stdout
+
+    assert (any(line.startswith("launch T-2") for line in out.splitlines()),
+            "T-2 not started" in out) == (False, True)
+
+
+def test_set_refuses_to_rewrite_a_started_set(tmp_path):
+    # Group review r8 (rush g0): a rewritten set started T-3 beside running T-1 with no
+    # Touch or maxLanes check against it, and cleanup lost T-1.
+    root = _started(tmp_path)
+    before = crew_wave.read_set(str(root), "s")
+
+    done = _cli("set", "--root", root, "--slug", "s", "--tickets", "T-3")
+
+    assert (done.returncode, "was started" in done.stderr, crew_wave.read_set(str(root), "s")) == (
+        1, True, before)
 
 
 def test_collect_reports_an_invalid_started_lane_id_and_keeps_the_valid_lanes(tmp_path):
@@ -742,6 +948,7 @@ def test_a_set_file_id_with_a_trailing_newline_is_refused_not_printed(tmp_path):
 
 def test_relaunch_skips_terminal_lanes(tmp_path):
     root = _started(tmp_path)
+    _set_lane(root, "T-1", state="running")
     crew_wave.lane_done(str(root), "s", "T-1", "clean", "done checks passed")
 
     out = _cli("start", "--root", root, "--set", "s").stdout
@@ -858,6 +1065,26 @@ def test_lane_prompt_starts_with_lane_init(tmp_path):
     assert (len(steps), "crew_wave.py lane-init" in steps[0]) == (1, True)
 
 
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+def test_lane_prompt_names_a_script_the_way_a_lanes_bash_reads_it(tmp_path, monkeypatch, platform):
+    # Windows CI (rush g0): SCRIPTS there is `C:\...\scripts`, and shlex.quote put the
+    # whole path in quotes, so `crew_wave.py lane-init` never appeared in step 1. A lane's
+    # Bash is Git Bash on Windows, where '/' is the separator; on POSIX a backslash is a
+    # filename character and stays, quoted.
+    root = _started(tmp_path)
+    monkeypatch.setattr(crew_wave, "SCRIPTS", "C:\\crew\\scripts")
+    monkeypatch.setattr(crew_wave.os, "name", platform)
+
+    step = [line for line in _prompt(root).splitlines() if line[:2] == "1."][0]
+
+    # os.path.join is the runner's own (ntpath on Windows), so the POSIX reading is built
+    # from it: only the separator rewrite is under test here, not the join.
+    joined = os.path.join("C:\\crew\\scripts", "crew_wave.py")
+    expected = {"nt": "python3 C:/crew/scripts/crew_wave.py lane-init ",
+                "posix": f"python3 {shlex.quote(joined)} lane-init "}[platform]
+    assert expected in step, step
+
+
 @pytest.mark.parametrize("policy", ["stop", "clean-only", "fix-and-rereview"])
 def test_lane_prompt_contains_no_forbidden_command(tmp_path, policy):
     text = _prompt(_started(tmp_path, autopilot={"reviewPolicy": policy}), resume_round=2)
@@ -920,6 +1147,7 @@ def test_lane_done_refuses_state_outside_the_four(tmp_path, state):
 @pytest.mark.parametrize("state", ["clean", "findings", "question", "failed"])
 def test_lane_done_writes_the_state(tmp_path, state):
     root = _started(tmp_path)
+    _set_lane(root, "T-1", state="running")
 
     done = _cli("lane-done", "--main", root, "--set", "s", "--ticket", "T-1", "--state", state,
                 "--reason", "why")
@@ -956,12 +1184,74 @@ def test_collect_missing_lane_file_reads_unknown(tmp_path):
     assert (got["state"], "missing" in got["reason"]) == ("unknown", True)
 
 
-@pytest.mark.parametrize("text", ["{broken", "[]", '{"state": "CLEAN"}', '{"state": null}'])
+@pytest.mark.parametrize("text", ["{broken", "[]", '{"state": "CLEAN"}', '{"state": null}',
+                                  '{"state": "clean"}'])
 def test_collect_corrupt_lane_file_reads_unknown(tmp_path, text):
     root = _started(tmp_path)
     _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", text)
 
     assert _state_of(_collect(root), "T-1")["state"] == "unknown"
+
+
+@pytest.mark.parametrize("drop, value", [("set", None), ("ticket", None), ("version", None),
+                                         ("set", "other"), ("ticket", "T-2"), ("version", 116),
+                                         ("worktree", 7), ("base", None), ("base", ""),
+                                         ("branch", None), ("branch", ""), ("worktree", "null"),
+                                         ("worktree", ""), ("branch", "T-2-wave")],
+                         ids=["no-set", "no-ticket", "no-version", "other-set", "other-ticket",
+                              "number-version", "number-worktree", "no-base", "empty-base",
+                              "no-branch", "empty-branch", "null-worktree-not-removed",
+                              "empty-worktree", "other-tickets-branch"])
+def test_collect_incomplete_clean_lane_file_reads_unknown(tmp_path, drop, value):
+    # Group review r3 (rush g0): `{"state": "clean"}` alone was collected as a clean lane.
+    root = _started(tmp_path)
+    lane, _ = _lane(root, "T-1")
+    lane.update(state="clean", worktree="/w", branch="T-1-wave")
+    if value is None:
+        del lane[drop]
+    else:
+        lane[drop] = None if value == "null" else value
+    _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", json.dumps(lane))
+
+    got = _collect(root)
+
+    assert (_state_of(got, "T-1")["state"], [t for t, _ in got["land"]]) == ("unknown", [])
+
+
+@pytest.mark.parametrize("fields", [{"worktree": "/w"}, {"worktree": None, "removed": True}],
+                         ids=["worktree", "removed"])
+def test_collect_complete_clean_lane_file_reads_clean(tmp_path, fields):
+    root = _started(tmp_path)
+    _set_lane(root, "T-1", state="clean", branch="T-1-wave", **fields)
+
+    assert _state_of(_collect(root), "T-1")["state"] == "clean"
+
+
+def test_a_pending_lane_file_with_no_base_is_corrupt(tmp_path):
+    # Group review r6: lane-init read lane["base"] from a pending file that had none.
+    root = _started(tmp_path)
+    lane, _ = _lane(root, "T-1")
+    del lane["base"]
+    _write(root / ".work" / "autopilot" / "s" / "lanes" / "T-1.json", json.dumps(lane))
+
+    assert _lane(root, "T-1") == (None, "corrupt")
+
+
+@pytest.mark.parametrize("state", ["clean", "findings", "question"])
+def test_lane_done_refuses_a_set_up_state_for_a_lane_lane_init_never_set_up(tmp_path, state):
+    root = _started(tmp_path)
+
+    done = _cli("lane-done", "--main", root, "--set", "s", "--ticket", "T-1", "--state", state,
+                "--reason", "why")
+
+    assert (done.returncode, _lane(root, "T-1")[0]["state"]) == (1, "pending")
+
+
+def test_a_failed_lane_needs_no_branch(tmp_path):
+    root = _started(tmp_path)
+    crew_wave.lane_done(str(root), "s", "T-1", "failed", "lane-init refused")
+
+    assert _state_of(_collect(root), "T-1")["state"] == "failed"
 
 
 def test_collect_unknown_when_the_wave_was_never_started(tmp_path):
@@ -1046,6 +1336,25 @@ def test_collect_unreadable_review_ledger_reads_unknown_never_clean(tmp_path):
     root = _started(tmp_path)
     _write(review_ledger.ledger_path(str(root), "T-1"), "{not json")
     _set_lane(root, "T-1", state="clean", version="1.0.61")
+
+    got = _collect(root)
+
+    assert (_state_of(got, "T-1")["state"], got["land"]) == ("unknown", [])
+
+
+@pytest.mark.parametrize("value", ["x", [1], {"T-1": "x"}, {"T-1": [1, 2]}, None])
+@pytest.mark.parametrize("owner_accepted", [False, True])
+def test_collect_malformed_receipts_map_reads_unknown_never_clean(tmp_path, value, owner_accepted):
+    # Group review r1 (rush g0): a truthy non-map passed as a baseline (clean), or raised.
+    root = _started(tmp_path)
+    if owner_accepted:
+        _write(review_ledger.ledger_path(str(root), "T-1"), json.dumps({
+            "ticket": "T-1", "budget": 2, "refused": [], "state": "ACCEPTED",
+            "rounds": [{"round": 1, "status": "completed", "verdict": "FINDINGS"}],
+            "receipt": {"kind": "owner-accepted", "round": 1, "verdict": "FINDINGS",
+                        "accepted_by": "someone", "accepted_at": "2026-09-27T00:00:00+00:00"}}))
+    _set_lane(root, "T-1", state="clean", version="1.0.61")
+    _receipts(root, value)
 
     got = _collect(root)
 
@@ -1212,6 +1521,30 @@ def test_cleanup_keeps_everything_after_a_failed_fetch(tmp_path):
     got = _cleaned(root)["T-1"]
 
     assert (got["removed"], "could not tell" in got["reason"], os.path.exists(wt)) == (False, True, True)
+
+
+def test_cleanup_reads_the_default_branch_from_the_remote_not_a_guess(tmp_path):
+    # Group review r1 (rush g0): with no origin/HEAD, origin/main was assumed; a lane merged only
+    # into main was removed although the remote's default had moved to a branch without it.
+    root, wt = _landed(tmp_path)
+    bare = tmp_path / "origin.git"
+    git(root, "push", "-q", "origin", "HEAD~1:refs/heads/trunk")
+    git(bare, "symbolic-ref", "HEAD", "refs/heads/trunk")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "origin/trunk" in got["reason"], os.path.exists(wt),
+            _has_branch(root, "T-1-wave")) == (False, True, True, True)
+
+
+def test_cleanup_keeps_everything_when_the_remote_head_cannot_be_told(tmp_path):
+    root, wt = _landed(tmp_path)
+    git(tmp_path / "origin.git", "symbolic-ref", "HEAD", "refs/heads/no-such-branch")
+
+    got = _cleaned(root)["T-1"]
+
+    assert (got["removed"], "default branch is unknown" in got["reason"], os.path.exists(wt)) == (
+        False, True, True)
 
 
 def test_cleanup_never_force_deletes_a_branch(tmp_path):

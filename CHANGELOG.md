@@ -60,7 +60,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this entry.** Unanswered doorbells (L-0636), the hub rule (L-0637) and the sabotage
   mutations (L-0638, review harness, lands separately under T-0087).
 
-### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+### crew 1.1.6 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
   in its own isolated worktree, with every lane's questions and results reported in one batch.
@@ -80,7 +80,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
   the lane prompt keeps a lane from accepting a review or admin-merging.
 
-### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
+### crew 1.1.6 — T-0030: cross-session claims on a git-backed channel
 
 - **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
   git branch so two of them never work the same ticket.
@@ -94,10 +94,32 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
   claim after the session id changes only on the same machine and worktree, with the local identity
   file naming the old holder and its process provably gone; anything else is presented for the owner.
-  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured, before a
+  run and before a wave starts.
   The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
 - **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
   are review harness and land separately (T-0087).
+
+### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
+
+- **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now
+  tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
+  An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
+- **crew `crew_ticket_state.py`** (new, read-only). `dependency_state` reads each dependency's INDEX
+  cell, then its spec header: `done`/`merged` is closed; open, `cancelled`, `superseded` and anything
+  it cannot read block. `view` adds `needs_replan` from the ledger (None, never False, when the ledger
+  cannot be read), the gating status (`hold`, `landing`, `needs-owner`, `cancelled`, `superseded`;
+  INDEX first, then header) and reports a typed `blocked`/`needs-replan` cell instead of obeying it.
+  Nothing acts on the answer yet.
+- **`/crew:spec`** shows the optional `depends-on: [T-####, ...]` line; it is hashed with the spec.
+- **`next.md` (L-0640).** `crew_ticket_state.read_next` parses `.work/tickets/<id>/next.md`:
+  `waiting-on:` (`owner`, `agent`, `external` or a ticket id), `next:`, `reason:`, `revisit:`
+  (`YYYY-MM-DD`) and `superseded-by:` (a ticket id). `view(top, ticket, today=None)` carries them as
+  `next` with `revisit_due` (None, never False, for a missing or bad date). A bad, empty or repeated
+  value, an unreadable file and a link out of the ticket folder are problems, never "nothing asked";
+  a `needs-owner` gate with no `next:` and a `superseded` gate with no successor (in `next.md` or
+  under the spec header) are reported. Nothing writes `next.md`, and it is not hashed or validated.
+
 ### Changed — crew 1.1.2: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
 
 - **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or
