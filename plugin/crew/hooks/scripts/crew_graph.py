@@ -343,6 +343,14 @@ def _verify(top, command, out):
     if pair == PAIR_UNKNOWN:
         out(f"crew-graph: unknown - pair=unknown: {detail}")
         return UNKNOWN
+    state = graph_state(top, info)
+    if state != "fresh":
+        # graphify exited 0 and the pair agrees, but the graph does not cover the
+        # code at HEAD (a no-op run over a stale graph): not refreshed (review round 4).
+        out(f"crew-graph: unknown - `{command}` exited 0 but the graph is {state} "
+            f"(built_at={info['builtAt'][:12]}): code moved since it and graphify's manifest "
+            "does not confirm it; nothing is verified")
+        return UNKNOWN
     changed = _changed(top, os.path.dirname(info["path"]))
     if changed is None:
         out("crew-graph: unknown - built and verified, but git could not list what changed")

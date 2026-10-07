@@ -85,7 +85,8 @@ class _Tool:
         self.calls.append(command)
         spec = self.spec
         if spec["code"] == 0:
-            built = head_sha(top, length=40) if spec["built"] else None
+            built = (spec["built"] if isinstance(spec["built"], str)
+                     else head_sha(top, length=40) if spec["built"] else None)
             text = spec["graph_text"] if spec["graph_text"] is not None else _graph_json(
                 spec["nodes"], spec["links"], built, spec["key"])
             _write(top, "graphify-out/graph.json", text)
@@ -257,6 +258,20 @@ def test_refresh_graph_without_built_at_commit_exits_2(tmp_path):
     code, out = _refresh(root, tool)
 
     assert (code, len(tool.calls), "built_at_commit" in out) == (2, 1, True), out
+
+
+def test_refresh_that_leaves_the_graph_stale_exits_2(tmp_path):
+    """Review round 4: graphify exiting 0 over a graph that still predates the
+    code (a no-op) is not a refresh."""
+    root = _repo(tmp_path)
+    old = _git(root, "rev-parse", "HEAD~2").strip()
+    _write(root, "src/app.py", "print('changed')\n")
+    commit_file(root, "src/app.py")
+    tool = _Tool(built=old)
+
+    code, out = _refresh(root, tool)
+
+    assert (code, len(tool.calls), "the graph is stale" in out) == (2, 1, True), out
 
 
 def test_refresh_node_count_disagreement_exits_1(tmp_path):

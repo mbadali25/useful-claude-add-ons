@@ -677,6 +677,17 @@ def test_l0708_the_refusal_names_the_answer_the_check_acted_on(fake, home, monke
         ("unknown", [], [], True), result
 
 
+def test_l0708_the_last_answer_is_per_thread():
+    """Review round 3: another thread's answer is never this probe's reason."""
+    kimi_probe._LAST_ANSWER.path, kimi_probe._LAST_ANSWER.why = "/x", "timed out"  # pylint: disable=protected-access
+    seen = []
+    other = threading.Thread(target=lambda: seen.append(
+        getattr(kimi_probe._LAST_ANSWER, "path", None)))  # pylint: disable=protected-access
+    other.start()
+    other.join()
+    assert seen == [None]
+
+
 def test_l0708_only_the_exact_not_a_repository_answer_allows(fake, home, monkeypatch, tmp_path):
     (tmp_path / "top" / ".git").mkdir(parents=True)
     _tmp_under(monkeypatch, tmp_path / "top")

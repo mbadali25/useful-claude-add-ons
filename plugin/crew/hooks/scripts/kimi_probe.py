@@ -483,19 +483,21 @@ def _inside_a_repository(path):
     stops at any `.git`, would read a project file there."""
     here = os.path.realpath(path)
     said = _git_says(here) or _kimi_project_files(path)
-    _LAST_ANSWER.update(path=path, why=said)
+    _LAST_ANSWER.path, _LAST_ANSWER.why = path, said
     return said
 
 
 # `probe` keeps `if _inside_a_repository(base):` as it was (a sabotage anchor);
 # the refusal reads the answer that `if` acted on, not a second ask whose
-# answer may differ (L-0708 review round 1).
-_LAST_ANSWER = {"path": None, "why": ""}
+# answer may differ (L-0708 review round 1). Per thread, so a probe running
+# beside another never reports the other's answer (review round 3).
+_LAST_ANSWER = threading.local()
 
 
 def _repository_refusal(base):
     """The refusal `probe` prints when `_inside_a_repository(base)` was truthy."""
-    why = _LAST_ANSWER["why"] if _LAST_ANSWER["path"] == base else _inside_a_repository(base)
+    why = (_LAST_ANSWER.why if getattr(_LAST_ANSWER, "path", None) == base
+           else _inside_a_repository(base))
     if why == IN_A_REPOSITORY:
         return f"the temporary directory {base} is inside a repository; set TMPDIR outside it"
     if " holds a .git " in why:
