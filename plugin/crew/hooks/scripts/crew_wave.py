@@ -426,6 +426,8 @@ def _channel_files(top, channel, channels, remote=None):
     if configured:
         cfg = crew_config.resolve_config(top).get("coord")
         remote = (cfg.get("remote") if isinstance(cfg, dict) else None) or "origin"
+        if not isinstance(remote, str):  # a malformed config value never crashes the plan (L-0633 r2)
+            return None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name"
     if (remote, channel) in channels:
         return channels[(remote, channel)]
     listed = crew_coord.run_git(top, ["remote"])
