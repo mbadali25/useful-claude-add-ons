@@ -220,7 +220,8 @@ def test_resume_plan_refuses_on_decide_wait(tmp_path, monkeypatch):
     got = fx.plan(monkeypatch)
 
     assert (got["status"], got["command"], got["marker"]) == ("refuse", "", "")
-    assert got["reason"] == "auto-resume is waiting: .work/tickets/T-0002/ does not exist"
+    assert got["reason"] == ("auto-resume is waiting: .work/tickets/T-0002/ does not exist "
+                             "(nor under Complete/)")
 
 
 def test_resume_plan_refuses_without_tmux(fx, monkeypatch):
@@ -491,7 +492,7 @@ def test_decide_wait_is_logged_and_types_nothing(tmp_path):
     done = fx.sh()
 
     assert done.stdout.strip() == ("autoresume: refused - auto-resume is waiting: .work/tickets/T-0002/ "
-                                   "does not exist")
+                                   "does not exist (nor under Complete/)")
     assert ("refusing - auto-resume: auto-resume is waiting" in fx.log(), os.path.exists(fx.marker)) == (True, False)
 
 

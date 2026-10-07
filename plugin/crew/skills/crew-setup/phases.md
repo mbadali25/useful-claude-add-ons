@@ -240,9 +240,17 @@ written after them it suppresses all four. `.crew/transcripts/` is inside that
 block and is the one nobody may drop: raw transcripts contain everything the
 session saw, including any secret that reached it.
 
+Then the language patterns, without asking (owner decision, T-0039): run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_gitignore.py apply --root .` and show its diff and
+report verbatim. It detects the languages from the files git lists, and adds what is missing only inside
+its own `# crew:gitignore:managed` block at the top of `.gitignore` - never a line of §3c's block, never a
+human line. `tracked` lines name files the new pattern cannot untrack; `needs-owner` (exit 3) is a
+committed secret - report it to me, never untrack or rewrite history; exit 4 is "could not tell".
+
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
 missing sections and no remaining placeholders,
-and `.gitignore` covers secrets and transcripts.
+and `.gitignore` covers secrets and transcripts, and the managed language block is current
+(`crew_gitignore.py check` exits 0, or 3 with the owner told).
 
 ## Phase 2 — Providers and notifications
 
@@ -308,6 +316,17 @@ If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
 `smoke.sh`, `run-all.sh`, and an empty `cases/`. Then fill it, in this
 session. Nothing else happens in this repo until
 `bash _verify/smoke.sh` runs green from a clean checkout.
+
+If the repo has Mermaid sources (`.mmd` files, usually `docs/diagrams/`), copy
+`templates/cases/diagrams-render.sh` into `_verify/cases/` (set `DIAGRAMS_DIR`
+when they live elsewhere); with an adopted harness, put it beside that
+harness's own checks and call it from its runner - it needs only bash and
+`mmdc`. Never write a case that calls `mmdc` bare: headless Chromium refuses
+to start as root, which is how CI containers run, and fails with "Running as
+root without --no-sandbox is not supported". The ready case passes the
+`--no-sandbox` config every time, prints mmdc's own last lines when a render
+fails, and exits 77 (SKIP) where mmdc is not installed. A repo with no
+diagrams does not get it.
 
 `_verify/README.md` is part of the deliverable, not an afterthought. Its layout
 table lists what each script covers and its status table records when each check

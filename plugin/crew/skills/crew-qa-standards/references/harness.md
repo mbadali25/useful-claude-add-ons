@@ -103,6 +103,8 @@ A check whose tool is absent exits **77** and says `TOOL MISSING`. It is never a
 a fail. The environment then installs the tool: a cloud environment's setup script, or the
 repo's install script.
 
+Code-level standard: GEN-01 (crew-standards), of which this is the missing-tool case.
+
 - **Evidence.** Without `pwsh`, `smoke.sh` read 10 passed / 1 failed. With it installed, 11/0.
   A missing `pwsh` also meant the verify gate could never record a clean pass, so every review
   needed an override.

@@ -54,6 +54,18 @@ codex exec --json --sandbox read-only "<review prompt>"   # the reviewer (review
 codex exec --sandbox workspace-write "<task>"              # only if you choose Codex to implement
 ```
 
+To check that Codex answers before you rely on it, run the probe from anywhere:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py" codex --root <repo>
+```
+
+It makes one real call with the reviewer's own command line (`review_run.command_for`, which adds
+`--skip-git-repo-check` and `-C <repo>`) and runs it with the repo root as its working directory, so
+it does not hit "Not inside a trusted directory" the way a `codex exec` typed in a `/tmp` export
+does. `codex: ok` is exit 0; `codex: FAILED - <reason>` (a failed call, an incomplete event stream,
+or a 120 s timeout) is exit 1; `codex: not installed` is exit 2.
+
 If you want named `review`/`work` profiles for convenience, they are a **user-level** concept, not
 a project one: `codex exec --help` (codex-cli 0.155.1) documents `--profile NAME` as layering
 `$CODEX_HOME/NAME.config.toml` on top of the base user config -- a file under `$CODEX_HOME`, never
@@ -89,7 +101,10 @@ fail-open handling, PowerShell/Bash drift, guard bypass, version and registratio
 path globs meet the files the diff changes, a few probes each. It is the same list
 `/crew:implement` showed the developer before the first plan step. It does not bound the review,
 and an item the diff does not touch is not a finding. When the bundle's manifest cannot say which
-files changed, every class is listed under an `UNKNOWN:` line rather than none.
+files changed, every class is listed under an `UNKNOWN:` line rather than none. Each class names
+the development standards it is a concrete instance of (its `seen:` line, for example GEN-09): the
+list is derived from the standards, a test holds every id it names to one that exists, and where a
+probe and its standard disagree the standard wins.
 
 Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
 the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base

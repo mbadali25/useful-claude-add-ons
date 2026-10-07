@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.1.8<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.14<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 37 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -71,15 +71,19 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the g
 
 `crew-graph` (below) wraps the third-party `graphify` CLI to build a code
 graph at `graph.out` (default `graphify-out/graph.json`, configurable in
-`.crew/config.json`), and `/crew:upgrade` (next) uses it to bring an older
-setup forward. Neither is a hook — nothing here runs on its own — but both assume
+`.crew/config.json`), and `/crew:onboard --refresh` uses it to bring the code
+map's graph facts forward. Neither is a hook — nothing here runs on its own — but both assume
 `graphify` is on `PATH`, which is a **separate, off-by-default install**:
 menu item 22 (`uv tool install graphifyy` — the PyPI package is `graphifyy`,
 double-y; the CLI it installs is `graphify`). A keyless build needs both
 `--no-viz` and `--code-only`: without `--code-only`, `graphify` errors on any
-repository containing docs, rather than skipping them. Exporting the graph
+repository containing docs, rather than skipping them. Before any build,
+`crew_graph_ignore.py --check` confirms graphify will read no
+secrets-denylisted file: `.gitignore` does not stop graphify reading a tracked
+file, so the root `.graphifyignore` must exclude every one, and `--write` adds
+what is missing. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
-the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
+the user in `.crew/config.json`; no crew command ever sets that flag itself.
 
 ### The emergency lane
 
@@ -122,7 +126,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 35, all explicit
+### Commands — 37, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -140,16 +144,17 @@ to CI or to branch protection.
 | `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
 | `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
 | `/crew:handoff [--clear]` | Write the handoff note for the next session |
+| `/crew:help [command \| question \| commands \| ticket id]` | What to do next, and what any crew command is for - with no argument, where you are, the one command to type next and 2-3 related ones in at most 8 lines; read-only, it never runs what it names |
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
-| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback |
+| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback; a pre-0.20 config is upgraded first, in the same run |
 | `/crew:model` | Show or change which model backs each crew role, and probe that it actually answers |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync a ticket between an Obsidian Kanban board and the local cache |
 | `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
 | `/crew:plan <ticket id> [--approve]` | Turn an approved spec into a step-by-step plan, then get it approved |
 | `/crew:promote <development \| qa \| production> [--dry-run \| --status]` | Promote a build to the next environment, with the full post-deploy proof |
-| `/crew:reference [--api \| --features \| --audit \| <area>]` | Generate the API and feature reference from the code, with anchors |
+| `/crew:reference [--api \| --features \| --integrations \| --audit \| <area>]` | Generate the API, feature and integrations reference from the code, with anchors |
 | `/crew:review [ticket id]` | Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean) |
 | `/crew:runbook <name \| --from-ticket T-#### \| --audit \| --verify <name>>` | Write, update, or audit operational runbooks |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
@@ -158,7 +163,7 @@ to CI or to branch protection.
 | `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
 | `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
-| `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
+| `/crew:upgrade` | Removed - use /crew:migrate, which upgrades a pre-0.20 config itself |
 | `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
 | `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
 | `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
@@ -198,7 +203,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
 | `crew-best-practices` | Community best practices for Claude Code, audited against crew — what crew already does, the three architectural rules it departs from and why (ADR 0003), and the five contradictions the source records about itself |
-| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
+| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API, feature and integrations reference under `docs/reference/` |
 | `crew-lint` | Linters and formatters for PowerShell, PHP, Python, Terraform, and JavaScript, wired into the gate |
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |
 | `crew-runbooks` | Writing, indexing, and maintaining operational runbooks |
@@ -208,20 +213,23 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-memory` | Obsidian-backed memory; resolves native-memory vault pointers and saves a memory as one, note first; migrates a memory folder and restores a pointer (`crew_memory.py`) |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
-| `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
+| `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:onboard --refresh` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
 | `crew-debugging` | Root cause before any fix — reproduce, check recent changes, gather evidence from the code map and verification map, one hypothesis tested minimally. Backs `/crew:debug` |
 | `crew-brainstorm` | Turn a request into an approved direction before it becomes a spec — one question per message, options with the recommendation first. Backs `/crew:brainstorm`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-plan` | Turn an approved spec into a step-by-step plan — files, tests and risk per step, no placeholders, self-reviewed against Touch. Backs `/crew:plan`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-execute` | Execute an approved plan task by task — TDD per step, a ruling instead of a silent deviation. Backs `/crew:implement`; adapted from `superpowers` (MIT, `NOTICE.md`) |
-| `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python so far); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
-| `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy |
+| `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python and PowerShell so far; other stacks list candidates in their `stack-*` skill); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. The one source for code-level rules; the recurring-findings probes are derived from it. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
+| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
+| `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy; no gated Angular set yet (set `NG` when earned), its Angular 2+ candidate standards |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
-| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section |
-| `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening |
+| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |
+| `stack-node` | Server-side and CLI Node.js/TypeScript pitfalls, checks and `verify.json` wiring — child processes, `fetch` status handling, paging that says it stopped, unhandled rejections, module format, dates, big integers; no gated Node set yet, its candidate standards |
+| `stack-php` | PHP 8 pitfalls, checks and `verify.json` wiring — loose comparison, array keys, bound SQL parameters, output escaping, `unserialize`, time zones, a `php -l` rule; no gated PHP set yet, its candidate standards |
+| `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening; the PWSH standards set's pointer and its candidates |
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
-| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking |
-| `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces |
+| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking; no gated SQL set yet, its candidate standards and their sources |
+| `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces; no gated Terraform set yet (set id `TF` when earned), its candidate standards and settled questions |
 | `stack-web` | Playwright web UI testing pitfalls, checks and `verify.json` wiring — role/testid locators, web-first assertions, trace and visual-baseline discipline, accessibility via axe. Backs `/crew:webtest` |
 
 ### What it creates in a repository
@@ -234,7 +242,7 @@ Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a
 | `.crew/verify.json` | phase 5 | Which checks a changed path requires, which specialist reviews it, and the promotion sequence per environment |
 | `.crew/codemap/` | phase 4 | One note per subsystem, every claim anchored to `file:line` and a sha |
 | `_verify/` | phase 3 | `smoke.sh`, `run-all.sh`, `cases/`, and a `README.md` recording what each check covers and when it last proved it could fail |
-| `docs/reference/` | `/crew:reference` | Every endpoint and every headless capability, anchored |
+| `docs/reference/` | `/crew:reference` | Every endpoint, every headless capability and every outbound call (`integrations.md`, linted, judged by the refresh check), anchored |
 | `.work/` | as work happens | Tickets, findings, the handoff note, and `PROMOTIONS.md` |
 | `CLAUDE.md` | phase 1 | Created if absent; if present, missing sections are **appended, never overwritten** |
 
@@ -446,7 +454,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.9<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.11<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |

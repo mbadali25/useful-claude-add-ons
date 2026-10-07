@@ -340,7 +340,7 @@ def test_resolve_command_falls_back_to_bash_plus_the_cloned_script(monkeypatch, 
     script = tmp_path / "testssl.sh"
     script.write_text("#!/usr/bin/env bash\n# stand-in")
 
-    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(testssl, "_testssl_script_candidates", lambda: (str(script),))
     monkeypatch.setattr(base, "which", lambda name: "/usr/bin/bash" if name == "bash" else None)
 
     assert testssl._resolve_command() == ["/usr/bin/bash", str(script)]
@@ -350,14 +350,14 @@ def test_resolve_command_is_none_when_script_found_but_no_bash(monkeypatch, tmp_
     script = tmp_path / "testssl.sh"
     script.write_text("stand-in")
 
-    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(testssl, "_testssl_script_candidates", lambda: (str(script),))
     monkeypatch.setattr(base, "which", lambda name: None)
 
     assert testssl._resolve_command() is None
 
 
 def test_resolve_command_is_none_when_nothing_is_found(monkeypatch):
-    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", ())
+    monkeypatch.setattr(testssl, "_testssl_script_candidates", lambda: ())
     monkeypatch.setattr(base, "which", lambda name: None)
 
     assert testssl._resolve_command() is None
@@ -367,7 +367,7 @@ def test_is_available_true_via_bash_and_the_cloned_script(monkeypatch, tmp_path)
     script = tmp_path / "testssl.sh"
     script.write_text("stand-in")
 
-    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(testssl, "_testssl_script_candidates", lambda: (str(script),))
     monkeypatch.setattr(base, "which", lambda name: "/usr/bin/bash" if name == "bash" else None)
 
     assert testssl.is_available() is True
@@ -377,7 +377,7 @@ def test_run_uses_bash_and_script_argv_when_no_native_binary_is_found(monkeypatc
     script = tmp_path / "testssl.sh"
     script.write_text("stand-in")
 
-    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(testssl, "_testssl_script_candidates", lambda: (str(script),))
     monkeypatch.setattr(
         base, "which",
         {"bash": "/usr/bin/bash", "hexdump": "/usr/bin/hexdump"}.get)

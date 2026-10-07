@@ -18,6 +18,12 @@ it:
   reviews kept finding, keyed by path globs. Not read whole: `hooks/scripts/recurring_findings.py`
   prints the classes a change's paths meet, to the implementer (`/crew:implement` step 2). Edit it in place; its suite holds each class to four probes and the block to its cap.
 
+Which skill owns which rule (L-0519): code-level rules and the self-check are
+crew-standards; harness, review-process, gate and environment rules are
+crew-qa-standards. crew-qa-standards' `recurring-findings.md` (RF) is a
+probe index derived from crew-standards: each class names the standard ids it
+echoes, and on a conflict the standard wins and the probe is corrected.
+
 Read only the rule you are applying. The files are long, and loading them whole to fix one
 gap costs the tokens the standards exist to save.
 
@@ -54,7 +60,7 @@ gap costs the tokens the standards exist to save.
 |---|---|
 | `/crew:init` Phase 5 and Phase 8 | the audit; a phase with an open GAP is `partial`, never `done` |
 | `/crew:init --audit` | the audit alone, then the doc dry run |
-| `/crew:upgrade` | the audit as a report, after the codemap migration |
+| `/crew:migrate` | the audit as a report, after a pre-0.20 config is upgraded (`crew-setup/upgrade-report.md`) |
 | `qaAuditStale` at session start | no stamp yet, or an audited path moved since the stamp |
 
 None of these is a hook that blocks. The audit reports; the gate stays what `.crew/verify.json` says.

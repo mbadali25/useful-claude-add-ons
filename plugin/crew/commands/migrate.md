@@ -17,7 +17,9 @@ so and stop.
 
 Preview writes nothing. Show me its output verbatim and point out:
 
-- every `CONFLICT` line - apply refuses while any exist;
+- every `CONFLICT` line - apply refuses while any exist; an unmigrated-block one is fixed by hand;
+- every `upgrade` line - a pre-0.20 config (no `schema`, or 1-6) is brought to the current schema in
+  the same apply; read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/upgrade-report.md` and relay each line as it says;
 - every `unmapped` key - carried into `crew.json` under `unmapped`, never dropped;
 - every `skip` line - a file that was not imported, and why;
 - every `retireable` line - an original left in place that 1.0 no longer reads;
@@ -52,31 +54,31 @@ What apply does, in order:
    `.crew/backups/migrate-<UTC timestamp>/` and writes a manifest naming every
    file it is about to create, with the sha256 of what it will write.
 2. Stages every new file as a temp beside its target, then moves each into
-   place with `os.replace`. If anything raises, whatever landed is removed and
-   the tree is the old one. A hard kill leaves the manifest unfinished; every
+   place with `os.replace`. If anything raises, whatever landed is undone (a file edited since it
+   landed is left and named). A hard kill leaves the manifest unfinished; every
    later run reports it until you roll back.
-3. Never overwrites and never deletes. An existing target with different bytes
-   is a conflict, found in preview. A crew.json an older crew wrote with
+3. Never deletes, and overwrites exactly one file: a pre-0.20 `.crew/config.json`, whose original
+   is in the backup and which rollback restores byte-identical. Any other existing target with
+   different bytes is a conflict, found in preview. A crew.json an older crew wrote with
    `unmapped.autopilot` is one: roll that migrate back, or leave it.
 
 | From | To |
 |---|---|
 | `.crew/config.json` (schema up to 7) | `.crew/crew.json` (schema 1) |
+| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above |
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |
 | `.crew/metrics.md` | `.crew/metrics.jsonl`, one object per row, missing values `UNKNOWN` |
 | `.crew/pm-journal.md`, `pm-standing.md` | copied to `.crew/archive/` | <!-- deliberate -->
 | `.crew/codemap/` and its anchors | untouched |
 
-The full key-by-key table for `crew.json` is the docstring of
-`hooks/scripts/crew_migrate.py`; a test holds the table and the code to each
-other.
+The full key-by-key table for `crew.json` is the docstring of `hooks/scripts/crew_migrate.py`;
+a test holds the table and the code to each other.
 
 Print the `backup:` line apply ends with. That path is the only way to undo it.
 
-Then convert `context.autoClear` — the one helper `/crew:init` and
-`/crew:onboard` also call, so relay its output rather than restating this.
-Run it **once**: a second run cannot see this repo's pre-migration opt-in.
+Then convert `context.autoClear` — the one helper `/crew:init` and `/crew:onboard` also call, so
+relay its output rather than restating this. Run it **once**: a second run cannot see this repo's pre-migration opt-in. So first ask which directories hold the user's other crew repos, and add `--scan-root <dir>` for each to the command below.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . apply-migrate
@@ -84,7 +86,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . a
 
 It rewrites `context.autoClear` in **both** `.crew/config.json` (what every sender reads) and `.crew/crew.json` (step 2's un-converted copy), whichever exist — converting only one leaves the other's stale value live. Prints a `notes` line per conversion, never silently: pre-1.0 `"windows"` becomes `"notify"` (sendkeys is an explicit opt-in); a duplicated repo `enabled: true` (0.20.17's read-only-the-repo-file workaround) is dropped since 1.0 gives it no effect (`enabled: false` opt-outs are kept); repo-copied `onlyRepos`/`onlySessions` are dropped too, being global-only under 1.0. `alreadyConfigured: true` means nothing to convert; a non-zero exit (e.g. a malformed machine-global file) means nothing was written — show the stderr message and stop.
 
-A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`, `onlyRepos: null`) — show `proposedOnlyRepos` and ask; only on yes, apply it with the generic writer (this write always precedes either repo write), never by re-running the command above: `crew_config.py --set 'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in effect and leave it.
+A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`, `onlyRepos: null`) — show `proposedOnlyRepos` and ask. Each note names its file. `--scan-root <dir>` (asked for before that one run; repeatable; `--scan-depth <n>`, default 3): a read-only walk whose finds join the proposal (`widening.scan`); a repo it could not read is listed and makes `--yes-widen` refuse, as does an empty proposal (`[]` would disarm every repo). Repos outside the roots, or already converted by an earlier run, cannot be found: add those by hand; only on yes, apply it with the generic writer (this write always precedes either repo write), never by re-running the command above: `crew_config.py --set 'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in effect and leave it.
 
 Then generate the rules the preview listed, and show the output verbatim:
 
@@ -96,20 +98,23 @@ A `hand-written, left alone` line is a collision to report, never to overwrite. 
 derived from `.crew/codemap/`, which migrate does not change, so they are outside the backup
 manifest and rollback leaves them; `/crew:onboard` regenerates them.
 
+If apply printed `upgrade` lines, finish with `upgrade-report.md`'s QA audit re-run (report only).
+
 ## Rollback
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --root . --rollback <backup-dir>
 ```
 
-Removes exactly the files apply created, after checking each still holds the
-bytes apply wrote. If you edited one since, rollback refuses and changes
-nothing - resolve that file by hand. The backup directory itself is kept as
-the record.
+Removes exactly the files apply created, and restores an upgraded `config.json` from the backup,
+after checking each still holds the bytes apply wrote. If you edited one since, rollback refuses
+and changes nothing - resolve that file by hand. An autoClear conversion edits `config.json` after
+apply, so rollback then refuses that file by name, as it does `crew.json`. The backup directory
+itself is kept as the record.
 
 ## After
 
-The originals marked `retireable` still exist. Removing them is a separate,
-explicit decision for the owner - never do it as part of this command.
+The originals marked `retireable` still exist. Removing them is a separate, explicit decision
+for the owner - never do it as part of this command.
 
 Run `/crew:status` to confirm the repo now reads as `.crew/crew.json schema 1`.

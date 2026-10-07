@@ -40,6 +40,14 @@ uses `crew:explorer` to pin down `path:line` evidence, and writes
 `spec.md` with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 `.work/INDEX.md` gets a row.
 
+If the ticket cannot start before others close, the spec carries an optional
+`depends-on: [T-0088, T-0090]` line under its header. `blocked` is then derived
+from it, never typed: any dependency that is open, `cancelled`, `superseded` or
+cannot be read blocks, and `done` or `merged` unblocks
+(`hooks/scripts/crew_ticket_state.py`). The line is hashed with the spec, so
+changing it needs `/crew:approve` again. `needs-replan` is derived the same way,
+from the review ledger.
+
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
 one step per unit of work in `plan.md` (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show
@@ -64,7 +72,10 @@ whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no
-document that needs updating.
+document that needs updating. Then `crew_gitignore.py check` asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers `.gitignore`, and otherwise the PR body lists
+them and the next `/crew:onboard` adds them.
 
 **6b. The standards self-check.** Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any
@@ -84,8 +95,10 @@ BLOCK stops for you unless you set `autopilot.maxAutoReplans` (default `0`, off)
 then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
 and FIX line, approves it under `autopilot.approval` and reviews again, at most
 that many successor plans per ticket. Each round's findings go into a
-`standards-proposals-r<N>.md` file, one row per finding; you approve or reject
-each proposed standard, and nothing is added to a standards file on its own.
+`standards-proposals-r<N>.md` file, one row per finding, once the review ledger
+records that round as CLEAN or FINDINGS (an INCOMPLETE round gets none); you
+approve or reject each proposed standard, and nothing is added to a standards
+file on its own.
 
 With parallel lanes in one clone, arm its **merge train** once (`crew_train.py arm`, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.

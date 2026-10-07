@@ -4,6 +4,8 @@ import os
 import re
 import subprocess
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
@@ -215,6 +217,19 @@ def test_work_recognises_an_sdp_local_key(tmp_path):
     """
     root = crew_fixtures.make_repo(tmp_path, work_ticket="SDP-40219")
     assert crew_state.read_work(str(root))["ticket"] == "SDP-40219"
+
+
+@pytest.mark.parametrize("ticket", ["L-0509", "W-0001", "T-0001"])
+def test_work_recognises_ids_beyond_t(tmp_path, ticket):
+    """L-0509: every prefix is a ticket id, from one shared shape."""
+    root = crew_fixtures.make_repo(tmp_path, work_ticket=ticket)
+    assert crew_state.read_work(str(root))["ticket"] == ticket
+
+
+def test_work_does_not_read_complete_as_a_ticket(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text("# Work\n\n- Complete - in progress\n", encoding="utf-8")
+    assert crew_state.read_work(str(root))["ticket"] is None
 
 
 def test_work_ignores_a_bare_request_number(tmp_path):
@@ -1543,3 +1558,15 @@ def test_authority_rank_is_ordered_and_fails_closed():
     # An unknown ranks LOWEST, never highest -- the whole fail-safe property.
     assert crew_state.authority_rank("nonsense") == 0
     assert crew_state.authority_rank(None) == 0
+
+
+# --- L-0639: the closed words, parametrised; `hold` stays open ----------------
+
+@pytest.mark.parametrize("word", ["cancelled", "superseded", "Cancelled", "SUPERSEDED"])
+def test_cancelled_and_superseded_rows_are_closed(tmp_path, word):
+    assert _first_open(tmp_path, f"| T-0001 | {word} | low | r | t |\n"
+                                 "| T-0002 | open | low | r | t |\n") == "T-0002"
+
+
+def test_hold_row_stays_open(tmp_path):
+    assert _first_open(tmp_path, "| T-0001 | hold | low | r | t |\n") == "T-0001"

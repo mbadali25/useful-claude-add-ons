@@ -78,7 +78,11 @@ above origin/main's crew version at land time"; `spec.md:34`: "The version bump 
 after the review receipt"), and the build branch carries none: it declares the version of the
 `origin/main` it last merged, whatever its plugin content. So `scripts/check-marketplace.py`'s
 version-drift check reports `<plugin>: <source>/ has changed since version <X> was set` on a build branch
-that changes plugin content; that is expected until landing and is not a finding. The stale-copy bug
+that changes plugin content; that is expected until landing and is not a finding. `--pending-bump`
+(L-0511) says so mechanically: it prints that drift as `pending at land: ...` and exits 0 for that check
+alone, every other check unchanged; verify rule 0 and CI's Marketplace job on a DRAFT pull request pass it,
+and it is ignored on branch `main`. A ready pull request (the `ready_for_review` event re-runs the job) and
+every push to `main` run the full check. The stale-copy bug
 CLAUDE.md's first stop-and-ask names is closed at land, where the bump is made and the same check must
 exit 0. At implement, check only that plugin content changed, that the build branch declares main's
 version (no bump), and that the land-time bump is planned. At land: greater than `origin/main`'s version,
@@ -90,7 +94,8 @@ CHANGELOG edits add sections and never rename a heading, `python3 scripts/check-
 
 **Self-check.** On the build branch: `git diff origin/main -- plugin/crew/.claude-plugin/plugin.json
 .claude-plugin/marketplace.json` shows no version line (no bump); a version-drift report from
-`check-marketplace.py` is expected there. At land: `git fetch origin && git show origin/main:plugin/crew/.claude-plugin/plugin.json`
+`check-marketplace.py` is expected there, and `check-marketplace.py --pending-bump` exits 0 with it as a
+`pending at land:` line. At land: `git fetch origin && git show origin/main:plugin/crew/.claude-plugin/plugin.json`
 (branch is greater); `gh pr list --state open` plus each worktree's `plugin.json` (not already declared);
 `git merge-base --is-ancestor origin/main HEAD` exits 0; `python3 scripts/check-marketplace.py` exits 0;
 `git diff origin/main...HEAD -- CHANGELOG.md` shows no removed `###` heading.
@@ -116,8 +121,8 @@ provisional build-branch bump the rule used to ask for is withdrawn.
 
 Doc set to search for the old description: `plugin/crew docs README.md CHANGELOG.md plugin/PLUGINS.md
 CLAUDE.md .crew/codemap`; a `plugin/crew/` change updates every document CLAUDE.md "Scope discipline"
-lists, or says `Docs: none - <why>` in its PR body. Parsed files: spec templates through
-`crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
+lists, or says `Docs: none - <why>` in its PR body or a `Docs:` commit trailer. Parsed files: spec
+templates through `crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
 node and link counts compared; a number this repository states about itself carries a
 `<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it.
 

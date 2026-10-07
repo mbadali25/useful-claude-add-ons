@@ -108,6 +108,13 @@ question at a time</strong>:</p>
 uses <code>crew:explorer</code> to pin down <code>path:line</code> evidence, and writes
 <code>spec.md</code> with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 <code>.work/INDEX.md</code> gets a row.</p>
+<p>If the ticket cannot start before others close, the spec carries an optional
+<code>depends-on: [T-0088, T-0090]</code> line under its header. <code>blocked</code> is then derived
+from it, never typed: any dependency that is open, <code>cancelled</code>, <code>superseded</code> or
+cannot be read blocks, and <code>done</code> or <code>merged</code> unblocks
+(<code>hooks/scripts/crew_ticket_state.py</code>). The line is hashed with the spec, so
+changing it needs <code>/crew:approve</code> again. <code>needs-replan</code> is derived the same way,
+from the review ledger.</p>
 <p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
 one step per unit of work in <code>plan.md</code> (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
@@ -130,7 +137,10 @@ list, a few probes each, kept open while the plan is worked and handed to
 whichever developer types.</p>
 <p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
 steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
-document that needs updating.</p>
+document that needs updating. Then <code>crew_gitignore.py check</code> asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers <code>.gitignore</code>, and otherwise the PR body lists
+them and the next <code>/crew:onboard</code> adds them.</p>
 <p><strong>6b. The standards self-check.</strong> Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any
 per-language set a changed file matches, and this repository's
@@ -148,8 +158,10 @@ BLOCK stops for you unless you set <code>autopilot.maxAutoReplans</code> (defaul
 then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
 and FIX line, approves it under <code>autopilot.approval</code> and reviews again, at most
 that many successor plans per ticket. Each round's findings go into a
-<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding; you approve or reject
-each proposed standard, and nothing is added to a standards file on its own.</p>
+<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding, once the review ledger
+records that round as CLEAN or FINDINGS (an INCOMPLETE round gets none); you
+approve or reject each proposed standard, and nothing is added to a standards
+file on its own.</p>
 <p>With parallel lanes in one clone, arm its <strong>merge train</strong> once (<code>crew_train.py arm</code>, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
 The review round takes the train itself (L-0526; <code>crew_train.py acquire --ticket T-0091</code> does
@@ -304,7 +316,9 @@ of those each step changes, and you approve both. Two hooks then hold the sessio
 contract. This section explains what they do, what they print, and how to change scope while you
 work.</p>
 <h3 id="the-contract">The Contract</h3>
-<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code>:</p>
+<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code> (once done and archived with <code>crew_tracker.py archive</code>, in
+<code>.work/tickets/Complete/&lt;id&gt;/</code>; crew finds it in either place, and a ticket present in both is "could
+not tell", which refuses). An id is <code>LETTERS-digits</code> with any prefix (<code>T-</code>, <code>L-</code>, <code>W-</code>):</p>
 <ul>
 <li><code>spec.md</code> has six sections: <code>## Intent</code>, <code>## Exclusions</code>, <code>## Evidence</code>, <code>## Unknowns</code>,
   <code>## Touch</code> and <code>## Acceptance checks</code>. <code>## Touch</code> lists one repo-relative glob or path per
@@ -318,6 +332,11 @@ work.</p>
 <ul>
 <li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
   Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>
+<li><code>next.md</code> is optional, and nothing in crew writes it: you do, by hand. One <code>key: value</code> per line
+  says who the ticket waits on and what happens next: <code>waiting-on:</code> (<code>owner</code>, <code>agent</code>, <code>external</code>
+  or a ticket id), <code>next:</code>, <code>reason:</code>, <code>revisit:</code> (a <code>YYYY-MM-DD</code> date) and <code>superseded-by:</code> (a
+  ticket id). It is not part of the contract: approval does not hash it and <code>validate</code> never reads
+  it, so you can edit it at any step without approving again.</li>
 </ul>
 <p>Check the contract at any time:</p>
 <pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/crew_ticket.py validate --ticket T-0042
@@ -423,6 +442,8 @@ until you approve again.</p>
 not count), it moves to <code>NEEDS_REPLAN</code>. With <code>autopilot.maxAutoReplans</code> at 1 or more, autopilot
 does this itself for a final round with a BLOCK (<code>auto-reject</code>), then writes and approves the
 successor plan under <code>autopilot.approval</code>; the cap counts every successor plan on the ledger.
+With notify on, the last round carrying a BLOCK sends the <code>Review out of rounds</code> ping
+(<code>-&gt; /crew:plan &lt;id&gt;</code>) when <code>/crew:autopilot</code> stops on it.
 Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.</p>

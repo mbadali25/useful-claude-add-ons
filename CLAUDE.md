@@ -28,6 +28,20 @@ row, `plugin/PLUGINS.md` for plugins, and both install scripts in the same order
 A partial registration is worse than none: the checker fails and nobody can tell which half was
 intended. Renaming or removing means the same places, in reverse.
 
+**A change to `plugin/crew/` updates every document that describes it, in the same PR.** Owner rule,
+2026-09-26. Docs are part of the ticket, not something noticed nearby, so they go in the spec's Touch
+list; otherwise the scope guard blocks the doc edits at implement time. The set to check:
+`plugin/crew/README.md`, `plugin/crew/CONFIG.md`, the command and skill files that describe the
+behaviour, `plugin/PLUGINS.md`'s row, `docs/guides/crew/src/*.md` plus the rebuilt HTML, DOCX and PDF
+(`docs/guides/crew/src/build.py`), the crew, configuration and autopilot guides once T-0048 and
+T-0054 land, `.crew/codemap/`, and `docs/diagrams/`. In this repo that overrides
+`commands/implement.md` step 6's "none is common and correct" for crew itself. A crew change with
+no doc impact says so in its PR body, with the reason (`Docs: none - <why>`), never silently.
+`scripts/check-crew-docs.py` fails a PR that changes crew code and neither touches a narrative doc
+nor carries the line; the line also works as a commit trailer, the only form a local run can see.
+CI also fails a stale built guide's HTML or configuration reference (`build.py --check`,
+`config_reference.py --check`).
+
 **A number this repo states about itself gets a marker, or it is not checked.** Write
 `<!-- claim: skills-count -->` or `<!-- claim: plugin-version:<name> -->` beside it and
 `check_self_claims` in `scripts/check-marketplace.py` verifies it against `marketplace.json` or that

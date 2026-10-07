@@ -22,7 +22,9 @@ Run: python3 scripts/_test/version-drift.py
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -130,10 +132,7 @@ def run_check(tmp: str) -> list[str]:
 def s_linear_stale(tmp: str) -> None:
     """Bump, THEN change the plugin. The whole reason the check exists."""
     init(tmp)
-    manifest(tmp, "1.0.1")
-    commit(tmp, "bump crew to 1.0.1", 100)
-    plugin_file(tmp, "crew", "v1 changed after the bump\n")
-    commit(tmp, "change crew after the bump", 200)
+    s_linear_stale_body(tmp)
 
 
 def s_linear_clean(tmp: str) -> None:
@@ -293,8 +292,134 @@ CASES = [
 ]
 
 
+# ------------------------------------------------- --pending-bump (L-0511, REPO-03)
+
+# main() runs every check, and a two-plugin fixture cannot satisfy the catalog,
+# docs or claim checks. So each case runs the REAL main() with every check_*
+# but registration and version drift replaced by a no-op: what is under test
+# is main's routing of the version-drift finding, and that no other check's
+# failure is routed with it.
+KEPT = ("check_registration", "check_versions")
+
+
+def run_main(tmp: str, *argv: str) -> tuple[int, str]:
+    os.makedirs(os.path.join(tmp, "skills"), exist_ok=True)
+    saved = {n: getattr(CHECKER, n) for n in dir(CHECKER) if n.startswith("check_")}
+    old_root, old_manifest = CHECKER.ROOT, CHECKER.MARKETPLACE
+    CHECKER.ROOT = tmp
+    CHECKER.MARKETPLACE = os.path.join(tmp, ".claude-plugin", "marketplace.json")
+    for name in saved:
+        if name not in KEPT:
+            setattr(CHECKER, name, lambda *a, **k: None)
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            rc = CHECKER.main(list(argv))
+    finally:
+        for name, fn in saved.items():
+            setattr(CHECKER, name, fn)
+        CHECKER.ROOT, CHECKER.MARKETPLACE = old_root, old_manifest
+    return rc, out.getvalue()
+
+
+def stale_on(tmp: str, branch: str | None) -> None:
+    """s_linear_stale's drift, committed on `branch` (None: a detached HEAD)."""
+    init(tmp)
+    sh(tmp, "git", "checkout", "-q", "-b", branch or "work")
+    s_linear_stale_body(tmp)
+    if branch is None:
+        sh(tmp, "git", "checkout", "-q", "--detach")
+
+
+def s_linear_stale_body(tmp: str) -> None:
+    manifest(tmp, "1.0.1")
+    commit(tmp, "bump crew to 1.0.1", 100)
+    plugin_file(tmp, "crew", "v1 changed after the bump\n")
+    commit(tmp, "change crew after the bump", 200)
+
+
+DRIFT = "has changed since version"
+
+
+def s_pending_bump_reports_and_passes(tmp: str) -> str | None:
+    stale_on(tmp, "L-0000-build")
+    rc, out = run_main(tmp, "--pending-bump")
+    if rc != 0:
+        return f"rc={rc}, expected 0"
+    if not any(ln.startswith("pending at land: crew: plugin/crew/") and DRIFT in ln
+               for ln in out.splitlines()):
+        return "no `pending at land: crew: ...` line"
+    return None
+
+
+def s_no_flag_still_fails(tmp: str) -> str | None:
+    stale_on(tmp, "L-0000-build")
+    rc, out = run_main(tmp)
+    if rc != 1:
+        return f"rc={rc}, expected 1"
+    if "pending at land" in out or f"crew: plugin/crew/ {DRIFT}" not in out:
+        return "the drift was not reported as a problem"
+    return None
+
+
+def s_pending_bump_ignored_on_main(tmp: str) -> str | None:
+    init(tmp)
+    s_linear_stale_body(tmp)
+    rc, out = run_main(tmp, "--pending-bump")
+    if rc != 1:
+        return f"rc={rc}, expected 1 (the flag must not weaken main)"
+    if "note: --pending-bump is ignored on branch main" not in out:
+        return "no note: line saying the flag was ignored"
+    if "pending at land" in out:
+        return "drift reported as pending on main"
+    return None
+
+
+def s_pending_bump_detached_head(tmp: str) -> str | None:
+    """A CI merge ref is a detached HEAD: not `main`, so the flag applies."""
+    stale_on(tmp, None)
+    rc, out = run_main(tmp, "--pending-bump")
+    if rc != 0 or "pending at land: crew:" not in out:
+        return f"rc={rc}, expected 0 with a pending line"
+    return None
+
+
+def s_pending_bump_keeps_other_failures(tmp: str) -> str | None:
+    stale_on(tmp, "L-0000-build")
+    plugin_file(tmp, "extra", "unregistered\n")
+    rc, out = run_main(tmp, "--pending-bump")
+    if rc != 1:
+        return f"rc={rc}, expected 1"
+    if "plugin/extra/ exists but is not registered" not in out:
+        return "the registration failure was not named"
+    if "pending at land: crew:" not in out:
+        return "the drift was not reported as pending"
+    return None
+
+
+MAIN_CASES = [
+    ("--pending-bump: drift is pending at land, exit 0", s_pending_bump_reports_and_passes),
+    ("no flag: the same drift still fails", s_no_flag_still_fails),
+    ("--pending-bump on branch main: ignored, drift fails", s_pending_bump_ignored_on_main),
+    ("--pending-bump on a detached HEAD (CI merge ref) applies", s_pending_bump_detached_head),
+    ("--pending-bump keeps every other failure", s_pending_bump_keeps_other_failures),
+]
+
+
 def main() -> int:
     passed = failed = 0
+    for name, build in MAIN_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                why = build(tmp)
+            except Exception as exc:  # a crash is a failure of that case, never a pass
+                why = f"raised {type(exc).__name__}: {exc}"
+        if why is None:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}: {why}")
     for name, build, expected in CASES:
         with tempfile.TemporaryDirectory() as tmp:
             build(tmp)

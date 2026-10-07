@@ -79,11 +79,19 @@ file. The template leaves out the five personal `autopilot.*` settings, so your
 machine-wide defaults for them apply. For a new config it sets `scope.mode` to `auto`: the scope guard reports
 for the first ten approved tickets, then blocks.
 
+Init also keeps `.gitignore` right for the languages it finds:
+`crew_gitignore.py apply` adds the missing patterns, without asking, inside
+one `# crew:gitignore:managed` block at the top of `.gitignore`, and never
+edits your own lines or untracks a file. A committed secret-shaped file is
+reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
+--refresh` run the same step, `/crew:implement` checks it, and
+`/crew:status` shows it as one `gitignore` line.
+
 `/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
 repository: `--preview` first, then `--apply`, which takes a backup that
 `--rollback` restores. Every historical metric it cannot recover is written
-`UNKNOWN`, never `0`. `/crew:upgrade` is only for a config older than 0.20
-that `/crew:migrate` refuses.
+`UNKNOWN`, never `0`. A config older than 0.20 (no `schema`, or 1-6) is
+upgraded by `/crew:migrate` itself in the same run; `/crew:upgrade` was removed.
 
 Deeper: [Quickstart](quickstart.md).
 
@@ -171,13 +179,15 @@ Source: `plugin/crew/commands/implement.md` and
 
 A refresh artifact is a file that describes the code and must follow it:
 the code maps under `.crew/codemap/`, the diagrams, the code graph in
-`graphify-out/`, and the generated `.claude/rules/`. The order is fixed:
-implement, then refresh, then review, then done.
+`graphify-out/`, the generated `.claude/rules/`, and the integrations
+reference (docs/reference/integrations.md) that `/crew:reference
+--integrations` writes. The order is fixed: implement, then refresh, then
+review, then done.
 
 `crew_refresh_check.py --root . --ticket <id>` reports each artifact the
 ticket's changes reach as `fresh`, `stale` (with the command that refreshes
-it: `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh` or
-`graphify update .`) or `unknown`. `/crew:implement` runs those commands and
+it: `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`,
+`/crew:reference --integrations` or `graphify update .`) or `unknown`. `/crew:implement` runs those commands and
 commits before review, so the reviewer reads the refreshed files. `/crew:done`
 runs the same check and refuses anything but `fresh`. It never refreshes
 anything itself: a write after review would stale the receipt.

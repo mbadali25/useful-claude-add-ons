@@ -14,13 +14,13 @@ carries the per-step TDD discipline and the ledger this file only summarises.
 ## 0. Refuse without an approved plan
 
 ```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py status --ticket $1
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
-**This command refuses to edit anything unless that call reports the plan
-approved.** No approval, a stale one (the plan changed since) or no plan: stop,
-say which, and point at `/crew:plan $1` or `/crew:plan $1 --approve`. The
-receipt, not your read of the plan, is what the completion audit checks later.
+**This command refuses to edit anything unless `status` reports the plan
+approved** (`validate` checks the contract, not approval). `none` or `stale`: stop, say which, name one fix -
+no plan.md or `INVALID:` lines: run `/crew:plan $1`; else the user types `/crew:approve $1`.
 
 ## 1. Record where this ticket starts
 
@@ -39,7 +39,7 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 
 Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
 `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN,
-UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the
+UNREADABLE or PROBLEM line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`; with `## PR slices`, only the `steps=` that `crew_autopilot.py slice --root . --ticket $1` prints (T-0059). Per step: write the
 test it names, watch it fail, make the minimal change, watch it pass, then the next step. A step whose Expected does not
 match reality is a plan defect — rule on it, note the ruling and why in your report, keep going; never silently deviate.
 
@@ -63,8 +63,7 @@ BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base
 git diff --name-only "$BASE"; git ls-files --others --exclude-standard
 ```
 
-Name anything outside `.work/tickets/$1/plan.md`'s Files: entries and this
-ticket's spec.Touch. File it to `TODO.md`, not to the diff.
+Name anything outside `.work/tickets/$1/plan.md`'s Files: entries and this ticket's spec.Touch. File it to `TODO.md`, not to the diff.
 
 ## 4. Verify
 
@@ -82,39 +81,40 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
   --declare-endpoint "<url or host>" --location <path:line> --ticket $1
 ```
 
-New behaviour with no coverage → write the test here, in this session, and
-confirm the `.crew/verify.json` rule it falls under actually fires.
+New behaviour with no coverage → write the test here, in this session, and confirm the `.crew/verify.json` rule it falls under actually fires.
 
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
-Coverage above is the tests. Then `/crew:docs`, deciding which documents this touches ("none" is common and
-correct). Then commit, and check the code maps, diagrams, code graph and README diagram embeds (`crew_diagrams.py`) this ticket's changed paths reach:
+Coverage above is the tests. Then `/crew:docs $1`, which records each `not needed` reason and deferral in
+`.work/tickets/$1/docs.json` ("none" is common and correct; a new outbound call gets its `/crew:reference --integrations` entry), and its read-only check:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
+```
+
+On `MISSING` run `/crew:docs $1` again; `MISSING` after the second run, or `unknown`: stop and report. Then commit, and check the code maps, diagrams, code graph, `docs/reference/integrations.md` and README diagram embeds (`crew_diagrams.py`) this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
 ```
 
-For each `refresh with` line, run the command it names, commit the result and re-run until it says
-`fresh` — an `unknown` whose anchor names no commit (a squash-merged branch) included: the refresh
-re-anchors it. `fresh-uncommitted` means commit the paths its `uncommitted:` line lists, then re-run. These writes need no Touch entry when they are what a refresh writes: the completion
-audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved
-forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
-rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.
-A `stop` ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a
-base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`,
-never a pass. Commit the refresh before `/crew:review $1` builds its bundle.
-Then the **required self-check** (`crew-standards` skill): run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
-every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
-until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
+For each `refresh with` line, run the command it names, commit the result and re-run until it says `fresh` — an `unknown`
+whose anchor names no commit (a squash-merged branch) included: the refresh re-anchors it. `fresh-uncommitted` means commit
+the paths its `uncommitted:` line lists, then re-run. These writes need no Touch entry when they are what a refresh writes: the
+completion audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved forward, to HEAD
+or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py rules`, the graph after a code change); anything
+else there needs Touch, and the audit names the reason. A `stop` ends the loop, on an artifact line (a missing tool, git unable to
+diff) or on the top line (a base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`
+there: the docs check above judges them. Commit the refresh before `/crew:review $1` builds its bundle.
+Then `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_gitignore.py check --root .`: on 1 `apply` only if Touch covers `.gitignore`, else list `missing` in the PR body; 3 goes to the owner; 4 is unknown.
+Then the **required self-check** (`crew-standards` skill): run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
+every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1` until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
 Set `spec.md`'s header to `status: review` — that edit keeps the approval: the digest normalises only the header's status value — and run
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
-handled as in step 1: the Review lane means the review is outstanding.
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`, handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
 A catch-up after review lands in `/crew:done`'s order (resolve, bump, refresh, commit, gate, re-review if the receipt reads stale, check-land); a re-anchor after review changes only the `anchor:` sha, provenance in `notes.md`.
 
 ## 7. Done is not this command's
 
-`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit and the artifact check all
-pass — this command does not set `done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the completion audit, the artifact check and the docs
+check all pass — this command does not set `done` itself.

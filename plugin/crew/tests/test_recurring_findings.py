@@ -10,6 +10,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_standards as cs
 import recurring_findings as rf
 
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(rf.__file__)), "recurring_findings.py")
@@ -84,6 +85,38 @@ def test_shipped_checklist_pins_the_seven_classes():
     assert [e["id"] for e in entries] == [sid for sid, _ in SEVEN_CLASSES]
     assert all(word in e["title"].lower() for e, (_, word) in zip(entries, SEVEN_CLASSES)), \
         [e["title"] for e in entries]
+
+
+def _standard_ids():
+    """Every standard id crew-standards ships, plus this repository's overlay,
+    read through the loader's own parser so a malformed set fails here too."""
+    refs = cs.references_dir()
+    paths = [(os.path.join(refs, n), cs.PLUGIN_FIELDS)
+             for n in sorted(os.listdir(refs)) if n.endswith(".md")]
+    paths.append((os.path.join(REPO, *cs.OVERLAY_REL.split("/")), cs.OVERLAY_FIELDS))
+    ids = set()
+    for path, required in paths:
+        parsed, problems, _raw = cs.parse_set(path, required=required)
+        assert parsed is not None and problems == [], (path, problems)
+        ids.update(std["id"] for std in parsed["standards"])
+    return ids
+
+
+def test_every_class_names_a_standard_that_exists():
+    """L-0519: RF is a probe index derived from crew-standards. Each class's
+    `seen:` line names at least one standard, and each one it names exists,
+    so a renumbered or removed standard cannot leave a probe pointing nowhere."""
+    known = _standard_ids()
+    entries = rf.parse(rf.data_path())[0]
+    bad = {}
+    for entry in entries:
+        cited = re.findall(r"\b[A-Z]{2,6}-\d{2}\b", entry["seen"])
+        missing = [sid for sid in cited if sid not in known]
+        if not cited or missing:
+            bad[entry["id"]] = missing or "names no standard"
+
+    assert entries
+    assert bad == {}, bad
 
 
 # ---- path scoping -----------------------------------------------------------------
@@ -530,3 +563,29 @@ def test_readers_never_exceed_the_cap(tmp_path, reader, scope_unknown, bad):
 
     assert len(lines) <= rf.MAX_LINES
     assert any(line.startswith("UNKNOWN:") for line in lines) is scope_unknown
+
+
+# ---- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_implementer_block_reads_an_archived_spec(tmp_path):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    data = _data(tmp_path, _section("RF-01", '["**/*.ps1"]') + _section("RF-02", '["**/*.md"]'))
+    _spec(tmp_path, "L-0001", ["- `docs/a.md`"])
+    live = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+    archive_ticket(tmp_path, "L-0001")
+
+    archived = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert (archived, live[1]) == (live, True)
+
+
+def test_implementer_block_could_not_tell_lists_every_class(tmp_path):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    data = _data(tmp_path, _section("RF-01", '["**/*.ps1"]') + _section("RF-02", '["**/*.md"]'))
+    _spec(tmp_path, "L-0001", ["- `docs/a.md`"])
+    both_places(tmp_path, "L-0001")
+
+    lines, complete = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert (complete, _ids(lines)) == (False, ["RF-01", "RF-02"])
+    assert any("could not tell where L-0001 lives" in line for line in lines)

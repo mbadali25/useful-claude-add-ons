@@ -172,6 +172,12 @@ one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
 every crew repo on this machine, with the repo file you are about to write
 taking precedence over it — see "Global config, and how it layers with the
 repo file" in `README.md` §11.
+One global block is machine-only in the stronger sense: `unattendedCloud`
+(T-0044), the cloud identity `crew_unattended.py launch` hands an unattended
+run, is read from the machine file alone. Never write it into a repo's
+`config.json`; a repo copy is ignored and reported (`CONFIG.md`,
+"`unattendedCloud`"). Its template shape, all `null` and naming nothing:
+`"unattendedCloud": {"aws": {"readOnly": {"profile": null, "identity": null, "region": null}, "nonProd": {}}}`.
 
 The global file has its own guided walkthrough, `/crew:config`, defined in
 `global-config.md` beside this file. With no argument it opens a menu
@@ -209,7 +215,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "jira": { "project": null, "cloudId": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
-  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800 } },
+  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800, "projects": [] } },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
@@ -234,7 +240,8 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
   "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null },
-                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60 },
+                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                 "maxLanes": null, "reviewPolicy": "stop" },
   "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }
@@ -324,7 +331,7 @@ next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.t
 doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
 brand from the rest of the docs, which is the client-deliverable case.
 
-`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
+`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:migrate` (upgrade stage) rewrites that one
 value to null — the only value the upgrade rewrites rather than preserving. Say so if the
 user asks why their config changed, and say why it was safe: **through 0.17.1 the key had no
 consumer at all**, so no value sitting in it could be a preference anyone formed by watching
@@ -466,6 +473,10 @@ the first secret exists is the only time it is free.
 .work/
 ```
 
+Language and tool patterns (`__pycache__/`, `node_modules/`, `/<project>/bin/`, ...) never go in
+this block: they are `crew_gitignore.py`'s managed block (`# crew:gitignore:managed`, at the top of
+the file), which Phase 1 applies and `/crew:onboard` keeps current. That script never edits this block.
+
 Everything under `.crew/` not on that list - `config.json` with its machine
 paths and its `pm.authority` trust decision, `STATUS.md`, `metrics.md`, the
 incident state - describes one checkout on one machine. A fresh clone runs
@@ -483,6 +494,23 @@ colleague and claim a dispatch that never happened there. `.crew/.hook-*` is the
 once-per-session claim marker (see `hooks/scripts/hook_once.py`): `.crew/*`
 already covers it, and it is named anyway because it is the entry whose absence
 shows up as noise in every `git status` rather than as a failure.
+
+## 3e. .graphifyignore from the secrets denylist
+
+`.gitignore` does not stop graphify reading a tracked file: only
+`.graphifyignore` can. So, before any graph is built, run:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph_ignore.py --root . --write
+```
+
+It appends every missing denylist pattern to `.graphifyignore` under one
+marked block and changes nothing else. Report what it printed: the patterns
+it added, or that none were needed. On exit 1 (a path still uncovered, or a
+`!` line kept open) or 2 (the reason), report it and do not build a graph.
+Repo-specific secret paths (`config/`, `/init.php`) go in
+`.claude/secrets-denylist`, one gitignore pattern per line. Commit both files. The crew-graph skill's **Secrets denylist** section lists every
+source.
 
 ## 4. Write the repo CLAUDE.md
 

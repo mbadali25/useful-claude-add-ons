@@ -355,6 +355,13 @@ def run_hook(script, args, os_value, drop_iswindows, fixture):
     env.pop("OS", None)
     if os_value is not None:
         env["OS"] = os_value
+    # The hook's temp files (completion-audit.ps1's marker) stay inside the
+    # throwaway fixture, beside the repo the snapshot reads, never in the
+    # caller's TMPDIR (T-0065: the suite leaves nothing in TMPDIR).
+    tmp = pathlib.Path(repo).parent / "tmp"
+    tmp.mkdir(exist_ok=True)
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        env[name] = str(tmp)
 
     prelude = ""
     if drop_iswindows:

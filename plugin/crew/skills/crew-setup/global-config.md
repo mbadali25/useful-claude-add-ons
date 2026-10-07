@@ -40,7 +40,9 @@ column. Run it even when nothing needs changing.
   were inherited by every repo that did not override them, so someone who set
   a vault path globally gave every repository on the machine a board that did
   not describe it. Do not work around either guard; move the key into that
-  repo's `.crew/config.json`.
+  repo's `.crew/config.json`. Since T-0070 such a key is not silent: every
+  session start names it in its `Inert settings` line as
+  `key=value (global, not read)` until it is moved.
 - **A global value is still a DEFAULT, not a lock.** Everything that survives
   the filter is overridable per repo. One project may legitimately want a
   different reviewer, and step 1's `source` column is what shows which layer
@@ -87,7 +89,7 @@ Then:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --check-global
 ```
 
-That prints the findings `/crew:upgrade` reports too: no global file, a file
+That prints the findings `/crew:migrate`'s upgrade stage and `/crew:config` report: no global file, a file
 that did not parse, keys the current template defines that this file does not
 set, keys the global layer IGNORES, an inert `schema`, and the effective
 `pm.authority` with its source named. Both commands are reporting-only and

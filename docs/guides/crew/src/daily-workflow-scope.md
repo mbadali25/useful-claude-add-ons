@@ -13,7 +13,9 @@ work.
 
 ## The contract
 
-A ticket lives in `.work/tickets/<id>/`:
+A ticket lives in `.work/tickets/<id>/` (once done and archived with `crew_tracker.py archive`, in
+`.work/tickets/Complete/<id>/`; crew finds it in either place, and a ticket present in both is "could
+not tell", which refuses). An id is `LETTERS-digits` with any prefix (`T-`, `L-`, `W-`):
 
 - `spec.md` has six sections: `## Intent`, `## Exclusions`, `## Evidence`, `## Unknowns`,
   `## Touch` and `## Acceptance checks`. `## Touch` lists one repo-relative glob or path per
@@ -28,6 +30,11 @@ A ticket lives in `.work/tickets/<id>/`:
 
 - `plan.md` is a list of steps. Each step has a `Files:` line, a `Test:` line and a `Risk:` line.
   Every `Files:` entry must fall inside Touch. A plan cannot add a path the spec does not list.
+- `next.md` is optional, and nothing in crew writes it: you do, by hand. One `key: value` per line
+  says who the ticket waits on and what happens next: `waiting-on:` (`owner`, `agent`, `external`
+  or a ticket id), `next:`, `reason:`, `revisit:` (a `YYYY-MM-DD` date) and `superseded-by:` (a
+  ticket id). It is not part of the contract: approval does not hash it and `validate` never reads
+  it, so you can edit it at any step without approving again.
 
 Check the contract at any time:
 
@@ -154,6 +161,8 @@ If a ticket uses both review rounds without an accepted receipt (refunded tool-f
 not count), it moves to `NEEDS_REPLAN`. With `autopilot.maxAutoReplans` at 1 or more, autopilot
 does this itself for a final round with a BLOCK (`auto-reject`), then writes and approves the
 successor plan under `autopilot.approval`; the cap counts every successor plan on the ledger.
+With notify on, the last round carrying a BLOCK sends the `Review out of rounds` ping
+(`-> /crew:plan <id>`) when `/crew:autopilot` stops on it.
 Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.

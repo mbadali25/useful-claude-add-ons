@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -1135,7 +1136,7 @@ def _config_lines(notes):
             "written): " + ", ".join(notes["unmigrated"])
             + ". `schema` was deliberately NOT stamped current, so this repo "
             "still reports an upgrade as needed. Fix the block by hand and "
-            "run `/crew:upgrade` again."
+            "run `/crew:migrate` again."
         )
     if notes["pinnedAtDefault"]:
         lines.append(
@@ -1149,6 +1150,13 @@ def _config_lines(notes):
 
 # Marks a human has put on a contradiction line. Anything carrying one is
 # carried forward verbatim rather than regenerated -- see `_carried_conflicts`.
+# T-0065 (item 8): every run puts its report on top of UPGRADE.md and keeps
+# the earlier file, byte for byte, below this line. Newest on top keeps
+# `/crew:upgrade`'s "opens with" and `_carried_conflicts`'s first
+# `## Contradictions` section true without either being rewritten.
+UPGRADE_HISTORY_MARKER = ("<!-- crew_upgrade: earlier runs below, newest first; "
+                          "nothing below this line is rewritten -->")
+
 _ANNOTATED = ("RESOLVED", "WONTFIX", "VERIFIED", "~~", "FALSE POSITIVE")
 
 
@@ -1180,6 +1188,11 @@ def _carried_conflicts(root, conflicts):
     if body:
         inside = False
         for line in body.splitlines():
+            # T-0065: earlier runs are kept below the marker. Only the newest
+            # run is read; an annotation on an older run stays in that run's
+            # history and is not carried into the new one.
+            if line.strip() == UPGRADE_HISTORY_MARKER:
+                break
             if line.startswith("## Contradictions"):
                 inside = True
                 continue
@@ -1212,12 +1225,13 @@ def _absent_global_headline(notes):
     why the dependency only runs the other way.
 
     Every OTHER `--check-global` finding (`unreadable`, `missing-keys`,
-    `repo-keys`, `inert-schema`) still lives only in `/crew:upgrade` step 4b,
-    which runs `crew_config.py --check-global` directly. This is the one
+    `repo-keys`, `inert-schema`) lives in `/crew:config`, which runs
+    `crew_config.py --check-global` directly (upgrade.md step 4b went when
+    T-0038 folded `/crew:upgrade` into `/crew:migrate`). This is the one
     finding an upgrade run has a stake of its own in, because it is the run
     that just decided whether `pm.authority` survives in the repo file at all
     (see `_prune_unsupplied_global_leaves`) -- worth leading the report with,
-    not left in a bullet list a reader has to reach step 4b to see. Returns
+    not left in a list a reader has to go to `/crew:config` to see. Returns
     None when a global file exists.
     """
     if crew_state.read_text(crew_state.GLOBAL_CONFIG_PATH) is not None:
@@ -1292,6 +1306,56 @@ def _report(status, head, results, notes, root):
     lines.extend(stale or ["- none"])
     lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def _umask():
+    """The process umask, read without leaving it changed."""
+    mask = os.umask(0o022)
+    os.umask(mask)
+    return mask
+
+
+def _write_upgrade_report(path, report):
+    """Put `report` on top of `path`, keeping the earlier file below the marker.
+
+    T-0065 (item 8): this used to `open(path, "w")` and write the report
+    alone, so `--force` erased every earlier run, an unverified contradictions
+    list included. The old bytes are read first and kept verbatim (binary, so
+    not even a line ending is touched); the whole new file is built in memory,
+    written to a pid-named sibling and renamed over the target, so an
+    interruption leaves the old file or the new one, never half of either.
+    The new report is LF-only on every platform, and keeps the earlier
+    file's permission bits (review: the sibling would otherwise carry the
+    umask's, widening a 0600 report on rerun)."""
+    try:
+        with open(path, "rb") as handle:
+            old = handle.read()
+            mode = os.stat(handle.fileno()).st_mode
+    except FileNotFoundError:
+        old, mode = b"", None
+    data = report.encode("utf-8")
+    if old:
+        data += b"\n" + UPGRADE_HISTORY_MARKER.encode("utf-8") + b"\n\n" + old
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    try:
+        # Created private (0600) and given the earlier report's bits before a
+        # byte is written, so the old report is never readable through it.
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                     0o600)
+        with os.fdopen(fd, "wb") as handle:
+            if mode is not None and hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), stat.S_IMODE(mode))
+            elif mode is not None:
+                os.chmod(tmp_path, stat.S_IMODE(mode))
+            elif hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o666 & ~_umask())
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def run(root, derived, force=False):
@@ -1401,9 +1465,7 @@ def run(root, derived, force=False):
               else "upgraded")
     report = _report(status, head, results, notes, root)
     if os.path.isdir(mapdir):
-        with open(os.path.join(mapdir, "UPGRADE.md"), "w",
-                  encoding="utf-8") as handle:
-            handle.write(report)
+        _write_upgrade_report(os.path.join(mapdir, "UPGRADE.md"), report)
 
     return {
         "status": status,
@@ -1503,7 +1565,7 @@ def main(argv=None):
         if notes["unmigrated"]:
             print("NOT migrated (wrong type, left as written): "
                   + ", ".join(notes["unmigrated"]))
-            print("schema was not stamped; fix these and re-run /crew:upgrade")
+            print("schema was not stamped; fix these and re-run /crew:migrate")
     if out["conflicts"]:
         print(f"{len(out['conflicts'])} conflict(s) - see .crew/codemap/UPGRADE.md")
     return 0

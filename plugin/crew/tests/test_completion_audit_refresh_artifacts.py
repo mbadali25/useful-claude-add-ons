@@ -23,7 +23,13 @@ from review_fixtures import git
 from scope_fixtures import FLAVOURS, make_repo, make_ticket, ready, run_hook, stop
 
 ARTIFACTS = [".crew/codemap/crew.md", "docs/diagrams/architecture.mmd",
-             "graphify-out/graph.json", ".claude/rules/crew.md"]
+             "graphify-out/graph.json", ".claude/rules/crew.md",
+             "docs/reference/integrations.md"]
+# T-0036 review: only the integrations FILE is a refresh's output; the rest of
+# docs/reference/ is judged against Touch like any other path.
+REFERENCE_NOT_ARTIFACTS = ["docs/reference/flows/order-sync.md", "docs/reference/api.md",
+                           "docs/reference/integrations.md.bak",
+                           "docs/reference/integrations.md/x.md"]
 
 
 @pytest.fixture(name="repo")
@@ -78,7 +84,8 @@ def test_a_stale_approval_cannot_leave_a_refresh_artifact_changed(repo):
 
 
 @pytest.mark.parametrize("rel", ["docs/diagrams-old/a.mmd", "graphify-outX/graph.json",
-                                 ".claude/rulesX/crew.md", "other/.crew/codemap/crew.md"])
+                                 ".claude/rulesX/crew.md", "other/.crew/codemap/crew.md",
+                                 *REFERENCE_NOT_ARTIFACTS[:3]])
 def test_a_path_that_only_prefix_matches_an_artifact_dir_is_out_of_scope(repo, rel):
     ready(repo)
     _write(repo, rel)

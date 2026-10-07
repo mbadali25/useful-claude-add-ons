@@ -92,6 +92,21 @@ lag. The same comparison for `graphify-out/` and `docs/diagrams/` can never come
 are tracked, so committing one advances HEAD past the sha it records.
 
 
+## From Scope discipline
+
+**Crew docs, and why the check counts only narrative docs** (T-0055, measured 2026-10-04 at
+origin/main `155fe6d8`). Of the last 60 first-parent merges on main
+(`git log origin/main --first-parent --merges -n 60`, each diffed against its first parent), 31
+changed crew code: a path under `plugin/crew/` that is not a `.md` file, a test, a `_test` suite, an
+eval or `plugin.json`. All 31 also changed `plugin/PLUGINS.md` and `CHANGELOG.md` (the version
+bump), and a re-anchor alone changes every code map (2a2d6e07: 9 files). So a check that counted
+those files as "docs touched" would have passed 31 of 31. 4 of the 31 changed no narrative doc
+(#380 1d43e9fe, #328 03d6b788, #317 e2bc4fa8, #302 8d84786d), and none of their PR bodies has a
+`Docs:` line. To re-measure: for each merge in that list, `git diff --name-only <merge>^1 <merge>`,
+classify the paths with `CREW`, `NOT_CODE` and `DOCS` in `scripts/check-crew-docs.py`, and count the
+merges with code and no doc. The count moves with every merge to main, so state the window and the
+sha you measured at.
+
 ## From Landmines
 
 - **`pwsh` is not on Git Bash's PATH here.** Name it absolutely. A bare `pwsh` fails as "command
@@ -128,20 +143,31 @@ are tracked, so committing one advances HEAD past the sha it records.
   hurt what they truncate: `plugin/localgpu/mcp/store.py:646` writes a temp
   file that `:651` then `os.replace`s — the immune construction — and
   `scripts/check-marketplace.py:1330` writes into a `TemporaryDirectory`. Six
-  more were read one by one and none has a raise reachable between the open
+  more were read one by one. Five have no raise reachable between the open
   and the write, each for a reason that is a fact about today: the argument
   is a `str` already in hand
   (`skills/aws-opensearch/scripts/opensearch_client.py:405`, read at `:402`;
   `plugin/gizmoduck/scripts/scanners/checkov.py:82` and
   `plugin/gizmoduck/scripts/scanners/semgrep.py:100`, whose `result.stdout` is
-  coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); a
+  coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); or a
   `str.join` over lines split before the open
   (`plugin/gizmoduck/scripts/gizmoduck.py:152`,
-  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`); or a re-run of a function
-  whose raising calls already ran once in the same run
-  (`skills/doc-builder/scripts/build_gallery.py:206` calls `index_html()` again
-  after `:128`, and only the thumbnail `os.path.isfile` at `:85` differs). That
-  is reading, not execution. The ninth is the one to re-check first:
+  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`). For those five that is
+  reading, not execution. The sixth,
+  `skills/doc-builder/scripts/build_gallery.py:206`, has one under a
+  condition, and it was run in a throwaway copy, not only read: its second
+  `index_html()` call (the first is at `:128`) re-reads the theme and density
+  files from disk after the Chromium renders, so the thumbnail
+  `os.path.isfile` at `:85` is not the only difference. It raises when the
+  `professional` theme or the `compact` density file (the pair
+  `COMPACT_SAMPLE` names at `:48`) has become unparsable (`OverlayInvalid`)
+  or gone (`OverlayNotFound`) by then, or when any theme file has become
+  valid JSON of the wrong shape (`AttributeError`, `TypeError` or
+  `ValueError`, by shape). Any other theme file made unparsable or removed
+  does not raise: `list_themes()` skips it. The raise is inside the `with`
+  opened at `:204`, so `index.html` is left at zero bytes (measured: 10988
+  bytes to 0, with `professional.json` removed). Those are the cases that
+  were run, not a complete list. The ninth is the one to re-check first:
   `plugin/gizmoduck/scripts/routine.py:508` calls `json.dumps` once per finding
   inside the `with` opened at `:506`, so a value `json` cannot encode (a
   `Path`, a `set`) raises there. On the first finding that leaves

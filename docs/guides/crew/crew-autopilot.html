@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>/crew:autopilot</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#88C0D0; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #4C566A; color:#88C0D0; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#88C0D0; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#D8DEE9; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#D8DEE9; font-size:9.5pt; }
+.warn { color:#EBCB8B; }
+.fail { color:#FFB3B8; }
+a { color:#88C0D0; }
+.footer { color:#D8DEE9; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #4C566A; padding-top:8pt; }
+.box { background:#3B4252; border:1px solid #88C0D0;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#3B4252; border-left:4px solid #88C0D0;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #6B7A94; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#434C5E; color:#ECEFF4; font-weight:700;
+             letter-spacing:0.02em; padding:8px 10px; }
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
+td { background:#2E3440; color:#ECEFF4; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#3B4252; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #6B7A94; padding:7px 10px; font-size:12px;
+             background:#2E3440; color:#ECEFF4; }
+table.meta td.k { background:#3B4252; font-weight:600; width:17%; }
+
+.lede { background:#3B4252; border-left:4px solid #88C0D0;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#4A2C33; border-left:4px solid #A3303A;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#FFD7DB; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#3B4252; border:1px solid #6B7A94; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#88C0D0; }
+div.l { font-size:11px; color:#D8DEE9; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
+</style>
+<meta name="doc-builder-page" content="#2E3440">
+</head>
+<body bgcolor="#2E3440">
+<h1 id="crewautopilot">/crew:autopilot</h1>
+<p>This guide is task-first. Each section answers one question you will have while autopilot drives a
+ticket: how to switch it on, how to hand it work, what its output means, and why it stopped. Every
+sample of script output below was printed by the script itself in a throwaway repository; the
+paths in them are shortened to <code>/path/to/repo</code>. Features that have not landed yet are listed once,
+under "What is coming", with their ticket ids and no invented output.</p>
+<h2 id="what-autopilot-is">What Autopilot Is</h2>
+<ul>
+<li>It drives <strong>one ticket</strong> through spec, plan, approval, implement, refresh, review, done and ship.</li>
+<li>It follows each phase's own command (<code>/crew:spec</code>, <code>/crew:plan</code>, <code>/crew:implement</code>, ...) in the
+  same session, exactly as if you had typed it.</li>
+<li>It does not choose the order. Every turn it asks <code>crew_autopilot.py next</code>, which reads the
+  ticket's files on disk and names the next phase, so a skipped phase is visible.</li>
+<li>It stops wherever a person is needed: a direction to approve, review findings with a BLOCK, an
+  action on the never-without-a-yes list, or anything it cannot tell.</li>
+<li>It is <strong>off by default</strong>. Nothing happens until you arm it.</li>
+</ul>
+<h2 id="arm-it">Arm It</h2>
+<p>Autopilot reads <code>.crew/config.json</code> in the repository. Only the exact string <code>plan</code> arms it:</p>
+<pre><code class="language-json">{
+  &quot;autopilot&quot;: { &quot;mode&quot;: &quot;plan&quot;, &quot;maxPhases&quot;: 12 }
+}
+</code></pre>
+<p><code>maxPhases</code> is how many phases one invocation may run before it stops and reports (default 12).
+Check what is in force:</p>
+<pre><code class="language-bash">python3 -B plugin/crew/hooks/scripts/crew_autopilot.py settings --root .
+</code></pre>
+<p>In a repository where crew is installed as a plugin, the script is under the plugin's
+<code>hooks/scripts/</code> directory; <code>/crew:autopilot</code> runs it for you. A fresh repository with only
+<code>"mode": "plan"</code> set prints:</p>
+<pre><code class="language-text">mode=plan maxPhases=12 deploy=none maxAutoReplans=0
+approval=risk questions=risk
+sleep=off schedule=none approval=- questions=- source=schedule
+</code></pre>
+<ul>
+<li><strong>Line 1</strong> is what autopilot may do: armed (<code>mode=plan</code>), at most 12 phases per run, no unattended
+  deploy (<code>deploy=none</code>), no automatic replanning after a review runs out of rounds
+  (<code>maxAutoReplans=0</code>).</li>
+<li><strong>Line 2</strong> is who decides an approval and an open question: <code>risk</code> for both (see "Approvals").</li>
+<li><strong>Line 3</strong> is the sleep schedule: off, so the day values on line 2 apply all the time.</li>
+<li>Any <code>warning:</code> line below them names a setting crew read as something else, and why.</li>
+</ul>
+<h2 id="hand-it-work">Hand It Work</h2>
+<table>
+<thead>
+<tr>
+<th>You type</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/crew:autopilot</code></td>
+<td>picks the ticket (below) and drives it</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot &lt;id&gt;</code> or <code>/crew:autopilot run &lt;id&gt;</code></td>
+<td>drives that ticket</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot status</code></td>
+<td>reports where the ticket stands; runs nothing</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Which ticket, when you name none.</strong> In this order: the handoff's <code>resume:</code> line (only when its
+<code>branch:</code> and <code>head:</code> match this checkout), then this worktree's active ticket, then
+<code>.work/INDEX.md</code> only when exactly one ticket is open. Autopilot prints where the ticket came from
+and every source it fell through. It never picks from a "next action" list.</p>
+<p><strong>Work that has no ticket yet.</strong> Write the request as a direction file under <code>.work/autopilot/</code> and
+mint a ticket from it:</p>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_ticket.py assign --root . --direction-file .work/autopilot/csv-export.md
+</code></pre>
+<p><code>crew_ticket.py assign</code> refuses, minting nothing, when the file is not under <code>.work/autopilot/</code>,
+when autopilot is not armed, or when the direction is missing a section. It writes the ticket as
+<code>ready</code> with the direction you gave; approval still goes through the policy below. The
+<code>/crew:autopilot assign</code> command that does this from plain text has not landed (see "What is
+coming").</p>
+<h2 id="read-its-output">Read Its Output</h2>
+<h3 id="crewautopilot-status"><code>/crew:autopilot Status</code></h3>
+<p><code>status</code> is read-only, armed or not. For a ticket whose direction is approved and which has no
+spec yet:</p>
+<pre><code class="language-text">mode: plan, maxPhases 12
+ticket: ABC-510 (from .work/INDEX.md)
+phase: spec - next: /crew:spec ABC-510
+waiting on: autopilot - run /crew:autopilot to continue
+review: EMPTY, 2 of 2 rounds left
+resume: no .work/HANDOFF.md
+fell through: no .work/HANDOFF.md
+fell through: no active-ticket entry for this worktree
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mode:</code></td>
+<td>armed or not, and the phase budget</td>
+</tr>
+<tr>
+<td><code>ticket:</code></td>
+<td>which ticket, and where it was found</td>
+</tr>
+<tr>
+<td><code>phase:</code></td>
+<td>the next phase and its command, or <code>stopped</code> with the reason</td>
+</tr>
+<tr>
+<td><code>waiting on:</code></td>
+<td>who has to act: <code>autopilot</code> (run it again), or <code>owner</code> (you) and what to type</td>
+</tr>
+<tr>
+<td><code>review:</code></td>
+<td>the review ledger: no round yet, and how many rounds are left</td>
+</tr>
+<tr>
+<td><code>resume:</code></td>
+<td>what the handoff file says, if there is one</td>
+</tr>
+<tr>
+<td><code>fell through:</code></td>
+<td>each ticket source that did not answer, in order</td>
+</tr>
+</tbody>
+</table>
+<p><code>unknown</code> anywhere means crew could not tell, never "nothing to do". With the plan written but not
+approved, the same ticket reads:</p>
+<pre><code class="language-text">phase: approve, stopped - ABC-510 has no approved plan. The human types /crew:approve ABC-510. status reads no approval policy: crew_autopilot.py settings shows whether autopilot.approval lets /crew:autopilot approve it instead
+waiting on: owner - types /crew:approve ABC-510
+</code></pre>
+<h3 id="the-next-line">The <code>Next</code> Line</h3>
+<p>Every turn autopilot runs <code>crew_autopilot.py next --root . --ticket &lt;id&gt;</code> and gets one line:</p>
+<pre><code class="language-text">phase=spec stop=0 command=/crew:spec ABC-510 reason=no spec.md
+</code></pre>
+<ul>
+<li><code>phase</code> - the phase it names from disk.</li>
+<li><code>stop</code> - <code>0</code>: run <code>command</code> now. <code>1</code>: stop and tell you <code>reason</code> and the command you type.</li>
+<li><code>command</code> - the phase command, or empty when only you can act.</li>
+<li><code>reason</code> - why, in words.</li>
+</ul>
+<p>No output, a traceback or a non-zero exit is a stop, never a guess.</p>
+<h3 id="autopilot-is-armed-its-first-phase-is-spec">"Autopilot Is Armed ... Its First Phase Is Spec"</h3>
+<p>When you start autopilot on a ticket whose direction you approved, the session reports something
+like this (it is the session's report, not a line a script prints):</p>
+<blockquote>
+<p>Autopilot is armed (mode=plan, maxPhases 12) and has activated ABC-510. Its first phase is spec:
+/crew:spec ABC-510</p>
+</blockquote>
+<p>That is <strong>not a stop</strong>. With an approved direction and no <code>spec.md</code>, <code>next</code> answers
+<code>phase=spec stop=0</code>, so autopilot runs <code>/crew:spec ABC-510</code> straight away. The two phases where it
+stops before any work are <code>brainstorm</code> (no direction yet) and <code>direction-approval</code> (a direction
+that waits for your yes). For the same ticket while its INDEX row still says <code>direction</code>:</p>
+<pre><code class="language-text">phase=direction-approval stop=1 command= reason=INDEX.md status is `direction`: direction.md waits for the owner's yes in /crew:brainstorm
+</code></pre>
+<h2 id="approvals">Approvals</h2>
+<p><strong>One ticket.</strong> Type <code>/crew:approve ABC-510</code>. The approval records a hash of <code>spec.md</code> and
+<code>plan.md</code>; any later edit to either, other than the header's status value, makes it <strong>stale</strong>, and
+autopilot stops at <code>approve</code> again until you re-approve.</p>
+<p><strong>Several tickets at once.</strong> <code>/crew:approve T-4 T-5</code>, or a range <code>/crew:approve T-0010..T-0012</code>.
+crew shows a PENDING list with each ticket's plan and spec hash and records nothing until you type
+<code>/crew:approve --confirm</code> as your next prompt.</p>
+<p><strong>Letting autopilot approve.</strong> <code>autopilot.approval</code> and <code>autopilot.questions</code> each take one of three
+policies:</p>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Approval of a plan</th>
+<th>An open question</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>human</code></td>
+<td>always stops for you</td>
+<td>always stops for you</td>
+</tr>
+<tr>
+<td><code>self</code></td>
+<td>autopilot approves</td>
+<td>autopilot takes the recommended option</td>
+</tr>
+<tr>
+<td><code>risk</code> (default)</td>
+<td>autopilot approves only a spec whose header says <code>risk: low</code></td>
+<td>the same rule, by the ticket's risk</td>
+</tr>
+</tbody>
+</table>
+<p>A missing or unreadable risk counts as <code>high</code>. Every <code>autopilot.approval</code> setting also needs
+<code>scope.allowCliApproval: true</code> in <code>.crew/config.json</code>, which defaults to <code>false</code>, so out of the box
+nothing self-approves (<code>autopilot.questions</code> does not need it). Refused:</p>
+<pre><code class="language-text">refused: scope.allowCliApproval is not exactly true in .crew/config.json, so no approval but the human's counts; the human types /crew:approve ABC-510
+</code></pre>
+<p>Allowed (<code>"approval": "self"</code> and <code>"scope": {"allowCliApproval": true}</code>):</p>
+<pre><code class="language-text">self-approved ABC-510 under approval=self, risk=low
+phase=implement stop=0 command=/crew:implement ABC-510 reason=approved, no review round under this plan
+</code></pre>
+<p>Autopilot reports every <code>self-approved</code> line by name in its final report. A ticket minted by
+<code>crew_ticket.py assign</code> follows the same policy as any other.</p>
+<p><strong>Overnight.</strong> <code>autopilot.sleep.schedule</code> (<code>"HH:MM-HH:MM"</code>, local time, default off) names one
+nightly window in which <code>autopilot.sleep.approval</code> and <code>autopilot.sleep.questions</code> replace the two
+day values, so an overnight run can approve where the day setting would stop. <code>/crew:autopilot
+sleep</code> starts sleep mode now and <code>/crew:autopilot wake</code> ends it; both need
+<code>scope.allowCliApproval: true</code>, and until L-1504 a manual sleep only ever tightens a policy. A plan
+approved asleep stops standing when the window ends if the day policy would not have approved it.
+Without the setting:</p>
+<pre><code class="language-text">refused: scope.allowCliApproval is not exactly true in .crew/config.json, so only the schedule puts autopilot to sleep
+</code></pre>
+<h2 id="what-it-stops-for">What It Stops For</h2>
+<p><strong>Always a person.</strong> <code>brainstorm</code> (no approved direction) and <code>review-acceptance</code>: review findings
+with any BLOCK, or a round the ledger's guarded accept refuses. A BLOCK is never accepted by
+autopilot, at any setting. The one way past a BLOCK without you is a new plan, and it is off by
+default: see "Review" below.</p>
+<p><strong>Enforced by <code>next</code> from disk, every turn.</strong> <code>needs-replan</code>, <code>needs-replan-or-revert</code>,
+<code>unknown-ledger</code>, <code>failed-validate</code>, <code>direction-unknown</code>, <code>index-disagreement</code>,
+<code>unsettled-artifact</code>, <code>ticket-mismatch</code>, <code>max-phases</code>, <code>no-progress</code>, <code>auto-replan-cap</code> and
+<code>drift</code>, plus, when it runs with <code>--runner</code>, <code>in-flight</code> (another runner holds the ticket here, or
+its marker is stale or unreadable) and <code>handover-elsewhere</code> (a live holder drives it from another
+worktree). <code>crew_autopilot.py stops --root .</code> lists them from the code.</p>
+<p><strong>Never without an explicit yes.</strong> Offboarding a role (<code>offboard-role</code>), deleting a code map or
+diagram (<code>delete-map</code>), rewriting the repository's crew metrics file (<code>rewrite-metrics</code>), and any
+force-push, branch delete, history rewrite or removal of a tracked file (<code>git-destruction</code>), and
+clearing another runner's in-flight marker (<code>clear-inflight</code>).</p>
+<p><strong>Deploys.</strong> <code>autopilot.deploy</code> is <code>none</code> (default), <code>nonprod</code> or <code>all</code>. Production needs <code>all</code>
+<strong>and</strong> <code>environments.prodUnattended: true</code> in both config layers, with the cloud guard in <code>block</code>.
+<code>crew_autopilot.py deploy-allowed</code> answers for one environment:</p>
+<pre><code class="language-text">verdict=allow env=staging class=nonProd reason=autopilot.deploy=nonprod allows nonProd
+verdict=ask env=prod class=prod reason=autopilot.deploy is nonprod; production needs all
+</code></pre>
+<p>Nothing in this crew version dispatches a deploy itself; <code>settings</code> warns you of that when the key
+is not <code>none</code>.</p>
+<p><strong>Being told it stopped.</strong> With crew's notifications configured (Telegram or Teams, in the
+machine-global config), a ping is sent when Claude Code stops and waits on you, led by a subject
+such as <code>Question</code> and naming the ticket and what it waits on; there is no ping per phase.</p>
+<p><strong>Review.</strong> A review phase ends at its verdict: autopilot reports the BLOCK and FIX lines verbatim
+and goes back to <code>next</code>. Fixing, accepting and replying on the PR are yours, with two exceptions.
+After the ledger says <code>review: auto-accept: eligible</code> on a final round with no BLOCK, autopilot runs
+<code>review_ledger.py --auto-accept</code>, the guarded accept that refuses anything it cannot read cleanly.
+And with <code>autopilot.maxAutoReplans</code> at 1 or more (default 0, off), a final round with a BLOCK that
+has no review round left can be rejected by autopilot itself (<code>crew_autopilot.py auto-reject</code>,
+which prints an <code>auto-rejected</code> line and every BLOCK and FIX line): <code>/crew:plan</code> then writes a
+successor plan that quotes each of them, and the approve phase decides it under
+<code>autopilot.approval</code>. The BLOCK is never accepted; once <code>maxAutoReplans</code> successor plans are on the
+ledger, autopilot stops at <code>auto-replan-cap</code>.</p>
+<p><strong>Ship.</strong> After <code>/crew:done</code>, <code>crew_autopilot.py ship</code> pushes the branch (never force), opens the PR,
+and under <code>autopilot.ship: merge</code> (the default; <code>pr</code> stops at the open PR) merges it with a merge
+commit only when every required check passes and the review receipt still stands. A <code>high</code>-risk
+ticket never merges on same-family reviews. It prints
+<code>action=... stop=... pr=... reason=...</code>.</p>
+<h2 id="resume-after-clear">Resume After /clear</h2>
+<p>When context runs low, autopilot writes a handoff with a resume line:</p>
+<pre><code class="language-text">resume: /crew:autopilot ABC-510
+</code></pre>
+<p>After <code>/clear</code> (or in a new session), type <code>/crew:autopilot</code> with no id: the handoff's <code>resume:</code>
+line names the ticket, but only while its <code>branch:</code> and <code>head:</code> match this checkout. A handoff from
+another branch or an older commit falls through to the active ticket, and <code>status</code> says so on a
+<code>fell through:</code> line. With auto-resume configured, crew can also type that resume command into its
+own session for you after the context cycle.</p>
+<p><strong>Plain text.</strong> With <code>route.enabled: true</code> in <code>.crew/config.json</code> (off by default), a whole prompt
+of <code>continue</code>, <code>keep going</code> or <code>carry on</code> routes to whatever <code>next</code> names for the ticket, and
+<code>autopilot status</code> or <code>what is autopilot doing</code> routes to <code>/crew:autopilot status</code>, and
+<code>heading to bed</code> or <code>I'm back</code> to <code>/crew:autopilot sleep</code> or <code>wake</code>. A <code>continue</code>
+whose next step is an approval asks instead: no phrase ever approves.</p>
+<h2 id="command-table">Command Table</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Status</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/crew:autopilot</code>, <code>/crew:autopilot &lt;id&gt;</code>, <code>/crew:autopilot run &lt;id&gt;</code></td>
+<td>landed</td>
+<td>drive one ticket</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot status</code></td>
+<td>landed</td>
+<td>report, read-only</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot focus &lt;id&gt;</code>, <code>focus</code>, <code>focus off</code></td>
+<td>landed</td>
+<td>lock autopilot onto one ticket, show it, release it</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot sleep</code>, <code>/crew:autopilot wake</code></td>
+<td>landed</td>
+<td>start or end sleep mode now (needs <code>scope.allowCliApproval: true</code>)</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot assign</code></td>
+<td>arrives with L-0611 (the router's message still names T-0019)</td>
+<td>mint a ticket from plain text</td>
+</tr>
+<tr>
+<td><code>/crew:autopilot goal</code></td>
+<td>arrives with T-0012</td>
+<td>work towards a goal across tickets</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py settings</code></td>
+<td>landed</td>
+<td>the settings in force</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py status</code></td>
+<td>landed</td>
+<td>the status lines above</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py next</code></td>
+<td>landed</td>
+<td>the one <code>next</code> line</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py resume</code></td>
+<td>landed</td>
+<td>which ticket, and from where</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py route</code></td>
+<td>landed</td>
+<td>how the command's arguments are read</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py approve</code></td>
+<td>landed</td>
+<td>self-approval under the policy, or <code>refused:</code></td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py questions-check</code></td>
+<td>landed</td>
+<td>checks a researched answer before it is taken</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py stops</code></td>
+<td>landed</td>
+<td>every stop, from the code</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py deploy-allowed</code></td>
+<td>landed</td>
+<td>allow, ask or refuse for one environment</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py ship</code></td>
+<td>landed</td>
+<td>push, PR and guarded merge after <code>/crew:done</code></td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py auto-reject</code></td>
+<td>landed</td>
+<td>under <code>maxAutoReplans</code>, reject an out-of-rounds BLOCK round for a successor plan</td>
+</tr>
+<tr>
+<td><code>crew_autopilot.py focus</code>, <code>sleep</code>, <code>wake</code></td>
+<td>landed</td>
+<td>the writers behind the three commands above</td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-is-coming">What Is Coming</h2>
+<p>Not landed in this crew version. No output is shown for any of them; each ticket adds its own
+section here when it lands.</p>
+<table>
+<thead>
+<tr>
+<th>Example</th>
+<th>Ticket</th>
+<th>Phrase</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Approving a goal's split, <code>goal:&lt;slug&gt;</code></td>
+<td>T-0012</td>
+<td><code>goal:&lt;slug&gt;</code></td>
+</tr>
+<tr>
+<td><code>/crew:autopilot assign</code>, from plain text</td>
+<td>L-0611</td>
+<td><code>assign</code></td>
+</tr>
+<tr>
+<td>A goal across several tickets</td>
+<td>T-0012, L-0541</td>
+<td><code>goal</code></td>
+</tr>
+<tr>
+<td>A wave: tickets run in parallel</td>
+<td>T-0029</td>
+<td><code>wave</code></td>
+</tr>
+<tr>
+<td>Autopilot's own split into PR slices</td>
+<td>T-0052, T-0058, T-0059</td>
+<td><code>split</code></td>
+</tr>
+<tr>
+<td>A goal that survives /clear, a branch switch and a crash (<code>--goal</code>)</td>
+<td>T-0056</td>
+<td><code>--goal</code></td>
+</tr>
+<tr>
+<td>The full goal walkthrough</td>
+<td>T-0012, L-0541</td>
+<td><code>walkthrough</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="when-something-looks-wrong">When Something Looks Wrong</h2>
+<ul>
+<li><strong>"It stopped at spec, but I wanted it to keep going."</strong> It did not stop there: <code>phase=spec
+  stop=0</code> runs. Read the <code>next</code> line; a real stop has <code>stop=1</code> and a reason.</li>
+<li><strong>"It will not approve my plan."</strong> <code>scope.allowCliApproval</code> is not <code>true</code>, or the policy is
+  <code>human</code>, or the ticket's risk is above what <code>risk</code> allows. The <code>refused:</code> line says which.</li>
+<li><strong>"It keeps stopping at approve after I edited the spec."</strong> The approval went stale. Re-approve.</li>
+<li><strong>"It stopped at review-acceptance."</strong> A BLOCK, or a round the guarded accept refused. That is
+  yours to fix or accept.</li>
+<li><strong>"<code>unknown</code> in status."</strong> crew could not read something it needed; the same line says what.</li>
+<li><strong>Stale installs, hook noise, review loops and turning things off</strong> are in the troubleshooting
+  guide, "crew - Troubleshooting".</li>
+</ul>
+</body>
+</html>

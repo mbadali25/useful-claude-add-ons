@@ -11,8 +11,8 @@ gets trusted.
 ## 1. Build or refresh the graph first
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/SKILL.md`'s **Build** section
-— `graphify . --no-viz --code-only`, both flags required — if no graph is
-present, or if it is present but not current. If `graphify` is absent, that
+— `graphify . --no-viz --code-only`, both flags required, after its denylist check (`crew_graph_ignore.py --check`) passes — if no
+graph is present, or if it is present but not current. A check that exits 1 or 2 stops here: report what it printed. If `graphify` is absent, that
 skill's **Detect** section governs: report it and stop; do not install
 anything without asking.
 
@@ -193,15 +193,17 @@ repo also has:
    this live"; the reference answers "what can this system do, and how do I call
    it". Those are different questions and the second does not fall out of the
    first. Endpoints, scheduled jobs, queue consumers, CLI commands, feature
-   flags, integrations — each anchored to a file and line.
+   flags, integrations (`--integrations`) — each anchored to a file and line.
 3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
 4. `e2e/` specs if this repo has a UI — write them in this session.
 5. `context.autoClear` configured — run `crew_autoclear_setup.py plan-windows-default` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`; the same helper `/crew:init`'s Phase 1 uses, so a repo onboarded standalone gets the identical question). `status: unreadable` (parse failure) means say so and stop, fix by hand first. `status: already-configured` means stop, nothing to ask — a retained pre-1.0 `method: "windows"` is proposed for conversion instead, never already-configured. Otherwise, on native Windows propose `method: "notify"` and write it only on yes; elsewhere describe the tmux path and write nothing. Enabling it at all, and `sendkeys`, each need their own separate explicit yes.
 
-Report which of the five are missing when you finish. A codemap on its own is
-the least useful of the six artifacts.
+6. `.gitignore` right for the languages here — run `crew_gitignore.py apply --root .` (same scripts dir). It adds only inside its own managed block at the top of the file, never edits a human line or the `.crew` policy block, and applies without asking (owner decision, T-0039). Show its diff and report verbatim. `tracked` lines are named, never untracked; `needs-owner` (exit 3, a tracked secret) goes to the owner; exit 4 is unknown; exit 5 inside a ticket whose Touch lacks `.gitignore` is reported, not worked around — it lands at the next run outside a ticket.
+
+Report which of the six are missing when you finish. A codemap on its own is
+the least useful of the seven artifacts.
 
 ## `--refresh <subsystem>`
 
@@ -209,7 +211,7 @@ Re-map one area after big changes, without re-running the whole thing on a
 schedule — that is the cost onboarding was avoiding.
 
 This follows `${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/reconcile.md` — the
-same path `/crew:upgrade` uses, not a second implementation. Rebuild the graph
+same `crew_upgrade.py` path `/crew:migrate` uses for config, not a second one. Rebuild the graph
 if it is stale (step 1), derive that one subsystem's `DERIVE` facts (step 3),
 write them as a one-entry JSON file, then:
 
@@ -227,15 +229,15 @@ restate the number here; this line said `2` long after the code had left it.
 `--force` is not free on a repo that was never behind schema. Say these
 consequences before running it, not after:
 
-- `.crew/codemap/UPGRADE.md` is overwritten unconditionally, including its
+- `.crew/codemap/UPGRADE.md` gets a new report on top, with its
   `schema <from> -> <current>` header — which reads as a migration on a repo
   that was already current, since `--force` runs the whole thing anyway.
   (This line used to quote the header as the literal `from schema: 1 -> 2`.
   It is interpolated from `notes["schemaFrom"]` and `crew_state.SCHEMA_CURRENT`,
-  so the numbers move; do not restate them.) If a previous `/crew:upgrade` left contradictions there that
-  nobody has verified yet, this run erases that list. Read the existing
-  `UPGRADE.md` before running `--refresh` if one is present, and fold its
-  unresolved contradictions into what you report afterward.
+  so the numbers move; do not restate them.) Earlier runs stay below a marker line, newest first, and are
+  never rewritten, so an unverified contradictions list survives; only the newest run's annotated lines
+  are carried into the new report. Read the top run of the existing `UPGRADE.md` before `--refresh`, and
+  fold its unresolved contradictions into what you report afterward.
 - `.crew/codemap.v1.bak/` is (re)confirmed if absent — on a repo that was
   never at v1, this creates a "v1 backup" that actually holds current-schema
   notes. Harmless, but say it happened; a stray backup with a misleading name
@@ -248,4 +250,5 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-`/crew:upgrade` does — surfaced, not resolved. Then run step 6.
+the upgrade report does — surfaced, not resolved. Then run step 6. Also run item 6 above
+(`crew_gitignore.py apply`): a ticket that added a language or manifest is when its ignore patterns go missing.

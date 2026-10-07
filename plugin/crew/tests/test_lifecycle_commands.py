@@ -28,7 +28,7 @@ SKILLS = os.path.join(CREW, "skills")
 MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
-                "done.md", "fix.md", "approve.md", "autopilot.md")
+                "done.md", "fix.md", "approve.md", "autopilot.md", "help.md")
 NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute", "crew-standards")
 
 
@@ -80,8 +80,11 @@ def test_skill_frontmatter_and_budget(name):
 # that already exists in review.md (`--ticket "$TICKET" --check-receipt`).
 EXPECTED_CLI = {
     "plan.md": ("`/crew:approve $1`",),
-    "implement.md": ("crew_ticket.py validate --ticket $1",
+    "implement.md": ("crew_ticket.py status --ticket $1",
+                      "crew_ticket.py validate --ticket $1",
                       "scope_base.py --root . --record $1"),
+    "help.md": ("crew_help.py\" where --root .",
+                "crew_help.py\" about --root . -- '$ARGUMENTS'"),
     "done.md": ('review_ledger.py --ticket "$1" --check-receipt',
                 'completion_audit.py --check --ticket "$1"',
                 'crew_metrics.py record --ticket "$1"'),
@@ -92,8 +95,13 @@ EXPECTED_CLI = {
                      "crew_autopilot.py next --root .",
                      "crew_autopilot.py route --root .",
                      "crew_autopilot.py status --root .",
+                     "crew_autopilot.py goal-propose --root .",
+                     "crew_autopilot.py goal-approve --root .",
+                     "route --root . --first goal",
                      "crew_inflight.py claim --root .",
-                     "crew_inflight.py release --root ."),
+                     "crew_inflight.py release --root .",
+                     "crew_notify.py run-stop --root .",
+                     "crew_autopilot.py split --root ."),
     "promote.md": ("bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy",
                    "--outcome <pass|fail>`"),
 }
@@ -117,6 +125,21 @@ def test_command_names_exact_cli(name, snippets):
 AUTOPILOT_MAX_LINES = 117
 
 
+# T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
+WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
+            "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only",
+            # Group review r2 (rush g0): a wave starts only after T-0030's coord check.
+            "section 2's first paragraph (the `coord` check, T-0030)")
+
+
+def test_autopilot_md_names_wave_cli_strings():
+    text = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [snippet for snippet in WAVE_CLI if snippet not in text] == []
+
+
 def test_autopilot_command_at_most_117_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 
@@ -134,19 +157,36 @@ def test_autopilot_command_names_the_sleep_and_wake_calls():
 
 
 IMPLEMENT_APPROVAL_TEXT = (
-    "This command refuses to edit anything unless that call reports the plan\n"
-    "approved."
+    "This command refuses to edit anything unless `status` reports the plan\n"
+    "approved**"
 )
 
 
 def _implement_refuses_without_approval(text):
     return (IMPLEMENT_APPROVAL_TEXT in text
-            and "crew_ticket.py validate --ticket $1" in text)
+            and "crew_ticket.py status --ticket $1" in text)
 
 
 def test_implement_refuses_without_approval():
     text = _read(os.path.join(COMMANDS, "implement.md"))
     assert _implement_refuses_without_approval(text)
+
+
+def _step_zero(text):
+    return text.split("## 0.", 1)[1].split("\n## 1.", 1)[0]
+
+
+def _implement_names_the_fix(text):
+    """T-0025: step 0's refusal names the one command that fixes it -- the
+    user types `/crew:approve $1`, or `/crew:plan $1` -- and never the old
+    `/crew:plan $1 --approve`, which records nothing."""
+    step = _step_zero(text)
+    return ("the user types `/crew:approve $1`" in step and "`/crew:plan $1`" in step
+            and "--approve" not in step)
+
+
+def test_implement_refusal_names_the_fix():
+    assert _implement_names_the_fix(_read(os.path.join(COMMANDS, "implement.md")))
 
 
 def test_implement_names_every_checklist_exit_1_prefix():
@@ -240,6 +280,11 @@ def _sabotage(path, target, checker, expected_before=True):
 def test_sabotage_drop_the_approval_check_from_implement_goes_red():
     path = os.path.join(COMMANDS, "implement.md")
     _sabotage(path, IMPLEMENT_APPROVAL_TEXT, _implement_refuses_without_approval)
+
+
+def test_sabotage_drop_the_approve_fix_from_implement_goes_red():
+    path = os.path.join(COMMANDS, "implement.md")
+    _sabotage(path, "the user types `/crew:approve $1`", _implement_names_the_fix)
 
 
 @pytest.mark.parametrize("missing", DONE_CHECKS)
@@ -381,6 +426,23 @@ def test_a_failed_create_stops_before_the_folder(name):
     assert (create != -1, stop != -1, folder != -1, create < stop < folder) == (True, True, True, True)
 
 
+def test_fix_mints_through_mcp_under_jira_and_sdp():
+    """T-0071 #5: fix.md step 1 read the tracker kind nowhere, minted a local
+    T-#### under Jira and SDP, and stopped on `create`'s delegated exit 3. The
+    kind is resolved first, and the MCP create and its key come before any
+    write under `.work/tickets/`."""
+    text = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+    step = text[text.find("## 1. Direction"):text.find("## 2.")]
+
+    resolve = step.find(f"{_TRACKER} resolve --root .")
+    jira = step.find("**Jira and ServiceDesk Plus**")
+    first_write = step.find("`.work/tickets/")
+
+    assert (resolve != -1, jira != -1, -1 < resolve < first_write, "through MCP" in step,
+            "use its key as `<id>`" in step, "`.work/tickets/<KEY>/`" in step,
+            "not a failure to stop on" in step, "`could not tell`" in step) == (True,) * 8
+
+
 # T-0085: the build-time standards reach the commands that apply them. Exact
 # strings, matched on whitespace-normalised text, and one ordering control: the
 # stamp sits before the review, so a self-check moved after `/crew:review $1`
@@ -437,6 +499,30 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+# --- ticket ids beyond T- (L-0509) --------------------------------------------------
+
+PREFIX_RULE = "with the prefix this box mints (`T-` when it has minted none"
+
+
+def test_no_command_hard_codes_the_t_prefix():
+    found = [name for name in sorted(os.listdir(COMMANDS)) if name.endswith(".md")
+             and re.search(r"T-#{4}|T-N{4}", _read(os.path.join(COMMANDS, name)))]
+
+    assert found == []
+
+
+def test_brainstorm_and_fix_name_the_box_prefix_rule():
+    brainstorm = " ".join(_read(os.path.join(COMMANDS, "brainstorm.md")).split())
+    fix = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+
+    assert (PREFIX_RULE in brainstorm, "above every id in `.work/INDEX.md`" in brainstorm,
+            "`/crew:brainstorm` step 1" in fix and "prefix" in fix) == (True, True, True)
+
+
+def test_status_names_the_archive():
+    assert ".work/tickets/Complete/" in _read(os.path.join(COMMANDS, "status.md"))
 
 
 def test_review_names_the_train_exit():

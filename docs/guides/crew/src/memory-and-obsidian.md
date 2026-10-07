@@ -104,6 +104,7 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 | After a plugin update | Re-run `$VO schedule --os <yours>` and reinstall the unit it prints. The unit names the plugin's versioned folder, which the update replaces. |
 | When a vault moves or you add one | `$VO adopt` to review roles. |
 | When recall seems blind | `$VO recall --query "<words you expect>"` and check which vaults it names. |
+| When another project's notes outrank this repo's | crew sends the main checkout's folder name as `--project`; if your notes' `project:` values differ, list them in the repo's `memory.recall.projects`. |
 | When the bridge misbehaves | `/obsidian-vault:doctor`, then `/obsidian-vault:repair`. The bridge is optional; capture, recall, import and gardening all work on the files without it. |
 | When the code changed a lot | `/crew:onboard --refresh <subsystem>` for the repository's own code map. That map lives in the repository, not the vault. |
 
@@ -275,17 +276,29 @@ board at the vault root, and a card another repo owns is refused.
 | `done` | Done, checked, below `**Complete**` |
 | `cancelled`, `superseded` (closed; leaving one needs `--reopen`) | Done, checked |
 
+Any other word in an INDEX status cell maps to no lane, and crew will not
+guess one. Moving to it is refused, and reading the ticket says the word is
+not a status crew knows rather than calling the card misplaced. For a word
+that was retired - `approved`, `merged`, `closed`, `new`, `parked` - it also
+names the word to write instead (`spec`, `done`, `done`, `direction`,
+`needs-owner`). Fix the INDEX cell by hand; crew never rewrites it for you.
+
 **Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
 `<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your
-repository's cards from another's. The value is your origin URL, lowercased
-with `.git` dropped, or the git directory's path when there is no origin. An
-ssh origin keeps its username (`git@github.com:team/app`); other URLs lose any
-user or token; a `file://` origin is decoded to its path.
+repository's cards from another's. The value is your origin URL with `.git`
+dropped and only the scheme and host case-folded, or the git directory's path
+when there is no origin. The user and the path keep their case, so
+`github.com:Team/App` and `github.com:team/app` are two repositories. An ssh
+origin keeps its username (`git@github.com:Team/app`); other URLs lose any user
+or token; a `file://` origin is decoded to its path, with `localhost` (or, on
+POSIX, any host) dropped. A quote around the value counts only as a matched pair.
 
 **Claiming an older note.** A card whose note has no `repo-id:` (a board from
 crew 0.20, or a card you added by hand) is refused until you add one. The
 refusal names the exact line: add `- repo-id: <the id it prints>` to the note
-and run the command again. Crew never rewrites a note for you.
+and run the command again. Crew never rewrites a note for you. A note written by
+an older crew for an origin with capitals in it holds the id lowercased; crew
+refuses it as another repo's and names the line to change it to.
 
 The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.

@@ -1,7 +1,11 @@
 """Tests for codemap/graph reconciliation and the v1 -> v2 upgrade."""
 import json
+import os
 import pathlib
+import stat
 import subprocess
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -1441,12 +1445,175 @@ def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
     )
 
 
-def test_upgrade_md_documents_the_current_migration():
-    """`commands/upgrade.md` section 5 says what each schema hop does. Carried
-    from test_pm_brief.py's agreement test when crew 1.0 deleted the brief
-    that named the hop: a SCHEMA_CURRENT bump that forgets its section-5
-    entry still has to fail somewhere."""
+def test_upgrade_report_documents_the_current_migration():
+    """`skills/crew-setup/upgrade-report.md` says what each schema hop does --
+    it took over `commands/upgrade.md` section 5 when T-0038 folded
+    `/crew:upgrade` into `/crew:migrate`. Carried from test_pm_brief.py's
+    agreement test when crew 1.0 deleted the brief that named the hop: a
+    SCHEMA_CURRENT bump that forgets its entry still has to fail somewhere."""
     current = crew_state.SCHEMA_CURRENT
-    doc = (pathlib.Path(__file__).resolve().parents[1] / "commands" / "upgrade.md"
-           ).read_text(encoding="utf-8")
+    doc = (pathlib.Path(__file__).resolve().parents[1] / "skills" / "crew-setup"
+           / "upgrade-report.md").read_text(encoding="utf-8")
     assert f"**Schema {current - 1} → {current}**" in doc
+
+
+# --- T-0065 item 8: UPGRADE.md keeps every earlier run below the new one -------
+
+MARKER = ("<!-- crew_upgrade: earlier runs below, newest first; "
+          "nothing below this line is rewritten -->")
+SEEDED = ("# Upgrade report\nstatus: upgraded\n\n## Contradictions\n"
+          "- old-conflict (verified: false alarm)\n\nNOTE-T0065 hand-written, keep me\n")
+
+
+def _upgrade_md(root):
+    return root / ".crew" / "codemap" / "UPGRADE.md"
+
+
+def _starts_with_a_report(data):
+    return data.startswith(b"# Upgrade report") or data.startswith(b"NO MACHINE-GLOBAL CONFIG")
+
+
+def test_the_marker_is_the_module_constant():
+    assert crew_upgrade.UPGRADE_HISTORY_MARKER == MARKER
+
+
+def test_force_keeps_earlier_upgrade_reports(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    seeded = _upgrade_md(root).read_bytes()
+
+    first = crew_upgrade.run(str(root), {}, force=True)
+    after_one = _upgrade_md(root).read_bytes()
+
+    assert _starts_with_a_report(after_one)
+    assert after_one == (first["report"].encode("utf-8") + b"\n" + MARKER.encode() + b"\n\n" + seeded)
+
+    second = crew_upgrade.run(str(root), {}, force=True)
+    after_two = _upgrade_md(root).read_bytes()
+
+    assert _starts_with_a_report(after_two)
+    assert after_two == (second["report"].encode("utf-8") + b"\n" + MARKER.encode() + b"\n\n"
+                         + after_one)
+    assert after_two.count(MARKER.encode()) == 2
+    assert after_two.count(b"NOTE-T0065") == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_a_rerun_keeps_the_report_file_mode(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    os.chmod(_upgrade_md(root), 0o600)
+
+    crew_upgrade.run(str(root), {}, force=True)
+
+    assert stat.S_IMODE(os.stat(_upgrade_md(root)).st_mode) == 0o600
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="names an fd through /proc")
+def test_the_sibling_is_private_before_the_earlier_report_is_written_into_it(tmp_path,
+                                                                             monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    os.chmod(_upgrade_md(root), 0o600)
+    seen = []
+    real_fdopen = os.fdopen
+
+    class Spy:  # pylint: disable=too-few-public-methods
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return self.handle.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        def write(self, data):
+            fd = self.handle.fileno()
+            name = os.path.basename(os.readlink(f"/proc/self/fd/{fd}"))
+            if name.startswith("UPGRADE.md.") and name.endswith(".tmp"):
+                seen.append(stat.S_IMODE(os.fstat(fd).st_mode))
+            return self.handle.write(data)
+
+    monkeypatch.setattr(crew_upgrade.os, "fdopen", lambda fd, *a, **k: Spy(real_fdopen(fd, *a, **k)))
+    old = os.umask(0o022)
+    try:
+        crew_upgrade.run(str(root), {}, force=True)
+    finally:
+        os.umask(old)
+
+    assert (bool(seen), set(seen), stat.S_IMODE(os.stat(_upgrade_md(root)).st_mode)) == (
+        True, {0o600}, 0o600)
+
+
+def test_first_upgrade_has_no_marker(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0}, codemap={"auth": V1_MAP})
+
+    out = crew_upgrade.run(str(root), {})
+
+    assert _upgrade_md(root).read_bytes() == out["report"].encode("utf-8")
+    assert MARKER not in out["report"]
+
+
+def test_carried_conflicts_reads_the_newest_run(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    newest = "# Upgrade report\n\n## Contradictions\n- newest-conflict RESOLVED 2026-10-01\n"
+    older = "# Upgrade report\n\n## Contradictions\n- older-only-conflict VERIFIED by hand\n"
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(newest + "\n" + MARKER + "\n\n" + older)
+
+    out = crew_upgrade.run(str(root), {}, force=True)
+
+    report = out["report"]
+    assert "- newest-conflict RESOLVED 2026-10-01" in report
+    assert "older-only-conflict" not in report
+    assert "1 annotated line(s) carried forward" in report
+    # The older run is still in the file, below the markers, untouched.
+    assert ("older-only-conflict VERIFIED by hand"
+            in _upgrade_md(root).read_text(encoding="utf-8").split(MARKER)[-1])
+
+
+def test_upgrade_report_write_is_atomic(tmp_path, monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT},
+                                   codemap={"auth": V1_MAP})
+    with open(_upgrade_md(root), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(SEEDED)
+    before = _upgrade_md(root).read_bytes()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("injected while building the report")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_upgrade, "_report", boom)
+        try:
+            crew_upgrade.run(str(root), {}, force=True)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the injected failure did not propagate")
+    assert _upgrade_md(root).read_bytes() == before
+
+    crew_upgrade.run(str(root), {}, force=True)
+
+    data = _upgrade_md(root).read_bytes()
+    assert b"\r" not in data
+    leftovers = [p.name for p in _upgrade_md(root).parent.iterdir() if p.name.endswith(".tmp")]
+    assert not leftovers
+
+
+def test_unmigrated_report_points_at_migrate():
+    """T-0038: `/crew:upgrade` is a removal stub, so the report must not send
+    the user back to it."""
+    said = "\n".join(crew_upgrade._config_lines(  # pylint: disable=protected-access
+        crew_upgrade.upgrade_config({"qa": "oops"})[1]))
+    assert ("/crew:migrate" in said, "run `/crew:upgrade` again" in said) == (True, False)

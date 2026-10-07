@@ -48,12 +48,12 @@ None.
 {touch}
 
 ## Acceptance checks
-- tests pass
+- [ ] tests pass
 """
 
 PLAN = """# Plan
 
-## Step 1
+### Step 1
 Files: {files}
 Test: pytest
 Risk: low
@@ -158,3 +158,20 @@ def stop(root, active=False):
 
 def common_dir(root):
     return crew_ticket.common_dir(str(root))
+
+
+def archive_ticket(root, ticket="T-1"):
+    """Move `.work/tickets/<ticket>` into `.work/tickets/Complete/<ticket>` the
+    way `crew_tracker.py archive` does (L-0509): one `os.rename`."""
+    tickets = os.path.join(str(root), ".work", "tickets")
+    os.makedirs(os.path.join(tickets, "Complete"), exist_ok=True)
+    os.rename(os.path.join(tickets, ticket), os.path.join(tickets, "Complete", ticket))
+    return os.path.join(tickets, "Complete", ticket)
+
+
+def both_places(root, ticket="T-1"):
+    """A half-finished archive: the ticket folder live AND under Complete/."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    tickets = os.path.join(str(root), ".work", "tickets")
+    os.makedirs(os.path.join(tickets, "Complete"), exist_ok=True)
+    shutil.copytree(os.path.join(tickets, ticket), os.path.join(tickets, "Complete", ticket))

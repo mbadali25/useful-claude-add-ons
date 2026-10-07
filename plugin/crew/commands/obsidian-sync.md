@@ -1,6 +1,6 @@
 ---
 description: Sync a ticket between an Obsidian Kanban board and the local cache
-argument-hint: <T-####> [--push]
+argument-hint: <ID> [--push]
 allowed-tools: Read, Bash
 ---
 
@@ -34,7 +34,7 @@ written by the same `move`, and each half reports its own result.
 |---|---|
 | Status, on pull | Nothing is changed. `read` reports the board lane beside the INDEX status and says when they disagree — a human dragging a card is a question to put to me, not an instruction. |
 | Status, on push | Crew. `move` writes the lane the INDEX status maps to and reports the lane it moved the card from. |
-| The ticket note | Written once, at create, and never rewritten. |
+| The ticket note | Written once, at create, and never rewritten; moved, never rewritten, to `<boardDir>/Complete/` by `crew_tracker.py archive`. |
 
 There is no `.work/cache/` mirror: the ticket's content lives in
 `.work/tickets/$1/`, which no tracker writes.
@@ -71,7 +71,11 @@ Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
 
 Any other status maps to no lane and is refused with nothing written: say which
 value you found and stop. Guessing a lane moves a card a human is looking at.
-The table lives in `crew_tracker.py` as `LANE_FOR_STATUS`; this is a copy.
+`read` reports such a word as `could not tell`, not a disagreement; for a word
+the owner retired (`approved`, `merged`, `closed`, `new`, `parked`) it and
+`move` name the crew word to write by hand (`; the crew word is done`) - a hint,
+never a lane. The tables live in `crew_tracker.py` as `LANE_FOR_STATUS` and
+`RETIRED_STATUSES`; this is a copy.
 
 ## The board file format — the module owns it
 

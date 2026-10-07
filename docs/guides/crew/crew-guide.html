@@ -167,11 +167,18 @@ and a <code>null</code> it writes never shadows a value you set in your machine-
 file. The template leaves out the five personal <code>autopilot.*</code> settings, so your
 machine-wide defaults for them apply. For a new config it sets <code>scope.mode</code> to <code>auto</code>: the scope guard reports
 for the first ten approved tickets, then blocks.</p>
+<p>Init also keeps <code>.gitignore</code> right for the languages it finds:
+<code>crew_gitignore.py apply</code> adds the missing patterns, without asking, inside
+one <code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>, and never
+edits your own lines or untracks a file. A committed secret-shaped file is
+reported to you instead (exit 3). <code>/crew:onboard</code> and <code>/crew:onboard
+--refresh</code> run the same step, <code>/crew:implement</code> checks it, and
+<code>/crew:status</code> shows it as one <code>gitignore</code> line.</p>
 <p><code>/crew:migrate</code> moves a crew 0.20 repository to the 1.0 layout, once per
 repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that
 <code>--rollback</code> restores. Every historical metric it cannot recover is written
-<code>UNKNOWN</code>, never <code>0</code>. <code>/crew:upgrade</code> is only for a config older than 0.20
-that <code>/crew:migrate</code> refuses.</p>
+<code>UNKNOWN</code>, never <code>0</code>. A config older than 0.20 (no <code>schema</code>, or 1-6) is
+upgraded by <code>/crew:migrate</code> itself in the same run; <code>/crew:upgrade</code> was removed.</p>
 <p>Deeper: <a href="quickstart.md">Quickstart</a>.</p>
 <h2 id="the-lifecycle">The Lifecycle</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_ticket.py</code> and
@@ -244,12 +251,14 @@ reviewed change does not.</p>
 <code>plugin/crew/hooks/scripts/crew_refresh_check.py</code>.</p>
 <p>A refresh artifact is a file that describes the code and must follow it:
 the code maps under <code>.crew/codemap/</code>, the diagrams, the code graph in
-<code>graphify-out/</code>, and the generated <code>.claude/rules/</code>. The order is fixed:
-implement, then refresh, then review, then done.</p>
+<code>graphify-out/</code>, the generated <code>.claude/rules/</code>, and the integrations
+reference (docs/reference/integrations.md) that <code>/crew:reference
+--integrations</code> writes. The order is fixed: implement, then refresh, then
+review, then done.</p>
 <p><code>crew_refresh_check.py --root . --ticket &lt;id&gt;</code> reports each artifact the
 ticket's changes reach as <code>fresh</code>, <code>stale</code> (with the command that refreshes
-it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code> or
-<code>graphify update .</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
+it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code>,
+<code>/crew:reference --integrations</code> or <code>graphify update .</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
 commits before review, so the reviewer reads the refreshed files. <code>/crew:done</code>
 runs the same check and refuses anything but <code>fresh</code>. It never refreshes
 anything itself: a write after review would stale the receipt.</p>

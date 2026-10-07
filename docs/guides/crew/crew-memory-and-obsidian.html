@@ -182,6 +182,10 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 <td><code>$VO recall --query "&lt;words you expect&gt;"</code> and check which vaults it names.</td>
 </tr>
 <tr>
+<td>When another project's notes outrank this repo's</td>
+<td>crew sends the main checkout's folder name as <code>--project</code>; if your notes' <code>project:</code> values differ, list them in the repo's <code>memory.recall.projects</code>.</td>
+</tr>
+<tr>
 <td>When the bridge misbehaves</td>
 <td><code>/obsidian-vault:doctor</code>, then <code>/obsidian-vault:repair</code>. The bridge is optional; capture, recall, import and gardening all work on the files without it.</td>
 </tr>
@@ -334,16 +338,27 @@ board at the vault root, and a card another repo owns is refused.</p>
 </tr>
 </tbody>
 </table>
+<p>Any other word in an INDEX status cell maps to no lane, and crew will not
+guess one. Moving to it is refused, and reading the ticket says the word is
+not a status crew knows rather than calling the card misplaced. For a word
+that was retired - <code>approved</code>, <code>merged</code>, <code>closed</code>, <code>new</code>, <code>parked</code> - it also
+names the word to write instead (<code>spec</code>, <code>done</code>, <code>done</code>, <code>direction</code>,
+<code>needs-owner</code>). Fix the INDEX cell by hand; crew never rewrites it for you.</p>
 <p><strong>Whose card it is.</strong> <code>/crew:brainstorm</code> writes a ticket note beside the board,
 <code>&lt;boardDir&gt;/T-0042.md</code>, once. Its <code>repo-id:</code> line is how crew tells your
-repository's cards from another's. The value is your origin URL, lowercased
-with <code>.git</code> dropped, or the git directory's path when there is no origin. An
-ssh origin keeps its username (<code>git@github.com:team/app</code>); other URLs lose any
-user or token; a <code>file://</code> origin is decoded to its path.</p>
+repository's cards from another's. The value is your origin URL with <code>.git</code>
+dropped and only the scheme and host case-folded, or the git directory's path
+when there is no origin. The user and the path keep their case, so
+<code>github.com:Team/App</code> and <code>github.com:team/app</code> are two repositories. An ssh
+origin keeps its username (<code>git@github.com:Team/app</code>); other URLs lose any user
+or token; a <code>file://</code> origin is decoded to its path, with <code>localhost</code> (or, on
+POSIX, any host) dropped. A quote around the value counts only as a matched pair.</p>
 <p><strong>Claiming an older note.</strong> A card whose note has no <code>repo-id:</code> (a board from
 crew 0.20, or a card you added by hand) is refused until you add one. The
 refusal names the exact line: add <code>- repo-id: &lt;the id it prints&gt;</code> to the note
-and run the command again. Crew never rewrites a note for you.</p>
+and run the command again. Crew never rewrites a note for you. A note written by
+an older crew for an origin with capitals in it holds the id lowercased; crew
+refuses it as another repo's and names the line to change it to.</p>
 <p>The full rules, including every refusal, are in the crew README, section 13c
 ("Optional: an Obsidian Kanban board"), in <code>plugin/crew/README.md</code>.</p>
 <h2 id="native-memories-as-vault-pointers">Native Memories as Vault Pointers</h2>
@@ -652,8 +667,17 @@ paste in a slice:</p>
 <li>A repo can set its own order in its crew config: <code>memory.recall.vaults</code> (an ordered list of names)
   and <code>memory.recall.maxChars</code> (default 800). Snippets come back in that vault order first, then in
   the order the search ranked them.</li>
+<li>Each recall names the repo's project, so that notes of this project rank first inside each vault:
+  <code>memory.recall.projects</code> (a list of names, repo-only) when set, otherwise the main checkout's
+  directory name (a linked worktree reports the main checkout's name). crew sends it as
+  <code>--project=&lt;a,b&gt;</code> and ranks nothing itself. An obsidian-vault CLI too old to know <code>--project</code>
+  exits 2; crew then asks once more without it, inside the same 4-second budget, and the log's
+  <code>recall</code> record says so: <code>project</code> is the list sent, <code>projectUsed</code> is <code>true</code> when the answer came
+  from the call with the project, <code>false</code> when it came from the retry without it, and <code>null</code> when
+  no project was sent or no call answered with JSON. Set <code>memory.recall.projects</code> when the vault's <code>project:</code>
+  values do not match the checkout's folder name.</li>
 <li>crew calls obsidian-vault's read-only CLI:
-  <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json</code>. If the plugin is missing, or
+  <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json [--project=a,b]</code>. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall
   and the log records a miss with the reason.</li>
 <li>An empty recall can be the CLI working as meant: it skips stop words, needs more than one

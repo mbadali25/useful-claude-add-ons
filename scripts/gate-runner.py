@@ -63,7 +63,8 @@ COULD-NOT-TELL. On Linux the checked directory is opened, the opened directory
 is checked again, and the child starts in it through /proc/self/fd, so a later
 swap of the pathname cannot redirect it; elsewhere (no /proc/self/fd) the
 child gets the resolved path and a swap in between is not prevented. A tool
-named in `needs` is run by its absolute path.
+named in `needs` is run by its absolute path; a `module:<name>` need is a
+Python module this interpreter must import, else the step is SKIP (L-0657).
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
@@ -131,7 +132,8 @@ class Step:
 PY = "{python}"
 COMBINED_DIRS = ("plugin/crew/tests/", "plugin/gizmoduck/scripts/_test/",
                  "skills/mermaid-svg-bitbucket/tests/", "skills/notify/tests/",
-                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/")
+                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/",
+                 "skills/windows-ssm/tests/")
 NO_CACHE = ("-p", "no:cacheprovider")
 # What pytest resolves on its own for the whole COMBINED_DIRS list, pinned so
 # a subset run (C-0001) is the same session: gizmoduck's ini sets the rootdir,
@@ -151,7 +153,10 @@ def _bash_suite(name: str, path: str, workflow: str, phase: str = "cheap",
 
 TABLE = (
     Step("check-marketplace", "cheap", (PY, "scripts/check-marketplace.py"),
-         ci=(("marketplace.yml", "python3 scripts/check-marketplace.py"),)),
+         # L-0511: CI passes --pending-bump on a draft PR only. A lane runs the
+         # full check (the stricter one), so the draft invocation is pinned here too.
+         ci=(("marketplace.yml", "python3 scripts/check-marketplace.py"),
+             ("marketplace.yml", "python3 scripts/check-marketplace.py --pending-bump"))),
     _py_suite("argument-hint-frontmatter", "scripts/_test/argument-hint-frontmatter.py"),
     _py_suite("self-claims", "scripts/_test/self-claims.py"),
     _py_suite("crew-ignore-policy", "scripts/_test/crew-ignore-policy.py"),
@@ -160,17 +165,33 @@ TABLE = (
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
+    _py_suite("crew-docs-suite", "scripts/_test/crew-docs.py"),
+    _py_suite("autopilot-guide", "scripts/_test/autopilot-guide.py"),
+    # T-0055. Locally it sees commit trailers only; CI also reads the PR body.
+    # Locally its base is the nearest of origin/main and origin/release/*.
+    Step("check-crew-docs", "cheap", (PY, "scripts/check-crew-docs.py"),
+         ci=(("marketplace.yml", "python3 scripts/check-crew-docs.py"),)),
     _py_suite("ci-select", "scripts/_test/ci-select.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
          ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),)),
+    # L-0657: the committed crew guide HTML and the generated configuration
+    # reference match their sources. build.py needs markdown: SKIP without it,
+    # never PASS. config_reference.py imports only the standard library.
+    Step("crew-guides-fresh", "cheap", (PY, "docs/guides/crew/src/build.py", "--check"),
+         needs=("module:markdown",),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/build.py --check"),)),
+    Step("crew-config-reference-fresh", "cheap",
+         (PY, "docs/guides/crew/src/config_reference.py", "--check"),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),)),
     _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
     _bash_suite("menu-groups", "scripts/_test/menu-groups.sh", "marketplace.yml",
                 ci_cmd="./scripts/_test/menu-groups.sh"),
     _bash_suite("check-powershell-suite", "scripts/_test/check-powershell.sh", "marketplace.yml"),
+    _bash_suite("pwsh-isolated", "scripts/_test/pwsh-isolated.sh", "marketplace.yml"),
     _bash_suite("ps-install-keys", "scripts/_test/ps-install-keys.sh", "marketplace.yml"),
     _bash_suite("uv-install", "scripts/_test/uv-install.sh", "marketplace.yml"),
     _bash_suite("smoke", "_verify/smoke.sh", "marketplace.yml"),
@@ -178,8 +199,12 @@ TABLE = (
     Step("validate-prompts", "cheap", (PY, "hooks/scripts/_test/validate-prompts.py"),
          cwd="plugin/crew",
          ci=(("marketplace.yml", "python3 hooks/scripts/_test/validate-prompts.py"),)),
-    Step("check-powershell", "cheap", ("pwsh", "-NoProfile", "-File", "scripts/check-powershell.ps1"),
-         needs=("pwsh",), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
+    # Through the launcher (T-0506): a private startup-profile cache per pwsh run.
+    # No `pwsh` need: the launcher resolves $PWSH, pwsh, pwsh.exe and the Windows
+    # install paths itself, and exits 77 (SKIP) when none runs.
+    Step("check-powershell", "cheap",
+         ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File", "scripts/check-powershell.ps1"),
+         needs=("bash",), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
     Step("check-instructions", "cheap", (PY, "scripts/check_instructions.py"),
          ci=(("instruction-budgets.yml", "python3 scripts/check_instructions.py"),
              ("instruction-budgets.yml", 'python3 scripts/check_instructions.py --base "$BASE"'))),
@@ -201,14 +226,14 @@ TABLE = (
          # CI runs the subset scripts/ci-select.py picks (C-0001), falling
          # back to all of COMBINED_DIRS; its suite checks that list.
          ci=(("pytest-crew.yml", "pytest ${PYTEST_COMBINED:-" + " ".join(COMBINED_DIRS) + "} "
-              + " ".join(COMBINED_CONFIG) + ' -n auto -m "not wallclock" -v'),)),
+              + " ".join(COMBINED_CONFIG) + ' -n 16 --dist worksteal -m "not wallclock" -v'),)),
     # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
     # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
     # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).
     Step("pytest-crew-slow", "heavy",
          (PY, "-m", "pytest", "plugin/crew/tests/", "-m", "slow", "-n", "4", *NO_CACHE),
          group="A", timeout=900, pytest=True,
-         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n auto -v"),)),
+         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n 8 -v"),)),
 
     _bash_suite("crew-run-tests", "plugin/crew/hooks/scripts/_test/run-tests.sh", "marketplace.yml",
                 phase="heavy", group="B", timeout=900),
@@ -731,6 +756,11 @@ def preflight(step: Step, ctx: Context, argv: list):
             if not os.path.exists(full):
                 return SKIP, f"NOT VERIFIED: {path} does not exist"
             continue
+        if need.startswith("module:"):
+            module = need[len("module:"):]
+            if not ctx.importable(module):
+                return SKIP, f"NOT VERIFIED: python module {module} is not importable"
+            continue
         found = _which(need)
         if found is None:
             return SKIP, f"NOT VERIFIED: {need} not found on PATH"
@@ -828,7 +858,9 @@ def summary_line(res: dict) -> str:
 # ---- inner: the heavy and solo phases, inside the one heavy-run call ------
 
 def run_inner(part: str, steps: list, ctx: Context) -> int:
-    data = {"started": time.time(), "pid": os.getpid(), "steps": {}}
+    # L-0517: the slot heavy-run says it gave this call; recorded, never trusted.
+    data = {"started": time.time(), "pid": os.getpid(),
+            "slot": os.environ.get("HEAVY_RUN_SLOT") or None, "steps": {}}
     lock = threading.Lock()
     write_status(part, data)
 
@@ -902,13 +934,21 @@ def _valid_result(step: Step, res) -> bool:
     return True
 
 
+def _slot(value):
+    """A heavy-run slot name (a lock file basename) or None: a non-empty string
+    of at most 64 characters with no `/`. Anything else is unknown (L-0517)."""
+    if isinstance(value, str) and value and len(value) <= 64 and "/" not in value:
+        return value
+    return None
+
+
 def _part(got, table: dict):
-    """(steps, started) from heavy-part.json as read: only well-formed results
-    for a step of `table` (name -> Step), and `started` only when a finite
-    non-bool number. A document of any other shape gives ({}, None), never an
-    exception."""
+    """(steps, started, slot) from heavy-part.json as read: only well-formed
+    results for a step of `table` (name -> Step), `started` only when a finite
+    non-bool number, and `slot` only when _slot() accepts it. A document of any
+    other shape gives ({}, None, None), never an exception."""
     if not isinstance(got, dict):
-        return {}, None
+        return {}, None, None
     steps = got.get("steps")
     steps = {n: r for n, r in steps.items()
              if isinstance(n, str) and n in table and _valid_result(table[n], r)} \
@@ -917,7 +957,7 @@ def _part(got, table: dict):
     if isinstance(started, bool) or not isinstance(started, (int, float)) \
             or not math.isfinite(started):
         started = None
-    return steps, started
+    return steps, started, _slot(got.get("slot"))
 
 
 def resolve_heavy_run(env) -> tuple:
@@ -1047,7 +1087,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict, digest: st
                 cmd, ctx.root, os.path.join(ctx.out, "logs", "heavy-run.log"), budget,
                 ctx.grace * 2 + 5, on_tick=tick)
         hr["rc"] = rc
-        recorded, inner_started = _part(read_json(part), wanted)
+        recorded, inner_started, hr["slot"] = _part(read_json(part), wanted)
         if inner_started is not None:
             hr["waited_seconds"] = round(inner_started - launched, 1)
         why = (f"heavy-run call timed out after {budget:g}s (slot wait included)" if timed_out
@@ -1418,7 +1458,7 @@ def main(argv=None) -> int:
     out = os.path.abspath(args.out) if args.out else default_out(root)
     ctx = Context(root, out, args.grace, set(args.skip or ()))
     hr = {"mode": mode, "path": path, "launched": False, "rc": None, "waited_seconds": None,
-          "note": "uncapped" if mode == "absent" else None}
+          "slot": None, "note": "uncapped" if mode == "absent" else None}
     return run_outer(args, steps, source, ctx, hr, digest)
 
 

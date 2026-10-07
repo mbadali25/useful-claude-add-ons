@@ -79,7 +79,8 @@
     "inject": true,
     "recall": {
       "vaults": [],
-      "maxChars": 800
+      "maxChars": 800,
+      "projects": []
     }
   },
   "verifyGate": true,
@@ -227,7 +228,9 @@
     },
     "ship": "merge",
     "knownFailures": [],
-    "ciTimeoutMinutes": 60
+    "ciTimeoutMinutes": 60,
+    "maxLanes": null,
+    "reviewPolicy": "stop"
   },
   "tickets": {
     "baseBranch": null

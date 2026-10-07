@@ -786,3 +786,31 @@ def test_review_the_overflow_file_needs_its_own_read(repo, tmp_path, read_as, ex
     code, _review_json = _review(repo, tmp_path, base, reads_extra=reads)
 
     assert code == expected
+
+
+# --- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_webtest_exclusions_read_an_archived_spec(repo):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    base = _base(repo)
+    _write(repo, SPEC, CLEAN_TEST + "test.skip('flaky', async () => {});\n")
+    _spec_exclusions(repo, f"- skip: {SPEC}")
+    folder = archive_ticket(repo, TICKET)
+
+    code, _lines = webtest_guard.check_skips(repo, TICKET, base)
+
+    assert (code, webtest_guard.findings_path(repo, TICKET),
+            os.path.isfile(os.path.join(folder, "webtest", "findings.json")),
+            os.path.exists(os.path.join(repo, ".work", "tickets", TICKET))) == (
+        0, os.path.join(folder, "webtest", "findings.json"), True, False)
+
+
+def test_webtest_could_not_tell_where_the_ticket_lives_is_unknown(repo):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    base = _base(repo)
+    both_places(repo, TICKET)
+
+    code, lines = webtest_guard.check_skips(repo, TICKET, base)
+
+    assert (code, webtest_guard.exclusions(repo, TICKET)) == (webtest_guard.EXIT_UNKNOWN, [])
+    assert "could not tell where T-0007 lives" in lines[0]
