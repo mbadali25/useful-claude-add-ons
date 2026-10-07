@@ -127,6 +127,9 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0053 | L-0656 review half: `autopilot.sleep.reviewPolicy` (unblocked now that T-0029 landed autopilot.reviewPolicy); key still reads "not available" | G6b report (L-0656 built notify half only, 6 rounds used) | none | needs ticket |
 | C-0054 | `goal-mark --reason-file` leaves `.work/autopilot/<slug>.reason` behind; add cleanup | G6b report | none | needs ticket |
 | C-0055 | H2 sabotage entries for G6b: L-0541 picker/caps/ticket marks; T-0056/L-0658/L-0659 goal handoffs; L-0654/L-0653 (L-0655 set); L-0656 hold list + send-once | G6b report | G6b on main | H2 lane |
+| C-0056 | L-0551 `waiting` line in /crew:status costs ~28 ms per open ticket (0.96 s / 30 tickets; >~70 passes the 2 s spec limit). Owner 2026-10-07: keep default-on; make it faster (cache or bound) | G6a report | none | needs ticket |
+| C-0057 | `crew_ticket_state.py` docstring still says "nothing acts on the answer yet" (L-0550 now acts on it) | G6a report | none | needs ticket |
+| C-0058 | `/crew:autopilot status` says "nobody - the ticket is closed" for the unarmed final-ship stop, whose decision is now `look` (a person ships it) | G6a report | none | needs ticket |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
