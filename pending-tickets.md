@@ -120,6 +120,10 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0046 | L-0650 wiring: hook `ghdeploy_mutations.py` (~180 entries) and `promote_tree_mutations.py` into `sabotage.py` | G4 report | none (harness: H lane) | needs ticket |
 | C-0047 | Harness half of T-0009: land `sabotage_cloud.py` (patch `$S/harness-T-0009.patch`, +741/-106) with its anchors moved to `crew_dispatch.py` | G4 report | T-0009 feature half (G4) on main | H2 |
 | C-0048 | Retire `sabotage_autopilot.py`'s "the inert warning is gone" entry and let `settings` drop its armed-deploy warning | G4 report | L-0649 (G4) on main | H lane |
+| C-0049 | crew_coord `coord.get("remote") or "origin"` (crew_coord.py:~1701) falls back to origin for a malformed coord block - the bug G3c fixed in crew_wave/crew_contract; make it unknown | G3c report | none | needs ticket |
+| C-0050 | `test_heartbeat_process_pushes_while_pid_alive` (G0) failed once on Windows shard 3/6 under load, passed on rerun; root-cause the timing (no upper bound may be loosened) | G3c report | none | needs ticket |
+| C-0051 | H2 sabotage entries from G3d: six `sabotage_kimi.py` mutations for L-0708 (any .git refuses; refusal deleted; other git exit allowed; Kimi project files ignored; git missing allowed; env not scrubbed - all hand-run red), L-0637 r4-r6 cases for L-0638's set, optional crew_graph.py mutations for sabotage_refresh.py | G3d report | G3d on main | H2 lane |
+| C-0052 | Owner-accepted deviation: contract bindings carry 5 fields {remote, channel, name, version, hash} (T-0031/L-0634 specs say 4) - update the two specs | G3c report, owner 2026-10-07 | none | docs |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
