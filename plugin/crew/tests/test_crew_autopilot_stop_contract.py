@@ -667,7 +667,7 @@ CASES = [
     ("before the next review round - {refresh", b_refresh_unsettled, "refresh", "look"),
     ("an artifact is stale after an", b_stale_after_review, "stale-after-review",
      "stale-after-review"),
-    ('dict(result, stop=True, decision="look", **stop)', b_inflight, "in-flight", "look"),
+    ("dict(result, stop=True, **crew_autopilot_stops.inflight(stop))", b_inflight, "in-flight", "look"),
     ("names no path to commit", b_commit_nothing, "commit-refresh", "look"),
     ("a path holds a character that is not printable", b_commit_unprintable, "commit-refresh",
      "look"),
@@ -865,6 +865,21 @@ def test_cli_prints_the_decision(tmp_path):
                                   "reason="),
             [r["id"] for r in json.loads(stops.stdout)["decisions"]]) == (
         True, list(crew_autopilot_stops.DECISIONS)), nxt.stdout
+
+
+def test_a_stale_marker_stop_names_the_owners_clear(tmp_path, monkeypatch):
+    """L-0666 review r2 FIX: a stale or unknown marker's stop carries the owner's
+    clear command, so its decision is `clear-inflight`, whose command it is."""
+    import crew_inflight  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+    clear = crew_inflight.clear_command(T)
+    monkeypatch.setattr(crew_inflight, "next_stop", lambda root, ticket, runner: {
+        "phase": "in-flight", "command": clear, "reason": f"in-flight: stale - the owner clears it: {clear}"})
+
+    got = _next(root, runner="autopilot")
+
+    assert (got["decision"], got["command"] in crew_autopilot_stops.commands(got["decision"], T),
+            crew_autopilot_stops.mechanical(got["reason"])) == ("clear-inflight", True, [])
 
 
 def test_a_running_phase_carries_no_decision(tmp_path):

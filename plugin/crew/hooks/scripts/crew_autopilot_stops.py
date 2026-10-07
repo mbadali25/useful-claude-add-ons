@@ -21,6 +21,8 @@ crew_autopilot.
 
 from __future__ import annotations
 
+import crew_inflight
+
 ID = "<id>"
 OWNER_DECISIONS = (
     ("direction", "brainstorm the direction, or say it is approved", ("/crew:brainstorm",)),
@@ -38,6 +40,9 @@ OWNER_DECISIONS = (
     ("activate-ticket", "re-point this worktree at the ticket (crew_ticket.py activate "
                         "--ticket <id>), which changes the approval that governs edits", ()),
     ("continue", "run autopilot again", (f"/crew:autopilot {ID}", f"/crew:autopilot run {ID}")),
+    ("clear-inflight", "clear another runner's stale or unknown in-flight marker - never "
+                       "without your explicit yes (crew_state.AUTONOMOUS_STOPS)",
+     (crew_inflight.CLEAR_COMMAND.replace("{ticket}", ID),)),
     ("closed", "nothing: the ticket is closed", ()),
 )
 DECISIONS = tuple(row[0] for row in OWNER_DECISIONS)
@@ -62,6 +67,12 @@ BY_PHASE = {"brainstorm": "direction", "direction-approval": "direction",
 def decided(phase, stop, decision=None):
     """`{"decision": id}` for a stop, `{}` for a phase that runs."""
     return {"decision": decision or BY_PHASE.get(phase, "look")} if stop else {}
+
+
+def inflight(stop):
+    """`crew_inflight.next_stop`'s stop with its decision: `clear-inflight` when it
+    carries the owner's clear command (a stale or unknown marker), else `look`."""
+    return dict(stop, decision="clear-inflight" if stop.get("command") else "look")
 
 
 def commands(decision, ticket):

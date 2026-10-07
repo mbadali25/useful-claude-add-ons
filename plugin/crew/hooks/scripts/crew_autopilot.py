@@ -1460,7 +1460,7 @@ def _inflight(root, ticket, runner, result):  # T-0049: next_stop's stop or None
         stop = importlib.import_module("crew_inflight").next_stop(root, ticket, runner)
     except Exception as exc:  # pylint: disable=broad-except
         stop = {"phase": "in-flight", "command": "", "reason": f"in-flight: unknown - {ticket}: {_failure(exc)}"}
-    return dict(result, stop=True, decision="look", **stop) if stop else None
+    return dict(result, stop=True, **crew_autopilot_stops.inflight(stop)) if stop else None
 
 
 def _commit_refresh(ticket, answer, paths):
