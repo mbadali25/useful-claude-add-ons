@@ -242,3 +242,89 @@ RECALL_PROJECT_MUTATIONS = (
 )
 
 CONTEXT_MUTATIONS += RECALL_PROJECT_MUTATIONS
+
+# L-0679: crew_memory.py's fail-closed rules (T-0084, L-0677, L-0678): the
+# pointer grammar, vault resolution, `save`'s write order and `migrate`/`restore`.
+MEMORY = os.path.join(SCRIPTS, "crew_memory.py")
+_MEM = "tests/test_crew_memory.py::"
+_SAVE = "tests/test_crew_memory_save.py::"
+_MIG = "tests/test_crew_memory_migrate.py::"
+
+MEMORY_MUTATIONS = (
+    ("memory (a): the note path grammar accepts a leading /", MEMORY,
+     '    if path.startswith("/"):\n',
+     "    if False:\n",
+     _MEM + "test_an_absolute_note_path_is_refused_as_absolute"),
+    ("memory (b): the note path grammar accepts a backslash", MEMORY,
+     '    if "\\\\" in path or "|" in path:\n',
+     '    if "|" in path:\n',
+     _MEM + "test_pointer_grammar_refuses"),
+    ("memory (b): the note path grammar accepts a drive prefix", MEMORY,
+     '    if ":" in path:\n        return "the note path holds',
+     '    if False:\n        return "the note path holds',
+     _MEM + "test_pointer_grammar_refuses"),
+    ("memory (c): the .. segment check is dropped", MEMORY,
+     '        if segment in ("", ".", ".."):\n',
+     '        if segment in ("", "."):\n',
+     _MEM + "test_pointer_grammar_refuses"),
+    ("memory (d): a vault: line that fails the grammar reads as full text", MEMORY,
+     "    if not _attempt(lines):\n",
+     '    if not _attempt(lines) or _grammar(lines)[0] == "malformed":\n',
+     _MEM + "test_pointer_grammar_refuses"),
+    ("memory (e): an unavailable named vault falls through to another", MEMORY,
+     "    if entry is not None:\n",
+     '    if entry is not None and os.path.isdir(str(entry.get("path"))):\n',
+     _MEM + "test_unavailable_vault_is_not_substituted"),
+    ("memory (f): an unparseable Obsidian config reads as no vaults", MEMORY,
+     '    if problem:\n        return None, "no-vault-config", problem\n',
+     "    if problem:\n        data, present = {}, False\n",
+     _MEM + "test_unparseable_config_is_not_no_vaults"),
+    ("memory (g): the symlink-component check is dropped", MEMORY,
+     "        if stat.S_ISLNK(mode):\n"
+     '            return None, "outside-vault", f"{note}: a symlink inside the vault',
+     "        if False:\n"
+     '            return None, "outside-vault", f"{note}: a symlink inside the vault',
+     _MEM + "test_symlinked_component_is_outside_vault"),
+    ("memory (h): save writes the pointer before the note", MEMORY,
+     "    try:\n        apply_note(plan)\n",
+     "    apply_pointer(plan)\n    try:\n        apply_note(plan)\n",
+     _SAVE + "test_note_write_failure_leaves_native_unchanged"),
+    ("memory (i): save skips the read-back before the pointer", MEMORY,
+     '    if not same or state != "resolved":\n',
+     "    if False:\n",
+     _SAVE + "test_read_back_failure_writes_no_pointer"),
+    ("memory (j): the no-hard-link create truncates a note that appeared", MEMORY,
+     '    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)\n',
+     '    flags = os.O_CREAT | os.O_TRUNC | os.O_WRONLY | getattr(os, "O_BINARY", 0)\n',
+     _SAVE + "test_no_hard_links_and_a_note_appearing_is_refused"),
+    ("memory (k): save ignores memory_id when a note exists", MEMORY,
+     "    if found != memory_id:\n",
+     "    if False:\n",
+     _SAVE + "test_existing_note_of_another_memory_is_a_collision"),
+    ("memory (l): the writer takes another vault when the primary is unavailable", MEMORY,
+     "    path, _state, reason = vault_path(name, root)\n    if path is None:\n",
+     "    path, _state, reason = vault_path(name, root)\n"
+     "    if path is None and vaults:\n"
+     "        name = next(n for n in vaults if n != name)\n"
+     "        path, _state, reason = vault_path(name, root)\n"
+     "    if path is None:\n",
+     _SAVE + "test_primary_not_on_disk_never_falls_back_to_recall"),
+    ("memory (m): save keeps the memory's CR line breaks in the note", MEMORY,
+     '    body = _LINE_BREAK.sub("\\n", body).strip("\\n")\n    if not body.strip():\n',
+     '    body = body.strip("\\n")\n    if not body.strip():\n',
+     _SAVE + "test_outputs_are_lf_only"),
+    ("memory (n): migrate --apply stops at the first failed file", MEMORY,
+     "            if args.apply:\n                _migrate_apply(row, plan)\n",
+     '            if args.apply and "failed" not in counts:\n                _migrate_apply(row, plan)\n',
+     _MIG + "test_migrate_continues_past_a_failed_file"),
+    ("memory (o): migrate converts a memory with no name: line", MEMORY,
+     '    if not title:\n        return "refuse: no name: line", "no name: line in the memory"\n',
+     '    if not title:\n        title = "untitled"\n',
+     _MIG + "test_migrate_apply_matches_the_preview"),
+    ("memory (p): restore goes on with a pointer that does not resolve", MEMORY,
+     '    if row["state"] != "resolved":\n        return dict(row, exit=0 if row["state"] == "full-text" else 1)\n',
+     '    if row["state"] == "full-text":\n        return dict(row, exit=0)\n',
+     _MIG + "test_restore_refuses_what_does_not_resolve"),
+)
+
+CONTEXT_MUTATIONS += MEMORY_MUTATIONS
