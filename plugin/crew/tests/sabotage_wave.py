@@ -75,7 +75,7 @@ WAVE_MUTATIONS = (
      _W + "test_lane_init_refuses_when_worktree_scope_not_block[off]"),
     ("WAVE: the guard's pattern misses --acc", GUARD,
      '--(?:a(?:c(?:c(?:e(?:pt?)?)?)?)?"',
-     '--(?:a(?:c(?:ce(?:pt?)?)?)?)?"',
+     '--(?:a(?:c(?:ce(?:pt?)?)?)?"',
      _G + "test_subagent_accept_reject_abbreviation_is_refused[--acc]"),
     ("WAVE: review_ledger.py abbreviates again", LEDGER,
      "allow_abbrev=False)",
