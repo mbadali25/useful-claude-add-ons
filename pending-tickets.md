@@ -32,7 +32,7 @@ New tickets minted by this rush start at **C-0020**; the owner's local session c
 | 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.7 (provisional) | landing (built: 11/11, all CLEAN) |
 | 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | next free | built, waiting to land |
 | 4b | G3c contracts on coord/wave | `rush/g3c-contracts` | #408 T-0031, #410 L-0633, #412 L-0634 (base: G0 + release) | next free | building |
-| 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667 (base: G0 + release) | next free | building |
+| 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667, then #547 L-0708 (kimi_probe asks git; owner 2026-10-07; build from `docs/tickets/L-0708/` on `L-0708-kimi-empty-dotgit`; its sabotage_kimi.py must-allow entry -> H2) (base: G0 + release) | next free | building |
 | 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | built, waiting to land |
 | 8 | G6a autopilot core | `rush/g6a-autopilot` | #485, #486, #397, #426, #449, #443, #446, #453, #483 (base: G2 + G0 + release) | next free | building |
 | 8b | G6b goals and sleep | `rush/g6b-goals-sleep` | L-0541 (#515), #459, #463, #469, then sleep #435, #431, #444 (base: G2 + release) | next free | building |
