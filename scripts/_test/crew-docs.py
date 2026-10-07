@@ -240,6 +240,29 @@ def pass_main_merged_in(tmp):
     return root, None, NO_ENV
 
 
+def _release_repo(tmp):
+    """origin/main at the seed; origin/release/9.9 adds a crew README change
+    on top; the lane branches from the release and changes a hook only."""
+    root = repo(tmp)
+    git(root, "checkout", "-qb", "release/9.9", "main")
+    commit(root, ["plugin/crew/README.md"], "release-branch doc work")
+    git(root, "update-ref", "refs/remotes/origin/release/9.9", "HEAD")
+    git(root, "checkout", "-qB", "lane", "release/9.9")
+    commit(root, [HOOK], "lane hook change")
+    return root
+
+
+def fail_release_base_doc_not_this_prs(tmp):
+    root = _release_repo(tmp)
+    return root, None, {"GITHUB_BASE_REF": "release/9.9"}
+
+
+def unknown_base_not_a_ref(tmp):
+    root = repo(tmp)
+    commit(root, [HOOK, "plugin/crew/README.md"], "hook and doc")
+    return root, None, {"GITHUB_BASE_REF": "release/missing"}
+
+
 def unknown_no_origin(tmp):
     root = repo(tmp, origin=False)
     commit(root, [HOOK], "hook")
@@ -307,7 +330,7 @@ CASES = [
     (fail_hook_only, 1), (fail_hook_plus_mechanical, 1), (fail_hook_untracked, 1),
     (fail_skill_script_plus_reference, 1), (fail_trailer_without_reason, 1),
     (fail_trailer_placeholder, 1), (fail_body_blank_reason, 1), (fail_body_mid_sentence, 1),
-    (fail_trailer_only_on_main, 1),
+    (fail_trailer_only_on_main, 1), (fail_release_base_doc_not_this_prs, 1),
     (pass_no_crew, 0), (pass_tests_evals_manifest, 0), (pass_command_md, 0),
     (pass_hook_plus_readme, 0), (pass_hook_plus_guide_source, 0), (pass_rename_plus_skill, 0),
     (pass_trailer_with_reason, 0), (_body_case("-"), 0), (_body_case("–"), 0),
@@ -317,6 +340,7 @@ CASES = [
     (unknown_no_origin, 77), (unknown_event_missing, 77), (unknown_event_not_json, 77),
     (unknown_body_file_missing, 77), (unknown_git_cannot_start, 77),
     (unknown_event_body_not_text, 77), (fail_event_body_null, 1),
+    (unknown_base_not_a_ref, 77),
 ]
 
 
@@ -388,14 +412,14 @@ def mutations(checker):
         m.check = patched
 
     def trailers_from_head(m):
-        def patched(root):
+        def patched(root, base="origin/main"):  # pylint: disable=unused-argument
             log = m._git(root, "log", "--format=%(trailers:key=Docs,valueonly)", "HEAD")  # pylint: disable=protected-access
             return [ln.strip() for ln in log.stdout.splitlines() if ln.strip()]
         m.trailer_values = patched
 
     def drop_status(m):
-        def patched(root):
-            diff = m._git(root, "diff", "--name-only", "origin/main...HEAD")  # pylint: disable=protected-access
+        def patched(root, base="origin/main"):
+            diff = m._git(root, "diff", "--name-only", f"{base}...HEAD")  # pylint: disable=protected-access
             return sorted(p for p in diff.stdout.splitlines() if p)
         m.changed_paths = patched
 
@@ -409,7 +433,11 @@ def mutations(checker):
                 return ""
         m.pr_body = patched
 
+    def base_always_main(m):
+        m.base_ref = lambda environ, base=None: "origin/main"
+
     return [
+        ("PR base ignored, main used", base_always_main, fail_release_base_doc_not_this_prs),
         ("PLUGINS.md counted as a doc", docs_plus_plugins, fail_hook_plus_mechanical),
         ("empty reason accepted", empty_reason_ok, fail_body_blank_reason),
         ("placeholder reason accepted", placeholder_ok, fail_trailer_placeholder),

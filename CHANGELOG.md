@@ -18,7 +18,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   check's output (into a temp file, so a background child cannot hold the runner open): a failure
   prints `FAIL <name>: <command>` and the last 5 lines, each as `FAIL <name> | <line>` (crew's
   verify gate relays only `FAIL` and `SMOKE:` lines of a failed smoke run); exit 77
-  prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure. `smoke.sh`'s last
+  prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure, and a run
+  with no failure but such a skip exits 77 itself, so the gate records it skipped, not verified. `smoke.sh`'s last
   line adds the skip count and still starts `SMOKE: `.
 - **`templates/cases/diagrams-render.sh`** (new; setup copies it into `_verify/cases/` only in a
   repo with `.mmd` files). Renders every source in `$DIAGRAMS_DIR` (default `docs/diagrams`) to a
@@ -50,8 +51,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Summary.** A pull request that changes crew code now fails CI unless it also changes a narrative
   crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew
   code holds even when nobody reads the PR.
-- **`scripts/check-crew-docs.py`.** Reads the branch's own changes (`origin/main...HEAD` plus
-  `git status`). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
+- **`scripts/check-crew-docs.py`.** Reads the branch's own changes (`<base>...HEAD` plus
+  `git status`; the base is the PR's own base branch, `origin/main` outside a PR). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
   eval or `plugin.json`; DOCS are crew's README and CONFIG, its command, agent and SKILL.md files, its
   `docs/`, and `docs/guides/crew/src/*.md`. `plugin/PLUGINS.md`, `CHANGELOG.md`, `BUDGETS.md`, the code
   maps, diagrams, graph and built guides count neither way. The declaration is a `Docs:` commit trailer

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A crew code change touches a narrative crew doc, or says why not.
 
-    python3 scripts/check-crew-docs.py [--root <repo>] [--pr-body-file <path>]
+    python3 scripts/check-crew-docs.py [--root <repo>] [--pr-body-file <path>] [--base <ref>]
 
 THE RULE (owner, 2026-09-26; CLAUDE.md "Scope discipline"). A change to
 `plugin/crew/` updates every document that describes it, in the same PR, or
@@ -21,11 +21,15 @@ counting them would have passed 31 of 31 measured crew PRs
 
 WHAT COUNTS AS CHANGED. The branch's own changes, exactly as
 `scripts/check-tooling-pr.py` reads them: `git diff --name-status -z
-origin/main...HEAD` (both sides of a rename; from the merge base, so what a
-merge of main brought in is main's), plus every path `git status` reports.
+<base>...HEAD` (both sides of a rename; from the merge base, so what a merge
+of the base brought in is the base's), plus every path `git status` reports.
+<base> is the PR's own base branch: `--base`, else `origin/$GITHUB_BASE_REF`
+(set on a pull_request run, e.g. a PR into a release branch), else
+`origin/main`. Diffing a release-branch PR against main would count docs the
+release branch changed, not this PR.
 
 THE DECLARATION. `Docs: none - <reason>` (hyphen, en dash or em dash), from a
-commit trailer on any commit in `origin/main..HEAD`, or from the PR body when
+commit trailer on any commit in `<base>..HEAD`, or from the PR body when
 `--pr-body-file` is given or `GITHUB_EVENT_NAME` is `pull_request` (the body is
 read from the JSON at `GITHUB_EVENT_PATH`). In a body the line must start a
 line. A reason that is empty or still the `<why>` placeholder is not a
@@ -33,7 +37,7 @@ declaration. A local run sees trailers only.
 
 Exit 0: no crew code changed, a doc changed, or a valid declaration exists.
 Exit 1: crew code changed with neither. Exit 77: the check could not tell -
-`origin/main` is not a ref, a git call failed, or a PR body that should have
+the base is not a ref, a git call failed, or a PR body that should have
 been readable was not. 77 is never a pass.
 """
 
@@ -94,14 +98,23 @@ def _git(root: str, *args: str) -> subprocess.CompletedProcess:
         raise CouldNotTell(f"git could not start ({exc})") from exc
 
 
-def changed_paths(root: str) -> list[str]:
+def base_ref(environ, base: str | None = None) -> str:
+    """The ref the branch is diffed against: `--base`, else the PR's base
+    branch (`origin/$GITHUB_BASE_REF`), else origin/main."""
+    if base:
+        return base
+    pr_base = (environ.get("GITHUB_BASE_REF") or "").strip()
+    return f"origin/{pr_base}" if pr_base else "origin/main"
+
+
+def changed_paths(root: str, base: str = "origin/main") -> list[str]:
     """The branch's own changed paths: merge base to HEAD, plus the working tree.
     The same reading as scripts/check-tooling-pr.py's changed_paths (copied, not
     imported: that file is harness and is not edited for this)."""
     paths: set[str] = set()
-    diff = _git(root, "diff", "--name-status", "-z", "origin/main...HEAD")
+    diff = _git(root, "diff", "--name-status", "-z", f"{base}...HEAD")
     if diff.returncode != 0:
-        raise CouldNotTell(f"git diff origin/main...HEAD failed: {diff.stderr.strip()}")
+        raise CouldNotTell(f"git diff {base}...HEAD failed: {diff.stderr.strip()}")
     fields = [f for f in diff.stdout.split("\0") if f]
     i = 0
     while i < len(fields):
@@ -126,11 +139,11 @@ def changed_paths(root: str) -> list[str]:
     return sorted(paths)
 
 
-def trailer_values(root: str) -> list[str]:
+def trailer_values(root: str, base: str = "origin/main") -> list[str]:
     """Every `Docs:` trailer value on the branch's own commits."""
-    log = _git(root, "log", f"--format=%(trailers:key={TRAILER},valueonly)", "origin/main..HEAD")
+    log = _git(root, "log", f"--format=%(trailers:key={TRAILER},valueonly)", f"{base}..HEAD")
     if log.returncode != 0:
-        raise CouldNotTell(f"git log origin/main..HEAD failed: {log.stderr.strip()}")
+        raise CouldNotTell(f"git log {base}..HEAD failed: {log.stderr.strip()}")
     return [line.strip() for line in log.stdout.splitlines() if line.strip()]
 
 
@@ -192,14 +205,16 @@ def _matches(path: str, globs) -> bool:
     return any(crew_ticket.path_matches(path, glob) for glob in globs)
 
 
-def check(root: str, pr_body_file: str | None = None, environ=None) -> tuple[int, list[str]]:
+def check(root: str, pr_body_file: str | None = None, environ=None,
+          base: str | None = None) -> tuple[int, list[str]]:
     """(exit code, output lines) for the branch checked out at `root`."""
     environ = os.environ if environ is None else environ
+    base = base_ref(environ, base)
     try:
-        if _git(root, "rev-parse", "--verify", "-q", "origin/main").returncode != 0:
-            return EXIT_MISSING, ["TOOL MISSING: origin/main is not a ref here, so the crew-docs "
+        if _git(root, "rev-parse", "--verify", "-q", f"{base}^{{commit}}").returncode != 0:
+            return EXIT_MISSING, [f"TOOL MISSING: {base} is not a ref here, so the crew-docs "
                                   "check DID NOT RUN. This is a missing ref, not a pass."]
-        paths = changed_paths(root)
+        paths = changed_paths(root, base)
         code = [p for p in paths if _matches(p, (CREW,)) and not _matches(p, NOT_CODE)]
         if not code:
             return 0, ["crew-docs: no crew code changed"]
@@ -207,7 +222,7 @@ def check(root: str, pr_body_file: str | None = None, environ=None) -> tuple[int
         if docs:
             return 0, [f"crew-docs: OK - {len(code)} crew code path(s), "
                        f"{len(docs)} narrative doc(s) changed"]
-        trailers = trailer_values(root)
+        trailers = trailer_values(root, base)
         source, reason, invalid = find_declaration(trailers, None)
         if not source:
             # Read only when a trailer did not settle it: an unreadable body
@@ -238,8 +253,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--pr-body-file")
+    parser.add_argument("--base", help="ref to diff against (default: origin/$GITHUB_BASE_REF, "
+                                       "else origin/main)")
     args = parser.parse_args(argv)
-    code, lines = check(os.path.abspath(args.root), args.pr_body_file)
+    code, lines = check(os.path.abspath(args.root), args.pr_body_file, base=args.base)
     stream = sys.stderr if code == EXIT_MISSING else sys.stdout
     for line in lines:
         print(line, file=stream)

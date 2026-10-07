@@ -171,11 +171,13 @@ def test_run_all_shows_a_failing_case_tail_and_counts_a_skip(tmp_path):
     assert "1 skipped" in lines[-1], lines[-1]
 
 
-def test_run_all_exit_77_alone_is_not_a_failure(tmp_path):
+def test_run_all_exit_77_alone_is_skip_not_pass(tmp_path):
+    """A run whose only case exited 77 ran nothing: the runner exits 77 so
+    crew's verify gate records SKIP, never a verified pass."""
     repo, env = _repo(tmp_path)
     _add_case(repo, "absent", "exit 77\n")
     proc = _run(["_verify/run-all.sh"], repo, env)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.returncode == 77, proc.stdout + proc.stderr
     assert proc.stdout.splitlines()[-1].startswith("REGRESSION: 0 passed, 0 failed, 1 skipped")
 
 
@@ -216,11 +218,29 @@ def test_smoke_shows_a_failing_check_tail_and_skips_77(tmp_path):
     assert "the cause" in lines[fail + 1], lines
 
 
-def test_smoke_exit_77_alone_does_not_fail_the_run(tmp_path):
+def test_smoke_exit_77_alone_is_skip_not_pass(tmp_path):
     repo, env = _repo(tmp_path)
     _smoke_with(repo, 'check "absent" sh -c "exit 77"')
     proc = _run(["_verify/smoke.sh"], repo, env)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.returncode == 77, proc.stdout + proc.stderr
+
+
+def test_smoke_a_pass_beside_a_77_skip_is_still_skip(tmp_path):
+    """A pass does not cover for a check that never ran (fail closed)."""
+    repo, env = _repo(tmp_path)
+    _smoke_with(repo, 'check "ok" true\ncheck "absent" sh -c "exit 77"')
+    proc = _run(["_verify/smoke.sh"], repo, env)
+    assert proc.returncode == 77, proc.stdout + proc.stderr
+    assert "PASS ok" in proc.stdout.splitlines()
+
+
+def test_run_all_a_pass_beside_a_77_skip_is_still_skip(tmp_path):
+    repo, env = _repo(tmp_path)
+    _add_case(repo, "fine", "exit 0\n")
+    _add_case(repo, "absent", "exit 77\n")
+    proc = _run(["_verify/run-all.sh"], repo, env)
+    assert proc.returncode == 77, proc.stdout + proc.stderr
+    assert "PASS fine" in proc.stdout.splitlines()
 
 
 def test_run_all_shows_the_mmdc_error(tmp_path):

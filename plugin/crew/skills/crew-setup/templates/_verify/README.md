@@ -26,7 +26,8 @@ worse than a missing one.
 ## The contract every script here honours
 
 1. **Exit 0 means pass. Exit 77 means skip** - a tool or environment the check
-   needs is absent; the runners print `SKIP` and do not fail. **Any other exit
+   needs is absent; the runners print `SKIP`, and a run with no failure but
+   such a skip exits 77 itself (skipped, not verified). **Any other exit
    means stop.** No "warnings" that exit 0.
 2. **Takes `--env <name>`**, defaulting to the local/development environment.
    Print the resolved target host or URL on the first line - a suite that passes
@@ -41,7 +42,7 @@ worse than a missing one.
    from a suite that ran nothing. Both runners print the last 5 lines of a
    failing check's output under its `FAIL` line, so the cause is in the log.
    Exit 77 means a tool or environment the check needs is absent: the runners
-   print `SKIP` and count it, and it is not a failure.
+   print `SKIP` and count it; it is not a failure, and not a pass either.
 5. **Cleans up after itself**, via `trap`, including on failure.
 
 ## Adding a check

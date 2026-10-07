@@ -29,7 +29,9 @@ fi
 
 # A failing check prints its last 5 output lines under its FAIL line, so the
 # cause is in the log. Exit 77 is SKIP (a missing tool or environment), not a
-# failure - the same convention crew's verify gate uses. The output goes to a
+# failure - the same convention crew's verify gate uses. A run with no
+# failure but an exit-77 skip exits 77 itself, so the gate records it as
+# skipped, never as verified: a check that did not run is not a pass. The output goes to a
 # temp file, not a $(...) capture, so a background process the check leaves
 # holding the pipe cannot hold the runner open. Each tail line starts
 # `FAIL <name> |`: crew's verify gate relays only lines starting `FAIL` or
@@ -40,14 +42,14 @@ CUR_OUT=""
 cleanup() { [ -z "$CUR_OUT" ] || rm -f "$CUR_OUT"; }
 trap cleanup EXIT
 trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
-PASS=0; FAIL=0; SKIP=0
+PASS=0; FAIL=0; SKIP=0; SKIP77=0
 run() { local n="$1" out rc f; shift
   f="$(mktemp)" || { echo "FAIL $n: cannot create a temp file"; FAIL=$((FAIL+1)); return; }
   CUR_OUT="$f"
   "$@" >"$f" 2>&1; rc=$?
   out="$(tail -n 5 "$f")"; rm -f "$f"; CUR_OUT=""
   if [ "$rc" -eq 0 ]; then echo "PASS $n"; PASS=$((PASS+1))
-  elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1))
+  elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1)); SKIP77=$((SKIP77+1))
   else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | while IFS= read -r l; do printf 'FAIL %s | %s\n' "$n" "$l"; done
     FAIL=$((FAIL+1)); fi; }
 skip() { echo "SKIP $1 ($2)"; SKIP=$((SKIP+1)); }
@@ -73,3 +75,4 @@ done
 
 echo "REGRESSION: $PASS passed, $FAIL failed, $SKIP skipped against $ENV"
 [ "$FAIL" -eq 0 ] || exit 1
+[ "$SKIP77" -eq 0 ] || exit 77
