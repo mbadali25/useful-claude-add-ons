@@ -1,7 +1,7 @@
 """kimi_probe.final_message: the Kimi Code stream-json parser (T-0028).
 
 Moved here from test_review_verdict.py when T-0028 was split: the parser lives
-in kimi_probe.py (feature code), and the review harness reuses it (L-0527).
+in kimi_probe.py (feature code), and the review harness imports it (L-0527).
 """
 import json
 import os

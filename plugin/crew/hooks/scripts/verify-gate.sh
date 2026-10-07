@@ -161,7 +161,14 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || {
   [ "$CI_MODE" -eq 1 ] && { echo "verify-gate --ci: cannot cd into ${CLAUDE_PROJECT_DIR:-.} - nothing was checked" >&2; exit 2; }
   exit 0
 }
-if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null; then
+# The resolved repo config (T-0096's crew_repo_config_dir, L-0681): a linked
+# worktree with no config of its own reads the main checkout's, the file
+# review_gate.py reads too. When git cannot tell, it is this checkout's own.
+crew_repo_config_dir .
+CREW_REPO_CONFIG="$CREW_CFG_DIR/config.json"
+# Not exported: a rule command must not inherit a gate variable
+# (test_verify_gate_rule_env_leak.py). The matcher below is handed it alone.
+if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' "$CREW_REPO_CONFIG" 2>/dev/null; then
   if [ "$CI_MODE" -eq 1 ]; then
     echo "verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job." >&2
     exit 2
@@ -931,7 +938,7 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
   TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
 fi
 
-MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
+MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
 import json,sys,fnmatch,io,os,re
 try:
     sys.stdout.reconfigure(newline="\n")
@@ -1001,11 +1008,11 @@ if len(sys.argv) > 2 and sys.argv[2] in ("--all", "--ci"):
     budget = None
 else:
     try:
-        _cc = json.load(open(".crew/config.json"))
+        _cc = json.load(open(os.environ["CREW_REPO_CONFIG"]))
         _v = (_cc.get("verify") or {}).get("stopBudgetSeconds")
         if isinstance(_v, (int, float)) and not isinstance(_v, bool) and _v >= 0:
             budget = _v
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, KeyError):
         pass
 
 # A command is ONE LINE, and a command that is not is REJECTED rather than
@@ -1209,6 +1216,24 @@ def _identity(cmd, env):
 def _identity_text(identity):
     return identity.split("\x1c", 1)[0]
 
+# T-0068: crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`: this
+# gate's records, the scope base, the metrics files) is dropped from the
+# changed list, so in a repository that does not ignore `.crew/` the gate's
+# last run is never this run's UNMAPPED CHANGE. A refresh artifact
+# (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`, which `/crew:done` checks for
+# freshness on its own) still runs any rule that names it, but is never
+# unmapped. One judgement for both flavours, `completion_audit.classify_paths`;
+# the .ps1 pipes the same list to `completion_audit.py --classify`. If it
+# cannot be imported every path stays `other`: unmapped, never mapped.
+try:
+    import completion_audit as _ca
+    _kinds = dict(zip(changed, _ca.classify_paths(os.getcwd(), changed)))
+except Exception as _e:  # pylint: disable=broad-except
+    print("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other "
+          "changes (%s: %s) - every changed path is judged" % (type(_e).__name__, _e),
+          file=sys.stderr)
+    _kinds = {}
+changed = [f for f in changed if _kinds.get(f) != "bookkeeping"]
 for f in changed:
     hit=False
     for ri, r in enumerate(cfg.get("rules",[])):
@@ -1287,7 +1312,7 @@ for f in changed:
                 if ident not in cmds: cmds.append(ident)
                 if ident not in rule_cmds[ri]: rule_cmds[ri].append(ident)
                 note_cost(ident, r if r.get("seconds") is not None else {"seconds": rule_secs.get(ri)})
-    if not hit: unmatched.append(f)
+    if not hit and _kinds.get(f) != "artifact": unmatched.append(f)
 for ri in rule_order:
     if ri not in stop_excluded and ri not in rule_secs:
         truly_unknown[ri] = True

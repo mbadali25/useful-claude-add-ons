@@ -154,7 +154,8 @@ force says `take`. Exit 0 valid, 1 not.
                                                              (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
-  receipt current, artifacts stale       stale-after-review  stop, nothing written
+  receipt current, artifacts stale       refresh             stop: run it, commit, rerun (L-0522)
+  moved beyond an anchor, or unsettled   stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
 
 A sliced plan's other rows carry `slice` and prefix the reason with `slice n
@@ -1387,6 +1388,8 @@ def _review_phase(top, ticket, evidence, answer):
                       f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes then /crew:review")
     ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:
+        return answer(*review_ledger.review_delta.beyond_anchor_stop(message))
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
@@ -1410,8 +1413,7 @@ def _review_phase(top, ticket, evidence, answer):
 
 
 def _toward_review(top, ticket, answer, ok, message, note=""):
-    """Refresh before the next review round, then review; or done once a
-    receipt stands. `note` prefixes the review reason (a refunded round). The
+    """Refresh, then review; or done once a receipt stands (`note`: a refunded round). The
     docs phase (T-0022) runs first, before the refresh and every round."""
     docs = None if ok else crew_autopilot_docs.before_review(top, ticket, answer)
     if docs is not None:
@@ -1428,10 +1430,8 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     if not ok:
         return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
-    if refresh["state"] != FRESH:
-        return answer("stale-after-review", True, "an artifact is stale after an "
-                      "accepted review; refreshing now would stale the receipt - human "
-                      f"decides. {refresh['reason']}")
+    if refresh["state"] != FRESH:  # L-0522: a refresh command settles it, then a rerun
+        return answer(*review_ledger.review_delta.after_review_refresh(refresh, STALE))
     return crew_autopilot_docs.after_review(top, ticket, answer) or answer(
         "done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 

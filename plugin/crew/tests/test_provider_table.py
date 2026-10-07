@@ -2535,10 +2535,14 @@ def test_kimi_display_names_render_the_owner_ids():
 # --- the launch gate (T-0028 round 6, owner 2026-09-30 "Fix 4 + launch-gate") -------------
 # A provider in `qa.order` is reviewable only when /crew:review can launch it:
 # `crew_config.review_launchable()` reads `review_run.LAUNCHED` (plus the in-session
-# `claude`). Kimi is second in the default order before its launcher exists (L-0527).
+# `claude`). Kimi is launched since L-0527, so the must-block case takes it out of
+# LAUNCHED as the stand-in for "a provider with no launcher".
 
-def test_kimi_in_qa_order_is_not_eligible_while_review_run_cannot_launch_it():
-    """must-block: round 6 FIX 1 - the walk took an eligible kimi that nothing launches."""
+def test_a_provider_review_run_cannot_launch_is_not_eligible(monkeypatch):
+    """must-block: round 6 FIX 1 - the walk took an eligible provider that nothing launches."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(review_run, "LAUNCHED",
+                        tuple(p for p in review_run.LAUNCHED if p != "kimi"))
     cfg = {"qa": {"provider": "auto", "order": ["kimi", "copilot", "claude"],
                   "kimi": {"model": "k3"}, "copilot": {"model": "gpt-5.6-sol"}}}
 
@@ -2549,16 +2553,16 @@ def test_kimi_in_qa_order_is_not_eligible_while_review_run_cannot_launch_it():
     assert "review_run.LAUNCHED" in kimi["why"]
 
 
-def test_kimi_becomes_eligible_once_review_run_launches_it(monkeypatch):
-    """must-allow: the gate names no provider - adding `kimi` to review_run.LAUNCHED
-    (L-0527) is the whole change that makes it eligible."""
+def test_kimi_is_eligible_now_that_review_run_launches_it():
+    """must-allow: the gate names no provider - `kimi` in review_run.LAUNCHED (L-0527)
+    is the whole change that makes it eligible."""
     import review_run  # pylint: disable=import-outside-toplevel
-    monkeypatch.setattr(review_run, "LAUNCHED", review_run.LAUNCHED + ("kimi",))
     cfg = {"qa": {"provider": "auto", "order": ["kimi", "claude"], "kimi": {"model": "k3"}}}
 
     rows = crew_config.order_candidates(cfg, "claude", which=lambda _n: "/bin/x")
 
-    assert (rows[0]["provider"], rows[0]["eligible"]) == ("kimi", True)
+    assert ("kimi" in review_run.LAUNCHED, rows[0]["provider"], rows[0]["eligible"]) == (
+        True, "kimi", True)
 
 
 def test_launch_gate_agrees_with_review_run():

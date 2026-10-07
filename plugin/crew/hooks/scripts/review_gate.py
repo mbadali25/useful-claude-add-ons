@@ -32,10 +32,11 @@ FOUR ANSWERS, and "could not tell" is its own one:
   UNVERIFIED  it does not, and the reason names which half failed
   UNKNOWN     git, the marker or the digest could not be read -- never read
               as VERIFIED, and refused like UNVERIFIED
-  NO_GATE     no `.crew/verify.json`, or `"verifyGate": false` in
-              `.crew/config.json` (the same test the gate's own first lines
-              make) -- there is nothing to be green against, so the review
-              proceeds and SAYS so
+  NO_GATE     no `.crew/verify.json`, or `"verifyGate": false` in the
+              resolved `.crew/config.json` (the same test the gate's own
+              first lines make, on the same file: in a linked worktree with
+              no config of its own, the main checkout's, L-0681) -- there is
+              nothing to be green against, so the review proceeds and SAYS so
 """
 import json
 import os
@@ -124,7 +125,8 @@ def _gate_state(root):
         if _read(os.path.join(root, VERIFY_MAP)) is None:
             return NO_GATE, ("no .crew/verify.json - there is no verify gate here to be "
                              "green against, so nothing was checked before this review")
-        config = _read(os.path.join(root, ".crew", "config.json"))
+        # L-0681: the resolved file, as verify-gate.sh's stand-down reads it.
+        config = _read(crew_common.repo_config_file(root, "config.json"))
         if config is not None and _STOOD_DOWN_RE.search(config):
             return NO_GATE, ('"verifyGate": false in .crew/config.json - the gate is stood '
                              "down, so nothing was checked before this review")
