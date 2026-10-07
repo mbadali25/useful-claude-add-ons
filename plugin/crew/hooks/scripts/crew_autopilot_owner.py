@@ -28,7 +28,10 @@ under `.work/tickets/` whose name is a ticket id and that no INDEX line names
 - any other stop: an item `(ticket, phase, action)`, the action from
   OWNER_ACTIONS, else FALLBACK;
 - `_phase` raising: in `unknown` with the exception's type name, never dropped
-  and never counted as "on you".
+  and never counted as "on you"; so is a header gate read under an INDEX cell
+  autopilot does not know, and a main-checkout INDEX it could not compare.
+- an open INDEX row whose folder is not in this checkout is read as well
+  (`folder-elsewhere`: a person copies it).
 
 No `.work/INDEX.md`, or one that cannot be read, is `state: unknown` (Jira and
 ServiceDesk Plus modes write no rows, so "nothing waiting" would be a guess).
@@ -99,6 +102,16 @@ def _tickets(top):
     (compared case-folded: one folder on a case-insensitive filesystem is one
     ticket); `why` when `.work/tickets/` exists and cannot be listed."""
     found = list(crew_autopilot.open_index_tickets(top))
+    # An open row whose folder is not in this checkout (only the main checkout's, or none):
+    # `_phase` stops at folder-elsewhere, which a person settles, so it is read too (L-0551 r6).
+    main, _why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
+    rows = list(crew_autopilot._index_rows(top))  # pylint: disable=protected-access
+    if main:
+        main_index = os.path.join(main, ".work", "INDEX.md")
+        rows += crew_autopilot._index_rows(top, main_index)  # pylint: disable=protected-access
+    for ticket, line in rows:
+        if ticket not in found and crew_autopilot._is_open(ticket, line):  # pylint: disable=protected-access
+            found.append(ticket)
     # A `done` row whose spec header is `done` too still ships (`_phase`'s ship rows).
     for ticket, _line in crew_autopilot._index_rows(top):  # pylint: disable=protected-access
         if ticket not in found and crew_autopilot._index_status(top, ticket) == "done" \
@@ -186,8 +199,9 @@ def owner_items(root, today=None):
                 continue
             if not result["stop"]:
                 continue
-            if crew_autopilot_gates.UNKNOWN_CELL in result["reason"]:  # never filtered: could-not-tell
-                got["items"].append((ticket, result["phase"], FALLBACK.format(id=ticket)))
+            if crew_autopilot_gates.UNKNOWN_CELL in result["reason"]:  # never filtered, never a phase
+                got["unknown"].append((ticket, f"its INDEX status is not one autopilot knows "
+                                               f"(the spec header stops it at {result['phase']})"))
                 continue
             if result["phase"] == "closed" and result.get("decision") != "look":
                 continue  # a closed stop that still asks something (unarmed ship) is listed

@@ -1485,7 +1485,7 @@ def test_owner_items_leave_out_what_waits_elsewhere(tmp_path, status, line):
     got = crew_autopilot_owner.owner_items(str(root))
     phase = crew_autopilot._phase(str(root), T, policy=False)["phase"]  # pylint: disable=protected-access
 
-    assert (phase, got["items"]) == (status if status == "landing" else "blocked", [])
+    assert (phase, [i for i in got["items"] if i[0] == T]) == (status if status == "landing" else "blocked", [])
 
 
 def test_owner_items_a_missing_row_names_the_status_read(tmp_path):
@@ -1548,7 +1548,8 @@ def test_owner_items_counts_a_blocked_ticket_without_listing_it(tmp_path):
 
     got = _owned(root)
 
-    assert (got["blocked"], got["items"]) == ([T], [])
+    # T-2's row has no folder: it is listed for a person (L-0551 r6), T-1 only counted.
+    assert (got["blocked"], [i for i in got["items"] if i[0] == T]) == ([T], [])
 
 
 def test_owner_items_skips_landing(tmp_path):
@@ -1705,8 +1706,9 @@ def test_owner_items_keep_an_unknown_index_cell_visible(tmp_path, header):
 
     got = _owned(root)
 
-    assert (got["items"], got["held"]) == ([(T, "closed" if header == "cancelled" else header,
-                                             f"see /crew:autopilot status {T}")], [])
+    # L-0551 review r6: could-not-tell, never shown as a definite phase.
+    assert ([t for t, why in got["unknown"] if "not one autopilot knows" in why], got["items"],
+            got["held"]) == ([T], [], [])
 
 
 def test_owner_items_a_case_only_folder_without_its_own_folder_is_listed(tmp_path):
@@ -1760,3 +1762,14 @@ def test_owner_items_an_unreadable_main_index_is_could_not_tell(tmp_path, monkey
     got = _owned(root)
 
     assert ([t for t, _w in got["unknown"]], got["items"]) == ([T], [])
+
+
+def test_owner_items_read_an_open_row_whose_folder_is_elsewhere(tmp_path):
+    """L-0551 review r6 BLOCK: an open INDEX row with no folder in this checkout stops at
+    folder-elsewhere (or no folder) for a person; it is never dropped from the list."""
+    root = make_repo(tmp_path, mode="off")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = _owned(root)
+
+    assert [t for t, _p, _a in got["items"]] + [t for t, _w in got["unknown"]] == [T], got

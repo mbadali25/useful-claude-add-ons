@@ -779,3 +779,13 @@ def test_replan_check_a_blank_rejector_or_disagreeing_counts_is_could_not_tell(t
     got = _check(_auto_rejected_plan(tmp_path, rejected=rejected, rounds=rows))
 
     assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
+
+
+@pytest.mark.parametrize("number", [True, 1, None, "2"])
+def test_replan_check_the_rejected_round_must_be_the_latest_rounds_int(tmp_path, number):
+    """L-0670 review r4 BLOCK: `True == 1`, a missing number or round 1 of two would read
+    the wrong row; only the latest round's int is read, else could-not-tell."""
+    rejected = dict(AUTO, round=number)
+    got = _check(_auto_rejected_plan(tmp_path, rejected=rejected, quoted=(BLOCK_LINE, FIX_LINE)))
+
+    assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
