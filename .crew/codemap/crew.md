@@ -383,8 +383,8 @@ are `gate-refuses-map`; each dispatch is printed with `gated-as:` - every enviro
 stripping (`gate_matches`, `:407`; `simulate_gate`, `:478`, is the agreement tables' entry point).
 It prints the dispatch for HEAD (`dispatch`, `:245`), runs only `git rev-parse HEAD`, the git
 `crew_common.require_tool` resolves (`_head`, `:528`), and writes nothing; no hook calls it yet,
-and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its unwired
-mutations are `plugin/crew/tests/ghdeploy_mutations.py` (L-0650 wires them). Added at HEAD after
+and promote-gate ignores the `github` key. DERIVED from the definitions cited. Its
+mutations are `plugin/crew/tests/ghdeploy_mutations.py`, in `sabotage.py`'s run since L-0650 (H2b). Added at HEAD after
 the anchor; the anchor was not moved for it.
 
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
