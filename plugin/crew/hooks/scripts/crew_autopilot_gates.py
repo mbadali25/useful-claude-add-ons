@@ -20,7 +20,8 @@ never sets or lifts a gate.
   "no gate".
 - `blocked`: an approved ticket whose `depends-on:` names a ticket that is not
   closed (`open`, `unknown`, `cancelled`, `superseded`), or whose `depends-on:`
-  line cannot be read, stops before implement, review and done. A blocked
+  line cannot be read, stops before implement, review and done, and before a
+  `ship` or `next-slice` that would act (`before_ship`). A blocked
   ticket still gets its spec and plan. The review-ledger problems `view`
   reports are not read here: `_review_phase` reads the ledger itself.
 - `revisit:` never lifts a hold. It is printed, with "(passed)" once due.
@@ -123,13 +124,13 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
     nxt = os.path.join(folder, "next.md")
     if os.path.lexists(nxt):
         evidence.append(_rel(top, nxt))
-    if index_status in GATES:
-        word, where = index_status, f".work/INDEX.md marks {ticket} `{index_status}`"
-    elif view["gate"] == "unknown":
+    if view["gate"] == "unknown":  # before the INDEX cell: the first of two disagreeing rows is no gate
         why = [p for p in view["problems"] if p.startswith("gate:")]
         return answer("direction-approval", True, f"cannot tell whether a gate ({', '.join(GATES)}, "
                       f"{', '.join(CLOSING)}) holds {ticket}: " + ("; ".join(why) or "unknown")
                       + " - the human makes .work/INDEX.md say one status for it"), view
+    if index_status in GATES:
+        word, where = index_status, f".work/INDEX.md marks {ticket} `{index_status}`"
     elif view["gate"] and view["gate_source"] == "header":
         word, where = view["gate"], f"spec.md header is `status: {view['gate']}`"
     else:
@@ -147,6 +148,15 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
     if problems:
         why += " (next.md: cannot tell - " + "; ".join(problems) + ")"
     return answer(word, True, f"{where}: {why}"), view
+
+
+def before_ship(top, ticket, answer, found):
+    """`found` from `_ship_phase`, unless it would act (stop=0: `ship` or
+    `next-slice`) while a dependency is not closed or cannot be told: then the
+    `blocked` stop. A stop (`closed` included) is returned as it is."""
+    if found["stop"]:
+        return found
+    return blocked(crew_ticket_state.view(top, ticket), answer) or found
 
 
 def blocked(view, answer):

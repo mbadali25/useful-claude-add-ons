@@ -1097,10 +1097,9 @@ def _phase(root, ticket, policy=True):
     if ctx and ctx["error"]:
         return answer("slices", True, ctx["error"])
     if ctx and ctx["piece"]["n"] in ctx["state"]["done"] and ctx["piece"]["n"] < ctx["m"]:
-        return sl.with_slice(ctx, _ship_phase(top, ticket, answer, "done by /crew:done "
-                                              "(crew_autopilot.py slice-done)", ctx))
-    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(top, ticket, evidence,
-                                                                        answer)
+        return sl.with_slice(ctx, crew_autopilot_gates.before_ship(top, ticket, answer, _ship_phase(
+            top, ticket, answer, "done by /crew:done (crew_autopilot.py slice-done)", ctx)))
+    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(top, ticket, evidence, answer)
     found = _auto_replan_route(top, ticket, found, answer) if policy else found
     if ctx:
         found = dict(found, reason=f"{sl.label(ctx)}: steps "
@@ -1122,7 +1121,8 @@ def _done_phase(top, ticket, answer, why, plan_text=None):
                       "later slices unbuilt. A non-final slice's /crew:done sets "
                       "`in-progress` and runs crew_autopilot.py slice-done - a human "
                       "puts the header back")
-    return sl.with_slice(ctx, _ship_phase(top, ticket, answer, why, ctx))
+    return sl.with_slice(ctx, crew_autopilot_gates.before_ship(top, ticket, answer, _ship_phase(
+        top, ticket, answer, why, ctx)))
 
 
 def _current_rounds(ledger):

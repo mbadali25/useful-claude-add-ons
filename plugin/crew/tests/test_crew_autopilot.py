@@ -2582,3 +2582,30 @@ def test_stops_lists_the_gate_stops():
     fixed = {slug for slug, _text in crew_autopilot.FIXED_STOPS}
 
     assert {"hold", "landing", "needs-owner", "blocked"} <= fixed
+
+
+@pytest.mark.parametrize("ship, phase", [(("ship", False), "blocked"), (("closed", True), "closed")])
+def test_next_blocked_stops_a_ship_that_would_act(tmp_path, monkeypatch, ship, phase):
+    """L-0550 review r1 BLOCK: a `status: done` header reaches `_ship_phase`
+    before the review-phase check; a ship that would act still stops on an
+    open dependency, and a stop (`closed`) is left as it is."""
+    root = _depends(tmp_path, "depends-on: T-2", "T-2 | spec | high | r | other")
+    first, rest = _spec_text(T, "status: done   risk: high").split("\n", 1)
+    _write(root / ".work" / "tickets" / T / "spec.md", f"{first}\ndepends-on: T-2\n{rest}")
+    monkeypatch.setattr(crew_autopilot, "_ship_phase",
+                        lambda top, ticket, answer, why, ctx=None: answer(ship[0], ship[1], why))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == (phase, True), got
+
+
+def test_next_hold_in_the_first_of_two_disagreeing_rows_is_cannot_tell(tmp_path):
+    """L-0550 review r1 FIX: `hold` then `ready` is no hold; the gate cannot be told."""
+    root = _approved(tmp_path)
+    _index(root, f"{T} | hold | high | r | title", f"{T} | ready | high | r | title")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "cannot tell whether a gate" in got["reason"]) == (
+        "direction-approval", True, True), got

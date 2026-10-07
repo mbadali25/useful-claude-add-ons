@@ -42,7 +42,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   questions, or says it cannot tell what is asked. A header `cancelled`/`superseded` is `closed`, and
   a superseded ticket names its successor or says "successor not named". An approved ticket whose
   `depends-on:` names a ticket that is not closed, or whose line cannot be read, stops as `blocked`
-  before implement, review and done. Two disagreeing INDEX rows stop as `direction-approval`.
+  before implement, review and done, and before a `ship` or `next-slice` that would act. Two disagreeing INDEX rows stop as `direction-approval`.
 - **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
   and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
 - **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
