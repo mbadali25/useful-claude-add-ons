@@ -93,6 +93,11 @@ PLATFORM_ONLY = {
     "the bash gate stops publishing a deadline at all (bash only)":
         (_LINUX, "its target's rule runs GNU `stat -c %Y`, which macOS's stat "
                  "does not take"),
+    "T-0081: the POSIX fd walk skips the per-component identity match":
+        (frozenset({"linux", "darwin"}), "the fd walk is POSIX's; on Windows the "
+                                         "handle walk runs instead and its own entry covers it"),
+    "T-0081: a zero inode on the walk is no longer could-not-tell":
+        (frozenset({"linux", "darwin"}), "its target test is skipped where there is no fd walk"),
     "a displaced move back says moved back without checking the inode":
         (frozenset({"linux", "darwin"}), "its target test is skipped on Windows: "
                                          "the link-then-park move is POSIX's"),
