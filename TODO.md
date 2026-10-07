@@ -3622,3 +3622,40 @@ context clear, so the open items live here where they are tracked.
   right before the `no_git_description_problems` case). Did not block: this round's QA
   named `count_plugin_commands`/`count_plugin_agents` (`:601`) specifically, not this
   earlier call, and `check_self_claims` predates this ticket entirely.
+
+## Filed 2026-09-22 by the mermaid-svg-bitbucket CRLF-digest fix developer, corrected 2026-09-22
+
+An earlier version of this entry said a Windows clone's checked-out SVG bytes would show
+as changed under `git diff`/`git status`, and proposed `*.svg -text` in the repo-root
+`.gitattributes` as the fix. Both halves of that were wrong, on review, and it is worth
+keeping the correction visible rather than quietly rewriting the entry, per this file's own
+"a correction that outlives the thing it corrected" pattern.
+
+- **`git status`/`git diff` do NOT show a converted checkout as changed.** That was the
+  premise for treating this as visible drift, and it inverts how `core.autocrlf` actually
+  works: on comparison, git runs the working-tree content back through its "clean" filter
+  (the same direction as a commit would use) before diffing it against the index/blob, which
+  reverses whatever the checkout's "smudge" filter did. A CRLF working-tree copy of an
+  LF-committed SVG that hasn't been otherwise touched compares as clean, not modified - the
+  same normalize-before-compare behavior that makes `.sh` scripts (this repo's existing
+  `*.sh text eol=lf` case) look unchanged in git even when their checked-out bytes carry
+  CRLF. `svg_digest()`'s normalization (`skills/mermaid-svg-bitbucket/scripts/render_mermaid.py:77`)
+  closes the one place this repo's own tooling looks at raw bytes without going through git's
+  compare-time filter - `--check`'s hash comparison - which is the part git's own filters
+  don't reach.
+- **Real mmdc output has nothing for a line-ending translation to act on.** Measured: this
+  skill's one committed real-render fixture, `tests/fixtures/sample.svg` (10937 bytes), contains
+  zero `\n` and zero `\r` bytes - it is emitted as a single line. A file with no line breaks in
+  it cannot differ by line-ending convention at all, on any host, with or without
+  `svg_digest()`'s normalization. That makes the byte-reproducibility scenario this entry
+  originally raised near-theoretical for a real render: it would need a diagram, or a
+  mermaid-cli version, that pretty-prints its SVG output with embedded newlines, which is not
+  what this skill has observed. (One fixture, one mermaid-cli version - this is not a claim
+  that no mmdc output ever contains a newline, only that the one measured here doesn't.)
+- **Conclusion: `.gitattributes` `*.svg -text`/`binary` is very likely not needed**, on the
+  evidence above - git's own compare-time normalization already prevents the "looks changed on
+  the other platform" failure mode this entry was originally written to describe, and the
+  "committed bytes literally differ" failure mode has nothing to act on in a real render. Not
+  proposed for implementation; nothing further queued here unless a future mermaid-cli version
+  is observed emitting multi-line SVGs, at which point `svg_digest()`'s normalization already
+  covers the `--check` side of that and this line should be revisited for the git-diff side.
