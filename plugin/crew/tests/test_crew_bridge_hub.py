@@ -98,6 +98,19 @@ def test_a_started_lane_whose_file_is_gone_is_unknown(tmp_path, capsys, gone):
     assert code == 3 and lines and lines[0].startswith("unknown") and "missing" in lines[0], lines
 
 
+def test_a_lane_file_that_is_not_utf8_is_unknown(tmp_path, capsys):
+    """L-0637 review round 6: a bad byte in the worktree path would be replaced on
+    read and never match; the file is unknown instead."""
+    root, lane, _ = _hub(tmp_path)
+    path = _lane_file(root)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = json.dumps(data).replace(data["worktree"].replace("\\", "\\\\"),
+                                   data["worktree"].replace("\\", "\\\\") + "\udcff", 1)
+    path.write_bytes(raw.encode("utf-8", "surrogateescape"))
+    code, lines = run(lane, ["ring"], capsys)
+    assert code == 3 and lines and "not valid UTF-8" in lines[0], lines
+
+
 def test_a_corrupt_start_record_is_unknown(tmp_path, capsys):
     root, lane, _ = _hub(tmp_path)
     (_lane_file(root).parent.parent / "start.json").write_text("{not json", encoding="utf-8")

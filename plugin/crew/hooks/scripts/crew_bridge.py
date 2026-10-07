@@ -181,6 +181,16 @@ def lane_state(top):
     return "not-lane", ""
 
 
+def _strict_utf8(path):
+    """True when the file at `path` decodes as UTF-8 with no replacement."""
+    try:
+        with open(path, "rb") as handle:
+            handle.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return True
+
+
 def _started_without_a_file(crew_wave, main, slug, names):
     """Why this set cannot say which worktrees its lanes are, or None:
     `start.json` lists every lane the wave started, and a started lane whose
@@ -238,6 +248,10 @@ def _lane_in(crew_wave, main, here):
                 lane, state = crew_wave.read_lane(main, slug, name[:-len(".json")])
             except (crew_wave.WaveError, crew_ticket.TicketError):
                 lane, state = None, "unreadable"
+            if state == "ok" and not _strict_utf8(os.path.join(lanes, name)):
+                # read_text replaces a bad byte, so a worktree path holding one would
+                # never match this one and read "not a lane" (L-0637 review round 6).
+                lane, state = None, "not valid UTF-8"
             if state != "ok":
                 return "unknown", (f"lane file {crew_coord.safe(slug, 64)}/{crew_coord.safe(name, 80)} is {state}: "
                                    "whether it names this worktree cannot be told")
