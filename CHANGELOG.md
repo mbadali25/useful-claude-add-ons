@@ -20,7 +20,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   verify gate relays only `FAIL` and `SMOKE:` lines of a failed smoke run); exit 77
   prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure, and a run
   with no failure but such a skip exits 77 itself, so the gate records it skipped, not verified. `smoke.sh`'s last
-  line adds the skip count and still starts `SMOKE: `.
+  line adds the skip count and still starts `SMOKE: `. Known Windows limitation: the capture file
+  is removed on Ctrl+C, a `timeout` or Git Bash's `kill`, but not when the runner is killed hard
+  (Task Manager, closing the window, a non-MSYS parent's TerminateProcess): no trap runs then,
+  the same as SIGKILL on Linux, and one capture file stays in `$TMPDIR`.
 - **`templates/cases/diagrams-render.sh`** (new; setup copies it into `_verify/cases/` only in a
   repo with `.mmd` files). Renders every source in `$DIAGRAMS_DIR` (default `docs/diagrams`) to a
   temp directory with the same `--no-sandbox` puppeteer config as `render.sh`, prints mmdc's last 5
@@ -97,6 +100,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   last command read as OK); under `--user`, a tool-home directory that is not a git clone is never
   replaced without `GIZMODUCK_BOOTSTRAP_FORCE=1`. Now: 0 nothing failed, 1 a tool or the template download failed, 2 a usage or
   precondition error. Skipped-only is 0 with a last line `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`.
+  Under `--user`, nmap and wkhtmltopdf count as present only when `--version` runs (30s ceiling);
+  one on PATH that fails it is a failure (exit 1), not present and not skipped.
 - **Privilege, decided once.** `id -u` 0: no `sudo` prefix. Otherwise `sudo`, with `-n` when stdin
   is not a terminal so a password prompt cannot hang a pipeline. Not root and no `sudo`: exit 2,
   pointing at `--user`. apt runs with `DEBIAN_FRONTEND=noninteractive` (through `env`, so sudo's

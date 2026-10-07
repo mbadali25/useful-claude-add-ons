@@ -16,9 +16,7 @@ no rule.
 import json
 import os
 import shutil
-import signal
 import subprocess
-import sys
 import time
 
 import pytest
@@ -318,24 +316,23 @@ def test_smoke_tail_survives_the_verify_gate_filter(tmp_path):
     assert any("the cause" in ln for ln in relayed), relayed
 
 
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="POSIX signals: on Windows Popen.send_signal(SIGTERM) is "
-                           "TerminateProcess, which no bash trap can observe")
 @pytest.mark.parametrize("runner", ["run-all", "smoke"])
 def test_an_interrupted_runner_leaves_no_capture_file(tmp_path, runner):
+    """The signal is sent by bash's own `kill`, not Popen.send_signal: on
+    Windows the latter is TerminateProcess, which no trap observes (a hard
+    kill, like SIGKILL), while Git Bash's kill delivers a real SIGTERM, as a
+    Ctrl+C or a `timeout` does. So this runs on every host."""
     repo, env = _repo(tmp_path)
     marker = tmp_path / "started"
     body = f'touch "{marker.as_posix()}"\necho partial output\nsleep 2\nexit 0\n'
     _add_case(repo, "slow", body)
     if runner == "smoke":
         _smoke_with(repo, 'check "slow" bash _verify/cases/slow.sh')
-    proc = subprocess.Popen([_BASH, f"_verify/{runner}.sh"], cwd=str(repo), env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(100):
-        if marker.exists():
-            break
-        time.sleep(0.05)
-    proc.send_signal(signal.SIGTERM)
-    proc.wait(timeout=20)
-    assert proc.returncode != 0
+    driver = (f'bash _verify/{runner}.sh >/dev/null 2>&1 & p=$!; n=0; '
+              f'until [ -e "{marker.as_posix()}" ] || [ $n -ge 200 ]; do sleep 0.05; n=$((n+1)); done; '
+              'kill -TERM "$p"; wait "$p"; echo "rc=$?"')
+    proc = subprocess.run([_BASH, "-c", driver], cwd=str(repo), env=env, capture_output=True,
+                          text=True, timeout=60, check=False)
+    assert marker.exists(), proc.stdout + proc.stderr
+    assert proc.stdout.strip().startswith("rc=") and proc.stdout.strip() != "rc=0", proc.stdout
     assert not os.listdir(env["TMPDIR"]), os.listdir(env["TMPDIR"])

@@ -18,7 +18,8 @@
 #                manager goes into the gizmoduck tool home (the same rule as
 #                scripts/scanners/base.py tool_home()); tools that need a
 #                package (nmap, wkhtmltopdf, a Java runtime, perl) are
-#                reported as present or SKIPPED, never installed.
+#                reported as present (nmap and wkhtmltopdf only when
+#                `--version` runs), SKIPPED, or failed, never installed.
 #   --dry-run    print one `plan:` line per tool and change nothing.
 #
 # Exit: 0 nothing failed (the last line starts GIZMODUCK_BOOTSTRAP_SKIPPED:
@@ -283,16 +284,30 @@ mark_skipped() {
 }
 
 # --user and a tool only a package manager provides: report it as present
-# when $2 is on PATH, else add it to SKIPPED (separate from FAILED) and say
-# which package an image needs.
+# only when $2 is on PATH, is not empty AND `$2 --version` exits 0 within 30s
+# (the same proof already_installed asks for; a resolving name alone is not).
+# On PATH but failing: return 1, so try_install records it FAILED - --user
+# cannot reinstall it. Not on PATH: add it to SKIPPED (separate from FAILED)
+# and say which package an image needs.
 user_package_tool() {
   local name="$1" cmd="$2" pkg="$3" path
   if path=$(command -v "$cmd" 2>/dev/null); then
-    echo ">> ${name}: present (${path})"
-  else
-    echo ">> ${name}: SKIPPED - needs a package manager (add '${pkg}' to the image)"
-    mark_skipped "$name"
+    if [[ -s "$path" ]] && probe_bounded 30 "$path" --version >/dev/null 2>&1; then
+      echo ">> ${name}: present (${path})"
+      return 0
+    fi
+    echo "!! ${name}: ${path} is on PATH but '--version' fails - --user cannot reinstall it; fix it or add '${pkg}' to the image" >&2
+    return 1
   fi
+  echo ">> ${name}: SKIPPED - needs a package manager (add '${pkg}' to the image)"
+  mark_skipped "$name"
+}
+
+# Runs $2.. with a hard ceiling of $1 seconds where coreutils' `timeout`
+# exists (a hung probe must not hang bootstrap), plainly otherwise.
+probe_bounded() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
 }
 
 # --user and a Java tool: no JRE install without a package manager, so a
@@ -307,7 +322,6 @@ install_prereqs() {
   if [[ $USER_MODE == 1 ]]; then
     # curl, unzip, git and python3 were checked before anything ran.
     user_package_tool "wkhtmltopdf (PDF reports)" wkhtmltopdf wkhtmltopdf
-    return 0
   fi
   local missing=0 c
   for c in curl unzip git python3 pip3 wkhtmltopdf; do
@@ -453,7 +467,7 @@ clone_nuclei_templates() {
 }
 
 install_nmap() {
-  if [[ $USER_MODE == 1 ]]; then user_package_tool nmap nmap nmap; return 0; fi
+  if [[ $USER_MODE == 1 ]]; then user_package_tool nmap nmap nmap; return; fi
   already_installed nmap nmap && return 0
   apt_install nmap
 }

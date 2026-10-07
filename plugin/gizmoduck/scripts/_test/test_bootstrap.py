@@ -432,3 +432,30 @@ def test_user_mode_keeps_a_dangling_link_where_a_clone_would_go(env, tmp_path):
     assert (home / "sqlmap").is_symlink(), proc.stdout + proc.stderr
     assert "clone" not in log.read_text(), log.read_text()
     assert proc.stdout.splitlines()[-1] == "failed=sqlmap", proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("tool, func, label", [("nmap", "install_nmap", "nmap"),
+                                               ("wkhtmltopdf", "install_prereqs",
+                                                "wkhtmltopdf (PDF reports)")])
+@pytest.mark.parametrize("works", [True, False])
+def test_user_mode_package_tool_is_present_only_when_it_runs(env, tmp_path, tool, func, label,
+                                                             works):
+    # Group review r4 (G5): `command -v` alone read a broken nmap as present and
+    # bootstrap exited 0 with "all tools installed". It must run `--version`.
+    e, fakes, _log = env
+    e["GIZMODUCK_HOME"] = str(tmp_path / "toolhome")
+    _fake(fakes, tool, f'#!{_BASH}\necho "{tool} 1.0"\n' if works
+          else f'#!{_BASH}\necho "{tool}: cannot open shared object" >&2\nexit 127\n')
+    script = (f'source "$0"; USER_MODE=1; SKIP_LOG=$(mktemp); FAILED=(); '
+              f'try_install "{label}" {func}; finish; echo "rc=$?"; rm -f -- "$SKIP_LOG"')
+    proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
+                          text=True, timeout=30, check=False)
+    out = proc.stdout
+    if works:
+        assert f">> {label}: present (" in out, out + proc.stderr
+        assert out.splitlines()[-1] == "rc=0", out + proc.stderr
+    else:
+        assert f">> {label}: present" not in out, out
+        assert "'--version' fails" in proc.stderr, proc.stderr
+        assert "all tools installed" not in out, out
+        assert out.splitlines()[-1] != "rc=0", out + proc.stderr

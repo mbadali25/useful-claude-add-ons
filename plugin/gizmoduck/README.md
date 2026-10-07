@@ -54,8 +54,9 @@ gizmoduck runs **inside** a container or a CI job; it never drives Docker itself
   `~/.local/share/gizmoduck`; see "Where gizmoduck looks for tools"): Nuclei, trivy, sqlmap,
   dependency-check, ZAP, and testssl.sh and nikto when `hexdump` and `perl` are present; checkov
   and semgrep go through `pip3 install --user` and are linked into the tool home's `bin`. It needs `curl`, `unzip`, `git` and `python3` first and exits 2 naming
-  any that are missing. Tools only a package manager provides are reported as present or
-  **skipped**, never installed. Add these to the image when you want them:
+  any that are missing. Tools only a package manager provides are reported as present (on
+  PATH and `--version` runs), **skipped** (not on PATH), or failed (on PATH but `--version`
+  fails, so the run exits 1), never installed. Add these to the image when you want them:
 
   | Package (Debian/Ubuntu) | For |
   |---|---|
