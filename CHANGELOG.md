@@ -20,9 +20,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   "not a git repository" answer allows; git missing, a timeout, "dubious ownership" or any other
   answer is could-not-tell and refuses, naming what happened.
 - **Kept.** Kimi Code 2.1.1 takes the nearest directory holding any `.git` as its project root
-  (read from its bundle), so a `.git` git rejects still refuses when `AGENTS.md`, `agents.md`,
-  `.kimi-code`, `.agents` or `.mcp.json` sits in a directory from there down to the temporary
-  directory: Kimi would read it.
+  (read from its bundle), so a `.git` git rejects still refuses when Kimi would read a file
+  there: `.kimi-code`, `.agents` or `.mcp.json` at that root, or `AGENTS.md`, `agents.md` or
+  `.kimi-code/AGENTS.md` in any directory from it down to the temporary directory.
 
 ### Added — crew 1.1.21: `/crew:graph`, one command for the code graph (L-0667)
 

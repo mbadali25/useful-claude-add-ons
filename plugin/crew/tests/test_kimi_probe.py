@@ -613,6 +613,29 @@ def test_l0708_kimi_project_files_beside_a_rejected_dot_git_are_refused(fake, ho
     assert str(top / name) in result["reason"] and "Kimi Code" in result["reason"], result
 
 
+@pytest.mark.parametrize("name, refused", [(".mcp.json", False), (".agents", False),
+                                           ("AGENTS.md", True), (".kimi-code/AGENTS.md", True)])
+def test_l0708_below_the_kimi_root_only_instruction_files_count(fake, home, monkeypatch,
+                                                                tmp_path, name, refused):
+    """Review round 4: Kimi reads .mcp.json, .agents and the rest of .kimi-code
+    at its root only, and AGENTS.md / agents.md / .kimi-code/AGENTS.md in each
+    directory from the root down."""
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    middle = top / "mid"
+    target = middle / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if name == ".agents":
+        target.mkdir()
+    else:
+        target.write_text("planted\n", encoding="utf-8")
+    _tmp_under(monkeypatch, middle)
+
+    result, calls = _ran(fake, home, monkeypatch)
+
+    assert (result["state"] == "unknown", len(calls)) == (refused, 0 if refused else 1), result
+
+
 def test_l0708_git_not_on_path_is_could_not_tell(fake, home, monkeypatch, tmp_path):
     (tmp_path / "top" / ".git").mkdir(parents=True)
     scratch = _tmp_under(monkeypatch, tmp_path / "top")

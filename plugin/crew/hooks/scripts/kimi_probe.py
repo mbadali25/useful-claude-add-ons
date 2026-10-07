@@ -390,6 +390,8 @@ IN_A_REPOSITORY = "inside a repository"
 # the nearest directory holding ANY `.git` entry (`findGitWorkTree`,
 # `findProjectRoot`), a `.git` git itself rejects included.
 KIMI_PROJECT_FILES = ("AGENTS.md", "agents.md", ".kimi-code", ".agents", ".mcp.json")
+# The instruction files it reads in every directory below the root too.
+KIMI_PER_DIRECTORY = ("AGENTS.md", "agents.md", os.path.join(".kimi-code", "AGENTS.md"))
 
 
 def _git_path():
@@ -437,7 +439,8 @@ def _kimi_project_files(path):
     """'' or why Kimi Code would read project files outside the probe's
     scratch directory: the nearest directory above `path` holding a `.git`
     entry is Kimi's project root, and every directory from it down to `path`
-    must hold none of KIMI_PROJECT_FILES. Walked lexically (Kimi does not
+    must hold none of KIMI_PROJECT_FILES at the root, nor of KIMI_PER_DIRECTORY
+    in a directory below it (review round 4). Walked lexically (Kimi does not
     resolve its working directory) and resolved (where the files land)."""
     for start in dict.fromkeys((os.path.abspath(path), os.path.realpath(path))):
         chain, here = [], start
@@ -457,7 +460,9 @@ def _kimi_project_files(path):
                 break
             here = parent
         for directory in chain:
-            for name in KIMI_PROJECT_FILES:
+            # chain runs from `path` up to the root, which is its last entry.
+            names = KIMI_PROJECT_FILES if directory == chain[-1] else KIMI_PER_DIRECTORY
+            for name in names:
                 found = os.path.join(directory, name)
                 try:
                     os.lstat(found)
