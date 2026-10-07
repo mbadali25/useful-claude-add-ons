@@ -329,6 +329,21 @@ def test_a_coord_block_that_is_not_an_object_is_unknown(root, value):
     _assert_refused(root, "unknown", "is not a remote name")
 
 
+def test_a_malformed_remote_never_reads_a_valid_remotes_cached_channel(root):
+    """L-0633 review round 5: repr(0) is "0", so a malformed coord.remote of 0
+    hit the cache entry a binding on the remote named "0" had filled."""
+    channels = {}
+    git(root, "remote", "add", "0", str(root))
+    crew_wave._channel_files(str(root), "peers", channels, remote="0")  # pylint: disable=protected-access
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    cfg["coord"] = {"remote": 0}
+    (root / ".crew" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+    files, why = crew_wave._channel_files(str(root), "peers", channels)  # pylint: disable=protected-access
+
+    assert files is None and "is not a remote name" in why
+
+
 def test_coord_remote_is_read_from_config(root, hub):
     _wave(root, ["peers:T-0001"])
     git(root, "remote", "add", "coordhub", str(hub))

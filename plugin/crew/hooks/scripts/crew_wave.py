@@ -431,11 +431,14 @@ def _channel_files(top, channel, channels, remote=None):
         # A coord block that is not an object cannot tell its remote either (r4).
         remote = (cfg.get("remote", "origin") if isinstance(cfg, dict) else "origin" if cfg is None
                   else {"coord": cfg})
-    key = (remote if isinstance(remote, str) else repr(remote), channel)
+    valid = isinstance(remote, str) and bool(remote)
+    # An invalid value gets a key no remote name can share, so it never reads a
+    # valid remote's cached channel (repr(0) is "0", a legal name; r5).
+    key = (remote, channel) if valid else ("invalid", repr(remote), channel)
     if key in channels:
         return channels[key]
     listed = crew_coord.run_git(top, ["remote"])
-    if not isinstance(remote, str) or not remote:
+    if not valid:
         got = (None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name")
     elif listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
         got = (None, f"{crew_coord.safe(remote)!r}{' (coord.remote)' if configured else ''} "
