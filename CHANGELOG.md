@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.1.11: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
+### Added — crew: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
 
 - **Summary.** crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript,
   with pitfalls and verify rules, and lists four candidate Node standards with the evidence each
@@ -30,7 +30,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (owner decision). That is a reported deviation from the spec, which expected `node.md` with
   NODE-08.
 
-### Added — crew 1.1.11: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
+### Added — crew: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
 
 - **Summary.** A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one
   PowerShell standard in its pre-review self-check: resolve an external program to an
@@ -61,7 +61,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   four new tests are a tooling-only follow-up, because `sabotage_standards.py` is a harness
   path.
 
-### Added — crew 1.1.11: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
+### Added — crew: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
 
 - **Summary.** crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule,
   and lists four candidate PHP standards with their sources. None is enforced.
@@ -86,7 +86,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   8.3.6 on the build host. It exits 0 on a clean untracked file, 1 on a parse error, and 77 with
   no input.
 
-### Added — crew 1.1.11: Angular 2+ candidate standards, no gated set yet (L-0538)
+### Added — crew: Angular 2+ candidate standards, no gated set yet (L-0538)
 
 - **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with the
   evidence each has. The one that matters most is NG-07: a failed read shows "could not verify" and
@@ -107,7 +107,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   other research ids are not listed one by one, because their titles and counts are private.
   That is a reported deviation.
 
-### Added — crew 1.1.11: Terraform candidate standards and settled questions, no gated set yet (L-0536)
+### Added — crew: Terraform candidate standards and settled questions, no gated set yet (L-0536)
 
 - **Summary.** `stack-terraform` now lists three candidate Terraform standards with the
   evidence each has, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
@@ -129,7 +129,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   spec's check that all of TERRAFORM-01..-19 appear in the stack skill does not pass, because
   their rule text was not available. That is a reported deviation.
 
-### Added — crew 1.1.11: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
+### Added — crew: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
 
 - **Summary.** `stack-dotnet` now lists two candidate .NET standards with their sources, plus
   the test-framework and `Result` defaults. None is enforced, because no rule this build could
@@ -148,7 +148,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   their rule text is in the owner's research, which this build did not have. That is a reported
   deviation.
 
-### Added — crew 1.1.11: SQL candidate standards, no gated SQL set yet (L-0532)
+### Added — crew: SQL candidate standards, no gated SQL set yet (L-0532)
 
 - **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is
   enforced: this build showed no SQL rule with three reviewed change sets that count, and the
@@ -168,7 +168,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   deviation, with no placeholder rows added. The MySQL docs site failed during the pass, so no
   MySQL/MariaDB rule was checked.
 
-### Fixed — crew 1.1.11: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
+### Fixed — crew: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
 
 - **Summary.** A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a
   SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's
@@ -186,7 +186,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (the review gate's lock-held skip decision, its uncaught incident errors, `commands/review.md`'s
   wording and the sabotage entries) lands separately.
 
-### Changed — crew 1.1.11: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
+### Changed — crew: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
 
 - **Summary.** crew's two standards skills now say which owns which rule: code-level rules live in
   `crew-standards`, the repository's machinery in `crew-qa-standards`, and the recurring-findings
