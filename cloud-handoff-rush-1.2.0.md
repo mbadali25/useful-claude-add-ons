@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T11:48Z
+Last updated: 2026-10-07T12:00Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T12:00Z G5 follow-up done: head c7665506; r4 BLOCK fixed (bootstrap --user runs --version, broken tool = failure, sabotage red); Windows skip REMOVED (test runs everywhere via bash kill); hard-kill leftover documented as Windows limitation; all 16 CI green; md5 stable. G5 added to train stack after G3b as crew 1.1.11 (1.1.10 = #549). README install URLs need re-pin after G5 reaches main.
 - 2026-10-07T11:48Z MERGED #548 (G7) into release/1.2.0 at 96b5595f, crew 1.1.7 (29/29 CI). #549 (retire, main, 1.1.10) CI queued. G2 restack (1.1.8 on G7) pending.
 - 2026-10-07T11:48Z Retire branch done (C-0047 pt1: 28 entries out, recorded; Codex r2 CLEAN). Coordinator re-set version 1.1.7 -> 1.1.10 (G7 holds 1.1.7), head cd8fe1b3; opened #549 -> main, subscribed. G4 head 60c76f54 (1.1.7 placeholder): r2 BLOCK+2 FIX fixed and sabotage-verified, full crew 14237 passed / 1 expected anchor fail. After #549: release merges main, then G4 re-merges release and takes its final version.
 - 2026-10-07T11:02Z G5 lander: head 84a1139b (crew 1.1.10, gizmoduck 0.5.10, windows-ssm 1.0.2), CI green, full crew 13555 passed, gizmoduck 873. r4 BLOCK (bootstrap --user trusts command -v) unfixed -> sent back to fix (G4 precedent). Asked to justify Windows skip of test_an_interrupted_runner_leaves_no_capture_file. md5 of /usr/local/bin+/opt changed 09:15->later outside its run (investigating). Install scripts changed: re-pin README URLs after main.
