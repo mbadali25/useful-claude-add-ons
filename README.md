@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.14**: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands. `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
 - **crew 1.1.8**: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2. Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
-- **crew 1.1.4**: Pre-review checks, L-0574's round-10 follow-ups. The pre-review linter checks and the review runner no longer crash on Windows timeouts, an unreadable output file or a swapped manifest, escape bidirectional control characters in status lines, and on Linux end a clean linter's leftover background processes before reaping it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

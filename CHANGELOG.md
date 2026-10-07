@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.14: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands
+
+- **Summary.** `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between
+  prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
+- **Why.** `test_every_crew_state_path_is_classified` (T-0068) fails for any `.crew/` path a crew
+  script spells that no list names. `crew_ghdeploy.py` lands with G4 on release/1.2.0, and the lists
+  live in `crew_ticket.py`, a harness path, so the line lands here first, harness-only (owner
+  2026-10-07). On main no script spells the path yet; nothing checks that a listed path is used, and
+  nothing else changes.
+
 ### Removed — crew 1.1.8: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
 
 - **Summary.** Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the
