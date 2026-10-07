@@ -198,9 +198,11 @@ def test_unreadable_slice_state_stops(tmp_path):
     {"current": 1, "done": [1, 1], "shipped": []},
     {"current": 1, "done": [], "shipped": [{"slice": 4, "branch": "a"}]},
     {"current": 1, "done": [0], "shipped": []},
+    {"current": 2, "done": [], "shipped": [{"slice": 1, "branch": "a"}]},
+    {"current": 1, "done": [2], "shipped": []},
 ], ids=["current-0", "current-past-count", "current-bool", "done-not-list", "shipped-not-list",
         "current-2-slice-1-unshipped", "slice-shipped-twice", "slice-done-twice",
-        "shipped-past-count", "done-0"])
+        "shipped-past-count", "done-0", "current-2-slice-1-not-done", "done-past-current"])
 def test_slice_state_out_of_shape_stops(tmp_path, state):
     root = _ticket(tmp_path)
     path = crew_autopilot_slices.slices_path(str(root), T)

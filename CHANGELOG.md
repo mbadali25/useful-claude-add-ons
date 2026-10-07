@@ -91,7 +91,10 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   branch, `ship` refuses it from any other branch (a second branch never opens
   another slice-1 PR or replaces the record); `slices.json` with a slice
   recorded twice, a slice number outside the plan, or `current` past a slice
-  with no shipped record is out of shape and stops as `slices`.
+  with no shipped record is out of shape and stops as `slices`. Round 2: a
+  slice done ahead of `current`, or an earlier slice never recorded done, is
+  out of shape too; `parse_slices` refuses a slice with two `Steps:` or two
+  `Base:` lines instead of keeping the first.
 
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 

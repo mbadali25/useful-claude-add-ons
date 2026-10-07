@@ -61,6 +61,27 @@ def is_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _history_problem(shipped, done, current, count):
+    """Why the recorded slice history cannot be true, or "". slice-done records
+    k done before k ships, next-slice moves `current` past k only once k
+    shipped, and a slice is recorded once: a duplicate, an out-of-range
+    number, a slice done ahead of `current`, or an earlier slice with no done
+    or shipped record leaves the history unknown."""
+    unshipped = [k for k in range(1, current) if k not in shipped]
+    undone = [k for k in range(1, current) if k not in done]
+    if unshipped:
+        return f"slice {current} is current but slice {unshipped[0]} has no shipped record"
+    if undone:
+        return f"slice {current} is current but slice {undone[0]} was never recorded done"
+    if len(set(shipped)) != len(shipped) or len(set(done)) != len(done):
+        return "a slice recorded twice"
+    if not all(1 <= k <= count for k in shipped + done):
+        return f"a slice outside 1-{count}"
+    if any(k > current for k in done):
+        return f"a slice recorded done past the current slice {current}"
+    return ""
+
+
 def _slice_state(top, ticket, count):
     """The slice state for a plan of `count` slices, or (None, why)."""
     path = slices_path(top, ticket)
@@ -77,18 +98,10 @@ def _slice_state(top, ticket, count):
         return None, (f"{_ap()._rel(top, path)} is unreadable or out of shape "  # pylint: disable=protected-access
                       f"(current 1-{count}, done and shipped lists): cannot tell which "
                       "slice is current - a human looks")
-    numbers = [e["slice"] for e in shipped]
-    # next-slice moves `current` past slice k only once k shipped, and a slice
-    # is recorded once: a duplicate, an out-of-range number or an earlier
-    # slice with no record leaves the history unknown, never a known slice.
-    if (len(set(numbers)) != len(numbers) or len(set(done)) != len(done)
-            or not all(1 <= k <= count for k in numbers + done)
-            or not all(k in numbers for k in range(1, current))):
-        unshipped = [k for k in range(1, current) if k not in numbers]
-        return None, (f"{_ap()._rel(top, path)} is out of shape (" + (  # pylint: disable=protected-access
-            f"slice {current} is current but slice {unshipped[0]} has no shipped record"
-            if unshipped else f"a slice recorded twice or outside 1-{count}")
-                      + "): cannot tell the slice history - a human looks")
+    why = _history_problem([e["slice"] for e in shipped], done, current, count)
+    if why:
+        return None, (f"{_ap()._rel(top, path)} is out of shape ({why}): cannot tell "  # pylint: disable=protected-access
+                      "the slice history - a human looks")
     return data, ""
 
 
