@@ -16,10 +16,13 @@ whole, `~/.azure`, `~/.terraform.d/credentials.tfrc.json`, `~/.config/gcloud`,
 config so the session cannot rename its identity).
 
 The session and the probe both start as
-`<claude> --settings <sealed> --setting-sources user ...`, from `--root`, with
-the same executable: a cloned repo's `.claude/settings.json` and
-`.claude/settings.local.json` never load, so they cannot add excluded
-commands, read allowances, hooks or an `env` block to the sealed session.
+`<claude> --settings <sealed> --setting-sources user --strict-mcp-config ...`,
+from `--root`, with the same executable: a cloned repo's `.claude/settings.json`
+and `.claude/settings.local.json` never load, so they cannot add excluded
+commands, read allowances, hooks or an `env` block to the sealed session, and
+no MCP server (a process outside the sandbox the probe proves) starts.
+`--mcp-config`, `--strict-mcp-config` and `--plugin-dir` on the command line
+are refused.
 
 Checks, in order; the first that is not `ready` stops the chain:
 
@@ -153,8 +156,11 @@ SETTING_SOURCES = "user"
 _SEALED_PREFIX = "crew-sealed-"
 _SEALED_RE = re.compile(r"^crew-sealed-(\d+)-")
 
-# Flags that would replace or drop the sealed settings for the launched session.
-_SETTINGS_FLAGS = ("--settings", "--setting-sources")
+# Flags that would replace or drop the sealed settings for the launched session,
+# or add a process outside the sandbox (an MCP server, a plugin's hooks and
+# servers) that the probe never saw.
+_SETTINGS_FLAGS = ("--settings", "--setting-sources", "--mcp-config", "--strict-mcp-config",
+                   "--plugin-dir")
 
 _GLOB_CHARS = ("*", "?", "[")
 
@@ -859,9 +865,12 @@ def run_version(exe, root, env):
 
 
 def sealed_flags(settings_path):
-    """The flags the launch AND the probe put first: the sealed settings, and
-    no project or local settings source."""
-    return ["--settings", settings_path, "--setting-sources", SETTING_SOURCES]
+    """The flags the launch AND the probe put first: the sealed settings, no
+    project or local settings source, and no MCP server (`--strict-mcp-config`
+    with no `--mcp-config`): an MCP server runs outside the Bash sandbox the
+    probe proves, and inherits the session's environment."""
+    return ["--settings", settings_path, "--setting-sources", SETTING_SOURCES,
+            "--strict-mcp-config"]
 
 
 def run_probe(exe, root, settings_path, env, targets):
@@ -935,8 +944,12 @@ def sweep_stale_sealed(tmpdir=None):
     process is left to clean up after it; the next launch does. A directory
     whose pid is alive (the session, or a reused pid) is left alone -- its
     settings file may be in use. Returns the paths removed."""
-    tmpdir = tmpdir or tempfile.gettempdir()
     removed = []
+    if _os_name() == "nt":
+        # Native Windows refuses at the platform check, before anything is
+        # sealed; and os.kill(pid, 0) there is CTRL_C_EVENT to the console.
+        return removed
+    tmpdir = tmpdir or tempfile.gettempdir()
     try:
         names = os.listdir(tmpdir)
     except OSError:
@@ -1066,8 +1079,8 @@ def _command_problem(command):
         return f"launch runs `claude` only, not `{os.path.basename(command[0])}`"
     for arg in command[1:]:
         if any(arg == flag or arg.startswith(flag + "=") for flag in _SETTINGS_FLAGS):
-            return (f"`{arg.split('=')[0]}` would replace the sealed settings; "
-                    "launch supplies them itself")
+            return (f"`{arg.split('=')[0]}` would replace the sealed settings or add a "
+                    "process outside the sandbox; launch supplies its own")
     return ""
 
 

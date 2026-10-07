@@ -1268,7 +1268,7 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None,
-                  "deploy": None},  # L-0654
+                  "deploy": None, "notifyHold": None},  # L-0654, L-0656
         "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
         "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}  # L-0541's caps
 
@@ -1360,13 +1360,14 @@ def test_command_never_types_approve():
 def test_autopilot_report_calls_run_stop():
     """T-0060: which stop pings is decided by `crew_notify.py run-stop`, tested
     code, not by prose. The report section names it once, for every stop,
-    with `next`'s phase and reason."""
+    with `next`'s phase. Group review (G2) BLOCK: never the reason, which can
+    quote ticket text, interpolated into a shell command."""
     text = _command_text()
     report = text[text.index("## 5."):]
     lines = [line for line in text.splitlines() if "crew_notify.py run-stop" in line]
 
-    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p> "
-            '--reason "<r>"' in report, "at every stop" in report) == (1, True, True)
+    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p>`"
+            in report, "--reason" in lines[0], "at every stop" in report) == (1, True, False, True)
     # T-0060 port review BLOCK: a claim refused for a stale or unknown marker
     # stops before `next` names a phase; it stops as `in-flight`, so the ping runs.
     claim = text[text.index("## 2."):text.index("## 3.")]

@@ -302,11 +302,24 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   turning a BLOCK-carrying `accept-review` stop into its own) is checked for out-of-rounds like
   `accept-review`; a Stop-gate refusal streak keeps its first refusal as its identity past the
   ten-id window, so a long streak pings once.
+- **Group review fixes (G2 landing).** `/crew:autopilot` runs `run-stop`
+  without `--reason`: a stop reason can quote ticket text, and it was being
+  put inside a shell command. A `stops.json` that is there and unreadable (or
+  this key's entry out of shape) pings `<gate> gate refused (refusal history
+  unreadable)` and restarts the streak, never counted as a first refusal.
 
 ### Added — `crew` 1.1.12: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
 
 - **Summary.** `crew_unattended.py launch -- claude ...` starts an unattended session holding temporary, read-only cloud credentials for one identity the machine owner named, sealed against repo settings and credential stores, or refuses to start.
 - **Ported to release/1.2.0 (feature rush, PR #369).** Merged onto current code: `explain_config` keeps T-0050's personal-key rows beside the machine-only `unattendedCloud` rows; the four `unattendedCloud` leaves get `crew_keys.KEY_META` rows (T-0048 landed since; `since` is 1.1.12, set at landing) and read `machine-only` in the generated layer column, and the generated CONFIG.md and configuration-reference tables are regenerated. The old troubleshooting DOCX/PDF renders (renamed since by C-0006) are not regenerated; the source and HTML carry the text. Not ported: the old branch's code-map and rules re-anchors.
+- **Group review fixes (G2 landing).** The probe and the session start with
+  `--strict-mcp-config` and no `--mcp-config`, so no MCP server (a process
+  outside the sandbox the probe proves, inheriting the sealed environment)
+  starts; `--mcp-config`, `--strict-mcp-config` and `--plugin-dir` on the
+  launch command are refused. On native Windows the start-up sweep of stale
+  sealed directories does nothing (`os.kill(pid, 0)` there is CTRL_C_EVENT,
+  which interrupted Windows CI); the POSIX chain's suite skips there and
+  `test_crew_unattended_windows.py` covers the platform refusal everywhere.
 - New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
   It starts an unattended Claude session with temporary AWS credentials for ONE identity the
   machine owner named, no inherited `AWS_*` variable, IMDS off, `CREW_UNATTENDED=1`, a region-only
