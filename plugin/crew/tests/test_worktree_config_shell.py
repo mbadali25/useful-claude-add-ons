@@ -46,7 +46,8 @@ needs_pwsh = pytest.mark.skipif(
 # which reads the resolved repo config through crew_config.resolve_config (no
 # PowerShell resolver; test_crew_notify_hooks.py pins that it reads no config).
 PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear",
-             "handoff-read", "handoff-write", "context-watch")  # L-0680: the last three
+             "handoff-read", "handoff-write", "context-watch",  # L-0680: these three
+             "verify-gate", "scope-guard", "completion-audit")  # L-0681: these three
 HANDOFF_PATH_COPIES = ("handoff-read", "handoff-write", "context-watch")  # L-0680 review B1
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
@@ -977,3 +978,150 @@ def test_auto_clear_knows_wrap_up_is_a_key(tmp_path, flavour):
     log = main / ".crew" / ".autoclear.log"
     text = log.read_text(encoding="utf-8") if log.exists() else ""
     assert "wrapUp" not in text or "not a recognised key" not in text, text
+
+
+# --- L-0681: the verify gate, the review gate's twin, the fingerprint and the scope wrappers --
+
+_GATE = {"sh": os.path.join(SCRIPTS, "verify-gate.sh"), "ps1": os.path.join(SCRIPTS, "verify-gate.ps1")}
+GATE_FLAVOURS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+_RED_MAP = {"version": 1, "rules": [{"paths": ["**"], "seconds": 5, "run": ["exit 1"],
+                                     "reach": "local", "why": "fixture"}],
+            "always": [], "default": [], "unmapped": "ignore"}
+
+
+def _gate_lane(tmp_path, main_cfg, own_cfg=None):
+    """A lane with a red verify map of its own and a changed file; its own
+    config is `own_cfg` (none when None); the main checkout's is `main_cfg`."""
+    _main, wt = _lane(tmp_path, main_cfg)
+    _own(wt, "verify.json", _RED_MAP)
+    if own_cfg is not None:
+        _own(wt, "config.json", own_cfg)
+    (wt / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    return wt
+
+
+def _run_gate(root, flavour, ci=False):
+    cmd = ([_BASH, _GATE["sh"]] + (["--ci"] if ci else []) if flavour == "sh" else
+           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _GATE["ps1"]]
+           + (["-Ci"] if ci else []))
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+    return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
+                                  capture_output=True, text=True, check=False,
+                                  timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
+@pytest.mark.parametrize("flavour", GATE_FLAVOURS)
+def test_stop_budget_is_inherited(tmp_path, flavour):
+    """A lane with no config reads the main checkout's `verify.stopBudgetSeconds`:
+    its rule is deferred exactly as a lane whose own config says the same."""
+    inherited = _run_gate(_gate_lane(tmp_path / "a", {"verify": {"stopBudgetSeconds": 0}}),
+                          flavour)
+    own = _run_gate(_gate_lane(tmp_path / "b", None, {"verify": {"stopBudgetSeconds": 0}}),
+                    flavour)
+    default = _run_gate(_gate_lane(tmp_path / "c", None), flavour)
+    assert default.returncode == 2, default.stderr
+    assert inherited.returncode == own.returncode != 2, (inherited.stderr, own.stderr)
+
+
+def test_fingerprint_follows_the_resolved_config(tmp_path):
+    import verify_fingerprint  # pylint: disable=import-outside-toplevel
+    main, wt = _lane(tmp_path, {"verify": {"stopBudgetSeconds": 60}})
+    before = verify_fingerprint.fingerprint(str(wt), [])
+    (main / ".crew" / "config.json").write_text(
+        json.dumps({"verify": {"stopBudgetSeconds": 5}}), encoding="utf-8")
+    assert verify_fingerprint.fingerprint(str(wt), []) != before
+    _own(wt, "config.json", {"verify": {"stopBudgetSeconds": 60}})
+    pinned = verify_fingerprint.fingerprint(str(wt), [])
+    (main / ".crew" / "config.json").write_text(
+        json.dumps({"verify": {"stopBudgetSeconds": 9}}), encoding="utf-8")
+    assert verify_fingerprint.fingerprint(str(wt), []) == pinned
+
+
+@needs_pwsh
+@pytest.mark.parametrize("own_cfg,gated", [(None, True), ({}, False)],
+                         ids=["inherits-standDown-false", "own-config-without-the-key"])
+def test_verify_gate_ps1_incident_stand_down_false_is_inherited(tmp_path, own_cfg, gated):
+    wt = _gate_lane(tmp_path, {"emergency": {"standDown": False}}, own_cfg)
+    _own(wt, "incident.json", {"id": "INC-T", "summary": "suite",
+                               "expiresAtEpoch": int(time.time()) + 3600})
+    proc = _run_gate(wt, "ps1")
+    assert (proc.returncode == 2) is gated, proc.stderr
+
+
+# The no-python fallback of both scope wrappers, both flavours.
+_WRAPPERS = {
+    "scope-guard.sh": b'{"tool_name":"Write","tool_input":{"file_path":"src/app.py","content":"x"}}',
+    "completion-audit.sh": b'{"session_id":"s-l0681","stop_hook_active":false}',
+}
+_WRAPPERS["scope-guard.ps1"] = _WRAPPERS["scope-guard.sh"]
+_WRAPPERS["completion-audit.ps1"] = _WRAPPERS["completion-audit.sh"]
+WRAPPER_DRIVERS = [pytest.param(w, marks=needs_bash if w.endswith(".sh") else needs_pwsh)
+                   for w in _WRAPPERS]
+
+
+def _run_wrapper(tmp_path, root, wrapper):
+    script = os.path.join(SCRIPTS, wrapper)
+    argv = ([_BASH, script] if wrapper.endswith(".sh") else
+            [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script])
+    env = _guard_env(tmp_path, root, "sh" if wrapper.endswith(".sh") else "ps1")
+    tmp = str(tmp_path)
+    env = dict(env, TMPDIR=tmp, TEMP=tmp, TMP=tmp)
+    with crew_fixtures.msys_tmp_pinned(_BASH, env):
+        return subprocess.run(argv, input=_WRAPPERS[wrapper], capture_output=True, env=env,
+                              cwd=str(root), timeout=120, check=False)
+
+
+@pytest.mark.parametrize("wrapper", WRAPPER_DRIVERS)
+def test_scope_wrapper_without_python_blocks_in_a_lane_whose_main_checkout_has_a_config(
+        tmp_path, wrapper):
+    _main, wt = _lane(tmp_path, {"scope": {"mode": "block"}})
+    proc = _run_wrapper(tmp_path, wt, wrapper)
+    assert proc.returncode == 2, proc.stderr
+
+
+@pytest.mark.parametrize("wrapper", WRAPPER_DRIVERS)
+def test_scope_wrapper_without_python_blocks_when_git_cannot_tell(tmp_path, wrapper):
+    root = _case_git_file_naming_a_missing_dir(tmp_path)
+    proc = _run_wrapper(tmp_path, root, wrapper)
+    assert proc.returncode == 2, proc.stderr
+
+
+@pytest.mark.parametrize("wrapper", WRAPPER_DRIVERS)
+@pytest.mark.parametrize("where", ["lane", "plain-repo"])
+def test_scope_wrapper_without_python_allows_when_no_checkout_has_a_config(
+        tmp_path, wrapper, where):
+    main, wt = _lane(tmp_path, None)
+    proc = _run_wrapper(tmp_path, wt if where == "lane" else main, wrapper)
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_pwsh
+@pytest.mark.parametrize("wrapper", ["scope-guard.ps1", "completion-audit.ps1"])
+def test_scope_wrapper_ps1_without_python_allows_an_inherited_strict_off(tmp_path, wrapper):
+    """PowerShell 7 parses the resolved file strictly, so a main checkout that
+    says exactly `{"scope": {"mode": "off"}}` is provably off in its lane."""
+    _main, wt = _lane(tmp_path, {"scope": {"mode": "off"}})
+    proc = _run_wrapper(tmp_path, wt, wrapper)
+    assert proc.returncode == 0, proc.stderr
+
+
+# Every hook script outside the session hooks above: a line that names the own
+# config path outside a comment is a user-facing message (echo / WriteLine), and
+# these are the counts; anything else must be in OWN_PATH_ALLOWED.
+OWN_PATH_MESSAGES = {"promote-gate.sh": 1, "promote-gate.ps1": 1, "scope-guard.sh": 2,
+                     "scope-guard.ps1": 3, "verify-gate.sh": 3, "verify-gate.ps1": 1}
+
+
+def test_no_hook_script_names_the_own_config_path():
+    """L-0681: after the gate, the review gate and the scope wrappers are
+    routed, no shell or PowerShell hook reads the own config outside the
+    resolver; the only mentions left are messages and L-0680's gates."""
+    for name in sorted(os.listdir(SCRIPTS)):
+        if not name.endswith((".sh", ".ps1")):
+            continue
+        found = _executable_mentions(os.path.join(SCRIPTS, name))
+        messages = {t: n for t, n in found.items()
+                    if t.startswith("echo ") or "WriteLine(" in t or t.startswith("PY=$(")}
+        rest = {t: n for t, n in found.items() if t not in messages}
+        assert sum(messages.values()) == OWN_PATH_MESSAGES.get(name, 0), (name, messages)
+        assert rest == OWN_PATH_ALLOWED.get(name, {}), (name, rest)

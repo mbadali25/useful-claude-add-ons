@@ -79,7 +79,8 @@
     "inject": true,
     "recall": {
       "vaults": [],
-      "maxChars": 800
+      "maxChars": 800,
+      "projects": []
     }
   },
   "verifyGate": true,
@@ -185,6 +186,7 @@
     "mergeGate": "block",
     "cloudDestructive": "block",
     "sqlDestructive": "block",
+    "deployWorkflow": "block",
     "prodDatabase": "none",
     "prodServer": "none",
     "roleWrites": "off",
@@ -201,7 +203,8 @@
   },
   "environments": {
     "nonProd": [],
-    "prodUnattended": false
+    "prodUnattended": false,
+    "workflows": {}
   },
   "change": {
     "requester": null,

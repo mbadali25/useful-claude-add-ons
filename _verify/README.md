@@ -23,6 +23,18 @@ copies drift.
 90s budget. It is not optional, it is just too slow to gate every edit, so it
 lives in `run-all.sh`. A budget that gets blown is a suite that gets skipped.
 
+## pwsh runs on a private cache
+
+Every pwsh these scripts start (the `.ps1` checks and the Windows registry probe) goes through
+`scripts/pwsh-isolated.sh`, which gives that one run a throwaway `XDG_CACHE_HOME`. PowerShell keeps
+its startup profile there, and two pwsh processes writing the shared `~/.cache/powershell` copy at
+once can corrupt it so that every later pwsh dies (L-0557). A line starting `TOOL BROKEN: pwsh`
+means pwsh itself died on a signal while running on that private, empty cache: the tool broke, no
+`.ps1` failed its check, and the shared profile is ruled out. The exit status is pwsh's own, and
+nothing is retried. `TOOL MISSING: pwsh` (exit 77) means no pwsh was found. On Windows the variable
+is set and changes nothing (the profile lives under `LOCALAPPDATA`); the launcher is not verified
+under Git Bash.
+
 ## Sabotage status
 
 A check nobody has broken on purpose is a check nobody knows works. Each row: the

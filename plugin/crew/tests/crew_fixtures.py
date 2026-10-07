@@ -1276,9 +1276,12 @@ def write_shim(directory, name, sh_body="#!/bin/sh\nexit 0\n",
 def shim_env(flavor, bindir, **extra):
     """`{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`."""
     env = {"PATH": shell_path(flavor, [bindir])}
-    # Built from scratch, so the per-test pwsh cache (L-0557) is copied in.
-    if "XDG_CACHE_HOME" in os.environ:
-        env["XDG_CACHE_HOME"] = os.environ["XDG_CACHE_HOME"]
+    # Built from scratch, so the per-test pwsh cache (L-0557) and the
+    # per-test temp directory (T-0065, conftest `_isolated_tmpdir`) are
+    # copied in: without them a hook's mktemp lands in the real /tmp.
+    for name in ("XDG_CACHE_HOME", "TMPDIR", "TEMP", "TMP"):
+        if name in os.environ:
+            env[name] = os.environ[name]
     env.update(extra)
     return env
 
@@ -1474,3 +1477,27 @@ def commit_with_date(root, path, iso_date):
     subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
                    cwd=root, check=True, capture_output=True, text=True,
                    env=env, stdin=subprocess.DEVNULL, timeout=30)
+
+
+def bookkeeping_samples():
+    """One concrete repo-relative path per `crew_ticket.CREW_BOOKKEEPING_PATHS`
+    entry (each `*`/`**` made a name), plus the gate's real record names --
+    what a TSS-shaped repository, whose `.gitignore` does not ignore
+    `.crew/`, collects untracked after a gate run and a review (T-0068)."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    out = [entry.replace("**", "x").replace("*", "x")
+           for entry in crew_ticket.CREW_BOOKKEEPING_PATHS]
+    out += [".crew/.verify-gate.record.json", ".crew/.verify-gate.timings.json"]
+    return sorted(set(out))
+
+
+def write_bookkeeping(root, text="written by crew\n"):
+    """Write every `bookkeeping_samples()` path under `root` that does not
+    exist yet (a real scope base stays the record it is); return them all."""
+    paths = bookkeeping_samples()
+    for rel in paths:
+        target = pathlib.Path(root, *rel.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text(text, encoding="utf-8")
+    return paths

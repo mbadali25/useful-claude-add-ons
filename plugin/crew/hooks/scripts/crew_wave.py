@@ -313,7 +313,7 @@ def read_set(root, slug):
 # --- plan: eligibility, overlap, landing order (read-only) -----------------------------
 
 _DEPENDS_RE = re.compile(r"\bdepends on\b([^);]*)", re.IGNORECASE)
-_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
+_ID_RE = re.compile(crew_common.TICKET_ID_CORE)  # L-0509: the one ticket-id shape
 # A token with a ':' in it, as a whole: cross_dep then judges its parts.
 _CROSS_TOKEN_RE = re.compile(r"(?<![^\s,])[^\s,]*:[^\s,]*")
 _DEP_FILLER_RE = re.compile(r"^(?:[\s,]|\band\b)*$", re.IGNORECASE)

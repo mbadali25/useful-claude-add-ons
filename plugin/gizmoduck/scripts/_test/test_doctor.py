@@ -100,6 +100,36 @@ def test_a_templates_directory_with_a_template_is_ok(tmp_path):
     assert "OK templates:" in result.stdout
 
 
+# ---- tool lookup (L-0684) ---------------------------------------------------
+
+def _doctor(env_updates):
+    env = os.environ.copy()
+    env.update(env_updates)
+    return subprocess.run([sys.executable, str(_SCRIPT), "doctor"],
+                          capture_output=True, text=True, check=False, env=env)
+
+
+def test_doctor_reports_tool_home(tmp_path):
+    home = tmp_path / "toolhome"
+    missing = _doctor({"GIZMODUCK_HOME": str(home)})
+    assert f"tool home: {home} (does not exist yet)" in missing.stdout
+    home.mkdir()
+    present = _doctor({"GIZMODUCK_HOME": str(home)})
+    assert f"tool home: {home} (exists)" in present.stdout
+
+
+def test_doctor_names_a_broken_override_without_changing_exit_status(tmp_path):
+    good_pl = tmp_path / "nikto.pl"
+    good_pl.write_text("# stand-in")
+    gone = tmp_path / "no-such-zap"
+    clean = _doctor({})
+    result = _doctor({"GIZMODUCK_ZAP_HOME": str(gone), "GIZMODUCK_NIKTO_PL": str(good_pl)})
+    assert f"!! GIZMODUCK_ZAP_HOME={gone} does not resolve - zap is disabled" in result.stdout
+    assert f"OK GIZMODUCK_NIKTO_PL: {good_pl}" in result.stdout
+    assert "GIZMODUCK_TESTSSL_SH" not in result.stdout  # unset variables are not listed
+    assert result.returncode == clean.returncode
+
+
 # --- C-0015.4: testssl needs hexdump, and `testssl --version` passes without it
 
 def _run_path(tmp_path, tools):

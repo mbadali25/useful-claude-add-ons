@@ -1085,8 +1085,10 @@ def _sanitised_env(tmp_path):
     env["PATH"] = str(emptybin)
     for var in ("HOME", "USERPROFILE", "LOCALAPPDATA", "TMPDIR"):
         env[var] = str(tmp_path)
+    # GIZMODUCK_HOME and XDG_DATA_HOME too: the tool home's bin is searched
+    # ahead of PATH (L-0684), so either one would hand the run real tools.
     for var in ("GIZMODUCK_ZAP_HOME", "GIZMODUCK_NIKTO_PL", "GIZMODUCK_TESTSSL_SH",
-                "GIZMODUCK_MSYS2_BIN"):
+                "GIZMODUCK_MSYS2_BIN", "GIZMODUCK_HOME", "XDG_DATA_HOME"):
         env.pop(var, None)
     # HOME moved, so the user site would move with it and hide a PyYAML
     # installed with `pip install --user`. Pin it where this interpreter found
@@ -1113,6 +1115,33 @@ def _write_e2e_manifest(tmp_path):
         f"  - {{name: iac-b, kind: iac, path: {json.dumps(str(tmp_path / 'no-such-dir'))}}}\n",
         encoding="utf-8")
     return manifest
+
+
+def _populated_tool_home(root):
+    """A tool home whose bin holds an executable stand-in for every scanner."""
+    bindir = root / "gizmoduck" / "bin"
+    bindir.mkdir(parents=True)
+    for name in ("nuclei", "zap.sh", "nikto", "nmap", "testssl.sh", "trivy",
+                 "dependency-check", "checkov", "sqlmap", "semgrep"):
+        tool = bindir / name
+        tool.write_text("#!/bin/sh\nexit 0\n")
+        tool.chmod(0o755)
+    return root / "gizmoduck"
+
+
+def test_sanitised_env_clears_tool_home(tmp_path, monkeypatch):
+    home = _populated_tool_home(tmp_path / "data")
+    monkeypatch.setenv("GIZMODUCK_HOME", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    env = _sanitised_env(tmp_path)
+    assert "GIZMODUCK_HOME" not in env and "XDG_DATA_HOME" not in env
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import scanners; print(sorted(n for n, m in scanners.ADAPTERS.items() "
+         "if m.is_available()))"],
+        capture_output=True, text=True, check=True, env=env, timeout=60,
+        cwd=str(_SCRIPT.parent))
+    assert probe.stdout.strip() == "[]", probe.stdout
 
 
 def test_all_tools_missing_exits_4_end_to_end(tmp_path):

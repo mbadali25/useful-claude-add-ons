@@ -33,7 +33,8 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    `nuclei_intrusive: true`); `--rate-limit N` (manifest `nuclei_rate_limit`)
    replaces the 50.
    This writes JSONL and reports how many findings it captured. If `nuclei` isn't
-   installed it will say so — run `bootstrap.sh` (Linux/WSL) or `bootstrap.ps1`
+   installed it will say so — run `bootstrap.sh` (Linux/WSL: as root or via sudo,
+   or `bootstrap.sh --user` without root, into the tool home) or `bootstrap.ps1`
    (Windows) first.
 
 2. **Summarize**, then lead with the counts:
@@ -149,4 +150,7 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.
   It also reports whether `NVD_API_KEY` is set (never the value) — that's a
-  gap, not a failure, and never changes doctor's exit code.
+  gap, not a failure, and never changes doctor's exit code. It prints the tool
+  home and every set lookup override; an override marked `!!` points at nothing
+  and disables its tool rather than falling back to PATH. The lookup order and
+  the variables are in the README's "Where gizmoduck looks for tools".

@@ -176,7 +176,23 @@ function Resolve-CrewPython {
   if ($script:CrewPythonMemoDone) {
     return $script:CrewPythonMemoResult
   }
-  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # L-0690: how the probe ended, for the caller to print. Set on every return
+  # with the result and memoized with it; this function writes nothing.
+  #   $script:CrewPythonOutcome  found | not-found | rejected | timed-out
+  #   $script:CrewPythonTrail    a summary line, then one line per candidate
+  # timed-out is "could not tell": a candidate was killed at its bound, its
+  # stdout was not read in time, or the 8s budget ran out with a candidate
+  # untried. rejected: every candidate launched (or failed to launch) and
+  # answered inside its bound, and none was a python. not-found: nothing on
+  # PATH reached a launch.
+  $crewPythonRows = New-Object System.Collections.Generic.List[string]
+  $crewPythonTimedOut = $false
+  $crewPythonLaunched = $false
+  $crewPythonSpent = $false
+  $crewPythonFound = ''
+  # ONE probe, byte for byte in the four review/gate harness .ps1 hooks, with
+  # its outcome and trail (L-0690); the other carriers keep the pre-L-0690
+  # copy until a follow-up rejoins them. Both groups are asserted by
   # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
   # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
   # function is invisible to scripts/check-powershell.ps1's static check.
@@ -239,13 +255,16 @@ function Resolve-CrewPython {
   $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
   $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
   foreach ($name in @('python3', 'python', 'py')) {
+    if ($crewPythonFound -or $crewPythonSpent) { break }
     $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
       if (-not $cmd.Source) { continue }
+      $crewPythonBegan = [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
       if ($crewPythonRealWindows) {
         $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
         if ($crewPythonNativeExts -notcontains $crewPythonExt) {
           Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          $crewPythonRows.Add("$name $($cmd.Source) 0 ms skipped-extension")
           continue
         }
       }
@@ -257,12 +276,16 @@ function Resolve-CrewPython {
       # and the 10s hook timeout it exists to stay inside.
       $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
       if ($crewPythonRemainingMs -le 0) {
-        $script:CrewPythonMemoDone = $true
-        $script:CrewPythonMemoResult = ''
-        return ''
+        # The walk stops here; later candidates are not enumerated.
+        $crewPythonRows.Add("$name $($cmd.Source) 0 ms not-tried-budget-spent")
+        $crewPythonTimedOut = $true
+        $crewPythonSpent = $true
+        break
       }
       $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
       $real = $null
+      $crewPythonVerdict = 'start-failed'
+      $crewPythonLaunched = $true
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
@@ -304,7 +327,15 @@ function Resolve-CrewPython {
           # Reap the killed tree with its own bound, rather than leaving it
           # torn down but never waited on for however long that takes.
           try { $null = $proc.WaitForExit(2000) } catch { }
-        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $crewPythonVerdict = "killed-at-bound $crewPythonWaitMs ms"
+          $crewPythonTimedOut = $true
+        } elseif ($proc.ExitCode -ne 0) {
+          $crewPythonVerdict = "exit-nonzero $($proc.ExitCode)"
+        } elseif (-not $outTask.Wait(1000)) {
+          $crewPythonVerdict = 'output-read-timeout'
+          $crewPythonTimedOut = $true
+        } else {
+          $crewPythonVerdict = 'not-python-proof'
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
           # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
           # NON-terminating binding error this try never catches: it reached stderr as a red
@@ -323,16 +354,40 @@ function Resolve-CrewPython {
         $real = $null
       }
       if ($real) { $real = $real.ToString().Trim() }
+      if ($real -and -not (Test-Path -LiteralPath $real -PathType Leaf)) {
+        $crewPythonVerdict = 'exe-missing'
+        $real = $null
+      }
+      if ($real) { $crewPythonVerdict = 'accepted' }
+      $crewPythonTook = [int]$crewPythonDeadline.Elapsed.TotalMilliseconds - $crewPythonBegan
+      $crewPythonRows.Add("$name $($cmd.Source) $crewPythonTook ms $crewPythonVerdict")
       if (-not $real) { continue }
-      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-      $script:CrewPythonMemoDone = $true
-      $script:CrewPythonMemoResult = $real
-      return $real
+      $crewPythonFound = $real
+      break
     }
   }
+  $crewPythonOutcome = if ($crewPythonFound) { 'found' } elseif ($crewPythonTimedOut) { 'timed-out' } elseif ($crewPythonLaunched) { 'rejected' } else { 'not-found' }
+  $crewPythonTrail = New-Object System.Collections.Generic.List[string]
+  $crewPythonTrail.Add("python probe: $crewPythonOutcome after $([int]$crewPythonDeadline.Elapsed.TotalMilliseconds) ms (budget 8000 ms, 3000 ms per candidate)")
+  for ($i = 0; $i -lt [Math]::Min(8, $crewPythonRows.Count); $i++) {
+    $crewPythonTrail.Add('python probe:   ' + $crewPythonRows[$i])
+  }
+  if ($crewPythonRows.Count -gt 8) { $crewPythonTrail.Add("python probe:   (+$($crewPythonRows.Count - 8) more)") }
+  $script:CrewPythonOutcome = $crewPythonOutcome
+  $script:CrewPythonTrail = $crewPythonTrail.ToArray()
   $script:CrewPythonMemoDone = $true
-  $script:CrewPythonMemoResult = ''
-  return ''
+  $script:CrewPythonMemoResult = $crewPythonFound
+  return $crewPythonFound
+}
+
+function Write-CrewPythonTrail {
+  # L-0690: the probe's trail (Resolve-CrewPython's $script:CrewPythonTrail) on
+  # stderr, once per process, after the message about the probe's outcome.
+  if ($script:CrewPythonTrailShown) { return }
+  $script:CrewPythonTrailShown = $true
+  foreach ($crewTrailLine in @($script:CrewPythonTrail)) {
+    if ($crewTrailLine) { [Console]::Error.WriteLine($crewTrailLine) }
+  }
 }
 
 # Arguments are checked strictly, the twin of verify-gate.sh's check. This
@@ -361,7 +416,12 @@ if ($Price) {
   Set-Location $root0
   $py0 = Resolve-CrewPython
   if (-not $py0) {
-    [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    if ($script:CrewPythonOutcome -eq 'timed-out') {
+      [Console]::Error.WriteLine("verify-gate -Price: the python probe timed out")
+    } else {
+      [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    }
+    Write-CrewPythonTrail
     exit 1
   }
   $script0 = Join-Path $PSScriptRoot 'verify_price.py'
@@ -377,7 +437,11 @@ if ($PrintBash) {
 }
 
 if ($PrintPython) {
-  Write-Output (Resolve-CrewPython)
+  $crewPrinted = Resolve-CrewPython
+  Write-Output $crewPrinted
+  # L-0690: stdout is the path or an empty line, as before; the trail of a
+  # probe that found nothing goes to stderr.
+  if (-not $crewPrinted) { Write-CrewPythonTrail }
   exit 0
 }
 
@@ -399,10 +463,61 @@ if ($All -and $Ci) {
 # every menu on Windows. Ten duplicated lines is the cheaper mistake.
 #
 # See hooks/scripts/crew_incident.py for the file format.
+function Get-CrewRepoConfigDir([string]$Root) {
+  # @{ Dir; Source }: the `.crew/` the repo config is read from, and own, main
+  # or unknown. Twin of crew_repo_config_dir in _common.sh and of
+  # crew_common.repo_config_dir (T-0088, T-0096): own files win whole, never
+  # merged; `unknown` inherits nothing and is never "absent". Copied verbatim
+  # into each script that needs it (a dot-sourced function is invisible to
+  # check-powershell.ps1); test_worktree_config_shell.py holds the copies equal.
+  # 5.1 cannot resolve a symlink as realpath does, so on every PowerShell (7 too)
+  # a symlink, a junction or an ancestor Get-Item cannot read (a UNC share's
+  # root, likely) in either path compared below reads `unknown`, never `main`.
+  if (-not $Root) { $Root = '.' }
+  $own = Join-Path $Root '.crew'
+  $result = @{ Dir = $own; Source = 'own' }
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $own $n) -Force -ErrorAction SilentlyContinue) { return $result }
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Leaf)) { return $result }
+  $result.Source = 'unknown'
+  # git prints paths as UTF-8; a native command's output is decoded with
+  # [Console]::OutputEncoding (the OEM code page on Windows), so pin UTF-8 for
+  # this one call and put the caller's back.
+  $encoding = [Console]::OutputEncoding
+  try {
+    $base = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).ProviderPath
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $lines = @(& git -C $base rev-parse --git-dir --git-common-dir 2>$null)
+  } catch { return $result } finally { [Console]::OutputEncoding = $encoding }
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 2) { return $result }
+  $real = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $lines) {
+    $full = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $base $p }))
+    for ($at = $full; $at; $at = Split-Path -Parent $at) {
+      $item = Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue
+      if (-not $item -or $item.LinkType) { return $result }
+    }
+    $real.Add($full.TrimEnd('\', '/'))
+  }
+  $result.Source = 'own'
+  $same = if ($env:OS -eq 'Windows_NT') { $real[0] -eq $real[1] } else { $real[0] -ceq $real[1] }
+  if ($same -or (Split-Path -Leaf $real[1]) -cne '.git') { return $result }
+  $main = Join-Path (Split-Path -Parent $real[1]) '.crew'
+  foreach ($n in 'crew.json', 'config.json') {
+    if (Get-Item -LiteralPath (Join-Path $main $n) -Force -ErrorAction SilentlyContinue) {
+      return @{ Dir = $main; Source = 'main' }
+    }
+  }
+  return $result
+}
+
 function Test-CrewIncidentActive {
   if (-not (Test-Path ".crew/incident.json")) { return $false }
   try {
-    $c = Get-Content .crew/config.json -Raw -ErrorAction Stop | ConvertFrom-Json
+    # L-0681: emergency.standDown from the resolved repo config, as
+    # crew_incident_active reads it.
+    $c = Get-Content -LiteralPath (Join-Path (Get-CrewRepoConfigDir '.').Dir 'config.json') -Raw -ErrorAction Stop | ConvertFrom-Json
     if ($c.emergency -and $c.emergency.standDown -eq $false) { return $false }
   } catch { }
   try { $inc = Get-Content .crew/incident.json -Raw -ErrorAction Stop | ConvertFrom-Json }
@@ -507,8 +622,12 @@ if (-not $env:CLAUDE_PLUGIN_ROOT) {
   $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 }
 
-if (Test-Path .crew/config.json) {
-  $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
+# The resolved repo config (Get-CrewRepoConfigDir, T-0096; L-0681): a linked
+# worktree with no config of its own reads the main checkout's, as
+# verify-gate.sh and review_gate.py do. When git cannot tell, this checkout's own.
+$repoConfig = Join-Path (Get-CrewRepoConfigDir $root).Dir 'config.json'
+if (Test-Path -LiteralPath $repoConfig) {
+  $cfg = Get-Content -LiteralPath $repoConfig -Raw | ConvertFrom-Json
   if ($cfg.verifyGate -eq $false) {
     # Under -Ci a disabled gate is a failure: a CI job that checked nothing
     # must not report green (the twin of verify-gate.sh).
@@ -914,7 +1033,12 @@ try {
   # one sentence -- and neither may be silent.
   $scopeScript = Join-Path $PSScriptRoot 'scope_report.py'
   if (-not $scopePy) {
-    [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+    if ($script:CrewPythonOutcome -eq 'timed-out') {
+      [Console]::Error.WriteLine('outside-scope: (python probe timed out; scope not checked)')
+    } else {
+      [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+    }
+    Write-CrewPythonTrail
   } elseif (-not (Test-Path $scopeScript)) {
     [Console]::Error.WriteLine("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
   } else {
@@ -1218,6 +1342,62 @@ function Get-CrewIdentityText([string]$Identity) {
   return $Identity
 }
 
+# T-0068, the twin of verify-gate.sh's: crew's own bookkeeping
+# (`crew_ticket.CREW_BOOKKEEPING_PATHS`: this gate's records, the scope base,
+# the metrics files) leaves the changed list, and a refresh artifact
+# (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`) still runs any rule naming it
+# but is never unmapped. The judgement is `completion_audit.py --classify`,
+# the function the .sh imports, so the pair cannot drift. One line comes back
+# per path, in order; a line that does not echo its path exactly, a short
+# answer, a non-zero exit or no python leaves EVERY path `other` -- unmapped,
+# never mapped -- and says so.
+$crewArtifacts = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$crewBookkeeping = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$changed = @($changed | Where-Object { $_ })
+try {
+  $classPy = Resolve-CrewPython
+  $classScript = Join-Path $PSScriptRoot 'completion_audit.py'
+  $classWhy = $null
+  if ($changed.Count -eq 0) {
+    $classWhy = $null
+  } elseif (-not $classPy) {
+    $classWhy = 'no python'
+  } elseif (-not (Test-Path $classScript)) {
+    $classWhy = "completion_audit.py not found at $classScript"
+  } else {
+    $classOut = @($changed -join "`n" | & $classPy $classScript --classify --root $PWD.Path)
+    if ($LASTEXITCODE -ne 0 -or $classOut.Count -ne $changed.Count) {
+      $classWhy = "the classifier exited $LASTEXITCODE with $($classOut.Count) of $($changed.Count) lines"
+    } else {
+      $kinds = @{}
+      for ($i = 0; $i -lt $changed.Count; $i++) {
+        $line = [string]$classOut[$i]
+        $tab = $line.IndexOf("`t", [System.StringComparison]::Ordinal)
+        if ($tab -le 0 -or -not ($line.Substring($tab + 1) -ceq [string]$changed[$i])) {
+          $classWhy = "the classifier's line $($i + 1) does not name its path"
+          break
+        }
+        $kinds[$i] = $line.Substring(0, $tab)
+      }
+      if (-not $classWhy) {
+        for ($i = 0; $i -lt $changed.Count; $i++) {
+          if ($kinds[$i] -ceq 'bookkeeping') { [void]$crewBookkeeping.Add([string]$changed[$i]) }
+          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewArtifacts.Add([string]$changed[$i]) }
+        }
+      }
+    }
+  }
+  if ($classWhy) {
+    [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($classWhy) - every changed path is judged")
+  }
+} catch {
+  $crewArtifacts.Clear()
+  $crewBookkeeping.Clear()
+  [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($_) - every changed path is judged")
+}
+$global:LASTEXITCODE = 0
+$changed = @($changed | Where-Object { -not $crewBookkeeping.Contains([string]$_) })
+
 foreach ($f in $changed) {
   $hit = $false
   $ri = -1
@@ -1298,7 +1478,7 @@ foreach ($f in $changed) {
       }
     }
   }
-  if (-not $hit) { [void]$unmapped.Add($f) }
+  if (-not $hit -and -not $crewArtifacts.Contains([string]$f)) { [void]$unmapped.Add($f) }
 }
 foreach ($ri in $ruleOrder) {
   if (-not $stopExcluded.ContainsKey($ri) -and -not $ruleSecs.ContainsKey($ri)) {
@@ -1360,8 +1540,8 @@ if ($All -or $Ci) {
   # A config that cannot be read falls back to the DEFAULT, never to "no
   # limit": "could not read the config" must not quietly become unbounded.
   try {
-    if (Test-Path .crew/config.json) {
-      $cc = Get-Content .crew/config.json -Raw | ConvertFrom-Json -ErrorAction Stop
+    if (Test-Path -LiteralPath $repoConfig) {
+      $cc = Get-Content -LiteralPath $repoConfig -Raw | ConvertFrom-Json -ErrorAction Stop
       $v = $cc.verify.stopBudgetSeconds
       if (Test-CrewSeconds $v) { $budget = [double]$v }
     }
@@ -1713,7 +1893,12 @@ if ($bashExe) {
   if (-not $python3Already) {
     $shimPy = Resolve-CrewPython
     if (-not $shimPy) {
-      [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+      if ($script:CrewPythonOutcome -eq 'timed-out') {
+        [Console]::Error.WriteLine("verify-gate: the python probe timed out before python3, python or py was proved; no python3 shim, so a rule hardcoding python3 may fail with 'command not found'")
+      } else {
+        [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+      }
+      Write-CrewPythonTrail
     } elseif ($shimPy -notmatch '^([A-Za-z]:[\\/]|[\\/][\\/]?)') {
       # Defensive: Resolve-CrewPython is documented to return an absolute
       # path (sys.executable); refuse to shim from anything else rather

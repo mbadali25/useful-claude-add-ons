@@ -54,35 +54,63 @@ def is_available():
     return _resolve_zap_command() is not None
 
 
+OVERRIDE_VAR = "GIZMODUCK_ZAP_HOME"
+
+
 def _zap_binary():
-    return base.which("zap.bat") or base.which("zap.sh")
+    """Step 3: a zap.bat / zap.sh wrapper via base.which (tool home bin, PATH)."""
+    return base.which_any("zap.bat", "zap.sh")
+
+
+def _wrapper_names():
+    return ("zap.bat", "zap.sh") if os.name == "nt" else ("zap.sh", "zap.bat")
+
+
+def _search_zap_dir(directory):
+    """What a ZAP install directory offers: ("wrapper", path) or ("jar", path),
+    or None. A wrapper is looked for in the directory itself and one level
+    below it (the Crossplatform zip extracts to ZAP_<version>/zap.sh); else
+    the first `zap-*.jar` anywhere under it, as a zip-only install leaves.
+    """
+    if not directory.is_dir():
+        return None
+    for name in _wrapper_names():
+        for candidate in [directory / name, *sorted(directory.glob(f"*/{name}"))]:
+            # A wrapper that cannot run (no execute bit off Windows) is not a
+            # route: the jar below, or nothing, is the honest answer.
+            if base.is_executable(candidate):
+                return ("wrapper", str(candidate))
+    for jar in sorted(directory.glob("**/zap-*.jar")):
+        return ("jar", str(jar))
+    return None
+
+
+def _command_for(found):
+    """The argv prefix for a _search_zap_dir result, or None (a jar needs java)."""
+    if found is None:
+        return None
+    kind, path = found
+    if kind == "wrapper":
+        return [path]
+    java = base.which("java")
+    return [java, "-jar", path] if java else None
 
 
 def _zap_jar_dirs():
-    """Directories to search for a ZAP jar when no zap.bat/zap.sh wrapper is
-    on PATH. A plain zip extraction (bootstrap.ps1's Install-Zap - "no
-    installer wizard to script") guarantees only that the jar sits inside
-    the extracted folder; it does not put anything on PATH at all. An
-    operator override (GIZMODUCK_ZAP_HOME) takes precedence, then the
-    well-known %LOCALAPPDATA%\\Programs\\zap location bootstrap.ps1 itself
-    extracts to.
+    """Step 4: the well-known %LOCALAPPDATA%\\Programs\\zap location
+    bootstrap.ps1 extracts to. A plain zip extraction ("no installer wizard
+    to script") guarantees only that the jar sits inside the extracted
+    folder; it puts nothing on PATH.
     """
-    dirs = []
-    override = os.environ.get("GIZMODUCK_ZAP_HOME")
-    if override:
-        dirs.append(Path(override))
     local_appdata = os.environ.get("LOCALAPPDATA")
-    if local_appdata:
-        dirs.append(Path(local_appdata) / "Programs" / "zap")
-    return dirs
+    return [Path(local_appdata) / "Programs" / "zap"] if local_appdata else []
 
 
 def _find_zap_jar():
-    """The first `zap-*.jar` found under any _zap_jar_dirs() candidate, or
-    None. zap.bat is documented (module docstring) to be nothing but a thin
-    wrapper around `java -jar` against exactly this jar - so when the
-    wrapper itself isn't resolvable, the jar it would have called is still
-    a legitimate way to run ZAP's Automation Framework.
+    """The first `zap-*.jar` under any _zap_jar_dirs() candidate, or None.
+    zap.bat is documented (module docstring) to be nothing but a thin wrapper
+    around `java -jar` against exactly this jar, so the jar is a legitimate
+    way to run ZAP's Automation Framework when no wrapper is found.
     """
     for base_dir in _zap_jar_dirs():
         if not base_dir.is_dir():
@@ -92,13 +120,28 @@ def _find_zap_jar():
     return None
 
 
+def zap_override():
+    """GIZMODUCK_ZAP_HOME's state (base.Override), read now."""
+    return base.override(OVERRIDE_VAR, _search_zap_dir)
+
+
 def _resolve_zap_command():
-    """The argv prefix to invoke ZAP's Automation Framework with, or None if
-    no usable route exists. Prefers the zap.bat/zap.sh wrapper (module
-    docstring: the only runnable local path is the AF) but falls back to
-    `java -jar <jar>` - the same thing the wrapper itself runs internally -
-    since a zip-only install commonly leaves no wrapper on PATH at all.
+    """The argv prefix to invoke ZAP's Automation Framework with, or None.
+
+    One order (L-0684): (1) GIZMODUCK_ZAP_HOME - set but holding no wrapper
+    and no jar makes ZAP unavailable, never a fall-through to another copy;
+    (2) <tool home>/zap; (3) a wrapper via base.which (tool home bin, then
+    PATH); (4) a jar under %LOCALAPPDATA%\\Programs\\zap. A jar runs as
+    `java -jar <jar>`, the same thing the wrapper runs internally.
     """
+    ovr = zap_override()
+    if ovr.state != base.UNSET:
+        return _command_for(ovr.found)
+    home = base.tool_home()
+    if home is not None:
+        command = _command_for(_search_zap_dir(home / "zap"))
+        if command:
+            return command
     wrapper = _zap_binary()
     if wrapper:
         return [wrapper]

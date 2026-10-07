@@ -58,8 +58,11 @@ def init_repo(root):
 #   hang      sleep far past any test timeout
 #   crash     kill the parent (review_run.py) -- an orchestrator crash
 #   turnfail  a JSON stream whose turn failed, exit 0
+#   limit     a Codex usage-limit error stream, exit 1 (T-0088)
 #   prose     a completed turn whose only agent message is prose: no READ
 #             lines, no verdict -- a reviewer that broke the contract (T-0087)
+#   a,b,...   a comma-separated sequence: call N runs mode N, the last mode
+#             repeating, counted in FAKE_REVIEWER_STATE (L-0514's retry relaunches)
 #   golden    replay a REAL `codex exec --json` stream from the golden corpus
 #             (FAKE_REVIEWER_GOLDEN_STREAM) byte for byte, except its last
 #             agent message, which becomes READ lines for the parts this
@@ -101,6 +104,14 @@ if m:
     with open(m.group(1), encoding="utf-8") as fh:
         prompt = fh.read()
 mode = os.environ.get("FAKE_REVIEWER_MODE", "clean")
+if "," in mode:
+    state = os.environ["FAKE_REVIEWER_STATE"]
+    calls = int(open(state, encoding="utf-8").read()) if os.path.exists(state) else 0
+    text = str(calls + 1)
+    with open(state, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    modes = mode.split(",")
+    mode = modes[min(calls, len(modes) - 1)]
 if mode == "golden":
     listed = re.findall(r"^  (\S.*part-\d{3}-of-\d{3}\.patch)$", prompt, re.M)
     if os.environ.get("FAKE_REVIEWER_READ_FORM", "full") == "bare":
@@ -161,6 +172,12 @@ if mode == "crash":
     sys.exit(0)
 if mode == "fail":
     sys.stderr.write("boom\n")
+    sys.exit(1)
+if mode == "limit":
+    message = "You've hit your usage limit. Try again at 3:45 PM."
+    print("\n".join(json.dumps(e) for e in [
+        {"type": "thread.started"}, {"type": "error", "message": message},
+        {"type": "turn.failed", "error": {"message": message}}]))
     sys.exit(1)
 if mode == "escape":
     lifetime = os.environ["FAKE_REVIEWER_ESCAPE_LIFETIME"]
@@ -234,10 +251,21 @@ def bundle(repo, scratch):
         encoding="utf-8")
 
 
+# review_run.py with L-0514's retry backoff patched to 0, the way a test
+# patches a module constant, for a subprocess: argv[1:] are review_run's own.
+NO_BACKOFF = [sys.executable, "-c",
+              "import sys; sys.path.insert(0, sys.argv.pop(1)); import review_run; "
+              "review_run.RETRY_BACKOFF_SECONDS = 0; sys.exit(review_run.main(sys.argv[1:]))",
+              _SCRIPTS]
+
+
 def run_review(repo, scratch, fakes, mode, *extra, **env_extra):
-    """Run review_run.py for ticket T1 with the fake codex in `mode`."""
+    """Run review_run.py for ticket T1 with the fake codex in `mode` (a
+    comma-separated `mode` is one mode per call; its counter is in `fakes`)."""
+    env_extra.setdefault("FAKE_REVIEWER_STATE", os.path.join(str(fakes), "calls.txt"))
     return subprocess.run(
-        [sys.executable, os.path.join(_SCRIPTS, "review_run.py"), "--root", str(repo),
-         "--ticket", "T1", "--scratch", str(scratch), "--provider", "codex"] + list(extra),
+        NO_BACKOFF + ["--root", str(repo),
+                      "--ticket", "T1", "--scratch", str(scratch), "--provider", "codex"]
+        + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
         env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)

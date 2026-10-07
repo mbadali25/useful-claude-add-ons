@@ -151,6 +151,11 @@ does not**. `.gitignore` ignores `.crew/*` with a named un-ignore list —
 the box that wrote it. On any other machine a rule can ask for an agent that does
 not exist, quietly reviewing less while nothing about the output looks different. `/crew:review` therefore lists every agent a matched rule asked for
 and could not find, and treats it exactly like a specialist that was skipped.
+It need not wait for a review: `hooks/scripts/verify_agents.py --root . --check`
+lists every named agent this machine cannot resolve (exit 1), or `unknown`
+(exit 2) when a plugin registry or settings file will not parse, never
+"installed". `/crew:status` shows the same check as its `agents` line, and
+`/crew:verify` step 8 reports it.
 
 (This paragraph has now been wrong in both directions. It first said
 `.crew/verify.json` "is committed and shared" when nothing tracked it; that was
@@ -406,7 +411,11 @@ the checks are declared, not remembered.
 | `requireHuman` | Stop and get explicit approval before deploying |
 
 **Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`
-reads `.crew/verify.json` and blocks a matching `deploy` command - but that
+reads `.crew/verify.json` and blocks a command that contains the declared
+`deploy` text - verbatim, with arguments after it or wrapped; a fragment of it
+is no deploy, so declare the shortest text every real run contains (L-0689) -
+(on either tool also a `gh workflow run` or `gh api .../dispatches` of a declared deploy
+workflow, read by T-0009's reader; one it cannot read blocks) - but that
 hook only runs inside a Claude Code session that has the crew plugin active.
 A fresh session without it (a teammate who never installed crew, a different
 machine, any tool other than Claude Code) can run the same `deploy` command
@@ -463,8 +472,78 @@ refused as `gate-refuses-map`. Each printed dispatch carries `gated-as:
 non-ASCII case pairs in another environment's deploy string).
 It prints the literal dispatch for HEAD, writes nothing and runs no `gh`. Exit 0 is valid (or no `github` entry), 2 is refused with
 `result=refused reason=<code>`, 3 is could-not-tell (map, environment or HEAD
-unreadable). **The dispatch sequence is not built yet:** nothing dispatches,
-finds the run, watches it or records it. Run the printed command by hand.
+unreadable).
+
+**`prepare` (L-0644)** - `crew_ghdeploy.py prepare --root . --env <name>
+[--index N]` - runs before the dispatch and refuses (exit 2, nothing written)
+on the first of: an entry problem `check` refuses (or no `github` entry,
+`github-none`), `deploy-prefix-mismatch`, `unmapped-workflow` (no
+`environments.workflows` key in `.crew/config.json` matches the workflow; an
+unlisted workflow is never nonProd), `unknown-environment` (T-0009's
+classifier cannot name one), `class-mismatch` (the dispatch classifies prod
+under a nonProd environment name, or the reverse), `actor-unreadable` (`gh
+api user`), `sha-not-on-remote`, `branch-tip-not-head` (no `shaInput` and the
+ref's tip is not HEAD) and `snapshot-unreadable` (`gh run list`); a classifier
+that raises is `classifier-failed`, and an environment name that cannot name
+a file under `.crew/.ghdeploy/` is `env-name-path`. Otherwise it writes
+`.crew/.ghdeploy/<env>-<N>.json` atomically - the workflow, ref, sha, actor,
+`t0`, the ids of this actor's existing `workflow_dispatch` runs on that ref,
+the correlation id, the command, `identifySeconds`, `watchMinutes` and the
+deadline - and prints the dispatch as its last line before `result=`. It
+never dispatches: its only `gh` calls are `api user`, two GETs and `run
+list`. Run the printed command as its own Bash call, so the cloud guard and
+promote-gate judge it.
+
+**`identify` (L-0645)** - `crew_ghdeploy.py identify --root . --env <name>
+[--index N]` - names the one run the dispatch created. It polls `gh run list`
+(the snapshot's filters) every 5 seconds for up to `identifySeconds`. A
+candidate is a run not in the snapshot, with event `workflow_dispatch`, on
+the ref, created no earlier than `t0` minus 30 seconds and, when a
+correlation id was sent, whose display title holds it - with no fallback to
+the time rule, so `correlationInput` only works for a workflow whose
+`run-name` includes that input. Exactly one candidate is the run: its id and
+URL go into the state file (exit 0). It never picks among candidates, and
+**could-not-tell stops**: two or more (`two-candidates`), none by the timeout
+(`none-in-timeout`, `correlation-not-found`, `run-list-fails`), an
+unparseable `createdAt`, a state file that is missing, unreadable or older
+than 600 seconds (`stale-prepare`) is exit 3 with no run id written; do not
+watch or record a run by hand then. Its only `gh` call is `run list`.
+
+**`watch` (L-0646)** - `crew_ghdeploy.py watch --root . --env <name> [--index
+N] [--slice-seconds S]` - follows the identified run with `gh run watch <id>
+--exit-status --interval 15` for one slice (default 540 seconds, at most 570,
+inside the Bash tool's limit) or until the deadline (`t0` + `watchMinutes`),
+polling `gh run view` every 15 seconds instead when the watch cannot run.
+**Exit 75** means the slice ended before the deadline with the run unfinished:
+call it again. The watch's own exit code never decides; the verdict comes from
+`gh run view --json status,conclusion,headSha,jobs,url`, is written into the
+state file and printed as the last line:
+- **pass (exit 0)** - conclusion `success`, every job matching `deployJob`
+  succeeded (at least one matches; with no `deployJob` the reason says the
+  deploy job was not checked) and, with no `shaInput`, the run's head sha is
+  the one deployed;
+- **fail (exit 1)** - any other conclusion (`cancelled` too), a deploy job
+  skipped, failed or absent, or a head sha mismatch;
+- **unknown (exit 3)** - the view is unreadable, or the run is still running
+  at the deadline (it is named and left running); no run id in the state file
+  is could-not-tell (exit 3).
+It never cancels, re-runs or approves a run: its only `gh` calls are `run
+watch` and `run view`.
+
+**`record` (L-0647)** - `crew_ghdeploy.py record --root . --env <name>
+[--index N]` - rebuilds `.work/PROMOTIONS.md` whole (temp file, `os.replace`)
+with one detail line that holds no pipe character, so no gate reads it as a
+row:
+`- deploy <env> <sha40> github <workflow>@<ref> run <id|none>
+<pass|FAIL|unknown|could-not-tell> <url|-> at <UTC> - <reason>`. On anything
+but pass it adds the previous all-pass sha, the last 40 lines of the
+failed-step log (pipes shown as `/`) and a `| ... | not-run | not-run |
+not-run | <actor> |` row, which records the deploy and never satisfies
+`requires`. A run with no verdict is exit 3, nothing written. **The sequence
+of the five steps, each exit code and what to do on it, and what is
+hook-enforced versus prose, is in `github-deploy.md`.** promote-gate enforces
+the sha input (L-0648): a dispatch of an entry with `shaInput` must give it
+once, as the full lowercase sha of the HEAD it deploys, or it blocks.
 
 ### The promotion record
 
@@ -477,7 +556,9 @@ Every promotion appends one line to `.work/PROMOTIONS.md`:
 | 2026-08-23T15:40Z | production | a1b2c3d | pass | pass | FAIL | mbadali |
 ```
 
-This is what `requires` reads. It is also the only honest answer to "is prod
+This is what `requires` reads: the NEWEST row for the environment and sha
+decides (file order is time order), so a re-run's pass clears an earlier
+failure and a later failure revokes an earlier pass. It is also the only honest answer to "is prod
 running the thing qa signed off on" - compare the shas, not the branch names.
 
 Record failures too. A promotions log with no failures in it is a log nobody

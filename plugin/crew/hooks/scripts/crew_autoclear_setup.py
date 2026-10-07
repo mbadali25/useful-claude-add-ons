@@ -47,6 +47,7 @@ import argparse
 import copy
 import json
 import os
+import stat
 import sys
 
 import crew_backup
@@ -342,7 +343,205 @@ def had_repo_local_opt_in(context):
     return _dig_dict(context, "autoClear").get("enabled") is True
 
 
-def detect_onlyRepos_widening(global_cfg, repo_root, repo_had_opt_in):
+# ------------------------------------------- migrate: --scan-root (T-0106)
+
+SCAN_DEPTH_DEFAULT = 3
+_REPO_CONFIG_NAMES = ("config.json", "crew.json")
+
+
+class WideningRefused(ValueError):
+    """`--yes-widen` would write a list that disarms or silently leaves out
+    an opted-in repo. Raised before anything is written anywhere."""
+
+
+def check_scan_roots(roots):
+    """Raise `ValueError` naming the first `--scan-root` that is not an
+    existing directory. Called before anything is read or written."""
+    for root in roots or ():
+        if not os.path.isdir(root):
+            raise ValueError(_scan_root_problem(root))
+
+
+def _scan_root_problem(root):
+    return (f"--scan-root {root} does not exist or is not a directory; "
+            "nothing was written")
+
+
+def _scan_candidate(directory):
+    """`(is_candidate, opted_in, reason)` for one directory. A candidate
+    holds `.crew/config.json` or `.crew/crew.json`. Opted in when either
+    file's `context.autoClear.enabled` is exactly `true` -- the test
+    `had_repo_local_opt_in` applies to the current repo. `reason` is set
+    when either present file could not be read as a JSON object -- even
+    when the other shows the opt-in, as the spec has it -- and when the
+    `.crew` directory itself is a symlink (never followed) or cannot be read or
+    listed: that repo is unreadable (never "not opted in"), and it blocks
+    `--yes-widen`."""
+    crew_dir = os.path.join(directory, ".crew")
+    # `lstat`, not `islink`/`isdir`: those answer False on a PermissionError,
+    # which would read an unreachable `.crew` as "no crew here".
+    try:
+        mode = os.lstat(crew_dir).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return False, False, ""
+    except OSError as exc:
+        return True, False, f".crew could not be read: {exc}"
+    if stat.S_ISLNK(mode):
+        return True, False, ".crew is a symlink; the scan does not follow it"
+    if not stat.S_ISDIR(mode):
+        return False, False, ""
+    try:
+        names = set(os.listdir(crew_dir))
+    except OSError as exc:
+        return True, False, f".crew could not be listed: {exc}"
+    present, opted_in, problems = False, False, []
+    for name in _REPO_CONFIG_NAMES:
+        # The filesystem decides, not an exact match on `listdir`'s stored
+        # spelling: on a case-insensitive one (Windows, macOS) crew reads
+        # `.crew/Config.json` as `config.json`, so the scan must see it too.
+        # `lstat` rather than `lexists`, which answers False on any error.
+        if name not in names:
+            try:
+                os.lstat(os.path.join(crew_dir, name))
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            except OSError as exc:
+                present = True
+                problems.append(f".crew/{name}: {exc}")
+                continue
+        present = True
+        try:
+            doc = _read_json_if_present(os.path.join(directory, ".crew", name))
+        except (OSError, ValueError) as exc:
+            problems.append(f".crew/{name}: {exc}")
+            continue
+        if doc is None:
+            problems.append(f".crew/{name}: vanished while it was read")
+            continue
+        context = doc.get("context")
+        if had_repo_local_opt_in(context if isinstance(context, dict) else {}):
+            opted_in = True
+    return present, opted_in, "; ".join(problems)
+
+
+def _scan_children(directory):
+    """`(children, unchecked)`: the subdirectories the walk may enter (not
+    hidden, not `node_modules`, not a symlink), and `{path: reason}` for
+    entries whose type could not be read -- unknown, never skipped as "not
+    a directory". Raises `OSError` when the directory cannot be listed."""
+    children, unchecked = [], {}
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            # casefold: `Node_Modules` IS `node_modules` on Windows and macOS.
+            if entry.name.startswith(".") or entry.name.casefold() == "node_modules":
+                continue
+            try:
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    continue
+            except OSError as exc:
+                unchecked[entry.path] = f"could not tell whether it is a directory: {exc}"
+                continue
+            children.append(entry.path)
+    return children, unchecked
+
+
+def scan_opted_in_repos(roots, depth=SCAN_DEPTH_DEFAULT, *, current=None):
+    """Read-only walk of each root for repos that still carry a 0.20.x
+    repo-local `context.autoClear.enabled: true`. Depth 1 is a root's
+    direct children; the root itself can be a candidate. A candidate is
+    not descended into; hidden directories, `node_modules` and symlinked
+    directories are not entered. `current` (a realpath) is skipped: its
+    opt-in comes from its own files.
+
+    Returns `{"roots", "depth", "found", "unreadable"}` -- `found` sorted
+    realpaths, `unreadable` `{"path", "reason"}` entries (a file that is
+    not a JSON object, or a directory that could not be listed)."""
+    real_roots = [os.path.realpath(root) for root in roots]
+    found, unreadable = set(), {}
+    best = {}
+    for top in real_roots:
+        stack = [(top, 0)]
+        while stack:
+            directory, level = stack.pop()
+            if best.get(directory, depth + 1) <= level:
+                continue
+            best[directory] = level
+            if directory == current:
+                continue
+            is_candidate, opted_in, reason = _scan_candidate(directory)
+            if is_candidate:
+                if reason:
+                    unreadable[directory] = reason
+                elif opted_in:
+                    found.add(directory)
+                continue
+            if level >= depth:
+                continue
+            try:
+                children, unchecked = _scan_children(directory)
+            except OSError as exc:
+                unreadable[directory] = f"could not list it: {exc}"
+                continue
+            unreadable.update(unchecked)
+            stack.extend((child, level + 1) for child in children)
+    return {
+        "roots": real_roots,
+        "depth": depth,
+        "found": sorted(found),
+        "unreadable": [{"path": path, "reason": unreadable[path]}
+                       for path in sorted(unreadable)],
+    }
+
+
+def _widening_message(proposed, scan, repo_had_opt_in):
+    """The widening text. Without a scan it is the pre-T-0106 text plus one
+    sentence naming `--scan-root`; with one it names the roots, the depth,
+    what was found and what could not be read, and the two limits."""
+    message = (
+        "context.autoClear.enabled is true machine-wide and onlyRepos is "
+        "null, so under 1.0 this arms EVERY initialised crew repo on this "
+        "machine, not just the ones that opted in under 0.20.x. "
+    )
+    if scan is None:
+        if proposed:
+            message += (
+                f"This repo had a repo-local opt-in before migration, so it is "
+                f"proposed for onlyRepos: {proposed}. This process can only see "
+                "this repo - if other repos on this machine also opted in "
+                "locally, add their paths by hand."
+            )
+        else:
+            message += (
+                "This repo had no repo-local opt-in, so nothing is proposed to "
+                "add to onlyRepos from here - if some other repo on this "
+                "machine did opt in, add it by hand."
+            )
+        return message + (
+            " Re-run with --scan-root <dir> to look for them under a "
+            "directory (read-only).")
+    message += (
+        f"This repo {'had' if repo_had_opt_in else 'had no'} repo-local "
+        f"opt-in. Scanned {', '.join(scan['roots'])} to depth "
+        f"{scan['depth']} (read-only): found {len(scan['found'])} other "
+        "opted-in repo(s)."
+    )
+    if scan["unreadable"]:
+        listed = "; ".join(f"{item['path']} ({item['reason']})"
+                           for item in scan["unreadable"])
+        message += (
+            f" Could not read {len(scan['unreadable'])}, so whether they "
+            f"opted in is unknown and they block --yes-widen: {listed}.")
+    message += (
+        f" Proposed for onlyRepos: {proposed}. Repos outside these roots are "
+        "not seen, and a repo an earlier apply-migrate already converted no "
+        "longer carries its opt-in, so no scan can find it - add those by "
+        "hand."
+    )
+    return message
+
+
+def detect_onlyRepos_widening(global_cfg, repo_root, repo_had_opt_in, *,
+                              scan_roots=None, scan_depth=SCAN_DEPTH_DEFAULT):
     """Whether leaving the global file untouched arms every crew repo on
     this machine, and what to propose instead.
 
@@ -351,35 +550,47 @@ def detect_onlyRepos_widening(global_cfg, repo_root, repo_had_opt_in):
     asked for auto-clear under 0.20.x, before 1.0's global-only `enabled`
     existed.
 
-    Returns `{"widening": bool, "proposedOnlyRepos": [...], "message": str}`.
-    `proposedOnlyRepos` can only ever name repos this process can see, which
-    in practice is just `repo_root` -- it cannot enumerate every crew repo on
-    the machine, and says so rather than implying it did.
+    Returns `{"widening": bool, "proposedOnlyRepos": [...], "message": str}`,
+    plus `"scan"` (`scan_opted_in_repos`' result) when `scan_roots` was
+    given and there is a widening. Without `scan_roots` the proposal can
+    only name `repo_root`, and the message says so rather than implying it
+    looked further. The scan runs only when there is a widening.
     """
     auto = _dig_dict(global_cfg, "context").get("autoClear")
     auto = auto if isinstance(auto, dict) else {}
     if auto.get("enabled") is not True or auto.get("onlyRepos") is not None:
         return {"widening": False, "proposedOnlyRepos": [], "message": ""}
-    proposed = [os.path.realpath(repo_root)] if repo_had_opt_in else []
-    message = (
-        "context.autoClear.enabled is true machine-wide and onlyRepos is "
-        "null, so under 1.0 this arms EVERY initialised crew repo on this "
-        "machine, not just the ones that opted in under 0.20.x. "
-    )
-    if proposed:
-        message += (
-            f"This repo had a repo-local opt-in before migration, so it is "
-            f"proposed for onlyRepos: {proposed}. This process can only see "
-            "this repo - if other repos on this machine also opted in "
-            "locally, add their paths by hand."
-        )
-    else:
-        message += (
-            "This repo had no repo-local opt-in, so nothing is proposed to "
-            "add to onlyRepos from here - if some other repo on this "
-            "machine did opt in, add it by hand."
-        )
-    return {"widening": True, "proposedOnlyRepos": proposed, "message": message}
+    here = os.path.realpath(repo_root)
+    scan = (scan_opted_in_repos(scan_roots, scan_depth, current=here)
+            if scan_roots else None)
+    proposed = {here} if repo_had_opt_in else set()
+    proposed.update(scan["found"] if scan else ())
+    proposed = sorted(proposed)
+    result = {"widening": True, "proposedOnlyRepos": proposed,
+              "message": _widening_message(proposed, scan, repo_had_opt_in)}
+    if scan is not None:
+        result["scan"] = scan
+    return result
+
+
+def widening_refusal(widening):
+    """Why `--yes-widen` must not write `widening`'s proposal, or None."""
+    unreadable = widening.get("scan", {}).get("unreadable") or []
+    if unreadable:
+        return ("refused --yes-widen: these repos could not be read, so "
+                "whether they opted in is unknown and writing onlyRepos now "
+                "could leave one out: "
+                + "; ".join(f"{item['path']} ({item['reason']})"
+                            for item in unreadable)
+                + ". Fix or move them and run again; nothing was written.")
+    if not widening["proposedOnlyRepos"]:
+        return ("refused --yes-widen: the proposed onlyRepos list is empty, "
+                "and an empty list would turn auto-clear off in every repo "
+                "on this machine. Run again with --scan-root <dir> to find "
+                "the repos that opted in, or write the list yourself with "
+                "crew_config.py --set 'context.autoClear.onlyRepos=<list>' "
+                "--apply. Nothing was written.")
+    return None
 
 
 def apply_onlyRepos_narrowing(only_repos, *, consent, path=None):
@@ -492,7 +703,8 @@ def _read_json_if_present(path):
     return parsed
 
 
-def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=False):
+def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=False, *,
+                          scan_roots=None, scan_depth=SCAN_DEPTH_DEFAULT):
     """Convert `context.autoClear` in whichever of `<root>/.crew/config.json`
     and `<root>/.crew/crew.json` are present, and write each one back in
     place.
@@ -576,7 +788,16 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
     honest read of what is left on disk. Show the proposal and get the yes
     before calling this at all, or accept `--yes-widen` up front on the one
     call that also does the stripping.
+
+    **`scan_roots` (T-0106) looks for the OTHER opted-in repos**, read-only,
+    through `scan_opted_in_repos`, and adds them to the proposal; a root
+    that is not a directory raises `ValueError` before anything is read.
+    `yes_widen` raises `WideningRefused` (nothing written anywhere) when
+    the proposal is empty -- `onlyRepos: []` would disarm every repo -- or
+    a scanned repo could not be read. Each note starts with its file
+    (`.crew/config.json: ` or `.crew/crew.json: `).
     """
+    check_scan_roots(scan_roots)
     config_path = os.path.join(root, ".crew", "config.json")
     crew_json_path = os.path.join(root, ".crew", "crew.json")
     config_doc = _read_json_if_present(config_path)
@@ -605,16 +826,21 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
         opted_in = opted_in or had_repo_local_opt_in(context)
         renamed, rename_note = convert_method_windows_literal(context)
         stripped, strip_notes = strip_repo_duplication(renamed, label)
-        file_notes = ([rename_note] if rename_note else []) + strip_notes
+        file_notes = [f".crew/{name}: {note}" for note in
+                      ([rename_note] if rename_note else []) + strip_notes]
         entries.append({"name": name, "path": path, "doc": doc,
                         "context": stripped, "notes": file_notes})
 
     notes = [note for entry in entries for note in entry["notes"]]
     already_configured = not notes
-    widening = detect_onlyRepos_widening(global_cfg, root, opted_in)
+    widening = detect_onlyRepos_widening(global_cfg, root, opted_in,
+                                         scan_roots=scan_roots, scan_depth=scan_depth)
 
     widening_applied = False
     if widening["widening"] and yes_widen:
+        refusal = widening_refusal(widening)
+        if refusal:
+            raise WideningRefused(refusal)
         apply_onlyRepos_narrowing(
             widening["proposedOnlyRepos"], consent=True, path=global_path)
         widening_applied = True
@@ -678,11 +904,10 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
 # --------------------------------------------------------------- self-check
 
 
-def check_no_forbidden_words():
-    """Every literal string this module can print, scanned for "cleared" and
-    "compacted". Returns the offending strings, empty when clean. Exists so
-    `test_no_forbidden_words` has one thing to call rather than hand-listing
-    every function here and forgetting the next one that's added."""
+def forbidden_word_samples():
+    """Every message this module can print, one sample each (T-0106 adds a
+    scan with a found and an unreadable repo, and both `--yes-widen`
+    refusals)."""
     samples = [
         describe_notify(), describe_tmux_path(), _SENDKEYS_NOTE,
         describe_global_windows_conversion(),
@@ -692,11 +917,30 @@ def check_no_forbidden_words():
         {"context": {"autoClear": {"enabled": True, "onlyRepos": None}}},
         "/tmp/example-repo", True)
     samples.append(widening["message"])
+    scan = {"roots": ["/tmp/src"], "depth": SCAN_DEPTH_DEFAULT,
+            "found": ["/tmp/src/other"],
+            "unreadable": [{"path": "/tmp/src/broken",
+                            "reason": ".crew/config.json: not valid JSON"}]}
+    samples.append(_widening_message(["/tmp/src/other"], scan, False))
+    samples.append(_widening_message([], None, False))
+    samples.append(widening_refusal(
+        {"proposedOnlyRepos": ["/tmp/src/other"], "scan": scan}))
+    samples.append(widening_refusal({"proposedOnlyRepos": []}))
+    samples.append(_scan_root_problem("/tmp/missing"))
     _, notes = strip_repo_duplication(
         {"autoClear": {"enabled": True, "onlyRepos": [], "onlySessions": []}})
     samples.extend(notes)
     _, note = convert_method_windows_literal({"autoClear": {"method": "windows"}})
     samples.append(note)
+    return samples
+
+
+def check_no_forbidden_words():
+    """Every literal string this module can print, scanned for "cleared" and
+    "compacted". Returns the offending strings, empty when clean. Exists so
+    `test_no_forbidden_words` has one thing to call rather than hand-listing
+    every function here and forgetting the next one that's added."""
+    samples = forbidden_word_samples()
     lowered = [s.lower() for s in samples]
     return [s for s, low in zip(samples, lowered)
             if any(word in low for word in FORBIDDEN_WORDS)]
@@ -737,8 +981,18 @@ def main(argv=None):
     p_am.add_argument("--repo-label", default=None)
     p_am.add_argument("--yes-widen", action="store_true",
                       help="also apply the proposed onlyRepos narrowing")
+    p_am.add_argument("--scan-root", action="append", default=None,
+                      help=("look under this directory, read-only, for other repos "
+                            "that opted in (repeatable)"))
+    p_am.add_argument("--scan-depth", type=int, default=None,
+                      help=f"levels below each --scan-root (default {SCAN_DEPTH_DEFAULT})")
 
     args = parser.parse_args(argv)
+    if getattr(args, "scan_depth", None) is not None:
+        if not args.scan_root:
+            parser.error("--scan-depth needs --scan-root")
+        if args.scan_depth < 1:
+            parser.error("--scan-depth must be at least 1")
 
     if args.cmd == "plan-windows-default":
         print(json.dumps(plan_windows_notify_default(args.global_path), indent=2))
@@ -778,7 +1032,9 @@ def main(argv=None):
     if args.cmd == "apply-migrate":
         try:
             plan = apply_migrate_to_repo(
-                args.root, args.global_path, args.repo_label, args.yes_widen)
+                args.root, args.global_path, args.repo_label, args.yes_widen,
+                scan_roots=args.scan_root,
+                scan_depth=args.scan_depth or SCAN_DEPTH_DEFAULT)
         except (GlobalConfigUnreadable, OSError, ValueError,
                 crew_backup.BackupError, crew_config.WriteBackupRefused) as exc:
             print(str(exc), file=sys.stderr)

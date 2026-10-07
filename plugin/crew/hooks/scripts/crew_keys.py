@@ -201,6 +201,10 @@ KEY_META = {
     "memory.recall.maxChars": _row("Recall output budget; a non-positive or non-integer "
                                    "value reads as 800.", "type", since="1.0.25",
                                    source=_S + "crew_recall.py", type_="positive integer"),
+    "memory.recall.projects": _unv("Project names sent to vault recall as `--project` so this "
+                                   "repo's notes rank first; empty sends the main checkout's "
+                                   "directory name.", "1.1.11", _S + "crew_recall.py",
+                                   "list of project names"),
     "verifyGate": _unv("Run the Stop verify gate.", FIRST, _S + "verify-gate.sh",
                        "boolean"),
     # --- context
@@ -310,7 +314,7 @@ KEY_META = {
                           "`chat_id`, and the skill's example value counts as unset.",
                           FIRST, _S + "crew_notify.py", "string or null"),
     "notify.events": _row("Events that notify: `deploy`, `question`, and `blocker` "
-                          "(reserved, sends nothing yet). The pre-1.0 names `gate`, "
+                          "(T-0060's four blocker reasons). The pre-1.0 names `gate`, "
                           "`waiting`, `phase`, `review` and `done` are mapped with a "
                           "notice. A list is one leaf.", "type", since=FIRST,
                           source=_S + "crew_notify.py",
@@ -343,6 +347,22 @@ KEY_META = {
                             "tuple", crew_shell.MODES, "1.0.54"),
     "shellRoute.distro": _unv("WSL distro to route to; null takes the default distro.",
                               "1.0.54", _S + "crew_shell.py", "string or null"),
+    # T-0044: machine file only; a repo copy is ignored and reported.
+    "unattendedCloud.aws.readOnly.profile": _row(
+        "The AWS profile an unattended run exports credentials from (`aws configure "
+        "export-credentials`); it must yield temporary credentials. Machine file only.",
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="profile name, or null"),
+    "unattendedCloud.aws.readOnly.identity": _row(
+        "The assumed-role ARN prefix STS must report for that profile, ending in `/`; "
+        "null refuses every launch. Machine file only.", "type", since="1.1.10",
+        source=_S + "crew_unattended.py", type_="ARN prefix ending in `/`, or null"),
+    "unattendedCloud.aws.readOnly.region": _row(
+        "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
+    "unattendedCloud.aws.nonProd": _row(
+        "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
+        "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
+        "open-table", since="1.1.10", source=_S + "crew_unattended.py"),
     # --- pm
     "pm.enabled": _unv("Run the PM brief.", FIRST, _S + "crew_state.py", "boolean"),
     "pm.mode": _unv("How the PM brief adapts its length.", FIRST, _S + "crew_state.py",
@@ -406,6 +426,8 @@ KEY_META = {
                              "`/crew:gate`).", "0.19.30"),
     "guards.cloudDestructive": _rat("Destructive cloud CLI commands.", "1.0.25"),
     "guards.sqlDestructive": _rat("Destructive SQL.", "1.0.25"),
+    "guards.deployWorkflow": _rat("A `gh workflow run` or `gh api .../dispatches` of a "
+                                  "workflow `environments.workflows` lists.", "1.1.16"),
     "guards.prodDatabase": _rat("How much of a declared production database crew may "
                                 "reach.", "0.19.30"),
     "guards.prodServer": _rat("How much of a declared production host crew may reach.",
@@ -429,6 +451,9 @@ KEY_META = {
                                  "list of globs"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
+    "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
+                                   "or `input:<name>`.", "1.1.16", _S + "crew_config.py",
+                                   "object of glob to string"),
     # --- change requests
     "change.requester": _unv("Who requests the change.", "0.19.31", _S + "crew_change.py",
                              "string or null"),
@@ -539,10 +564,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("guards.deployWorkflow", "T-0009", "new key",
-            "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
-    _coming("environments.workflows", "T-0009", "new key",
-            "Deploy workflows per environment.", "{}", "repo"),
     _coming("coord.ttlMinutes", "T-0030", "new key",
             "Lifetime of a cross-session coordination claim (1-10080).", "30",
             "set when T-0030 lands"),
@@ -594,7 +615,7 @@ def layer_of(key):
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
-    if key in _MACHINE_ONLY:
+    if key in _MACHINE_ONLY or key.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):
         return "repo"

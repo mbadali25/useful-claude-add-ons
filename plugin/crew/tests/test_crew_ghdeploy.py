@@ -11,12 +11,15 @@ The cases are the spec's acceptance checks. The mutations that prove each
 refusing branch is tested are in `ghdeploy_mutations.py` (unwired; L-0650
 wires them into the sabotage harness).
 """
+import contextlib
+import io
 import json
 import os
 import re
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -378,6 +381,10 @@ def test_dispatch_matches_promote_gate(tmp_path):
     proc = _check(root)
     assert proc.returncode == 0, proc.stdout
     command = proc.stdout.splitlines()[0][len("dispatch: "):]
+    # The gates match by containment (L-0689: one way), so the dispatch must
+    # hold the declared prefix literally; T-0062's dispatch reader would
+    # otherwise still reach staging and hide a dispatch that drifted from it.
+    assert command.startswith(_PREFIX), command
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
 
     gate = subprocess.run(
@@ -447,7 +454,7 @@ _CONFIGS = {
     "inputless staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main"}, None),
         ("production", _PROD, None), human=("production",)),
-        {"staging": "staging,production", "production": "staging,production"}),
+        {"staging": "staging", "production": "staging,production"}),
     "shaInput-only staging before production": (_envs(
         ("staging", {"workflow": "deploy.yml", "ref": "main", "shaInput": "sha"}, None),
         ("production", _PROD, None), human=("production",)),
@@ -473,7 +480,7 @@ _CONFIGS = {
         ("qa", None, ["gh workflow run deploy.yml --ref main -f target=dev -f stage=qa"]),
         ("production", None, ["gh workflow run deploy.yml --ref main -f target=dev"
                               " -f stage=qa -f go=prod"]), human=("production",)),
-        {"dev": "dev,qa,production"}),
+        {"dev": "dev"}),
     # `*`, `?` and `[...]` are text to both gates: no wildcard claims a dispatch.
     "a star in an earlier plain string": (_envs(
         ("legacy", None, ["gh workflow run deploy.yml --ref main -f target=*"]),
@@ -697,7 +704,7 @@ _EXTRA = [
     # union with a dispatch, case variants in values
     ({"staging": "gh workflow run deploy.yml --ref main",
       "Prod": _PROD_PREFIX, "qa": "GH WORKFLOW RUN deploy.yml --ref main -f target=PROD"},
-     [_PROD_PREFIX + " -f sha=" + "0" * 40, "gh workflow run deploy.yml",
+     [_PROD_PREFIX + " -f sha=" + "0" * 40, "gh workflow run deploy.yml --ref main -f target=PROD",
       "gh workflow run deploy.yml --ref main -f target=staging"]),
     # CRLF map text, and CRs inside a deploy string and the command
     (_raw('\r\n"a": {"deploy": "./deploy.sh a\\r", ' + _RB + '},\r\n'
@@ -877,3 +884,998 @@ def test_a_non_ascii_name_in_a_message_survives_a_cp1252_stdout(tmp_path, label)
     proc = _check(root, env="production", encoding="cp1252")
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert _last(proc) == "result=refused reason=gate-refuses-map"
+
+
+# --- the github sequence (L-0644 to L-0647): shared fixtures ------------------
+#
+# Every `gh` call goes through `crew_ghdeploy._run_gh`, which these tests
+# replace with `FakeGh`: it answers from a table keyed by the call's leading
+# words and records every argv, so `test_helper_never_dispatches` can prove no
+# scenario dispatched, cancelled, re-ran, merged or sent a mutating `api`.
+
+_SEQ_SHA_ENTRY = {"workflow": "deploy.yml", "ref": "main",
+                  "inputs": {"target": "staging"}, "shaInput": "sha"}
+_ACTOR = "octo-bot"
+_SCENARIOS = []         # every sequence scenario, for the never-dispatches test
+
+
+def _scenario(fn):
+    _SCENARIOS.append(fn)
+    return fn
+
+
+class FakeGh:  # pylint: disable=too-few-public-methods
+    """`_run_gh`'s stand-in. `answers` maps a tuple of leading words to
+    `(status, stdout)` or to a list of them, consumed one call at a time
+    (the last one repeats)."""
+
+    def __init__(self, answers):
+        self.answers = {k: list(v) if isinstance(v, list) else [v]
+                        for k, v in answers.items()}
+        self.calls = []
+
+    def __call__(self, args, _root, **_kw):
+        args = list(args)
+        self.calls.append(args)
+        for key in sorted(self.answers, key=len, reverse=True):
+            if tuple(args[:len(key)]) == key:
+                queue = self.answers[key]
+                return queue.pop(0) if len(queue) > 1 else queue[0]
+        return 1, ""
+
+
+def _ok(obj):
+    return 0, json.dumps(obj)
+
+
+def _seq_repo(tmp_path, monkeypatch, entry=None, env="staging", workflows=None,
+              non_prod=("staging",)):
+    """A committed repo whose `env` carries `entry`, with the repo layer's
+    `environments` block, the machine layer pointed at an empty file, and
+    the clock at 1,000,000."""
+    entry = dict(_SEQ_SHA_ENTRY if entry is None else entry)
+    root = _repo(tmp_path, _doc(entry, env=env))
+    config = {"environments": {"nonProd": list(non_prod), "workflows": (
+        {"deploy.yml": "input:target"} if workflows is None else workflows)}}
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    glob = tmp_path / "global.json"
+    glob.write_text("{}", encoding="utf-8")
+    import crew_config  # pylint: disable=import-outside-toplevel
+    import crew_state  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(glob))
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(glob))
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: 1_000_000)
+    monkeypatch.setattr(crew_ghdeploy, "_sleep", lambda _s: None)
+    return root
+
+
+def _prepare_answers(sha, **over):
+    answers = {("api", "user"): _ok({"login": _ACTOR}),
+               ("api", f"repos/{{owner}}/{{repo}}/commits/{sha}"): _ok({"sha": sha}),
+               ("api", "repos/{owner}/{repo}/branches/main"): _ok({"commit": {"sha": sha}}),
+               ("run", "list"): _ok([{"databaseId": 11}, {"databaseId": 12}])}
+    answers.update({tuple(k.split(" ")): v for k, v in over.items()})
+    return answers
+
+
+def _run(monkeypatch, gh, *argv):
+    """`crew_ghdeploy.main(argv)` in-process with `gh`: `(exit, stdout lines)`."""
+    monkeypatch.setattr(crew_ghdeploy, "_run_gh", gh)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = crew_ghdeploy.main(list(argv))
+    return code, out.getvalue().splitlines()
+
+
+def _forbidden(argv):
+    """A `gh` call the helper must never make: a dispatch, a cancel, a re-run,
+    a merge, or an `api` call with a method other than GET."""
+    if argv[:2] in (["workflow", "run"], ["run", "cancel"], ["run", "rerun"],
+                    ["pr", "merge"]):
+        return True
+    if argv[:1] == ["api"]:
+        for i, word in enumerate(argv):
+            method = (argv[i + 1] if word in ("-X", "--method") and i + 1 < len(argv)
+                      else word[2:] if word.startswith("-X") and len(word) > 2
+                      else word.split("=", 1)[1] if word.startswith("--method=")
+                      else None)
+            if method is not None and method.upper() != "GET":
+                return True
+    return False
+
+
+def _state(root, env="staging", index=0):
+    path = root / ".crew" / ".ghdeploy" / f"{env}-{index}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+# --- prepare (L-0644) ---------------------------------------------------------
+
+def _prepare(monkeypatch, root, gh, env="staging"):
+    return _run(monkeypatch, gh, "prepare", "--root", str(root), "--env", env)
+
+
+@_scenario
+def test_nonprod_prepare(tmp_path, monkeypatch):
+    """must-allow: exit 0, the dispatch is the last line before `result=`,
+    the state holds the snapshot and t0, and gh saw exactly three calls."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    sha = _head(root)
+    gh = FakeGh(_prepare_answers(sha))
+    code, lines = _prepare(monkeypatch, root, gh)
+    assert code == 0, lines
+    assert lines[-1].startswith("result=ok class=nonProd")
+    assert lines[-2] == f"gh workflow run deploy.yml --ref main -f target=staging -f sha={sha}"
+    state = _state(root)
+    assert state["snapshot"] == [11, 12] and state["t0"] == 1_000_000
+    assert state["actor"] == _ACTOR and state["sha"] == sha
+    assert state["deadline"] == 1_000_000 + 60 * 60
+    assert state["command"] == lines[-2]
+    assert [c[:2] for c in gh.calls] == [
+        ["api", "user"], ["api", f"repos/{{owner}}/{{repo}}/commits/{sha}"],
+        ["run", "list"]]
+
+
+@_scenario
+def test_prepare_with_a_correlation_input_records_the_id(tmp_path, monkeypatch):
+    entry = dict(_SEQ_SHA_ENTRY, correlationInput="crew_id")
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    corr = _state(root)["correlationId"]
+    assert re.fullmatch(r"crew-staging-[0-9a-f]{7}-[0-9a-f]{8}", corr)
+    assert lines[-2].endswith(f"-f crew_id={corr}")
+
+
+def _no_branch_entry():
+    return {k: v for k, v in _SEQ_SHA_ENTRY.items() if k != "shaInput"}
+
+
+_PREPARE_BLOCKS = {
+    # name: (entry, deploy override, config workflows, nonProd, gh overrides, reason)
+    "config-problem": (dict(_SEQ_SHA_ENTRY, workflow="Deploy"), None, None,
+                       ("staging",), {}, "workflow-not-filename"),
+    "deploy-prefix-mismatch": (None, ["gh workflow run deploy.yml"], None,
+                               ("staging",), {}, "deploy-prefix-mismatch"),
+    "unmapped-workflow": (None, None, {"other.yml": "staging"}, ("staging",), {},
+                          "unmapped-workflow"),
+    "unknown-environment": (None, None, {"deploy.yml": "input:region"},
+                            ("staging",), {}, "unknown-environment"),
+    "class-mismatch": (None, None, {"deploy.yml": "production"}, ("staging",), {},
+                       "class-mismatch"),
+    "actor-unreadable": (None, None, None, ("staging",),
+                         {"api user": (1, "")}, "actor-unreadable"),
+    "sha-not-on-remote": (None, None, None, ("staging",),
+                          {"api commits": None}, "sha-not-on-remote"),
+    "branch-tip-not-head": ("no-sha", None, None, ("staging",),
+                            {"api repos/{owner}/{repo}/branches/main":
+                             _ok({"commit": {"sha": "0" * 40}})},
+                            "branch-tip-not-head"),
+    "snapshot-unreadable": (None, None, None, ("staging",),
+                            {"run list": (1, "")}, "snapshot-unreadable"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_PREPARE_BLOCKS))
+def test_prepare_refuses(tmp_path, monkeypatch, name):
+    """must-block: exit 2 and nothing under `.crew/.ghdeploy/`."""
+    entry, deploy, workflows, non_prod, over, reason = _PREPARE_BLOCKS[name]
+    entry = _no_branch_entry() if entry == "no-sha" else entry
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry, workflows=workflows,
+                     non_prod=non_prod)
+    if deploy is not None:
+        doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+        doc["environments"]["staging"]["deploy"] = deploy
+        (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    sha = _head(root)
+    answers = _prepare_answers(sha)
+    for key, value in over.items():
+        if key == "api commits":
+            answers[("api", f"repos/{{owner}}/{{repo}}/commits/{sha}")] = _ok({"sha": "1" * 40})
+        else:
+            answers[tuple(key.split(" "))] = value
+    code, lines = _prepare(monkeypatch, root, FakeGh(answers))
+    assert code == 2, lines
+    assert lines[-1] == f"result=refused reason={reason}"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+for _name in sorted(_PREPARE_BLOCKS):
+    _scenario(lambda t, m, _n=_name: test_prepare_refuses(t, m, _n))
+
+
+def test_prepare_refuses_an_environment_without_a_github_entry(tmp_path, monkeypatch):
+    root = _seq_repo(tmp_path, monkeypatch)
+    doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    del doc["environments"]["staging"]["github"]
+    (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=github-none"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+@_scenario
+def test_prepare_refuses_an_env_name_that_leaves_the_state_dir(tmp_path, monkeypatch):
+    """An environment named `../x` exists in the map, but its state file
+    would land outside `.crew/.ghdeploy/`: refused before any gh call."""
+    root = _seq_repo(tmp_path, monkeypatch, env="../escape", non_prod=("../escape",))
+    gh = FakeGh(_prepare_answers(_head(root)))
+    code, lines = _prepare(monkeypatch, root, gh, env="../escape")
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=env-name-path"
+    assert gh.calls == []
+    assert not (root / ".crew" / "escape-0.json").exists()
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+@_scenario
+def test_prepare_refuses_a_corrupt_machine_environments_block(tmp_path, monkeypatch):
+    """The dispatch guard reads the machine layer's block too: a corrupt one
+    is unknown-environment, never the repo layer's nonProd answer."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    (tmp_path / "global.json").write_text('{"environments": {"nonProd": "staging"}}',
+                                          encoding="utf-8")
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=unknown-environment"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+_BRANCH_ANSWERS = [{"commit": None}, {"commit": "abc"}, [], "x"]
+
+
+@pytest.mark.parametrize("answer", _BRANCH_ANSWERS)
+def test_prepare_a_malformed_branch_answer_is_not_head(tmp_path, monkeypatch, answer):
+    root = _seq_repo(tmp_path, monkeypatch, entry=_no_branch_entry())
+    answers = _prepare_answers(_head(root))
+    answers[("api", "repos/{owner}/{repo}/branches/main")] = _ok(answer)
+    code, lines = _prepare(monkeypatch, root, FakeGh(answers))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=branch-tip-not-head"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+for _answer in _BRANCH_ANSWERS:
+    _scenario(lambda t, m, _a=_answer: test_prepare_a_malformed_branch_answer_is_not_head(t, m, _a))
+
+
+@_scenario
+def test_prepare_and_identify_take_a_full_branch_ref(tmp_path, monkeypatch):
+    """`check` accepts `refs/heads/main`: the dispatch keeps it, but the
+    branches GET, `run list -b` and the run's `headBranch` use the name."""
+    entry = dict(_no_branch_entry(), ref="refs/heads/main")
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    doc = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    doc["environments"]["staging"]["deploy"] = [crew_ghdeploy.prefix(entry)]
+    (root / ".crew" / "verify.json").write_text(json.dumps(doc), encoding="utf-8")
+    gh = FakeGh(_prepare_answers(_head(root)))
+    code, lines = _prepare(monkeypatch, root, gh)
+    assert code == 0, lines
+    assert "--ref refs/heads/main" in lines[-2]
+    assert ["api", "repos/{owner}/{repo}/branches/main"] in gh.calls
+    assert [c[5] for c in gh.calls if c[:2] == ["run", "list"]] == ["main"]
+    gh = FakeGh({("run", "list"): _ok([_new_run(13, created=1_000_002)])})
+    code, lines = _run(monkeypatch, gh, "identify", "--root", str(root), "--env", "staging")
+    assert code == 0, lines
+    assert gh.calls[0][5] == "main" and _state(root)["runId"] == 13
+
+
+def test_prepare_classifier_crash_refuses(tmp_path, monkeypatch):
+    import crew_dispatch  # pylint: disable=import-outside-toplevel
+    root = _seq_repo(tmp_path, monkeypatch)
+
+    def boom(*_a):
+        raise RuntimeError("classifier exploded")
+    monkeypatch.setattr(crew_dispatch, "dispatch_environment", boom)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 2, lines
+    assert lines[-1] == "result=refused reason=classifier-failed"
+    assert not (root / ".crew" / ".ghdeploy").exists()
+
+
+def test_prepare_state_is_atomic(tmp_path, monkeypatch):
+    """A failure while writing leaves no partial state file."""
+    root = _seq_repo(tmp_path, monkeypatch)
+    real = os.replace
+
+    def fail(src, dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", real)
+    left = list((root / ".crew" / ".ghdeploy").iterdir())
+    assert left == []
+
+
+def test_helper_never_dispatches(tmp_path, monkeypatch):
+    """Across every registered scenario of every subcommand, no recorded gh
+    argv dispatches, cancels, re-runs, merges or sends a mutating `api`."""
+    seen = []
+    real = FakeGh.__call__
+
+    def spy(self, args, root, **kw):
+        seen.append(list(args))
+        return real(self, args, root, **kw)
+    monkeypatch.setattr(FakeGh, "__call__", spy)
+    for index, scenario in enumerate(_SCENARIOS):
+        where = tmp_path / f"scenario-{index}"
+        where.mkdir()
+        with monkeypatch.context() as patch:
+            scenario(where, patch)
+    assert seen, "no scenario reached gh"
+    assert [a for a in seen if _forbidden(a)] == []
+    for bad in (["workflow", "run", "x.yml"], ["run", "cancel", "1"],
+                ["run", "rerun", "1"], ["pr", "merge", "1"],
+                ["api", "-X", "POST", "x"], ["api", "--method=DELETE", "x"],
+                ["api", "-XPATCH", "x"]):
+        assert _forbidden(bad), bad
+    assert not _forbidden(["api", "user"])
+
+
+# --- identify (L-0645) --------------------------------------------------------
+
+_T0 = 1_000_000
+
+
+def _iso(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def _new_run(run_id, created=_T0 + 2, branch="main", event="workflow_dispatch", title="Deploy"):
+    return {"databaseId": run_id, "createdAt": created if isinstance(created, str)
+            else _iso(created), "headBranch": branch, "event": event,
+            "displayTitle": title, "url": f"https://github.com/o/r/actions/runs/{run_id}"}
+
+
+_OLD = [_new_run(11, created=_T0 - 3600), _new_run(12, created=_T0 - 1800)]
+
+
+def _identify_repo(tmp_path, monkeypatch, corr=False, t0=_T0, now=_T0 + 3):
+    """A repo after a successful `prepare` (snapshot 11 and 12, t0 = `t0`),
+    with a clock at `now` that each 5-second sleep advances."""
+    entry = dict(_SEQ_SHA_ENTRY, correlationInput="crew_id") if corr else None
+    root = _seq_repo(tmp_path, monkeypatch, entry=entry)
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: t0)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    clock = {"now": now}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    return root
+
+
+def _identify(monkeypatch, root, answers):
+    """`identify` with `run list` answering `answers` (one per poll, the last
+    repeating): `(exit, lines, gh)`."""
+    gh = FakeGh({("run", "list"): answers})
+    code, lines = _run(monkeypatch, gh, "identify", "--root", str(root), "--env", "staging")
+    return code, lines, gh
+
+
+def _title(root):
+    return f"Deploy {_state(root)['correlationId']}"
+
+
+_IDENTIFY_BLOCKS = {
+    # name: (correlation?, run-list answers or a callable of root, reason)
+    "two-candidates": (False, [_ok(_OLD + [_new_run(13), _new_run(14)])], "two-candidates"),
+    "none-in-timeout": (False, [_ok(_OLD)], "none-in-timeout"),
+    "old-run-only": (False, [_ok([_new_run(11, created=_T0 + 1)])], "none-in-timeout"),
+    "wrong-branch": (False, [_ok(_OLD + [_new_run(13, branch="other")])], "none-in-timeout"),
+    "wrong-event": (False, [_ok(_OLD + [_new_run(13, event="push")])], "none-in-timeout"),
+    "outside-the-window": (False, [_ok(_OLD + [_new_run(13, created=_T0 - 31)])],
+                           "none-in-timeout"),
+    "correlation-not-found": (True, [_ok(_OLD + [_new_run(13, title="Deploy crew-other")])],
+                              "correlation-not-found"),
+    "created-unparseable": (False, [_ok(_OLD + [_new_run(13, created="yesterday")])],
+                            "created-unparseable"),
+    "created-without-zone": (False, [_ok(_OLD + [_new_run(13, created="2026-10-04T12:00:00")])],
+                             "created-unparseable"),
+    "run-list-fails": (False, [(1, "")], "run-list-fails"),
+    "run-list-not-runs": (False, [_ok({"runs": []})], "run-list-unreadable"),
+    "run-without-url": (False, [_ok(_OLD + [dict(_new_run(13), url=None)])],
+                        "run-url-unreadable"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_IDENTIFY_BLOCKS))
+def test_identify_could_not_tell(tmp_path, monkeypatch, name):
+    """must-block: exit 3, the last line names the reason, no run id written
+    and the state file byte-identical."""
+    corr, answers, reason = _IDENTIFY_BLOCKS[name]
+    root = _identify_repo(tmp_path, monkeypatch, corr=corr)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    before = path.read_bytes()
+    code, lines, _gh = _identify(monkeypatch, root, answers)
+    assert code == 3, lines
+    assert lines[-1] == f"result=could-not-tell reason={reason}"
+    assert path.read_bytes() == before
+    assert not any("runs/1" in line for line in lines)
+
+
+for _name in sorted(_IDENTIFY_BLOCKS):
+    _scenario(lambda t, m, _n=_name: test_identify_could_not_tell(t, m, _n))
+
+
+@_scenario
+def test_identify_polls_until_identify_seconds(tmp_path, monkeypatch):
+    """none-in-timeout polls every 5 seconds for identifySeconds (120): 24
+    polls, at 0 to 115 seconds; none starts at the deadline itself."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD)])
+    assert code == 3, lines
+    assert len(gh.calls) == 120 // 5
+
+
+@_scenario
+def test_identify_stale_prepare(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch, now=_T0 + 601)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=stale-prepare"
+    assert gh.calls == [] and "runId" not in _state(root)
+
+
+def test_identify_at_600_seconds_is_not_stale(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch, now=_T0 + 600)
+    code, lines, _gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+
+
+@_scenario
+def test_identify_state_file_missing(tmp_path, monkeypatch):
+    root = _seq_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok([_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-missing"
+    assert gh.calls == []
+
+
+@pytest.mark.parametrize("text", ["{not json", "[]", '{"workflow": "deploy.yml"}'])
+def test_identify_state_file_unreadable(tmp_path, monkeypatch, text):
+    root = _identify_repo(tmp_path, monkeypatch)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    path.write_text(text, encoding="utf-8")
+    code, lines, gh = _identify(monkeypatch, root, [_ok([_new_run(13)])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-unreadable"
+    assert gh.calls == [] and path.read_text(encoding="utf-8") == text
+
+
+_scenario(lambda t, m: test_identify_state_file_unreadable(t, m, "{not json"))
+
+
+@_scenario
+def test_identify_one_new_run(tmp_path, monkeypatch):
+    """must-allow: the one new run's id and URL go into the state file, and
+    the call carries the snapshot's filters."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+    assert lines[-1] == "result=ok run=13"
+    state = _state(root)
+    assert state["runId"] == 13
+    assert state["runUrl"] == "https://github.com/o/r/actions/runs/13"
+    assert gh.calls == [["run", "list", "-w", "deploy.yml", "-b", "main", "-e",
+                         "workflow_dispatch", "-u", _ACTOR, "-L", "50", "--json",
+                         crew_ghdeploy.RUN_FIELDS]]
+
+
+@_scenario
+def test_identify_new_run_after_two_polls(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, gh = _identify(monkeypatch, root,
+                                [_ok(_OLD), (1, ""), _ok(_OLD + [_new_run(13)])])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 13 and len(gh.calls) == 3
+
+
+@_scenario
+def test_identify_correlation_found(tmp_path, monkeypatch):
+    """Two new runs in the window: the one titled with the id is the run."""
+    root = _identify_repo(tmp_path, monkeypatch, corr=True)
+    runs = _OLD + [_new_run(13, title="Deploy crew-staging-other"),
+                   _new_run(14, title=_title(root))]
+    code, lines, _gh = _identify(monkeypatch, root, [_ok(runs)])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 14
+
+
+@_scenario
+def test_identify_clock_skew_within_30s(tmp_path, monkeypatch):
+    root = _identify_repo(tmp_path, monkeypatch)
+    code, lines, _gh = _identify(monkeypatch, root,
+                                 [_ok(_OLD + [_new_run(13, created=_T0 - 20)])])
+    assert code == 0, lines
+    assert _state(root)["runId"] == 13
+
+
+def test_identify_writes_run_atomically(tmp_path, monkeypatch):
+    """A failed write leaves the state file byte-identical."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    path = root / ".crew" / ".ghdeploy" / "staging-0.json"
+    before = path.read_bytes()
+
+    def fail(_src, _dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _identify(monkeypatch, root, [_ok(_OLD + [_new_run(13)])])
+    assert path.read_bytes() == before
+    assert sorted(p.name for p in path.parent.iterdir()) == ["staging-0.json"]
+
+
+# --- watch (L-0646) -----------------------------------------------------------
+
+_WATCH_ENTRY = dict(_SEQ_SHA_ENTRY, deployJob="deploy*")
+
+
+class ClockGh(FakeGh):  # pylint: disable=too-few-public-methods
+    """FakeGh whose `run watch` takes time: a 124 (killed at its timeout)
+    advances the clock by that timeout, anything else by 80 seconds or the
+    timeout, whichever is less."""
+
+    def __init__(self, answers, clock):
+        super().__init__(answers)
+        self.clock = clock
+        self.timeouts = []
+
+    def __call__(self, args, root, **kw):
+        code, out = super().__call__(args, root, **kw)
+        if list(args[:2]) == ["run", "watch"]:
+            self.timeouts.append(kw.get("timeout"))
+            timeout = kw.get("timeout", 0)
+            self.clock["now"] += timeout if code == 124 else min(80, timeout)
+        return code, out
+
+
+def _watch_repo(tmp_path, monkeypatch, entry=None, run_id=13, now=_T0 + 10):
+    """A repo after prepare and identify (run `run_id`, deadline t0 + 3600),
+    with an advancing clock: `(root, clock)`."""
+    root = _seq_repo(tmp_path, monkeypatch, entry=_WATCH_ENTRY if entry is None else entry)
+    code, lines = _prepare(monkeypatch, root, FakeGh(_prepare_answers(_head(root))))
+    assert code == 0, lines
+    state = _state(root)
+    if run_id is not None:
+        state["runId"] = run_id
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    clock = {"now": now}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    return root, clock
+
+
+def _view(root, status="completed", conclusion="success", jobs=(("deploy-prod", "success"),),
+          head=None):
+    return _ok({"status": status, "conclusion": conclusion,
+                "headSha": head or _head(root), "url": "https://github.com/o/r/actions/runs/13",
+                "jobs": [{"name": n, "conclusion": c} for n, c in jobs]})
+
+
+def _watch(monkeypatch, root, clock, watch, view, *extra):
+    gh = ClockGh({("run", "watch"): watch, ("run", "view"): view}, clock)
+    code, lines = _run(monkeypatch, gh, "watch", "--root", str(root), "--env", "staging",
+                       *extra)
+    return code, lines, gh
+
+
+_NO_SHA_WATCH = {k: v for k, v in _WATCH_ENTRY.items() if k != "shaInput"}
+
+_WATCH_CASES = {
+    # name: (entry, watch answers, view answers (root -> list), exit, verdict line)
+    "watch-exit0-conclusion-failure": (None, [(0, "")],
+                                       lambda r: [_view(r, conclusion="failure")],
+                                       1, "fail", "conclusion-failure"),
+    "deploy-job-skipped": (None, [(0, "")],
+                           lambda r: [_view(r, jobs=[("build", "success"),
+                                                     ("deploy-prod", "skipped")])],
+                           1, "fail", "deploy-job-skipped"),
+    "deploy-job-absent": (None, [(0, "")], lambda r: [_view(r, jobs=[("build", "success")])],
+                          1, "fail", "deploy-job-absent"),
+    "cancelled": (None, [(1, "")], lambda r: [_view(r, conclusion="cancelled")],
+                  1, "fail", "conclusion-cancelled"),
+    "headsha-mismatch": (_NO_SHA_WATCH, [(0, "")], lambda r: [_view(r, head="0" * 40)],
+                         1, "fail", "headsha-mismatch"),
+    "watch-nonzero-view-unreadable": (None, [(1, "")], lambda r: [(1, "")],
+                                      3, "unknown", "view-unreadable"),
+    "view-not-json": (None, [(0, "")], lambda r: [(0, "not json")],
+                      3, "unknown", "view-unreadable"),
+    "jobs-unreadable": (None, [(0, "")], lambda r: [_ok({"status": "completed",
+                                                         "conclusion": "success",
+                                                         "headSha": _head(r), "jobs": None})],
+                        3, "unknown", "jobs-unreadable"),
+    "nonprod-happy": (None, [(0, "")], lambda r: [_view(r)], 0, "pass",
+                      "success-deploy-job-succeeded"),
+    "no-deploy-job-configured": (dict(_SEQ_SHA_ENTRY), [(0, "")], lambda r: [_view(r)],
+                                 0, "pass", "success-deploy-job-not-checked"),
+    "watch-nonzero-view-success": (None, [(1, "token type not supported")],
+                                   lambda r: [_view(r)], 0, "pass",
+                                   "success-deploy-job-succeeded"),
+    "status-unreadable": (None, [(0, "")], lambda r: [_view(r, status=None, conclusion="")],
+                          3, "unknown", "status-unreadable"),
+    "status-unknown-word": (None, [(0, "")], lambda r: [_view(r, status="paused", conclusion="")],
+                            3, "unknown", "status-unreadable"),
+    "no-shainput-head-matches": (_NO_SHA_WATCH, [(0, "")], lambda r: [_view(r)],
+                                 0, "pass", "success-deploy-job-succeeded"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_WATCH_CASES))
+def test_watch_verdict(tmp_path, monkeypatch, name):
+    """The verdict comes from the run view, never the watch exit code, and
+    goes into the state file and the last line."""
+    entry, watch, view, code_wanted, verdict, reason = _WATCH_CASES[name]
+    root, clock = _watch_repo(tmp_path, monkeypatch, entry=entry)
+    code, lines, gh = _watch(monkeypatch, root, clock, watch, view(root))
+    assert code == code_wanted, lines
+    assert lines[-1] == f"result={verdict} run=13 reason={reason}"
+    state = _state(root)
+    assert (state["verdict"], state["verdictReason"]) == (verdict, reason)
+    assert state["watchExit"] == watch[0][0]
+    assert ["run", "watch", "13", "--exit-status", "--interval", "15"] in gh.calls
+
+
+for _name in sorted(_WATCH_CASES):
+    _scenario(lambda t, m, _n=_name: test_watch_verdict(t, m, _n))
+
+
+@_scenario
+def test_watch_timeout_is_unknown_and_never_cancels(tmp_path, monkeypatch):
+    """In progress at the deadline: unknown, the run named and left running."""
+    root, clock = _watch_repo(tmp_path, monkeypatch, now=_T0 + 3600 - 100)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(124, "")],
+                             [_view(root, status="in_progress", conclusion="")])
+    assert code == 3, lines
+    assert lines[-1] == "result=unknown run=13 reason=still-running"
+    assert any("left running" in line for line in lines)
+    assert gh.timeouts == [100]
+    assert not any(c[:2] == ["run", "cancel"] for c in gh.calls)
+
+
+@_scenario
+def test_watch_queued_then_success(tmp_path, monkeypatch):
+    """The first slice ends before the deadline (exit 75, no verdict); the
+    second passes."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(124, "")],
+                             [_view(root, status="queued", conclusion="")])
+    assert code == 75, lines
+    assert lines[-1].startswith("result=again run=13")
+    assert gh.timeouts == [540] and "verdict" not in _state(root)
+    code, lines, _gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)])
+    assert code == 0, lines
+    assert _state(root)["verdict"] == "pass"
+
+
+@_scenario
+def test_watch_a_watch_that_cannot_run_polls_the_view(tmp_path, monkeypatch):
+    """The watch fails at once: the view is polled every 15 seconds and the
+    run finishing inside the slice is judged then."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    views = [_view(root, status="in_progress", conclusion="")] * 3 + [_view(root)]
+    code, lines, gh = _watch(monkeypatch, root, clock, [(1, "")], views)
+    assert code == 0, lines
+    assert len([c for c in gh.calls if c[:2] == ["run", "view"]]) == 4
+
+
+@_scenario
+def test_watch_no_run_id_in_state(tmp_path, monkeypatch):
+    root, clock = _watch_repo(tmp_path, monkeypatch, run_id=None)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=no-run-id-in-state"
+    assert gh.calls == [] and "verdict" not in _state(root)
+
+
+def test_watch_slice_seconds_range(tmp_path, monkeypatch):
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    for bad in ("0", "571"):
+        code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
+                                 "--slice-seconds", bad)
+        assert code == 2 and lines[-1] == "result=refused reason=slice-seconds-range"
+        assert gh.calls == []
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")], [_view(root)],
+                             "--slice-seconds", "30")
+    assert code == 0 and gh.timeouts == [30]
+
+
+@_scenario
+def test_identify_bounds_each_poll_by_the_exact_time_left(tmp_path, monkeypatch):
+    """The call gets the fractional time left (not rounded down), and no
+    poll starts once identifySeconds is spent."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    clock = {"now": _T0 + 3.0}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    monkeypatch.setattr(crew_ghdeploy, "_sleep",
+                        lambda s: clock.__setitem__("now", clock["now"] + s))
+    timeouts = []
+
+    def slow(_args, _root, timeout=None):
+        timeouts.append(round(timeout, 3))
+        clock["now"] += 110.1 if len(timeouts) == 1 else 3.0
+        return _ok(_OLD)
+    code, lines = _run(monkeypatch, slow, "identify", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    # 113.1 -> sleep -> 118.1 (4.9 left) -> 121.1 -> sleep -> 126.1: past the
+    # deadline, so no third poll starts.
+    assert timeouts == [120.0, 4.9]
+
+
+@_scenario
+def test_identify_an_answer_after_identify_seconds_is_not_used(tmp_path, monkeypatch):
+    """A `run list` that answers after the deadline is not a run, and the
+    call itself is bounded by the time left."""
+    root = _identify_repo(tmp_path, monkeypatch)
+    clock = {"now": _T0 + 3}
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: clock["now"])
+    timeouts = []
+
+    def slow(_args, _root, timeout=None):
+        timeouts.append(timeout)
+        clock["now"] += 130
+        return _ok(_OLD + [_new_run(13)])
+    code, lines = _run(monkeypatch, slow, "identify", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=none-in-timeout"
+    assert timeouts == [120] and "runId" not in _state(root)
+
+
+# --- record (L-0647) ----------------------------------------------------------
+
+_FAIL_LOG = "\n".join([f"step {i} \x1b[31merror\x1b[0m | {'x' * 400}" for i in range(50)]
+                      + ["| development | abc | pass | pass | pass |"])
+_PREV = ("| when (UTC) | env | sha | smoke | regression | verify | by |\n"
+         "|---|---|---|---|---|---|---|\n"
+         "| 2026-10-01T10:00Z | staging | " + "a" * 40 + " | pass | pass | pass | octo |\n"
+         "| 2026-10-02T10:00Z | staging | " + "b" * 40 + " | pass | FAIL | pass | octo |\n")
+
+
+def _record_repo(tmp_path, monkeypatch, verdict="fail", reason="conclusion-failure",
+                 run_id=13, promotions=None):
+    """A repo after prepare, identify and watch (`verdict`), the clock at
+    2026-10-05T12:00Z, PROMOTIONS.md holding `promotions` (None: absent)."""
+    root, _clock = _watch_repo(tmp_path, monkeypatch, run_id=run_id)
+    state = _state(root)
+    if verdict is not None:
+        state.update(verdict=verdict, verdictReason=reason,
+                     runUrl="https://github.com/o/r/actions/runs/13")
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    monkeypatch.setattr(crew_ghdeploy, "_clock", lambda: 1_791_201_600)
+    if promotions is not None:
+        (root / ".work").mkdir(exist_ok=True)
+        (root / ".work" / "PROMOTIONS.md").write_text(promotions, encoding="utf-8")
+    return root
+
+
+def _record(monkeypatch, root, log=(0, _FAIL_LOG)):
+    gh = FakeGh({("run", "view"): log})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    text = root / ".work" / "PROMOTIONS.md"
+    return code, lines, gh, text.read_text(encoding="utf-8") if text.exists() else None
+
+
+def _verify_gate_finds(text, env, sha):
+    """verify-gate.sh's Stop-check pattern, run with grep as the hook runs it."""
+    proc = subprocess.run(["grep", "-qE", rf"\|[[:space:]]*{env}[[:space:]]*\|[[:space:]]*{sha}"],
+                          input=text, text=True, check=False)
+    return proc.returncode == 0
+
+
+@_scenario
+def test_record_pass_writes_one_detail_line(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="pass",
+                        reason="success-deploy-job-succeeded", promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    sha = _head(root)
+    added = text[len(_PREV):].splitlines()
+    assert added == [f"- deploy staging {sha} github deploy.yml@main run 13 pass "
+                     "https://github.com/o/r/actions/runs/13 at 2026-10-05T12:00Z - "
+                     "success-deploy-job-succeeded"]
+    assert gh.calls == [] and lines[-1] == "result=recorded outcome=pass"
+
+
+@_scenario
+def test_record_fail(tmp_path, monkeypatch):
+    """The detail line, the previous good sha, the cleaned excerpt and the
+    not-run row with the full sha, which verify-gate's pattern finds."""
+    root = _record_repo(tmp_path, monkeypatch, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    sha = _head(root)
+    added = text[len(_PREV):].splitlines()
+    assert added[0].startswith(f"- deploy staging {sha} github deploy.yml@main run 13 FAIL ")
+    assert added[1] == "  previous all-pass sha for staging: " + "a" * 40
+    log = added[3:-1]
+    assert len(log) == 40
+    assert all(line.startswith("    ") and "|" not in line and "\x1b" not in line
+               and len(line) <= 304 for line in log)
+    assert log[-1] == "    / development / abc / pass / pass / pass /"
+    assert log[0].startswith("    step 11 error / xxx")  # the colour codes are gone, not blanked
+    assert added[-1] == f"| 2026-10-05T12:00Z | staging | {sha} | not-run | not-run | not-run | {_ACTOR} |"
+    assert ["run", "view", "13", "--log-failed"] in gh.calls
+    assert _verify_gate_finds(text, "staging", sha[:7])
+    assert lines[-1] == "result=recorded outcome=FAIL"
+    assert all("|" not in line for line in added[:-1])
+
+
+@_scenario
+def test_record_could_not_tell(tmp_path, monkeypatch):
+    """No run id: run `none`, a not-run row, no excerpt."""
+    root = _record_repo(tmp_path, monkeypatch, verdict=None, run_id=None, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    added = text[len(_PREV):].splitlines()
+    assert " run none could-not-tell - at " in added[0]
+    assert added[1] == "  previous all-pass sha for staging: " + "a" * 40
+    assert len(added) == 3 and added[2].startswith("| 2026-10-05T12:00Z | staging |")
+    assert gh.calls == []
+
+
+@_scenario
+def test_record_unknown_with_no_previous_good(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="unknown", reason="still-running")
+    code, lines, _gh, text = _record(monkeypatch, root, log=(1, ""))
+    assert code == 0, lines
+    assert "  previous all-pass sha for staging: none" in text
+    assert "    (the failed-step log could not be read)" in text
+
+
+@_scenario
+def test_record_absent_file_gets_the_header(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict="pass", reason="x")
+    code, lines, _gh, text = _record(monkeypatch, root)
+    assert code == 0, lines
+    assert text.startswith(crew_ghdeploy.HEADER)
+    assert len(text.splitlines()) == 3
+
+
+@_scenario
+def test_record_without_verdict(tmp_path, monkeypatch):
+    root = _record_repo(tmp_path, monkeypatch, verdict=None, promotions=_PREV)
+    code, lines, gh, text = _record(monkeypatch, root)
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=record-without-verdict"
+    assert text == _PREV and gh.calls == []
+
+
+@_scenario
+def test_record_is_atomic(tmp_path, monkeypatch):
+    """A record that raises while building the excerpt leaves the file
+    byte-identical, and so does a failed replace."""
+    root = _record_repo(tmp_path, monkeypatch, promotions=_PREV)
+    path = root / ".work" / "PROMOTIONS.md"
+    before = path.read_bytes()
+
+    def boom(_root, _run_id):
+        raise RuntimeError("log exploded")
+    monkeypatch.setattr(crew_ghdeploy, "excerpt", boom)
+    with pytest.raises(RuntimeError):
+        _record(monkeypatch, root)
+    assert path.read_bytes() == before
+    monkeypatch.undo()
+    root = _record_repo(tmp_path / "again", monkeypatch, promotions=_PREV)
+    path = root / ".work" / "PROMOTIONS.md"
+
+    def fail(_src, _dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ghdeploy.os, "replace", fail)
+    with pytest.raises(OSError):
+        _record(monkeypatch, root)
+    assert path.read_bytes() == before
+    assert sorted(p.name for p in path.parent.iterdir()) == ["PROMOTIONS.md"]
+
+
+def test_previous_good_is_the_last_all_pass_row():
+    text = _PREV + "| 2026-10-03T10:00Z | staging | " + "c" * 40 + " | PASS | pass | pass | o |\n"
+    assert crew_ghdeploy.previous_good(text, "staging") == "c" * 40
+    assert crew_ghdeploy.previous_good(_PREV, "qa") is None
+
+
+_BAD_ENTRY_KEYS = {"deployJob absent": ("deployJob", _DROP), "deployJob empty": ("deployJob", ""),
+                   "deployJob a number": ("deployJob", 3), "shaInput absent": ("shaInput", _DROP),
+                   "shaInput true": ("shaInput", True), "shaInput empty": ("shaInput", "")}
+
+
+@pytest.mark.parametrize("label", sorted(_BAD_ENTRY_KEYS))
+def test_watch_a_state_file_without_the_entry_keys_is_unreadable(tmp_path, monkeypatch, label):
+    """A state file that does not say, as prepare writes it, whether
+    `deployJob` or `shaInput` was set is never read as "not configured"."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    state = _state(root)
+    key, value = _BAD_ENTRY_KEYS[label]
+    if value is _DROP:
+        del state[key]
+    else:
+        state[key] = value
+    crew_ghdeploy.write_state(str(root / ".crew" / ".ghdeploy" / "staging-0.json"), state)
+    code, lines, gh = _watch(monkeypatch, root, clock, [(0, "")],
+                             [_view(root, jobs=[("deploy-prod", "skipped")])])
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=state-file-unreadable"
+    assert gh.calls == [] and "verdict" not in _state(root)
+
+
+for _label in sorted(_BAD_ENTRY_KEYS):
+    _scenario(lambda t, m, _l=_label: test_watch_a_state_file_without_the_entry_keys_is_unreadable(
+        t, m, _l))
+
+
+@_scenario
+def test_watch_one_call_ends_inside_the_bash_limit(tmp_path, monkeypatch):
+    """A watch that uses its whole 570-second slice leaves the run view at
+    most 25 seconds, so one call ends inside 600."""
+    root, clock = _watch_repo(tmp_path, monkeypatch)
+    start = clock["now"]
+    seen = []
+
+    def gh(args, _root, timeout=None):
+        seen.append((list(args[:2]), timeout))
+        clock["now"] += timeout  # every call runs until it is killed
+        return 124, ""
+    code, lines = _run(monkeypatch, gh, "watch", "--root", str(root), "--env", "staging",
+                       "--slice-seconds", "570")
+    assert code == 3, lines
+    assert lines[-1] == "result=unknown run=13 reason=view-unreadable"
+    assert seen == [(["run", "watch"], 570), (["run", "view"], 25)]
+    assert clock["now"] - start < 600
+
+
+def _link_promotions(root, target):
+    """PROMOTIONS.md as a symlink to `target`; skipped where the host cannot
+    make one (Windows without SeCreateSymbolicLink)."""
+    (root / ".work").mkdir(exist_ok=True)
+    link = root / ".work" / "PROMOTIONS.md"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot make a symlink here: {exc}")
+    return link
+
+
+@_scenario
+def test_record_a_dangling_promotions_symlink_is_could_not_tell(tmp_path, monkeypatch):
+    """Group review r2: a dangling PROMOTIONS.md symlink read as an absent
+    log, and the replace put a fresh file where the link was. It is exit 3
+    now, and the link is left as it was."""
+    root = _record_repo(tmp_path, monkeypatch)
+    link = _link_promotions(root, tmp_path / "gone.md")
+    gh = FakeGh({("run", "view"): (0, _FAIL_LOG)})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=promotions-unreadable"
+    assert link.is_symlink() and not (tmp_path / "gone.md").exists()
+
+
+@_scenario
+def test_record_through_a_promotions_symlink_keeps_the_link(tmp_path, monkeypatch):
+    """Group review r2: a PROMOTIONS.md symlink is written through, so the
+    next record still lands in the file it points at."""
+    root = _record_repo(tmp_path, monkeypatch)
+    target = tmp_path / "shared-promotions.md"
+    target.write_text(_PREV, encoding="utf-8")
+    link = _link_promotions(root, target)
+    code, lines, _gh, _text = _record(monkeypatch, root)
+    assert code == 0, lines
+    assert link.is_symlink()
+    body = target.read_text(encoding="utf-8")
+    assert body.startswith(_PREV) and f"- deploy staging {_head(root)} github" in body
+
+
+@_scenario
+def test_record_an_unreadable_promotions_file_is_could_not_tell(tmp_path, monkeypatch):
+    """A PROMOTIONS.md that cannot be read is exit 3 and left as it was; it
+    is never replaced by a fresh header."""
+    root = _record_repo(tmp_path, monkeypatch)
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "PROMOTIONS.md").mkdir()
+    gh = FakeGh({("run", "view"): (0, _FAIL_LOG)})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=promotions-unreadable"
+    assert (root / ".work" / "PROMOTIONS.md").is_dir()
+    assert sorted(p.name for p in (root / ".work").iterdir()) == ["PROMOTIONS.md"]

@@ -2,7 +2,7 @@
 """crew_split.py -- the one split rulebook (T-0052), behind /crew:split.
 
 `/crew:split` calls it in every tracker mode, and T-0058's `/crew:autopilot
-split` will call the same functions: there is one set of rules, so autopilot
+split` calls the same functions: there is one set of rules, so autopilot
 gets none of its own that could drift from the command's.
 
 The API (stable; T-0058 and T-0059 build on it):
@@ -12,6 +12,8 @@ The API (stable; T-0058 and T-0059 build on it):
                                         tickets_too_large}; None = unreadable
     triggers(measures, stage)       -> fired names for stage "spec"|"plan";
                                         a None measure is "unknown:<name>"
+    absent_sources(top)             -> {trigger: why} for a source the repo
+                                        does not have (T-0058's "unmeasured")
     parent_criteria(spec_text)      -> the Acceptance bullets, or None
     parse_proposal(text)            -> the split.md fields (no judgement)
     minted_tail(text)               -> (body, {n: id}) for a valid trailing
@@ -21,6 +23,10 @@ The API (stable; T-0058 and T-0059 build on it):
     check(top, ticket, ...)         -> (decision, problems); records the pass
     confirm(top, ticket, session)   -> {"ok", "reason"}
     apply(top, ticket, via, ...)    -> {"children", "parent", "warnings"}
+    ticket_split_policy(top, ticket) -> {allow, policy, risk, known, reason,
+                                        warnings} (T-0058, autopilot's yes)
+    parse_slices(plan_text)         -> (slices, problems) for the plan's
+                                        `## PR slices` (T-0059); none = ([], [])
 
 A trigger means LOOK, never SPLIT: a split also needs `separable-criteria`
 evidence, and "not too big" is a result, not a failure. `split.md` format:
@@ -72,11 +78,22 @@ or from a harness envelope, not a session or process that sets out to forge
 the answer; the prose confirmation is what reads it. Follow-up: route split
 approval through the /crew:approve harness path (TODO.md).
 
+`apply --via autopilot` (T-0058) needs no human turn: its yes is
+`ticket_split_policy`, T-0012's split rule (`crew_autopilot_goal._split_rule`)
+on the parent's spec risk, asked at apply time and never read from a record.
+It refuses in jira mode whatever `autopilot.approval` says -- autopilot never
+creates a Jira issue; the owner runs /crew:split <KEY> -- and in sdp mode.
+Any caller may pass `--via autopilot`: like `crew_ticket.approve` ("whoever
+calls"), the gate is the repository's policy, not who the caller is. Out of
+the box it refuses (`scope.allowCliApproval` defaults to false, autopilot to
+off), and the owner opts in per repository; the policy, not the `via`
+string, is what a split under `--via autopilot` answers to.
+
 CLI (exit 0 ok, 1 refused):
     crew_split.py [measure] --root . --ticket <id> [--stage spec|plan]
     crew_split.py check --root . --ticket <id> [--proposal <f>] [--criteria-file <f>]
     crew_split.py confirm --root . --ticket <id-or-KEY>
-    crew_split.py apply --root . --ticket <id> --via command
+    crew_split.py apply --root . --ticket <id> --via command|autopilot
 """
 
 import argparse
@@ -114,6 +131,13 @@ SUBSYSTEMS_LOOK = 2
 # /crew:split's rule since before T-0052: fewer than two is not a split, more
 # than five is an epic wearing a story's label (split.md, step 3).
 CHILDREN_MIN, CHILDREN_MAX = 2, 5
+# T-0059: a sliced plan's bounds are the children's, for the same reason one
+# level down - one slice is not a slicing, and more than five is a split. The
+# ledger evidence (T-0052 Evidence: no ticket of 8 steps or fewer passed 4
+# rounds) says a slice of 2-4 steps fits one review budget.
+SLICES_MIN, SLICES_MAX = CHILDREN_MIN, CHILDREN_MAX
+SLICES_HEADING = "PR slices"
+MAIN_BASE = "main"
 
 EVIDENCE_KEYS = ("plan-steps", "acceptance-count", "subsystems", "findings-rate",
                  "tickets-too-large", "separable-criteria")
@@ -122,9 +146,11 @@ STAGES = ("spec", "plan")
 RISKS = ("low", "med", "high")
 MEASURES = ("plan_steps", "acceptance", "touch", "subsystems", "findings_rate",
             "tickets_too_large")
-# Who may call apply. T-0058 appends "autopilot" with its own approval path.
-VIAS = ("command",)
+# Who may call apply: /crew:split (a human turn) or autopilot (T-0058, the policy).
+VIAS = ("command", "autopilot")
 SDP_STOP = "SDP is a service desk, not where this work gets decomposed"
+JIRA_STOP = ("autopilot never creates a Jira issue, whatever autopilot.approval says: "
+             "the owner runs /crew:split <KEY>")
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 UNKNOWN = "unknown"
 SUPERSEDED = "superseded"
@@ -142,6 +168,11 @@ _STEP_RE = re.compile(r"^###\s+Step\b")
 _STATUS_RE = re.compile(r"(?<![\w-])status:[ \t]*\S+")
 _MINTED_RE = re.compile(r"^-[ \t]+Child[ \t]+(\d+):[ \t]*(\S+)[ \t]*$")
 _MINTED_HEAD_RE = re.compile(r"(?m)^##[ \t]+Minted\b.*$")
+_ANY_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*#*\s*$")
+# The same heading `measure` counts (`_STEP_RE`): level 3, case-sensitive.
+_PLAN_STEP_RE = re.compile(r"^###\s+Step\s+(\d+)\b")
+_SLICE_RE = re.compile(r"^###\s+Slice\s+(\d+)\s*:?\s*(.*?)\s*$", re.IGNORECASE)
+_SLICE_FIELD_RE = re.compile(r"^\s*(?:[-*+]\s+)?(steps|base):[ \t]*(.*?)\s*$", re.IGNORECASE)
 MINTED_RULE = ("a ## Minted section is written by apply only: the last section, holding "
                "only `- Child N: <id>` lines")
 
@@ -259,10 +290,93 @@ def measure(top, ticket):
         # plan of zero steps.
         got["plan_steps"] = sum(1 for line in plan.splitlines() if _STEP_RE.match(line)) or None
     rate = crew_state.read_metrics(top).get("rate")
-    if rate is not None:
+    path, problem = crew_common.metrics_md_path(top)
+    # A review row read_metrics skipped (too few cells, counts that do not
+    # parse) means the rate it reports leaves a review out: unknown, never a
+    # rate that may read as "small".
+    if rate is not None and not problem and path and not _malformed_rows(path):
         got["findings_rate"] = rate
         got["tickets_too_large"] = rate > crew_state.HEALTHY_HIGH
     return got
+
+
+def absent_sources(top):
+    """`{trigger name: why}` for each repo-level measure whose source this
+    repository does not have at all: no `.crew/codemap/` (`subsystems`), or
+    no review recorded -- `.crew/metrics.md` absent, or readable with no row
+    (`findings-rate`, `tickets-too-large`). measure() reports these None like
+    an unreadable source; T-0058's autopilot gate names them `unmeasured`
+    and does not stop on them. A source that IS there and cannot be read is
+    not listed: that one stays unknown."""
+    top = _top(top)
+    absent = {}
+    if not os.path.lexists(os.path.join(top, ".crew", "codemap")):
+        absent["subsystems"] = "no .crew/codemap/ in this repository"
+    # The file `measure` reads (crew_state.read_metrics): the main checkout's,
+    # also from a linked worktree. A path git cannot name is not "absent".
+    path, problem = crew_common.metrics_md_path(top)
+    why = None
+    if problem or path is None:
+        why = None
+    elif not os.path.lexists(path):
+        why = "no .crew/metrics.md (no review recorded)"
+    elif os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                handle.read()
+        except OSError:
+            why = None
+        else:
+            if crew_state.read_metrics(top).get("tickets") == 0 and not _row_like(path):
+                why = "no review recorded in .crew/metrics.md yet"
+    if why:
+        absent["findings-rate"] = absent["tickets-too-large"] = why
+    return absent
+
+
+def _row_like(path):
+    """True when metrics.md holds a table line that is not the header or a
+    `---` separator: read_metrics skips a row with too few cells or counts
+    that do not parse, so `tickets: 0` beside one is a malformed source --
+    unknown -- never "no review recorded"."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return True
+    for line in lines:
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # Any table line but the header and a `---` separator: a row with too
+        # few cells is as malformed as one whose counts do not parse.
+        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+            continue
+        return True
+    return False
+
+
+def _malformed_rows(path):
+    """True when metrics.md holds a table row read_metrics skips: not the
+    header or a `---` separator, and with too few cells or BLOCK/FIX counts
+    that do not parse. Unreadable is True (could not tell)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    for line in lines:
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+            continue
+        if len(cells) < 5 or crew_state._leading_int(cells[3]) is None \
+                or crew_state._leading_int(cells[4]) is None:  # pylint: disable=protected-access
+            return True
+    return False
 
 
 def triggers(measures, stage):
@@ -599,9 +713,12 @@ def check(top, ticket, proposal=None, criteria_file=None, session=None):
         return decision, problems
     turn, _ = current_turn(top, session)
     prompt, _ = current_prompt(top, session)
+    # policy_at_check is for the report only: apply asks ticket_split_policy again.
+    policy = ticket_split_policy(top, ticket)
     record = {"proposal": path, "proposal_sha256": _proposal_sha(data), "turn": turn,
               "prompt_sha256": _prompt_sha(prompt),
-              "session": session if session is not None else os.environ.get(SESSION_ENV)}
+              "session": session if session is not None else os.environ.get(SESSION_ENV),
+              "policy_at_check": {"allow": policy["allow"], "reason": policy["reason"]}}
     target = check_record_path(top, ticket)
     os.makedirs(os.path.dirname(target), exist_ok=True)
     _atomic_write(target, (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
@@ -686,6 +803,51 @@ def _drop(path):
         pass
 
 
+# --- the ticket split policy (T-0058) ---------------------------------------------------
+
+def ticket_split_policy(top, ticket):
+    """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
+    autopilot may apply `ticket`'s split itself. jira refuses (JIRA_STOP),
+    sdp refuses (SDP_STOP), an unknown mode refuses; otherwise T-0012's split
+    rule on the parent's spec risk (`crew_autopilot._ticket_risk`: missing or
+    unreadable reads `high`, unknown). Asked fresh on every call; anything
+    that raises refuses as could-not-tell."""
+    base = {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False, "warnings": []}
+    try:
+        # pylint: disable=import-outside-toplevel  # crew_autopilot imports this module
+        import crew_autopilot
+        import crew_autopilot_goal
+        top = _top(top)
+        mode = tracker_mode(top)
+        if mode == "jira":
+            return dict(base, reason=f"tracker is jira: {JIRA_STOP}")
+        if mode == "sdp":
+            return dict(base, reason=f"tracker is sdp: {SDP_STOP}")
+        if mode == UNKNOWN:
+            return dict(base, reason="the tracker mode could not be told, so autopilot "
+                                     "applies no split")
+        conf = crew_autopilot.settings(top)
+        risk = crew_autopilot._ticket_risk(top, ticket)  # pylint: disable=protected-access
+        allowed = crew_ticket.cli_approval_allowed(top)
+        policy = conf["approval"]
+        warnings = [w for w in conf["warnings"] if "autopilot.approval " in w
+                    or "autopilot.mode " in w]
+        words = (f"risk: {risk['risk']}" if risk["known"]
+                 else "no risk: low|med|high in the spec header (reads as high)")
+        low = risk["known"] and risk["risk"] == "low"
+        result = dict(base, policy=policy, risk=risk["risk"], known=risk["known"],
+                      warnings=warnings)
+        why = crew_autopilot_goal._split_rule(  # pylint: disable=protected-access
+            conf, warnings, allowed, low,
+            f"autopilot.approval is risk and the spec has {words}, not risk: low")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return dict(base, reason=f"could not tell whether autopilot may apply the split "
+                                 f"({type(exc).__name__}: {exc})")
+    if why:
+        return dict(result, reason=why)
+    return dict(result, allow=True, reason=f"autopilot.approval is {policy} ({words})")
+
+
 # --- apply -----------------------------------------------------------------------------
 
 def _direction(parent, child):
@@ -744,7 +906,7 @@ def _written_for(top, child_id, parent, child):
 def _orphans(top, parent):
     """`{number: id}` for tickets apply minted for this parent (provenance
     plus an INDEX row) -- whether or not their ids reached split.md."""
-    tickets = os.path.join(top, ".work", "tickets")
+    tickets = crew_common.tickets_root(top)
     try:
         names = sorted(os.listdir(tickets))
     except OSError:
@@ -905,16 +1067,30 @@ def apply(top, ticket, via, session=None):
     sdp or an unknown mode, on a `via` not in VIAS, on a spec or proposal that
     is not UTF-8, on a proposal check_proposal refuses or whose decision is
     not `split`, on a `## Minted` entry apply did not write, on a parent
-    already superseded, and when confirm refuses. Then, in order: record the
-    apply; write spec.pre-split.md byte-identical to spec.md; mint each child
-    (recording each id in split.md as it returns); and only after every mint
-    returned, mark the parent's spec header and INDEX row `superseded`. A
-    success spends the check record; a failure part-way drops it too, so a
-    re-run needs a fresh check and yes."""
+    already superseded, and when the approval refuses: confirm (a human turn)
+    for `command`, ticket_split_policy asked now for `autopilot` (which runs
+    every other check, existing-children verification included). Then, in
+    order: record the apply; write spec.pre-split.md byte-identical to
+    spec.md; mint each child (recording each id in split.md as it returns);
+    and only after every mint returned, mark the parent's spec header and
+    INDEX row `superseded`. A success spends the check record; a failure
+    part-way drops it too, so a re-run needs a fresh check and yes."""
     top = _top(top)
     if via not in VIAS:
-        raise SplitError(f"via {via} is not one of {'|'.join(VIAS)} (T-0058 adds autopilot's "
-                         "path); nothing was written")
+        raise SplitError(f"via {via} is not one of {'|'.join(VIAS)}; nothing was written")
+    if via == "autopilot":
+        policy = ticket_split_policy(top, ticket)
+        if not policy["allow"]:
+            raise SplitError(f"the split policy refused: {policy['reason']}; nothing was "
+                             f"written - the owner runs /crew:split {ticket}")
+        # The size gate's own rules, on every --via autopilot entry point: no
+        # apply while a measure is unknown, nor for a decision taken before a
+        # trigger now firing (crew_autopilot_split._not_current).
+        import crew_autopilot_split  # pylint: disable=import-outside-toplevel
+        stale = crew_autopilot_split._not_current(top, ticket)  # pylint: disable=protected-access
+        if stale:
+            raise SplitError(f"{PROPOSAL} cannot be applied: " + "; ".join(stale)
+                             + f"; nothing was written - the owner runs /crew:split {ticket}")
     _refuse_mode(top)
     folder = _folder(top, ticket)
     spec_path = os.path.join(folder, "spec.md")
@@ -930,11 +1106,13 @@ def apply(top, ticket, via, session=None):
         raise SplitError(f"the decision is {decision}, not split; nothing to apply")
     got = parse_proposal(proposal)
     existing = _existing_children(top, ticket, got["children"], got["minted"])
-    gate = confirm(top, ticket, session)
+    gate = confirm(top, ticket, session) if via == "command" else {"ok": True}
     if not gate["ok"]:
         raise SplitError(f"confirm refused: {gate['reason']}; nothing was written")
     check_path, record_path = check_record_path(top, ticket), apply_record_path(top, ticket)
     if not os.path.lexists(record_path):
+        # --via autopilot may run with no check before it, so nothing made the folder.
+        os.makedirs(os.path.dirname(record_path), exist_ok=True)
         _atomic_write(record_path, (json.dumps({"parent": ticket}) + "\n").encode("utf-8"))
     try:
         _write_pre_split(folder, spec)
@@ -956,6 +1134,255 @@ def apply(top, ticket, via, session=None):
 
 # --- CLI -------------------------------------------------------------------------------
 
+# --- PR slices: the plan section a cohesive-but-large ticket ships through (T-0059) -----
+#
+# A ticket that holds together but is too large for one review keeps one ticket
+# and its plan groups the steps into ordered slices, each shipped as its own PR
+# with its own review budget. parse_slices is the one reader; crew_autopilot
+# routes on it and stops a plan whose section it refuses.
+
+def _step_blocks(text):
+    """{step number: the step's text} for every `## Step N` / `### Step N`
+    heading, wherever it sits: a Step heading written after `## PR slices`
+    is still a plan step (and ends that section), so a partition that leaves
+    it out reports it uncovered. A block runs to the next heading of level
+    three or above."""
+    blocks, current = {}, None
+    for line in text.splitlines():
+        heading = _ANY_HEADING_RE.match(line)
+        if heading:
+            current = None
+            step = _PLAN_STEP_RE.match(line)
+            if step:
+                current = int(step.group(1))
+                blocks.setdefault(current, [])
+            continue
+        if current is not None:
+            blocks[current].append(line)
+    return {n: "\n".join(lines) for n, lines in blocks.items()}
+
+
+def _level_two_steps(text):
+    """Step numbers written as `## Step N` rather than `### Step N`."""
+    return {int(m.group(1)) for m in re.finditer(r"(?m)^##[ \t]+Step[ \t]+(\d+)\b", text)}
+
+
+def _slice_section(text):
+    """The `### Slice` blocks under `## PR slices` as [(n, name, lines)], or
+    None when the plan has no such section."""
+    found, slices = False, []
+    inside = False
+    for line in text.splitlines():
+        heading = _ANY_HEADING_RE.match(line)
+        if heading and (len(heading.group(1)) <= 2 or _PLAN_STEP_RE.match(line)):
+            # A Step heading ends the section too: it is a plan step, never
+            # part of the last slice's block.
+            inside = (not _PLAN_STEP_RE.match(line)
+                      and _norm(heading.group(2)).casefold() == SLICES_HEADING.casefold())
+            found = found or inside
+            continue
+        if not inside:
+            continue
+        head = _SLICE_RE.match(line)
+        if head:
+            slices.append((int(head.group(1)), head.group(2), []))
+        elif slices:
+            slices[-1][2].append(line)
+    return slices if found else None
+
+
+def _step_list(value):
+    """[step numbers] from `1, 2`, `3-4` or `5`, or None when unreadable."""
+    steps = []
+    for part in value.split(","):
+        part = part.strip()
+        span = re.fullmatch(r"(\d+)\s*-\s*(\d+)", part)
+        if span and int(span.group(1)) <= int(span.group(2)):
+            steps.extend(range(int(span.group(1)), int(span.group(2)) + 1))
+        elif part.isdigit():
+            steps.append(int(part))
+        else:
+            return None
+    return steps or None
+
+
+def _literal_prefix(entry):
+    """The case-folded segments before the first wildcard segment, after
+    crew_ticket's own normalisation (`./` and empty segments drop). A literal
+    entry's prefix is the whole entry: `path_matches` reads a literal as a
+    directory covering everything under it."""
+    prefix = []
+    for part in crew_ticket._segments(entry):  # pylint: disable=protected-access
+        if crew_ticket._is_glob(part):  # pylint: disable=protected-access
+            break
+        prefix.append(part.casefold())
+    return prefix
+
+
+def _disjoint(a, b):
+    """True only when Files entries `a` and `b` provably name nothing in
+    common: their literal prefixes differ at an index both have (compared
+    case-folded, as fnmatch does on Windows). Every other pair is unknown."""
+    left, right = _literal_prefix(a), _literal_prefix(b)
+    return any(x != y for x, y in zip(left, right))
+
+
+def _overlaps(mine, theirs):
+    """(shared, unknown) for every pair of Files entries: `shared` the
+    entries in `mine` that equal or match one in `theirs`, `unknown` the
+    pairs that are neither that nor provably disjoint - an unknown is never
+    "disjoint"."""
+    shared, unknown = set(), set()
+    for a in mine:
+        for b in theirs:
+            if a == b or crew_ticket.path_matches(a, b) or crew_ticket.path_matches(b, a):
+                shared.add(a)
+            elif not _disjoint(a, b):
+                unknown.add(f"{a} vs {b}")
+    return sorted(shared), sorted(unknown)
+
+
+def _slice_problems(slices, steps):
+    problems = []
+    if not SLICES_MIN <= len(slices) <= SLICES_MAX:
+        problems.append(f"{len(slices)} slice{'s' * (len(slices) != 1)}: a sliced plan "
+                        f"has {SLICES_MIN}-{SLICES_MAX}")
+    if [s["n"] for s in slices] != list(range(1, len(slices) + 1)):
+        problems.append("slices are not numbered 1, 2, 3 ... in order")
+    owner = {}
+    for piece in slices:
+        for step in piece["steps"]:
+            if step not in steps:
+                problems.append(f"slice {piece['n']} names step {step}: no such step "
+                                "in the plan")
+            elif step in owner:
+                problems.append(f"step {step} is in slices {owner[step]} and {piece['n']}")
+            else:
+                owner[step] = piece["n"]
+    problems += [f"step {step} is in no slice" for step in sorted(steps) if step not in owner]
+    last = 0
+    for piece in slices:
+        if piece["steps"] != sorted(piece["steps"]):
+            problems.append(f"slice {piece['n']}'s steps {piece['steps']} are not listed in "
+                            "ascending order")
+        run = sorted(piece["steps"])
+        if run and run != list(range(run[0], run[0] + len(run))):
+            problems.append(f"slice {piece['n']}'s steps {run} are not one contiguous run")
+        if run and run[0] <= last:
+            problems.append(f"slice {piece['n']} starts at step {run[0]}, out of order "
+                            f"after step {last}")
+        last = max(last, run[-1] if run else last)
+    return problems
+
+
+def _base_problems(slices, step_files):
+    problems = []
+    for i, piece in enumerate(slices):
+        base = piece["base"]
+        if base is None:
+            problems.append(f"slice {piece['n']}: Base: must be `main` or `slice <k>`")
+        elif base != MAIN_BASE and not 1 <= base < piece["n"]:
+            problems.append(f"slice {piece['n']}: Base: slice {base} is not an earlier "
+                            "slice")
+        if base != MAIN_BASE and isinstance(base, int) and 1 <= base < piece["n"]:
+            problems += _stack_problems(slices, i, step_files)
+        if base != MAIN_BASE or i == 0:
+            continue
+        unknown = [s for s in piece["steps"] if not step_files.get(s)]
+        unknown += [s for e in slices[:i] for s in e["steps"] if not step_files.get(s)]
+        if unknown:
+            problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
+                            f"shares Files with an earlier slice (no Files: on step "
+                            f"{', '.join(map(str, sorted(set(unknown))))})")
+            continue
+        shared, unknown = _overlaps(piece["files"], [f for e in slices[:i] for f in e["files"]])
+        if unknown and not shared:
+            problems.append(f"slice {piece['n']}: Base: main, but cannot tell whether it "
+                            f"shares Files with an earlier slice (not provably disjoint: "
+                            f"{'; '.join(unknown)}) - use Base: slice <k> or exact paths")
+        if shared:
+            problems.append(f"slice {piece['n']}: Base: main, but it shares Files with an "
+                            f"earlier slice ({', '.join(shared)}) - use Base: slice <k>")
+    return problems
+
+
+def _stack_problems(slices, i, step_files):
+    """A stacked slice's PR holds only its base chain's commits: every earlier
+    slice whose Files it shares (or cannot be shown not to share) must be on
+    that chain (`Base: slice <k>`, k's base, ...), else its PR lacks a
+    dependency once the chain's lower slices merge."""
+    by_n = {s["n"]: s for s in slices}
+    piece, chain, base = slices[i], set(), slices[i]["base"]
+    while isinstance(base, int) and base in by_n and base not in chain:
+        chain.add(base)
+        base = by_n[base]["base"]
+    problems = []
+    for other in slices[:i]:
+        if other["n"] in chain:
+            continue
+        if any(not step_files.get(s) for s in piece["steps"] + other["steps"]):
+            problems.append(f"slice {piece['n']}: Base: slice {piece['base']}, but cannot "
+                            f"tell whether it shares Files with slice {other['n']}, which is "
+                            "not on its base chain")
+            continue
+        shared, unknown = _overlaps(piece["files"], other["files"])
+        if shared or unknown:
+            problems.append(f"slice {piece['n']}: Base: slice {piece['base']} leaves out "
+                            f"slice {other['n']}, which "
+                            + (f"shares Files ({', '.join(shared)})" if shared else
+                               f"may share Files ({'; '.join(unknown)})")
+                            + f" - stack on slice {other['n']}")
+    return problems
+
+
+def parse_slices(plan_text):
+    """`(slices, problems)` for the plan's `## PR slices` section. A slice is
+    `{"n", "name", "steps", "base", "files"}`: `base` is "main" or the earlier
+    slice's number (None unreadable) and `files` the union of its steps'
+    `Files:` entries. No section returns `([], [])`; a section that breaks a
+    rule returns its slices and the problems, each naming the slice or step."""
+    text = plan_text or ""
+    section = _slice_section(text)
+    if section is None:
+        return [], []
+    blocks = _step_blocks(text)
+    step_files = {n: crew_ticket.parse_plan(block)[0] for n, block in blocks.items()}
+    slices, problems = [], []
+    # Two `Step N` headings with one number merge into one block above: the
+    # partition could not account for them separately, so it is refused.
+    numbers = [int(m.group(1)) for line in text.splitlines()
+               for m in [_PLAN_STEP_RE.match(line)] if m]
+    problems += [f"step {n} has more than one Step heading" for n in
+                 sorted({n for n in numbers if numbers.count(n) > 1})]
+    for n, name, lines in section:
+        fields, repeated = {}, set()
+        for line in lines:
+            field = _SLICE_FIELD_RE.match(line)
+            if field:
+                key = field.group(1).casefold()
+                if key in fields:
+                    repeated.add(key)
+                fields.setdefault(key, field.group(2))
+        # Two Steps: or Base: lines are two instructions for one slice: refused,
+        # never the first one kept.
+        problems += [f"slice {n}: {key.capitalize()}: given more than once"
+                     for key in sorted(repeated)]
+        steps = _step_list(fields.get("steps", ""))
+        if steps is None:
+            problems.append(f"slice {n}: Steps: must list step numbers (`1, 2` or `3-4`)")
+        base_text = _norm(fields.get("base", "")).casefold()
+        base = re.fullmatch(r"slice\s+(\d+)", base_text)
+        base = MAIN_BASE if base_text == MAIN_BASE else (int(base.group(1)) if base else None)
+        steps = steps or []
+        slices.append({"n": n, "name": name, "steps": steps, "base": base,
+                       "files": sorted({f for s in steps for f in step_files.get(s, [])})})
+    problems += [f"plan.md `## Step {n}`: write steps as `### Step N` (measure counts only "
+                 "those, so the two readers would disagree)" for n in sorted(_level_two_steps(text))]
+    problems += _slice_problems(slices, set(blocks))
+    problems += _base_problems(slices, step_files)
+    return slices, problems
+
+
 def _fmt(value):
     return UNKNOWN if value is None else str(value)
 
@@ -973,7 +1400,8 @@ def main(argv=None):
     parser.add_argument("--proposal", help="check: the split.md (default the ticket's)")
     parser.add_argument("--criteria-file", help="check: the parent's criteria as bullets "
                         "(Jira, where the parent is an issue with no spec.md)")
-    parser.add_argument("--via", help="apply: who is applying; only `command` here")
+    parser.add_argument("--via", help="apply: command (/crew:split, after a human turn) or "
+                        "autopilot (ticket_split_policy)")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     try:

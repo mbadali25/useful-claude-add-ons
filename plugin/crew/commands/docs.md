@@ -1,6 +1,6 @@
 ---
 description: Update the documents this change should touch — and only those
-argument-hint: [--audit]
+argument-hint: "[ticket id] [--audit]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
@@ -21,6 +21,21 @@ $ARGUMENTS
 
 "None of them" is a valid and common answer. Say it plainly rather than finding
 something to write.
+
+## With a ticket id - record the decisions, then check them (T-0022)
+
+Do steps 1-5 for ticket `$1`, then write `.work/tickets/$1/docs.json` once, computed in full first:
+`{"reasons": {"<document>": "<why not>"}, "deferred": [{"key", "why", "unblock"}]}`. A reason
+per document you decided not to touch (`README.md`, `plugin/<n>/README.md`, `SECURITY.md`); a
+`deferred` item per piece of work left for later, each also added to `TODO.md` as its own entry (a bullet opening with its key) with its why and
+unblock. Then run the read-only check:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
+```
+
+Act on each `MISSING` line and re-run it. A changed plugin's CHANGELOG line (`` `<name>` `` and its
+new version, under `## [Unreleased]`) has no reason that waives it. `unknown` is a stop: report it.
 
 ## `--audit`
 

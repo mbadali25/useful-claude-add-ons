@@ -20,6 +20,7 @@ import time
 
 import context  # pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_sleep
 import crew_sleep
 import crew_ticket
 import pytest
@@ -1206,7 +1207,7 @@ def _opens(monkeypatch, path, before=None):
 def test_an_oversized_state_file_is_unknown(tmp_path, clock):
     clock(DAY)
     root = _honouring(tmp_path)
-    _plant(root, json.dumps(VALID) + " " * crew_autopilot.MANUAL_MAX_BYTES)
+    _plant(root, json.dumps(VALID) + " " * crew_autopilot_sleep.MANUAL_MAX_BYTES)
 
     conf = _sleep_conf(root)
 
@@ -1218,7 +1219,7 @@ def test_an_exactly_full_state_file_is_still_read(tmp_path, clock):
     clock(DAY)
     root = _honouring(tmp_path)
     text = json.dumps(VALID)
-    _plant(root, text + " " * (crew_autopilot.MANUAL_MAX_BYTES - len(text)))
+    _plant(root, text + " " * (crew_autopilot_sleep.MANUAL_MAX_BYTES - len(text)))
 
     assert _sleep_conf(root)["sleep"]["state"] == "asleep"
 
@@ -1439,3 +1440,13 @@ def test_the_25_real_hour_backstop_holds_where_a_clock_change_is_two_hours(troll
 
     assert (got["kind"], "25 real" in got["warning"], kept["kind"]) == (
         "untrusted", True, "valid")
+
+
+# --- L-0651: the sabotage entries that prove the must-block branches ------------
+
+def test_every_sleep_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import SLEEP_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in SLEEP_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_autopilot_sleep.py::"), label
