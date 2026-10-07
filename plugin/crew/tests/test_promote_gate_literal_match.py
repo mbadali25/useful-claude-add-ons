@@ -110,7 +110,9 @@ def _git(cwd, *args):
 
 
 def _env(deploy, human=False, key="deploy"):
-    cfg = {key: deploy, "rollback": "none", "rollbackReason": "fixture"}
+    # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
+    cfg = {key: deploy, "rollback": "none", "rollbackReason": "fixture",
+           "requireReview": False, "reviewReason": "fixture"}
     if human:
         cfg["requireHuman"] = True
     return cfg
@@ -135,6 +137,7 @@ class Repo:
         _git(root, "add", "-A")
         _git(root, "commit", "-q", "-m", "fixture")
         self.sha = _git(root, "rev-parse", "--short", "HEAD")
+        self.full = _git(root, "rev-parse", "HEAD")
 
     def write_map(self, envs):
         """Write `.crew/verify.json` (committed only by the constructor)."""
@@ -268,7 +271,7 @@ def test_a_deploy_that_prefixes_another_carries_its_requirements(
     assert "'qa' has no all-pass row" in err, err
     (repo.root / ".work" / "PROMOTIONS.md").write_text(
         "| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n"
-        f"| 2026-10-04 | qa | {repo.sha} | pass | pass | pass | t |\n", encoding="utf-8")
+        f"| 2026-10-04 | qa | {repo.full} | pass | pass | pass | t |\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, command)
     assert code == 0, err
     assert repo.in_flight() == f"qa,prod {repo.sha}"

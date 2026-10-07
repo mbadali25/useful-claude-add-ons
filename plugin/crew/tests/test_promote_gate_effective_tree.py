@@ -59,14 +59,18 @@ FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=_NEEDS_PWSH)]
 
 _WT_NAME = "deploy-worktree-t0505"
 
+# L-0703: review evidence is opted out here - this suite is about WHICH tree is
+# judged, and test_promote_gate_review.py owns the review rule.
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+
 _VERIFY = {
     "environments": {
         "development": {"deploy": "deploy-dev", "rollback": "none",
-                        "rollbackReason": "fixture"},
+                        "rollbackReason": "fixture", **_NO_REVIEW},
         "qa": {"deploy": "deploy-qa", "requires": ["development"],
-               "rollback": "none", "rollbackReason": "fixture"},
+               "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
         "prod": {"deploy": "deploy-prod", "requireHuman": True,
-                 "rollback": "none", "rollbackReason": "fixture"},
+                 "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
     }
 }
 
@@ -137,7 +141,10 @@ class Repo:  # pylint: disable=too-few-public-methods
     def promotions(self, *rows):
         body = ["| when | env | sha | smoke | regression | verify | by |",
                 "|---|---|---|---|---|---|---|"]
-        body += [f"| 2026-09-30 | {env} | {sha} | pass | pass | pass | t |"
+        # L-0703: a row counts only with the full sha, so the short shas the
+        # cases name are written out in full.
+        full = {self.main_sha: self.main_full, self.wt_sha: self.wt_full}
+        body += [f"| 2026-09-30 | {env} | {full.get(sha, sha)} | pass | pass | pass | t |"
                  for env, sha in rows]
         (self.main / ".work" / "PROMOTIONS.md").write_text(
             "\n".join(body) + "\n", encoding="utf-8")

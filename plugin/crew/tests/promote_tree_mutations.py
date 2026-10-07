@@ -21,7 +21,9 @@ _SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 SH = os.path.join(_SCRIPTS, "promote-gate.sh")
 PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
 TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
+REVIEW = os.path.join(_SCRIPTS, "_promote_review.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
+_R = "tests/test_promote_gate_review.py::"
 
 PROMOTE_TREE_MUTATIONS = (
     # Retargeted after review r1: the dirty-worktree case is now also caught by
@@ -150,4 +152,49 @@ PROMOTE_TREE_MUTATIONS = (
      '  catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }\n',
      '  catch { exit 0 }\n',
      _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[ps1]"),
+    # --- L-0703: the exact-sha rule and the review evidence ------------------
+    ("promote-gate.sh counts a 7-character prefix as this sha again", SH,
+     '    if cell == full:\n        return "full"\n',
+     '    if full.startswith(cell[:7]):\n        return "full"\n',
+     _R + "test_a_pass_row_for_a_same_prefix_different_sha_is_refused[sh]"),
+    ("promote-gate.sh counts a short row as the full sha", SH,
+     '    if 7 <= len(cell) < len(full) and full.startswith(cell):\n        return "short"\n',
+     '    if 7 <= len(cell) < len(full) and full.startswith(cell):\n        return "full"\n',
+     _R + "test_a_short_row_for_the_deploying_sha_is_refused[7-sh]"),
+    ("promote-gate.ps1 counts a 7-character prefix as this sha again", PS1,
+     '    if ($cell -ceq $sha) {\n',
+     '    if ($sha.StartsWith($cell.Substring(0, [Math]::Min(7, $cell.Length)))) {\n',
+     _R + "test_a_pass_row_for_a_same_prefix_different_sha_is_refused[ps1]"),
+    ("_promote_review.py drops the tree-identity filter", REVIEW,
+     '                  if line == f"{want} tree"]\n',
+     '                  if line.endswith(" tree")]\n',
+     _R + "test_a_change_the_bundle_cannot_see_is_still_a_different_tree[sh]"),
+    ("_promote_review.py accepts a receipt on its state alone", REVIEW,
+     '            ok, why = review_ledger.check_receipt(tree, ticket)\n',
+     '            ok, why = True, "not checked"\n',
+     _R + "test_a_receipt_whose_bundle_no_longer_matches_is_refused[sh]"),
+    ("_promote_review.py waits on a hung receipt check without a bound", REVIEW,
+     '        out, err = proc.communicate(timeout=seconds)\n',
+     '        out, err = proc.communicate()\n',
+     _R + "test_a_hung_receipt_check_blocks_within_the_hook_timeout[sh]"),
+    ("promote-gate.sh gives the review search a fixed budget, not what is left", SH,
+     '  "$GATE_DEADLINE" "${ENVLIST[@]}")\n',
+     '  "$(( $(date +%s) + 60 ))" "${ENVLIST[@]}")\n',
+     _R + "test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout[sh]"),
+    ("promote-gate.sh skips the review evidence", SH,
+     'REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \\\n',
+     'REVIEW=$(true "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \\\n',
+     _R + "test_no_ledger_is_refused[sh]"),
+    ("promote-gate.ps1 skips the review evidence", PS1,
+     'foreach ($reason in ($reviewOut -split [char]0x1e)) {\n',
+     'foreach ($reason in @()) {\n',
+     _R + "test_no_ledger_is_refused[ps1]"),
+    ("promote-gate.sh stands down again when no python resolves", SH,
+     'PY=$(crew_py) || PY=""\n',
+     'PY=$(crew_py) || exit 0\n',
+     _R + "test_sh_without_python_blocks_a_declared_deploy[True]"),
+    ("promote-gate.ps1 allows a deploy when no python resolves", PS1,
+     '  Stop-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."\n',
+     '  exit 0\n',
+     _R + "test_ps1_without_python_blocks_a_declared_deploy"),
 )

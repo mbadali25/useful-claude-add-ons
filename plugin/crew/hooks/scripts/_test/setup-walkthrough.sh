@@ -121,7 +121,8 @@ cat > .crew/verify.json <<'EOF'
         "rollback":"none","rollbackReason":"qa is disposable, rebuilt on every push",
         "promotesTo":"production"},
   "production":{"requires":["qa"],"deploy":["./deploy.sh prod"],
-                "rollback":"docs/runbooks/rollback.md","requireHuman":true}}}
+                "rollback":"docs/runbooks/rollback.md","requireHuman":true,
+                "requireReview":false,"reviewReason":"walkthrough: no review ledger here"}}}
 EOF
 T=$(bash "$S/resolve-tools.sh" 2>&1)
 echo "$T" | grep -q "TOOL" && ok "resolve-tools.sh reads the map with no arguments" || bad "resolve-tools map read"
@@ -156,7 +157,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"./deploy.sh prod"}}' | bash "
 [ "$?" = "2" ] && ok "promote-gate blocks prod with no qa row / no runbook / no approval" || bad "promote-gate initial block"
 printf 'last verified: %s\n' "$(date +%Y-%m-%d)" > docs/runbooks/rollback.md
 git add -A && git commit -qm runbook >/dev/null; SHA=$(git rev-parse --short HEAD)
-printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$SHA" > .work/PROMOTIONS.md
+printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$(git rev-parse HEAD)" > .work/PROMOTIONS.md
 touch ".crew/.approved-production-$SHA"
 echo '{"tool_name":"Bash","tool_input":{"command":"./deploy.sh prod"}}' | bash "$H/promote-gate.sh" >/dev/null 2>&1
 [ "$?" = "0" ] && ok "promote-gate ALLOWS prod once every gate is satisfied" || bad "promote-gate allow"

@@ -8,13 +8,18 @@
 #
 # What it enforces, before the deploy runs:
 #   1. `requires` - the upstream environment has a PASS row in
-#      .work/PROMOTIONS.md for THIS sha. Not "a pass row" - this sha.
+#      .work/PROMOTIONS.md for THIS sha. Not "a pass row" - this sha, written
+#      out in full: a 7-character (or any short) row never counts (L-0703).
 #   2. `rollback` - required for every gated environment. Either a runbook path
 #      that exists and whose `last verified` is inside 90 days, or the literal
 #      "none" plus a `rollbackReason`. An absent key blocks the deploy.
 #   3. `requireHuman` - refuses unless an explicit approval marker for this sha
 #      was written this session.
 #   4. A clean tree - you cannot deploy a sha that is not what is committed.
+#   5. Review evidence (L-0703) - an accepted review receipt whose reviewed
+#      head has this commit's tree, unless the environment sets
+#      `requireReview: false` plus a `reviewReason`. See _promote_review.py
+#      for what that proves and what it does not.
 #
 # WHICH tree (T-0505). The sha and the clean-tree check are read from the tree
 # the deploy RUNS FROM, not from CLAUDE_PROJECT_DIR: the payload `cwd` (else
@@ -76,7 +81,58 @@ elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/de
   MAP_DIRTY="untracked - in no commit"
 fi
 
-PY=$(crew_py) || exit 0   # no python: cannot read the map, so do not pretend to gate
+# L-0703: one deadline for the whole gate, under the 20s hook timeout
+# (hooks.json), as a Unix time. A hook that runs out of time is not a block,
+# so the review search below is given this deadline, never a fixed slice of
+# its own: python's start-up and every check before it count against it.
+GATE_DEADLINE=$(( $(date +%s) + 17 ))
+
+# No python is NOT an opt-out (L-0703). It used to `exit 0` here, so a host
+# without python ran every declared deploy ungated. Without python the map
+# cannot be parsed the way the gate parses it, so this asks the cheaper
+# question "could this command be a deploy?" and blocks when the answer is
+# not "no":
+#   - with jq: every string VALUE in the working map and, when that map is
+#     uncommitted, the committed one too, decoded by jq at any depth. A value
+#     the command contains, or that contains the command (the matcher's own
+#     two-way rule, ASCII case ignored), blocks. That is a superset of the
+#     declared `deploy` commands. A map jq cannot read blocks;
+#   - with neither: the command cannot even be read, and a textual key scan
+#     is evadable (`"deploy"`), so every command blocks while a map
+#     exists. Doubly degraded, a deploy cannot be told from anything else.
+PY=$(crew_py) || PY=""
+if [ -z "$PY" ]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "PROMOTION BLOCKED: no usable python and no jq, and this repository has a deployment map (.crew/verify.json). Crew cannot read the command or the map, so it cannot tell whether this command deploys. This is not a pass. Install python 3.8+ (every crew hook needs it)." >&2
+    exit 2
+  fi
+  NP_CMD=$(crew_strip_cr "$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)")
+  [ -z "${NP_CMD//[[:space:]]/}" ] && exit 0
+  NP_FCMD=$(printf '%s' "$NP_CMD" | LC_ALL=C tr 'A-Z' 'a-z')
+  NP_HIT=""
+  np_scan() {
+    local text=$1 where=$2 v fv
+    if ! printf '%s' "$text" | jq empty >/dev/null 2>&1; then
+      echo "PROMOTION BLOCKED: no usable python, and $where could not be read by jq either, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
+      exit 2
+    fi
+    while IFS= read -r -d '' v; do
+      [ -z "$v" ] && continue
+      fv=$(printf '%s' "$v" | LC_ALL=C tr 'A-Z' 'a-z')
+      case "$NP_FCMD" in *"$fv"*) NP_HIT=$v ;; esac
+      case "$fv" in *"$NP_FCMD"*) NP_HIT=$v ;; esac
+    done < <(printf '%s' "$text" | jq -j '.. | strings | (., "\u0000")' 2>/dev/null)
+  }
+  [ -e .crew/verify.json ] && np_scan "$(cat .crew/verify.json 2>/dev/null)" ".crew/verify.json"
+  if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
+    np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json"
+  fi
+  if [ -n "$NP_HIT" ]; then
+    echo "PROMOTION BLOCKED: no usable python, and this command and the map's string '$NP_HIT' contain one another, so it may be a declared deploy. Without python crew cannot evaluate any pre-deploy check. This is not a pass. Install python 3.8+." >&2
+    exit 2
+  fi
+  exit 0
+fi
 
 if command -v jq >/dev/null 2>&1; then
   CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -506,9 +562,9 @@ for H in ${HEXES[@]+"${HEXES[@]}"}; do
 done
 
 # 1-3, read from the map
-VERDICT=$("$PY" - "$SHA" "${ENVLIST[@]}" <<'PY' 2>/dev/null
+VERDICT=$("$PY" - "$SHA" "$FULL" "${ENVLIST[@]}" <<'PY' 2>/dev/null
 import json, sys, os, re, datetime
-sha, envs = sys.argv[1], sys.argv[2:]
+sha, full, envs = sys.argv[1], sys.argv[2].lower(), sys.argv[3:]
 
 
 # Keys read ignoring case, case twins refused: the matcher's rule above (and
@@ -535,7 +591,25 @@ rows = ""
 if os.path.exists(".work/PROMOTIONS.md"):
     rows = open(".work/PROMOTIONS.md", encoding="utf-8", errors="replace").read()
 
-def passed(name, sha):
+# L-0703: a row is THIS commit's only when its sha cell is the full 40-hex
+# sha (case ignored). `startswith(sha[:7])` admitted a PASS row for any other
+# commit sharing the first 7 characters. A strict prefix of the full sha is a
+# short row: never counted (no back-compat - resolving it re-opens the hole
+# whenever the row's own commit is gone from the object store), but named, so
+# the block says what to fix.
+def row_sha(cell, full):
+    cell = cell.strip().lower()
+    if cell == full:
+        return "full"
+    if 7 <= len(cell) < len(full) and full.startswith(cell):
+        return "short"
+    return None
+
+
+shorts = {}
+
+
+def passed(name, full):
     for line in rows.splitlines():
         if "|" not in line:
             continue
@@ -543,7 +617,10 @@ def passed(name, sha):
         if len(cells) < 6:
             continue
         # when | env | sha | smoke | regression | verify | by
-        if cells[1] == name and cells[2].startswith(sha[:7]):
+        kind = row_sha(cells[2], full) if cells[1] == name else None
+        if kind == "short":
+            shorts.setdefault(name, []).append(cells[2])
+        if kind == "full":
             return all(c.lower() == "pass" for c in cells[3:6])
     return False
 
@@ -554,9 +631,14 @@ for env in envs:
     cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
     before = len(out)
     for upstream in cfg.get("REQUIRES", []):
-        if not passed(upstream, sha):
-            out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
-                       f"Run /crew:promote {upstream} first, and let it record the result.")
+        if not passed(upstream, full):
+            short = "".join(f" (.work/PROMOTIONS.md records the short sha {s} for '{upstream}': "
+                            "a row counts only with the full 40-character sha - re-run the "
+                            "promotion, or rewrite the row with the full sha after checking it)"
+                            for s in shorts.get(upstream, [])[:1])
+            out.append(f"'{upstream}' has no all-pass row for sha {full} in .work/PROMOTIONS.md"
+                       f"{short}. Run /crew:promote {upstream} first, and let it record the "
+                       "result.")
 
     # Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
     # It now means "nobody said". The only way to deploy with no rollback plan is
@@ -630,6 +712,28 @@ if [ "$VERDICT_STATUS" -ne 0 ]; then
   echo "    runbook could not be read - a malformed 'last verified' date does" >&2
   echo "    exactly this. Fix the input and re-run; the traceback is above." >&2
   exit 2
+fi
+
+# 5. Review evidence (L-0703): an accepted review receipt whose reviewed head
+# has THIS commit's tree, confirmed by review_ledger.check_receipt run in the
+# deploying tree - for every matched environment unless it sets
+# `requireReview: false` with a `reviewReason`. `requireHuman` does not waive
+# it. _promote_review.py decides for BOTH flavours; it gets GATE_DEADLINE and
+# kills its search when that passes. Its reasons join VERDICT, so the emergency lane and the
+# message below treat them like every other unmet precondition; a non-zero
+# exit is could-not-tell and blocks like the check above.
+REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \
+  "$GATE_DEADLINE" "${ENVLIST[@]}")
+REVIEW_STATUS=$?
+if [ "$REVIEW_STATUS" -ne 0 ]; then
+  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
+  echo "  - the review-evidence check could not be evaluated (exit $REVIEW_STATUS)." >&2
+  echo "    This is not a pass. _promote_review.py failed or is missing; its" >&2
+  echo "    reason is above." >&2
+  exit 2
+fi
+if [ -n "$REVIEW" ]; then
+  VERDICT="${VERDICT:+$VERDICT$'\036'}$REVIEW"
 fi
 
 if [ -n "$VERDICT" ] && crew_incident_active; then
