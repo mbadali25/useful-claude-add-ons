@@ -5,6 +5,7 @@ description: |
   defaults, TLS, module compatibility, and security hardening. Use when the repo has *.ps1 or
   *.psm1 files, or the user asks to write or review a PowerShell script, decide between 5.1
   and 7 for a target host, or asks why a generated file is UTF-16 or why Install-Module fails.
+  Points at the gated PWSH standards set and lists the PowerShell candidates.
 ---
 
 # Stack: PowerShell (5.1 and 7)
@@ -58,6 +59,18 @@ scheduled task, a GPO startup script, or an installer's custom action calls `pow
 Execution policy documented, no plaintext creds (use SecretManagement/Key Vault/DPAPI),
 module/script-block logging enabled, remoting restricted to JEA or a constrained endpoint,
 least-privilege service accounts. No `Write-Host` of a secret; sanitise error output.
+
+## Standards
+
+The gated PowerShell standards are `crew-standards/references/powershell.md`, set `PWSH`,
+applied to any change touching a `.ps1`, `.psm1` or `.psd1` and answered in the required
+self-check (the `crew-standards` skill). `PWSH-NN` is the owner's research `POWERSHELL-NN`.
+- PWSH-16 An external program is resolved to an Application that is proven to run, never
+  to whatever name lookup returns first (its command-resolution half; StrictMode is not gated)
+
+Candidates (exit status and `$null`, literal matching, forced collections, explicit bytes at a
+native boundary, the StrictMode half) are in `references/candidates.md`: guidance, promoted
+when a third reviewed change set earns one. PWSH-20 is listed there as overlay material only.
 
 ## Verification
 

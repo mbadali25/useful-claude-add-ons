@@ -123,11 +123,10 @@ AUTOPILOT_MAX_LINES = 117
 
 
 # T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
-# inside the same 117 (its section was paid for by rewrapping sections 0 and 6; it is
-# section 8 since T-0012's `goal` took section 7, paid for by rewrapping the preamble).
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
 WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
             "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
-            "`scope-not-enforcing`", "`sub=wave`: section 8 only",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only",
             # Group review r2 (rush g0): a wave starts only after T-0030's coord check.
             "section 2's first paragraph (the `coord` check, T-0030)")
 

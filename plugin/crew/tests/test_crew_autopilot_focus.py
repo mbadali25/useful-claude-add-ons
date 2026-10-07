@@ -636,6 +636,8 @@ def test_route_goal_with_a_pointer_and_no_focus_is_available(tmp_path):
 
     assert (crew_autopilot.focus_guard(str(root), "goal"), got["sub"], got["stop"]) == (
         None, "goal", False)
+
+
 def test_wave_with_a_pointer_and_no_focus_routes(tmp_path):
     """T-0029: `wave` is live, so with no focus it routes, never stops as focus."""
     got = crew_autopilot.route(str(_pointed(tmp_path)), "wave")

@@ -79,7 +79,8 @@ cheaper than catching it from a refused write.
    because it was "already checked": this is the review that catches the
    check being forgotten under time pressure, not the check itself.
 5. **Standards.** Does every step name the standards its Files and Risk
-   trigger (the `crew-standards` skill; `crew_standards.py sets` lists them)?
+   trigger (the `crew-standards` skill; `crew_standards.py sets --touch` lists them
+   from the spec's Touch list, with no scope base yet)?
 6. **Recorded decisions.** A step that changes behaviour someone decided (a
    default, a model tier, a guard) cites where that decision is recorded
    (`CHANGELOG.md`, `docs/adr/`, a ticket's `direction.md`), or says it searched

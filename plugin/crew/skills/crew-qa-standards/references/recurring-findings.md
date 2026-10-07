@@ -6,6 +6,11 @@ paths a change touches: to the implementer from the spec's Touch list (`/crew:im
 and, through `review_block`, from a review bundle's changed files. It is a list of probes, not a
 gate, and it does not bound a review.
 
+It is derived from `crew-standards`, which is the one source for code-level rules (L-0519). Each
+section's `seen:` line names the standards it is a concrete instance of, and every id it names must
+exist in a shipped `crew-standards` set or this repository's `.crew/standards.md` (the suite checks
+it). Where a probe and its standard disagree, the standard wins and the probe is corrected.
+
 Format, read by `recurring_findings.parse`: `## RF-NN <title>`, then `applies-to: <JSON list of
 globs>`, then `seen: <one line>`, then one to four `- ` probe lines. Sections stay in descending order of
 their `seen` count (the suite checks it), because the printed block drops whole sections from the
@@ -57,7 +62,7 @@ seen: about 55 of 539 BLOCK/FIX findings (GEN-05, GEN-06)
 
 ## RF-07 A plugin changed without its version and registration
 applies-to: ["plugin/**", "skills/**", "**/.claude-plugin/*.json", "**/PLUGINS.md", "**/marketplace.json"]
-seen: about 38 of 539 BLOCK/FIX findings (CLAUDE.md "Stop and ask")
+seen: about 38 of 539 BLOCK/FIX findings (GEN-09; this repository's REPO-03, CLAUDE.md "Stop and ask")
 - A content change under a plugin needs a version bump in its `plugin.json`, the marketplace entry and the catalog row, at the point the repository's release rule sets (a standards overlay may put it at land, not on the build branch).
 - Every place that states a version or a count agrees with the declared one, and the marketplace checker exits 0 where the release rule says it must.
 

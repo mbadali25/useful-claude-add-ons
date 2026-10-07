@@ -913,7 +913,7 @@ def _command_text():
 
 def _goal_section():
     text = _command_text()
-    start = text.index("## 7. goal")
+    start = text.index("## 8. goal")
     end = text.find("\n## ", start + 1)
     return text[start:end if end >= 0 else len(text)]
 

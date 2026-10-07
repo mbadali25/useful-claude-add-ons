@@ -200,9 +200,16 @@ def test_unreadable_slice_state_stops(tmp_path):
     {"current": 1, "done": [0], "shipped": []},
     {"current": 2, "done": [], "shipped": [{"slice": 1, "branch": "a"}]},
     {"current": 1, "done": [2], "shipped": []},
+    {"current": 1, "done": [], "shipped": [{"slice": 2, "branch": "a"}]},
+    {"current": 1, "done": [1], "shipped": [{"slice": 2, "branch": "a"}]},
+    {"current": 1, "done": [], "shipped": [{"slice": 1, "branch": "a"}]},
+    {"current": 3, "done": [1, 2, 3], "shipped": [{"slice": 1, "branch": "a"},
+                                                  {"slice": 2, "branch": "a-s2"}]},
 ], ids=["current-0", "current-past-count", "current-bool", "done-not-list", "shipped-not-list",
         "current-2-slice-1-unshipped", "slice-shipped-twice", "slice-done-twice",
-        "shipped-past-count", "done-0", "current-2-slice-1-not-done", "done-past-current"])
+        "shipped-past-count", "done-0", "current-2-slice-1-not-done", "done-past-current",
+        "shipped-past-current", "shipped-past-current-after-done", "current-shipped-not-done",
+        "last-slice-done"])
 def test_slice_state_out_of_shape_stops(tmp_path, state):
     root = _ticket(tmp_path)
     path = crew_autopilot_slices.slices_path(str(root), T)
@@ -937,7 +944,7 @@ def test_an_open_predecessor_does_not_hide_an_unreadable_slice_under_it(tmp_path
                         "### Slice 2: second\nSteps: 3-4\nBase: slice 1\n\n"
                         "### Slice 3: third\nSteps: 5\nBase: slice 2\n")
     root = _ticket(tmp_path, header="status: in-progress   risk: low", plan=plan)
-    _state(root, current=3, done=[1, 2, 3], shipped=[
+    _state(root, current=3, done=[1, 2], shipped=[
         _shipped(1, BRANCH), _shipped(2, f"{BRANCH}-s2", base=BRANCH),
         _shipped(3, f"{BRANCH}-s3", base=f"{BRANCH}-s2")])
     _merged_world(monkeypatch, {BRANCH: None, f"{BRANCH}-s2": ("OPEN", BRANCH),

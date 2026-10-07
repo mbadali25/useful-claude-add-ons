@@ -361,7 +361,7 @@ HUMAN_STOPS = (
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
 SUBCOMMANDS += ("sleep", "wake", "wave")  # L-0652: manual sleep mode; T-0029: crew_wave.py
 SUBCOMMANDS += ("split",)  # T-0058
-AVAILABLE = frozenset({"status", "run", "goal", "focus", "sleep", "wake", "split", "wave"})
+AVAILABLE = frozenset({"status", "run", "goal", "focus", "sleep", "wake", "wave", "split"})
 # L-0652: the subcommands that take no ticket, not even a second word.
 NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019"}
@@ -2719,8 +2719,8 @@ def focus_guard(root, sub, ticket=""):
     could not be read refuses everything else -- whether focus is on cannot be told, so nothing may
     start or switch work. Focused on T-A: a pointer naming anything but T-A refuses all but `focus
     T-A` (which re-points it); else `run` or `split` with no ticket or T-A, and `focus` alone or
-    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a subcommand this does not know -- is
-    refused."""
+    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a subcommand this does not
+    know -- is refused."""
     if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
         return None
     top = crew_ticket.toplevel(root) or os.path.abspath(root)

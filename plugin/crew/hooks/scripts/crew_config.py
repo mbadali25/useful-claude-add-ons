@@ -2211,6 +2211,8 @@ def inspect_global(root, path=None):
 # `(effect, ticket)`. A key-level entry goes dead, and stays harmless, once
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
+# T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
+# defaults, so their rows went with it.
 INERT_PENDING = {
     "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
                                    "L-0541"),

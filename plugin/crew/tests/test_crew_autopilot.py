@@ -1497,13 +1497,14 @@ def test_command_never_types_approve():
 def test_autopilot_report_calls_run_stop():
     """T-0060: which stop pings is decided by `crew_notify.py run-stop`, tested
     code, not by prose. The report section names it once, for every stop,
-    with `next`'s phase and reason."""
+    with `next`'s phase. Group review (G2) BLOCK: never the reason, which can
+    quote ticket text, interpolated into a shell command."""
     text = _command_text()
     report = text[text.index("## 5."):]
     lines = [line for line in text.splitlines() if "crew_notify.py run-stop" in line]
 
-    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p> "
-            '--reason "<r>"' in report, "at every stop" in report) == (1, True, True)
+    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p>`"
+            in report, "--reason" in lines[0], "at every stop" in report) == (1, True, False, True)
     # T-0060 port review BLOCK: a claim refused for a stale or unknown marker
     # stops before `next` names a phase; it stops as `in-flight`, so the ping runs.
     claim = text[text.index("## 2."):text.index("## 3.")]
@@ -1832,20 +1833,19 @@ def _inert(got):
 
 def test_settings_warns_on_inert_autopilot_keys(tmp_path):
     root = make_repo(tmp_path, mode="off")
-    # T-0029's `maxLanes` and `reviewPolicy` are live since the wave landed, so
-    # they are not named; L-0541's `maxTicketsPerRun` still is.
+    # T-0029 landed `maxLanes` and `reviewPolicy` (crew 1.1.6): set, they stay quiet.
     _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3,
-                   "maxTicketsPerRun": 2})
+                   "maxTicketsPerRun": 50})
 
     got = crew_autopilot.settings(str(root))
 
     assert [w.split(" - ")[0] for w in _inert(got)] == [
-        "inert: autopilot.maxTicketsPerRun=2 (L-0541)"]
+        "inert: autopilot.maxTicketsPerRun=50 (L-0541)"]
     done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
                           capture_output=True, text=True, check=False)
     lines = done.stdout.splitlines()
     assert lines[0].startswith("mode=plan")
-    assert "warning: inert: autopilot.maxTicketsPerRun=2 (L-0541) - would cap how many " \
+    assert "warning: inert: autopilot.maxTicketsPerRun=50 (L-0541) - would cap how many " \
            "tickets one backlog run takes" in lines
 
 

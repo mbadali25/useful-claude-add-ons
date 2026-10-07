@@ -23,8 +23,8 @@ from test_crew_config import _TEMPLATE_PATH, _global
 # pins to the template), plus `INERT_PENDING`'s value-level entries, plus every
 # path the global filter drops. `autopilot.approval: self` (the incident) landed in
 # T-0010, so it is must-stay-quiet now, and so is `autopilot.ship` since T-0011 landed;
-# `autopilot.maxLanes` (T-0029, live since the wave landed) too; `autopilot.maxTicketsPerRun`
-# (L-0541) carries must-warn.
+# T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy`, so they are
+# must-stay-quiet too; `autopilot.maxTicketsPerRun` (L-0541) carries must-warn.
 
 _INERT_CASES = [
     ("autopilot.maxTicketsPerRun", 50, "L-0541"),
@@ -120,8 +120,10 @@ def test_an_implemented_value_is_quiet(tmp_path, dotted, value):
 
 
 def test_a_key_entering_the_defaults_goes_quiet(tmp_path, monkeypatch):
-    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}}, git=False)
-    assert [e["key"] for e in crew_config.inert_settings(str(root))] == ["autopilot.maxTicketsPerRun"]
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}},
+                                   git=False)
+    assert [e["key"] for e in crew_config.inert_settings(str(root))] == [
+        "autopilot.maxTicketsPerRun"]
     monkeypatch.setattr(crew_state, "AUTOPILOT_DEFAULTS",
                         dict(crew_state.AUTOPILOT_DEFAULTS, maxTicketsPerRun=1))
     assert crew_config.inert_settings(str(root)) == []
