@@ -124,6 +124,9 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0050 | `test_heartbeat_process_pushes_while_pid_alive` (G0) failed once on Windows shard 3/6 under load, passed on rerun; root-cause the timing (no upper bound may be loosened) | G3c report | none | needs ticket |
 | C-0051 | H2 sabotage entries from G3d: six `sabotage_kimi.py` mutations for L-0708 (any .git refuses; refusal deleted; other git exit allowed; Kimi project files ignored; git missing allowed; env not scrubbed - all hand-run red), L-0637 r4-r6 cases for L-0638's set, optional crew_graph.py mutations for sabotage_refresh.py | G3d report | G3d on main | H2 lane |
 | C-0052 | Owner-accepted deviation: contract bindings carry 5 fields {remote, channel, name, version, hash} (T-0031/L-0634 specs say 4) - update the two specs | G3c report, owner 2026-10-07 | none | docs |
+| C-0053 | L-0656 review half: `autopilot.sleep.reviewPolicy` (unblocked now that T-0029 landed autopilot.reviewPolicy); key still reads "not available" | G6b report (L-0656 built notify half only, 6 rounds used) | none | needs ticket |
+| C-0054 | `goal-mark --reason-file` leaves `.work/autopilot/<slug>.reason` behind; add cleanup | G6b report | none | needs ticket |
+| C-0055 | H2 sabotage entries for G6b: L-0541 picker/caps/ticket marks; T-0056/L-0658/L-0659 goal handoffs; L-0654/L-0653 (L-0655 set); L-0656 hold list + send-once | G6b report | G6b on main | H2 lane |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
