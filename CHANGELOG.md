@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Removed — crew 1.1.7: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
+### Removed — crew 1.1.10: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
 
 - **Summary.** Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the
   environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
