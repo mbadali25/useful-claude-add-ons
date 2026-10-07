@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T20:26Z
+Last updated: 2026-10-07T20:40Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T20:40Z H2a ready at d2c52fc0 (crew 1.1.17; 3 entries moved to H2b; 416/418 touched sabotage RED, 2 pre-existing greens C-0038/C-0064). Opens after G4's wave 7 lands (merge main first).
 - 2026-10-07T20:26Z H2a built: rush/h2a-sabotage 9d1a89a8, 19 tickets CLEAN, +294 sabotage entries, Windows 16/16. Incl. T-0029/T-0030 harness halves (scope guard now refuses review_ledger --accept/--reject + gh pr merge --admin for subagents). Told to move 3 entries anchored on G3c/G6b code to H2b and set crew 1.1.17. New order: G4 1.1.16 -> H2a 1.1.17 -> G3c 1.1.18 -> G3d 1.1.19 -> G6a 1.1.20 -> G6b 1.1.21 -> H2b 1.2.0. C-0064 minted; next free C-0065.
 - 2026-10-07T19:39Z Release FF'd to main eaeb2f4d. G4 lander resumed: merge release, crew 1.1.16, crew-docs gate, full suite, Windows.
 - 2026-10-07T19:39Z MERGED WAVE 6 #561 (h5 C-0060, harness-only) into main, crew 1.1.15 (29/29 green). Next: FF release to main, then G4 1.1.16.
