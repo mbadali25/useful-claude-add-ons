@@ -300,8 +300,9 @@ MEMORY_MUTATIONS = (
      _MEM + "test_symlinked_component_is_outside_vault"),
     ("memory (h): save writes the pointer before the note", MEMORY,
      "    try:\n        apply_note(plan)\n",
-     "    apply_pointer(plan)\n    try:\n        apply_note(plan)\n",
-     _SAVE + "test_note_write_failure_leaves_native_unchanged"),
+     "    try:\n        apply_pointer(plan)\n    except (OSError, ValueError):\n        pass\n"
+     "    try:\n        apply_note(plan)\n",
+     _SAVE + "test_note_link_failure_leaves_native_unchanged_and_no_temp"),
     ("memory (i): save skips the read-back before the pointer", MEMORY,
      '    if not same or state != "resolved":\n',
      "    if False:\n",
@@ -334,9 +335,9 @@ MEMORY_MUTATIONS = (
      '    if not title:\n        return "refuse: no name: line", "no name: line in the memory"\n',
      '    if not title:\n        title = "untitled"\n',
      _MIG + "test_migrate_apply_matches_the_preview"),
-    ("memory (p): restore goes on with a pointer that does not resolve", MEMORY,
+    ("memory (p): restore exits 0 on a pointer that does not resolve", MEMORY,
      '    if row["state"] != "resolved":\n        return dict(row, exit=0 if row["state"] == "full-text" else 1)\n',
-     '    if row["state"] == "full-text":\n        return dict(row, exit=0)\n',
+     '    if row["state"] != "resolved":\n        return dict(row, exit=0)\n',
      _MIG + "test_restore_refuses_what_does_not_resolve"),
 )
 
