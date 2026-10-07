@@ -203,7 +203,7 @@ KEY_META = {
                                    source=_S + "crew_recall.py", type_="positive integer"),
     "memory.recall.projects": _unv("Project names sent to vault recall as `--project` so this "
                                    "repo's notes rank first; empty sends the main checkout's "
-                                   "directory name.", "1.1.9", _S + "crew_recall.py",
+                                   "directory name.", "1.1.7", _S + "crew_recall.py",
                                    "list of project names"),
     "verifyGate": _unv("Run the Stop verify gate.", FIRST, _S + "verify-gate.sh",
                        "boolean"),
