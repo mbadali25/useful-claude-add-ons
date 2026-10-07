@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T19:04Z
+Last updated: 2026-10-07T19:06Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T19:06Z Opened #561 (h5, C-0060, harness-only -> main, crew 1.1.15, head 39f1c498; merged main 9b3ff4f2; README install URLs re-pinned to 9b3ff4f2). After it: FF release to main, then G4 (1.1.16).
 - 2026-10-07T19:04Z MERGED WAVE 5 #559 into main at 9b3ff4f2 (crew 1.1.14; G1b + C-0063). G1b sources closed. Next: README install-URL re-pin (G5+G1b changed install scripts) + h5 (C-0060, 1.1.15) to main.
 - 2026-10-07T18:45Z MERGED #560 (C-0063) into release at 04b0bf57, crew 1.1.14. Wave 5 #559 now on 04b0bf57 (retitled), CI re-running.
 - 2026-10-07T18:27Z Wave 5 #559 test 3.12 failed twice (test_sabotage_bound pidfile race = real). Opened #560 fix/c0063-pidfile-race -> release (crew 1.1.14, test-only, atomic pid write). h5 local fix dropped (reset to origin ac645dcf); h5 -> 1.1.15, G4 1.1.16, G3c 1.1.17, G3d 1.1.18, G6a 1.1.19, G6b 1.1.20.
