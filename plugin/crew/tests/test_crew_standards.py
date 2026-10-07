@@ -1309,7 +1309,7 @@ def test_proposals_proposes_a_round_whose_admission_the_wording_list_misses(tmp_
     (scratch / "out.txt").write_text(
         "FIX|x.py:1|bad|repro\nI only inspected one of the nine files", encoding="utf-8")
     root = tmp_path / "root"
-    root.mkdir()
+    _ledger(root, {1: "FINDINGS"})
 
     result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
                   str(scratch), "--round", "1")
