@@ -132,13 +132,31 @@ photos. If the user says "wipe" but describes offboarding a BYOD phone, ask whic
 Bulk sync, with the count stated up front:
 
 ```bash
-python scripts/graph.py GET "deviceManagement/managedDevices" \
-  --filter "complianceState eq 'noncompliant'" --select "id,deviceName" > /tmp/d.json
-python3 - << 'PY'
+# A relative temp file in the current directory, not an absolute one under
+# /tmp. Under MSYS_NO_PATHCONV=1 (which this repo's Git-Bash notes document
+# elsewhere), bash's own /tmp resolves inside Git for Windows' install tree
+# while a native python3.exe's open("/tmp/...") resolves against the
+# current drive (C:\tmp\...) - the same absolute string names two different
+# files. A relative name has no leading slash for that path-conversion
+# layer to touch, so the shell redirect below and the python that reads it
+# agree on the same file regardless of MSYS_NO_PATHCONV. It holds device
+# IDs and names, so it's a randomized name cleaned up by the trap - not one
+# that could be `git add`-ed by hand, and not left behind on Ctrl-C either.
+# No ".json" suffix on the template: GNU coreutils' mktemp (Linux, and Git
+# for Windows' MSYS toolchain) recognizes literal text after the X run as a
+# suffix and randomizes only the X's, but BSD/macOS mktemp does not honor
+# that the same way - a template needs its randomized run of X's at the
+# very end to be portable across both. Confirmed only on GNU coreutils
+# here; not verified on an actual BSD/macOS mktemp.
+f="$(mktemp ./d.XXXXXX)"
+trap 'rm -f "$f"' EXIT
+python3 scripts/graph.py GET "deviceManagement/managedDevices" \
+  --filter "complianceState eq 'noncompliant'" --select "id,deviceName" > "$f"
+python3 - "$f" << 'PY'
 import json, sys
 sys.path.insert(0, "scripts")
 from graph import GraphClient
-devices = json.load(open("/tmp/d.json"))
+devices = json.load(open(sys.argv[1]))
 print(f"About to sync {len(devices)} devices")   # show this before proceeding
 g = GraphClient()
 for d in devices:
