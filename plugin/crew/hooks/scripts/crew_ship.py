@@ -13,6 +13,24 @@ on PATH takes the same failure path as one that could not start. gh 2.46's
 `gh pr checks` has no --json, so `read_checks` parses its text rows, names and
 buckets verbatim, and a row that is not exactly five fields makes the whole
 read unreadable. Standard library only, plus `crew_common`.
+
+The rule, moved here from crew_autopilot.py's docstring (T-0012's port, the same
+3400-line cap): `ship_decision` is the rule, with no I/O: `autopilot.ship` anything but
+exactly `merge` opens the PR and stops. `merge` needs every required check
+`pass`, or `fail` named EXACTLY in `autopilot.knownFailures`; pending or none
+reported yet waits (stopping at `ciTimeoutMinutes`); an unreadable or unknown
+state, `skipping` or an unlisted failure stops. A `high` or unknown risk whose
+completed rounds are all `claude` or carry no `model_family` stops before CI
+is read. `ship` refuses a dirty working tree (before the push and again before
+the merge), takes HEAD once right after the push and holds the PR's head and
+this checkout's HEAD to it before and after every poll and right before the
+merge, re-reads the settings, risk and review families (with the hash of the
+ledger bytes they came from) on every poll, stops on a green that lands past
+the deadline, re-checks the review receipt after CI against that same ledger
+hash, refuses a base branch with a merge queue (or one it cannot read), binds
+the merge to the HEAD it checked, and dequeues a PR gh queued anyway.
+The rule and the gh/git adapter (`_run_gh`, the only code that runs gh, and
+`read_checks`, which parses gh 2.46's text rows) are here; `crew_autopilot.ship` drives them.
 """
 import json
 import re
@@ -302,15 +320,17 @@ def _full_sha(value):
     return value if _SHA.fullmatch(value) else None
 
 
-def merged_phase(top, branch, pr, answer):
+def merged_phase(top, branch, pr, answer, finished=None):
     """A MERGED PR closes the ticket only when it merged this checkout's HEAD
     (full SHAs). A later commit on the branch, or a head either side cannot
     read, stops: autopilot never ships a merged branch again, and "could not
-    tell" never reads `closed`."""
+    tell" never reads `closed`. `finished(reason)`, when given, answers the
+    merged-at-HEAD case instead (T-0059: a non-final slice opens the next)."""
     merged = _full_sha(pr.get("headRefOid"))
     local = _full_sha(git_out(top, "rev-parse", "HEAD"))
     if merged and local and merged == local:
-        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+        why = f"PR #{pr['number']} is merged ({pr.get('url')})"
+        return finished(why) if finished else answer("closed", True, why)
     if merged and local:
         return answer("ship", True, f"{branch} has commits after PR #{pr['number']} merged "
                       f"(merged head {merged}, HEAD {local}) - ship them on a new branch "

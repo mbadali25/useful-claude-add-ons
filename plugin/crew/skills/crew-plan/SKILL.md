@@ -43,6 +43,16 @@ Standards: the crew-standards ids this step triggers, or "none - <why>"
 - [ ] concrete actions - what to actually do, not what the result should be
 ```
 
+**PR slices (T-0059).** A ticket that holds together but is too large for one
+review (the split rulebook said `slices`, or you judge it so) stays one ticket:
+end the plan with `## PR slices` and, per slice, `### Slice N: <name>`,
+`Steps: <comma list or a-b>` and `Base: main|slice <k>`. 2-5 slices; steps in
+contiguous ascending runs, each step in exactly one slice; `Base: main` only
+when the slice's Files share nothing with any earlier slice, otherwise the
+earlier slice it stacks on. Each slice runs its own implement, review (with its
+own review budget), done and ship as its own PR, in order. Slices are fixed
+here, before code; changing them is a plan edit, which stales the approval.
+
 ## No placeholders
 
 These are plan failures, not shorthand - never write them:

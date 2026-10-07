@@ -55,7 +55,7 @@ def test_route_goal_flag_is_run(tmp_path):
 
     got = crew_autopilot.route(str(root), "--goal")
 
-    assert (got["sub"], got["stop"], "T-0012" in got["reason"]) == ("run", True, True)
+    assert (got["sub"], got["stop"], "L-0541" in got["reason"]) == ("run", True, True)
 
 
 @pytest.mark.parametrize("token", ["T-1", "T-0018", "ABC-42"])
@@ -87,7 +87,7 @@ def test_route_unknown_word_refuses(tmp_path, token):
 
 
 # T-0020 landed `focus`: test_crew_autopilot_focus.py holds its routing.
-@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012")])
+@pytest.mark.parametrize("name,ticket", [("assign", "T-0019")])
 def test_route_unavailable_names_its_ticket(tmp_path, name, ticket):
     root = make_repo(tmp_path, mode="off")
 
@@ -177,7 +177,7 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
 
     got = crew_autopilot.route_args(str(root), "run --goal ship")
 
-    assert (got["sub"], got["stop"], got["ticket"], "arrives with T-0012" in got["reason"]) == (
+    assert (got["sub"], got["stop"], got["ticket"], "arrives with L-0541" in got["reason"]) == (
         "run", True, "", True)
 
 
@@ -186,13 +186,13 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
     (["--first", "run"], "sub=run stop=0 reason="),
     (["--first", ""], "sub=run stop=0 reason="),
     (["--first", "T-0018"], "sub=run stop=0 reason="),
-    (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with T-0012"),
+    (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with L-0541"),
     (["--first", "stauts"], "sub= stop=1 reason=unknown subcommand; one of "
                             "status|run|assign|goal|focus"),
     (["--first", "assign"], "sub=assign stop=1 reason=/crew:autopilot assign arrives with "
                             "T-0019"),
     (["--args", "--goal"], "sub=run stop=1 ticket= reason=run --goal <slug> arrives with "
-                           "T-0012"),
+                           "L-0541"),
     (["--args", "-h"], "sub= stop=1 ticket= reason=unknown subcommand"),
 ], ids=["first-status", "first-run", "first-empty", "first-id", "first-goal", "first-typo",
         "first-assign", "args-goal", "args-dash"])
@@ -451,7 +451,7 @@ def test_status_resume_line_usable(tmp_path):
     (f"resume: /crew:autopilot {T}", "0123456789", "head: does not match this checkout"),
     (f"resume: /crew:approve {T}", None, "/crew:approve is excluded from auto-resume"),
     ("resume: rm -rf ~ EVIL", None, "not an allowlisted /crew: command"),
-    ("resume: /crew:autopilot --goal ship-it", None, "goal resume arrives with T-0012"),
+    ("resume: /crew:autopilot --goal ship-it", None, "goal resume arrives with L-0541"),
 ], ids=["head", "excluded", "not-allowlisted", "goal"])
 def test_status_resume_line_mismatch_reason(tmp_path, line, head, reason):
     root = _approved(tmp_path)

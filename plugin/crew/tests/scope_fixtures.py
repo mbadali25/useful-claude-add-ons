@@ -48,12 +48,12 @@ None.
 {touch}
 
 ## Acceptance checks
-- tests pass
+- [ ] tests pass
 """
 
 PLAN = """# Plan
 
-## Step 1
+### Step 1
 Files: {files}
 Test: pytest
 Risk: low

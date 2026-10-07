@@ -41,6 +41,16 @@ Standards: the crew-standards ids this step triggers, or "none - <why>"
 
    No placeholders — "TBD", "handle edge cases", "similar to Step 1" are plan
    failures, not shorthand. Every step ends with something testable.
+
+   **PR slices** (T-0059), when `split.md` said `slices` or the ticket holds
+   together but is too large for one review: end the plan with `## PR slices`,
+   then per slice `### Slice N: <name>`, `Steps: 1, 2` (or `3-4`) and
+   `Base: main` or `Base: slice <k>`. 2-5 slices; each slice's steps one
+   contiguous run, in order, every step in exactly one; `Base: main` only when
+   its Files share nothing with an earlier slice, else `slice <k>` (stacked).
+   Each slice runs its own implement, review (its own budget), done and ship,
+   as its own PR; `crew_split.parse_slices` is the rule and autopilot stops a
+   plan it refuses.
 5. **Self-review before showing me.** Walk the spec's Acceptance list: does
    every line have a step? Walk the steps: does every Files: entry sit inside
    the spec's Touch? A step that doesn't is not silently kept — either the

@@ -71,9 +71,9 @@ def test_hooks_json_notification_passes_hook_and_no_matcher():
 
 # review.md's per-round ping is retired too, but review.md is in
 # scripts/check-tooling-pr.py's HARNESS, so its removal lands as a
-# harness-only change. Until then its legacy `notify.sh review ...` maps to
-# the reserved `blocker` and sends nothing:
-# test_review_md_legacy_ping_maps_to_reserved_blocker below.
+# harness-only change. Until then its legacy `notify.sh review ...` is a
+# retired caller and sends nothing, although `blocker` itself sends (T-0060):
+# test_review_md_legacy_ping_stays_retired below.
 _RETIRED = (COMMANDS / "done.md", COMMANDS / "init.md",
             SCRIPTS / "context-watch.sh", SCRIPTS / "context-watch.ps1")
 
@@ -264,11 +264,16 @@ def test_the_token_never_reaches_wrapper_output(tmp_path, fake):
 
 
 @pytest.mark.skipif(BASH is None, reason="needs bash")
-def test_review_md_legacy_ping_maps_to_reserved_blocker(tmp_path, fake):
+def test_review_md_legacy_ping_stays_retired(tmp_path, fake):
     """review.md still carries `notify.sh review ...` until its harness-only
-    removal lands. The legacy name maps to the reserved `blocker`, so the call
-    sends nothing, exits 0 and says so on stderr, naming T-0060."""
+    removal lands. `blocker` sends since T-0060, but a send under the legacy
+    NAME is a retired caller: with blocker enabled it still sends nothing,
+    exits 0 and says so on stderr, so no CLEAN round is paged as `Blocked`."""
     root = _repo(tmp_path, "review")
+    config = root / ".crew" / "config.json"
+    data = json.loads(config.read_text(encoding="utf-8"))
+    data["notify"]["events"] = ["blocker", "deploy", "question"]
+    config.write_text(json.dumps(data), encoding="utf-8")
     line = next(line for line in _read(COMMANDS / "review.md").splitlines()
                 if "notify.sh review" in line)
 
@@ -277,7 +282,7 @@ def test_review_md_legacy_ping_maps_to_reserved_blocker(tmp_path, fake):
                           stdin=subprocess.DEVNULL, check=False, timeout=60, text=True)
 
     assert ("notify.sh review" in line, done.returncode, _Fake.texts, done.stdout.strip(),
-            "legacy 'review' read as 'blocker'" in done.stderr, "T-0060" in done.stderr) == (
+            "legacy 'review'" in done.stderr, "retired" in done.stderr) == (
                 True, 0, [], "filtered", True, True)
 
 
