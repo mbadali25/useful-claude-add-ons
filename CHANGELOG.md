@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### crew 1.1.20 — L-0634: the wave refuses a ticket whose contract moved since it was built against
+### crew 1.1.13 — L-0634: the wave refuses a ticket whose contract moved since it was built against
 
 - **Summary.** A ticket built against a contract version is no longer started by the autopilot wave
   once that version on the shared channel has changed, and `crew_contract.py verify` checks the same
@@ -25,7 +25,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and the troubleshooting guide describe the refusal and the way out.
 - **Not in this entry.** Sabotage for this guard is L-0635, a harness PR (T-0087).
 
-### crew 1.1.20 — L-0633: a wave ticket can depend on a ticket another session works
+### crew 1.1.13 — L-0633: a wave ticket can depend on a ticket another session works
 
 - **Summary.** An autopilot wave can now wait on a ticket another session is working, written
   `<channel>:<id>`, and starts it only once that session's claim reads `done`.
@@ -39,7 +39,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the troubleshooting guide list each refusal.
 - **Not in this entry.** Sabotage for this check is L-0635, a harness PR (T-0087).
 
-### crew 1.1.20 — T-0031: versioned contracts between sessions, frozen once built against
+### crew 1.1.13 — T-0031: versioned contracts between sessions, frozen once built against
 
 - **Summary.** Two sessions building against each other can now put the interface between them on
   the shared coordination channel as a numbered, hashed version that nobody can edit once a side
