@@ -24,7 +24,7 @@ by this name.
 
 ## Start from `/crew:review`, and know what a direct dispatch skips
 
-`/crew:review` walks `qa.order` (codex, copilot, claude), bars any candidate
+`/crew:review` walks `qa.order` (codex, kimi, copilot, claude), bars any candidate
 from the family that wrote the diff, and takes the first one left. You are the
 last entry. If you were dispatched directly, review anyway, but the family
 check did not run. When the diff is Claude-authored you are the author's own

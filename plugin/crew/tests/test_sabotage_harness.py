@@ -11,13 +11,18 @@ target under `tmp_path`, because a test for a harness that corrupts files must
 not be able to corrupt the files it is testing against.
 """
 import atexit
+import importlib.util
 import os
+import shutil
 import signal
+import sys
+import time
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import sabotage
+import sabotage_platform
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +60,20 @@ def _text(path):
     """
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+def _report(passed=0, failed=0, errored=0, skipped=0, names=None):
+    names = names if names is not None else [
+        f"t{i}" for i in range(passed + failed + errored + skipped)]
+    return {"names": names, "passed": passed, "failed": failed,
+            "errored": errored, "skipped": skipped,
+            "skip_reason": "off this host" if skipped else ""}
+
+
+def _caught(_test):
+    """A run_test stub: the target test failed for real (RED)."""
+    return (sabotage._REAL_TEST_FAILURE, "", _report(failed=1), ["t0"], 0.1,
+            False)
 
 
 def _target(tmp_path, text="alpha\nbeta\n"):
@@ -233,7 +252,7 @@ def test_main_discards_an_interrupted_backup_before_it_mutates(tmp_path,
         ("a label", target, "beta", "gamma", "test_nothing"),
     ))
     monkeypatch.setattr(sabotage, "run_test",
-                        lambda _test: (sabotage._REAL_TEST_FAILURE, ""))
+                        _caught)
 
     seen = {}
     real_apply = sabotage.apply_mutation
@@ -334,7 +353,7 @@ def test_main_reports_a_restore_that_did_not_take(tmp_path, monkeypatch,
         ("a label", target, "beta", "gamma", "test_nothing"),
     ))
     monkeypatch.setattr(sabotage, "run_test",
-                        lambda _test: (sabotage._REAL_TEST_FAILURE, ""))
+                        _caught)
 
     def _restore_that_does_nothing(path):
         sabotage._LIVE.discard(path)  # pylint: disable=protected-access
@@ -360,7 +379,7 @@ def test_a_clean_run_reports_pass_and_leaves_no_backup(tmp_path, monkeypatch,
         ("a label", target, "beta", "gamma", "test_nothing"),
     ))
     monkeypatch.setattr(sabotage, "run_test",
-                        lambda _test: (sabotage._REAL_TEST_FAILURE, ""))
+                        _caught)
 
     assert sabotage.main() == 0
     assert "SABOTAGE SUITE: PASS" in capsys.readouterr().out
@@ -409,12 +428,13 @@ def test_main_reports_a_timed_out_entry_as_unproven_and_fails(tmp_path, monkeypa
     monkeypatch.setattr(sabotage, "MUTATIONS", (
         ("a label", target, "beta", "gamma", "test_nothing"),
     ))
+    # L-0608's runner: code None and timed_out True for an overrun.
     monkeypatch.setattr(sabotage, "run_test",
-                        lambda _test: (sabotage.sabotage_bound.TIMED_OUT, ""))
+                        lambda _test: (None, "", None, None, 600.0, True))
 
     assert sabotage.main() == 1
     printed = capsys.readouterr().out
-    assert "RED BUT UNPROVEN -- timed out after 600s" in printed
+    assert "COULD-NOT-TELL -- timed out after 600s" in printed
     assert "RED (good)" not in printed
     assert "SABOTAGE SUITE: FAIL" in printed
     assert sabotage.digest(target) == pristine
@@ -451,8 +471,10 @@ def test_main_prints_the_bound_before_the_first_mutation(tmp_path, monkeypatch, 
     monkeypatch.setattr(sabotage, "MUTATIONS", (
         ("a label", target, "beta", "gamma", "test_nothing"),
     ))
-    monkeypatch.setattr(sabotage, "run_test",
-                        lambda _test: (sabotage._REAL_TEST_FAILURE, ""))
+    report = {"names": ["test_nothing"], "failed": 1, "errored": 0, "skipped": 0,
+              "passed": 0, "skip_reason": ""}
+    monkeypatch.setattr(sabotage, "run_test", lambda _test: (
+        sabotage._REAL_TEST_FAILURE, "", report, ["test_nothing"], 0.1, False))
 
     assert sabotage.main() == 0
     printed = capsys.readouterr().out
@@ -460,23 +482,45 @@ def test_main_prints_the_bound_before_the_first_mutation(tmp_path, monkeypatch, 
     assert printed.index("bound:") < printed.index("RED (good)")
 
 
-def test_run_test_hands_pytest_to_the_bounded_runner(monkeypatch):
+def test_run_test_hands_the_limits_to_the_runner(monkeypatch):
+    """L-0608 merge: sabotage.py runs each entry through
+    sabotage_platform.run_target, handed T-0080's limits."""
     seen = {}
 
-    def _bounded(argv, cwd, env, mem_mib, timeout_s):
-        seen.update(argv=argv, cwd=cwd, env=env, mem=mem_mib, timeout=timeout_s)
-        return 1, "out"
+    def _runner(target, timeout=None, mem_mib=None):
+        seen.update(target=target, timeout=timeout, mem=mem_mib)
+        return 1, "out", None, None, 0.0, False
 
     monkeypatch.setenv("CREW_SABOTAGE_MEM_MB", "1234")
     monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "56")
-    monkeypatch.setattr(sabotage.sabotage_bound, "run", _bounded)
+    monkeypatch.setattr(sabotage.sabotage_platform, "run_target", _runner)
 
-    assert sabotage.run_test("tests/test_x.py::test_y") == (1, "out")
-    assert seen["argv"][1:] == ["-m", "pytest", "tests/test_x.py::test_y", "-q",
-                                "--no-header", "-x", "--run-slow"]
-    assert seen["cwd"] == sabotage.CREW
-    assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert (seen["mem"], seen["timeout"]) == (1234, 56)
+    assert sabotage.run_test("tests/test_x.py::test_y")[0] == 1
+    assert seen == {"target": "tests/test_x.py::test_y", "timeout": 56, "mem": 1234}
+
+
+_CAP_PROBE = (
+    "import resource\n"
+    "def test_cap():\n"
+    "    assert resource.getrlimit(resource.RLIMIT_DATA)[0] == 1234 << 20\n")
+
+
+@pytest.mark.skipif(sabotage.sabotage_bound._absent(1234) is not None,  # pylint: disable=protected-access
+                    reason="the memory cap is enforced on Linux 4.7+ only")
+def test_run_target_runs_the_entry_under_the_memory_cap(tmp_path):
+    """T-0080's cap reaches the entry's pytest through L-0608's runner."""
+    code, _, report, _, _, timed_out = sabotage_platform.run_target(
+        _write_probe(tmp_path, _CAP_PROBE), timeout=120, cwd=str(tmp_path), extra=(),
+        mem_mib=1234)
+
+    assert (code, timed_out, report["passed"]) == (0, False, 1)
+
+
+def test_run_target_reads_its_default_limits_from_the_environment(monkeypatch):
+    monkeypatch.setenv("CREW_SABOTAGE_TIMEOUT_S", "never")
+
+    with pytest.raises(ValueError):
+        sabotage_platform.run_target("tests/test_x.py::test_y")
 
 
 # --- review round 2 N7: the three standalone runners are bounded too --------
@@ -526,3 +570,294 @@ def test_a_standalone_runner_refuses_an_unreadable_limit_before_any_mutation(
 
     assert module.main(["--scratch", str(tmp_path)]) == 2
     assert "CREW_SABOTAGE_TIMEOUT_S" in capsys.readouterr().out
+# --- L-0608: verdicts from the junit report, platform declarations, timeout --
+
+_V = sabotage_platform.verdict
+
+
+@pytest.mark.parametrize("code,report,collected,timed_out,want,ok", [
+    (None, None, None, True, "COULD-NOT-TELL -- timed out", False),
+    (1, None, None, False, "COULD-NOT-TELL -- no test report", False),
+    (0, None, None, False, "COULD-NOT-TELL -- no test report", False),
+    (0, _report(skipped=2), ["t0", "t1"], False,
+     "COULD-NOT-TELL -- target skipped (off this host)", False),
+    (0, _report(), [], False, "COULD-NOT-TELL -- target skipped (no case ran)",
+     False),
+    (0, _report(passed=1, skipped=1), ["t0", "t1"], False, "STILL GREEN", False),
+    (1, _report(errored=1), ["t0"], False, "RED BUT UNPROVEN -- exit 1, 1 errored",
+     False),
+    (1, _report(failed=1, skipped=1), ["t0", "t1"], False,
+     "RED BUT UNPROVEN -- exit 1, partial: 1 skipped", False),
+    (1, _report(failed=1), ["t0", "t1"], False,
+     "RED BUT UNPROVEN -- exit 1, partial: 1 unrun", False),
+    (1, _report(failed=1), None, False,
+     "RED BUT UNPROVEN -- exit 1, collection not recorded", False),
+    (1, _report(passed=1), ["t0"], False,
+     "RED BUT UNPROVEN -- exit 1, no failing case", False),
+    (4, _report(), [], False, "RED BUT UNPROVEN -- exit 4", False),
+    (1, _report(failed=1), ["t0"], False, "RED (good)", True),
+    (1, _report(failed=1, passed=2), ["t0", "t1", "t2"], False, "RED (good)",
+     True),
+], ids=["timeout", "exit1-no-report", "exit0-no-report", "all-skipped",
+        "none-collected", "pass-beside-skip", "error", "fail-beside-skip",
+        "fail-with-unrun", "no-collection", "exit1-no-failure", "exit4",
+        "red", "red-with-passing-siblings"])
+def test_a_verdict_is_red_only_when_the_report_proves_it(
+        code, report, collected, timed_out, want, ok):
+    """must-block / must-allow. A skipped, errored, partial or unreported run
+    never reads as caught; only a complete report with a failure does."""
+    text, good = _V(code, report, collected, timed_out, 1.0)
+    assert text.startswith(want), text
+    assert good is ok
+
+
+def test_junit_outcome_counts_each_kind_of_case(tmp_path):
+    report = tmp_path / "r.xml"
+    report.write_text(
+        '<testsuites><testsuite>'
+        '<testcase name="a[1]"/>'
+        '<testcase name="a[2]"><failure message="x"/></testcase>'
+        '<testcase name="a[3]"><error message="y"/></testcase>'
+        '<testcase name="a[4]"><skipped message="needs Windows"/></testcase>'
+        '</testsuite></testsuites>', encoding="utf-8")
+    got = sabotage_platform.junit_outcome(str(report))
+    assert got == {"names": ["a[1]", "a[2]", "a[3]", "a[4]"], "passed": 1,
+                   "failed": 1, "errored": 1, "skipped": 1,
+                   "skip_reason": "needs Windows"}
+    assert sabotage_platform.junit_outcome(str(tmp_path / "absent.xml")) is None
+
+
+def test_an_entry_declared_for_another_platform_is_not_applied(
+        tmp_path, monkeypatch, capsys):
+    """must-allow. Declared and not this host: the source is never touched,
+    no test runs, the suite still passes, and the summary counts it."""
+    target = _target(tmp_path)
+    pristine = sabotage.digest(target)
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a windows label", target, "beta", "gamma", "test_nothing"),
+        ("a plain label", target, "alpha", "omega", "test_nothing"),
+    ))
+    monkeypatch.setitem(sabotage_platform.PLATFORM_ONLY, "a windows label",
+                        (frozenset({"elsewhere"}), "test"))
+    ran = []
+
+    def _run(test):
+        ran.append(test)
+        return _caught(test)
+
+    monkeypatch.setattr(sabotage, "run_test", _run)
+
+    assert sabotage.main() == 0
+    printed = capsys.readouterr().out
+    assert "PLATFORM-ONLY, NOT EXERCISED (elsewhere)" in printed
+    assert "(1 platform-only, not exercised on" in printed
+    assert "SABOTAGE SUITE: PASS" in printed
+    assert ran == ["test_nothing"]
+    assert sabotage.digest(target) == pristine
+
+
+def test_a_declared_entry_that_skips_on_its_own_platform_fails(
+        tmp_path, monkeypatch, capsys):
+    """must-block. On its own platform a declared entry is applied, and its
+    skip means the test could not run where it was supposed to."""
+    target = _target(tmp_path)
+    host = sabotage_platform.host_platform()
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a here label", target, "beta", "gamma", "test_nothing"),
+    ))
+    monkeypatch.setitem(sabotage_platform.PLATFORM_ONLY, "a here label",
+                        (frozenset({host}), "test"))
+    monkeypatch.setattr(sabotage, "run_test", lambda _t: (
+        0, "", _report(skipped=1), ["t0"], 0.1, False))
+
+    assert sabotage.main() == 1
+    printed = capsys.readouterr().out
+    assert "COULD-NOT-TELL -- target skipped" in printed
+    assert "SABOTAGE SUITE: FAIL (0 platform-only" in printed
+
+
+def _labels_with_pwsh(monkeypatch, present):
+    """`sabotage.MUTATIONS` labels as a host with or without pwsh builds them.
+
+    `sabotage_tooling` appends its .ps1 entries only `if shutil.which("pwsh")`,
+    so the shipped list depends on the host. Fresh copies are loaded under
+    their own names with `shutil.which` patched; the imported modules every
+    other test uses are not reloaded, and `sys.modules` is put back after.
+    """
+    real_which = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda cmd, *a, **k: (
+        ("/fake/pwsh" if present else None) if cmd == "pwsh"
+        else real_which(cmd, *a, **k)))
+    fresh = {}
+    for name in ("sabotage_tooling", "sabotage"):
+        spec = importlib.util.spec_from_file_location(
+            f"_fresh_{name}", os.path.join(os.path.dirname(sabotage.__file__),
+                                           name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setitem(sys.modules, name, module)
+        fresh[name] = module
+    monkeypatch.setattr(shutil, "which", real_which)
+    return [m[0] for m in fresh["sabotage"].MUTATIONS]
+
+
+def test_every_platform_only_label_names_exactly_one_shipped_mutation(
+        monkeypatch):
+    """must-block: a host WITH pwsh ships every entry, so there each label
+    must name exactly one -- a typo'd label counts 0 and fails on every host,
+    pwsh or not. Without pwsh the .ps1 entries are absent, so a label may
+    count 0 there, never 2; that is checked on the simulated host and on
+    this one."""
+    with_pwsh = _labels_with_pwsh(monkeypatch, present=True)
+    for label in sabotage_platform.PLATFORM_ONLY:
+        assert with_pwsh.count(label) == 1, label
+    without_pwsh = _labels_with_pwsh(monkeypatch, present=False)
+    here = [m[0] for m in sabotage.MUTATIONS]
+    for label in sabotage_platform.PLATFORM_ONLY:
+        assert without_pwsh.count(label) <= 1, label
+        assert here.count(label) <= 1, label
+    # The pwsh branch was really taken: some declared label exists only there.
+    assert any(without_pwsh.count(label) == 0
+               for label in sabotage_platform.PLATFORM_ONLY)
+
+
+def test_a_typod_platform_only_label_fails_on_a_host_with_pwsh(monkeypatch):
+    """must-block for the check above: an unknown label must not collapse
+    into a pass because pwsh-gated labels are allowed to be missing."""
+    monkeypatch.setitem(sabotage_platform.PLATFORM_ONLY,
+                        "the PowerShell gate lets a dearer measurment replace",
+                        (frozenset({"win"}), "test"))
+    with pytest.raises(AssertionError):
+        test_every_platform_only_label_names_exactly_one_shipped_mutation(
+            monkeypatch)
+
+
+def _write_probe(tmp_path, body):
+    (tmp_path / "test_probe.py").write_text(body, encoding="utf-8")
+    return str(tmp_path / "test_probe.py")
+
+
+_PARAMS = (
+    "import pytest\n"
+    "@pytest.mark.parametrize('n', [1, 2, 3])\n"
+    "def test_p(n):\n"
+    "    assert n != 1\n")
+
+
+@pytest.mark.parametrize("addopts", [None, "-x"])
+def test_every_case_of_a_parametrized_target_runs(tmp_path, monkeypatch,
+                                                  addopts):
+    """A failing first case must not stop the rest: no `-x` of our own, and an
+    inherited PYTEST_ADDOPTS=-x is dropped from the child's environment."""
+    if addopts:
+        monkeypatch.setenv("PYTEST_ADDOPTS", addopts)
+    code, _, report, collected, seconds, timed_out = sabotage_platform.run_target(
+        _write_probe(tmp_path, _PARAMS), timeout=120, cwd=str(tmp_path),
+        extra=())
+    assert report["names"] == ["test_p[1]", "test_p[2]", "test_p[3]"]
+    assert collected == report["names"]
+    assert _V(code, report, collected, timed_out, seconds) == ("RED (good)",
+                                                               True)
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _gone_within(pid, seconds=10.0):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not _alive(pid):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+_SPAWN = (
+    "import os, subprocess, sys, time\n"
+    "def test_spawn():\n"
+    "    child = subprocess.Popen([sys.executable, '-c',"
+    " 'import time; time.sleep(120)'])\n"
+    "    with open(os.environ['PROBE_PIDS'], 'w') as h:\n"
+    "        h.write(f'{os.getpid()} {child.pid}')\n"
+    "    {tail}\n")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the Windows job-object path is "
+                    "exercised on a Windows host (win-repo-2)")
+@pytest.mark.parametrize("tail,timeout,overrun", [
+    ("time.sleep(120)", 3, True),
+    ("pass", 60, False),
+], ids=["overrun", "parent-exited"])
+def test_an_entry_leaves_no_process_behind(tmp_path, monkeypatch, tail,
+                                           timeout, overrun):
+    """An overrun is COULD-NOT-TELL and its whole tree is killed; and a
+    grandchild that outlives a finished pytest is killed too, so nothing an
+    entry started can contend with the next one."""
+    pids = tmp_path / "pids"
+    monkeypatch.setenv("PROBE_PIDS", str(pids))
+    result = sabotage_platform.run_target(
+        _write_probe(tmp_path, _SPAWN.replace("{tail}", tail)),
+        timeout=timeout, cwd=str(tmp_path), extra=())
+    assert result[5] is overrun
+    if overrun:
+        assert _V(*[result[i] for i in (0, 2, 3, 5, 4)])[0].startswith(
+            "COULD-NOT-TELL -- timed out")
+    for pid in map(int, pids.read_text(encoding="utf-8").split()):
+        assert _gone_within(pid), pid
+
+
+def test_ps1_refresh_rows_follow_the_shared_pwsh_resolver():
+    """Review of a73a1ed6: the .ps1 refresh rows join wherever their target
+    tests can run, which is what crew_fixtures.resolve_pwsh decides (a pwsh
+    off PATH included), not shutil.which."""
+    import crew_fixtures  # pylint: disable=import-outside-toplevel
+    import sabotage_refresh  # pylint: disable=import-outside-toplevel
+    labels = {m[0] for m in sabotage_refresh.REFRESH_MUTATIONS}
+    assert ("the ps1 gate reports bookkeeping as unmapped" in labels) is bool(
+        crew_fixtures.resolve_pwsh())
+
+
+def test_an_entry_stays_registered_until_its_tree_is_killed(tmp_path, monkeypatch):
+    """Review of ee01a3ca: a signal during cleanup must still find the entry
+    (kill_current), so it leaves the registry only after its tree is killed."""
+    seen = []
+    real = sabotage_platform._kill_tree  # pylint: disable=protected-access
+
+    def _spy(proc, job):
+        seen.append(len(sabotage_platform._CURRENT))  # pylint: disable=protected-access
+        real(proc, job)
+
+    monkeypatch.setattr(sabotage_platform, "_kill_tree", _spy)
+    sabotage_platform.run_target(_write_probe(tmp_path, "def test_ok():\n    pass\n"),
+                                 timeout=120, cwd=str(tmp_path), extra=())
+
+    assert seen == [1]
+    assert not sabotage_platform._CURRENT  # pylint: disable=protected-access
+
+
+def test_an_entry_no_job_object_could_hold_is_could_not_tell(tmp_path, monkeypatch):
+    """Review of d0b7fd8e (L-0608 port), FIX: on Windows taskkill /T cannot reach
+    a grandchild once pytest has exited, so without a job object the entry is
+    could-not-tell, never a verdict."""
+    monkeypatch.setattr(sabotage_platform, "_NEEDS_JOB", True)
+    monkeypatch.setattr(sabotage_platform, "_new_job", lambda _proc: None)
+    result = sabotage_platform.run_target(
+        _write_probe(tmp_path, "def test_red():\n    assert False\n"),
+        timeout=120, cwd=str(tmp_path), extra=())
+
+    assert _V(*[result[i] for i in (0, 2, 3, 5, 4)]) == (
+        "COULD-NOT-TELL -- no job object held the entry's tree", False)
+
+
+def test_the_summary_names_the_platform_only_count():
+    assert sabotage_platform.summary(True, 3, "linux") == (
+        "\nSABOTAGE SUITE: PASS (3 platform-only, not exercised on linux)")
+    assert sabotage_platform.summary(False, 0, "win").startswith(
+        "\nSABOTAGE SUITE: FAIL (0 platform-only")

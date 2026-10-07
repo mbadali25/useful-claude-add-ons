@@ -190,7 +190,7 @@ Columns:
 | `memory.inject` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_context.py` (expects boolean) | 1.0.25 | Inject the handoff and recall at session start; only an explicit `false` stops it. |
 | `memory.recall.vaults` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of vault names) | 1.0.25 | This repo's vault priority for recall; empty uses the obsidian config's roles. |
 | `memory.recall.maxChars` | repo | `800` | positive integer (coerced in `plugin/crew/hooks/scripts/crew_recall.py`) | 1.0.25 | Recall output budget; a non-positive or non-integer value reads as 800. |
-| `memory.recall.projects` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of project names) | 1.1.9 | Project names sent to vault recall as `--project` so this repo's notes rank first; empty sends the main checkout's directory name. |
+| `memory.recall.projects` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of project names) | 1.1.11 | Project names sent to vault recall as `--project` so this repo's notes rank first; empty sends the main checkout's directory name. |
 
 ### `context`
 
@@ -407,10 +407,10 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
-| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
-| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
-| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
+| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
+| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 

@@ -24,7 +24,11 @@ INPUT=$(cat)
 # is never provably off from bash, whatever it says -- with no usable python,
 # a present config blocks writes and the Stop until python is available.
 _scope_provably_off() {
-  local cfg="${CLAUDE_PROJECT_DIR:-$PWD}/.crew/config.json"
+  # L-0681: the resolved file (T-0096's crew_repo_config_dir), the one
+  # scope_guard.py reads; `unknown` (git could not tell) is never proof.
+  crew_repo_config_dir "${CLAUDE_PROJECT_DIR:-$PWD}"
+  [ "$CREW_CFG_SOURCE" = unknown ] && return 1
+  local cfg="$CREW_CFG_DIR/config.json"
   [ -e "$cfg" ] || [ -L "$cfg" ] || return 0
   return 1
 }
