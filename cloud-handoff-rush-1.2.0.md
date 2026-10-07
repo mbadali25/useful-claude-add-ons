@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T10:27Z
+Last updated: 2026-10-07T10:32Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T10:32Z G4: T-0009 not separable (8/10 tickets build on crew_dispatch.py). Stacked harness PR impossible: check-tooling-pr diffs vs origin/main. Owner approved RETIRE-THEN-READD: H-lane rush/h4-cloud-retire (main, harness-only, C-0047 part 1) retires the 28 orphaned sabotage_cloud.py entries, recorded in docs/tickets/C-0047/retired-entries.md; release merges main; G4 lands green; H2 re-adds anchored to new code. G4 lander does retire first, then r2 fixes on rush/g4-deploy.
 - 2026-10-07T10:27Z G4 lander: head 2b8cb316 (1.1.7) red only on test_every_shipped_anchor (28 sabotage_cloud.py anchors lost by T-0009 rewrite; harness). Owner: SPLIT T-0009 out -> rebuild as rush/g4b-deploy from release with fresh commits (no revert; #336 not an ancestor); rush/g4-deploy kept as T-0009's record; T-0009 feature+re-anchor land together later. Owner: verify+fix r2 (BLOCK promote-gate.sh:381 literal match hides 2nd env; FIX ghdeploy symlink; FIX autopilot_deploy probe), no more rounds. Lander resumed.
 - 2026-10-07T09:58Z G6b builder started (1.1.16; per-ticket loops for L-0659, L-0654, L-0653; build L-0656 #444; base G2 + release). Every lane now has an agent (10/10).
 - 2026-10-07T09:58Z G0 fixer done: r1 BLOCK (remote HEAD via ls-remote --symref, unknown keeps lanes) + 2 FIX + r2's 1 BLOCK ({} start.json relaunch) fixed, sabotage-verified, 570 coord+wave passed, gates clean. Head 0e196503 (1.1.6 last). No r3 (owner rule). Waiting CI -> merge #546.
