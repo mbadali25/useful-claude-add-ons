@@ -801,3 +801,14 @@ def test_replan_check_a_malformed_last_row_is_could_not_tell(tmp_path, last):
     got = _check(_auto_rejected_plan(tmp_path, rounds=rows))
 
     assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
+
+
+def test_replan_check_cli_prints_the_owed_line_verbatim(tmp_path):
+    """L-0670 review r6 FIX: the CLI keeps the owed line's spacing, so it pastes."""
+    owed = "  FIX|src/app.py:9|two  spaces\tand a tab"
+    rows = [_row(1), _row(2, findings=[BLOCK_LINE, owed], counts={"BLOCK": 1, "FIX": 1, "NIT": 0})]
+    root = _auto_rejected_plan(tmp_path, rounds=rows, quoted=(BLOCK_LINE,))
+
+    done = _cli(root, "replan-check", "--ticket", T)
+
+    assert (done.returncode, done.stdout.rstrip("\n").endswith(f"first: {owed}")) == (1, True), done.stdout

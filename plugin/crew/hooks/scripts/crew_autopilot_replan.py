@@ -137,5 +137,5 @@ def add_parsers(sub):
 def main(args):
     got = replan_check(args.root, args.ticket)
     print(f"applies={int(got['applies'])} ok={int(got['ok'])} missing={got['missing']} "
-          f"reason={' '.join(got['reason'].split())}")
+          f"reason={got['reason']}")  # verbatim: the owed line is pasted as printed (L-0670 r6)
     return 0 if got["ok"] else 1
