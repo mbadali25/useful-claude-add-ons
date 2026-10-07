@@ -112,7 +112,9 @@ kanban-plugin: board
 ````
 
 5. Set `tracker: "obsidian"`. No `.work/cache/`: the ticket's content lives in
-   `.work/tickets/<id>/`, the board carries status only. Confirm with
+   `.work/tickets/<id>/`, the board carries status only. A done ticket archived
+   by `crew_tracker.py archive` keeps its note, moved, under `<boardDir>/Complete/`
+   and its folder under `.work/tickets/Complete/`. Confirm with
    `crew_tracker.py resolve --root .`, which must say `obsidian`.
 
 Say two things plainly before finishing:

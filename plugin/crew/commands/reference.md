@@ -1,6 +1,6 @@
 ---
-description: Generate the API and feature reference from the code, with anchors
-argument-hint: [--api | --features | --audit | <area>]
+description: Generate the API, feature and integrations reference from the code, with anchors
+argument-hint: [--api | --features | --integrations | --audit | <area>]
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent
 ---
 
@@ -65,8 +65,7 @@ for, and include the things that have no UI:
   one is missed
 - Queue consumers and event handlers - which event, what it does
 - CLI commands and admin scripts
-- Feature flags and the config keys that switch behaviour
-- Integrations, with the direction of the call
+- Feature flags and the config keys that switch behaviour; integrations (direction of the call)
 
 ```
 ### Nightly inventory sync
@@ -77,6 +76,15 @@ A missed run is not retried; the next night's run is a full reconcile.
 Fails loudly to the SES error mailbox; silent success is a known gap.
 ```
 
+## `--integrations`
+
+Write `docs/reference/integrations.md`: every outbound call (partner API, payment or shipping
+provider, cloud SDK), one `##` per external system, one `###` entry per call with an anchor and an
+`Auth:` line naming WHERE the credential comes from, never its value (format and steps:
+`${CLAUDE_PLUGIN_ROOT}/skills/crew-docs/integrations.md`). Auth and credentials go to `crew:security`.
+Draft outside the repo; copy in only once `crew_reference.py lint --kind integrations` exits 0. No
+outbound calls: write no file, and say so. The lint knows listed secret shapes only; a novel one passes.
+
 ## `--audit`
 
 Do not rewrite. Report drift only:
@@ -86,6 +94,7 @@ Do not rewrite. Report drift only:
    check with `git diff --name-only <anchor-sha>..HEAD -- <paths>`.
 3. Features documented that no longer exist.
 4. Anything marked `undocumented - needs a human` that is still unanswered.
+5. `integrations.md`: outbound calls with no entry, entries whose anchor no longer holds.
 
 Report the counts and the list. Do not fix silently: a reference quietly
 rewritten is indistinguishable from one that was right all along.
@@ -99,9 +108,8 @@ rewritten is indistinguishable from one that was right all along.
 
 ## When you finish
 
-Say which areas you enumerated, which you did not, and how many entries are
-marked `undocumented`. An incomplete reference that says so is useful; one that
-implies full coverage is not.
+Say which areas you enumerated, which you did not, and how many entries are marked
+`undocumented`. An incomplete reference that says so is useful; one implying full coverage is not.
 
 Then add a rule to `.crew/verify.json` so the reference goes stale loudly:
 

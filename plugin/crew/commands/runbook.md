@@ -1,6 +1,6 @@
 ---
 description: Write, update, or audit operational runbooks
-argument-hint: <name | --from-ticket T-#### | --audit | --verify <name>>
+argument-hint: <name | --from-ticket <ID> | --audit | --verify <name>>
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 

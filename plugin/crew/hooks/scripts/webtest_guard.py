@@ -425,10 +425,15 @@ def _section(markdown, name):
 
 def exclusions(root, ticket):
     """[(path, text_or_None)] from list items directly under the ticket
-    spec's `## Exclusions` whose text begins `skip:`. Prose never counts."""
+    spec's `## Exclusions` whose text begins `skip:`. Prose never counts.
+    The spec is read wherever the ticket lives, live or `Complete/` (L-0509);
+    could-not-tell is no rules here, and `check_skips` reports it UNKNOWN."""
     if not ticket:
         return []
-    text = crew_common.read_text(os.path.join(root, ".work", "tickets", ticket, "spec.md"))
+    folder, where, _ = crew_common.locate_ticket(root, ticket)
+    if where == crew_common.COULD_NOT_TELL:
+        return []
+    text = crew_common.read_text(os.path.join(folder, "spec.md"))
     if not text:
         return []
     rules = []
@@ -454,7 +459,13 @@ def _write_json(path, obj):
 
 
 def findings_path(root, ticket):
-    return os.path.join(root, ".work", "tickets", ticket, "webtest", "findings.json")
+    """`<the ticket's folder>/webtest/findings.json`, live or `Complete/`
+    (L-0509). Never raises: review_run reads it unguarded. A could-not-tell
+    ticket gets the live path; `check_skips` refuses to write one first."""
+    folder, where, _ = crew_common.locate_ticket(root, ticket)
+    if where == crew_common.COULD_NOT_TELL:
+        folder = os.path.join(crew_common.tickets_root(root), str(ticket))
+    return os.path.join(folder, "webtest", "findings.json")
 
 
 def check_skips(root, ticket=None, base=None, bundle_sha256=None):
@@ -467,6 +478,10 @@ def check_skips(root, ticket=None, base=None, bundle_sha256=None):
             crew_ticket.check_ticket(ticket)
         except crew_ticket.TicketError as exc:
             return EXIT_UNKNOWN, [f"webtest skips: UNKNOWN -- {exc}"]
+    if ticket:
+        _, where, why = crew_common.locate_ticket(root, ticket)
+        if where == crew_common.COULD_NOT_TELL:
+            return EXIT_UNKNOWN, [f"webtest skips: UNKNOWN -- could not tell where {ticket} lives: {why}"]
     reason = f"--base {base}"
     if base is None:
         base, _src, reason = scope_base.resolve(root, ticket or "(no active ticket)")

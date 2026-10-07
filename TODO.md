@@ -4,6 +4,29 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Split `plugin/crew/hooks/scripts/crew_autopilot.py` (over `.pylintrc`'s 3400 lines).** L-0509's
+  merge of main 3d4b4b5d took it to 3435 lines; it carries a module-level
+  `# pylint: disable=too-many-lines`, as `crew_config.py` does, rather than a split chosen to clear
+  a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
+  ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
+
+- **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
+  every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
+  read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`
+  `ticket_dir`/`resolve_active`/`read_contract`/`validate` onto the resolver (a pointer to an
+  archived ticket reads as broken today; `crew_autopilot._broken_pointer` names it); (b)
+  `check_ticket` (`crew_ticket.py:175`, `_TICKET_RE`, `$` not `\Z`) and so `activate`
+  (`:926`) accept `Complete` and an id with a trailing newline - alias `crew_common.PLAIN_ID`
+  and refuse `crew_common.reserved_id`; (c) `_mint_taken` (`:1061`) scans live folders and INDEX
+  but not `.work/tickets/Complete/`, and `mint` mints `T-` only; (d) `scope_guard.py`'s
+  own-files prefix follows the resolver (must-allow a write in the archived active ticket;
+  must-block another archived ticket and the live path of an archived one; could-not-tell
+  refuses), module/sh/ps1 x block/report; (e) `approval_hook._is_folder`, `review_prompt`'s
+  spec/plan/webtest blocks, `review_run`'s default work_dir, `review_ledger`'s paths and id
+  regex, `review_checks`' id regex; (f) the L-0509 sabotage rows in `sabotage_scope.py` and
+  `sabotage_tracker.py` (the 20 run by hand in PR #341); (g) empty the harness allowlists in
+  `plugin/crew/tests/test_crew_ticket.py` (`_HARNESS_FOLLOW_UP`, `_REGEX_ANCHORED`).
+
 - **L-0685 follow-ups (gizmoduck bootstrap).** (1) No tool version is pinned: every run takes the
   newest release. (2) Downloads outside Nuclei and trivy (dependency-check, ZAP) are not checked
   against a published checksum. (3) Not verified: whether `pip3 install --user` (checkov, semgrep) is
@@ -132,6 +155,50 @@ be wrong can be closed on evidence.
   `review_ledger.open_slice` and `_spent` counting the latest slice row (the per-slice budget;
   `next-slice` refuses until it lands), `review_ledger.summary` carrying `slices`, and
   `crew_ticket.validate` appending `parse_slices`' problems as `PR slices:`.
+- **T-0036 follow-ups (`/crew:reference --integrations`).** (a) Judge `docs/reference/api.md` and
+  `features.md` in the refresh check (`plugin/crew/hooks/scripts/crew_refresh_check.py::_references`
+  judges `integrations.md` only, so done is not refused in consumer repos whose existing docs are
+  stale). (b) An outbound-call candidate detector over a ticket's diff; today `/crew:docs` judges it
+  at `/crew:implement` step 6 and `--audit` is the backstop. (c) T-0035's embeds adopting the
+  inline flow diagrams once L-0549 (`--flows`, the flow-doc lint) lands. (d) Harness follow-ups
+  (tooling-PR rule, T-0087): `plugin/crew/tests/sabotage_reference.py` with `REFERENCE_MUTATIONS`
+  and the four new `sabotage_refresh.py` entries (reference kind not called, a no-header doc read
+  as fresh, `docs/reference` dropped from `REFRESH_ARTIFACT_PATHS`, `api.md` judged) - each was
+  sabotaged by hand and went red - and a `reference` kind in `artifact_verdicts`, without which a
+  refreshed `integrations.md` needs Touch once L-0540 wires the verdicts into the audit.
+
+- **crew command surface - owner decision (T-0025, advisory; not started, ask first).**
+  `plugin/crew/commands/` holds 37 files. `/crew:help commands` groups them
+  (`plugin/crew/hooks/scripts/crew_help.py::GROUPS`) but nothing is hidden, merged, renamed or
+  removed: CLAUDE.md "Stop and ask" covers deleting or renaming a registered entry. Proposed:
+  (1) **core, shown first everywhere** - brainstorm, spec, plan, approve, implement, review, done,
+  fix, autopilot, status, help; (2) **reached through `/crew:help` or `/crew:autopilot`, off the
+  README's primary table** - docs, diagram, onboard, reference, verify, runbook, handoff, init,
+  config, config-setup, model, migrate, debug, survey; (3) **merge candidates** -
+  jira-sync + sdp-sync + obsidian-sync -> one `/crew:sync` dispatching on the tracker mode
+  (migrate + upgrade was done by T-0038); (4) **keep, specialist** - change, emergency, gate,
+  promote, split, webtest; (5) **remove at the next major** - the removal stubs
+  `plugin/crew/commands/ticket.md`, `work.md` and `upgrade.md`.
+  Unverified: whether Claude Code has a frontmatter field that hides a plugin command from the
+  `/` menu. `config-setup` (added after T-0025's spec was written) is placed in group 2 as setup.
+- **T-0025 harness-only follow-up (review/gate harness, lands alone).** Three parts of T-0025's
+  spec touch `HARNESS` paths (`scripts/check-tooling-pr.py`), so they were left out of #359:
+  (a) `plugin/crew/hooks/scripts/scope_guard.py` - for approval status `none`, deny with "no
+  approved plan for <id>: the user types `/crew:approve <id>`" (or "run `/crew:plan <id>`" when
+  `.work/tickets/<id>/plan.md` is missing) instead of "To widen scope", which stays for an
+  out-of-Touch path only; keep the `if approval["status"] != "approved":` anchor; tests
+  `test_no_approval_deny_names_approve` / `test_no_plan_deny_names_plan` (module and both
+  flavours) in `plugin/crew/tests/test_scope_guard.py`; (b) `plugin/crew/commands/review.md`'s
+  no-ticket stop names `/crew:review <ticket-id>` and `/crew:help`
+  (`test_review_no_ticket_stop_names_a_command`); (c) `plugin/crew/tests/sabotage_help.py`
+  registered in `plugin/crew/tests/sabotage.py` with HELP_MUTATIONS: a 9th `where` line, picking
+  the first of several open tickets, a local `re.compile` table in `crew_help.py`, implement.md
+  back to `/crew:plan $1 --approve`, and the scope-guard `none` text back to "To widen scope";
+  (d) `plugin/crew/hooks/scripts/crew_ticket.py status` reports `accepted()`'s status (a `cli`
+  receipt without `scope.allowCliApproval`, or an autopilot one its policy no longer allows, is
+  `unaccepted` with its why), so `/crew:implement` step 0 refuses what the scope guard and the
+  completion audit refuse even with `scope.mode` off or report (port review of T-0025, BLOCK);
+  test it in `test_crew_ticket.py` and keep `test_lifecycle_commands.py`'s exact CLI pin.
 - **T-0039 follow-ups (`crew_gitignore.py`).** (a) Done by the harness lane (C-0025): the 19
   hand-run mutations are `GITIGNORE_MUTATIONS` in `plugin/crew/tests/sabotage_gitignore.py`,
   registered in `plugin/crew/tests/sabotage.py`. (b) Apply it to this repo's own `.gitignore`:

@@ -433,7 +433,22 @@ the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must eac
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
-<li><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
+<li>
+<p><strong>Symptom: a done ticket "has no .work/tickets/ folder".</strong>
+  <strong>Check:</strong> <code>.work/tickets/Complete/&lt;id&gt;/</code>. <code>crew_tracker.py archive --ticket &lt;id&gt;</code> moves a done
+  or merged ticket's folder there (and, under Obsidian, its note to <code>&lt;boardDir&gt;/Complete/</code>), and
+  <code>/crew:status</code> counts those apart (<code>&lt;m&gt; archived in Complete/</code>).
+  <strong>Fix:</strong> none needed: every crew reader finds it there. To reopen it, move the folder and the
+  note back by hand; <code>move --reopen</code> refuses an archived ticket.</p>
+</li>
+<li>
+<p><strong>Symptom: <code>could not tell where &lt;id&gt; lives</code>.</strong>
+  <strong>Check:</strong> both <code>.work/tickets/&lt;id&gt;/</code> and <code>.work/tickets/Complete/&lt;id&gt;/</code> exist (a half-finished
+  archive, or a copy made by hand), or one of them cannot be read.
+  <strong>Fix:</strong> compare the two, keep the right one, remove the stray copy. Crew never picks one.</p>
+</li>
+<li>
+<p><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
   read as <code>off</code>, guards at their defaults). <code>.crew/*</code> is gitignored, so <code>git worktree add</code> makes a
   checkout with no crew config.
   <strong>Check:</strong> <code>/crew:status</code> prints <code>config   inherited from the main checkout (&lt;path&gt;) ...</code> when
@@ -452,7 +467,8 @@ contract itself. This section is what goes wrong with the approval and the audit
   L-0681 the verify gate (both flavours), <code>review_gate.py</code> and the scope and completion
   wrappers inherit as well: an inherited <code>"verifyGate": false</code> stands a lane's Stop gate down,
   and with no python a lane whose main checkout has a config blocks writes and the Stop (the
-  PowerShell 7 wrappers still allow one that strictly says <code>scope.mode: off</code>).</li>
+  PowerShell 7 wrappers still allow one that strictly says <code>scope.mode: off</code>).</p>
+</li>
 <li><strong>Symptom: which tickets still need my approval?</strong>
   <strong>Check:</strong> <code>/crew:status --approvals</code>. It prints one ready-to-paste <code>/crew:approve &lt;id&gt;</code> line, with a
   <code>why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
@@ -875,6 +891,45 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
+<h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
+<p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an
+agent this machine lacks reviews less, and nothing in the output says so.</p>
+<ul>
+<li><strong>Symptom:</strong> <code>/crew:status</code> prints <code>agents   MISSING &lt;name&gt; (verify.json rule: &lt;paths&gt;)</code>, or
+  <code>/crew:review</code> reports a requested agent as a gap.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/verify_agents.py&quot; --root . --check
+</code></pre>
+<p>Exit 1 lists each missing name with its rule's paths. Exit 2 (<code>unknown</code>) means a plugin registry,
+  a settings file or <code>verify.json</code> itself would not parse, so it could not tell; it never reads that
+  as installed. Managed-policy agents and <code>--agents</code> agents are not checked.
+  <strong>Fix:</strong> install the plugin or agent, enable the plugin (<code>enabledPlugins</code>; a narrower settings
+  scope's <code>false</code> wins), or change the rule to an agent this machine has.</p>
+<h2 id="the-temp-directory-fills-with-crew-files">The Temp Directory Fills with Crew Files</h2>
+<p>Earlier crew releases' test suites and auto-clear sender could leave files in the
+system temp directory: <code>crew-completion-audit.*</code> markers, <code>tmp.*</code> auto-clear sender scripts
+(<code>tmux send-keys ...</code> / <code>xdotool ...</code> followed by <code>rm -f -- &lt;itself&gt;</code>) and <code>tmp.*</code> fixture
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
+guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
+<code>TMPDIR</code>, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
+makes.</p>
+<ul>
+<li><strong>Symptom:</strong> <code>df -i /tmp</code> near 100%, or hooks failing on <code>mktemp</code>.
+  <strong>Check</strong> (read-only):</li>
+</ul>
+<pre><code class="language-bash">cd &quot;${TMPDIR:-/tmp}&quot;
+ls -d crew-completion-audit.* 2&gt;/dev/null | wc -l
+grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | wc -l
+</code></pre>
+<p><strong>Fix (an owner action; crew itself never runs it):</strong> with no crew session or test run active,
+  remove what the check counted:</p>
+<pre><code class="language-bash">cd &quot;${TMPDIR:-/tmp}&quot;
+find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
+grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2&gt;/dev/null | xargs -r rm -f --
+</code></pre>
+<p>Old shell-suite fixture directories are ordinary <code>tmp.*</code> directories (a <code>.crew/</code> and a
+  <code>.git/</code> inside); read each before removing it.</p>
 <h2 id="a-setting-seems-to-do-nothing">A Setting Seems to Do Nothing</h2>
 <p><strong>Symptom:</strong> you set a key in <code>.crew/config.json</code> or <code>~/.claude/crew/config.json</code> and crew behaves
 as if it were absent.</p>

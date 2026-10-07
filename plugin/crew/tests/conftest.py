@@ -119,6 +119,34 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_tmpdir(tmp_path_factory, monkeypatch):
+    """Fifth channel (T-0065, item 7): the temp directory. Every test, and
+    every subprocess that inherits `os.environ`, gets its own directory as
+    `TMPDIR`/`TEMP`/`TMP` and as `tempfile`'s own cached directory.
+
+    Measured on the host TSS shares: its `/tmp` held 7,798
+    `crew-completion-audit.*` markers (each test's distinct project path
+    leaves one, by design, in `${TMPDIR:-/tmp}`) and hundreds of auto-clear
+    sender scripts that a test's `bash` shim reads and never runs. Together
+    with other leftovers they exhausted the inodes, and the guard and the
+    Stop verify-gate then failed closed. Under this fixture anything a test
+    leaves behind goes away with pytest's basetemp.
+
+    Made by `tmp_path_factory.mktemp`, BESIDE tmp_path rather than inside it,
+    for the reason the XDG cache above is: tests assert exactly what their
+    tmp_path holds, and a `tmp` subdirectory there failed twelve of them.
+
+    `tempfile.tempdir` is patched too: `gettempdir()` caches its first answer
+    for the life of the process, so the environment alone would not reach an
+    in-process `mkstemp`. A test that wants another temp directory sets its
+    own `TMPDIR` afterwards (or passes an explicit `env=`) and that wins."""
+    tmp = tmp_path_factory.mktemp("tmpdir")
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, str(tmp))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp))
+
+
 # --- the `slow` marker: the full per-shell hook matrix ------------------------
 #
 # A conftest hook rather than `addopts = -m "not slow"`: this repo has no

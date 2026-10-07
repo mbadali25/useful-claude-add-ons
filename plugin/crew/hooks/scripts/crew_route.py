@@ -28,6 +28,8 @@ approval is the human's to type (T-0024 owns group approval).
 
   no row matches                                  none   (no line at all)
   status                                          route  /crew:status
+  help, what now, what's next, where are we       route  /crew:help (T-0025)
+  how do i [use] <x> (never approval)             route  /crew:help <x>
   brainstorm <topic>                              route  /crew:brainstorm <topic>
   explicit id with a .work/tickets/<id>/ folder   route
   explicit id without one                         ask    "no such ticket"
@@ -173,6 +175,11 @@ PHRASES = (
     ("sleep", "/crew:autopilot sleep", "autopilot",
      (rf"(?:{_IM} )?heading to bed", rf"(?:{_IM} )?going to sleep", _GREETINGS[0])),
     ("wake", "/crew:autopilot wake", "autopilot", (rf"{_IM} back", _GREETINGS[1])),
+    # T-0025: `/crew:help` reads this table too; its questions resolve here.
+    ("help", "/crew:help", "none",
+     (r"help", r"crew help", r"what now", r"what(?:'s|\u2019s| is) next", r"where are we")),
+    ("help-topic", "/crew:help", "topic",
+     (r"how do i (?:use )?(?!.*approv)(?P<topic>.+)",)),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
@@ -358,6 +365,13 @@ def _resolve(top, explicit):  # pylint: disable=too-many-return-statements
     """(ticket, source, reason, candidates). `ticket` None means ask: one
     return per row of the module docstring's table, so each reads alone."""
     if explicit:
+        # Live or archived in Complete/ (L-0509); could-not-tell asks, naming why.
+        # The live test below is kept as written: sabotage_route.py anchors it.
+        _, where, why = crew_common.locate_ticket(top, crew_ticket.check_ticket(explicit))
+        if where == crew_common.COULD_NOT_TELL:
+            return None, "", f"could not tell where {explicit} lives: {why}", []
+        if where == crew_common.COMPLETE:
+            return explicit, "named in the prompt (archived in Complete/)", "", []
         if os.path.isdir(crew_ticket.ticket_dir(top, explicit)):
             return explicit, "named in the prompt", "", []
         return None, "", f"no such ticket: {explicit} has no .work/tickets/ folder", []

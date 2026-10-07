@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.1.90**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (294 new entries, 2093 to 2387, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
-- **crew 1.1.12**: Crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root. A repo set up by crew now sees a failing check's own error lines in its `_verify` output, and gets a ready diagram check that works as root in CI containers instead of failing with no reason.
+- **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
