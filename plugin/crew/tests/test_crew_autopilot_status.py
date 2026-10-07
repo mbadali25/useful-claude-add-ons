@@ -1364,7 +1364,9 @@ def test_owner_items_skips_closed_tickets(tmp_path):
 
     names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
 
-    assert ("T-11" in names, "T-5" in names) == (False, False)
+    # T-5's done header with autopilot off: closed for autopilot, but a person still ships it
+    # (L-0666 review r5), so it is listed; T-11's merged row is closed for everyone.
+    assert ("T-11" in names, "T-5" in names) == (False, True)
 
 
 def test_owner_items_skips_a_reserved_round(tmp_path):
@@ -1672,3 +1674,58 @@ def test_owner_items_needs_owner_question_keeps_an_unreadable_next_md(tmp_path):
 
     assert ("answer: direction.md: which tracker?" in action, "next.md: cannot tell" in action) == (
         True, True), action
+
+
+def test_status_waits_on_the_owner_when_dependencies_cannot_be_told(tmp_path):
+    """L-0550 review r6 FIX: a blocked stop that cannot tell its dependencies waits on
+    the owner (the depends-on: line), never 'another ticket'."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\ndepends-on: [T-2\n{rest}")
+    _index(root, f"{T} | ready | high | r | t")
+    approve_as_user(root, T)
+
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (shown["phase"], shown["waiting"].startswith("owner - cannot tell the dependencies")) == (
+        "blocked", True), shown
+
+
+@pytest.mark.parametrize("header", ["hold", "landing", "cancelled"])
+def test_owner_items_keep_an_unknown_index_cell_visible(tmp_path, header):
+    """L-0551 review r4 / L-0687 review r3 BLOCK: a header gate under an INDEX cell
+    autopilot does not know is listed (look), never held, skipped or closed."""
+    root = _approved(tmp_path, status="mystery")
+    _write(root / ".work" / "tickets" / T / "spec.md", _spec_text(T, f"status: {header}   risk: high"))
+    _write(root / ".work" / "tickets" / T / "next.md", "reason: r\nrevisit: 2999-01-01\n")
+
+    got = _owned(root)
+
+    assert (got["items"], got["held"]) == ([(T, "closed" if header == "cancelled" else header,
+                                             f"see /crew:autopilot status {T}")], [])
+
+
+def test_owner_items_a_case_only_folder_without_its_own_folder_is_listed(tmp_path):
+    """L-0551 review r4 BLOCK: INDEX `T-1` with no T-1 folder on a case-sensitive
+    filesystem and a sole folder `t-1`: the folder is its own ticket, never hidden."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="t-1", status="ready")
+    _index(root, f"{T} | ready | high | r | t")
+    if os.path.isdir(str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-insensitive filesystem: T-1 and t-1 are one folder")
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert "t-1" in names
+
+
+def test_owner_items_list_a_ticket_a_person_still_ships(tmp_path):
+    """L-0666 review r5: a done ticket with autopilot off is closed for autopilot, but a
+    person still pushes and merges it, so the owner list names it."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+
+    got = _owned(root)
+
+    assert got["items"] == [(T, "closed", f"see /crew:autopilot status {T}")]

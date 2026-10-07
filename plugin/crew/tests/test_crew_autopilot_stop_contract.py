@@ -631,7 +631,7 @@ def u_fix(tmp, _mp):
 CASES = [
     ('answer("closed", True, reason)', b_finished_closed, "closed", "closed"),
     ("a person ships this", b_unarmed_slice, "ship", "look"),
-    ("closed by /crew:done. Shipping is", b_unarmed_closed, "closed", "closed"),
+    ("closed by /crew:done. Shipping is", b_unarmed_closed, "closed", "look"),
     ("cannot tell which branch ships", b_no_branch, "ship", "look"),
     ('answer("ship", True, wrong)', b_branch_stop, "ship", "look"),
     ('answer("ship", True, wrong)', b_base_stop, "ship", "look"),

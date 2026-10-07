@@ -748,3 +748,22 @@ def test_replan_check_owes_an_indented_finding_line(tmp_path):
     kept = _check(_auto_rejected_plan(tmp_path / "kept", rounds=rows, quoted=(BLOCK_LINE, f" {FIX_LINE}")))
 
     assert ((dropped["ok"], dropped["missing"]), kept["ok"]) == ((False, 1), True)
+
+
+@pytest.mark.parametrize("rejected", [{"at": "x", "round": 2}, "autopilot", {"by": None, "round": 2}])
+def test_replan_check_a_malformed_reject_record_is_could_not_tell(tmp_path, rejected):
+    """L-0670 review r2 BLOCK: who rejected cannot be told, so the guard applies and refuses."""
+    root = _auto_rejected_plan(tmp_path, quoted=(), rejected=rejected)
+    got = _check(root)
+
+    code, text = crew_autopilot.approve(str(root), T)
+
+    assert (got["applies"], got["ok"], got["reason"].startswith("could not tell"), code,
+            text.startswith("refused: could not tell")) == (True, False, True, 2, True), (got, text)
+
+
+def test_replan_check_a_spent_budget_without_a_reject_is_not_checked(tmp_path):
+    root = _repo(tmp_path)
+    _ledger(root, state="NEEDS_REPLAN")
+
+    assert (_check(root)["applies"], _check(root)["ok"]) == (False, True)

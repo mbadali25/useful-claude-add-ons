@@ -92,8 +92,10 @@ def _tickets(top):
         if ticket not in found and crew_autopilot._index_status(top, ticket) == "done" \
                 and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):  # pylint: disable=protected-access
             found.append(ticket)
-    seen = {ticket.casefold() for ticket in found} | {
-        ticket.casefold() for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
+    # A folder named like an INDEX id only in case is that ticket where its folder resolved
+    # (case-insensitive), and its own ticket where it did not (case-sensitive): L-0551 r4.
+    seen = {ticket.casefold() for ticket in found}
+    named = {ticket for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
     folder = os.path.join(top, ".work", "tickets")
     try:
         names = sorted(os.listdir(folder)) if os.path.lexists(folder) else []
@@ -104,7 +106,7 @@ def _tickets(top):
             crew_ticket.check_ticket(name)
         except crew_ticket.TicketError:
             continue
-        if name.casefold() not in seen and os.path.isdir(os.path.join(folder, name)):
+        if name.casefold() not in seen and name not in named and os.path.isdir(os.path.join(folder, name)):
             seen.add(name.casefold())
             found.append(name)
     return found, ""
@@ -161,8 +163,13 @@ def owner_items(root, today=None):
     for ticket in tickets:
         try:
             result = crew_autopilot._phase(top, ticket, policy=False, deep=False)  # pylint: disable=protected-access
-            if not result["stop"] or result["phase"] == "closed":
+            if not result["stop"]:
                 continue
+            if crew_autopilot_gates.UNKNOWN_CELL in result["reason"]:  # never filtered: could-not-tell
+                got["items"].append((ticket, result["phase"], FALLBACK.format(id=ticket)))
+                continue
+            if result["phase"] == "closed" and result.get("decision") != "look":
+                continue  # a closed stop that still asks something (unarmed ship) is listed
             if result["phase"] == crew_autopilot_stops.UNREAD:
                 got["unread"].append(ticket)
                 continue

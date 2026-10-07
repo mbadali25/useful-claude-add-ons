@@ -28,7 +28,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew brief crew context](#process-crew-brief-crew-context) | PASS |
 | [Process crew brief handoff read](#process-crew-brief-handoff-read) | PASS |
 | [Process crew brief platform sync](#process-crew-brief-platform-sync) | PASS |
-| [Process crew brief status](#process-crew-brief-status) | PASS |
+| [Process crew brief status](#process-crew-brief-status) | not rendered (run render.sh, then this again) |
 | [Process crew brief](#process-crew-brief) | PASS |
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
@@ -953,18 +953,19 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... handoff<br/>:211-240"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting ... gitignore,<br/>handoff :514-550"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:541),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
 ```
 
 | Box | Details |
 |---|---|
-| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :67), tickets, review ledgers, verify, shell (Windows only, T-0040), codemap freshness, metrics, handoff, interrupted migrate :211-240 |
+| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :67), tickets, waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers, verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate :514-550 |
 
 - **Source:** `process-crew-brief-status.mmd`
-- **Drawn from:** `plugin/crew/commands/status.md`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
-- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/commands/status.md`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot_owner.py`
+- **Readability:** not rendered (run render.sh, then this again)
 
 ## Process crew brief
 

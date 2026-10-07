@@ -5,8 +5,11 @@ only when it quotes every BLOCK and FIX line of the rejected round.
 `replan_check(root, ticket)` -> `{"applies", "ok", "reason", "missing"}`:
 
 - `applies` False (and `ok` True) when the review ledger is not NEEDS_REPLAN, or
-  its `rejected.by` is not `crew_autopilot.AUTO_REJECT_BY` (an owner's reject:
-  the owner plans freely), or there is no ledger at all.
+  its `rejected.by` is a name other than `crew_autopilot.AUTO_REJECT_BY` (an
+  owner's reject: the owner plans freely), or NEEDS_REPLAN carries no
+  `rejected` record at all (the budget was spent; `review_ledger.reject` always
+  writes one), or there is no ledger at all. A `rejected` record that is not
+  an object naming who rejected is could-not-tell.
 - Otherwise the required lines are the `findings` of the row whose `round` is
   `rejected.round` that start with `BLOCK|` or `FIX|` (NIT lines are not
   owed), compared without stripping. `plan.md` is read as UTF-8 with
@@ -87,9 +90,16 @@ def replan_check(root, ticket):
     if state != "ok":
         return _result(True, False, f"{CANNOT_TELL}: the review ledger is {state}")
     rejected = data.get("rejected")
-    if data.get("state") != review_ledger.NEEDS_REPLAN or not isinstance(rejected, dict) \
-            or rejected.get("by") != crew_autopilot.AUTO_REJECT_BY:
-        return _result(False, True, "not NEEDS_REPLAN after an automatic reject")
+    if data.get("state") != review_ledger.NEEDS_REPLAN:
+        return _result(False, True, "not NEEDS_REPLAN")
+    if "rejected" not in data:  # review_ledger.reject always writes it: a spent budget, no reject
+        return _result(False, True, "NEEDS_REPLAN with no reject recorded (the budget was spent)")
+    if not isinstance(rejected, dict) or not isinstance(rejected.get("by"), str):
+        # L-0670 review r2: who rejected cannot be told, so neither can whether the guard applies.
+        return _result(True, False, f"{CANNOT_TELL}: the ledger is NEEDS_REPLAN and its rejected "
+                                    f"record ({rejected!r}) does not say who rejected")
+    if rejected.get("by") != crew_autopilot.AUTO_REJECT_BY:
+        return _result(False, True, "NEEDS_REPLAN after the owner's reject")
     lines, why = _required(data)
     if why:
         return _result(True, False, f"{CANNOT_TELL}: {why}")

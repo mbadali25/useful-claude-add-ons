@@ -41,6 +41,7 @@ import crew_ticket_state
 
 GATES = ("hold", "landing", "needs-owner")
 CLOSING = crew_ticket_state.CLOSING_STATUSES
+CANNOT_TELL = crew_ticket_state.CANNOT_TELL
 NEEDS_OWNER = "needs-owner"
 NO_SUCCESSOR = " (successor not named)"
 
@@ -60,6 +61,18 @@ WAITING = {"hold": "owner", NEEDS_OWNER: "owner", "landing": "the land step",
            "blocked": "another ticket"}
 # Who `_waiting` names with no owner command: someone other than the owner.
 ELSEWHERE = ("the land step", "another ticket")
+# Marks a header gate read under an INDEX cell autopilot does not know (L-0666 review r4).
+UNKNOWN_CELL = "is not one autopilot knows"
+
+
+def waiting(who, result):
+    """`/crew:autopilot status`'s `waiting on:` for a stop WAITING gives to someone
+    else. A `blocked` stop whose dependencies cannot be told waits on the owner,
+    who reads the depends-on: line: never "another ticket" (L-0550 review r6)."""
+    reason = result.get("reason") or ""
+    if result.get("phase") == "blocked" and (CANNOT_TELL in reason or "can be told" in reason):
+        return "owner - cannot tell the dependencies: see the phase reason"
+    return f"{who} - see the phase reason"
 
 # The line under a closed spec's header naming what replaced it (T-0037,
 # T-0052): `split-into: T-2, T-3` or `superseded-by: T-9`.
@@ -152,7 +165,7 @@ def gate(top, ticket, index_status, folder, known, questions, answer, evidence):
     elif view["gate"] and view["gate_source"] == "header":
         word, where = view["gate"], f"spec.md header is `status: {view['gate']}`"
         if not known:  # L-0666 review r4: an unknown INDEX cell keeps the stop could-not-tell
-            where += f" (and its .work/INDEX.md status `{index_status}` is not one autopilot knows)"
+            where += f" (and its .work/INDEX.md status `{index_status}` {UNKNOWN_CELL})"
     else:
         return None, view
     unknown_cell = None if known or word == index_status else "look"

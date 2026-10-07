@@ -17,7 +17,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   round's `BLOCK|` and `FIX|` lines and requires each as a whole line of `plan.md`, as many times
   as the round carries it (CRLF read as LF; NIT lines not required). `crew_autopilot.py approve`
   refuses (exit 2, nothing written) when it fails; `crew_autopilot.py replan-check --ticket <id>`
-  gives the same answer read-only. Anything it cannot read is could-not-tell, a refusal.
+  gives the same answer read-only. Anything it cannot read is could-not-tell, a refusal,
+  including a `rejected` record that does not say who rejected.
 - **Unchanged.** An owner's reject, a first plan and `/crew:approve` are never checked.
 - **Not in this entry.** The sabotage mutations are harness (T-0087): L-0671.
 

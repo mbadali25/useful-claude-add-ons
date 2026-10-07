@@ -451,7 +451,7 @@ def _ship_phase(top, ticket, answer, why, ctx=None, deep=True):
     if not config["armed"]:
         return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
                       "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
-                      "merges")
+                      "merges", decision="look")  # L-0666: a person still ships it
     if not deep:  # L-0551: the owner list never asks gh
         return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_SHIP)
     branch = crew_ship._branch(top)
@@ -2955,7 +2955,7 @@ def _waiting(top, result, bare):
     if who == "nobody":
         return "nobody - the ticket is closed"
     if who in crew_autopilot_gates.ELSEWHERE:
-        return f"{who} - see the phase reason"
+        return crew_autopilot_gates.waiting(who, result)
     if phase == "drift":
         return ("owner - reverts the paths outside Touch, or amends Touch and approves "
                 "again")

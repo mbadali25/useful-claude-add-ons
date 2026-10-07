@@ -20,7 +20,11 @@ What changed against the spec, because the branch moved:
   30-ticket fixture, each awaiting approval, took 0.96s with the waiting line and 0.13s without.
   About 28 ms per open ticket on a loaded 4-CPU container, so a repo with 70 or more open tickets
   passes the spec's 2-second line: reported to the owner, not tuned.
-- The status diagram (`docs/diagrams/process-crew-brief-status.mmd`) is not regenerated here.
+- The status diagram (`docs/diagrams/process-crew-brief-status.mmd`) shows the `waiting` line and
+  `--owner` (review r3); its section of `docs/diagrams/README.md` is spliced from `diagram_doc.py`'s
+  output for that one file and marked not rendered, because this container has no mermaid
+  renderer and a full `--write` without renders would mark every other diagram unrendered.
+  `docs/diagrams/index.html` is not regenerated.
 
 ### Step 1: tests first
 Files: `plugin/crew/tests/test_crew_autopilot_status.py`, `plugin/crew/tests/test_status.py`,
