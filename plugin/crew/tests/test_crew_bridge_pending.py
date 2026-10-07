@@ -18,7 +18,7 @@ import crew_bridge
 import crew_coord
 import pytest
 from test_crew_bridge import (  # noqa: F401  pylint: disable=unused-import
-    CHANNEL, COMMAND, REF, _world, bell, break_fetch, git, run)
+    CHANNEL, COMMAND, REF, _world, bell, break_fetch, git, plumb, run)
 
 T0 = datetime.datetime(2026, 10, 5, 12, 0, 0, tzinfo=datetime.timezone.utc)
 FORCE_FLAGS = ("--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror")
@@ -52,10 +52,8 @@ def peer_line(seed, bare, holder="peer", event="claim", raw=None):
         {"at": crew_coord.stamp(), "event": event, "ticket": "x__T-1", "holder": holder, "detail": ""},
         sort_keys=True)
     text = old + "\n" + line + "\n"
-    blob = subprocess.run(["git", "-C", str(seed), "hash-object", "-w", "--stdin"], input=text,
-                          check=True, capture_output=True, text=True).stdout.strip()
-    tree = subprocess.run(["git", "-C", str(seed), "mktree"], input=f"100644 blob {blob}\tlog.jsonl\n",
-                          check=True, capture_output=True, text=True).stdout.strip()
+    blob = plumb(seed, ["hash-object", "-w", "--stdin"], text)
+    tree = plumb(seed, ["mktree"], f"100644 blob {blob}\tlog.jsonl\n")
     sha = git(seed, "commit-tree", tree, "-p", parent, "-m", "peer")
     git(seed, "push", "-q", "origin", f"{sha}:{REF}")
     return sha
@@ -228,8 +226,7 @@ def test_absent_channel_is_unknown_never_none_pending(world, capsys):
 
 def test_a_channel_without_a_log_is_unknown(world, capsys):
     bare, work, seed, tip = world
-    tree = subprocess.run(["git", "-C", str(seed), "mktree"], input="", check=True, capture_output=True,
-                          text=True).stdout.strip()
+    tree = plumb(seed, ["mktree"], "")
     sha = git(seed, "commit-tree", tree, "-p", tip, "-m", "log gone")
     git(seed, "push", "-q", "origin", f"{sha}:{REF}")
     assert channel_tip(bare) == sha
@@ -242,11 +239,9 @@ def _replace_log(seed, bare, text):
     git(seed, "fetch", "-q", "origin", REF)  # the channel's tip object, whoever pushed it
     entries = ""
     if text is not None:
-        blob = subprocess.run(["git", "-C", str(seed), "hash-object", "-w", "--stdin"], input=text, check=True,
-                              capture_output=True, text=True).stdout.strip()
+        blob = plumb(seed, ["hash-object", "-w", "--stdin"], text)
         entries = f"100644 blob {blob}\tlog.jsonl\n"
-    tree = subprocess.run(["git", "-C", str(seed), "mktree"], input=entries, check=True, capture_output=True,
-                          text=True).stdout.strip()
+    tree = plumb(seed, ["mktree"], entries)
     sha = git(seed, "commit-tree", tree, "-p", channel_tip(bare), "-m", "log replaced")
     git(seed, "push", "-q", "origin", f"{sha}:{REF}")
     return sha

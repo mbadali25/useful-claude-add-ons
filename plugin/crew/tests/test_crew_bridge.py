@@ -39,15 +39,20 @@ def _configure(root):
     git(root, "config", "core.autocrlf", "false")
 
 
+def plumb(root, args, data):
+    """A git plumbing command fed `data` as bytes: text-mode stdin on Windows
+    writes "\r\n", which makes mktree name the file `log.jsonl\r`."""
+    return subprocess.run(["git", "-C", str(root)] + list(args), input=data.encode("utf-8"),
+                          check=True, capture_output=True).stdout.decode("utf-8").strip()
+
+
 def _channel_commit(root, parent=None, text="one"):
     """A commit for the channel, built with plumbing: a log.jsonl holding one
     seed entry whose detail is `text`."""
     line = json.dumps({"at": "2026-10-01T00:00:00+00:00", "event": "seed", "ticket": "-", "holder": "seed",
                        "detail": text}, sort_keys=True)
-    blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=line + "\n",
-                          check=True, capture_output=True, text=True).stdout.strip()
-    tree = subprocess.run(["git", "-C", str(root), "mktree"], input=f"100644 blob {blob}\tlog.jsonl\n",
-                          check=True, capture_output=True, text=True).stdout.strip()
+    blob = plumb(root, ["hash-object", "-w", "--stdin"], line + "\n")
+    tree = plumb(root, ["mktree"], f"100644 blob {blob}\tlog.jsonl\n")
     args = ["commit-tree", tree, "-m", text] + (["-p", parent] if parent else [])
     return git(root, *args)
 

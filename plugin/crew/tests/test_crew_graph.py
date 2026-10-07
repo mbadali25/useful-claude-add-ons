@@ -99,8 +99,9 @@ def _graphify(_name):
 
 
 def _refresh(root, tool, which=_graphify):
+    """Off-Windows behaviour on every runner; the Windows route has its own cases."""
     lines = []
-    code = crew_graph.refresh(root, which=which, run=tool, out=lines.append)
+    code = crew_graph.refresh(root, which=which, run=tool, out=lines.append, windows=False)
     return code, "\n".join(lines)
 
 

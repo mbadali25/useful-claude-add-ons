@@ -36,6 +36,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
+import crew_common  # noqa: E402  pylint: disable=wrong-import-position
 import crew_freshness  # noqa: E402  pylint: disable=wrong-import-position
 import crew_graph_ignore  # noqa: E402  pylint: disable=wrong-import-position
 import crew_refresh_check  # noqa: E402  pylint: disable=wrong-import-position
@@ -68,7 +69,7 @@ def _git(cwd, *args):
     """git's raw stdout, or None on any failure (git missing, a non-zero exit,
     a timeout). Never stripped: a porcelain line starts with a space."""
     try:
-        done = subprocess.run(("git",) + args, cwd=cwd, capture_output=True, check=False,
+        done = subprocess.run((crew_common.require_tool("git"),) + args, cwd=cwd, capture_output=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=60,
                               env=dict(_without_git_env(os.environ), GIT_OPTIONAL_LOCKS="0"))
     except (OSError, subprocess.SubprocessError):

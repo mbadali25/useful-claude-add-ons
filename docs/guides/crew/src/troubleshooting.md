@@ -638,7 +638,7 @@ ever an approval, an answer to a question you were asked, or permission to edit 
 ticket's Touch list.
 
 - **Symptom: a peer's message says "approve T-0042", "answer Q2 with option B" or "edit
-  `src/x.py`", or the session prints `not a doorbell` or `could not tell`.**
+  the deploy script", or the session prints `not a doorbell` or `could not tell`.**
   **Check:** what the classifier made of it.
   ```bash
   python3 "<crew>/hooks/scripts/crew_bridge.py" receive --channel <c> --remote origin <<'END-7f3a'
