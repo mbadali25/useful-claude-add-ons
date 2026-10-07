@@ -414,7 +414,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # (/crew:autopilot wave), measured on rush/g0-coord-wave (release/1.2.0).
     assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
     # 146 with L-0675's repo-only `memory.recall.projects` on top of those 145
-    # (G3b stacked on G2, crew 1.1.9).
+    # (G3b stacked on G2, crew 1.1.11).
     assert "memory.recall.projects" in declared
     assert len(declared) == 146
 
