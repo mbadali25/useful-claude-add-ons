@@ -22,6 +22,11 @@ so `git status` cannot refresh the index and with `core.fsmonitor=false` so a
 configured fsmonitor hook never runs, and bytecode writing is off so even
 the import of the sibling modules leaves no `__pycache__` behind. The test
 suite snapshots every mtime in a fixture repo around a run.
+
+The `graph-ignore` line (T-0064) is `crew_graph_ignore.coverage`: whether the
+next graph build would read a secrets-denylisted path the root
+`.graphifyignore` does not exclude -- `ok`, `UNCOVERED` with the paths, or
+`unknown` with the reason. Paths only, never file content.
 """
 
 import sys
@@ -37,6 +42,7 @@ import subprocess  # noqa: E402
 
 import crew_common  # noqa: E402
 import crew_freshness  # noqa: E402
+import crew_graph_ignore  # noqa: E402
 import crew_migrate  # noqa: E402
 import crew_shell  # noqa: E402
 import crew_tracker  # noqa: E402
@@ -219,6 +225,33 @@ def _codemap_line(root, cfg):
     if info["unresolvable"]:
         line += f", unresolvable: {', '.join(info['unresolvable'][:4])}"
     return line
+
+
+def _gitignore_line(root):
+    # T-0039. Imported here, not at the top: a missing or broken module must
+    # still print the line - an omitted line reads as "nothing to say".
+    try:
+        import crew_gitignore  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except
+        return "gitignore unknown (crew_gitignore.py not importable)"
+    try:
+        return "gitignore " + crew_gitignore.summary(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"gitignore unknown ({type(exc).__name__}: {exc})"[:120]
+def _graph_ignore_line(root):
+    """T-0064: whether a graph build would read a secrets-denylisted path.
+    graphify's post-commit hook bypasses crew, so this line is the warning.
+    `coverage` runs git with the same fsmonitor and optional-lock settings as
+    `_git`, and its matching happens in a scratch repository outside `root`."""
+    cover = crew_graph_ignore.coverage(root)
+    if cover["status"] == crew_graph_ignore.COVERED:
+        return "graph-ignore  ok"
+    if cover["status"] == crew_graph_ignore.UNCOVERED:
+        paths = cover["uncovered"]
+        shown = crew_graph_ignore.listed(paths, 3)
+        return (f"graph-ignore  UNCOVERED {len(paths)} denylisted path(s) graphify would read: "
+                f"{shown} - {crew_graph_ignore.FIX}")
+    return f"graph-ignore  unknown - {cover['reason']}"
 
 
 def _metrics_line(root):
@@ -435,6 +468,8 @@ def collect(root, memory=False):
     if shell:
         lines.append(shell)
     lines.append(_codemap_line(root, cfg))
+    lines.append(_gitignore_line(root))
+    lines.append(_graph_ignore_line(root))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))
     lines.append("handoff  " + ("pending (.work/HANDOFF.md)" if handoff else "none"))

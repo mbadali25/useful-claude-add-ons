@@ -89,7 +89,7 @@ Then:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --check-global
 ```
 
-That prints the findings `/crew:upgrade` reports too: no global file, a file
+That prints the findings `/crew:migrate`'s upgrade stage and `/crew:config` report: no global file, a file
 that did not parse, keys the current template defines that this file does not
 set, keys the global layer IGNORES, an inert `schema`, and the effective
 `pm.authority` with its source named. Both commands are reporting-only and
