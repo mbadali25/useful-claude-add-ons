@@ -1810,7 +1810,10 @@ def case_no_step_launches_pwsh_directly(tmp: str) -> None:
     step = next(s for s in runner.TABLE if s.name == "check-powershell")
     expect(tuple(step.argv) == ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File",
                                 "scripts/check-powershell.ps1"), f"check-powershell argv {step.argv}")
-    expect({"bash", "pwsh"} <= set(step.needs), f"check-powershell needs {step.needs}")
+    # The launcher resolves pwsh ($PWSH, pwsh.exe, install paths) and exits 77
+    # when none runs; a bare-PATH `pwsh` need would SKIP before it could.
+    expect("bash" in step.needs and "pwsh" not in step.needs,
+           f"check-powershell needs {step.needs}")
     expect(tuple(step.ci) == (("marketplace.yml", "./scripts/check-powershell.ps1"),),
            f"check-powershell ci {step.ci}")
 

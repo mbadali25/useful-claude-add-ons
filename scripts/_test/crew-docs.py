@@ -257,6 +257,23 @@ def fail_release_base_doc_not_this_prs(tmp):
     return root, None, {"GITHUB_BASE_REF": "release/9.9"}
 
 
+def fail_release_base_local(tmp):
+    """A local run (no PR): the lane's nearest base is the release branch."""
+    root = _release_repo(tmp)
+    return root, None, NO_ENV
+
+
+def pass_local_main_lane_beside_a_release(tmp):
+    """A lane off main still diffs against main when a release ref exists."""
+    root = repo(tmp)
+    git(root, "checkout", "-qb", "release/9.9", "main")
+    commit(root, ["scripts/release_only.py"], "release work")
+    git(root, "update-ref", "refs/remotes/origin/release/9.9", "HEAD")
+    git(root, "checkout", "-q", "lane")
+    commit(root, [HOOK, "plugin/crew/README.md"], "hook and doc")
+    return root, None, NO_ENV
+
+
 def unknown_base_not_a_ref(tmp):
     root = repo(tmp)
     commit(root, [HOOK, "plugin/crew/README.md"], "hook and doc")
@@ -331,6 +348,7 @@ CASES = [
     (fail_skill_script_plus_reference, 1), (fail_trailer_without_reason, 1),
     (fail_trailer_placeholder, 1), (fail_body_blank_reason, 1), (fail_body_mid_sentence, 1),
     (fail_trailer_only_on_main, 1), (fail_release_base_doc_not_this_prs, 1),
+    (fail_release_base_local, 1), (pass_local_main_lane_beside_a_release, 0),
     (pass_no_crew, 0), (pass_tests_evals_manifest, 0), (pass_command_md, 0),
     (pass_hook_plus_readme, 0), (pass_hook_plus_guide_source, 0), (pass_rename_plus_skill, 0),
     (pass_trailer_with_reason, 0), (_body_case("-"), 0), (_body_case("–"), 0),
@@ -434,10 +452,14 @@ def mutations(checker):
         m.pr_body = patched
 
     def base_always_main(m):
-        m.base_ref = lambda environ, base=None: "origin/main"
+        m.base_ref = lambda environ, base=None, root=None: "origin/main"
+
+    def nearest_is_main(m):
+        m.nearest_base = lambda root: "origin/main"
 
     return [
         ("PR base ignored, main used", base_always_main, fail_release_base_doc_not_this_prs),
+        ("local base always main", nearest_is_main, fail_release_base_local),
         ("PLUGINS.md counted as a doc", docs_plus_plugins, fail_hook_plus_mechanical),
         ("empty reason accepted", empty_reason_ok, fail_body_blank_reason),
         ("placeholder reason accepted", placeholder_ok, fail_trailer_placeholder),

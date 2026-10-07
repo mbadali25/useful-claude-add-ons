@@ -24,9 +24,10 @@ WHAT COUNTS AS CHANGED. The branch's own changes, exactly as
 <base>...HEAD` (both sides of a rename; from the merge base, so what a merge
 of the base brought in is the base's), plus every path `git status` reports.
 <base> is the PR's own base branch: `--base`, else `origin/$GITHUB_BASE_REF`
-(set on a pull_request run, e.g. a PR into a release branch), else
-`origin/main`. Diffing a release-branch PR against main would count docs the
-release branch changed, not this PR.
+(set on a pull_request run, e.g. a PR into a release branch), else - a local
+run, which knows no PR - the nearest of `origin/main` and `origin/release/*`:
+the one HEAD has the fewest commits beyond. Diffing a release-branch lane
+against main would count docs the release branch changed, not the lane.
 
 THE DECLARATION. `Docs: none - <reason>` (hyphen, en dash or em dash), from a
 commit trailer on any commit in `<base>..HEAD`, or from the PR body when
@@ -98,13 +99,33 @@ def _git(root: str, *args: str) -> subprocess.CompletedProcess:
         raise CouldNotTell(f"git could not start ({exc})") from exc
 
 
-def base_ref(environ, base: str | None = None) -> str:
+def nearest_base(root: str) -> str:
+    """Of origin/main and every origin/release/* ref, the one HEAD has the
+    fewest commits beyond (ties: origin/main). origin/main when no candidate
+    can be counted; check() then reports a missing ref as could-not-tell."""
+    refs = _git(root, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/release/")
+    if refs.returncode != 0:
+        raise CouldNotTell(f"git for-each-ref failed: {refs.stderr.strip()}")
+    best, best_n = "origin/main", None
+    for ref in ["origin/main"] + sorted(r for r in refs.stdout.splitlines() if r.strip()):
+        count = _git(root, "rev-list", "--count", f"{ref}..HEAD")
+        if count.returncode != 0:
+            continue
+        n = int(count.stdout.strip() or 0)
+        if best_n is None or n < best_n:
+            best, best_n = ref, n
+    return best
+
+
+def base_ref(environ, base: str | None = None, root: str | None = None) -> str:
     """The ref the branch is diffed against: `--base`, else the PR's base
-    branch (`origin/$GITHUB_BASE_REF`), else origin/main."""
+    branch (`origin/$GITHUB_BASE_REF`), else the nearest base (a local run)."""
     if base:
         return base
     pr_base = (environ.get("GITHUB_BASE_REF") or "").strip()
-    return f"origin/{pr_base}" if pr_base else "origin/main"
+    if pr_base:
+        return f"origin/{pr_base}"
+    return nearest_base(root) if root else "origin/main"
 
 
 def changed_paths(root: str, base: str = "origin/main") -> list[str]:
@@ -209,8 +230,8 @@ def check(root: str, pr_body_file: str | None = None, environ=None,
           base: str | None = None) -> tuple[int, list[str]]:
     """(exit code, output lines) for the branch checked out at `root`."""
     environ = os.environ if environ is None else environ
-    base = base_ref(environ, base)
     try:
+        base = base_ref(environ, base, root)
         if _git(root, "rev-parse", "--verify", "-q", f"{base}^{{commit}}").returncode != 0:
             return EXIT_MISSING, [f"TOOL MISSING: {base} is not a ref here, so the crew-docs "
                                   "check DID NOT RUN. This is a missing ref, not a pass."]
@@ -221,7 +242,7 @@ def check(root: str, pr_body_file: str | None = None, environ=None,
         docs = [p for p in paths if _matches(p, DOCS)]
         if docs:
             return 0, [f"crew-docs: OK - {len(code)} crew code path(s), "
-                       f"{len(docs)} narrative doc(s) changed"]
+                       f"{len(docs)} narrative doc(s) changed (base {base})"]
         trailers = trailer_values(root, base)
         source, reason, invalid = find_declaration(trailers, None)
         if not source:
@@ -254,7 +275,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=".")
     parser.add_argument("--pr-body-file")
     parser.add_argument("--base", help="ref to diff against (default: origin/$GITHUB_BASE_REF, "
-                                       "else origin/main)")
+                                       "else the nearest of origin/main and origin/release/*)")
     args = parser.parse_args(argv)
     code, lines = check(os.path.abspath(args.root), args.pr_body_file, base=args.base)
     stream = sys.stderr if code == EXIT_MISSING else sys.stdout

@@ -168,6 +168,7 @@ TABLE = (
     _py_suite("crew-docs-suite", "scripts/_test/crew-docs.py"),
     _py_suite("autopilot-guide", "scripts/_test/autopilot-guide.py"),
     # T-0055. Locally it sees commit trailers only; CI also reads the PR body.
+    # Locally its base is the nearest of origin/main and origin/release/*.
     Step("check-crew-docs", "cheap", (PY, "scripts/check-crew-docs.py"),
          ci=(("marketplace.yml", "python3 scripts/check-crew-docs.py"),)),
     _py_suite("ci-select", "scripts/_test/ci-select.py"),
@@ -199,9 +200,11 @@ TABLE = (
          cwd="plugin/crew",
          ci=(("marketplace.yml", "python3 hooks/scripts/_test/validate-prompts.py"),)),
     # Through the launcher (T-0506): a private startup-profile cache per pwsh run.
+    # No `pwsh` need: the launcher resolves $PWSH, pwsh, pwsh.exe and the Windows
+    # install paths itself, and exits 77 (SKIP) when none runs.
     Step("check-powershell", "cheap",
          ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File", "scripts/check-powershell.ps1"),
-         needs=("bash", "pwsh"), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
+         needs=("bash",), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
     Step("check-instructions", "cheap", (PY, "scripts/check_instructions.py"),
          ci=(("instruction-budgets.yml", "python3 scripts/check_instructions.py"),
              ("instruction-budgets.yml", 'python3 scripts/check_instructions.py --base "$BASE"'))),

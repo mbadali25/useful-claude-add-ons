@@ -523,19 +523,20 @@ partial. The list is informative only: what the receipt accepts did not change.<
 <h2 id="a-diagram-check-fails-in-ci-with-no-reason-or-running-as-root-without-no-sandbox">A Diagram Check Fails in CI with No Reason, or "Running as Root Without --No-Sandbox"</h2>
 <p>Headless Chromium, which <code>mmdc</code> drives, refuses to start as root unless puppeteer passes
 <code>--no-sandbox</code>, and CI containers run as root. A hand-written <code>_verify</code> case that calls <code>mmdc</code> bare
-fails there, and an older <code>_verify/run-all.sh</code> or <code>smoke.sh</code> threw the check's output away, so all the
+fails there, and an older <code>_verify/run-all.sh</code> or <code>_verify/smoke.sh</code> threw the check's output away, so all the
 log said was <code>FAIL &lt;name&gt;</code>.</p>
 <ul>
-<li><strong>Use the ready case.</strong> Copy <code>templates/cases/diagrams-render.sh</code> from crew-setup into
+<li><strong>Use the ready case.</strong> Copy <code>plugin/crew/skills/crew-setup/templates/cases/diagrams-render.sh</code> into
   <code>_verify/cases/</code> (crew-setup does this itself in a repo that has <code>.mmd</code> files). It passes the same
-  <code>--no-sandbox</code> puppeteer config as crew's <code>render.sh</code> every time, renders to a temp directory,
+  <code>--no-sandbox</code> puppeteer config as <code>plugin/crew/skills/crew-diagrams/scripts/render.sh</code> every time, renders to a temp directory,
   prints mmdc's own last lines under a failed source's <code>FAIL</code> line, and exits 77 (SKIP) where <code>mmdc</code>
   is not installed. <code>DIAGRAMS_DIR</code> points it at a directory other than <code>docs/diagrams</code>.</li>
 <li><strong>See why a check failed.</strong> The current template runners print the last 5 lines of a failing
-  check's output under its <code>FAIL</code> line and report exit 77 as <code>SKIP</code>, not a failure. A repo set up
+  check's output under its <code>FAIL</code> line and report exit 77 as <code>SKIP</code>, not a failure; a run with no
+  failure but such a skip exits 77 itself, so crew's verify gate records it skipped, not verified. A repo set up
   earlier keeps its old runners: replace the counter line, the <code>check()</code> / <code>run()</code> function with the
-  <code>CUR_OUT</code> / <code>cleanup</code> / <code>trap</code> lines above it, and the final count line from the templates. Copying
-  <code>check()</code> alone breaks the old <code>smoke.sh</code> on the first exit 77 (<code>SKIP</code> is unset under <code>set -u</code>).</li>
+  <code>CUR_OUT</code> / <code>cleanup</code> / <code>trap</code> lines above it, and the final count and exit lines from the templates. Copying
+  <code>check()</code> alone breaks the old <code>_verify/smoke.sh</code> on the first exit 77 (<code>SKIP</code> is unset under <code>set -u</code>).</li>
 </ul>
 <h2 id="autopilot-in-a-worktree-and-the-refresh-check">Autopilot in a Worktree, and the Refresh Check</h2>
 <ul>

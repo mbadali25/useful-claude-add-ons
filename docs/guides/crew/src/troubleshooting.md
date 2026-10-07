@@ -367,19 +367,20 @@ partial. The list is informative only: what the receipt accepts did not change.
 
 Headless Chromium, which `mmdc` drives, refuses to start as root unless puppeteer passes
 `--no-sandbox`, and CI containers run as root. A hand-written `_verify` case that calls `mmdc` bare
-fails there, and an older `_verify/run-all.sh` or `smoke.sh` threw the check's output away, so all the
+fails there, and an older `_verify/run-all.sh` or `_verify/smoke.sh` threw the check's output away, so all the
 log said was `FAIL <name>`.
 
-- **Use the ready case.** Copy `templates/cases/diagrams-render.sh` from crew-setup into
+- **Use the ready case.** Copy `plugin/crew/skills/crew-setup/templates/cases/diagrams-render.sh` into
   `_verify/cases/` (crew-setup does this itself in a repo that has `.mmd` files). It passes the same
-  `--no-sandbox` puppeteer config as crew's `render.sh` every time, renders to a temp directory,
+  `--no-sandbox` puppeteer config as `plugin/crew/skills/crew-diagrams/scripts/render.sh` every time, renders to a temp directory,
   prints mmdc's own last lines under a failed source's `FAIL` line, and exits 77 (SKIP) where `mmdc`
   is not installed. `DIAGRAMS_DIR` points it at a directory other than `docs/diagrams`.
 - **See why a check failed.** The current template runners print the last 5 lines of a failing
-  check's output under its `FAIL` line and report exit 77 as `SKIP`, not a failure. A repo set up
+  check's output under its `FAIL` line and report exit 77 as `SKIP`, not a failure; a run with no
+  failure but such a skip exits 77 itself, so crew's verify gate records it skipped, not verified. A repo set up
   earlier keeps its old runners: replace the counter line, the `check()` / `run()` function with the
-  `CUR_OUT` / `cleanup` / `trap` lines above it, and the final count line from the templates. Copying
-  `check()` alone breaks the old `smoke.sh` on the first exit 77 (`SKIP` is unset under `set -u`).
+  `CUR_OUT` / `cleanup` / `trap` lines above it, and the final count and exit lines from the templates. Copying
+  `check()` alone breaks the old `_verify/smoke.sh` on the first exit 77 (`SKIP` is unset under `set -u`).
 
 ## Autopilot in a worktree, and the refresh check
 

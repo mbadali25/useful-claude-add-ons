@@ -52,7 +52,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew
   code holds even when nobody reads the PR.
 - **`scripts/check-crew-docs.py`.** Reads the branch's own changes (`<base>...HEAD` plus
-  `git status`; the base is the PR's own base branch, `origin/main` outside a PR). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
+  `git status`; the base is the PR's own base branch, or outside a PR the nearest of
+  `origin/main` and `origin/release/*`). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
   eval or `plugin.json`; DOCS are crew's README and CONFIG, its command, agent and SKILL.md files, its
   `docs/`, and `docs/guides/crew/src/*.md`. `plugin/PLUGINS.md`, `CHANGELOG.md`, `BUDGETS.md`, the code
   maps, diagrams, graph and built guides count neither way. The declaration is a `Docs:` commit trailer
