@@ -1,6 +1,6 @@
 ---
-description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|sleep|wake|assign|goal|focus|split] [ticket id | off | --goal <slug>]"
+description: Report a ticket (status), drive it until a human is needed (run), or run an approved set as parallel lanes (wave)
+argument-hint: "[status|run|sleep|wake|assign|goal|focus|wave|split] [ticket id | off | --goal <slug> | --set <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
@@ -13,7 +13,7 @@ on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN
 
 ## 0. Route
 
-A first word of exactly `goal`: run the line below as `route --root . --first goal`, never `--args` (the goal's text stays off every shell line); `sub=goal stop=0` is section 7 only.
+A first word of exactly `goal`: run the line below as `route --root . --first goal`, never `--args` (the goal's text stays off every shell line); `sub=goal stop=0` is section 8 only.
 If the arguments hold a quote, `$`, a backtick or a backslash, stop without
 running anything: no subcommand or ticket id has one. Otherwise:
 
@@ -22,11 +22,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 ```
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
-a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never a ticket; `assign` comes with T-0019, `--goal` resume with L-0541). `sub=status`: section 1; `sub=focus`: section 6 only; `sub=goal`: section 7 only;
-`sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or
-`crew_autopilot.py wake --root .`, print its line, stop. `sub=split` (`split`): section 3's `split-check` for `<ticket>`, then stop. `sub=run`: sections 2 to 5; `<ticket>` is route's
-`ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
+a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is never a ticket; `assign` comes with T-0019, `--goal` resume with L-0541). `sub=status`: section 1; `sub=focus`: section 6 only; `sub=wave`: section 7 only; `sub=goal`: section 8 only; `sub=sleep`, `sub=wake`: run (as route ran) `crew_autopilot.py sleep --root .` or `crew_autopilot.py wake --root .`, print its line, stop. `sub=split` (`split`): section 3's `split-check` for `<ticket>`, then stop. `sub=run`: sections 2 to 5; `<ticket>` is route's `ticket=`, never re-read from the arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 Unattended cloud work is started by `crew_unattended.py launch -- claude ...` (README), never from a running session.
 
 ## 1. status
@@ -38,6 +34,8 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status --root .
 Print its lines as they are, then stop: read-only, armed or not (`-B`: not even a bytecode cache), no other command, no edit, no phase. `unknown` means it could not tell.
 
 ## 2. Arm, then pick the ticket
+
+First, when `.crew/config.json` has a `coord` block (T-0030): `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_coord.py status` - print its lines; stop on a non-zero exit (`unknown`: could not fetch or read, or a corrupt claim) or any `yours from a previous session` line (with its recommended action); never `recover` or `--break` here.
 
 ```bash
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
@@ -54,8 +52,7 @@ Then `claim` (T-0049): `claimed` or `refreshed` goes on; `refused:` (held by ano
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 
 ```bash
-python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
-  --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
 ```
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
@@ -91,9 +88,7 @@ A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`, `docs-missing`, `docs-unknown`, `docs-after-review`, `split-approval` (unless section 3's `--apply` passes), `split-check-unknown`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up and `split --apply`'s children, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
-- `offboard-role` - offboarding a role, or removing one from the roster.
-- `delete-map` - deleting a codemap file or a diagram.
-- `rewrite-metrics` - rewriting .crew/metrics.md.
+`offboard-role` (offboarding or removing a role), `delete-map` (a codemap file or a diagram), `rewrite-metrics` (.crew/metrics.md), and
 - `git-destruction` - force-push, branch delete, history rewrite, or rm of a tracked file.
 - `clear-inflight` - clearing another runner's in-flight marker (a stop names the owner's `clear`).
 
@@ -106,7 +101,12 @@ When context-watch asks for a handoff: run `/crew:handoff --wrap-up` with `resum
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py focus --root .`, with `--ticket <ticket>` for `focus <ticket>`, `--off` only for route's `off=1` (the owner typed `focus off`), nothing for `focus`; print
 its output as-is, stop. Focus is on only once `focus <ticket>` sets it, never from the active ticket alone; then `route` refuses other work and `next` stops at `drift`. Never fix an out-of-scope finding in the diff: add a TODO entry (path:line, why deferred, what unblocks it) to the file `focus --findings --ticket <ticket>` prints. Autopilot never runs `focus off` itself.
 
-## 7. goal - research once, propose, print the /goal line, ask for the split
+## 7. `wave` (T-0029) - `crew_wave.py` is `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_wave.py`
+
+Design is the owner's, here: `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket, then `crew_wave.py set --root . --slug <s> --tickets <ids> --deps <id>=<ids>|none` (one per ticket); stop - the human types the `/crew:approve` line. Route's `tickets=`: print `crew_wave.py plan --root . --tickets <ids>` and stop (only a set starts). Otherwise section 2's first paragraph (the `coord` check, T-0030) - its stops stop the wave too - then `crew_wave.py plan --root . --set <s>` (no `set=`: it lists the sets; print them and stop), then `crew_wave.py start --root . --set <s>`; a `stop:` line (`scope-not-enforcing` names its fix) or a non-zero exit is a stop.
+Each `launch` line, all in one message: one Agent with `isolation: worktree` - never any other launch - prompted with the output of the `crew_wave.py lane-prompt` command it names. A lane's question, approval or review verdict is the owner's; never answer or accept it. When all return, print `crew_wave.py collect --root . --set <s>` verbatim and stop; after lanes land, `crew_wave.py cleanup --root . --set <s>` removes merged, clean worktrees.
+
+## 8. goal - research once, propose, print the /goal line, ask for the split
 
 Research the goal once (crew:explorer, crew:researcher) and write `.work/autopilot/<name>.proposal.json`: `goal`, a one-line `done_condition`, `findings`, and `tickets` (`title`, `risk`, `depends_on`: indexes of earlier tickets), the recommendation first, in dependency order. Then:
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py goal-propose --root . --proposal-file <file>`

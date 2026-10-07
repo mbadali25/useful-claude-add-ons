@@ -52,10 +52,10 @@ Counted by walking the directories at this anchor:
 |---|---|---|
 | Agents | 4 | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` |
 | Commands | 36 | `.md` files in `plugin/crew/commands/` (36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
-| Skills | 31 | subdirectories of `plugin/crew/skills/` (includes 8 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267) |
+| Skills | 33 | subdirectories of `plugin/crew/skills/` (includes 10 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267, `stack-php` since L-0533, `stack-node` since L-0537) |
 
 `.claude-plugin/marketplace.json:223` states the identical three numbers (4
-agents, 36 commands, 31 skills) in its `crew` entry's description, and `:224`
+agents, 36 commands, 33 skills) in its `crew` entry's description, and `:224`
 the version, 1.0.184 (T-0061-build's number, allocated by the coordinator after main reached 1.0.162 with L-0601 #327; 1.0.163-1.0.183 not used by it); before that 1.0.162 (L-0601's number, allocated by the coordinator after main reached 1.0.154 with L-0510 #318, #328, #329 and #330; 1.0.141 and 1.0.155-1.0.161 not used by it); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
@@ -77,8 +77,8 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 - **No specialist roles.** `SPECIALIST_ROLES` is now `frozenset()`
   (`plugin/crew/hooks/scripts/crew_state.py:1313`) — domain knowledge that
   used to be a specialist agent now lives in the on-demand `stack-*` skills
-  (`stack-angular`, `stack-bash`, `stack-dotnet`, `stack-powershell`,
-  `stack-python`, `stack-sql`, `stack-terraform`, `stack-web`), which are
+  (`stack-angular`, `stack-bash`, `stack-dotnet`, `stack-node`, `stack-powershell`,
+  `stack-php`, `stack-python`, `stack-sql`, `stack-terraform`, `stack-web`), which are
   never dispatched as a role.
 - **No standing PM agent file.** `plugin/crew/agents/pm.md` does not exist at
   this anchor (`find . -iname pm.md` returns nothing). The interactive session
@@ -2011,6 +2011,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   covers each included file's set name and bytes, and the overlay's absence.
   The first stack set is `plugin/crew/skills/crew-standards/references/python.md` (set
   `PYTHON`, `applies-to: ["**/*.py"]`, nine standards, T-0086 slice 1); no loader code changed for it.
+  The second is `references/powershell.md` (set `PWSH`, `applies-to: ["**/*.ps1", "**/*.psm1",
+  "**/*.psd1"]`, one standard, PWSH-16, L-0534), so this repository's own hook `.ps1` changes now
+  draw it. SQL, .NET, Terraform, Angular, PHP and Node.js have candidates only, each in its
+  `stack-*` skill's `references/candidates.md` (L-0532..L-0538; JUDGEMENT: public change sets do
+  not count, owner 2026-10-05).
 - **Self-check.** `init` (`:520`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
   `record_problems` (`:414`) refuses a missing, duplicate or unknown row, a status outside
   `STATUSES` (`:78`) and placeholder evidence; `stamp` (`:535`) validates the rows from one
@@ -2025,7 +2030,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `--record`, which would rewrite it with this ticket's entry alone (`_scope_entry` tells it
   from an absent record through `_read_bytes`). It takes `review_patch.compute`'s
   `bundle_sha256` over it, refuses if the file's bytes changed meanwhile, and writes
-  `_STAMP_RE`'s line (`:86`) under the header through a temp file and `os.replace`
+  `_STAMP_RE`'s line (`:87`, `base=` exactly 40 or 64 hex since L-0518, so a SHA-256
+  repository stamps) under the header through a temp file and `os.replace`
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
@@ -2058,13 +2064,25 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
   manifest)`, the recurring-findings classes keyed to the manifest's changed files (every class
   under `UNKNOWN:` when the file lists are unusable), then the web tests.
-- **Loop and metric.** `proposals` (`:724`) exclusive-creates
-  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
-  refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:795`)
+  The two blocks are one source per kind of rule (L-0519): the standards are the source for
+  code-level rules, and the recurring-findings classes are a probe index derived from them;
+  each class's `seen:` line names the standard ids it echoes, held to a shipped set or the
+  overlay by `test_every_class_names_a_standard_that_exists`
+  (`plugin/crew/tests/test_recurring_findings.py`), and the standard wins on a conflict.
+- **Loop and metric.** `proposals` (`:764`) exclusive-creates
+  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped. Since
+  L-0518 it first requires the review ledger's row for the round (`_recorded_verdict`
+  `:733`, read through `review_ledger.status`) to be completed CLEAN or FINDINGS,
+  and refuses any other verdict, no row, two rows or an unreadable ledger; it then refuses an
+  out.txt the parser calls INCOMPLETE; either refusal writes nothing.
+  `sets --touch` (`_touch_sets` `:921`) lists the effective set from the spec's Touch
+  list with no scope base, through `effective_set`'s `applies` predicate and
+  `recurring_findings.matches(..., touch=True)`, and lists every set under `UNKNOWN:` (exit 1)
+  when the spec or its Touch list cannot be read; `metric_summary` (`:842`)
   groups round-1 rows from `crew_migrate.metrics_rows` by ticket and sides each row with
-  `_std_side` (`:778`, on `_STD_TOKEN_RE` `:89`): no token is before, `std:<8 hex>` after,
+  `_std_side` (`:825`, on `_STD_TOKEN_RE` `:90`): no token is before, `std:<8 hex>` after,
   and `std:none` or any other `std:` value is counted on neither side, as are unknown
-  rounds; `metric --record` (`:832`) appends a line with no `|`.
+  rounds; `metric --record` (`:879`) appends a line with no `|`.
 - **Tests.** `plugin/crew/tests/test_crew_standards.py`, `test_review_run_standards.py`,
   `test_review_prompt.py`, `test_lifecycle_commands.py`; fifty-one mutations in
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:61`; 44 at origin/main

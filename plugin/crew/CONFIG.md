@@ -754,7 +754,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 147 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
+87 of 149 keys are settable in the machine-global file (generated; 62 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -882,7 +882,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-60 of 147 keys are repo-only (generated; 87 are global-settable, section 10).
+62 of 149 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -948,6 +948,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `autopilot.maxLanes` | repo | positive integer or null (checked in `hooks/scripts/crew_wave.py`) | `null` |
+| `autopilot.reviewPolicy` | repo | `stop` \| `clean-only` \| `fix-and-rereview` | `"stop"` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 

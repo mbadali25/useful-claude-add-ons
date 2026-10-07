@@ -728,7 +728,8 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
     # L-0652 adds `sleep` and `wake`; `approve` and `questions-check` stay
     # script subcommands only.
     assert (crew_autopilot.SUBCOMMANDS, got) == (
-        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "split"), [True, True])
+        ("status", "run", "assign", "goal", "focus", "sleep", "wake", "wave", "split"),
+        [True, True])
 
 
 # --- T-0057: plain-text routing for the autopilot commands the router knows -----
@@ -1192,18 +1193,20 @@ def _four_repo(tmp_path, *tickets):
     return root
 
 
-# L-0652 put `sleep` and `wake` in SUBCOMMANDS and AVAILABLE, and T-0058 `split`,
-# so only wave is still unknown to the router (batch 5 merge of L-0662).
+# L-0652 put `sleep` and `wake` in SUBCOMMANDS and AVAILABLE, T-0058 `split` and T-0029
+# `wave`, so none of the four is unknown to the router now: this list is empty and the test
+# below collects as skipped until a reserved intent is added that has no subcommand yet.
 _UNKNOWN_EXAMPLES = [p for intent in _FOUR if intent not in crew_autopilot.SUBCOMMANDS
                      for p, _t, _top in EXAMPLES[intent]]
 _LIVE_SLEEP_WAKE = [(p, intent) for intent in ("sleep", "wake")
                     for p, _t, _top in EXAMPLES[intent]]
 
 
-def test_sleep_wake_and_split_are_live_and_wave_is_not():
+def test_wave_split_sleep_and_wake_are_all_live():
+    # T-0029 made `wave` live (release/1.2.0) and T-0058 `split` (G2).
     assert ([s in crew_autopilot.SUBCOMMANDS for s in _FOUR],
             [s in crew_autopilot.AVAILABLE for s in _FOUR]) == \
-        ([False, True, True, True], [False, True, True, True])
+        ([True, True, True, True], [True, True, True, True])
 
 
 @pytest.mark.parametrize("prompt", _UNKNOWN_EXAMPLES)

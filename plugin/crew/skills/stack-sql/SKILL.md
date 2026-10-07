@@ -39,7 +39,7 @@ isolation in ways that make a rule true on one and wrong on another.
   metadata-only **on PostgreSQL 11+ only** - before 11 it rewrites the whole table under that
   same `ACCESS EXCLUSIVE` lock, so confirm the major version before calling it cheap.
   `CREATE INDEX CONCURRENTLY` avoids the write lock but cannot run in a transaction and leaves
-  an invalid index behind on failure. Default isolation `READ COMMITTED`; plain readers never
+  an invalid index behind on failure. (Candidate SQL-P2 in `references/candidates.md`.) Default isolation `READ COMMITTED`; plain readers never
   block writers, but `SELECT ... FOR UPDATE`/`FOR SHARE` is a reader that takes row locks and
   can block a concurrent writer (or another locking `SELECT`) on the same rows.
 - **MySQL/InnoDB**: no transactional DDL - a multi-statement migration that fails partway
@@ -60,6 +60,14 @@ Uniqueness differs too: SQL Server permits one NULL in a unique index, Postgres 
 permit many. A migration is reviewed only once it has actually been applied to a real
 database (ephemeral, container, or dev) with rollback proven, not "it will apply at deploy
 time" - `crew:security` reviews the injection and permission side of this.
+
+## Standards
+
+No gated SQL standards set ships yet (L-0532). This build showed no SQL rule with three
+reviewed change sets that count: public change sets do not count (owner, 2026-10-05), and
+the owner-private evidence, which may hold more, was not consulted (re-check: C-0020). The candidates, with
+their sources and public verdicts, are in `references/candidates.md`. They are guidance,
+not rows of the self-check.
 
 ## Verification
 
