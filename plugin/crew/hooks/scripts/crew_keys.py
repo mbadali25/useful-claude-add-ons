@@ -507,7 +507,7 @@ KEY_META = {
                                    "anything else, `all` included, is refused with a warning. "
                                    "Asleep, an effective `all` reads as `nonprod`: production "
                                    "never runs unattended asleep.", "branch",
-                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.24",
+                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.16",
                                    _S + "crew_sleep.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
@@ -527,13 +527,13 @@ KEY_META = {
     "autopilot.maxTicketsPerRun": _row("Tickets one goal run (one session) may start; the "
                                        "next one stops the run. Anything but a positive "
                                        "integer reads as 3, with a warning.", "branch", None,
-                                       "1.1.23", _S + "crew_autopilot_backlog.py",
+                                       "1.1.16", _S + "crew_autopilot_backlog.py",
                                        type_="positive integer"),
     "autopilot.maxTokensPerSession": _row("Input plus output tokens one goal session may "
                                           "spend before the run stops; a transcript that "
                                           "cannot be read stops too. Anything but a "
                                           "positive integer reads as 2000000, with a "
-                                          "warning.", "branch", None, "1.1.23",
+                                          "warning.", "branch", None, "1.1.16",
                                           _S + "crew_autopilot_backlog.py",
                                           type_="positive integer"),
     # --- tickets

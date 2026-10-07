@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.1.24: sleep log and morning summary (L-0653)
+### Added — crew 1.1.16: sleep log and morning summary (L-0653)
 
 - **Summary.** Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
 - **What changed.** `.work/autopilot/sleep-log.md` (local, append-only, one whole line per write, never committed or read to decide anything): `approve` appends an `approved` entry after its receipt while asleep (a log that cannot be written never undoes the approval; it warns); `crew_autopilot.py sleep-note --ticket <id> --kind answered|note --text <t>` appends one entry, only while asleep; `crew_autopilot.py sleep-summary` prints the unreported entries and, once awake, appends a `- reported` marker. `wake` prints the summary when there is one, and `settings` warns while decisions are unreported. Fields are folded to one line with `|` replaced, so none can forge an entry or a marker; an unreadable log is never read as empty. `autopilot.md` calls `sleep-note` for each answer it takes while asleep.
@@ -18,20 +18,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Also (L-0658 review round 3).** A `.work/autopilot` that is a dangling link or a file makes a goal file could-not-tell, never missing.
 - **Tests.** `test_crew_autopilot_sleep.py` (one entry per approve asleep, sleep-note asleep and awake, forged fields, the summary once, asleep marks nothing, settings' count, wake's summary, an unreadable log, an unwritable log, two processes appending), and the only-writer test in `test_crew_autopilot_policy.py`.
 
-### Added — crew 1.1.24: sleep deploy override, `nonprod` only; production always waits while asleep (L-0654)
+### Added — crew 1.1.16: sleep deploy override, `nonprod` only; production always waits while asleep (L-0654)
 
 - **Summary.** While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.
 - **What changed.** New repo key `autopilot.sleep.deploy` (`null`, `nonprod` or `none`; `all` or anything else is refused with a warning and the day value stands). While asleep, a valid value replaces `autopilot.deploy` (stricter-only for a manual sleep outside the window), and an effective `all` reads as `nonprod`. Awake, off or `unknown`, the day value stands. `deploy-allowed`'s reason names the sleep state when it changed the answer; the incident check, the one-root rule, the layer probes and every could-not-tell `ask` run first, as before. Inert until T-0045 dispatches a deploy.
 - **Tests.** `test_crew_autopilot_sleep.py`: must-allow nonprod asleep, the must-block cases, awake production unchanged, and a hand-written state x day value x override x class matrix; the 324-case deploy matrix is unchanged.
 
-### Changed — crew 1.1.23: bare `/crew:autopilot` finds a running goal when there is no usable handoff (L-0659)
+### Changed — crew 1.1.16: bare `/crew:autopilot` finds a running goal when there is no usable handoff (L-0659)
 
 - **Summary.** A session that died without writing a handoff no longer loses its autopilot goal: a bare `/crew:autopilot` resumes the one running goal before falling back to the active ticket.
 - **The order.** Argument, handoff, running goal, active ticket, INDEX. One running goal resumes at its next ticket (source `goal-file`); several stop and list them (`name one: /crew:autopilot --goal <slug>`); a goal file that cannot be read stops as could-not-tell and the active ticket is not driven; a `stopped` goal is named in a `fell through:` line with its reason and `--goal` command and never resumed; with no goal, or only `done` ones, the answer is exactly today's.
 - **Also.** An argument still wins, and so does a usable ticket handoff, with a `disagreement:` line naming the running goal. Status shows `(from goal-file, goal <slug>)`. Autopilot's context handoff now leaves the goal `running` (it is not a stop), so the next session resumes it.
 - **Tests.** `test_crew_autopilot_goal_resume.py` (one goal, two goals, unreadable alone and beside a running goal, stopped, no goal, argument and handoff win, status, the owner's crash scenario).
 
-### Changed — crew 1.1.23: a `--goal` handoff is checked against the goal file, not the branch and head (L-0658)
+### Changed — crew 1.1.16: a `--goal` handoff is checked against the goal file, not the branch and head (L-0658)
 
 - **Summary.** A goal handoff written on one ticket's branch now resumes the goal after the next ticket's branch is checked out, as long as the goal is still running.
 - **What changed.** `crew_goal_state.py` (new) reads a goal file's run state; `crew_resume.decide`, `crew_autopilot._handoff_ticket` and status's resume line take a `resume: /crew:autopilot --goal <slug>` line only while that goal is `running`, and no longer compare its `branch:` and `head:`. The ticket form is checked exactly as before. A missing, unreadable, not-started, `done` or `stopped` goal is not taken: `decide` waits; `resume_target` falls through (missing, not started, done) or stops (unreadable as could-not-tell; stopped, named with its reason and `/crew:autopilot --goal <slug>`). Every other auto-resume condition still binds a goal handoff. SessionStart's staleness rule (`crew_state.handoff_staleness`) no longer archives a running goal's handoff for branch or head drift; its age still counts.
@@ -39,7 +39,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Also (T-0056 review round 1).** A goal run whose `running` mark cannot be written stops instead of running unmarked; a goal folder that cannot be listed is could-not-tell for `handoff-resume`.
 - **Tests.** `test_crew_autopilot_goal_resume.py` (cross-branch resume, the six must-block cases, the owner's scenario part (b)), `test_crew_resume.py` (`decide` across branches, must-block cases, every other condition kept, ticket form unchanged).
 
-### Added — crew 1.1.23: a running autopilot goal is written into every handoff - goal run state and `handoff_resume` (T-0056)
+### Added — crew 1.1.16: a running autopilot goal is written into every handoff - goal run state and `handoff_resume` (T-0056)
 
 - **Summary.** While an autopilot goal runs, every handoff names the goal (`resume: /crew:autopilot --goal <slug>`) instead of the ticket in hand, so a resume after `/clear` continues the goal.
 - **Run state.** The goal file gains a `run` block (`state` `running|stopped|done`, `ticket`, `reason`, `at`), written by `crew_autopilot.py goal-mark` (temp file and `os.replace`, under the goal lock, every other key kept) and by `goal-run` itself; `running_goals` reads it, an unreadable file as `unknown`.
@@ -48,7 +48,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this change.** Reading a `--goal` handoff across branches (L-0658), bare-run goal discovery (L-0659), sabotage entries (L-0660, harness), T-0017's wrap-up writer.
 - **Tests.** `test_crew_autopilot_goal_resume.py` (new), the skeleton cases in `test_crew_resume_hook.py` (both flavours; the `.ps1` cases skip without `pwsh`), two command tests in `test_lifecycle_commands.py`.
 
-### Added — crew 1.1.23: autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal` (L-0541)
+### Added — crew 1.1.16: autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal` (L-0541)
 
 - **Summary.** Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.
 - **Mint.** `crew_autopilot.py goal-approve --goal <slug>` mints every proposed ticket without an id after the split approval, in list order, through T-0019's unchanged `crew_ticket.mint` (`ready`; the direction names the goal file, `goal-ticket: <slug> <n>/<m>`, the risk and the dependencies). A failure stops naming the minted and the unminted tickets; a re-run mints only what is missing and adopts a folder whose id never reached the goal file. Goal-file writes hold `.work/autopilot/<slug>.lock`.

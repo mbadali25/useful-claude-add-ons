@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.24**: Sleep log and morning summary. Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
-- **crew 1.1.24**: Sleep deploy override, `nonprod` only; production always waits while asleep. While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.
+- **crew 1.1.16**: Sleep log and morning summary. Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
+- **crew 1.1.16**: Sleep deploy override, `nonprod` only; production always waits while asleep. While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
