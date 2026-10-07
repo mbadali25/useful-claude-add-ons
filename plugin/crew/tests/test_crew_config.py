@@ -3155,6 +3155,44 @@ def test_global_write_refuses_when_its_directory_cannot_be_made(
     assert (code, os.path.dirname(gpath) in capsys.readouterr().err) == (2, True)
 
 
+# L-0682: `os_error_text` at each writer. A Windows path in an OSError's
+# filename is repr()'d by str(exc), doubling every backslash; the refusal must
+# name it as written. A backslash filename makes that observable on every OS.
+_WIN_DIR = r"C:\Users\o\.claude\crew"
+
+
+def _deny_makedirs_naming(monkeypatch, name):
+    def _deny(*_args, **_kwargs):
+        raise PermissionError(errno.EACCES, "Permission denied", name)
+    monkeypatch.setattr(crew_config_files.os, "makedirs", _deny)
+
+
+def test_a_refused_machine_write_names_a_backslash_path_as_written(tmp_path, capsys,
+                                                                   monkeypatch):
+    root = _repo(tmp_path)
+    gpath = str(tmp_path / "nodir" / "config.json")
+    _deny_makedirs_naming(monkeypatch, _WIN_DIR)
+
+    code = _set_at(root, gpath, "machine", 'pm.authority="act"')
+
+    err = capsys.readouterr().err
+    assert (code, _WIN_DIR in err, _WIN_DIR.replace("\\", "\\\\") in err) == (2, True, False)
+
+
+def test_a_refused_repo_write_names_a_backslash_path_as_written(tmp_path, capsys,
+                                                                monkeypatch):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+    gpath = str(tmp_path / "nodir" / "config.json")
+    _deny_makedirs_naming(monkeypatch, _WIN_DIR)
+
+    code = _set_at(root, gpath, "repo", 'tracker="jira"')
+
+    err = capsys.readouterr().err
+    assert (code, _WIN_DIR in err, _WIN_DIR.replace("\\", "\\\\") in err) == (2, True, False)
+    assert _repo_bytes(root) == before
+
+
 def _deny_lock_files(monkeypatch):
     real_open = crew_config_files.os.open
 

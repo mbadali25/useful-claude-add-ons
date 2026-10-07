@@ -576,9 +576,11 @@ first (a `Displaced` move-aside exits 1 with every path named), writes the bytes
 `validate_change_set` (`:1010`) and `_usage_problem` (`:1039`) refuse a malformed `--changes`,
 `--pending` (an explicitly empty one included), digest, `--confirm` or `--from` with exit 2.
 Tests: `plugin/crew/tests/test_config_files.py`, `plugin/crew/tests/test_config_menu.py`,
-`plugin/crew/tests/test_crew_config.py`; 98 mutations in `plugin/crew/tests/sabotage_config.py`
-(`CONFIG_MENU_MUTATIONS`, `len()` at `938e3b11`: 50 through review round 2, 31 for round 3, 17
-for round 4; registered in `sabotage.py:79`, appended at `:3065`); `.crew/verify.json` rule 7
+`plugin/crew/tests/test_crew_config.py`; 126 mutations in `plugin/crew/tests/sabotage_config.py`
+(`CONFIG_MENU_MUTATIONS` by `len()` after L-0682: 50 through review round 2, 31 for round 3, 17
+for round 4 (98 at `938e3b11`), 19 more by round 5 and later, 9 for round 6, L-0682; re-measure
+with `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_config as s;
+print(len(s.CONFIG_MENU_MUTATIONS))"`; registered in `sabotage.py:79`, appended at `:3065`); `.crew/verify.json` rule 7
 (`:159-176`, one longer since T-0028 added `plugin/crew/skills/crew-setup/SKILL.md`) maps all of
 them plus the three modules.
 

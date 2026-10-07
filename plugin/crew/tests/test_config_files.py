@@ -606,3 +606,18 @@ def test_machine_lock_creates_the_directory_and_locks(tmp_path):
     assert (held, os.path.exists(path + ".lock"), os.path.lexists(path)) == (
         True, False, False)
     assert os.path.isdir(os.path.dirname(path))
+
+
+# --- L-0682: os_error_text names paths as written ------------------------------
+
+def test_os_error_text_keeps_backslashes_and_both_filenames():
+    one = r"C:\Users\o\.claude\crew\config.json"
+    two = r"C:\Users\o\.claude\crew\config.json.bak-1"
+    err = PermissionError(errno.EACCES, "Permission denied", one)
+    assert files.os_error_text(err) == f"[Errno {errno.EACCES}] Permission denied: {one}"
+    assert files.os_error_text(OSError(errno.EXDEV, "Invalid cross-device link", one, None, two)) == \
+        f"[Errno {errno.EXDEV}] Invalid cross-device link: {one} -> {two}"
+    assert files.os_error_text(OSError(errno.EIO, "I/O error")) == str(OSError(errno.EIO, "I/O error"))
+    win = OSError(errno.EACCES, "Access is denied", one)
+    win.winerror = 5
+    assert files.os_error_text(win) == f"[WinError 5] Access is denied: {one}"
