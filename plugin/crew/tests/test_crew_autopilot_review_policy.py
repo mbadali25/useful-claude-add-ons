@@ -376,3 +376,19 @@ def test_an_empty_rebuilt_bundle_stops(tmp_path):
     got = _next(root)
 
     assert (got["phase"], got["stop"], "is empty" in got["reason"]) == ("accept-review", True, True), got
+
+
+def test_the_owner_list_still_sees_a_final_round(tmp_path):
+    """T-0067 review r4 FIX: with deep=False the round budget is read before the
+    unread path, so a final FINDINGS round stays the owner's accept-review stop."""
+    root = _approved(tmp_path)
+    second = dict(_round(2, "FINDINGS"), findings=FINDINGS)
+    _findings_round(root, rounds=[_round(1, "CLEAN"), second])
+    first_round = _approved(tmp_path / "first")
+    _findings_round(first_round)
+
+    final = crew_autopilot._phase(str(root), T, policy=False, deep=False)  # pylint: disable=protected-access
+    owed = crew_autopilot._phase(str(first_round), T, policy=False, deep=False)  # pylint: disable=protected-access
+
+    assert ((final["phase"], final["stop"]), (owed["phase"], owed["stop"])) == (
+        ("accept-review", True), ("fix", False))

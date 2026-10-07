@@ -139,8 +139,6 @@ def decide(top, ticket, policy, ledger, latest, answer, toward, deep=True):
     if policy != FIX:
         return (" - autopilot.reviewPolicy could not be told (the config could not be read), "
                 "so autopilot does not fix it")
-    if not deep:  # L-0551: whether the fix is complete needs a bundle rebuild
-        return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_REVIEW)
     left = ledger.get("rounds_left")
     if isinstance(left, bool) or not isinstance(left, int):
         return cause + f"rounds_left is {left!r}, not an integer: could not tell"
@@ -173,6 +171,10 @@ def decide(top, ticket, policy, ledger, latest, answer, toward, deep=True):
     missing, why = _missing(folder, number, owed)
     if why:
         return cause + why
+    if not deep:  # L-0551: the owner list never rebuilds a bundle; a fix still owed is autopilot's
+        return (answer("fix", False, f"round {number}: fixes.md lacks {len(missing)} BLOCK/FIX "
+                       "line(s)", command(ticket, number)) if missing
+                else answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_REVIEW))
     try:
         current = review_patch.compute(top, base)[0]["bundle_sha256"]
     except (RuntimeError, OSError, KeyError, TypeError) as exc:

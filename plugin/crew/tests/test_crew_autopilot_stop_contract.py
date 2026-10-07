@@ -620,7 +620,10 @@ def u_fix(tmp, _mp):
     root = _approved(tmp)
     _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
                                                         "autopilot": {"reviewPolicy": "fix-and-rereview"}}))
-    _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
+    line = "FIX|src/app.py|1|x|y"
+    _ledger(root, [dict(_round(1, "FINDINGS"), findings=[line], ignored_lines=0,
+                        counts={"BLOCK": 0, "FIX": 1, "NIT": 0})], state="REVIEWED")
+    _write(root / ".work" / "tickets" / T / "fixes.md", f"## Round 1\n{line}\n")
     return _shallow(root)
 
 
