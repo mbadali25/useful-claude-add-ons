@@ -181,6 +181,29 @@ def lane_state(top):
     return "not-lane", ""
 
 
+def _started_without_a_file(crew_wave, main, slug, names):
+    """Why this set cannot say which worktrees its lanes are, or None:
+    `start.json` lists every lane the wave started, and a started lane whose
+    file is gone is unknown to crew_wave itself (L-0637 review round 5), so
+    it is never read as "no lane here"."""
+    path = crew_wave.start_path(main, slug)
+    present = _present(path)
+    if present is None:
+        return f"whether {path} exists could not be told"
+    if not present:
+        return None
+    record, state = crew_wave._read_json(path)  # pylint: disable=protected-access
+    started = record.get("lanes") if state == "ok" and isinstance(record, dict) else None
+    if not isinstance(started, list) or not all(isinstance(t, str) for t in started):
+        return (f"{crew_coord.safe(slug, 64)}/start.json is unreadable: which lanes were "
+                "started, and so whether one names this worktree, cannot be told")
+    for ticket in started:
+        if f"{ticket}.json" not in names:
+            return (f"{crew_coord.safe(slug, 64)}/start.json lists {crew_coord.safe(ticket, 80)}, "
+                    "whose lane file is missing: whether it names this worktree cannot be told")
+    return None
+
+
 def _lane_in(crew_wave, main, here):
     """lane_state's question asked of the wave lane files under one worktree
     `main`: 'lane', 'not-lane' or 'unknown'."""
@@ -201,12 +224,13 @@ def _lane_in(crew_wave, main, here):
         present = _present(lanes)
         if present is None:
             return "unknown", f"whether {lanes} exists could not be told"
-        if not present:
-            continue
         try:
-            names = sorted(os.listdir(lanes))
+            names = sorted(os.listdir(lanes)) if present else []
         except OSError as exc:
             return "unknown", f"{lanes} could not be listed ({type(exc).__name__})"
+        gone = _started_without_a_file(crew_wave, main, slug, names)
+        if gone:
+            return "unknown", gone
         for name in names:
             if not name.endswith(".json"):
                 continue

@@ -85,6 +85,26 @@ def test_ring_in_a_lane_of_a_wave_started_from_a_linked_worktree_is_refused(tmp_
     assert run(hub, ["ring"], capsys) == (0, [bell(tip)])
 
 
+@pytest.mark.parametrize("gone", ["file", "directory"])
+def test_a_started_lane_whose_file_is_gone_is_unknown(tmp_path, capsys, gone):
+    """L-0637 review round 5: start.json names the started lanes; a missing
+    lane file (or lanes/ directory) is unknown, never "no lane here"."""
+    root, lane, _ = _hub(tmp_path)
+    if gone == "file":
+        _lane_file(root).unlink()
+    else:
+        shutil.rmtree(_lane_file(root).parent)
+    code, lines = run(lane, ["ring", "--to", "peer-a"], capsys)
+    assert code == 3 and lines and lines[0].startswith("unknown") and "missing" in lines[0], lines
+
+
+def test_a_corrupt_start_record_is_unknown(tmp_path, capsys):
+    root, lane, _ = _hub(tmp_path)
+    (_lane_file(root).parent.parent / "start.json").write_text("{not json", encoding="utf-8")
+    code, lines = run(lane, ["ring"], capsys)
+    assert code == 3 and lines and "start.json is unreadable" in lines[0], lines
+
+
 def test_ring_where_the_lane_marker_is_corrupt_is_unknown(tmp_path, capsys):
     root, lane, _ = _hub(tmp_path)
     _lane_file(root).write_text("{not json", encoding="utf-8")
