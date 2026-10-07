@@ -94,11 +94,11 @@ be wrong can be closed on evidence.
   (1) **core, shown first everywhere** - brainstorm, spec, plan, approve, implement, review, done,
   fix, autopilot, status, help; (2) **reached through `/crew:help` or `/crew:autopilot`, off the
   README's primary table** - docs, diagram, onboard, reference, verify, runbook, handoff, init,
-  config, config-setup, model, migrate, upgrade, debug, survey; (3) **merge candidates** -
-  jira-sync + sdp-sync + obsidian-sync -> one `/crew:sync` dispatching on the tracker mode, and
-  migrate + upgrade -> one `/crew:migrate` that runs the pre-0.20 upgrade first when needed;
-  (4) **keep, specialist** - change, emergency, gate, promote, split, webtest; (5) **remove at the
-  next major** - the 10-line removal stubs `plugin/crew/commands/ticket.md` and `work.md`.
+  config, config-setup, model, migrate, debug, survey; (3) **merge candidates** -
+  jira-sync + sdp-sync + obsidian-sync -> one `/crew:sync` dispatching on the tracker mode
+  (migrate + upgrade was done by T-0038); (4) **keep, specialist** - change, emergency, gate,
+  promote, split, webtest; (5) **remove at the next major** - the removal stubs
+  `plugin/crew/commands/ticket.md`, `work.md` and `upgrade.md`.
   Unverified: whether Claude Code has a frontmatter field that hides a plugin command from the
   `/` menu. `config-setup` (added after T-0025's spec was written) is placed in group 2 as setup.
 - **T-0025 harness-only follow-up (review/gate harness, lands alone).** Three parts of T-0025's

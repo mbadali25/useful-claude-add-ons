@@ -256,7 +256,7 @@ def test_help_md_keeps_an_apostrophe_in_the_question():
 
 
 def test_removal_stubs_are_in_removed():
-    assert dict(crew_help.GROUPS)["removed"] == ("ticket", "work")
+    assert dict(crew_help.GROUPS)["removed"] == ("ticket", "work", "upgrade")
 
 
 def test_about_commands_lists_every_group_core_first():

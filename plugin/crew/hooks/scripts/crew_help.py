@@ -141,11 +141,10 @@ GROUPS = (
     ("core", ("brainstorm", "spec", "plan", "approve", "implement", "review", "done", "fix",
               "autopilot", "status", "help")),
     ("through-help", ("docs", "diagram", "onboard", "reference", "verify", "runbook", "handoff",
-                      "init", "config", "config-setup", "model", "migrate", "upgrade", "debug",
-                      "survey")),
+                      "init", "config", "config-setup", "model", "migrate", "debug", "survey")),
     ("merge-candidates", ("jira-sync", "sdp-sync", "obsidian-sync")),
     ("specialist", ("change", "emergency", "gate", "promote", "split", "webtest")),
-    ("removed", ("ticket", "work")),
+    ("removed", ("ticket", "work", "upgrade")),
 )
 
 
@@ -274,7 +273,7 @@ def describe(name):
     when, after = HELP.get(name, (None, None))
     if when is None:
         group = _group_of(name)
-        when = (f"removed in crew 1.0 - {fields.get('description', '')}" if group == "removed"
+        when = (f"removed - {fields.get('description', '')}" if group == "removed"
                 else f"see /crew:help commands ({group or 'ungrouped'})")
         after = "/crew:help"
     return [_one(f"/crew:{name}: {fields.get('description') or 'no description'}"),

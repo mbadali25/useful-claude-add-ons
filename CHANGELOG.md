@@ -105,7 +105,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Fixed — `crew` 1.1.6: verify.json agents checked early, a provider probe from the repo root, UPGRADE.md history kept, crew's temp files cleaned (T-0065)
 
 - **Summary.** `/crew:status` now names agents your verify map needs that are not installed, a provider
-  probe tests Codex from the repo root, `/crew:upgrade --force` keeps earlier UPGRADE.md runs, and
+  probe tests Codex from the repo root, `crew_upgrade.py --force` keeps earlier UPGRADE.md runs, and
   crew's own tests and hooks stop leaving files in your temp directory.
 
 TheSelectSource (crew 1.0.41) reported four gaps; these are crew's halves of them.
@@ -123,7 +123,7 @@ TheSelectSource (crew 1.0.41) reported four gaps; these are crew's halves of the
   trusted directory" cannot happen. An incomplete event stream or a 120 s timeout is `FAILED`
   (exit 1), a missing CLI exit 2. `/crew:model`, the providers skill and `providers.sh` name it
   instead of a hand-typed `codex exec`.
-- **`/crew:upgrade --force` keeps `UPGRADE.md`'s history (item 8).** Each run puts its report on
+- **`crew_upgrade.py --force` (`/crew:onboard --refresh`) keeps `UPGRADE.md`'s history (item 8).** Each run puts its report on
   top and keeps the earlier file byte for byte below one marker line, newest first; an unverified
   contradictions list is no longer erased. Only the newest run's annotated contradictions are
   carried. The write is a pid-named sibling plus `os.replace`, LF-only. The config backup stays
