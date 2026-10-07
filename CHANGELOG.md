@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.15: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands
+
+- **Summary.** `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between
+  prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
+- **Why.** `test_every_crew_state_path_is_classified` (T-0068) fails for any `.crew/` path a crew
+  script spells that no list names. `crew_ghdeploy.py`'s stateful deploy steps (prepare, identify,
+  watch, record) land with G4 on release/1.2.0, and the lists live in `crew_ticket.py`, a harness
+  path, so the line lands here first, harness-only (owner 2026-10-07). On main no script spells the
+  path yet; nothing checks that a listed path is used, and nothing else changes.
+
 ### Fixed — `crew` 1.1.14: a harness test no longer reads a half-written pid file (C-0063)
 
 - `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and `write` (it failed twice in a row on Python 3.12 CI in wave 5). Test-only; no behaviour change.

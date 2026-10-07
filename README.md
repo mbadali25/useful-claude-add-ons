@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bd3e9ad1daac89654e0134be1cc56c79612be535/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9b3ff4f2a3cb93c78f7a25eeb100a69b809e87e0/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bd3e9ad1daac89654e0134be1cc56c79612be535/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9b3ff4f2a3cb93c78f7a25eeb100a69b809e87e0/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.15**: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands. `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
 - **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
-- **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
