@@ -34,6 +34,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_ticket
 import merged_main_fixtures
 import review_patch
 
@@ -334,7 +335,8 @@ def test_work_dir_is_excluded_and_says_so(repo, tmp_path):
     assert result.returncode == 0, result.stderr
     manifest = _manifest(tmp_path)
     assert manifest["untracked_files"] == ["real.txt"]
-    assert manifest["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
+    assert manifest["excluded"] == [".work/", "graphify-out/"] + list(
+        crew_ticket.CREW_BOOKKEEPING_PATHS)
     assert b"scratch" not in (tmp_path / "diff.txt").read_bytes()
 
 
@@ -405,7 +407,7 @@ def test_generated_graph_dir_is_excluded_and_says_so(repo, tmp_path):
     assert b"graphify-out/" not in patch
     assert b'"nodes": 2' not in patch
     m = _manifest(tmp_path)
-    assert m["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
+    assert m["excluded"] == [".work/", "graphify-out/"] + list(crew_ticket.CREW_BOOKKEEPING_PATHS)
     listed = (m["committed_files"] + m["unstaged_files"] + m["untracked_files"]
               + [e["path"] for e in m["entries"]])
     assert not [p for p in listed if p.startswith("graphify-out/")]
@@ -658,3 +660,108 @@ def test_everything_merged_and_nothing_else_is_nothing_to_review(tmp_path):
 
     assert (result.returncode, f"identical to merged origin/main {merged[:12]}" in result.stderr,
             "matches" in result.stderr) == (2, True, False)
+# ---- T-0068: crew's own bookkeeping never enters the bundle -----------------
+
+def test_bookkeeping_never_enters_the_bundle(repo, tmp_path):
+    """Must-allow. A repository that does not ignore `.crew/` (TSS-510's
+    shape): every path a crew script writes for itself, written untracked
+    after the bundle was built, leaves `bundle_sha256` unchanged, and the
+    manifest names each exclusion."""
+    import crew_fixtures  # pylint: disable=import-outside-toplevel
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    crew_fixtures.write_bookkeeping(repo)
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    m = _manifest(tmp_path)
+    assert before is not None and m["bundle_sha256"] == before
+    assert m["untracked_files"] == []
+    assert ".work/" in m["excluded"]
+    assert set(crew_ticket.CREW_BOOKKEEPING_PATHS) <= set(m["excluded"])
+
+
+def test_a_guard_log_row_never_enters_the_bundle(repo, tmp_path):
+    """Must-allow (round-2 review of 1292b863): a scope refusal appends
+    `.crew/guard.log` (`scope_guard._log`) after the bundle was built; in a
+    repository that does not ignore `.crew/` that row must not stale the
+    receipt, as the gate's record does not."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+    (repo / ".crew").mkdir(exist_ok=True)
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    scope_guard._log(str(repo), "block", "block", "T-1", "lib/b.py",  # pylint: disable=protected-access
+                     "outside T-1's spec ## Touch")
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / ".crew" / "guard.log").is_file()
+    m = _manifest(tmp_path)
+    assert before is not None and m["bundle_sha256"] == before
+    assert m["untracked_files"] == []
+
+
+@pytest.mark.parametrize("rel,tracked", [
+    (".crew/verify.json", True),
+    (".crew/codemap/x.md", False),
+    ("sub/.crew/.scope-base", False),
+    ("sub/.crew/metrics.md", False),
+])
+def test_a_crew_content_path_still_enters_the_bundle(repo, tmp_path, rel, tracked):
+    """Must-block. What crew reads as config or a map, and a nested
+    look-alike of a bookkeeping file, still change the hash and reach the
+    patch: the exclusion is the named list, root-anchored, nothing wider."""
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if tracked:
+        target.write_text("{}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "content")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "src.txt").write_text("real change\n", encoding="utf-8")
+    _git(repo, "add", "src.txt")
+    _git(repo, "commit", "-qm", "real")
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    before = _manifest(tmp_path)["bundle_sha256"]
+    target.write_text('{"changed": "by the ticket"}\n', encoding="utf-8")
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert _manifest(tmp_path)["bundle_sha256"] != before
+    patch = (tmp_path / "diff.txt").read_bytes()
+    assert rel.encode() in patch and b"by the ticket" in patch
+
+
+@pytest.mark.parametrize("rel", [".crew/incident.json", ".crew/tfplan/x.json",
+                                 ".crew/handoffs/x.md", ".crew/backups/x",
+                                 ".crew/transcripts/x.jsonl", ".crew/.deploy-in-flight"])
+def test_a_committed_crew_trust_input_is_in_the_bundle(repo, tmp_path, rel):
+    """Must-block (review of 514ca132, FIX 3): crew writes these, but a PR
+    that COMMITS one -- a plan summary `cloud_guard` trusts, an incident that
+    stands the Stop gate down -- is a change the reviewer must see. Only the
+    ticket-flow bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`) is left out."""
+    base = _git(repo, "rev-parse", "HEAD")
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"deletes": []}\n', encoding="utf-8")
+    _git(repo, "add", "-f", rel)
+    _git(repo, "commit", "-qm", "commits a crew trust input")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    m = _manifest(tmp_path)
+    assert rel in m["committed_files"]
+    assert rel not in m["excluded"]
+    assert rel.encode() in (tmp_path / "diff.txt").read_bytes()

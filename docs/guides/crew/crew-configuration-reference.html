@@ -1827,7 +1827,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>profile name, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The AWS profile an unattended run exports credentials from (<code>aws configure export-credentials</code>); it must yield temporary credentials. Machine file only.</td>
 </tr>
 <tr>
@@ -1835,7 +1835,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>ARN prefix ending in <code>/</code>, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The assumed-role ARN prefix STS must report for that profile, ending in <code>/</code>; null refuses every launch. Machine file only.</td>
 </tr>
 <tr>
@@ -1843,7 +1843,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>region, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The AWS region the unattended run gets; null is <code>us-east-1</code>. Machine file only.</td>
 </tr>
 <tr>
@@ -1851,7 +1851,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>{}</code></td>
 <td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
 </tr>
 </tbody>

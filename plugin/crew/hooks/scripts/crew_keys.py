@@ -351,18 +351,18 @@ KEY_META = {
     "unattendedCloud.aws.readOnly.profile": _row(
         "The AWS profile an unattended run exports credentials from (`aws configure "
         "export-credentials`); it must yield temporary credentials. Machine file only.",
-        "type", since="1.1.8", source=_S + "crew_unattended.py", type_="profile name, or null"),
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="profile name, or null"),
     "unattendedCloud.aws.readOnly.identity": _row(
         "The assumed-role ARN prefix STS must report for that profile, ending in `/`; "
-        "null refuses every launch. Machine file only.", "type", since="1.1.8",
+        "null refuses every launch. Machine file only.", "type", since="1.1.10",
         source=_S + "crew_unattended.py", type_="ARN prefix ending in `/`, or null"),
     "unattendedCloud.aws.readOnly.region": _row(
         "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
-        "type", since="1.1.8", source=_S + "crew_unattended.py", type_="region, or null"),
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
     "unattendedCloud.aws.nonProd": _row(
         "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
         "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
-        "open-table", since="1.1.8", source=_S + "crew_unattended.py"),
+        "open-table", since="1.1.10", source=_S + "crew_unattended.py"),
     # --- pm
     "pm.enabled": _unv("Run the PM brief.", FIRST, _S + "crew_state.py", "boolean"),
     "pm.mode": _unv("How the PM brief adapts its length.", FIRST, _S + "crew_state.py",

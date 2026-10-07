@@ -130,6 +130,27 @@ be wrong can be closed on evidence.
   `4 missing (os/editor, secrets)` - `[Dd]esktop.ini`, `*.p12`, `id_rsa`, `id_ed25519` - with no
   tracked secret (spec Exclusions: not changed by T-0039). (c) A Windows run on win-repo-2 (the
   script is plain python; CRLF and BOM are tested on Linux only).
+- **L-0526 follow-ups (the gate round takes the train).** (a) `crew_train.py`'s module docstring
+  still says neither caller imports it "in this release"
+  (`plugin/crew/hooks/scripts/crew_train.py:9-12`); since L-0526 both do. A feature path, so not
+  edited in L-0526's tooling PR. (b) Sabotage rows S16-S19 (L-0520's PYTHON-set fixes) and
+  S20-S33 (L-0558's round-2 fixes, CHANGELOG 1.0.102) were drafted machine-local and never reached
+  the repo; `plugin/crew/tests/sabotage_train.py` holds S1-S15, R1-R6 and P1-P6 only.
+- **T-0068 follow-ups (crew's own bookkeeping).** (a) A `verify.knownFailures` allowance for TSS
+  F496 (`bash _verify/smoke.sh` fails `local:srl-merged-away-backfill` as root, on main too): a
+  repo-only list of check ids, each with a ticket reference and an expiry, reported as
+  `known-fail` never `pass`, never covering a check that passes on main and fails on the branch,
+  and listed by `/crew:done`. Excluded from T-0068's spec (open question 1, a new config key with
+  its own must-block cases); the owner's answer to that question is not recorded here. (b) The
+  command prose outside the review/gate harness, left out because T-0068 is a harness change
+  that lands alone (`scripts/check-tooling-pr.py`): `plugin/crew/commands/done.md` checks 1-3
+  (bookkeeping written after acceptance does not stale the receipt; the audit never lists it, so
+  a listed `.crew/` path is a real finding), `plugin/crew/commands/verify.md:95-102` (bookkeeping
+  is never unmapped, refresh artifacts are mapped; `:102` still says the gate record is "never
+  tracked") and `plugin/crew/commands/implement.md` step 6 (bookkeeping beside the
+  refresh-artifact allowance). (c) `/crew:init` and `/crew:migrate` adding the untracked
+  bookkeeping to `.gitignore` (direction, excluded by the spec as unnecessary for correctness).
+
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
@@ -141,14 +162,16 @@ be wrong can be closed on evidence.
   section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
 - **T-0028 follow-ups (Kimi Code provider).**
   (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
-  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  and kimi has since L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
   the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
-  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
-  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
-  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
-  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch landed as
+  L-0527 (tooling only). Its follow-ups, each its own ticket: a working-tree fingerprint for
+  codex and copilot; the codex stream error put into review.json reasons unredacted; a write
+  inside `.git` beyond HEAD and the index is not seen; and the docs outside the harness lane
+  (crew-providers `SKILL.md`, `alternative-providers.md`, the `kimi_probe.py` and
+  `crew_config.review_launchable` docstrings), which still say the launch lands later. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
-  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  `plugin/crew/agents/reviewer.md:27`'s order names kimi since the #540 group review (done).
   (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
   `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
   `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
@@ -3631,7 +3654,7 @@ still does not exist anywhere in this repo.
   without guessing which file it continues, and CLAUDE.md forbids the bare form
   for exactly that reason - which is a prose change to a section this ticket's
   defects do not touch, and it carries its own version bump.
-- The sabotage suite reports 11 STILL GREEN mutations on Linux, all
+- **CLOSED 2026-10-03 by L-0608** (verdicts read the junit report; the Windows-only entries are declared in `plugin/crew/tests/sabotage_platform.py` and counted; the frozen-artifact entry is re-aimed at a test that feeds a backslash path). The sabotage suite reports 11 STILL GREEN mutations on Linux, all
   pre-existing and none in `test_docs_routing.py`. Measured at this tree with
   `plugin/crew/tests/sabotage.py` run in five index slices. Ten of them report
   `1 skipped` under the mutation, so the named test never executed: nine name
@@ -5015,7 +5038,9 @@ From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None b
 - `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
 - `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
 
-## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25)
+## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25) - CLOSED 2026-10-03 by L-0608
+
+`sabotage.py` now reads each run's junit report (`plugin/crew/tests/sabotage_platform.py`); the Get-CrewChildTabRecheck entry is declared Windows-only and counted on other hosts.
 
 `plugin/crew/tests/sabotage.py:2928` folds `AUTOCYCLE_MUTATIONS` into its own `MUTATIONS` tuple and
 re-runs every entry through its own independent `run_test`/`main` (`plugin/crew/tests/sabotage.py:2945-3253`),
@@ -5199,7 +5224,7 @@ Ruled by the crew during the 1.0 ship pass, 2026-09-25. Each is a harness defect
 none blocks 1.0. No lane was spent on any of them. Recorded here so the deferral is distinguishable from
 nobody having noticed.
 
-1. `sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b` - the mutations do not bite,
+1. ~~`sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b`~~ CLOSED 2026-10-03 by L-0608: not pwsh - they are Windows-only by design (or vacuous: items 2, 3), now declared or re-aimed. - the mutations do not bite,
    so that slice of the sabotage harness is currently vacuous.
 2. `test_ps1_python_probe.py:~93` - the `.cmd` stubs pass a POSIX `/c/...` path to `CreateProcess`, which
    cannot open it. The stub branch is therefore not exercising what it claims to.
@@ -5236,7 +5261,7 @@ Filed by T-0014. Each item below has no ticket of its own (T-0002..T-0013 carry 
 - **Hooks and CLI approval read `.crew/config.json`; `/crew:migrate` writes `.crew/crew.json`** - `plugin/crew/hooks/scripts/crew_state.py:263` (`load_config`), `plugin/crew/hooks/scripts/crew_ticket.py:518` (`scope.allowCliApproval`, read at `:520`) and `:684` (`scope.mode`) read only `config.json`, while `plugin/crew/hooks/scripts/crew_migrate.py:473` writes the migrated settings to `crew.json` and keeps `config.json` (table at `:11`). The split is partial, not total: `plugin/crew/hooks/scripts/crew_context.py:121` (`load_crew_config`) reads `crew.json` before `config.json`, so `memory.inject` (`inject_enabled`, `:142`) is live from `crew.json`, and `plugin/crew/hooks/scripts/crew_autoclear_setup.py:579` rewrites `context.autoClear` in both files. A setting read through `load_config` or `crew_ticket` and changed only in `crew.json` has no effect. Pick one file as the source every hook reads, or have migrate say which settings are live where.
 - **HTTP deploys and workspace changes pass `cloud_guard.py` unclassified (deferred from T-0005/T-0009)** - under `gh`, `plugin/crew/hooks/scripts/cloud_guard.py:1131` recognises only `gh pr merge --admin`, and the file contains no `curl` handling (`grep -c curl` is 0 at `f2bb919b`). Reproduced at `f2bb919b`: `cloud_guard.scan("bash", ...)` returns no finding for `gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches`, `gh run rerun 12345`, `gh workflow run deploy.yml`, `gh api -X DELETE repos/o/r`, or a `curl -X DELETE`/`-X POST` to `app.terraform.io/api/v2/...` (TFC/HCP workspace delete and run create). Needs a URL-and-method parser whose `unknown` environment is never allowed unattended, plus a must-block/must-allow suite, sabotage-tested, per CLAUDE.md's rule for a blocking hook.
 - **Constraint: the review bundle excludes only `.work/` and, since crew 1.0.54 (T-0092), generated `graphify-out/`** - `plugin/crew/hooks/scripts/review_patch.py:104` (`EXCLUDED = (".work/", "graphify-out/")`), so any other tracked artifact written after review (a codemap refresh, a diagram render, a TODO entry - no longer a graphify rebuild) changes the bundle and stales the receipt. Resolved by ordering in T-0004 and T-0008; recorded as a constraint on anything that writes tracked files after `/crew:review`, not as a defect to fix.
-- **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
+- **CLOSED 2026-10-03 by L-0608 for the 13 STILL GREEN** (ten Windows-only by design and now declared; the bash deadline entry gained a bash-only twin; the frozen-artifact and schema-5 entries were vacuous and are re-aimed); the docs.theme exit-4 entry below stays open. **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
   `promote-gate.ps1 reads an unreadable map as one that gates nothing` (`:482`);
   `the frozen artifact path is stored with native separators` (`:1868`);
   `the schema 5 migration lands install.policy above the floor` (`:2085`);
@@ -5318,3 +5343,13 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 - **SendWait's paste handling was not measured.** The T-0013 spike found tmux text over ~60 characters arriving in one read with its Enter is taken as a paste (the Enter becomes a newline); the tmux sender separates them by 0.5 s. The `.ps1` child sends `SendWait(text)` then `SendWait("{ENTER}")` back to back, unchanged from the `/clear` path, and `/crew:autopilot --goal <slug>` can exceed 60 characters. Measure on Windows, and if it bites, put a pause between the two in the child (a `/clear`-path change too).
 - **Sabotage entries for T-0013 land separately.** `plugin/crew/tests/sabotage*.py` is harness (T-0087), so the eleven mutations (each red on its named `test_resume_typing*.py` test, run by hand on the T-0013 branch) go in their own tooling PR, with the anchor-presence test.
 - **The claiming flavour can report the wrong flavour's outcome on Windows.** Both flavours run their own sender; the one that wins the context claim names ITS sender's result. When the other flavour typed, the claimer's second `decide` reads "already resumed" and its own sender refused, so the context says `Auto-resume did not start: this handoff was already resumed` while the command is being typed. The refusing direction, but misleading.
+
+## Three sabotage entries read STILL GREEN on main (filed 2026-10-03 by L-0608)
+
+Found by L-0608's full Linux run (the first to reach its summary since the azureProfile OOM), and by
+L-0605's gate at main: `the marker's shape check is dropped` and `a round of true passes for round 1`
+(both RED in L-0520's runs, STILL GREEN since), and `install-scripts' paths are left to citation
+counts` (`plugin/crew/tests/sabotage_prereview.py`; RED again after main's f808e5f0), and since #329 `auto-accept defaults a missing ignored_lines to 0` (`tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]`). Their targets ran and passed under the mutation:
+real vacuity, not a platform skip. Each needs its target test re-checked against the code it guards.
+Also still open: `docs.theme default goes back to the string neutral` exits 4 (its target does not
+collect).

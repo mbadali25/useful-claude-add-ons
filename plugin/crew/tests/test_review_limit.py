@@ -23,7 +23,7 @@ import crew_status
 import review_ledger
 import review_limit
 import review_run
-from review_fixtures import git, init_repo
+from review_fixtures import NO_BACKOFF, git, init_repo
 
 LIMIT_MESSAGES = [
     pytest.param("You’ve hit your usage limit. Try again at 3:45 PM.", id="usage-curly"),
@@ -165,8 +165,8 @@ def _bundle(repo, scratch):
 
 def _script(repo, scratch, env, *extra):
     return subprocess.run(
-        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
-         "--scratch", str(scratch)] + list(extra),
+        NO_BACKOFF + ["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch)]
+        + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
         env=env, timeout=180)
 
@@ -212,6 +212,13 @@ def test_probe_limit_error_is_limited_and_reserves_nothing(lane):
 
     assert (result.returncode, _field(result, "PROBE"), _rounds_used(repo)) == (5, "limited", 0)
     assert "hit your usage limit" in _field(result, "PROBE_DETAIL")
+
+
+def test_probe_codes_stay_and_the_unverified_refusal_moved_off_5():
+    """L-0528: the probe keeps 5/6/7 (persisted `codex-probe=5` notes keep
+    their meaning); the gate and pre-review refusal is 9, so 5 is a limit."""
+    assert (review_run.EXIT_PROBE_LIMITED, review_run.EXIT_PROBE_FAILED,
+            review_run.EXIT_PROBE_UNKNOWN, review_run.EXIT_UNVERIFIED) == (5, 6, 7, 9)
 
 
 def test_probe_limit_on_stderr_is_limited(lane):
