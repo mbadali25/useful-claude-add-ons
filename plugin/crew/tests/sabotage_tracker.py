@@ -775,9 +775,9 @@ TRACKER_MUTATIONS = (
      "    status = RETIRED_STATUSES.get(status, status)\n"
      "    if status not in LANE_FOR_STATUS:\n        return _report(info, [_result(kind, FAILED, "
      "f\"status {status} maps to no lane",
-     _TESTS + "test_move_to_retired_status_hints_and_writes_nothing"),
+     _TESTS + "test_retired_hint_is_text_only[merged]"),
     ("L-0530: read applies a retired word's hint as the INDEX status", TRACKER,
      '    status = files.get("status")\n    if status is None:',
      '    status = RETIRED_STATUSES.get(files.get("status"), files.get("status"))\n    if status is None:',
-     _TESTS + "test_retired_hint_is_text_only"),
+     _TESTS + "test_retired_hint_is_text_only[merged]"),
 )
