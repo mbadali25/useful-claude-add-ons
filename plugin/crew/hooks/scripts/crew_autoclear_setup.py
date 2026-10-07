@@ -387,7 +387,10 @@ def _scan_candidate(directory):
         return True, False, f".crew could not be listed: {exc}"
     present, opted_in, problems = False, False, []
     for name in _REPO_CONFIG_NAMES:
-        if name not in names:
+        # The filesystem decides, not an exact match on `listdir`'s stored
+        # spelling: on a case-insensitive one (Windows, macOS) crew reads
+        # `.crew/Config.json` as `config.json`, so the scan must see it too.
+        if name not in names and not os.path.lexists(os.path.join(crew_dir, name)):
             continue
         present = True
         try:

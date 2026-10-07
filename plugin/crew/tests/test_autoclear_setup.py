@@ -881,6 +881,28 @@ def test_an_unreadable_file_is_not_masked_by_an_opted_in_sibling(tmp_path):
                        "--scan-root", str(scan), "--yes-widen"]) == 1
 
 
+def test_a_config_file_listed_in_another_case_is_still_scanned(tmp_path, monkeypatch):
+    # A case-insensitive filesystem (Windows, macOS) lists `Config.json` as
+    # stored, while opening `config.json` reads it; the scan must not skip it.
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    other = _repo(str(scan / "other"))
+    real_listdir = os.listdir
+
+    def _listdir(path):
+        names = real_listdir(path)
+        if os.path.realpath(path) == os.path.join(other, ".crew"):
+            return [n.capitalize() for n in names]
+        return names
+    monkeypatch.setattr(setup.os, "listdir", _listdir)
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["scan"]["found"] == [other]
+    assert plan["widening"]["proposedOnlyRepos"] == sorted([here, other])
+
+
 def test_a_crew_directory_that_cannot_be_listed_is_unreadable(tmp_path, monkeypatch):
     scan = tmp_path / "src"
     here = _repo(str(tmp_path / "here"))
