@@ -84,11 +84,11 @@ COORD_MUTATIONS = (
      '    if old["machine"] != machine():\n',
      "    if False:\n",
      _T + "test_recover_refuses_other_machine"),
+    # G0's recovery adopts only at the measured-gone check, so a probe flipped
+    # after it changed only the refusal's words: the mutation widens the check.
     ("crew_coord adopts while the old PID is alive", COORD,
-     ('    if probe.state == "alive":\n'
-      '        return False, f"pid {pid} is alive, so the old session may still be running"\n'),
-     ('    if probe.state == "alive":\n'
-      '        probe = PidProbe("gone", probe.start, probe.measured)\n'),
+     '    if probe.state == "gone" and probe.measured:\n',
+     '    if probe.state in ("gone", "alive") and probe.measured:\n',
      _T + "test_recover_refuses_live_pid"),
     ("crew_coord reads an unreadable PID check as dead", COORD,
      '    if probe.state == "gone" and probe.measured:\n',
