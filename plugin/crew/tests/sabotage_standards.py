@@ -58,6 +58,7 @@ REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
 PYTHON_SET = os.path.join(CREW, "skills", "crew-standards", "references", "python.md")
+PWSH_SET = os.path.join(CREW, "skills", "crew-standards", "references", "powershell.md")
 
 STANDARDS_MUTATIONS = (
     (
@@ -518,5 +519,39 @@ STANDARDS_MUTATIONS = (
         "command line option\n  [...] which",
         ("tests/test_crew_standards.py::"
          "test_python_sources_quote_whole_spans_without_elision"),
+    ),
+    # C-0042: L-0534's PowerShell set (PWSH), the four its spec proved by hand
+    # (.work/tickets/L-0534/notes.md was machine-local; the list is the spec's).
+    (
+        "the PWSH set stops applying to .ps1 and .psd1 files",
+        PWSH_SET,
+        'applies-to: ["**/*.ps1", "**/*.psm1", "**/*.psd1"]\n',
+        'applies-to: ["**/*.psm1"]\n',
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_set_applies_to_powershell_files_only"),
+    ),
+    (
+        "PWSH-16 names two change sets",
+        PWSH_SET,
+        "**Change sets.** 3: crew-0.19.69, crew-0.19.92, crew-1.0.23\n",
+        "**Change sets.** 2: crew-0.19.69, crew-0.19.92\n",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_names_and_cites_three_change_sets[powershell.md]"),
+    ),
+    (
+        "a PWSH candidate id ships in place of the admitted PWSH-16",
+        PWSH_SET,
+        "## PWSH-16 ",
+        "## PWSH-17 ",
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_set_parses_with_every_field"),
+    ),
+    (
+        "PWSH-16's Why claims one finding too many",
+        PWSH_SET,
+        "or hung. 3 findings across 3 change sets: a python",
+        "or hung. 4 findings across 3 change sets: a python",
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_why_finding_counts_match_their_enumerations"),
     ),
 )
