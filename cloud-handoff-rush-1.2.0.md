@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T09:13Z
+Last updated: 2026-10-07T09:42Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T09:42Z Owner: #547 L-0708 (spec-only: kimi_probe asks git rev-parse instead of any .git) added to a later group -> G3d (not harness; no group touches kimi files). Built by the G3d builder after its 4 tickets; sabotage_kimi.py must-allow entry -> H2.
 - 2026-10-07T09:13Z G0 Codex group r1 on 477aedbc: BLOCK 1 (wave cleanup trusts local origin/HEAD or guesses main -> may delete unmerged lane), FIX 2 (write_set drops deps keys outside --tickets; start.json receipts map unvalidated). Fixer started (8 agents = cap).
 - 2026-10-07T09:10Z Codex logged in (device auth, 3rd code). G0 #546 whole-group Codex r1 running on 477aedbc. Landers started (6 agents + G0 review = 7): G4 (1.1.7), G3b (1.1.8), G1b (1.1.9, merge release), G5 (1.1.10), G7 (1.1.11), G2 (1.1.12); provisional, final in landing order. G3c/G3d/G6a/G6b builders wait for a free slot (and G0 landing).
 - 2026-10-07T08:53Z #546 at 405f3115: only Windows 1/6 red (fixer's new [posix] lane-prompt case hard-coded a POSIX join; ntpath on the runner). Coordinator fixed test (ddd31a27), 1.1.6 re-applied last, pushed 477aedbc. 217 wave passed, check-marketplace + tooling-pr clean.
