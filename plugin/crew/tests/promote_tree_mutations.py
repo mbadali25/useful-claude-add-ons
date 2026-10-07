@@ -214,4 +214,8 @@ PROMOTE_TREE_MUTATIONS = (
      'GATE_DEADLINE=$(( $(date +%s) - SECONDS + 16 ))\n',
      'GATE_DEADLINE=$(( $(date +%s) - SECONDS + 21 ))\n',
      _R + "test_a_slow_first_git_probe_counts_against_the_deadline"),
+    ("_promote_review.py hashes the map without git's eol rules for its path", REVIEW,
+     '[git, "hash-object", "--stdin", "--path", ".crew/verify.json"]',
+     '[git, "hash-object", "--stdin"]',
+     _R + "test_a_crlf_checkout_of_the_committed_map_is_the_committed_map[sh]"),
 )

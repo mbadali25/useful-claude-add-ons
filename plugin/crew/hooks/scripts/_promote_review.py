@@ -285,8 +285,11 @@ def committed_map_text():
         with open(".crew/verify.json", "rb") as fh:
             raw = fh.read()
         git = crew_common.require_tool("git")
-        hashed = subprocess.run([git, "hash-object", "--stdin"], input=raw, capture_output=True,
-                                check=False, timeout=GIT_SECONDS)
+        # --path: hash the bytes as git would store THIS path (autocrlf and
+        # .gitattributes eol applied), or a Windows checkout's CRLF map never
+        # equals its own LF blob.
+        hashed = subprocess.run([git, "hash-object", "--stdin", "--path", ".crew/verify.json"],
+                                input=raw, capture_output=True, check=False, timeout=GIT_SECONDS)
         head = subprocess.run([git, "rev-parse", "-q", "--verify", "HEAD:./.crew/verify.json"],
                               capture_output=True, check=False, timeout=GIT_SECONDS,
                               stdin=subprocess.DEVNULL)

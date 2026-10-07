@@ -688,6 +688,20 @@ def test_require_review_false_with_reason_admits(flavour, tmp_path):
     assert repo.in_flight() == f"development {repo.short}"
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_crlf_checkout_of_the_committed_map_is_the_committed_map(flavour, tmp_path):
+    """Windows CI: under core.autocrlf the working map is CRLF and its blob LF;
+    the helper's hold-to-HEAD check must hash it as git stores the path."""
+    repo = Repo(tmp_path, SHA_MAP)
+    _git(repo.root, "config", "core.autocrlf", "true")
+    path = repo.root / ".crew" / "verify.json"
+    path.unlink()
+    _git(repo.root, "checkout", "--", ".crew/verify.json")
+    assert b"\r\n" in path.read_bytes(), "the checkout did not write CRLF: the case proves nothing"
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_require_human_true_with_marker_and_receipt_admits(flavour, tmp_path):
     repo = Repo(tmp_path, REVIEW_MAP)
