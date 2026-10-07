@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.17**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
+- **crew 1.1.90**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
 - **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
