@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T19:39Z Release FF'd to main eaeb2f4d. G4 lander resumed: merge release, crew 1.1.16, crew-docs gate, full suite, Windows.
 - 2026-10-07T19:39Z MERGED WAVE 6 #561 (h5 C-0060, harness-only) into main, crew 1.1.15 (29/29 green). Next: FF release to main, then G4 1.1.16.
 - 2026-10-07T19:08Z #561 check red: crew-docs (T-0055) wants Docs: none trailer for crew_ticket.py change. Re-wrote version commit with 'Docs: none - ...' trailer (revert + fresh), check-crew-docs OK locally, pushed.
 - 2026-10-07T19:06Z Opened #561 (h5, C-0060, harness-only -> main, crew 1.1.15, head 39f1c498; merged main 9b3ff4f2; README install URLs re-pinned to 9b3ff4f2). After it: FF release to main, then G4 (1.1.16).
