@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T11:48Z MERGED #548 (G7) into release/1.2.0 at 96b5595f, crew 1.1.7 (29/29 CI). #549 (retire, main, 1.1.10) CI queued. G2 restack (1.1.8 on G7) pending.
 - 2026-10-07T11:48Z Retire branch done (C-0047 pt1: 28 entries out, recorded; Codex r2 CLEAN). Coordinator re-set version 1.1.7 -> 1.1.10 (G7 holds 1.1.7), head cd8fe1b3; opened #549 -> main, subscribed. G4 head 60c76f54 (1.1.7 placeholder): r2 BLOCK+2 FIX fixed and sabotage-verified, full crew 14237 passed / 1 expected anchor fail. After #549: release merges main, then G4 re-merges release and takes its final version.
 - 2026-10-07T11:02Z G5 lander: head 84a1139b (crew 1.1.10, gizmoduck 0.5.10, windows-ssm 1.0.2), CI green, full crew 13555 passed, gizmoduck 873. r4 BLOCK (bootstrap --user trusts command -v) unfixed -> sent back to fix (G4 precedent). Asked to justify Windows skip of test_an_interrupted_runner_leaves_no_capture_file. md5 of /usr/local/bin+/opt changed 09:15->later outside its run (investigating). Install scripts changed: re-pin README URLs after main.
 - 2026-10-07T10:54Z Opened #548 (G7 -> release, crew 1.1.7, head cff852dd, contains release 55e45b60), subscribed. G2 (1.1.8) and G3b (1.1.9) restack in progress.
