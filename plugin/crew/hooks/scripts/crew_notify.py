@@ -833,10 +833,15 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
         elif kind not in ("ask", "permission"):
             kind = "ask"
         import crew_notify_hold  # pylint: disable=import-outside-toplevel  # L-0656, imports this
-        if not _already_sent(root, cfg, event, reason, ticket, episode, dedupe) and \
-                crew_notify_hold.holds(root, event, kind, "|".join(
-                    [ticket or "", reason, repr(episode), str(dedupe or "")])):
-            return "held"
+        if (event, kind) in crew_notify_hold.HOLDABLE:  # L-0656 review r4: config failures surface
+            stop = _credentials(cfg)[3]
+            if stop:
+                return stop
+            if not _already_sent(root, cfg, event, reason, ticket, episode, dedupe) and \
+                    crew_notify_hold.holds(root, event, kind, "|".join(
+                        [ticket or where(root)["ticket"] or "", reason, repr(episode),
+                         str(dedupe or "")])):
+                return "held"
         return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"failed ({exc.__class__.__name__})")

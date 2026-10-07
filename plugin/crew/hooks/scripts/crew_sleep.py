@@ -429,24 +429,32 @@ def last_cutoff(text):
     return cutoff
 
 
-def unreported(text):
-    """The entries the last marker does not cover, as `{"at", "ticket",
-    "kind", "text", "setting"}`, in order: those starting at or after its
-    `upto` byte offset (UTF-8, "\n"-split lines, as crew_autopilot_sleep appends them).
-    A line that is neither is not an entry."""
-    entries, cutoff, offset = [], 0, 0
+def unreported_spans(text):
+    """`[(start, end, entry)]` for `unreported`'s entries: each entry's byte
+    span in the log, so a summary that reports only some of them can mark
+    exactly those (L-0656 review r4)."""
+    spans, cutoff, offset = [], 0, 0
     for raw in (text or "").split("\n"):
         line = raw[:-1] if raw.endswith("\r") else raw
         mark = _MARK_RE.match(line)
+        end = offset + len(raw.encode("utf-8")) + 1
         if mark:
             cutoff = int(mark.group(2)) if mark.group(2) else offset
         else:
             found = _ENTRY_RE.match(line)
             if found:
-                entries.append((offset, dict(zip(("at", "ticket", "kind", "text", "setting"),
-                                                 found.groups()))))
-        offset += len(raw.encode("utf-8")) + 1
-    return [entry for start, entry in entries if start >= cutoff]
+                spans.append((offset, end, dict(zip(("at", "ticket", "kind", "text", "setting"),
+                                                    found.groups()))))
+        offset = end
+    return [span for span in spans if span[0] >= cutoff]
+
+
+def unreported(text):
+    """The entries the last marker does not cover, as `{"at", "ticket",
+    "kind", "text", "setting"}`, in order: those starting at or after its
+    `upto` byte offset (UTF-8, "\n"-split lines, as crew_autopilot_sleep appends them).
+    A line that is neither is not an entry."""
+    return [entry for _start, _end, entry in unreported_spans(text)]
 
 
 def malformed(text):
@@ -463,6 +471,9 @@ def malformed(text):
                 not mark or (mark.group(2) and int(mark.group(2)) > offset)):
             bad.append(n)
         offset += len(raw.encode("utf-8")) + 1
+    lines = (text or "").split("\n")
+    if lines[-1].strip() and len(lines) not in bad:  # no final newline: an append cut short
+        bad.append(len(lines))
     return bad
 
 

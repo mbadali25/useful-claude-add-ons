@@ -229,16 +229,23 @@ def _read_log(top):
 
 
 def _append(top, line):
-    """One whole line, one `os.write`, O_APPEND: never truncates, never splits."""
+    """One whole line, one `os.write`, O_APPEND: never truncates, never splits.
+    Under `sleep-log.lock` too: on Windows O_APPEND is a seek then a write,
+    not one step, so two writers could overwrite each other's line (Windows
+    CI, 2026-10-07); a lock that cannot be had there refuses the append."""
     path = log_path(top)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = line.encode("utf-8")
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o644)
-    try:
-        if os.write(fd, data) != len(data):
-            raise OSError("short write to the sleep log")
-    finally:
-        os.close(fd)
+    with crew_notify_hold._Lock(path[:-len(".md")] + ".lock") as lock:  # pylint: disable=protected-access
+        if not lock.held and os.name == "nt":
+            raise OSError("the sleep log lock is busy")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                     0o644)
+        try:
+            if os.write(fd, data) != len(data):
+                raise OSError("short write to the sleep log")
+        finally:
+            os.close(fd)
 
 
 def _setting(conf, key):
@@ -276,7 +283,8 @@ def sleep_note(root, ticket, kind, text):
     if conf["sleep"]["state"] != crew_sleep.ASLEEP:
         return 2, f"refused: autopilot is not asleep ({conf['sleep']['state']}); nothing written"
     setting = _setting(conf, "questions") if kind == "answered" else (
-        f"sleep={conf['sleep'].get('schedule') or conf['sleep'].get('source', 'manual')}")
+        "sleep=manual" if conf["sleep"].get("source") == "manual"  # review r5
+        else f"sleep={conf['sleep'].get('schedule') or 'manual'}")
     _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, kind, text, setting))
     return 0, "noted"
 
@@ -293,7 +301,7 @@ def sleep_summary(root):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = ap.settings(top)["sleep"]["state"]
     if state not in (crew_sleep.AWAKE, crew_sleep.OFF):
-        code, out, _, _ = _summary(top)
+        code, out, _, _, _ = _summary(top)
         why = ("still asleep" if state == crew_sleep.ASLEEP
                else "whether autopilot is asleep cannot be told")
         return code, out + ("" if code or out == NOTHING else
@@ -305,7 +313,7 @@ def sleep_summary(root):
         unfinished = _finish_delivered(top)
         if unfinished:
             return 1, unfinished
-        code, out, text, held = _summary(top)
+        code, out, text, held, upto = _summary(top)
         if code or out == NOTHING:
             return code, out
         word = crew_notify_hold.send_summary(
@@ -313,7 +321,6 @@ def sleep_summary(root):
         if word not in ("sent", "off", "filtered"):
             return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
                              "reported and sent again next run")
-        upto = len(text.encode("utf-8"))
         if word == "sent":
             try:
                 crew_notify_hold.write_delivered(top, upto, held)
@@ -358,28 +365,42 @@ def _finish_delivered(top):
             'could not be removed'}); nothing sent")
 
 
+SUMMARY_BUDGET = 3000  # characters of decisions in one summary; the rest waits for the next
+
+
 def _summary(top):
-    """(exit code, text, log text, held keys): the summary of what is
+    """(exit code, text, log text, held keys, upto): the summary of what is
     unreported and held, or why not; the log text and the held keys are what
-    the summary was made from."""
+    the summary was made from, and `upto` is the end of the last decision it
+    shows. Decisions past SUMMARY_BUDGET wait for the next summary, so a
+    message the notifier must cut never marks a decision it did not carry
+    (L-0656 review r4)."""
     text, why = _read_log(top)
     if text is None:
-        return 1, f"refused: the sleep log could not be read ({why}); it is not empty", None, []
+        return 1, f"refused: the sleep log could not be read ({why}); it is not empty", None, [], 0
     bad = crew_sleep.malformed(text)
     if bad:
         return 1, (f"refused: the sleep log has {len(bad)} line(s) that are not entries (line "
                    f"{', '.join(map(str, bad[:5]))}); it is not read as empty - fix or remove "
-                   f"them in {log_path(top)}"), None, []
+                   f"them in {log_path(top)}"), None, [], 0
     record, held_why = crew_notify_hold.read(top)
     held = sorted(record["keys"]) if record is not None else []
-    entries = crew_sleep.unreported(text)
-    if not entries and record is not None and not held:
-        return 0, NOTHING, text, []
-    if not entries and record is None:
-        return 1, f"refused: {crew_notify_hold.held_line(None, held_why)}", text, []
-    return 0, crew_sleep.summary_text(entries) + (
-        "" if record is not None and not held else "\n" + crew_notify_hold.held_line(
-            None if record is None else len(held), held_why)), text, held
+    spans = crew_sleep.unreported_spans(text)
+    if not spans and record is not None and not held:
+        return 0, NOTHING, text, [], 0
+    if not spans and record is None:
+        return 1, f"refused: {crew_notify_hold.held_line(None, held_why)}", text, [], 0
+    shown = []
+    for span in spans:
+        if shown and len(crew_sleep.summary_text([e for _s, _e, e in shown + [span]])) > SUMMARY_BUDGET:
+            break
+        shown.append(span)
+    out = crew_sleep.summary_text([e for _s, _e, e in shown])
+    if len(shown) < len(spans):
+        out += f"\n({len(spans) - len(shown)} more decision(s): reported in the next summary)"
+    upto = shown[-1][1] if shown else crew_sleep.last_cutoff(text)
+    return 0, out + ("" if record is not None and not held else "\n" + crew_notify_hold.held_line(
+        None if record is None else len(held), held_why)), text, held, upto
 
 
 def with_log_warnings(top, conf):

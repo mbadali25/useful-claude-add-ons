@@ -2305,3 +2305,54 @@ def test_a_ping_already_sent_before_the_window_is_not_counted(tmp_path, clock, w
                              episode=episode)
 
     assert (awake, again, len(wire), _held(root)) == ("sent", "episode", 1, 0)
+
+
+def test_a_long_summary_marks_only_the_decisions_it_carries(tmp_path, clock, wire, capsys):
+    """L-0656 review r4 (must-block): decisions past the budget wait for the next summary."""
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    for n in range(20):
+        _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text",
+             f"note {n} " + "y" * 200)
+    clock(DAY)
+    monkeypatch_wire = wire  # the recording transport
+    assert len(crew_sleep.summary_text(crew_sleep.unreported(_log_text(root)))) > 3000
+
+    first = _cmd(root, capsys, "sleep-summary")
+    left = len(crew_sleep.unreported(_log_text(root)))
+    second = _cmd(root, capsys, "sleep-summary")
+
+    assert (first[0], "more decision(s): reported in the next summary" in first[1], 0 < left < 20,
+            second[0], "note 19" in second[1], len(monkeypatch_wire),
+            all(len(text) <= crew_notify_hold.MAX_SUMMARY for text, _ in monkeypatch_wire)) == (
+        0, True, True, 0, True, 2, True)
+
+
+def test_an_entry_without_its_final_newline_is_malformed():
+    entry = crew_sleep.log_line(NIGHT, T, "note", "a", "x")
+
+    assert (crew_sleep.malformed(entry.rstrip("\n")), crew_sleep.malformed(entry)) == ([1], [])
+
+
+def test_a_manual_sleep_note_names_manual_not_the_schedule(tmp_path, clock, capsys):
+    """L-0653 review r5: a manual sleep outside the window is the source."""
+    clock(DAY)
+    root = _repo(tmp_path, approval="risk", sleep=_night(approval="human"))
+    _manual(root, "asleep")
+
+    code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")[0]
+
+    assert (code, crew_sleep.unreported(_log_text(root))[0]["setting"]) == (0, "sleep=manual")
+
+
+def test_holding_never_hides_a_notifier_that_cannot_send(tmp_path, clock, monkeypatch):
+    """L-0656 review r4: missing credentials surface, asleep or not."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    monkeypatch.delenv("CREW_TEST_TG_TOKEN", raising=False)
+    monkeypatch.setattr(crew_notify, "effective_config", lambda root: (
+        {"provider": "telegram", "tokenEnv": "CREW_TEST_TG_TOKEN", "chatId": "1",
+         "events": list(crew_notify.EVENTS)}, []))
+
+    assert (crew_notify.send(str(root), "question", "q"), _held(root)) == (
+        "missing-credentials", 0)
