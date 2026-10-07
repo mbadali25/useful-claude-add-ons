@@ -951,13 +951,16 @@ def _touch_sets(root, ticket, refs_dir=None):
     `/crew:implement` step 2 uses (it over-lists, never under-lists). A spec or
     Touch list that cannot be read lists every set under UNKNOWN and exits 1."""
     import recurring_findings  # pylint: disable=import-outside-toplevel
-    spec = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), "spec.md")
+    folder, _where, why = crew_common.locate_ticket(root, crew_ticket.check_ticket(ticket))
+    spec = os.path.join(folder, "spec.md") if folder else None  # L-0509: live or archived
     unknown = None
     try:
+        if spec is None:
+            raise OSError(f"could not tell where {ticket} lives: {why}")
         # The FIFO-safe reader step 2's block uses (PYTHON-07), so both read a spec alike.
         text = recurring_findings._read_regular(spec)  # pylint: disable=protected-access
     except (OSError, UnicodeDecodeError) as exc:
-        touch, unknown = [], f"{spec} cannot be read ({exc.__class__.__name__}: {exc})"
+        touch, unknown = [], f"{spec or ticket} cannot be read ({exc.__class__.__name__}: {exc})"
     else:
         touch, why = crew_ticket.parse_touch(text)
         if why:

@@ -1026,6 +1026,8 @@ _PATH_ALLOWED = dict(_HARNESS_FOLLOW_UP, **{
     "crew_status.py": "enumerates .work/tickets/ to count live and archived folders",
     "crew_migrate.py": "the 0.20 layout: legacy files and the live migration target",
     "crew_tracker.py": "_note_text writes the live folder's link once, at create",
+    "crew_wave.py": "copies an eligible (so live, never archived) ticket folder into a lane "
+                    "worktree and reads the lane's own copy there",
 })
 _SCRIPTS_DIR = os.path.dirname(crew_ticket.__file__)
 
@@ -1078,12 +1080,17 @@ _ID_SHAPES = ("[A-Z][A-Z0-9]*-", "[A-Za-z0-9][A-Za-z0-9._-]")
 _REGEX_ANCHORED = {
     "crew_resume.py": "sabotage_resume.py's non-ASCII-digit row anchors _TICKET_ID_RE's line",
 }
+# A regex of the plain-id SHAPE that is not a ticket id at all.
+_NOT_A_TICKET_ID = {
+    "crew_coord.py": "_PART_RE is one part of a coordination repo key, not a ticket id",
+}
 
 
 def test_ticket_id_regexes_are_defined_once():
     found = []
     for name, tree in _script_trees():
-        if name == "crew_common.py" or name in _HARNESS_FOLLOW_UP or name in _REGEX_ANCHORED:
+        if name == "crew_common.py" or name in _HARNESS_FOLLOW_UP or name in _REGEX_ANCHORED \
+                or name in _NOT_A_TICKET_ID:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) \
