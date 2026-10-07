@@ -110,7 +110,8 @@ each with a `src/` of Markdown sources and a `build.py`.** DERIVED:
 rendered `.html`/`.docx`/`.pdf` guides at the top of the directory;
 `docs/guides/crew/src/` holds the Markdown sources (`quickstart.md`,
 `daily-workflow.md`, `troubleshooting.md`, `working-with-codex.md`,
-`memory-and-obsidian.md`, plus two non-published planning files,
+`memory-and-obsidian.md`, `autopilot.md` (T-0054; its examples are checked by
+`scripts/_test/autopilot-guide.py`), plus two non-published planning files,
 `daily-workflow-scope.md` and `memory-recall-proof.md`) and
 `docs/guides/crew/src/build.py`, the generator; `docs/guides/crew/archive/`
 holds superseded dated reports. Not read for build.py's own mechanism at this

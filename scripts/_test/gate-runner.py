@@ -1783,6 +1783,41 @@ def case_timeout_kills_group_outliving_leader(tmp: str) -> None:
     expect(gone, f"child {child} outlived its leader and survived the group SIGKILL")
 
 
+def case_module_need_missing_is_skip(tmp: str) -> None:
+    """L-0657: a `module:` need that does not import is SKIP (NOT VERIFIED), never
+    PASS; one that imports lets the step run."""
+    steps = [sh_step("nomod", "cheap", "exit 0", needs=["module:no_such_module_l0657"]),
+             sh_step("hasmod", "cheap", "exit 0", needs=["module:json"])]
+    rc, out, status = run_gate(tmp, steps)
+    st = by_name(status)
+    expect(st["nomod"]["state"] == "SKIP" and "no_such_module_l0657" in st["nomod"]["reason"],
+           f"nomod = {st['nomod']['state']} {st['nomod']['reason']!r}\n{out}")
+    expect(st["hasmod"]["state"] == "PASS", f"hasmod = {st['hasmod']['state']}\n{out}")
+    expect(rc == 0, f"rc={rc}: a SKIP beside a PASS is a passing run\n{out}")
+    runner = load_runner()
+    step = next(s for s in runner.TABLE if s.name == "crew-guides-fresh")
+    expect("module:markdown" in step.needs, f"crew-guides-fresh needs {step.needs}")
+
+
+def case_no_step_launches_pwsh_directly(tmp: str) -> None:
+    """T-0506: every pwsh a step starts goes through scripts/pwsh-isolated.sh,
+    which gives it a private startup-profile cache."""
+    del tmp
+    runner = load_runner()
+    direct = [s.name for s in runner.TABLE if s.argv and os.path.basename(s.argv[0]) in
+              ("pwsh", "pwsh.exe")]
+    expect(not direct, f"steps start pwsh directly: {direct}")
+    step = next(s for s in runner.TABLE if s.name == "check-powershell")
+    expect(tuple(step.argv) == ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File",
+                                "scripts/check-powershell.ps1"), f"check-powershell argv {step.argv}")
+    # The launcher resolves pwsh ($PWSH, pwsh.exe, install paths) and exits 77
+    # when none runs; a bare-PATH `pwsh` need would SKIP before it could.
+    expect("bash" in step.needs and "pwsh" not in step.needs,
+           f"check-powershell needs {step.needs}")
+    expect(tuple(step.ci) == (("marketplace.yml", "./scripts/check-powershell.ps1"),),
+           f"check-powershell ci {step.ci}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1837,6 +1872,8 @@ CASES = [
     case_heavy_part_bad_slot_is_null,
     case_no_group_signal_after_leader_reaped,
     case_timeout_kills_group_outliving_leader,
+    case_no_step_launches_pwsh_directly,
+    case_module_need_missing_is_skip,
 ]
 
 

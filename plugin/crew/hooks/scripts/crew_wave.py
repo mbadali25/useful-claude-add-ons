@@ -269,7 +269,7 @@ def read_set(root, slug):
 # --- plan: eligibility, overlap, landing order (read-only) -----------------------------
 
 _DEPENDS_RE = re.compile(r"\bdepends on\b([^);]*)", re.IGNORECASE)
-_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
+_ID_RE = re.compile(crew_common.TICKET_ID_CORE)  # L-0509: the one ticket-id shape
 _DEP_FILLER_RE = re.compile(r"^(?:[\s,]|\band\b)*$", re.IGNORECASE)
 CREW_GLOB = "plugin/crew/**"
 PLUGIN_JSON = "plugin/crew/.claude-plugin/plugin.json"

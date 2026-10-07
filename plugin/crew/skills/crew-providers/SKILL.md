@@ -146,15 +146,17 @@ the round runs on the Claude reviewer, announced as same-family (owner, T-0088).
 
 Install the Codex CLI and authenticate per its own docs — the flow changes, so
 follow the current instructions rather than anything written here. Then verify
-with a real call before trusting it:
+with a real call before trusting it, from the repo:
 
 ```bash
-echo "print hello world in python" > /tmp/crew-probe.txt
-codex exec --skip-git-repo-check "Read /tmp/crew-probe.txt and reply with one line of code only"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py codex --root .
 ```
 
-If that returns code, the wiring works. If it hangs, prompts for login, or
-returns an auth error, fix that now — a QA gate that silently fails is worse
+It builds the call with `/crew:review`'s own command line (`review_run.command_for`:
+`--skip-git-repo-check`, `-C <root>`, the repo root as cwd), so it works from any
+directory; a hand-typed `codex exec` run from a `/tmp` export fails with "Not inside
+a trusted directory" instead. `codex: ok` (exit 0) means the wiring works. If it
+reports `FAILED` (an auth error, a login prompt, a timeout), fix that now — a QA gate that silently fails is worse
 than no gate, because everything goes green.
 
 ### Invocation

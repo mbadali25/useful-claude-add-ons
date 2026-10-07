@@ -112,12 +112,14 @@ def _targets(top, sha):
     return sorted(found, key=lambda target: _ORDER.get(target[1], 1))
 
 
-def after_merge(top, branch, pr, answer, deploy, allowed):
+def after_merge(top, branch, pr, answer, deploy, allowed, finished=None):
     """`next`'s answer for a MERGED PR: `crew_ship.merged_phase`'s, then the
     deploy phase. `deploy` is the `autopilot.deploy` setting, `allowed`
     `deploy_allowed`; the sha is the PR's merged head, which `merged_phase`
-    has checked is this checkout's HEAD."""
-    closed = crew_ship.merged_phase(top, branch, pr, answer)
+    has checked is this checkout's HEAD. `finished` is merged_phase's (T-0059):
+    a non-final slice answers `next-slice`, never `closed`, so it never
+    deploys; the deploy phase follows the ticket's final slice."""
+    closed = crew_ship.merged_phase(top, branch, pr, answer, finished)
     if closed.get("phase") != "closed" or deploy == "none":
         return closed
     return deploy_phase(top, closed, answer, allowed, pr.get("headRefOid") or "")

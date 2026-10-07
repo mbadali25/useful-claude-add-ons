@@ -45,3 +45,16 @@ def scratch_nuclei_home(tmp_path, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("NUCLEI_CONFIG_DIR", raising=False)
     return home
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tool_lookup(tmp_path_factory, monkeypatch):
+    """No test reads the operator's real tool home or lookup overrides
+    (L-0684). scanners.base.which looks in the tool home's bin ahead of PATH,
+    so a developer with a populated ~/.local/share/gizmoduck would otherwise
+    see real tools from inside a test. GIZMODUCK_HOME points at an empty
+    directory; the per-tool overrides and XDG_DATA_HOME are removed."""
+    monkeypatch.setenv("GIZMODUCK_HOME", str(tmp_path_factory.mktemp("empty-tool-home")))
+    for var in ("GIZMODUCK_ZAP_HOME", "GIZMODUCK_NIKTO_PL", "GIZMODUCK_TESTSSL_SH",
+                "XDG_DATA_HOME"):
+        monkeypatch.delenv(var, raising=False)

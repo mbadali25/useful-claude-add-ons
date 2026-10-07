@@ -39,6 +39,16 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 48 rules
 
+**DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
+(the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:290-295`):
+paths `plugin/crew/skills/crew-setup/templates/**` and
+`plugin/crew/tests/test_setup_verify_templates.py`, running that one test file (fake `mmdc`,
+throwaway repos; priced 10s, measured under 1s). It covers crew-setup's `_verify` runner templates
+(a failing check's last 5 lines as `FAIL <name> | ...`, exit 77 as SKIP, a temp-file capture
+removed on any exit) and the ready case `templates/cases/diagrams-render.sh`. No earlier rule ran
+a test of these templates: `plugin/crew/skills/**` maps only to `validate-prompts.py`. The
+paragraphs below read older trees and do not count this rule.
+
 **T-0068 (DERIVED, `json.load` and `grep -n` on `T-0068-build` after merging origin/main, 2026-10-04): 565 lines, 52 rules.** The last rule (`.crew/verify.json:554-561`) is T-0068's: `review_patch.py`, `review_ledger.py` and their two test files, running `test_review_patch.py` and `test_review_ledger.py`; before it only the catch-all named either file. Rule 4 (the gate) runs `test_verify_gate_bookkeeping.py` too, rule 12 (`crew_ticket.py`) runs and lists `test_crew_bookkeeping.py`; `default` is `:563` and `unmapped` `:564`. The headings and counts below read older trees.
 
 **The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1211`), drops `bookkeeping` from `changed` (`:1218`) and never appends an `artifact` to `unmatched` (`:1297`), so a rule naming `.crew/codemap/**` still runs. `verify-gate.ps1` pipes `$changed` to `completion_audit.py --classify` (`plugin/crew/hooks/scripts/verify-gate.ps1:1244`), accepts the answer only when every line echoes its path in order, then filters (`:1275`) and skips artifacts at `$unmapped` (`:1357`). Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell`. The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair in both flavours.
@@ -738,8 +748,13 @@ on `make up` and unsets it on `make down`.
 Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint with one worker per
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
-suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
+suites with xdist and `-m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
+The worker count is `-n 16 --dist worksteal` in the `test` job and `-n 8` in the ubuntu slow leg
+since L-0590 (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AUTO_NUM_WORKERS);
+the Windows jobs keep `-n auto`. The `test` job's `max-parallel` is 3 on a pull request and 1 on
+every other event, so a main push runs one Python leg at a time on the self-hosted host; the
+required `test (3.11|3.12|3.13)` checks are that job's legs, as before.
 
 ## Entry points
 

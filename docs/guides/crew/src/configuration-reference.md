@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**147 keys**: 84 settable in the machine-global file, 63 repo-only.
+**152 keys**: 88 settable in the machine-global file, 64 repo-only.
 
 Columns:
 
@@ -190,6 +190,7 @@ Columns:
 | `memory.inject` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_context.py` (expects boolean) | 1.0.25 | Inject the handoff and recall at session start; only an explicit `false` stops it. |
 | `memory.recall.vaults` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of vault names) | 1.0.25 | This repo's vault priority for recall; empty uses the obsidian config's roles. |
 | `memory.recall.maxChars` | repo | `800` | positive integer (coerced in `plugin/crew/hooks/scripts/crew_recall.py`) | 1.0.25 | Recall output budget; a non-positive or non-integer value reads as 800. |
+| `memory.recall.projects` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of project names) | 1.1.11 | Project names sent to vault recall as `--project` so this repo's notes rank first; empty sends the main checkout's directory name. |
 
 ### `context`
 
@@ -240,7 +241,7 @@ Columns:
 | `notify.urlEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Teams webhook URL. Honoured from the machine file only; a repo's is ignored with a notice. |
 | `notify.tokenEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Telegram bot token; null may be filled from the notify skill's `bot_token_env`. Honoured from the machine file only. |
 | `notify.chatId` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Telegram chat id; null may be filled from the notify skill's `chat_id`, and the skill's example value counts as unset. |
-| `notify.events` | both | `["blocker", "deploy", "question"]` | list of event names; an unknown name is dropped with a notice (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Events that notify: `deploy`, `question`, and `blocker` (reserved, sends nothing yet). The pre-1.0 names `gate`, `waiting`, `phase`, `review` and `done` are mapped with a notice. A list is one leaf. |
+| `notify.events` | both | `["blocker", "deploy", "question"]` | list of event names; an unknown name is dropped with a notice (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Events that notify: `deploy`, `question`, and `blocker` (T-0060's four blocker reasons). The pre-1.0 names `gate`, `waiting`, `phase`, `review` and `done` are mapped with a notice. A list is one leaf. |
 | `notify.realertHours` | both | `6` | number of hours; negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The same event + ticket + reason is sent once per this many hours; a question pings once per waiting episode. |
 | `notify.questionTypes` | both | `null` | list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The Claude Code `notification_type` values that count as a question; null uses the built-in five (`crew_notify.QUESTION_TYPES`). |
 
@@ -403,6 +404,15 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `route.enabled` | both | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_route.py`) | 1.0.42 | Route plain-text prompts to `/crew:` commands; only the JSON value `true` arms it. |
+
+### `unattendedCloud`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
+| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 

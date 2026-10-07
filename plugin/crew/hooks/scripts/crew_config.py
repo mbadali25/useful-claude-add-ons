@@ -302,7 +302,7 @@ def default_config():
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
         "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800}},
+                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:
@@ -644,6 +644,12 @@ def default_global_config():
         # per-fork cost differs 16-21x between two of the owner's hosts), so
         # the shell route is settable here; a repo may still override it.
         "shellRoute": {"mode": "auto", "distro": None},
+        # T-0044. Which cloud identity an unattended run holds. In THIS layer
+        # only and absent from `default_config()`: `crew_unattended.py` reads
+        # it from the machine file alone, `resolve_config` drops a repo copy
+        # and `explain_config` reports one as ignored. `nonProd` is an open
+        # table (one leaf), like `dev.roles`.
+        "unattendedCloud": copy.deepcopy(crew_state.UNATTENDED_CLOUD_DEFAULTS),
     }
 
 
@@ -947,6 +953,7 @@ def resolve_config(root):
     # /crew:init template spells out every nullable key, so without this the
     # machine-global layer was inert for every repo crew had ever set up.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg)
+    repo_cfg = _without_machine_only(repo_cfg)
     merged = crew_state.merge_defaults(default_config(), global_cfg)
     merged = crew_state.merge_defaults(merged, repo_cfg)
     if "schema" in repo_cfg:
@@ -1203,6 +1210,68 @@ def cloud_block_problem(block):
         if not isinstance(value, list) or not all(
                 isinstance(v, str) and v.strip() for v in value):
             return f"`cloud.{key}` is not a list of glob strings"
+    return ""
+
+
+def _unattended_target_problem(where, entry, need_named):
+    """Why one `{profile, identity, region}` entry cannot be read, or `""`."""
+    if not isinstance(entry, dict):
+        return f"`{where}` is not an object"
+    for key in ("profile", "identity", "region"):
+        value = entry.get(key)
+        if value is None:
+            if need_named and key in ("profile", "identity"):
+                return f"`{where}.{key}` must be named"
+            continue
+        if not isinstance(value, str) or not value.strip():
+            return f"`{where}.{key}` is not a non-blank string"
+    ident = entry.get("identity")
+    if isinstance(ident, str) and not ident.endswith("/"):
+        return (f"`{where}.identity` must end in `/` (an assumed-role ARN "
+                "prefix exactly as STS prints it)")
+    # One named role, never a whole account: `.../assumed-role/` alone would
+    # let any role's session through.
+    if isinstance(ident, str) and not _ROLE_PREFIX.fullmatch(ident):
+        return (f"`{where}.identity` must name one role: "
+                "`arn:<partition>:sts::<account>:assumed-role/<role name>/`")
+    return ""
+
+
+_ROLE_PREFIX = re.compile(r"arn:[a-z-]+:sts::[0-9]{12}:assumed-role/[^/\s]+/")
+
+
+def unattended_cloud_block_problem(block):
+    """Why a PRESENT machine-layer `unattendedCloud` block cannot be read, or `""`.
+
+    T-0044. A malformed block is never "nothing named, so use the ambient
+    credentials" -- `crew_unattended.py` refuses the launch on any problem
+    named here. A provider other than `aws` is the provider seam: named, and
+    refused as not implemented.
+    """
+    if not isinstance(block, dict):
+        return "`unattendedCloud` is not an object"
+    for provider in block:
+        if provider not in crew_state.UNATTENDED_CLOUD_PROVIDERS:
+            return (f"`unattendedCloud.{provider}`: provider not implemented "
+                    "(only `aws` is)")
+    aws = block.get("aws", {})
+    if not isinstance(aws, dict):
+        return "`unattendedCloud.aws` is not an object"
+    for key in aws:
+        if key not in ("readOnly", "nonProd"):
+            return f"`unattendedCloud.aws.{key}` is not a known key"
+    problem = _unattended_target_problem(
+        "unattendedCloud.aws.readOnly", aws.get("readOnly", {}), False)
+    if problem:
+        return problem
+    non_prod = aws.get("nonProd", {})
+    if not isinstance(non_prod, dict):
+        return "`unattendedCloud.aws.nonProd` is not a map of environment names"
+    for name, entry in non_prod.items():
+        problem = _unattended_target_problem(
+            f"unattendedCloud.aws.nonProd.{name}", entry, True)
+        if problem:
+            return problem
     return ""
 
 
@@ -1845,6 +1914,21 @@ _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
 
 
+def _without_machine_only(repo_cfg):
+    """`repo_cfg` minus every block that is read from the machine file ONLY
+    (T-0044's `unattendedCloud`). Does not mutate. A repo copy decides
+    nothing, so it must not reach the resolved config either."""
+    if not isinstance(repo_cfg, dict) or not any(
+            key in repo_cfg for key in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY):
+        return repo_cfg
+    return {key: value for key, value in repo_cfg.items()
+            if key not in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY}
+
+
+def _is_machine_only_block_path(dotted):
+    return dotted.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY
+
+
 def explain_config(root, path=None, all_keys=False):
     """Every globally-settable key, with its effective value and its source.
 
@@ -1889,6 +1973,8 @@ def explain_config(root, path=None, all_keys=False):
     # helper: if the report applied a different rule from the run, the source
     # column would credit `repo` for a value the run took from `global`.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg, defaults)
+    raw_repo = repo_cfg if isinstance(repo_cfg, dict) else {}
+    repo_cfg = _without_machine_only(repo_cfg)
     resolved = crew_state.merge_defaults(
         crew_state.merge_defaults(defaults, global_cfg), repo_cfg)
 
@@ -1909,6 +1995,26 @@ def explain_config(root, path=None, all_keys=False):
             continue
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if _is_machine_only_block_path(dotted):
+            # T-0044: `crew_unattended.py` reads `unattendedCloud` from the
+            # machine file alone. Judge the global layer against the block's
+            # own defaults (it is absent from `default_config()`), and flag a
+            # repo copy as ignored rather than crediting it.
+            block = {parts[0]: copy.deepcopy(
+                default_global_config()[parts[0]])}
+            only_value = _dig(crew_state.merge_defaults(
+                block, {parts[0]: global_cfg.get(parts[0], {})}), parts)
+            row = {
+                "path": dotted,
+                "value": None if only_value is _MISSING else only_value,
+                "source": "global" if _layer_supplies(
+                    global_cfg, parts, block) else "default",
+            }
+            if _layer_supplies(raw_repo, parts, block):
+                repo_value = _dig(raw_repo, parts)
+                row["repoIgnored"] = None if repo_value is _MISSING else repo_value
+            rows.append(row)
+            continue
         if dotted in crew_state.PERSONAL_KEYS:
             # T-0050: a personal key does not resolve by precedence either,
             # so the merged value is the wrong one to print -- the same
@@ -2129,6 +2235,263 @@ def inspect_global(root, path=None):
         "readable": bool(global_cfg),
         "findings": findings,
     }
+
+
+# --- Inert settings (T-0070) -------------------------------------------------
+#
+# A setting the installed crew does not act on is NAMED, never silently
+# ignored. `.crew/config.json` held `autopilot.approval: self` for days before
+# the crew that read it existed, and nothing said so. The rule is one set
+# difference: a resolved leaf that is not a leaf of `default_config()` (outside
+# `platform.*`, machine facts `platform-sync` stamps, and `schema`) is inert.
+# `INERT_PENDING` only adds what that difference cannot see -- a key that IS in
+# the defaults but whose value does nothing yet -- and the effect and ticket
+# text for a known key. Reporting only: nothing here refuses or rewrites.
+
+# A dotted key, or `(key, value)` for a value-level entry, mapped to
+# `(effect, ticket)`. A key-level entry goes dead, and stays harmless, once
+# its key enters `default_config()`; a value-level entry must be deleted by the
+# ticket that makes the value work. The landing ticket deletes its rows.
+# T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
+# defaults, so their rows went with it.
+INERT_PENDING = {
+    "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
+                                   "L-0541"),
+    ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
+                                    "only `plan` arms it today", "L-0541"),
+    ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
+                                      "dispatches a deploy yet", "T-0045"),
+    ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "
+                                  "dispatches a deploy yet", "T-0045"),
+}
+
+_UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
+# What this crew DOES with a path `filter_global` drops, and no claim about
+# which file may set it: that policy moves (T-0050), this sentence does not.
+_GLOBAL_IGNORED_EFFECT = ("this crew does not read it from the global file, so it takes "
+                          "effect nowhere; set it in the repo's .crew/config.json")
+_INERT_SKIP = ("platform", "schema")
+
+
+def installed_version():
+    """The crew version in this plugin's own `plugin.json`, or None when it
+    cannot be read. Never a guess: the caller says "this crew" instead."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                        os.pardir, ".claude-plugin", "plugin.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            version = json.load(fh).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return version if isinstance(version, str) and version else None
+
+
+def _known_leaf(parts, known):
+    """True when the key tuple `parts` is a default leaf, or sits under one
+    whose default is an open table (`dev.roles`, an empty `{}`). `known` maps
+    each default leaf's key tuple to its default value. A scalar default the
+    user replaced with a block (`autopilot.mode: {"foo": 1}`) is not a
+    table, so `mode.foo` is named. Tuples, never dotted text: a key
+    `mode.foo` is not a child of `mode`."""
+    parts = tuple(parts)
+    if parts in known:
+        return True
+    return any(parts[:i] in known and isinstance(known[parts[:i]], dict)
+               for i in range(1, len(parts)))
+
+
+def inert_settings(root, path=None):
+    """Every setting the installed crew does not act on, sorted by key.
+
+    Each entry is `{"key", "value", "effect", "ticket", "kind", "layer"}`:
+    `kind` is `pending` (a ticket brings it), `unknown` (no ticket knows it)
+    or `global-ignored` (the global filter drops it); `layer` is the raw
+    layer that supplies the value, `repo` winning over `global`."""
+    real_path = GLOBAL_CONFIG_PATH if path is None else path
+    entries = {}
+    # A file that is there and cannot be read is could-not-tell, never "no
+    # inert settings": the readers below collapse it to absent.
+    for label, file_path in (("repo", crew_common.repo_config_file(root, "config.json")),
+                             ("global", real_path)):
+        why = _unreadable_config(file_path)
+        if why:
+            entries[(label, "unreadable")] = {
+                "key": label, "value": why, "effect": "could not tell which settings are "
+                f"inert: {why}", "ticket": None, "kind": "unreadable", "layer": label}
+    repo_raw = crew_state.load_config(root)
+    repo_raw = repo_raw if isinstance(repo_raw, dict) else {}
+    global_raw = read_global_config(real_path)
+    global_kept, ignored = filter_global(global_raw)
+    repo_cfg = without_null_shadows(repo_raw, global_kept)
+    merged = crew_state.merge_defaults(default_config(), global_kept)
+    merged = crew_state.merge_defaults(merged, repo_cfg)
+    # T-0050's personal keys do not resolve by precedence: the value in force
+    # is resolve_config's, and its layer is the one that supplied it.
+    personal = {}
+    for dotted in PERSONAL_PATHS:
+        parts = dotted.split(".")
+        block = merged.get(parts[0])
+        if isinstance(block, dict) and len(parts) == 2:
+            row = _personal_row(repo_cfg, global_kept, dotted)
+            block[parts[1]] = copy.deepcopy(row["effective"])
+            personal[dotted] = ("global" if row["heldDownBy"] == "global"
+                                or row["repo"] is None else "repo")
+    known = dict(_leaf_items(default_config()))
+    # A machine-only block (T-0044's `unattendedCloud`) is known from the
+    # machine file, which its own reader reads; a repo copy stays unknown.
+    known_global = {**known, **dict(_leaf_items(default_global_config()))}
+
+    def layer(parts):
+        dotted = ".".join(parts)
+        if dotted in personal:
+            return personal[dotted]
+        return "repo" if _dig(repo_cfg, parts) is not _MISSING else "global"
+
+    # The path as key TUPLES, not dotted text: a key holding a `.` must not be
+    # read back as two levels (its value would be the _MISSING sentinel).
+    for parts, value in _leaf_items(merged):
+        dotted = ".".join(parts)
+        if parts[0] in _INERT_SKIP:
+            continue
+        pending = INERT_PENDING.get(dotted)
+        # Any repo value, `[]` and `""` included (an empty scope matches
+        # nothing, so it would narrow everything if it were read).
+        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS and _dig(repo_cfg, parts) not in (
+                None, _MISSING):
+            # Read from the machine file only (crew_autocycle.settings): a
+            # repo value narrows nothing.
+            entries[(dotted, "inert")] = {
+                "key": dotted, "value": _dig(repo_cfg, parts), "effect": _REPO_IGNORED_EFFECT,
+                "ticket": None,
+                "kind": "repo-ignored", "layer": "repo"}
+            continue
+        if not _known_leaf(parts, known_global if layer(parts) == "global" else known):
+            effect, ticket = pending or (_UNKNOWN_EFFECT, None)
+            kind = "pending" if pending else "unknown"
+        elif isinstance(value, (str, int, float, bool)) \
+                and (dotted, value) in INERT_PENDING:
+            effect, ticket = INERT_PENDING[(dotted, value)]
+            kind = "pending"
+        else:
+            continue
+        entries[(dotted, "inert")] = {"key": dotted, "value": value, "effect": effect,
+                                      "ticket": ticket, "kind": kind, "layer": layer(parts)}
+    for dropped in ignored:
+        if dropped in _INERT_SKIP:
+            continue  # `schema` has its own --check-global finding
+        for dotted, value in _dropped_leaves(global_raw, dropped):
+            entries[(dotted, "global")] = {"key": dotted, "value": value,
+                                           "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
+                                           "kind": "global-ignored", "layer": "global"}
+    # A could-not-tell first: a line cut at `+N more` must still say it.
+    return [entries[k] for k in sorted(entries, key=lambda k: (k[1] != "unreadable", k))]
+
+
+def _dropped_leaves(raw, dropped):
+    """`(dotted, value)` for every leaf of `raw` at or under the dotted name
+    `dropped`, matched on key TUPLES joined, so a key holding a `.` reads its
+    own value, never the _MISSING sentinel. A dropped name with no leaf (an
+    empty block) is itself, with its value when it can be read."""
+    found = [(".".join(parts), value) for parts, value in _leaf_items(raw)
+             if ".".join(parts) == dropped or ".".join(parts).startswith(dropped + ".")]
+    if found:
+        return found
+    value = _dig(raw, tuple(dropped.split(".")))
+    return [(dropped, None if value is _MISSING else value)]
+
+
+def _leaf_items(node, prefix=()):
+    """`(key tuple, value)` for every non-dict leaf of `node`, in order (a
+    list is a leaf, as in `leaf_paths`)."""
+    out = []
+    for key, value in node.items():
+        here = prefix + (str(key),)
+        if isinstance(value, dict) and value:
+            out.extend(_leaf_items(value, here))
+        else:
+            out.append((here, value))
+    return out
+
+
+def _escaped(text):
+    """`text` with every non-printable character escaped (`completion_audit.
+    shown`). An inert key and value are whatever a config file holds, and they
+    reach a terminal and SessionStart's model context: ESC, BEL or a newline is
+    shown, never emitted."""
+    from completion_audit import shown  # pylint: disable=import-outside-toplevel
+    return shown(text)
+
+
+_REPO_IGNORED_EFFECT = ("read from the machine file only (~/.claude/crew/config.json): "
+                        "a repo value narrows nothing")
+
+
+def _unreadable_config(path):
+    """Why the config file at `path` is there and cannot be read as a JSON
+    object, or None (absent, or readable)."""
+    if not path or not os.path.lexists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        return f"{os.path.basename(path)} could not be read ({type(exc).__name__})"
+    return None if isinstance(data, dict) else f"{os.path.basename(path)} is not a JSON object"
+
+
+def _inert_item(entry):
+    value = entry["value"]
+    shown = _escaped(value if isinstance(value, str) else json.dumps(value))
+    if entry["kind"] == "unreadable":
+        return f"could not tell ({_escaped(entry['key'])} config: {shown})"
+    if entry["kind"] == "repo-ignored":
+        why = "repo, not read"
+    elif entry["kind"] == "global-ignored":
+        why = "global, not read"
+    elif entry["ticket"]:
+        why = entry["ticket"] + (", global" if entry["layer"] == "global" else "")
+    else:
+        why = "unknown key"
+    return f"{_escaped(entry['key'])}={shown} ({why})"
+
+
+def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {exc}"):
+    """`inert: key=value (ticket) - effect` for every `autopilot.*` setting this
+    crew does not act on (T-0070), for `crew_autopilot.settings`. Warns only,
+    never refuses: an inert key must not block the run it was meant to speed
+    up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
+    which already names T-0045. `failure` renders an exception (autopilot's
+    `_failure`); anything that raises is one could-not-tell warning."""
+    try:
+        return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
+                for e in inert_settings(top)
+                if e["key"].startswith("autopilot.")
+                and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
+    except Exception as exc:  # pylint: disable=broad-except
+        return [f"inert: could not tell which settings are inert ({failure(exc)})"]
+
+
+def inert_items(entries, room):
+    """`key=value (why)` items joined by `, `, cut at an item boundary so the
+    result fits `room` characters, ending `+N more` when anything was cut."""
+    items = [_inert_item(e) for e in entries]
+    for keep in range(len(items), -1, -1):
+        text = ", ".join(items[:keep])
+        if keep < len(items):
+            text += (", " if keep else "") + f"+{len(items) - keep} more"
+        if len(text) <= room:
+            return text
+    return f"+{len(items)} more"
+
+
+INERT_LIMIT = 300
+
+
+def format_inert(entries, version, limit=INERT_LIMIT):
+    """One line naming every inert setting, at most `limit` characters."""
+    head = (f"Inert settings (crew {version} does not act on them): " if version
+            else "Inert settings (this crew does not act on them): ")
+    return head + inert_items(entries, limit - len(head))
 
 
 # --- What actually backs each role -----------------------------------------
@@ -3450,7 +3813,8 @@ def is_repo_path(dotted):
 
 def repo_widens(dotted, before, after, global_value):
     """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change, plus
-    `widensTo` (the value in force after) for a personal key.
+    `widensTo` (the value in force after) for a personal key, and `inForce`
+    (the inherited machine value) for a repo `null` on a `_RATCHETED` key.
 
     A ratcheted key compares what is IN FORCE before and after, by rank: a
     repo `block` -> `allow` under a machine `allow` widens, and the same edit
@@ -3484,7 +3848,13 @@ def repo_widens(dotted, before, after, global_value):
     if dotted in _RATCHETED:
         rank = _RATCHETED[dotted][0]
         was = before if before is not None else global_value
-        out["widens"] = rank(after) > rank(was)
+        # T-0103: a repo `null` inherits the machine value (`null_means`), so
+        # what takes effect is that value. `inForce` carries it for the `!`
+        # line's note; the printed token stays the written `null`.
+        in_force = after if after is not None else global_value
+        out["widens"] = rank(in_force) > rank(was)
+        if after is None:
+            out["inForce"] = in_force
         return out
     out["widens"] = _consent_widening(dotted, after) and before != after
     return out
@@ -3614,10 +3984,16 @@ def print_changes(changes):
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
         if change["widens"] and (change.get("unset") or "widensTo" in change):
-            granted = change.get("widensTo")
+            # A repo removal on a `_RATCHETED` key carries `inForce` (T-0103).
+            granted = change.get("widensTo", change.get("inForce"))
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
+        elif change["widens"] and "inForce" in change:
+            # T-0103: a repo `null` is described by the value it inherits;
+            # the token stays the written `null`.
+            print(f"  ! {change['path']} widens to `null`: "
+                  + widening_note(change["path"], change["inForce"]))
         elif change["widens"]:
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(change['after']).strip(chr(34))}`: "
@@ -4272,6 +4648,8 @@ def main(argv=None):
                         help="findings about the machine-global config")
     parser.add_argument("--check", action="store_true",
                         help="warnings about the repo config (exit 0)")
+    parser.add_argument("--inert", action="store_true",
+                        help="settings this crew does not act on (exit 0)")
     parser.add_argument("--author-stale", action="store_true",
                         help="the caller compared the recorded dispatch "
                              "against the diff's merge-base and found it "
@@ -4439,6 +4817,18 @@ def main(argv=None):
             print(json.dumps(report, indent=2))
         else:
             _print_models(report, args.root)
+        return 0
+
+    if args.inert:
+        entries = inert_settings(args.root, args.global_path)
+        if args.json:
+            print(json.dumps(entries, indent=2))
+        elif not entries:
+            print("inert settings: none")
+        else:
+            print(format_inert(entries, installed_version()))
+            for entry in entries:
+                print(f"- {_escaped(entry['key'])}: {entry['effect']}")
         return 0
 
     if args.check:

@@ -34,6 +34,16 @@ no sha answers that, which is why these stay manual.
 `/crew:implement` asks this question once per ticket. The honest answer is
 usually "none of them."
 
+## The decision is recorded, then checked
+
+`/crew:docs <id>` writes `.work/tickets/<id>/docs.json` once: `{"reasons": {"<document>":
+"<why not>"}, "deferred": [{"key", "why", "unblock"}]}`. `crew_docs_check.py --ticket <id>`
+then prints each document `updated`, `not needed (<reason>)` or `MISSING`. A changed
+marketplace entry's CHANGELOG line (its name and new version, under `[Unreleased]`) is
+mechanical and no reason waives it; README and SECURITY.md are `not needed` only with a
+recorded reason once a trigger fired; every deferral must reach TODO.md. ADRs and
+runbooks stay judgement, reported `not measured`. It runs before review, never after.
+
 ## Generated blocks are not yours to edit
 
 Some documentation is compiled from source. Editing the output is work that gets
@@ -120,7 +130,7 @@ reports rather than fixes, because bulk doc edits are unreviewable.
 
 ---
 
-## References: API and features
+## References: API, features and integrations
 
 `/crew:reference` writes these, in the session that runs it. They are
 separate from everything above because they are **enumerations**, not narratives
@@ -130,6 +140,7 @@ separate from everything above because they are **enumerations**, not narratives
 |---|---|
 | `docs/reference/api.md` | What can I call, with what, and what does it do to the system |
 | `docs/reference/features.md` | What can this system do, including the parts with no UI |
+| `docs/reference/integrations.md` | What does this system call out to, with what credential source, and how does each call fail ([format](integrations.md)) |
 
 ### Why the codemap does not cover this
 

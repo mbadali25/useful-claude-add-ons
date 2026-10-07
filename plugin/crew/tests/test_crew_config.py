@@ -128,9 +128,16 @@ def test_the_global_template_carries_no_schema():
 
 def test_every_global_key_is_a_real_repo_config_key():
     """A global key the repo shape has never heard of would resolve into
-    every repo and be read by nothing."""
+    every repo and be read by nothing.
+
+    The one exception is a MACHINE-ONLY block (T-0044's `unattendedCloud`):
+    it is read from the machine file alone by `crew_unattended.py`, so the
+    repo shape must NOT carry it -- that is asserted, not just allowed."""
     repo = crew_config.default_config()
     for path in crew_config.leaf_paths(crew_config.default_global_config()):
+        if path.split(".")[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
+            assert path.split(".")[0] not in repo, path
+            continue
         node = repo
         for part in path.split("."):
             assert isinstance(node, dict) and part in node, path
@@ -411,7 +418,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 147 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
     # (/crew:autopilot wave) on top of those 145, merging release/1.2.0 into G4.
     assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
-    assert len(declared) == 147
+    # 146 with L-0675's repo-only `memory.recall.projects` on top of those 145
+    # (G3b stacked on G2, crew 1.1.11); 148 with G4's two T-0009 keys above.
+    assert "memory.recall.projects" in declared
+    assert len(declared) == 148
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -858,7 +868,8 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["memory"] == {"mode": "vault",
                                   "vaultPath": "/home/me/vault",
                                   "inject": True,
-                                  "recall": {"vaults": [], "maxChars": 800}}
+                                  "recall": {"vaults": [], "maxChars": 800,
+                                             "projects": []}}
 
 
 @pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",
@@ -2294,6 +2305,50 @@ def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     assert (code, [c["widens"] for c in changes]) == (0, [True])
     assert "! guards.forcePush widens to" in out
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
+
+
+def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, capsys):
+    """T-0103 (T-0075 round-6 NIT 2): a repo `null` on `pm.authority`
+    inherits the machine value, so under a wider machine value it widens,
+    and the `!` line's note is the note of the value in force, not of `null`.
+    The `widens to` token stays the written value."""
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "report-only"}, {"pm": {"authority": "autonomous"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+    code = crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                             "--set", "pm.authority=null"])
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert (code, [c["widens"] for c in changes]) == (0, [True])
+    assert "! pm.authority widens to `null`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
+def test_a_repo_removal_that_widens_is_described_by_the_value_in_force(capsys):
+    """A whole-file restore that removes a repo `pm.authority` under a wider
+    machine value: the `!` line names and describes the inherited value."""
+    changes = crew_config._diff_changes(  # pylint: disable=protected-access
+        {"pm": {"authority": "report-only"}}, {}, "repo",
+        {"pm": {"authority": "autonomous"}})
+
+    crew_config.print_changes(changes)
+
+    out = capsys.readouterr().out
+    notes = crew_config._RATCHETED["pm.authority"][2]  # pylint: disable=protected-access
+    assert [c["widens"] for c in changes] == [True]
+    assert "! pm.authority widens to `autonomous`: " + notes["autonomous"] in out
+    assert notes["report-only"] not in out
+
+
+def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, capsys):
+    root, gpath = _repo_with_global(
+        tmp_path, {"pm.authority": "act"}, {"pm": {"authority": "report-only"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {"pm.authority": None}, gpath)
+
+    assert [c["widens"] for c in changes] == [False]
 
 
 def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):

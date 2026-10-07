@@ -735,8 +735,8 @@ def test_apply_refuses_via_other_than_command(tmp_path):
     ticket = _parent(root)
     _checked(root, ticket)
 
-    with pytest.raises(crew_split.SplitError, match="via autopilot"):
-        crew_split.apply(str(root), ticket, "autopilot", session=SESSION)
+    with pytest.raises(crew_split.SplitError, match="via robot is not one of command|autopilot"):
+        crew_split.apply(str(root), ticket, "robot", session=SESSION)
 
 
 def test_apply_refuses_when_confirm_refuses(tmp_path):
@@ -1390,3 +1390,674 @@ def test_superseded_child_is_not_reused(tmp_path, monkeypatch):
     got = crew_split.apply(str(root), ticket, "command", session=SESSION)
 
     assert first not in got["children"]
+
+
+# --- T-0058: the ticket split policy and apply --via autopilot ----------------------
+#
+# `ticket_split_policy` is T-0012's split rule (crew_autopilot_goal._split_rule)
+# applied to the parent's spec risk, refused outright in jira and sdp mode.
+# `apply --via autopilot` asks it at apply time and needs no human turn;
+# `--via command` needs no policy.
+
+def _policy_repo(tmp_path, approval="self", allow=True, mode="plan", tracker="files",
+                 risk="high"):
+    root = make_repo(tmp_path)
+    config = {"tracker": tracker, "autopilot": {"mode": mode, "approval": approval}}
+    if allow is not None:
+        config["scope"] = {"allowCliApproval": allow}
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    ticket = _parent(root) if tracker in ("files", "obsidian") else None
+    if ticket and risk != "high":
+        spec = root / ".work" / "tickets" / ticket / "spec.md"
+        text = spec.read_text(encoding="utf-8")
+        spec.write_text(text.replace("risk: high", risk, 1), encoding="utf-8", newline="\n")
+    _staged(root, ticket)
+    return root, ticket
+
+
+def _set_config(root, **changes):
+    path = root / ".crew" / "config.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    for key, value in changes.items():
+        if key == "approval":
+            config["autopilot"]["approval"] = value
+        else:
+            config[key] = value
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_policy_refuses_jira_even_under_self(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="jira")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "/crew:split <KEY>" in got["reason"]) == (False, True), got
+
+
+def test_policy_refuses_sdp(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="sdp")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], crew_split.SDP_STOP in got["reason"]) == (False, True), got
+
+
+def test_policy_refuses_unknown_tracker(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text("{torn", encoding="utf-8")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert got["allow"] is False, got
+
+
+def test_policy_refuses_human(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human", risk="risk: low")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"], "owner" in got["reason"]) == (False, "human", True)
+
+
+@pytest.mark.parametrize("risk", ["risk: med", "risk: high", "risk: maybe", ""])
+def test_policy_refuses_risk_not_low(tmp_path, risk):
+    root, ticket = _policy_repo(tmp_path, approval="risk", risk=risk)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"]) == (False, "risk"), got
+    assert got["risk"] != "low" or got["known"] is False, got
+
+
+@pytest.mark.parametrize("allow", [None, False, "true", 1])
+def test_policy_refuses_without_allow_cli_approval(tmp_path, allow):
+    root, ticket = _policy_repo(tmp_path, allow=allow)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "allowCliApproval" in got["reason"]) == (False, True), got
+
+
+@pytest.mark.parametrize("mode", ["off", "Plan", None])
+def test_policy_refuses_unarmed(tmp_path, mode):
+    root, ticket = _policy_repo(tmp_path, mode=mode)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "not armed" in got["reason"]) == (False, True), got
+
+
+def test_policy_allows_self_any_risk(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["policy"], got["risk"]) == (True, "self", "high"), got
+
+
+def test_policy_allows_risk_low(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="risk", risk="risk: low")
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], got["risk"], got["known"]) == (True, "low", True), got
+
+
+def test_policy_reasked_at_apply(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    assert crew_split.check(str(root), ticket)[1] == []
+    assert crew_split.ticket_split_policy(str(root), ticket)["allow"] is True
+    _set_config(root, approval="human")
+
+    with pytest.raises(crew_split.SplitError, match="autopilot.approval is human"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_apply_via_autopilot_refuses_jira_before_anything(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    _set_config(root, tracker="jira")
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    with pytest.raises(crew_split.SplitError, match="/crew:split <KEY>"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert minted == []
+
+
+def test_apply_self_files_mode_mints_children(tmp_path):
+    root, ticket = _policy_repo(tmp_path)
+    before = _spec_bytes(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    kids = got["children"]
+    assert len(kids) == 3
+    spec = _spec_bytes(root, ticket).decode("utf-8").splitlines()
+    assert re.search(r"status: superseded(\s|$)", spec[0]), spec[0]
+    assert spec[1] == "split-into: " + ", ".join(kids)
+    assert _index_status(root, ticket) == "superseded"
+    assert (root / ".work" / "tickets" / ticket / "spec.pre-split.md").read_bytes() == before
+    crit = _criteria()
+    for kid, items in zip(kids, (crit[4:7], crit[7:10], crit[10:11])):
+        direction = (root / ".work" / "tickets" / kid / "direction.md").read_text(encoding="utf-8")
+        assert all(f"- {c}" in direction for c in items)
+        assert _index_status(root, kid) == "ready"
+
+
+def test_apply_risk_low_obsidian_mode(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = make_repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text(json.dumps({"tracker": {
+        "kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo",
+                                         "board": "Board.md"}}}), encoding="utf-8")
+    (root / ".crew" / "config.json").write_text(json.dumps({
+        "autopilot": {"mode": "plan", "approval": "risk"},
+        "scope": {"allowCliApproval": True}}), encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_text("T-0059 | done | - | r | old\n", encoding="utf-8")
+    ticket = _parent(root)
+    spec = root / ".work" / "tickets" / ticket / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("risk: high", "risk: low", 1),
+                    encoding="utf-8", newline="\n")
+    _staged(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+    assert len(got["children"]) == 3
+    assert all(_index_status(root, kid) == "ready" for kid in got["children"])
+    assert (_index_status(root, ticket), _lane_of(board, ticket)) == ("superseded", "Done")
+
+
+def test_apply_via_command_needs_no_policy(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human", allow=None, mode="off")
+    _checked(root, ticket)
+
+    got = crew_split.apply(str(root), ticket, "command", session=SESSION)
+
+    assert len(got["children"]) == 3
+
+
+def test_apply_via_autopilot_needs_no_human_turn(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    monkeypatch.delenv(crew_split.SESSION_ENV, raising=False)
+    monkeypatch.setattr(crew_split, "confirm", lambda *a, **k: {"ok": False, "reason": "x"})
+
+    assert len(crew_split.apply(str(root), ticket, "autopilot")["children"]) == 3
+
+
+def test_apply_cli_via_autopilot_refused_names_crew_split(tmp_path):
+    root, ticket = _policy_repo(tmp_path, approval="human")
+
+    run = subprocess.run([sys.executable, SCRIPT, "apply", "--root", str(root), "--ticket", ticket,
+                          "--via", "autopilot"], capture_output=True, text=True, check=False)
+
+    assert run.returncode == 1, run.stdout + run.stderr
+    assert "refused:" in run.stdout and "autopilot.approval is human" in run.stdout
+
+
+def test_split_policy_for_goals_unchanged_by_the_factored_rule():
+    """T-0012's goal split_policy and the ticket policy share one rule."""
+    import crew_autopilot_goal  # pylint: disable=import-outside-toplevel
+    assert callable(crew_autopilot_goal._split_rule)  # pylint: disable=protected-access
+
+
+# --- T-0058 x T-0052 round 3: --via autopilot keeps the existing-children checks ----
+
+def test_apply_via_autopilot_refuses_preseeded_minted(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    before = _spec_bytes(root, ticket)
+    _staged(root, ticket, _t0004_proposal() + "\n## Minted\n- Child 1: T-9999\n")
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    with pytest.raises(crew_split.SplitError, match="Minted|no apply has run"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert (minted, _spec_bytes(root, ticket), _index_status(root, ticket)) == (
+        [], before, "spec")
+
+
+def test_apply_via_autopilot_refuses_minted_entry_without_provenance(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(re.sub(r"- Child 1: T-\d+", f"- Child 1: {ticket}", text), encoding="utf-8")
+
+    with pytest.raises(crew_split.SplitError, match="provenance"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert _index_status(root, ticket) == "spec"
+
+
+def test_apply_via_autopilot_rerun_skips_verified_children(tmp_path, monkeypatch):
+    root, ticket = _policy_repo(tmp_path)
+    real, calls = crew_ticket.mint, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise crew_ticket.TicketError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "mint", flaky)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    assert (len(calls), len(got["children"]), len(set(got["children"]))) == (4, 3, 3)
+
+
+# --- #365 review of 20718c87 -------------------------------------------------------
+
+def test_policy_crash_refuses_and_apply_writes_nothing(tmp_path, monkeypatch):
+    """FIX 1: anything ticket_split_policy cannot read is could-not-tell, never allow."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root, ticket = _policy_repo(tmp_path)
+    before = _spec_bytes(root, ticket)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("settings unreadable")
+
+    monkeypatch.setattr(crew_autopilot, "settings", boom)
+    minted = []
+    monkeypatch.setattr(crew_ticket, "mint", lambda *a, **k: minted.append(a))
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+    with pytest.raises(crew_split.SplitError, match="could not tell"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert (minted, _spec_bytes(root, ticket), _index_status(root, ticket)) == (
+        [], before, "spec")
+    assert not (root / ".work" / "tickets" / ticket / "spec.pre-split.md").exists()
+
+
+@pytest.mark.parametrize("target", ["_split_rule", "_ticket_risk"])
+def test_policy_rule_crash_refuses_never_raises(tmp_path, monkeypatch, target):
+    """NIT 2: the rule and the risk read sit inside the could-not-tell boundary."""
+    # pylint: disable=import-outside-toplevel
+    import crew_autopilot
+    import crew_autopilot_goal
+    root, ticket = _policy_repo(tmp_path)
+
+    def boom(*_a, **_k):
+        raise KeyError("approval")
+
+    monkeypatch.setattr(crew_autopilot_goal if target == "_split_rule" else crew_autopilot,
+                        target, boom)
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+
+
+def test_policy_with_a_settings_answer_missing_a_key_refuses(tmp_path, monkeypatch):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root, ticket = _policy_repo(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "settings", lambda top: {"warnings": []})
+
+    got = crew_split.ticket_split_policy(str(root), ticket)
+
+    assert (got["allow"], "could not tell" in got["reason"]) == (False, True), got
+
+
+def _swap_after_partial(root, ticket):
+    path = root / ".work" / "tickets" / ticket / "split.md"
+    old = path.read_text(encoding="utf-8")
+    first = re.search(r"- Child 1: (T-\d+)", old).group(1)
+    crit = _criteria()
+    swapped = _t0004_proposal(children=[
+        ("autopilot ship policy", "high", crit[7:10]),
+        ("autopilot approval and question policies", "high", crit[4:7]),
+        ("autopilot goal: tickets from a goal file", "med", crit[10:11])])
+    path.write_text(swapped + "\n" + old[old.index("## Minted"):], encoding="utf-8")
+    return first
+
+
+def test_apply_via_autopilot_refuses_a_stale_child_from_an_edited_proposal(tmp_path,
+                                                                           monkeypatch):
+    """NIT 4 (T-0052 round 2 on the autopilot path): a child minted for an older
+    proposal is refused, never reused, and nothing new is written."""
+    root, ticket = _policy_repo(tmp_path)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    _swap_after_partial(root, ticket)
+    before = sorted(os.listdir(root / ".work" / "tickets"))
+
+    with pytest.raises(crew_split.SplitError, match="different proposal"):
+        crew_split.apply(str(root), ticket, "autopilot")
+    assert sorted(os.listdir(root / ".work" / "tickets")) == before
+    assert _index_status(root, ticket) == "spec"
+
+
+@pytest.mark.parametrize("closed", ["cancelled", "superseded"])
+def test_apply_via_autopilot_remints_a_closed_child(tmp_path, monkeypatch, closed):
+    """NIT 4 (T-0052 round 3 on the autopilot path): a cancelled or superseded
+    child is re-minted, never reused."""
+    root, ticket = _policy_repo(tmp_path)
+    real = _fail_second_mint(monkeypatch)
+    with pytest.raises(crew_split.SplitError):
+        crew_split.apply(str(root), ticket, "autopilot")
+    monkeypatch.setattr(crew_ticket, "mint", real)
+    first = re.search(r"- Child 1: (T-\d+)", (root / ".work" / "tickets" / ticket /
+                                              "split.md").read_text(encoding="utf-8")).group(1)
+    assert crew_tracker.exit_code(crew_tracker.move(str(root), first, closed)) == 0
+
+    got = crew_split.apply(str(root), ticket, "autopilot")
+
+    assert first not in got["children"] and len(set(got["children"])) == 3
+    assert _index_status(root, ticket) == "superseded"
+
+
+# --- T-0059: the plan's `## PR slices` section (parse_slices) ------------------------
+
+def _plan_with_slices(slices, files=None):
+    """A five-step plan (step N touches `src/sN.py` unless `files` says
+    otherwise) followed by `slices`, the `## PR slices` body verbatim."""
+    files = files or {}
+    steps = "".join(f"### Step {n}: step {n}\nFiles: {files.get(n, f'src/s{n}.py')}\n"
+                    f"Test: pytest\nRisk: low\n- [ ] do {n}\n\n" for n in range(1, 6))
+    tail = f"## PR slices\n\n{slices}" if slices is not None else ""
+    return f"# T-1 plan\n\n{steps}{tail}"
+
+
+def _slice(n, steps, base="main", name=None):
+    return f"### Slice {n}: {name or f'part {n}'}\nSteps: {steps}\nBase: {base}\n\n"
+
+
+GOOD_SLICES = _slice(1, "1, 2") + _slice(2, "3-4") + _slice(3, "5", base="slice 2")
+
+
+def test_slice_bounds_match_the_child_bounds():
+    assert (crew_split.SLICES_MIN, crew_split.SLICES_MAX) == (
+        crew_split.CHILDREN_MIN, crew_split.CHILDREN_MAX)
+
+
+def test_no_slices_section_valid():
+    assert crew_split.parse_slices(_plan_with_slices(None)) == ([], [])
+
+
+def test_slices_partition_ok():
+    slices, problems = crew_split.parse_slices(_plan_with_slices(GOOD_SLICES))
+
+    assert (problems, [(s["n"], s["name"], s["steps"], s["base"]) for s in slices]) == (
+        [], [(1, "part 1", [1, 2], "main"), (2, "part 2", [3, 4], "main"),
+             (3, "part 3", [5], 2)])
+
+
+def test_slices_carry_each_slices_files():
+    slices, _ = crew_split.parse_slices(_plan_with_slices(GOOD_SLICES))
+
+    assert slices[1]["files"] == ["src/s3.py", "src/s4.py"]
+
+
+@pytest.mark.parametrize("extra, field", [
+    ("Base: slice 1\n", "Base"), ("Steps: 3\n", "Steps"), ("base: main\n", "Base")],
+    ids=["two-bases", "two-step-lists", "same-base-twice-any-case"])
+def test_slice_field_given_twice_refused(extra, field):
+    """Group review (G2) FIX: two Base: or Steps: lines are two instructions
+    for one slice; the first is never silently kept."""
+    second = "### Slice 2: part 2\nSteps: 3-5\nBase: main\n" + extra + "\n"
+    _, problems = crew_split.parse_slices(_plan_with_slices(_slice(1, "1, 2") + second))
+
+    assert f"slice 2: {field}: given more than once" in problems, problems
+
+
+def test_step_in_two_slices_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2, 3") + _slice(2, "3, 4, 5")))
+
+    assert any("step 3 is in slices 1 and 2" in p for p in problems), problems
+
+
+def test_step_in_no_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3, 4")))
+
+    assert any("step 5 is in no slice" in p for p in problems), problems
+
+
+def test_unknown_step_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-6")))
+
+    assert any("step 6" in p and "no such step" in p for p in problems), problems
+
+
+def test_non_contiguous_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 3") + _slice(2, "2, 4, 5")))
+
+    assert any("slice 1" in p and "not one contiguous run" in p for p in problems), problems
+
+
+def test_slices_out_of_order_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "3-5") + _slice(2, "1, 2")))
+
+    assert any("out of order" in p for p in problems), problems
+
+
+def test_base_main_with_shared_files_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"), files={4: "src/s1.py"}))
+
+    assert any("slice 2" in p and "Base: main" in p and "src/s1.py" in p
+               for p in problems), problems
+
+
+def test_base_main_with_a_glob_overlap_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"), files={1: "src/**"}))
+
+    assert any("slice 2" in p and "Base: main" in p for p in problems), problems
+
+
+def test_base_slice_with_shared_files_allowed():
+    slices, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5", base="slice 1"), files={4: "src/s1.py"}))
+
+    assert (problems, slices[1]["base"]) == ([], 1)
+
+
+def test_base_later_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2", base="slice 2") + _slice(2, "3-5")))
+
+    assert any("slice 1" in p and "Base: slice 2" in p for p in problems), problems
+
+
+def test_base_unreadable_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5", base="develop")))
+
+    assert any("slice 2" in p and "Base:" in p for p in problems), problems
+
+
+def test_one_slice_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(_slice(1, "1-5")))
+
+    assert any("1 slice" in p and "2-5" in p for p in problems), problems
+
+
+def test_six_slices_refused():
+    many = "".join(_slice(n, str(n)) for n in range(1, 6)) + _slice(6, "5")
+    _, problems = crew_split.parse_slices(_plan_with_slices(many))
+
+    assert any("6 slices" in p for p in problems), problems
+
+
+def test_slices_numbered_out_of_sequence_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(3, "3-5")))
+
+    assert any("numbered" in p for p in problems), problems
+
+
+def test_slice_without_steps_line_refused():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + "### Slice 2: rest\nBase: main\n"))
+
+    assert any("slice 2" in p and "Steps:" in p for p in problems), problems
+
+
+def test_base_main_with_a_step_of_unknown_files_refused():
+    """Could not tell is not "shares nothing": a step whose Files line is
+    missing cannot prove slice 2 independent."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("Files: src/s4.py\n", "")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("slice 2" in p and "cannot tell" in p for p in problems), problems
+
+
+# --- review of #366: a step after the section, glob-vs-glob overlap, `## Step` -----
+
+def test_step_heading_after_the_slices_section_is_uncovered():
+    """A `### Step 5` written after `## PR slices` is still a plan step, so a
+    partition that leaves it out is refused, never silently short a step."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3, 4"))
+    plan = plan.replace("### Step 5: step 5\n", "").replace("Files: src/s5.py\n", "")
+    plan += "\n### Step 5: late\nFiles: src/s5.py\nTest: pytest\nRisk: low\n"
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("step 5 is in no slice" in p for p in problems), problems
+
+
+def test_base_main_with_two_overlapping_globs_cannot_tell():
+    _, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: "plugin/crew/hooks/scripts/*.py", 3: "plugin/**/crew_split.py"}))
+
+    assert any("slice 2" in p and "Base: main" in p and "cannot tell" in p
+               for p in problems), problems
+
+
+def test_base_main_with_disjoint_glob_prefixes_allowed():
+    """Two globs under different literal directories are provably disjoint."""
+    slices, problems = crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: "docs/**", 2: "docs/b.md", 3: "src/**"}))
+
+    assert (problems, slices[1]["base"]) == ([], "main")
+
+
+def test_level_two_step_heading_refused():
+    """measure counts only `### Step`; a `## Step` would be counted by one
+    reader and not the other, so parse_slices refuses it."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("### Step 3: step 3", "## Step 3: step 3")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("## Step 3" in p and "### Step" in p for p in problems), problems
+
+
+# --- re-review of #366: one conservative overlap rule for every Files pair ---------
+
+def _two_slice_problems(first, second):
+    return crew_split.parse_slices(_plan_with_slices(
+        _slice(1, "1, 2") + _slice(2, "3-5"),
+        files={1: first, 2: "zz/one.md", 3: second, 4: "yy/a.md", 5: "yy/b.md"}))[1]
+
+
+@pytest.mark.parametrize("first, second", [
+    ("./src/*.py", "src/**/x.py"),        # FIX A: `./` not normalised
+    ("src/a", "src/*/x.py"),              # FIX B: a literal is a directory
+    ("src/a/", "src/*/x.py"),
+    ("src", "**/x.py"),
+    ("Src/*.py", "src/**/x.py"),          # NIT C: fnmatch case-folds on Windows
+])
+def test_base_main_pair_not_provably_disjoint_refused(first, second):
+    problems = _two_slice_problems(first, second)
+
+    assert any("slice 2" in p and "Base: main" in p for p in problems), problems
+
+
+@pytest.mark.parametrize("first, second", [
+    ("src/a/*.py", "docs/*.md"),
+    ("src/a", "docs"),
+])
+def test_base_main_pair_provably_disjoint_allowed(first, second):
+    assert _two_slice_problems(first, second) == []
+
+
+def test_step_heading_case_follows_measure():
+    """`measure` counts `### Step` case-sensitively; a `### step 5` is not a
+    step to either reader, so it does not join the partition."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan += "\n### step 6: lower-case\nFiles: src/s6.py\n"
+
+    slices, problems = crew_split.parse_slices(plan)
+
+    assert (problems, slices[1]["steps"]) == ([], [3, 4, 5])
+
+
+def test_level_two_step_check_does_not_cross_a_line():
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("## PR slices\n", "## Step\n6 notes\n\n## PR slices\n")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert not any("## Step 6" in p for p in problems), problems
+
+
+
+def test_base_slice_zero_refused():
+    """T-0059 port review FIX: `Base: slice 0` is not an earlier slice."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5", base="slice 0"))
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("Base: slice 0 is not an earlier" in p for p in problems), problems
+
+
+
+def test_steps_listed_out_of_order_refused():
+    """T-0059 port review r3 BLOCK: `Steps: 1, 3, 2` would print `steps=1-2`
+    to /crew:implement and drop step 3."""
+    plan = _plan_with_slices(_slice(1, "1, 3, 2") + _slice(2, "4-5"))
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("not listed in ascending order" in p for p in problems), problems
+
+
+def test_stacked_slice_must_carry_every_earlier_slice_it_shares_files_with():
+    """T-0059 port review r3 BLOCK: slice 3 on `Base: slice 1` sharing Files
+    with slice 2 would ship without slice 2's changes."""
+    plan = _plan_with_slices(_slice(1, "1") + _slice(2, "2-3", base="main")
+                             + _slice(3, "4-5", base="slice 1"),
+                             files={1: "a.py", 2: "b.py", 3: "c.py", 4: "b.py", 5: "d.py"})
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("leaves out slice 2" in p for p in problems), problems
+
+
+
+def test_duplicate_step_headings_refused():
+    """T-0058/T-0059 port review FIX: two `### Step 1` headings merge into one
+    block; the partition cannot account for them separately."""
+    plan = _plan_with_slices(_slice(1, "1, 2") + _slice(2, "3-5"))
+    plan = plan.replace("### Step 2: step 2", "### Step 1: again")
+
+    _, problems = crew_split.parse_slices(plan)
+
+    assert any("step 1 has more than one Step heading" in p for p in problems), problems

@@ -172,6 +172,12 @@ one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
 every crew repo on this machine, with the repo file you are about to write
 taking precedence over it — see "Global config, and how it layers with the
 repo file" in `README.md` §11.
+One global block is machine-only in the stronger sense: `unattendedCloud`
+(T-0044), the cloud identity `crew_unattended.py launch` hands an unattended
+run, is read from the machine file alone. Never write it into a repo's
+`config.json`; a repo copy is ignored and reported (`CONFIG.md`,
+"`unattendedCloud`"). Its template shape, all `null` and naming nothing:
+`"unattendedCloud": {"aws": {"readOnly": {"profile": null, "identity": null, "region": null}, "nonProd": {}}}`.
 
 The global file has its own guided walkthrough, `/crew:config`, defined in
 `global-config.md` beside this file. With no argument it opens a menu
@@ -209,7 +215,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "jira": { "project": null, "cloudId": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
-  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800 } },
+  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800, "projects": [] } },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
