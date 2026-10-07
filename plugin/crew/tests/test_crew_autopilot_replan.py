@@ -789,3 +789,15 @@ def test_replan_check_the_rejected_round_must_be_the_latest_rounds_int(tmp_path,
     got = _check(_auto_rejected_plan(tmp_path, rejected=rejected, quoted=(BLOCK_LINE, FIX_LINE)))
 
     assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
+
+
+@pytest.mark.parametrize("last", [None, "float"])
+def test_replan_check_a_malformed_last_row_is_could_not_tell(tmp_path, last):
+    """L-0670 review r5 BLOCK: a ledger ending in a non-object, or in a row numbered
+    2.0, cannot say which round was rejected."""
+    rows = [_row(1), _row(2)] + ([None] if last is None else [])
+    if last == "float":
+        rows = [_row(1), _row(2.0)]
+    got = _check(_auto_rejected_plan(tmp_path, rounds=rows))
+
+    assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got

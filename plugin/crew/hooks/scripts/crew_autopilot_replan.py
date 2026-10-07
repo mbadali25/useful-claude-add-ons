@@ -50,13 +50,16 @@ def _required(data):
     """`(lines, None)` owed by the rejected round, or `(None, why)`."""
     rejected = data.get("rejected") or {}
     number = rejected.get("round")
-    rounds = [r for r in data.get("rounds") or [] if isinstance(r, dict)]
-    latest = rounds[-1].get("round") if rounds else None
-    # L-0670 r4: an int (never a bool, `True == 1`) naming the latest row, as reject writes it.
-    if isinstance(number, bool) or not isinstance(number, int) or number != latest \
-            or isinstance(latest, bool):
+    rounds = data.get("rounds") or []
+    last = rounds[-1] if rounds else None
+    latest = last.get("round") if isinstance(last, dict) else None
+    # L-0670 r4/r5: the ledger's actual last row, an object whose round is an int (never a
+    # bool or a float: `True == 1`, `2.0 == 2`) equal to the rejected round, as reject writes it.
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in (number, latest)) \
+            or number != latest:
         return None, f"the rejected round {number!r} is not the latest round's number ({latest!r})"
-    rows = [r for r in rounds if r.get("round") == number and not isinstance(r.get("round"), bool)]
+    rows = [r for r in rounds if isinstance(r, dict) and type(r.get("round")) is int
+            and r.get("round") == number]
     if len(rows) != 1:
         return None, f"no single round row for the rejected round {number!r}"
     findings = rows[0].get("findings")
