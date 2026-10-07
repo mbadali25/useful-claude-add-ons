@@ -4,8 +4,9 @@
     python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_contract_verify.py \
         plugin/crew/tests/test_crew_contract.py plugin/crew/tests/test_crew_wave.py -q
 
-Every case builds a throwaway repository under tmp_path whose `origin` is a
-bare repository there (`coord.remote`'s default), puts a contract on
+Every case builds a throwaway repository under tmp_path whose remote `coord`
+is a bare repository there (`origin` is a short URL that only gives the repo
+key and is never fetched), puts a contract on
 `crew-coord/<channel>` and builds an approved ticket against it with
 crew_contract.py itself; a peer's later rewrite of the channel is written
 through crew_coord's Channel. Nothing is pushed anywhere else.
@@ -26,6 +27,7 @@ from review_fixtures import git
 from scope_fixtures import approve_as_user, make_repo, make_ticket
 
 CHANNEL = "peers"
+HUB = "coord"
 REF = f"refs/heads/crew-coord/{CHANNEL}"
 BODY = b"GET /widgets -> [{id, name}]\n"
 
@@ -49,7 +51,11 @@ def _hub(tmp_path):
 @pytest.fixture(name="root")
 def _root(tmp_path, hub):
     root = make_repo(tmp_path, mode="block", name="main")
-    git(root, "remote", "add", "origin", str(hub))
+    # origin gives the repo key only and is never fetched: a short URL, since a
+    # Windows tmp_path makes a local path's key pass 128 characters (G3c CI).
+    # The channel lives on the remote `coord`.
+    git(root, "remote", "add", "origin", "https://example.test/owner/repo.git")
+    git(root, "remote", "add", HUB, str(hub))
     return root
 
 
@@ -62,11 +68,11 @@ def _ticket(root, ticket="T-1", touch=("src/**",)):
     approve_as_user(root, ticket)
 
 
-def _contract(root, *args, remote="origin"):
+def _contract(root, *args, remote=HUB):
     return crew_contract.main([args[0], "--root", str(root), "--remote", remote] + list(args[1:]))
 
 
-def _built(root, tmp_path, ticket="T-1", name="api", remote="origin"):
+def _built(root, tmp_path, ticket="T-1", name="api", remote=HUB):
     """`name` v1 put on the channel and built against by the approved `ticket`."""
     body = tmp_path / f"{name}.txt"
     body.write_bytes(BODY)
@@ -76,13 +82,13 @@ def _built(root, tmp_path, ticket="T-1", name="api", remote="origin"):
 
 
 def _files(root):
-    chan = crew_coord.Channel(str(root), "origin", CHANNEL)
+    chan = crew_coord.Channel(str(root), HUB, CHANNEL)
     tip, state, _ = chan.fetch()
     assert state == "ok"
     return chan.read(tip)
 
 
-def _peer_rewrites(root, files, drop=(), remote="origin"):
+def _peer_rewrites(root, files, drop=(), remote=HUB):
     chan = crew_coord.Channel(str(root), remote, CHANNEL)
 
     def change(tree):
@@ -230,7 +236,7 @@ def test_a_one_field_edit_is_a_mismatch_not_unknown(capsys, tmp_path, root, chan
     ("binding-field-missing", "contract bindings unknown"),
     ("bindings-emptied", "holds no bindings"),
     ("record-deeply-nested", "its record is corrupt"),
-    ("remote-gone", "'origin' is not a configured remote")],
+    ("remote-gone", "'coord' is not a configured remote")],
     ids=["fetch-fails", "channel-absent", "record-missing", "body-missing", "record-corrupt",
          "bindings-not-json", "bindings-schema", "binding-field-missing", "bindings-emptied",
          "record-deeply-nested", "remote-gone"])
@@ -239,7 +245,7 @@ def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, nee
     _built(root, tmp_path)
     binding = crew_contract.binding_path(str(root), "T-1")
     if how == "fetch-fails":
-        git(root, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
+        git(root, "remote", "set-url", HUB, str(tmp_path / "gone.git"))
     elif how == "channel-absent":
         git(hub, "update-ref", "-d", REF)
     elif how == "record-missing":
@@ -260,7 +266,7 @@ def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, nee
     elif how == "bindings-emptied":
         _write(binding, json.dumps({"schema": 1, "bindings": []}))
     else:  # the remote the binding was built on is gone (renamed)
-        git(root, "remote", "rename", "origin", "elsewhere")
+        git(root, "remote", "rename", HUB, "elsewhere")
     capsys.readouterr()
 
     code, out = _verify(capsys, root)
@@ -272,7 +278,7 @@ def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, nee
 @pytest.fixture(name="alt")
 def _alt(tmp_path, root):
     """A second remote, `alt`, with its own bare repository; `coord.remote`
-    stays the default `origin`."""
+    is not set, so it reads the default `origin`, which is never fetched."""
     bare = tmp_path / "alt.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True,
                    capture_output=True, stdin=subprocess.DEVNULL)
@@ -289,7 +295,7 @@ def test_a_binding_is_checked_on_the_remote_it_was_built_on(capsys, tmp_path, ro
     (tmp_path / "api.txt").unlink()
     _built(root, tmp_path, remote="alt")
     bound = crew_contract.read_bindings(crew_contract.binding_path(str(root), "T-1"))[0]
-    assert sorted(b["remote"] for b in bound) == ["alt", "origin"]
+    assert sorted(b["remote"] for b in bound) == ["alt", HUB]
     _peer_rewrites(root, {"contracts/api/v1.body": b"edited\n"}, remote="alt")
     capsys.readouterr()
 
@@ -305,10 +311,10 @@ def test_verify_remote_naming_another_remote_is_unknown(capsys, tmp_path, root, 
     _built(root, tmp_path, remote="alt")
     capsys.readouterr()
 
-    code, out = _verify(capsys, root, "T-1", ["--remote", "origin"])
+    code, out = _verify(capsys, root, "T-1", ["--remote", HUB])
 
     assert code == crew_contract.EXIT_UNKNOWN, out
-    assert "built against on remote alt, not origin" in out
+    assert f"built against on remote alt, not {HUB}" in out
     code, out = _verify(capsys, root, "T-1", ["--remote", "alt"])
     assert code == 0, out
 

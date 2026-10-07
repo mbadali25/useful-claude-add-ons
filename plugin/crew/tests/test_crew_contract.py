@@ -41,8 +41,9 @@ def _hub(tmp_path):
 
 def _side(tmp_path, hub, name):
     root = make_repo(tmp_path, name=name)
-    origin = _bare(tmp_path / f"{name}-origin.git")
-    git(root, "remote", "add", "origin", str(origin))
+    # A short URL, never fetched: the repo key comes from origin's URL, and a
+    # Windows tmp_path makes a local path's key pass 128 characters (G3c CI).
+    git(root, "remote", "add", "origin", f"https://example.test/owner/{name}.git")
     git(root, "remote", "add", "coord", str(hub))
     return root
 
