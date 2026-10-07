@@ -98,9 +98,6 @@ PLATFORM_ONLY = {
                                          "handle walk runs instead and its own entry covers it"),
     "T-0081: a zero inode on the walk is no longer could-not-tell":
         (frozenset({"linux", "darwin"}), "its target test is skipped where there is no fd walk"),
-    "gitignore: stdout is not reconfigured to replace what it cannot encode":
-        (frozenset({"linux", "darwin"}), "its target test is skipped on Windows: NTFS cannot "
-                                         "hold the undecodable file name it needs"),
     "a displaced move back says moved back without checking the inode":
         (frozenset({"linux", "darwin"}), "its target test is skipped on Windows: "
                                          "the link-then-park move is POSIX's"),

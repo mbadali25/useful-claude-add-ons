@@ -86,11 +86,15 @@ GITIGNORE_MUTATIONS = (
      '        return "gitignore unknown (crew_gitignore.py not importable)"\n',
      '        return ""\n',
      "tests/test_status.py::test_status_gitignore_line_unknown_when_git_fails"),
-    # Review round 1 of T-0039 added these three.
+    # Review round 1 of T-0039 added these three. The reconfigure was proved at
+    # the time on test_undecodable_tracked_name_still_reports_owner_exit_3;
+    # since group review r4 every report line is escaped by `_shown`, so that
+    # test stays green without it. The failure line is not escaped, and a test
+    # for it (C-0025) now holds the reconfigure.
     ("gitignore: stdout is not reconfigured to replace what it cannot encode", GITIGNORE,
      '            stream.reconfigure(errors="replace")\n',
      "            pass\n",
-     _G + "test_undecodable_tracked_name_still_reports_owner_exit_3"),
+     _G + "test_an_unencodable_failure_message_is_still_unknown_exit_4"),
     ("gitignore: an OSError reading .gitignore is not converted to unknown", GITIGNORE,
      "    except OSError as exc:\n"
      '        raise Unknown(f"{label} could not be read: {exc}") from exc\n',
