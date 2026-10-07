@@ -1621,6 +1621,12 @@ Obsidian vault). A CLI the commands call, not a hook.
   the gate from `GATING_STATUSES` in the INDEX cell first, then the header,
   and reports a typed derived word as a problem. JUDGEMENT: nothing acts on
   `view` yet; L-0550 and L-0551 are its consumers.
+  DERIVED (L-0641): each fail-closed rule above, the `cancelled` closed word
+  in `crew_state._TABLE_DONE_WORDS` and L-0640's next.md checks have one
+  mutation in `TICKET_STATE_MUTATIONS`
+  (`plugin/crew/tests/sabotage_ticket_state.py`, appended to `sabotage.py`'s
+  `MUTATIONS`), each on the test its label names;
+  `plugin/crew/tests/test_ticket_state.py` pins that set and its anchors.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
   (`_files_create` `:666`, `_files_move` `:692`, `_files_read` `:720`); a row
   with no status cell is `could not update` / `could not read`; `create` on
