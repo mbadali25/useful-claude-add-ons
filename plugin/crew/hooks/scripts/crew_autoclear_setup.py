@@ -47,6 +47,7 @@ import argparse
 import copy
 import json
 import os
+import stat
 import sys
 
 import crew_backup
@@ -373,13 +374,21 @@ def _scan_candidate(directory):
     `had_repo_local_opt_in` applies to the current repo. `reason` is set
     when either present file could not be read as a JSON object -- even
     when the other shows the opt-in, as the spec has it -- and when the
-    `.crew` directory itself is a symlink (never followed) or cannot be
+    `.crew` directory itself is a symlink (never followed) or cannot be read or
     listed: that repo is unreadable (never "not opted in"), and it blocks
     `--yes-widen`."""
     crew_dir = os.path.join(directory, ".crew")
-    if os.path.islink(crew_dir):
+    # `lstat`, not `islink`/`isdir`: those answer False on a PermissionError,
+    # which would read an unreachable `.crew` as "no crew here".
+    try:
+        mode = os.lstat(crew_dir).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return False, False, ""
+    except OSError as exc:
+        return True, False, f".crew could not be read: {exc}"
+    if stat.S_ISLNK(mode):
         return True, False, ".crew is a symlink; the scan does not follow it"
-    if not os.path.isdir(crew_dir):
+    if not stat.S_ISDIR(mode):
         return False, False, ""
     try:
         names = set(os.listdir(crew_dir))
@@ -390,8 +399,16 @@ def _scan_candidate(directory):
         # The filesystem decides, not an exact match on `listdir`'s stored
         # spelling: on a case-insensitive one (Windows, macOS) crew reads
         # `.crew/Config.json` as `config.json`, so the scan must see it too.
-        if name not in names and not os.path.lexists(os.path.join(crew_dir, name)):
-            continue
+        # `lstat` rather than `lexists`, which answers False on any error.
+        if name not in names:
+            try:
+                os.lstat(os.path.join(crew_dir, name))
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            except OSError as exc:
+                present = True
+                problems.append(f".crew/{name}: {exc}")
+                continue
         present = True
         try:
             doc = _read_json_if_present(os.path.join(directory, ".crew", name))
@@ -415,7 +432,8 @@ def _scan_children(directory):
     children, unchecked = [], {}
     with os.scandir(directory) as entries:
         for entry in entries:
-            if entry.name.startswith(".") or entry.name == "node_modules":
+            # casefold: `Node_Modules` IS `node_modules` on Windows and macOS.
+            if entry.name.startswith(".") or entry.name.casefold() == "node_modules":
                 continue
             try:
                 if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):

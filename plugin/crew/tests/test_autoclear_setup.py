@@ -903,6 +903,66 @@ def test_a_config_file_listed_in_another_case_is_still_scanned(tmp_path, monkeyp
     assert plan["widening"]["proposedOnlyRepos"] == sorted([here, other])
 
 
+def _lstat_denied(monkeypatch, denied):
+    real_lstat = os.lstat
+
+    def _lstat(path, *args, **kwargs):
+        if os.fspath(path) == denied:
+            raise PermissionError(13, "Permission denied", path)
+        return real_lstat(path, *args, **kwargs)
+    monkeypatch.setattr(setup.os, "lstat", _lstat)
+
+
+def test_a_crew_directory_that_cannot_be_statted_is_unreadable(tmp_path, monkeypatch):
+    # `os.path.isdir` answers False on a PermissionError; that must not read
+    # as "no crew here" and let --yes-widen leave the repo out.
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    locked = _repo(str(scan / "locked"))
+    global_path = _widening_global(tmp_path)
+    _lstat_denied(monkeypatch, os.path.join(locked, ".crew"))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=global_path,
+                                       scan_roots=[str(scan)])
+
+    assert [item["path"] for item in plan["widening"]["scan"]["unreadable"]] == [locked]
+    with pytest.raises(setup.WideningRefused):
+        setup.apply_migrate_to_repo(here, global_path=global_path,
+                                    scan_roots=[str(scan)], yes_widen=True)
+
+
+def test_a_case_variant_config_that_cannot_be_statted_is_unreadable(tmp_path, monkeypatch):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    other = _repo(str(scan / "other"))
+    real_listdir = os.listdir
+
+    def _listdir(path):
+        names = real_listdir(path)
+        if os.path.realpath(path) == os.path.join(other, ".crew"):
+            return [n.capitalize() for n in names]
+        return names
+    monkeypatch.setattr(setup.os, "listdir", _listdir)
+    _lstat_denied(monkeypatch, os.path.join(other, ".crew", "config.json"))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert [item["path"] for item in plan["widening"]["scan"]["unreadable"]] == [other]
+    assert plan["widening"]["scan"]["found"] == []
+
+
+def test_node_modules_in_another_case_is_not_entered(tmp_path):
+    scan = tmp_path / "src"
+    here = _repo(str(tmp_path / "here"))
+    _repo(str(scan / "Node_Modules" / "pkg"))
+
+    plan = setup.apply_migrate_to_repo(here, global_path=_widening_global(tmp_path),
+                                       scan_roots=[str(scan)])
+
+    assert plan["widening"]["scan"]["found"] == []
+
+
 def test_a_crew_directory_that_cannot_be_listed_is_unreadable(tmp_path, monkeypatch):
     scan = tmp_path / "src"
     here = _repo(str(tmp_path / "here"))

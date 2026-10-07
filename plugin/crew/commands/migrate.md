@@ -78,7 +78,7 @@ a test holds the table and the code to each other.
 Print the `backup:` line apply ends with. That path is the only way to undo it.
 
 Then convert `context.autoClear` — the one helper `/crew:init` and `/crew:onboard` also call, so
-relay its output rather than restating this. Run it **once**: a second run cannot see this repo's pre-migration opt-in.
+relay its output rather than restating this. Run it **once**: a second run cannot see this repo's pre-migration opt-in. So first ask which directories hold the user's other crew repos, and add `--scan-root <dir>` for each to the command below.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . apply-migrate
@@ -86,7 +86,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . a
 
 It rewrites `context.autoClear` in **both** `.crew/config.json` (what every sender reads) and `.crew/crew.json` (step 2's un-converted copy), whichever exist — converting only one leaves the other's stale value live. Prints a `notes` line per conversion, never silently: pre-1.0 `"windows"` becomes `"notify"` (sendkeys is an explicit opt-in); a duplicated repo `enabled: true` (0.20.17's read-only-the-repo-file workaround) is dropped since 1.0 gives it no effect (`enabled: false` opt-outs are kept); repo-copied `onlyRepos`/`onlySessions` are dropped too, being global-only under 1.0. `alreadyConfigured: true` means nothing to convert; a non-zero exit (e.g. a malformed machine-global file) means nothing was written — show the stderr message and stop.
 
-A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`, `onlyRepos: null`) — show `proposedOnlyRepos` and ask. Each note names its file. To find the other repos that opted in, add `--scan-root <dir>` to that one run (repeatable; `--scan-depth <n>`, default 3): a read-only walk whose finds join the proposal (`widening.scan`); a repo it could not read is listed and makes `--yes-widen` refuse, as does an empty proposal (`[]` would disarm every repo). Repos outside the roots, or already converted by an earlier run, cannot be found: add those by hand; only on yes, apply it with the generic writer (this write always precedes either repo write), never by re-running the command above: `crew_config.py --set 'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in effect and leave it.
+A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`, `onlyRepos: null`) — show `proposedOnlyRepos` and ask. Each note names its file. `--scan-root <dir>` (asked for before that one run; repeatable; `--scan-depth <n>`, default 3): a read-only walk whose finds join the proposal (`widening.scan`); a repo it could not read is listed and makes `--yes-widen` refuse, as does an empty proposal (`[]` would disarm every repo). Repos outside the roots, or already converted by an earlier run, cannot be found: add those by hand; only on yes, apply it with the generic writer (this write always precedes either repo write), never by re-running the command above: `crew_config.py --set 'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in effect and leave it.
 
 Then generate the rules the preview listed, and show the output verbatim:
 
