@@ -368,7 +368,9 @@ AUTO_COMMAND = (f"python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilo
 TODAYS_ACCEPT_REVIEW = (
     "round 2 is FINDINGS; review_ledger.py --auto-accept refuses it (round 2 has 1 BLOCK "
     "finding(s); a BLOCK is never auto-accepted): the owner accepts with review_ledger.py "
-    "--accept --by <owner>, or fixes then /crew:review")
+    "--accept --by <owner>, or fixes, then reruns crew_refresh_check.py --root . --ticket T-1 "
+    "until it says fresh (commit what each `refresh with` writes and each `uncommitted:` path; "
+    "unknown is a stop), then /crew:review T-1")  # T-0043's FINDINGS stop names the refresh
 
 
 def test_default_zero_changes_nothing(tmp_path):
@@ -409,7 +411,7 @@ def test_a_round_left_keeps_todays_answer(tmp_path):
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "or fixes then /crew:review" in got["reason"]) == (
+    assert (got["phase"], got["stop"], "or fixes, then reruns crew_refresh_check.py" in got["reason"]) == (
         "accept-review", True, True)
 
 
