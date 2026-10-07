@@ -235,6 +235,9 @@ def test_rounds_left_that_is_not_an_int_stops(tmp_path, monkeypatch, left):
     ({"findings": ["FIX|a|1|b\nBLOCK|x"]}, "line break"),
     ({"base": None}, "no round number, base or bundle_sha256"),
     ({"bundle_sha256": None}, "no round number, base or bundle_sha256"),
+    ({"bundle_sha256": 42}, "is not a SHA-256"),
+    ({"bundle_sha256": "A" * 64}, "is not a SHA-256"),
+    ({"base": 7}, "is not a SHA-256"),
 ])
 def test_a_row_it_cannot_read_stops(tmp_path, row, words):
     got = _blocked(tmp_path, **row)
@@ -280,6 +283,8 @@ def test_complete_fixes_md_with_an_unchanged_bundle_is_no_progress(tmp_path):
 
 @pytest.mark.parametrize("text", [
     "## Round 1\nunrelated\n",
+    f"## Round 1\n##\tRound 2\n{FINDINGS[0]}\n",
+    f"## Round 1\n## Notes\n{FINDINGS[0]}\n",
     f"## Round 1\n- {FINDINGS[0]}\n",
     f"## Round 2\n{FINDINGS[0]}\n",
 ])

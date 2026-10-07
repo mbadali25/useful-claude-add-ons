@@ -53,7 +53,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   every BLOCK and FIX line verbatim (as many times as the round carries it) and the rebuilt bundle
   differs from the round's, `next` goes on to the refresh and `/crew:review`.
 - **Fail closed.** The policy `unknown` (an unreadable config), a `rounds_left` that is not an
-  integer, the final round, a row without findings, base or bundle hash, finding lines that disagree with the row's counts,
+  integer, the final round, a row without findings, or whose base or bundle hash is missing or malformed, finding lines that disagree with the row's counts,
   a verdict recovered from stray lines (`ignored_lines`), a bundle that cannot be rebuilt or rebuilds empty, and a fixes.md that is not UTF-8 each keep the `accept-review` stop, naming the cause. An
   unrefunded INCOMPLETE round, NEEDS_REPLAN and a reserved round stop as before. `fix` named again
   right after it ran is `no-progress`. A finding the phase cannot fix inside Touch, or disputes, is

@@ -54,6 +54,8 @@ PROCEDURE_STOPS = (
 )
 OWED = ("BLOCK|", "FIX|")
 _ROUND_HEADING = re.compile(r"^##[ \t]+Round[ \t]+(\d+)[ \t]*$")
+_LEVEL_TWO = re.compile(r"^##(?!#)")  # any level-two heading ends a section, `##\tRound 2` included
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def review_policy(block, warnings):
@@ -82,7 +84,7 @@ def _section_lines(text, number):
     lines, inside = [], False
     for raw in text.split("\n"):
         line = raw[:-1] if raw.endswith("\r") else raw
-        if line.startswith("## "):
+        if _LEVEL_TWO.match(line):
             match = _ROUND_HEADING.match(line)
             inside = bool(match) and int(match.group(1)) == number
             continue
@@ -165,6 +167,9 @@ def decide(top, ticket, policy, ledger, latest, answer, toward, deep=True):
     if isinstance(number, bool) or not isinstance(number, int) or not base or not recorded:
         return cause + (f"round {number!r} has no round number, base or bundle_sha256: "
                         "could not tell")
+    if not isinstance(recorded, str) or not _SHA256.match(recorded) or not isinstance(base, str):
+        return cause + (f"round {number}'s bundle_sha256 {recorded!r} or base {base!r} is not a "
+                        "SHA-256 and a commit name: could not tell")
     missing, why = _missing(folder, number, owed)
     if why:
         return cause + why
