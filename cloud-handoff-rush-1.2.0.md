@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T09:10Z
+Last updated: 2026-10-07T09:13Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T09:13Z G0 Codex group r1 on 477aedbc: BLOCK 1 (wave cleanup trusts local origin/HEAD or guesses main -> may delete unmerged lane), FIX 2 (write_set drops deps keys outside --tickets; start.json receipts map unvalidated). Fixer started (8 agents = cap).
 - 2026-10-07T09:10Z Codex logged in (device auth, 3rd code). G0 #546 whole-group Codex r1 running on 477aedbc. Landers started (6 agents + G0 review = 7): G4 (1.1.7), G3b (1.1.8), G1b (1.1.9, merge release), G5 (1.1.10), G7 (1.1.11), G2 (1.1.12); provisional, final in landing order. G3c/G3d/G6a/G6b builders wait for a free slot (and G0 landing).
 - 2026-10-07T08:53Z #546 at 405f3115: only Windows 1/6 red (fixer's new [posix] lane-prompt case hard-coded a POSIX join; ntpath on the runner). Coordinator fixed test (ddd31a27), 1.1.6 re-applied last, pushed 477aedbc. 217 wave passed, check-marketplace + tooling-pr clean.
 - 2026-10-07T08:37Z G0 Windows fixes pushed, head 405f3115 (1.1.6 last): coord file://C:\ drive on nt = path (prod), lane prompt script path '/' on nt (prod), 2 tests moved origins to short tmp base (128-char key rule kept), unlistable-dir test asserts UnknownKey where case-insensitive. 549 coord+wave passed; sabotage red. Coordinator read prod diff. CI re-running. Codex re-login: code expired untouched; waiting for owner 'ready'.
