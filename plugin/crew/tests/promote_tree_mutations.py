@@ -194,7 +194,7 @@ PROMOTE_TREE_MUTATIONS = (
      'PY=$(crew_py) || exit 0\n',
      _R + "test_sh_without_python_blocks_a_declared_deploy[True]"),
     ("promote-gate.ps1 allows a deploy when no python resolves", PS1,
-     '  Stop-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."\n',
+     '  Deny-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."\n',
      '  exit 0\n',
      _R + "test_ps1_without_python_blocks_a_declared_deploy"),
 )

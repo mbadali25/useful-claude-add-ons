@@ -2,6 +2,14 @@
 # Fires only on a command matching a `deploy` entry in .crew/verify.json
 # -> environments. Exit 2 blocks.
 
+# L-0703: Resolve-CrewPython below is the byte-identical copy every crew .ps1
+# carries (test_ps1_python_probe.py asserts it), and its best-effort cleanup
+# catches are empty by design (a kill or dispose that fails changes nothing the
+# probe decides). The suppression is script-wide because PSScriptAnalyzer reads
+# it only from a param block, and the copy may not be edited to carry its own.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingEmptyCatchBlock', '', Justification = 'Resolve-CrewPython copy: best-effort cleanup catches')]
+param()
+
 # Flavour guard. Both flavours are registered for every event, so on a host
 # that has BOTH interpreters both would otherwise run. Stand down only when
 # we can positively prove this is not Windows.
@@ -11,6 +19,7 @@
 # does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
 # hook stands down on the one platform it exists for. crew has already shipped
 # that bug once - the guard stood down on Windows and blocked nothing there.
+
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 # L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
@@ -919,7 +928,7 @@ function Resolve-CrewPython {
   return ''
 }
 
-function Stop-ReviewUnknown([string]$Why) {
+function Deny-ReviewUnknown([string]$Why) {
   [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName, sha $sha, tree ${tree}):")
   [Console]::Error.WriteLine("  - the review-evidence check could not be evaluated: $Why")
   [Console]::Error.WriteLine("    This is not a pass.")
@@ -927,11 +936,11 @@ function Stop-ReviewUnknown([string]$Why) {
 }
 $reviewPy = Resolve-CrewPython
 if (-not $reviewPy) {
-  Stop-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."
+  Deny-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."
 }
 $helper = Join-Path $PSScriptRoot '_promote_review.py'
 if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
-  Stop-ReviewUnknown "$helper is missing."
+  Deny-ReviewUnknown "$helper is missing."
 }
 $reviewOut = $null
 try {
@@ -956,23 +965,27 @@ try {
   # for a helper that cannot even start its clock.
   $waitMs = [int][Math]::Max(1000, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds() + 1) * 1000)
   if (-not $proc.WaitForExit($waitMs)) {
-    try { $proc.Kill($true) } catch { try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }; try { $proc.Kill() } catch { } }
-    Stop-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
+    # Best effort: whatever is left running, the deploy is refused below.
+    try { $proc.Kill($true) } catch {
+      try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { $null = $_ }
+      try { $proc.Kill() } catch { $null = $_ }
+    }
+    Deny-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
   }
   # Bounded too: a helper that exited while something it started still holds
   # its stdout or stderr would otherwise leave .Result waiting past the hook
   # timeout, and a timed-out hook is not a block.
   if (-not $outTask.Wait(2000) -or -not $errTask.Wait(2000)) {
-    Stop-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
+    Deny-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
   }
   if ($proc.ExitCode -ne 0) {
     $errText = "$($errTask.Result)".Trim()
     if ($errText) { [Console]::Error.WriteLine($errText) }
-    Stop-ReviewUnknown "_promote_review.py exited $($proc.ExitCode); its reason is above."
+    Deny-ReviewUnknown "_promote_review.py exited $($proc.ExitCode); its reason is above."
   }
   $reviewOut = "$($outTask.Result)"
 } catch {
-  Stop-ReviewUnknown "_promote_review.py could not be run ($($_.Exception.Message))."
+  Deny-ReviewUnknown "_promote_review.py could not be run ($($_.Exception.Message))."
 }
 foreach ($reason in ($reviewOut -split [char]0x1e)) {
   if ($reason) { $problems.Add($reason) }
