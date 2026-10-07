@@ -471,7 +471,7 @@ def _holding_lane(repo, capsys, touch=("a.txt",)):
 
 def _passing_verdict(monkeypatch):
     monkeypatch.setattr(review_ledger, "check_receipt",
-                        lambda root, ticket: (True, "receipt current: fixture"))
+                        lambda root, ticket, base_sha=None: (True, "receipt current: fixture"))
     monkeypatch.setattr(review_gate, "gate_state",
                         lambda root: (review_gate.VERIFIED, "fixture"))
 
@@ -499,7 +499,7 @@ def test_check_land_requires_receipt_on_merged_head(repo, capsys, monkeypatch):
     code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
     assert code == 1 and "no accepted review receipt for T-1" in out, out
     monkeypatch.setattr(review_ledger, "check_receipt",
-                        lambda root, ticket: (True, "receipt current: fixture"))
+                        lambda root, ticket, base_sha=None: (True, "receipt current: fixture"))
     monkeypatch.setattr(review_gate, "gate_state",
                         lambda root: (review_gate.UNVERIFIED, "fixture red"))
     code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
@@ -513,7 +513,7 @@ def _receipt(monkeypatch, state, reason):
     """Local gate UNVERIFIED; `ci_receipt.check` answers `state`."""
     import ci_receipt  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(review_ledger, "check_receipt",
-                        lambda root, ticket: (True, "receipt current: fixture"))
+                        lambda root, ticket, base_sha=None: (True, "receipt current: fixture"))
     monkeypatch.setattr(review_gate, "gate_state",
                         lambda root: (review_gate.UNVERIFIED, "never gated here"))
     monkeypatch.setattr(ci_receipt, "check",
@@ -1225,6 +1225,26 @@ def test_check_land_judges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):
     code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
 
     assert code == 1 and "LAND_OK" not in out and "a.txt" in out, out
+
+
+def test_check_land_pins_the_receipt_check_to_the_fetched_sha(repo, capsys, monkeypatch,
+                                                              tmp_path):
+    """L-0522 PR 3: the delta gate judges the base sha check_land fetched,
+    not the ref by name, which another worktree's fetch can move after it."""
+    lane, moved, old = _remote_lane(repo, capsys, tmp_path)
+    assert _cli(capsys, lane, "catch-up", "--ticket", "T-1", "--base", "origin/main")[0] == 0
+    seen = []
+
+    def receipt(root, ticket, base_sha=None):
+        seen.append(base_sha)
+        return True, "receipt current: fixture"
+    monkeypatch.setattr(review_ledger, "check_receipt", receipt)
+    monkeypatch.setattr(review_gate, "gate_state", lambda root: (review_gate.VERIFIED, "fixture"))
+    _fetch_then_rewind(monkeypatch, lane, old)
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 0 and seen == [moved], (seen, moved, out)
 
 
 def test_catch_up_merges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):

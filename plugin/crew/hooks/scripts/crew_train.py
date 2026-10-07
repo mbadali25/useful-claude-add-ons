@@ -1276,7 +1276,9 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
     if behind:
         lines.append(f"base moved outside Touch only ({len(moved)} paths); the verdict on "
                      "HEAD still covers every Touch path")
-    ok, message = review_ledger.check_receipt(top, ticket)
+    # The delta gate (L-0522) judges the base sha fetched above, never the ref
+    # by name, which another worktree's fetch can move meanwhile.
+    ok, message = review_ledger.check_receipt(top, ticket, base_sha=base_sha)
     if not ok:
         return EXIT_REFUSED, lines + [f"review receipt: {message}"]
     lines.append(f"review receipt: {message}")

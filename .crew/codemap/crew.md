@@ -977,8 +977,9 @@ and routes a stale artifact after review to its refresh, then stops (`:1312`); b
 words are `review_delta.beyond_anchor_stop` (`:659`) and `after_review_refresh` (`:667`), since
 `crew_autopilot.py` sits at max-module-lines. JUDGEMENT: the gate binds its integration ref to the
 merge-train entry, so in a clone whose train is not armed it reads stale on every catch-up
-(fail-closed, owner decision 2026-10-03). Nothing passes `base_sha` yet (L-0522 PR 3 wires
-`check_land`).
+(fail-closed, owner decision 2026-10-03). `crew_train.check_land` passes the base sha it
+fetched as `base_sha` (L-0522 PR 3, DERIVED on `L-0522-docs`), so the gate judges that commit,
+not the ref by name; every other caller passes none.
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:708`) asks `review_ledger.receipt_stands`
@@ -2014,7 +2015,8 @@ then the train is advisory.
   conflicted or rerere-resolved merge, and a merge state it cannot read is `could not tell`
   (exit 3). `check_land` (`:1240`): hold, fetch, `_merge_tree` (`:1217`,
   `--write-tree --name-only`; exit 1 lists conflicts, other codes are could-not-tell),
-  moved-in-Touch, `review_ledger.check_receipt`, `review_gate.gate_state`, then re-checks the hold
+  moved-in-Touch, `review_ledger.check_receipt` (with the fetched sha as `base_sha`, L-0522 PR 3),
+  `review_gate.gate_state`, then re-checks the hold
   and HEAD under the lock and prints `LAND_OK` and the `gh pr merge ... --match-head-commit` line
   and logs `check-land`. `release` (`:904`) logs `release`, `merged` (paths from
   `<sha>^1..<sha>`, `null` when unreadable) or `force-release` (needs `--by` and `--reason`).

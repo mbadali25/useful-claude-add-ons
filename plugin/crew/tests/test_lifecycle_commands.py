@@ -451,3 +451,33 @@ def test_review_names_the_train_exit():
     assert "exit 10 above - the merge train" in text
     assert "A spent budget skips the train" in text
     assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text
+
+
+def _section(text, heading):
+    start = text.index(heading)
+    end = text.find("\n## ", start + len(heading))
+    return " ".join(text[start:end if end != -1 else len(text)].split())
+
+
+def test_done_check_1_names_the_delta_gate_and_its_armed_train():
+    """L-0522 PR 3: check 1 says a receipt may be kept by the delta gate, what
+    that line means, that it needs an armed merge train, and that check-land
+    pins it to the base sha it fetched."""
+    check1 = _section(_read(os.path.join(COMMANDS, "done.md")), "## Check 1")
+
+    missing = [s for s in ("receipt kept by delta gate", "crew_train.py arm",
+                           "no train entry binds the integration ref", "fetched")
+               if s not in check1]
+
+    assert missing == [], f"done.md check 1 lacks {missing}"
+
+
+def test_readme_receipt_paragraph_says_done_gates_on_it():
+    """L-0522 PR 3: the README's receipt paragraph no longer says /crew:done
+    will gate on the receipt some day, and names the delta gate's exception."""
+    readme = _read(os.path.join(CREW, "README.md"))
+    para = " ".join(readme[readme.index("**The receipt is bound to the bundle.**"):].split("\n\n")[0]
+                    .split())
+
+    assert ("will gate on it" not in para and "`/crew:done` check 1 gates on it" in para
+            and "receipt kept by delta gate" in para)

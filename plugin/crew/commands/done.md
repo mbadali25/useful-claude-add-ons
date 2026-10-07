@@ -14,7 +14,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$1" --che
 ```
 
 Rebuilds the bundle and fails if anything changed since the receipt was
-written. No receipt, a failing rebuild, or a ticket still `NEEDS_REPLAN`
+written, with one exception: `receipt kept by delta gate: ...` means the delta
+gate (L-0522) proved the ticket's own delta byte-identical across a catch-up
+merge, a version bump or an anchor-only refresh. It binds to this ticket's
+merge-train entry, so it keeps nothing until `crew_train.py arm` (else `no train
+entry binds the integration ref`); `check-land` pins it to the base it fetched.
+No receipt, a failing rebuild, or a ticket still `NEEDS_REPLAN`
 (budget spent, no successor plan approved) all refuse — say which, and point
 at `/crew:review $1` or `/crew:plan $1` for a replan.
 
