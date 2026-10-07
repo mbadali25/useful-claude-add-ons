@@ -94,17 +94,14 @@ _GOAL_RESUME_RE = re.compile(r"^resume:[ \t]*/crew:autopilot[ \t]+--goal[ \t]+"
                              r"([a-z0-9][a-z0-9-]{0,63})[ \t]*$", re.MULTILINE)
 
 
-def running_goal_handoff(root, handoff_text):
-    """Whether the note's one `resume:` line is `/crew:autopilot --goal <slug>`
-    for a goal whose run state is `running`: `crew_state.handoff_staleness`
-    then skips its branch and head drift checks (L-0658 review r2), as
-    `decide` does. Any doubt -- two resume lines, a goal file that cannot be
-    read -- is False, so the drift checks still run."""
+def goal_handoff(handoff_text):
+    """Whether the note's one `resume:` line is `/crew:autopilot --goal <slug>`:
+    `crew_state.handoff_staleness` then skips its branch and head drift checks
+    (L-0658 review r2), whatever the goal's run state -- the goal file judges
+    the handoff (`handoff_refusal`: a stopped goal named with its reason, a
+    done or missing one falling through) when it is read, so it is never
+    archived for drift first (review r4). Two resume lines are doubt: False,
+    so the drift checks still run. Age still archives it."""
     text = handoff_text if isinstance(handoff_text, str) else ""
-    found = _GOAL_RESUME_RE.findall(text)
-    if len(found) != 1 or len(re.findall(r"^resume:", text, re.MULTILINE)) != 1:
-        return False
-    try:
-        return run_state(root, found[0])["state"] == "running"
-    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-        return False
+    return (len(_GOAL_RESUME_RE.findall(text)) == 1
+            and len(re.findall(r"^resume:", text, re.MULTILINE)) == 1)

@@ -41,8 +41,8 @@ With `--wrap-up` (the one wrap-up procedure: context-watch's armed warning and
 1. Run `git status --porcelain --untracked-files=no` first.
 2. Clean: take `branch:` and `head:` from `git rev-parse` now, after the commit,
    and write `resume:` per step 5 (`/crew:autopilot <ticket>` when autopilot drives).
-3. Dirty: write `resume: none`, and list the modified files under **Verify first**
-   with why the step could not be finished. Do not commit them.
+3. Dirty: write `resume: none` (a goal line step 5's `handoff-resume` prints still wins: T-0056), list
+   the modified files under **Verify first** with why the step could not be finished. Do not commit them.
 4. Keep the note under 40 lines, then end the turn. Do not tell the user to
    `/clear`: auto-clear does it when its four conditions hold, or says why not.
 

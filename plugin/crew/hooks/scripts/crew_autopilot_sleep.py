@@ -22,6 +22,11 @@ prints the entries not yet reported, grouped by ticket, and -- not while
 asleep -- appends a `- reported` marker; `wake` prints it after its state
 line; `settings` warns while unreported entries wait (`log_warnings`). A log
 that is there and cannot be read is said so, never "nothing to report".
+
+L-0656: the summary also carries the pings `autopilot.sleep.notifyHold` held
+(crew_notify_hold.py), `settings` warns while any are held and not asleep,
+and a summary reported awake is passed to the notifier once, under a lock,
+and empties the held record.
 """
 import datetime
 import importlib
@@ -31,6 +36,7 @@ import stat
 import sys
 
 import crew_config
+import crew_notify_hold
 import crew_sleep
 import crew_ticket
 
@@ -213,7 +219,7 @@ def _read_log(top):
     log that is there and cannot be read -- never read as empty."""
     path = log_path(top)
     try:
-        with open(path, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8", newline="") as handle:  # byte-exact for `upto`
             return handle.read(), ""
     except FileNotFoundError:
         return ("", "") if not os.path.lexists(path) else (None, "it is a dangling link")
@@ -251,7 +257,7 @@ def log_approval(top, ticket):
         _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, "approved",
                                          "plan approved by autopilot", _setting(conf, "approval")))
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-        return ap._one_line(f"\nwarning: sleep log not written ({ap._failure(exc)})")
+        return "\n" + ap._one_line(f"warning: sleep log not written ({ap._failure(exc)})")
     return ""
 
 
@@ -271,20 +277,46 @@ def sleep_note(root, ticket, kind, text):
 
 
 def sleep_summary(root):
-    """(exit code, text) for `sleep-summary`: the unreported entries, then --
-    not while asleep -- one marker. Nothing unreported writes nothing."""
+    """(exit code, text) for `sleep-summary`: the unreported entries and the
+    held pings (L-0656), then -- not while asleep -- one marker, the held
+    record emptied and the text passed to the notifier once, all under one
+    lock that is taken before anything is read. Nothing unreported and
+    nothing held writes and sends nothing."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    if ap.settings(top)["sleep"]["state"] == crew_sleep.ASLEEP:
+        code, out, _ = _summary(top)
+        return code, out + ("" if code or out == NOTHING else
+                            "\n(still asleep: reported again after the window ends)")
+    with crew_notify_hold.summary_lock(top) as lock:
+        if not lock.held:
+            return 1, ("refused: another run is reporting the sleep summary (the summary lock "
+                       "is held); nothing marked or sent")
+        code, out, text = _summary(top)
+        if code or out == NOTHING:
+            return code, out
+        if crew_sleep.unreported(text):
+            _append(top, crew_sleep.marker_line(crew_sleep.now(), len(text.encode("utf-8"))))
+        if crew_notify_hold.count(top)[0]:
+            out += "" if crew_notify_hold.take(top) is not None else (
+                "\n(the held record could not be emptied)")
+        word = crew_notify_hold.send_summary(top, out)
+        return 0, out + ("" if word == "off" else f"\nnotify: {word}")
+
+
+def _summary(top):
+    """(exit code, text, log text): the summary of what is unreported and
+    held, or why not; the log text is what the summary was made from."""
     text, why = _read_log(top)
     if text is None:
-        return 1, f"refused: the sleep log could not be read ({why}); it is not empty"
+        return 1, f"refused: the sleep log could not be read ({why}); it is not empty", None
+    held, held_why = crew_notify_hold.count(top)
     entries = crew_sleep.unreported(text)
-    if not entries:
-        return 0, NOTHING
-    out = crew_sleep.summary_text(entries)
-    if ap.settings(top)["sleep"]["state"] == crew_sleep.ASLEEP:
-        return 0, out + "\n(still asleep: reported again after the window ends)"
-    _append(top, crew_sleep.marker_line(crew_sleep.now()))
-    return 0, out
+    if not entries and held == 0:
+        return 0, NOTHING, text
+    if not entries and held is None:
+        return 1, f"refused: {crew_notify_hold.held_line(held, held_why)}", text
+    return 0, crew_sleep.summary_text(entries) + (
+        "" if held == 0 else "\n" + crew_notify_hold.held_line(held, held_why)), text
 
 
 def with_log_warnings(top, conf):
@@ -294,18 +326,31 @@ def with_log_warnings(top, conf):
 
 
 def log_warnings(top, conf):
-    """`settings`' warnings about the log (L-0653): unreported entries while
-    not asleep, or a log that cannot be read. Never raises."""
+    """`settings`' warnings about the log (L-0653) and the held pings (L-0656):
+    unreported entries or held pings while not asleep, or a log or held
+    record that cannot be read. Never raises."""
+    found = []
     try:
         text, why = _read_log(top)
         if text is None:
-            return [f"sleep log could not be read ({why}); {log_path(top)} is not read as empty"]
-        count = len(crew_sleep.unreported(text))
-        if count and conf["sleep"]["state"] != crew_sleep.ASLEEP:
-            return [f"{count} sleep decisions are unreported - run crew_autopilot.py sleep-summary"]
+            found.append(f"sleep log could not be read ({why}); {log_path(top)} is not read as "
+                         "empty")
+        elif crew_sleep.unreported(text) and conf["sleep"]["state"] != crew_sleep.ASLEEP:
+            found.append(f"{len(crew_sleep.unreported(text))} sleep decisions are unreported - "
+                         "run crew_autopilot.py sleep-summary")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-        return [f"sleep log could not be read ({ap._failure(exc)})"]
-    return []
+        found.append(f"sleep log could not be read ({ap._failure(exc)})")
+    try:
+        held, why = crew_notify_hold.count(top)
+        if held is None:
+            found.append(f"held pings could not be read ({why}); not read as none - run "
+                         "crew_autopilot.py sleep-summary")
+        elif held and conf["sleep"]["state"] != crew_sleep.ASLEEP:
+            found.append(f"{held} pings were held while asleep - run crew_autopilot.py "
+                         "sleep-summary")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        found.append(f"held pings could not be read ({ap._failure(exc)})")
+    return found
 
 
 def main(args):
@@ -320,8 +365,9 @@ def main(args):
             code, text = sleep_now(args.root, args.by)
         else:
             code, text = wake_now(args.root)
-            summary = sleep_summary(args.root)[1] if code == 0 else NOTHING
+            summary_code, summary = sleep_summary(args.root) if code == 0 else (0, NOTHING)
             text += "" if summary == NOTHING else "\n" + summary
+            code = code or summary_code  # awake either way; a failed summary is not hidden
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         code, text = 1, ap._one_line(f"refused: {ap._failure(exc)}")
     sys.stdout.write(text + "\n")

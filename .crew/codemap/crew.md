@@ -4828,7 +4828,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   ticket is worked before the next.
 - DERIVED. Review round 2: `crew_state.handoff_staleness` (SessionStart's archive and
   `crew_autocycle.resume_plan`) skips its branch/head drift reasons for a note whose one
-  `resume:` line is a running goal (`crew_goal_state.running_goal_handoff`); age still stales it.
+  `resume:` line is a goal line, whatever its run state (`crew_goal_state.goal_handoff`; review
+  round 4: the goal file judges it when read, so a stopped goal is named, never archived for
+  drift first); age still stales it.
 - JUDGEMENT. In `resume_target` a missing, not-started or done goal falls through with its reason;
   an unreadable or stopped one stops. `decide` waits on all of them.
 
@@ -4851,7 +4853,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `deploy`; `_decide` pins the note and `deploy_allowed` appends it to the reason.
 - JUDGEMENT. Inert until T-0045 dispatches a deploy; `unknown` leaves the day value (main's
   behaviour), as the spec chose. Review r1: a manual sleep whose only tightening is `deploy`
-  is admitted (`crew_autopilot_sleep.sleep_now`).
+  is admitted (`crew_autopilot_sleep.sleep_now`). Review r2: a manual `wake` inside the window
+  (`awake` with `tightenOnly`) keeps the night cap in `deploy_overlay`, and the note names a
+  manual sleep by its end, not the schedule.
 
 ## The sleep log and the morning summary (L-0653, rush/g6b-goals-sleep)
 
@@ -4861,3 +4865,22 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `log_approval`, `sleep_note`, `sleep_summary`, `with_log_warnings`). Call sites in
   `crew_autopilot.py`: `approve` appends after its receipt; `settings` adds the warnings;
   `EXTRA_ACTIONS` routes `sleep-note` and `sleep-summary`.
+- DERIVED. Review r1: the marker is `- reported <ISO> upto <n>` (`crew_sleep.marker_line`), `n`
+  the bytes the summary read, and `unreported` keeps every entry at or after the last cutoff, so
+  a line appended between the read and the marker stays unreported; `wake` exits non-zero when
+  its summary fails.
+
+## Held pings while asleep, and the morning summary sent once (L-0656, rush/g6b-goals-sleep)
+
+- DERIVED. `autopilot.sleep.notifyHold` (`null` or exactly `true`) is read by
+  `crew_sleep.read_notify_hold` into `resolve`'s `notifyHold`. `crew_notify.send` asks
+  `plugin/crew/hooks/scripts/crew_notify_hold.py`'s `holds` after its filters: only `HOLDABLE`
+  pings (every `question`, blocker `approval` and `rounds`), only while `crew_autopilot.settings`
+  says armed, asleep, not `tightenOnly`, hold on; the ping is recorded in
+  `<git-common-dir>/crew/notify/held.json` (one key per distinct message) or sent.
+  `crew_autopilot_sleep.sleep_summary` adds `held_line`, and awake, under `summary_lock`, marks
+  the log, empties the record (`take`) and calls `send_summary` once. `crew_notify._credentials`
+  is `_deliver`'s credential checks, factored out so the summary uses the same ones.
+- JUDGEMENT. The review half (`autopilot.sleep.reviewPolicy`) waits for T-0029 / T-0067; that
+  key still reads "not available". Fail direction is send: anything that cannot be told sends
+  the ping.

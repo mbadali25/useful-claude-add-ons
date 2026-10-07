@@ -185,9 +185,11 @@ def next_goal_ticket(root, slug, goal=None):
         place = f"ticket {n + 1} of {len(tickets)} of goal {slug}"
         ticket = entry.get("id")
         if not isinstance(ticket, str) or not ap._INDEX_ID.fullmatch(ticket):  # pylint: disable=protected-access
-            return stop(f"{place} ({ap._one_line(entry['title'])}) is not minted: the split "
-                        f"approval mints it (crew_autopilot.py goal-approve --root . "
-                        f"--goal {slug})")
+            return stop(f"{place} is not minted: the split approval mints it "
+                        f"(crew_autopilot.py goal-approve --root . --goal {slug})")
+        why = mark_problem(top, slug, n + 1, len(tickets), ticket)
+        if why:
+            return stop(f"{place} names {ticket}, {why}")
         state, why = ticket_state(top, ticket)
         states[n] = (ticket, state, why)
         if state == "closed":
@@ -268,13 +270,20 @@ def goal_source(top, goal, fallthrough, why, source):
 
 def running_goal_note(top):
     """L-0659: a usable ticket handoff wins over a running goal; this names
-    the goal(s) it won over for `resume`'s `disagreement:` line, or ""."""
+    the goal(s) it won over for `resume`'s `disagreement:` line, or "". A goal
+    file that cannot be read, or a discovery that raises, is named too
+    (review r1): the handoff still wins, but never over a silent unknown."""
     try:
-        running = importlib.import_module("crew_autopilot_handoff").running_goals(top)["running"]
-    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-        return ""
-    return (f"goal {', '.join(running)} is running; the handoff's ticket wins - "
-            f"/crew:autopilot --goal {running[0]} resumes the goal") if running else ""
+        goals = importlib.import_module("crew_autopilot_handoff").running_goals(top)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return (f"could not tell whether an autopilot goal is running ({type(exc).__name__}); "
+                "the handoff's ticket wins")
+    notes = [f"goal {', '.join(goals['running'])} is running; the handoff's ticket wins - "
+             f"/crew:autopilot --goal {goals['running'][0]} resumes the goal"] if goals["running"] else []
+    if goals["unknown"]:
+        notes.append("could not tell whether an autopilot goal is running: "
+                     + "; ".join(goals["unknown"]) + " could not be read; the handoff's ticket wins")
+    return "; ".join(notes)
 
 
 def status_goal_line(top, rendered, slug, bare):
@@ -293,7 +302,9 @@ def closed_in_goal(top, slug, ticket):
     the one active pointer a goal's next pick may replace. Any doubt is False."""
     try:
         ids = [t["id"] for t in _goal().read_goal(top, slug)["tickets"]]
-        return ticket in ids and ticket_state(top, ticket)[0] in ("closed", "settled")
+        return (ticket in ids and not mark_problem(top, slug, ids.index(ticket) + 1, len(ids),
+                                                   ticket)
+                and ticket_state(top, ticket)[0] in ("closed", "settled"))
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except
         return False
 
@@ -335,6 +346,21 @@ def _direction(goal, slug, n):
         "",
         "Spec, plan and approval follow as for any ticket; nothing here approves it.",
         ""])
+
+
+def mark_problem(top, slug, n, m, ticket):
+    """"" when `ticket`'s direction.md carries this goal's MARK for place n of m
+    (only a ticket this goal minted or adopted does); else why it is not taken --
+    a goal file naming another ticket is never trusted (L-0541 review r6)."""
+    path = os.path.join(top, ".work", "tickets", ticket, "direction.md")
+    text = read_text(path)
+    if text is None:
+        return (f"whose direction.md could not be read, so whether goal {slug} minted it "
+                "cannot be told - the owner checks the goal file")
+    if MARK.format(slug=slug, n=n, m=m) not in (line.strip() for line in text.splitlines()):
+        return (f"whose direction.md does not carry `{MARK.format(slug=slug, n=n, m=m)}`: "
+                f"goal {slug} did not mint it - the owner fixes the goal file")
+    return ""
 
 
 def _adopt(top, slug, n, m):
@@ -437,7 +463,7 @@ def session_tokens(transcript):
     a count that raises (a usage value that is not a number) included."""
     try:
         tokens = importlib.import_module("crew_metrics").transcript_tokens(
-            transcript, fields=TOKEN_FIELDS)
+            transcript, fields=TOKEN_FIELDS, strict=True)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return None, f"the transcript {transcript} could not be counted ({type(exc).__name__})"
     if isinstance(tokens, bool) or not isinstance(tokens, int):
@@ -569,6 +595,9 @@ def ticket_approve(root, slug, ticket):
     resume = RESUME.format(slug=slug)
     if ticket not in ids:
         return 2, f"refused: {ticket} is not a minted ticket of goal {slug}\n{resume}"
+    why = mark_problem(top, slug, ids.index(ticket) + 1, len(ids), ticket)
+    if why:
+        return 2, f"refused: goal {slug} names {ticket}, {why}\n{resume}"
     code, text = ap.approve(top, ticket)
     if code == 0:
         return 0, text

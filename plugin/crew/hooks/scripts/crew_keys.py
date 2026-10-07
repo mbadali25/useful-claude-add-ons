@@ -509,6 +509,15 @@ KEY_META = {
                                    "never runs unattended asleep.", "branch",
                                    (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.16",
                                    _S + "crew_sleep.py"),
+    "autopilot.sleep.notifyHold": _row("Inside the sleep window (L-0656): `true` holds the pings "
+                                       "that only ask for attention (questions, Approval waiting, "
+                                       "Review out of rounds) and counts them; the morning "
+                                       "summary carries the count. A failure (a deploy result, "
+                                       "a refused Stop gate, a stalled lane) is never held. Only "
+                                       "while armed and asleep by the schedule (a manual sleep "
+                                       "outside it holds nothing); anything but null or true "
+                                       "holds nothing, with a warning.", "branch", (None, True),
+                                       "1.1.16", _S + "crew_notify_hold.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",

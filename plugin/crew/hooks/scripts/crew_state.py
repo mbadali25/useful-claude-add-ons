@@ -921,7 +921,7 @@ def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
     # a timeout all read the same as "cannot check". REALITY DRIFT therefore
     # only ever recommends staleness, never disproves it: when git cannot
     # answer, this loop contributes no reasons and AGE is what decides.
-    bound = __import__("crew_goal_state").running_goal_handoff(root, handoff_text)  # L-0658: a goal file, not drift
+    bound = __import__("crew_goal_state").goal_handoff(handoff_text)  # L-0658: the goal file judges it, not drift
     if git_out(root, "rev-parse", "--is-inside-work-tree") and not bound:
         current_branch = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
         if noted_branch and current_branch and current_branch != noted_branch:
@@ -1127,18 +1127,16 @@ AUTONOMOUS_STOPS = (
     ("clear-inflight", "clearing another runner's in-flight marker"),
 )
 
-# `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases `crew_autopilot.py next` names from disk.
-# `mode` is armed only by exactly `plan` or `backlog` (L-0541), a typo is `off`; `maxPhases` bounds one run's phases.
-# `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is read by crew_autopilot.deploy_allowed.
-# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names each, a test iterates the tuple.
-# `approval`/`questions` (T-0010, plan approval and open questions) are `human|self|risk`: `risk` acts only on a spec
-# header saying `risk: low`, any other value reads `human`, approval also needs `scope.allowCliApproval: true`
-# (crew_autopilot.approval_policy). `sleep` (T-0053): crew_sleep.py's window. `maxAutoReplans` (T-0074): 0 off.
+# `/crew:autopilot` (T-0004) drives one ticket through the phases `crew_autopilot.py next` names. `mode` arms only on
+# exactly `plan` or `backlog` (L-0541), a typo is `off`; `maxPhases` caps a run. `deploy` (T-0072): `none|nonprod|all`,
+# else `none` (crew_autopilot.deploy_allowed). Every AUTONOMOUS_STOPS entry binds it too (autopilot.md names each).
+# `approval`/`questions` (T-0010) are `human|self|risk`: `risk` acts only on a spec header `risk: low`, else `human`;
+# approval also needs `scope.allowCliApproval: true`. `sleep` (T-0053): crew_sleep.py. `maxAutoReplans` (T-0074): 0 off.
 # T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
                       "maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
-                      "sleep": {"schedule": None, "approval": None, "questions": None, "deploy": None},
+                      "sleep": dict.fromkeys(("schedule", "approval", "questions", "deploy", "notifyHold")),
                       "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}
 
 # How many tickets one session's work becomes. The default is `system`: one

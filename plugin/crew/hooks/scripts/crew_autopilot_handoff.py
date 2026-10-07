@@ -113,17 +113,30 @@ def running_goals(root):
     folder = os.path.join(top, ".work", "autopilot")
     slug_ok = _goal()._goal_slug_ok  # pylint: disable=protected-access
     try:
-        names = sorted(n for n in os.listdir(folder) if n.endswith(".json"))
+        names = sorted(n for n in os.listdir(folder) if n.lower().endswith(".json"))
     except FileNotFoundError:
         names = []
+        # A `.work` or `.work/autopilot` entry that is there but no directory
+        # (a dangling link, a file) cannot say there are no goals (review r1).
+        for parent in (folder, os.path.dirname(folder)):
+            if os.path.lexists(parent) and not os.path.isdir(parent):
+                out["unknown"].append(f"{os.path.relpath(parent, top)} (there, but not a "
+                                      "directory it can read)".replace(os.sep, "/"))
+                break
     except OSError as exc:  # there, and cannot be listed: never "no goals"
         out["unknown"].append(f".work/autopilot/ (could not list it: {type(exc).__name__})")
         names = []
     for path in (os.path.join(folder, n) for n in names):
         name = os.path.basename(path)[:-len(".json")]
-        if name.endswith(".proposal") or not slug_ok(name):
+        if name.lower().endswith(".proposal") or not slug_ok(name.lower()):
             continue
-        rel = f".work/autopilot/{name}.json"
+        rel = f".work/autopilot/{name}{os.path.basename(path)[-len('.json'):]}"
+        if os.path.basename(path) != name.lower() + ".json":
+            # On a case-insensitive filesystem `--goal <slug>` opens this file; on a
+            # case-sensitive one it does not: either way it is never "no goal" (review r1).
+            out["unknown"].append(f"{rel} (a goal file name that is not lowercase: rename it "
+                                  f"to {name.lower()}.json)")
+            continue
         text = read_text(path)
         try:
             data = json.loads(text) if text is not None else None

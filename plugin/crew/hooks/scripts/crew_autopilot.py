@@ -1683,8 +1683,8 @@ def resume_target(root, ticket=None, policy=True, goal=None):
     disk = next_phase(top, ticket, policy=policy)
     disagreement = _backlog().running_goal_note(top) if source == "handoff" and not goal else ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
-        disagreement = (f"the handoff says {hint}, the disk says "
-                        f"{disk['command'] or disk['phase']}; disk wins")
+        disagreement = "; ".join(filter(None, (f"the handoff says {hint}, the disk says "  # L-0659 r1: keep both
+                                               f"{disk['command'] or disk['phase']}; disk wins", disagreement)))
     return {"ticket": ticket, "source": source, "stop": False, "hint": hint,
             "disagreement": disagreement, "reason": f"{ticket} from {source}", "goal": goal,
             "fallthrough": fallthrough, "next": disk, "activate": where != "active-ticket"}

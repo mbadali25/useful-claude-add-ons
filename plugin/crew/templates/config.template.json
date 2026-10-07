@@ -220,15 +220,16 @@
   },
   "autopilot": {
     "maxAutoReplans": 0,
+    "ship": "merge",
+    "knownFailures": [],
+    "ciTimeoutMinutes": 60,
     "sleep": {
       "schedule": null,
       "approval": null,
       "questions": null,
-      "deploy": null
+      "deploy": null,
+      "notifyHold": null
     },
-    "ship": "merge",
-    "knownFailures": [],
-    "ciTimeoutMinutes": 60,
     "maxTicketsPerRun": 3,
     "maxTokensPerSession": 2000000
   },

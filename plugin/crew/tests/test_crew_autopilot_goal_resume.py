@@ -627,9 +627,11 @@ def test_a_goal_file_that_cannot_be_looked_up_is_unknown(tmp_path, monkeypatch):
 
 # --- L-0658 review round 2: the SessionStart staleness rule ------------------------------
 
-@pytest.mark.parametrize("state,stale", [("running", False), ("stopped", True), ("done", True)])
-def test_a_running_goal_handoff_is_not_archived_for_branch_drift(tmp_path, monkeypatch,
+@pytest.mark.parametrize("state,stale", [("running", False), ("stopped", False), ("done", False)])
+def test_a_goal_handoff_is_not_archived_for_branch_drift(tmp_path, monkeypatch,
                                                                  state, stale):
+    """L-0658 review r4: whatever the run state, the goal file judges a goal
+    handoff (a stopped goal is named when it is read), never branch drift."""
     import crew_state  # pylint: disable=import-outside-toplevel
     root, slug = _minted_goal(tmp_path, monkeypatch)
     if state != "running":
@@ -649,10 +651,10 @@ def test_a_running_goal_handoff_is_not_archived_for_branch_drift(tmp_path, monke
 
 def test_two_resume_lines_keep_the_drift_check(tmp_path, monkeypatch):
     import crew_goal_state  # pylint: disable=import-outside-toplevel
-    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _root, slug = _minted_goal(tmp_path, monkeypatch)
     text = f"resume: /crew:autopilot --goal {slug}\nresume: /crew:done T-0001\n"
 
-    assert crew_goal_state.running_goal_handoff(str(root), text) is False
+    assert crew_goal_state.goal_handoff(text) is False
 
 
 @pytest.mark.parametrize("how", ["dangling-link", "a-file"])
@@ -674,3 +676,110 @@ def test_a_goal_folder_that_is_not_a_directory_is_unknown_not_missing(tmp_path, 
 
     assert (crew_goal_state.run_state(str(root), slug)["state"], got["stop"],
             "could not read" in got["reason"]) == ("unknown", True, True)
+
+
+# --- group review fixes (G6b, 2026-10-07) ----------------------------------------------------
+
+def test_a_second_disagreement_keeps_the_running_goal(tmp_path, monkeypatch):
+    """L-0659 review r1: a ticket handoff that also disagrees with the disk keeps
+    the running-goal note beside its own."""
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    crew_ticket_activate(root, "T-0002")
+    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root),
+                            capture_output=True, text=True, check=True).stdout.strip()
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
+                          capture_output=True, text=True, check=True).stdout.strip()
+    _write(root / ".work" / "HANDOFF.md",
+           f"# Handoff\nbranch: {branch}\nhead: {head}\nresume: /crew:done T-0002\n")
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["source"], "the handoff says /crew:done T-0002" in got["disagreement"],
+            f"goal {slug} is running" in got["disagreement"]) == ("T-0002", "handoff", True, True)
+
+
+def test_running_goal_note_names_a_goal_file_it_cannot_read(tmp_path, monkeypatch):
+    """L-0659 review r1: the handoff still wins, but the unknown is named."""
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    root, _slug = _minted_goal(tmp_path, monkeypatch)
+    _write(root / ".work" / "autopilot" / "broken.json", "{not json")
+
+    note = crew_autopilot_backlog.running_goal_note(str(root))
+
+    assert ("could not tell whether an autopilot goal is running" in note,
+            "broken.json" in note) == (True, True)
+
+
+@pytest.mark.parametrize("how", ["dangling-link", "a-file"])
+def test_goal_discovery_reads_a_folder_that_is_not_one_as_unknown(tmp_path, how):
+    """L-0659 / T-0056 review: `.work/autopilot` that is a dangling link (or a
+    file) is could-not-tell for discovery too, never "no goals"."""
+    root = make_repo(tmp_path)
+    folder = root / ".work" / "autopilot"
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    if how == "a-file":
+        _write(folder, "not a folder")
+    else:
+        try:
+            os.symlink(str(root / "gone"), str(folder))
+        except (OSError, NotImplementedError):
+            pytest.skip("cannot make a symlink here - NOT run")
+
+    got = handoff.running_goals(str(root))
+
+    assert (got["running"], len(got["unknown"]), ".work/autopilot" in got["unknown"][0]) == (
+        [], 1, True)
+
+
+def test_an_uppercase_goal_file_name_is_unknown_not_no_goal(tmp_path, monkeypatch):
+    """T-0056 review r3: SHIP-IT.JSON opens as ship-it on a case-insensitive
+    filesystem and not on a case-sensitive one: either way it is named."""
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    folder = root / ".work" / "autopilot"
+    os.replace(str(folder / f"{slug}.json"), str(folder / "tmp-name"))
+    os.replace(str(folder / "tmp-name"), str(folder / f"{slug.upper()}.JSON"))
+
+    got = handoff.running_goals(str(root))
+
+    assert (got["running"], [u for u in got["unknown"] if "not lowercase" in u] != []) == (
+        [], True)
+
+
+def test_the_wrap_up_dirty_step_keeps_a_goal_line():
+    """T-0056 review r3: `--wrap-up` on a dirty tree still writes a goal line."""
+    with open(os.path.join(context._ROOT, "commands", "handoff.md"),  # pylint: disable=protected-access
+              encoding="utf-8") as handle:
+        text = handle.read()
+    dirty = [line for line in text.splitlines() if line.startswith("3. Dirty:")]
+
+    assert (len(dirty), "goal line" in dirty[0], "still wins" in dirty[0]) == (1, True, True)
+
+
+def test_a_goal_file_naming_a_ticket_it_did_not_mint_is_refused(tmp_path, monkeypatch):
+    """L-0541 review r6 (must-block): an id in the goal file counts only when that
+    ticket's direction.md carries this goal's mark for its place."""
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _write(root / ".work" / "tickets" / "T-0009" / "direction.md", "someone else's ticket\n")
+    path = root / ".work" / "autopilot" / f"{slug}.json"
+    goal = json.loads(_read(path))
+    goal["tickets"][1]["id"] = "T-0009"
+    _write(path, json.dumps(goal))
+
+    pick = crew_autopilot_backlog.next_goal_ticket(str(root), slug)
+    code, text = crew_autopilot_backlog.ticket_approve(str(root), slug, "T-0009")
+
+    assert (pick["ticket"], pick["stop"], "did not mint it" in pick["reason"], code,
+            "did not mint it" in text) == (None, True, True, 2, True)
+
+
+@pytest.mark.parametrize("usage", [[2100000, -2100000], [None, 1], ["5", 1], [True, 1]])
+def test_a_usage_count_that_is_not_a_non_negative_integer_is_unknown(tmp_path, usage):
+    """L-0541 review r6: a negative (or non-integer) count never lowers the total."""
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    transcript = tmp_path / "t.jsonl"
+    _write(transcript, "".join(json.dumps({
+        "type": "assistant", "timestamp": "2026-10-05T00:00:00Z",
+        "message": {"usage": {"input_tokens": n, "output_tokens": 0}}}) + "\n" for n in usage))
+
+    assert crew_autopilot_backlog.session_tokens(str(transcript))[0] is None

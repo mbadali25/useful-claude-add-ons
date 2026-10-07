@@ -85,6 +85,8 @@ _KNOWN_VALUES = {
     "autopilot.sleep.questions": ("human", "self", "risk", None),
     # crew_sleep.DEPLOY_OVERRIDES, or null (L-0654); `all` is never a night value.
     "autopilot.sleep.deploy": (None, "nonprod", "none"),
+    # crew_sleep.read_notify_hold: null or exactly true (L-0656).
+    "autopilot.sleep.notifyHold": (None, True),
     # plugin/crew/skills/crew-graph/SKILL.md:168
     "graph.mode": ("code-only",),
     # plugin/crew/hooks/scripts/crew_autocycle.py reads true from the machine
