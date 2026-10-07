@@ -9,6 +9,204 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.7: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
+
+- **Summary.** crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript,
+  with pitfalls and verify rules, and lists four candidate Node standards with the evidence each
+  has. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-node/SKILL.md` covers child processes,
+  `fetch` status handling, paging that says it stopped, unhandled rejections, erased types,
+  ESM/CJS, date parsing, integers above 2^53, `process.exit()` and `npm ci`. The behaviour
+  claims were checked on Node 22.22.0. It proposes two verify.json commands, `npm test` and
+  `node_modules/.bin/tsc --noEmit`; each exits 77 with `TOOL MISSING` when its tool is absent.
+  New `stack-node/references/candidates.md` covers NODE-08 (a partial result says it is
+  partial), NODE-P1 (argv arrays, not shell strings), NODE-P2 (status before body) and NODE-P3
+  (credentials only to the configured origin). `test_stack_skills.py` lists `stack-node`, and
+  crew's skill count reads 33 everywhere it is stated. No set file, loader or gate change.
+- **Evidence.** The evidence is this repository's commits and CHANGELOG, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. NODE-08 is at
+  the bar (4) in the spec's re-count, but three of its change sets are in a private repository
+  and their text was not available, so it stays a candidate. Public change sets do not count
+  (owner decision). That is a reported deviation from the spec, which expected `node.md` with
+  NODE-08.
+
+### Added — crew 1.1.7: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
+
+- **Summary.** A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one
+  PowerShell standard in its pre-review self-check: resolve an external program to an
+  Application that is proven to run, never to whatever name lookup returns first.
+- **Behaviour change.** In this repository every hook-pair change touches a `.ps1`, so it now
+  draws the `PWSH` set. A ticket in flight with a `.ps1` change gets a stale stamp after it
+  merges this, and must add the PWSH-16 row to its self-check and stamp again.
+- **What changed.** New `plugin/crew/skills/crew-standards/references/powershell.md`, set
+  `PWSH` (the loader takes 2-6 capitals), `applies-to: ["**/*.ps1", "**/*.psm1", "**/*.psd1"]`,
+  holds PWSH-16, the command-resolution half of that research rule. It is earned by three of
+  this repository's own reviews: crew 0.19.69 (a security review of the scope layer), 0.19.92
+  (the PowerShell-security-hardening review in PR #200) and 1.0.23 BLOCK B2. Its Source
+  sentences are re-matched against the raw about_Command_Precedence page. New tests in
+  `test_crew_standards.py` cover it: `test_pwsh_set_parses_with_every_field`,
+  `test_pwsh_why_finding_counts_match_their_enumerations`,
+  `test_pwsh_sources_quote_whole_spans_without_elision` and
+  `test_pwsh_set_applies_to_powershell_files_only`. Each was proven red by a hand-run
+  mutation. `stack-powershell` points at the set, and its new `references/candidates.md` lists
+  PWSH-P1 (exit status, and `$null` as failure), PWSH-P2 (literal matching), PWSH-P3 (forced
+  collections), PWSH-04 (explicit bytes at a native boundary), the documentation-only
+  StrictMode half and PWSH-20 as overlay material. `crew-standards/SKILL.md` names both stack
+  sets. No gate or `.ps1` change. One matcher change (group review): a set's `applies-to` is
+  matched case-folded on every host, in `_applies` and in plan-time `sets --touch`, because
+  `fnmatch` folds case on Windows only, so `check.PS1` missed `PWSH` on Linux and the same change
+  stamped a different digest per host. Folding can only add a set. Covered by
+  `test_pwsh_set_applies_to_a_mixed_case_extension_on_every_host` and a mixed-case Touch glob case of
+  `test_sets_touch_needs_no_scope_base`.
+- **Evidence.** The evidence is this repository's CHANGELOG and commits, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. Public change
+  sets do not count (owner decision), so PWSH-P1's six public change sets leave it at 1.
+  PWSH-01..PWSH-20 were not all assessed, so the spec's `grep -c '^PWSH-' >= 20` check of the
+  change-set file does not pass. That is a reported deviation. The sabotage entries for the
+  four new tests are a tooling-only follow-up, because `sabotage_standards.py` is a harness
+  path.
+
+### Added — crew 1.1.7: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
+
+- **Summary.** crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule,
+  and lists four candidate PHP standards with their sources. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-php/SKILL.md` covers loose comparison,
+  `empty("0")`, array-key behaviour, bound SQL parameters, output escaping, `unserialize`,
+  per-file `strict_types`, byte strings, time zones and `composer.lock`. It has a `## Standards`
+  section and a proposed verify.json rule: `php -l` over tracked and untracked `.php`/`.phtml`
+  files. The rule exits 77 with `TOOL MISSING` when `php` is absent, and with `NO INPUT` when
+  there is no PHP file to check. New `stack-php/references/candidates.md`
+  covers PHP-01 (bound parameters and allow-listed identifiers), PHP-P1 (no `unserialize` of
+  data an attacker can influence), PHP-P2 (context escaping) and PHP-P3 (strict comparison).
+  Each gives its public change sets, its verdict and a php.net Source sentence, re-matched
+  against the raw page. `test_stack_skills.py` lists `stack-php`, and crew's skill count moves
+  from 31 to 32 everywhere it is stated (33 after L-0537). No `references/php.md`, loader or gate change, and no
+  install-script change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. Owner-private evidence was not consulted, and the re-check is tracked as C-0020. Most
+  public change sets are WordPress plugins. PHP-02..PHP-20 were not assessed, so the spec's
+  `grep -c '^PHP-' >= 20` and "at least 20 PHP-NN in stack-php" checks do not pass. That is a
+  reported deviation, with no placeholder rows added. The verify rule was run against real PHP
+  8.3.6 on the build host. It exits 0 on a clean untracked file, 1 on a parse error, and 77 with
+  no input.
+
+### Added — crew 1.1.7: Angular 2+ candidate standards, no gated set yet (L-0538)
+
+- **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with the
+  evidence each has. The one that matters most is NG-07: a failed read shows "could not verify" and
+  blocks the writes it feeds. Nothing is enforced yet.
+- **What changed.** New `plugin/crew/skills/stack-angular/references/candidates.md` covers
+  NG-07 (its rule, Applies when and Self-check, taken from the spec's publishable text), NG-P1
+  (no `bypassSecurityTrust*` on content a user, contact or model can author) and NG-P2
+  (interceptors send credentials only to allow-listed origins). Each gives its change sets and
+  its standing. NG-07 and NG-P1 also carry angular.dev Source sentences, re-matched against the
+  raw pages. NG-P2 has no Source yet.
+  `stack-angular/SKILL.md` gains a `## Standards` section and two pitfall pointers, and its
+  description says AngularJS gets no standards. The AngularJS section is unchanged. No
+  `references/angular.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. NG-07 is at the bar in the coordinator's private count, but its
+  Why, Earned by and Change sets text was not supplied in a publishable form. Public change sets
+  do not count (owner decision), so the slice ships candidates only (direction Option 3). The
+  other research ids are not listed one by one, because their titles and counts are private.
+  That is a reported deviation.
+
+### Added — crew 1.1.7: Terraform candidate standards and settled questions, no gated set yet (L-0536)
+
+- **Summary.** `stack-terraform` now lists three candidate Terraform standards with the
+  evidence each has, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
+  CMK for log groups stays a flagged candidate, and literal ARNs are banned in new code.
+  Nothing is enforced.
+- **What changed.** New `plugin/crew/skills/stack-terraform/references/candidates.md` covers
+  TERRAFORM-03 (no literal account IDs or ARNs), TERRAFORM-P1 (secrets never outputs; sensitive
+  inputs) and TERRAFORM-12 (CMK for CloudWatch log groups). The first two give their public
+  change sets, a verdict and HashiCorp Source sentences, re-matched against the raw pages.
+  TERRAFORM-12 has no public change set and no Source. Its 2 counted change sets are in the
+  spec's private re-count, and its "CMK always" position stays flagged. The 1.7.0 floor is
+  confirmed from the raw `v1.7` CHANGELOG. `stack-terraform/SKILL.md` gains a `## Standards`
+  section. It says no set ships, and that when one is earned its id is `TF`: the loader accepts
+  2-6 capitals, so the spec's `TERRAFORM` would be refused. No set file, test, loader or gate
+  change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The spec's private re-count put no rule above two. Public change
+  sets do not count (owner decision), and the private PR review threads were not reachable. The
+  spec's check that all of TERRAFORM-01..-19 appear in the stack skill does not pass, because
+  their rule text was not available. That is a reported deviation.
+
+### Added — crew 1.1.7: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
+
+- **Summary.** `stack-dotnet` now lists two candidate .NET standards with their sources, plus
+  the test-framework and `Result` defaults. None is enforced, because no rule this build could
+  write has three reviewed change sets that count.
+- **What changed.** New `plugin/crew/skills/stack-dotnet/references/candidates.md` covers
+  DOTNET-P1 (never block on async code) and DOTNET-P2 (no per-call `HttpClient`). Each entry
+  gives its public change sets, its verdict and a Microsoft Learn Source sentence, re-matched
+  against the raw page. The file also gives the spec's per-rule counts for DOTNET-01..20 and the
+  conventions, which have no id. `stack-dotnet/SKILL.md` gains a `## Standards` section with the
+  defaults: xUnit + NSubstitute + FluentAssertions for new test projects, and the repository's
+  own `Result<TValue, TError>` with no package mandated. Its async and `HttpClient` pitfalls point
+  at the candidates. No `references/dotnet.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. The spec expected DOTNET-08, -13 and -15 to ship on the owner's private re-count, but
+  their rule text is in the owner's research, which this build did not have. That is a reported
+  deviation.
+
+### Added — crew 1.1.7: SQL candidate standards, no gated SQL set yet (L-0532)
+
+- **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is
+  enforced: this build showed no SQL rule with three reviewed change sets that count, and the
+  owner-private evidence, which may hold more, was not consulted.
+- **What changed.** New `plugin/crew/skills/stack-sql/references/candidates.md` covers SQL-P1
+  (PostgreSQL `SECURITY DEFINER` pins `search_path` and revokes `EXECUTE` from `PUBLIC`), SQL-P2
+  (PostgreSQL `CREATE INDEX CONCURRENTLY` outside the runner's transaction) and SQL-17 (SQL Server
+  session `SET` options are part of the change). Each entry gives its public change sets, its
+  verdict and a Source sentence, re-matched against the raw page. `stack-sql/SKILL.md` gains a
+  `## Standards` section that says why no set ships, and the README and PLUGINS.md say so too.
+  No `references/sql.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  three-reviewed-change-sets bar. Owner-private evidence was not consulted, and the re-check is
+  tracked as C-0020. SQL-01..SQL-20 from the owner's research were not assessed, so the spec's
+  `grep -c '^SQL-' >= 20` check of the change-set file does not pass. That is a reported
+  deviation, with no placeholder rows added. The MySQL docs site failed during the pass, so no
+  MySQL/MariaDB rule was checked.
+
+### Fixed — crew 1.1.7: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
+
+- **Summary.** A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a
+  SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's
+  standards can be listed before any scope base exists.
+- **What changed.** `crew_standards.py proposals --round N` first reads the review ledger
+  (`review_ledger.status`) and proceeds only when round N is recorded completed as CLEAN or
+  FINDINGS; INCOMPLETE, a reserved row, no row, two rows or an unreadable ledger refuse with
+  nothing written, and the `out.txt` parse stays as a second check. The stamp's `base=` parses as
+  exactly 40 or exactly 64 hex. `sets --touch` lists GEN, the overlay and every stack set whose
+  `applies-to` overlaps a spec Touch entry (the matcher `/crew:implement` step 2 uses), needing no
+  scope base; an unreadable spec or Touch list prints `UNKNOWN:`, lists every set and exits 1.
+  `(fallback)` appears once on a line. The crew-plan self-review names `sets --touch`; the
+  crew-standards skill loses its "The An" fragment; six code-map history cells close their
+  parenthesis; T-0085's entry names the crew-standards rule instead of "Rule 31". The harness half
+  (the review gate's lock-held skip decision, its uncaught incident errors, `commands/review.md`'s
+  wording and the sabotage entries) lands separately.
+
+### Changed — crew 1.1.7: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
+
+- **Summary.** crew's two standards skills now say which owns which rule: code-level rules live in
+  `crew-standards`, the repository's machinery in `crew-qa-standards`, and the recurring-findings
+  probes are derived from the standards, with a test that every standard they name exists.
+- **What changed.** `recurring-findings.md`'s introduction declares RF-01..07 a probe index derived
+  from `crew-standards` (the standard wins on a conflict), and RF-07's `seen:` line now names GEN-09
+  and this repository's REPO-03 instead of only `CLAUDE.md`. The new
+  `test_every_class_names_a_standard_that_exists` (`plugin/crew/tests/test_recurring_findings.py`)
+  reads every shipped set and the overlay through `crew_standards.parse_set` and fails when a class
+  names no standard or one that does not exist. Both SKILL.md files state the split in the same
+  words; H8, R10 and R12 each name the code-level standard they restate (GEN-01, GEN-04, GEN-12).
+  `plugin/PLUGINS.md` gains its missing `crew-qa-standards` row. No probe was reworded: each of the
+  21 was read against the Self-check of the standards it cites and agrees. The review prompt keeps
+  both checklist blocks; no harness path changed.
+
 ### crew 1.1.6 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
@@ -4425,8 +4623,8 @@ A tooling change: this release carries no feature work.
   rows and unreadable `std:` tokens on neither side, counted, instead of in the baseline.
   `review_run.py` answers a spent review budget (exit 4) before the self-check gate. GEN-02 and GEN-07
   each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
-  The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
-  `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
+  The stamp's docstring names its remaining write window instead of claiming GEN-03. The
+  crew-standards rule of `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
 - Bumped `1.0.69 -> 1.0.75` on the land branch (REPO-03 as amended: no bump on the build branch):
   1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
   `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`

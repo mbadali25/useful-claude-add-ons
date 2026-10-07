@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.1.6<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.7<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 36 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -218,14 +218,17 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-brainstorm` | Turn a request into an approved direction before it becomes a spec — one question per message, options with the recommendation first. Backs `/crew:brainstorm`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-plan` | Turn an approved spec into a step-by-step plan — files, tests and risk per step, no placeholders, self-reviewed against Touch. Backs `/crew:plan`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-execute` | Execute an approved plan task by task — TDD per step, a ruling instead of a silent deviation. Backs `/crew:implement`; adapted from `superpowers` (MIT, `NOTICE.md`) |
-| `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python so far); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
-| `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy |
+| `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python and PowerShell so far; other stacks list candidates in their `stack-*` skill); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. The one source for code-level rules; the recurring-findings probes are derived from it. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
+| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
+| `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy; no gated Angular set yet (set `NG` when earned), its Angular 2+ candidate standards |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
-| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section |
-| `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening |
+| `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |
+| `stack-node` | Server-side and CLI Node.js/TypeScript pitfalls, checks and `verify.json` wiring — child processes, `fetch` status handling, paging that says it stopped, unhandled rejections, module format, dates, big integers; no gated Node set yet, its candidate standards |
+| `stack-php` | PHP 8 pitfalls, checks and `verify.json` wiring — loose comparison, array keys, bound SQL parameters, output escaping, `unserialize`, time zones, a `php -l` rule; no gated PHP set yet, its candidate standards |
+| `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening; the PWSH standards set's pointer and its candidates |
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
-| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking |
-| `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces |
+| `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking; no gated SQL set yet, its candidate standards and their sources |
+| `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces; no gated Terraform set yet (set id `TF` when earned), its candidate standards and settled questions |
 | `stack-web` | Playwright web UI testing pitfalls, checks and `verify.json` wiring — role/testid locators, web-first assertions, trace and visual-baseline discipline, accessibility via axe. Backs `/crew:webtest` |
 
 ### What it creates in a repository
