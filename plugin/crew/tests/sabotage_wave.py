@@ -66,7 +66,7 @@ WAVE_MUTATIONS = (
      "    agents = os.path.join(main_top, AGENT_DIR)\n"
      "    if not os.path.normcase(top).startswith(os.path.normcase(agents) + os.sep):\n",
      "    agents = os.path.join(main_top, AGENT_DIR)\n    if False:\n",
-     _W + "test_lane_init_refuses_main_checkout"),
+     _W + "test_the_init_refusal_names_the_main_checkout"),
     ("WAVE: lane-init skips the worktree's scope mode", WAVE,
      "    ok, why = scope_enforcing(top, [ticket])\n    if not ok:\n        return False, why\n"
      "    crew_ticket.activate(top, ticket)\n",
