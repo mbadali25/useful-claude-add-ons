@@ -19,6 +19,7 @@ removal stub with no behaviour.
 
 ```
 # $1 <title>          status: spec   risk: low|med|high
+depends-on: [T-####, ...]
 ## Intent
 2-3 sentences: the outcome, taken from direction.md's Recommendation.
 ## Exclusions
@@ -35,6 +36,8 @@ Each with how it will be resolved before implement, or "accepted as risk".
 - [ ] the new test this ticket adds, by name (add one if none exists)
 ```
 
+   `depends-on:` is optional (omit it when nothing must close first); like every
+   spec line it is hashed, so a changed list needs `/crew:approve` again.
    Touch feeds the scope guard (PreToolUse) and `/crew:plan`'s validation: a
    plan step whose Files: are not covered here needs this section amended
    first, not a plan that quietly reaches outside it. `/crew:approve` reads it

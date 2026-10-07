@@ -40,6 +40,14 @@ uses `crew:explorer` to pin down `path:line` evidence, and writes
 `spec.md` with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 `.work/INDEX.md` gets a row.
 
+If the ticket cannot start before others close, the spec carries an optional
+`depends-on: [T-0088, T-0090]` line under its header. `blocked` is then derived
+from it, never typed: any dependency that is open, `cancelled`, `superseded` or
+cannot be read blocks, and `done` or `merged` unblocks
+(`hooks/scripts/crew_ticket_state.py`). The line is hashed with the spec, so
+changing it needs `/crew:approve` again. `needs-replan` is derived the same way,
+from the review ledger.
+
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
 one step per unit of work in `plan.md` (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show
@@ -64,7 +72,10 @@ whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no
-document that needs updating.
+document that needs updating. Then `crew_gitignore.py check` asks whether the
+ticket brought a language or manifest whose ignore patterns are missing: it adds
+them only if the spec's Touch covers `.gitignore`, and otherwise the PR body lists
+them and the next `/crew:onboard` adds them.
 
 **6b. The standards self-check.** Before the review, the session answers every
 development standard in the effective set (crew's generic GEN standards, any

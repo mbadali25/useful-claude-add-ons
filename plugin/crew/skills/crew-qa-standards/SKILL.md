@@ -60,7 +60,7 @@ gap costs the tokens the standards exist to save.
 |---|---|
 | `/crew:init` Phase 5 and Phase 8 | the audit; a phase with an open GAP is `partial`, never `done` |
 | `/crew:init --audit` | the audit alone, then the doc dry run |
-| `/crew:upgrade` | the audit as a report, after the codemap migration |
+| `/crew:migrate` | the audit as a report, after a pre-0.20 config is upgraded (`crew-setup/upgrade-report.md`) |
 | `qaAuditStale` at session start | no stamp yet, or an audited path moved since the stamp |
 
 None of these is a hook that blocks. The audit reports; the gate stays what `.crew/verify.json` says.

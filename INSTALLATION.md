@@ -301,7 +301,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
   Both flags matter: `--code-only` skips docs, papers, and images — omit it against a repo that has any of those and `graphify` errors instead of skipping them. `--no-viz` skips the HTML visualization, which is effectively unopenable past a modest repo size.
 
-  This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 19) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
+  This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 19) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:onboard --refresh` reads it to fold graph facts into the code map. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
 
 ### Optional: Microsoft MCP servers
 

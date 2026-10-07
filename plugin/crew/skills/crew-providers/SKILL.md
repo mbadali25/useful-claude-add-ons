@@ -40,7 +40,7 @@ not that such a review is bad; it is that it looks exactly like a good one.
 **This table is a configuration to adopt, not what crew ships.** A fresh
 install has `dev.provider: "claude"` and an empty `dev.roles`, and each
 agent file's frontmatter pins a Claude tier, so every role below runs on
-Claude until someone writes these pins. `/crew:init` and `/crew:upgrade`
+Claude until someone writes these pins. `/crew:init` and `/crew:config`
 offer the table; neither applies it unasked.
 
 Crew fills every role with Claude except these:
