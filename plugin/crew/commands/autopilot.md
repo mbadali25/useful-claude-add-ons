@@ -66,7 +66,7 @@ It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback 
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --check` until `ok`, and back through `next`.
 - `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: the policy below. With `phase=split-approval` - not yet a stop: run
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py split --root . --ticket <ticket> --apply` (it applies only under the approval policy, and in Jira mode it always refuses); report each `child=`, or on `refused:` stop - the human types `/crew:split <ticket>`. Never run `/crew:split` yourself.
-- any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the questions it names; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
+- any other `stop=1` - print the phase, the reason and the command the human types (may be empty), then **stop** - never run it yourself. `phase=needs-owner` waits on the owner's answer to the `next:` or questions it names, `hold`, `landing` and `blocked` on the owner, the land step or another ticket; `phase=closed` also covers INDEX or header `cancelled`/`superseded`.
 
 The policy (T-0010; `next`'s reason names it; `human` always stops) is one writer here (the other policy writer is `auto-replan`'s `auto-reject`, T-0074, which writes only the ledger's REVIEWED -> NEEDS_REPLAN):
 `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`
@@ -86,7 +86,7 @@ The tracker step (T-0022), after each phase and after `/crew:done` succeeds, mov
 ## 4. Stops
 
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's; a BLOCK is never accepted here, at any setting, and only `auto-replan` rejects one); `plan-approval` and `open-questions` are a person unless section 3's
-policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
+policy allows. `next` enforces from disk, every turn: the ticket's gate (`hold`, `landing`, `needs-owner`) and `blocked` (a `depends-on:` not closed), `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown` (no INDEX row here or in the main checkout), `index-disagreement`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`, `auto-replan-cap` (`maxAutoReplans` successor plans already on the ledger), `drift`, `in-flight`, `handover-elsewhere`, `docs-missing`, `docs-unknown`, `docs-after-review`, `split-approval` (unless section 3's `--apply` passes), `split-check-unknown`; the tracker step: `tracker-failed`, `tracker-unavailable`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR but `ship`'s (never by hand), new ticket (T-0012) except section 3's step 3.3 follow-up and `split --apply`'s children, lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 `offboard-role` (offboarding or removing a role), `delete-map` (a codemap file or a diagram), `rewrite-metrics` (.crew/metrics.md), and

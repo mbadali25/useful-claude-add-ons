@@ -1258,3 +1258,34 @@ def test_status_keeps_the_could_not_tell_warning(tmp_path, text):
     warnings = [line for line in _lines(root)[1] if line.startswith("warning:")]
 
     assert (len(warnings), ".crew/config.json" in warnings[0]) == (1, True), warnings
+
+
+# --- L-0550: who the gate stops wait on ---------------------------------------
+
+def _gate_stop(root, phase):
+    if phase == "blocked":
+        spec = root / ".work" / "tickets" / T / "spec.md"
+        first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+        _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+        _index(root, f"{T} | ready | high | r | title", "T-2 | spec | high | r | other")
+        approve_as_user(root, T)
+    else:
+        _index(root, f"{T} | {phase} | high | r | title")
+
+
+@pytest.mark.parametrize("phase, who", [("hold", "owner"), ("landing", "the land step"),
+                                        ("needs-owner", "owner"), ("blocked", "another ticket")])
+def test_status_waiting_on_a_gate_is_never_autopilot(tmp_path, phase, who):
+    root = _approved(tmp_path)
+    _gate_stop(root, phase)
+
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (shown["phase"], shown["waiting"].split(" - ")[0]) == (phase, who), shown
+
+
+def test_closed_reads_a_cancelled_header(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, header="status: cancelled   risk: high")
+
+    assert crew_autopilot._closed(str(root), T) is True  # pylint: disable=protected-access

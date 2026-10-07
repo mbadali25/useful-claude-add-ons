@@ -25,6 +25,7 @@ import crew_autopilot
 import crew_autopilot_docs
 import crew_state
 import crew_ticket
+import crew_ticket_state
 import review_ledger
 from review_fixtures import git
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
@@ -751,7 +752,8 @@ def test_open_questions_round2_list_nested_fence_repro_stops(tmp_path):
     assert _next_on_direction(tmp_path, ROUND2_LIST_NESTED) == ("open-questions", True, True)
 
 
-@pytest.mark.parametrize("status", ["", "brainstorm", "parked", "rejected", "**ready**"])
+@pytest.mark.parametrize("status", ["", "brainstorm", "parked", "rejected", "**ready**",
+                                    "blocked", "needs-replan"])
 def test_next_index_status_that_does_not_say_approved_stops(tmp_path, status):
     root = make_repo(tmp_path, mode="off")
     _ticket(root, spec=False, plan=False, status=status)
@@ -2350,3 +2352,233 @@ def test_next_cancelled_index_row_is_closed(tmp_path, word):
     _ticket(root, status=word)
     got = _next(root)
     assert (got["phase"], got["stop"]) == ("closed", True)
+
+
+# --- L-0550: hold, landing, needs-owner, closed and blocked stops -------------
+
+def _next_md(root, text, ticket=T):
+    _write(root / ".work" / "tickets" / ticket / "next.md", text)
+
+
+def _gated(tmp_path, where, word):
+    """An approved ticket gated by `word` in its INDEX cell or (under INDEX
+    `ready`) its spec header, written after the approval."""
+    root = _approved(tmp_path, status=word if where == "index" else "ready")
+    if where == "header":
+        _write(root / ".work" / "tickets" / T / "spec.md",
+               _spec_text(T, f"status: {word}   risk: high"))
+    return root
+
+
+def _depends(tmp_path, line, *rows):
+    """An approved ticket whose spec carries `line` under its header."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _with_line2(root, line)
+    _index(root, f"{T} | ready | high | r | title", *rows)
+    approve_as_user(root, T)
+    return root
+
+
+@pytest.mark.parametrize("where", ["index", "header"])
+def test_next_hold_stops(tmp_path, where):
+    root = _gated(tmp_path, where, "hold")
+    _next_md(root, "reason: the vendor answers first\nrevisit: 2999-01-01\n")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"], "the vendor answers first" in got["reason"],
+            "revisit: 2999-01-01" in got["reason"], "(passed)" in got["reason"],
+            ("INDEX.md" if where == "index" else "spec.md header") in got["reason"],
+            f".work/tickets/{T}/next.md" in got["evidence"]) == (
+        "hold", True, "", True, True, False, True, True), got
+
+
+def test_next_hold_without_next_md_stops(tmp_path):
+    got = _next(_gated(tmp_path, "index", "hold"))
+
+    assert (got["phase"], got["stop"], "no reason given" in got["reason"],
+            "no revisit date" in got["reason"]) == ("hold", True, True, True), got
+
+
+def test_next_hold_past_its_revisit_still_stops(tmp_path):
+    root = _gated(tmp_path, "header", "hold")
+    _next_md(root, "revisit: 2000-01-01\n")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "revisit: 2000-01-01 (passed)" in got["reason"]) == (
+        "hold", True, True), got
+
+
+def test_next_hold_with_an_unreadable_next_md_says_cannot_tell(tmp_path):
+    root = _gated(tmp_path, "index", "hold")
+    _next_md(root, "reason: one\nreason: two\n")
+
+    got = _next(root)
+
+    assert (got["phase"], "cannot tell" in got["reason"], "more than once" in got["reason"]) == (
+        "hold", True, True), got
+
+
+@pytest.mark.parametrize("status, phase", [("ready", "done"), ("landing", "landing")])
+def test_next_landing_stops(tmp_path, monkeypatch, status, phase):
+    """A CLEAN current receipt and fresh artifacts: `done`, unless INDEX says `landing`."""
+    root = _approved(tmp_path, status=status)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "land step" in got["reason"]) == (
+        phase, phase == "landing", phase == "landing"), got
+
+
+def test_next_needs_owner_stops_with_the_next_line(tmp_path):
+    root = _gated(tmp_path, "index", "needs-owner")
+    _next_md(root, "next: say which tracker closes a cancelled item\n")
+    asked = _next(root)
+    os.remove(str(root / ".work" / "tickets" / T / "next.md"))
+    blind = _next(root)
+
+    assert (asked["phase"], asked["stop"], "next: say which tracker closes" in asked["reason"],
+            "cannot tell" in asked["reason"], blind["phase"], "cannot tell" in blind["reason"]) == (
+        "needs-owner", True, True, False, "needs-owner", True), (asked, blind)
+
+
+def test_next_header_needs_owner_stops(tmp_path):
+    got = _next(_gated(tmp_path, "header", "needs-owner"))
+
+    assert (got["phase"], got["stop"], "spec.md header" in got["reason"]) == (
+        "needs-owner", True, True), got
+
+
+def test_next_header_cancelled_is_closed(tmp_path):
+    root = _gated(tmp_path, "header", "cancelled")
+    _index(root, f"{T} | parked | high | r | title")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "status: cancelled" in got["reason"],
+            "successor" in got["reason"]) == ("closed", True, True, False), got
+
+
+@pytest.mark.parametrize("where", ["index", "header"])
+def test_next_superseded_names_its_successor(tmp_path, where):
+    root = _gated(tmp_path, where, "superseded")
+    unnamed = _next(root)
+    _next_md(root, "superseded-by: T-9\n")
+    named = _next(root)
+
+    assert (named["phase"], named["stop"], "superseded-by: T-9, from next.md" in named["reason"],
+            unnamed["phase"], unnamed["reason"].endswith("(successor not named)")) == (
+        "closed", True, True, "closed", True), (named, unnamed)
+
+
+def test_next_blocked_stops_before_implement(tmp_path):
+    root = _depends(tmp_path, "depends-on: T-2", "T-2 | spec | high | r | other")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"], "T-2 (open:" in got["reason"]) == (
+        "blocked", True, "", True), got
+
+
+def test_next_blocked_with_an_unknown_dependency_stops(tmp_path):
+    got = _next(_depends(tmp_path, "depends-on: T-7"))
+
+    assert (got["phase"], got["stop"], "T-7 (unknown:" in got["reason"],
+            "cannot tell" in got["reason"]) == ("blocked", True, True, True), got
+
+
+def test_next_blocked_by_a_cancelled_dependency_stops(tmp_path):
+    got = _next(_depends(tmp_path, "depends-on: T-2", "T-2 | cancelled | high | r | other"))
+
+    assert (got["phase"], got["stop"], "T-2 (cancelled:" in got["reason"]) == (
+        "blocked", True, True), got
+
+
+def test_next_unreadable_depends_on_stops_as_blocked(tmp_path):
+    got = _next(_depends(tmp_path, "depends-on: T-2, not an id"))
+
+    assert (got["phase"], got["stop"], "not a ticket id" in got["reason"]) == (
+        "blocked", True, True), got
+
+
+def test_next_blocked_stops_a_ticket_already_in_review(tmp_path):
+    root = _depends(tmp_path, "depends-on: T-2", "T-2 | spec | high | r | other")
+    _ledger(root, [_round(1, "FINDINGS")])
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("blocked", True), got
+
+
+def test_next_stops_when_the_ticket_view_raises(tmp_path, monkeypatch, capsys):
+    root = _approved(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("view on fire")
+
+    monkeypatch.setattr(crew_ticket_state, "view", boom)
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    out = capsys.readouterr().out
+    assert (code, "stop=1" in out, "view on fire" in out) == (0, True, True), out
+
+
+def test_next_disagreeing_index_rows_stop_on_the_gate(tmp_path):
+    root = _approved(tmp_path)
+    _index(root, f"{T} | ready | high | r | title", f"{T} | hold | high | r | title")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "cannot tell whether a gate" in got["reason"]) == (
+        "direction-approval", True, True), got
+
+
+def test_next_dependencies_closed_reaches_implement(tmp_path):
+    got = _next(_depends(tmp_path, "depends-on: T-2, T-3", "T-2 | done | high | r | a",
+                         "T-3 | merged | high | r | b"))
+
+    assert (got["phase"], got["stop"]) == ("implement", False), got
+
+
+def test_next_blocked_ticket_still_gets_spec_and_plan(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status="ready")
+    _index(root, f"{T} | ready | high | r | title", "T-2 | spec | high | r | other")
+    first = _next(root)
+    _write(root / ".work" / "tickets" / T / "spec.md", _spec_text())
+    _with_line2(root, "depends-on: T-2")
+    second = _next(root)
+
+    assert ((first["phase"], first["stop"]), (second["phase"], second["stop"])) == (
+        ("spec", False), ("plan", False)), (first, second)
+
+
+def test_next_ticket_without_a_gate_is_unchanged(tmp_path):
+    got = _next(_approved(tmp_path))
+
+    assert (got["phase"], got["stop"], [e for e in got["evidence"] if "next.md" in e]) == (
+        "implement", False, []), got
+
+
+def test_next_gate_stops_are_read_only(tmp_path):
+    hold = _gated(tmp_path / "hold", "index", "hold")
+    _next_md(hold, "reason: r\nrevisit: 2000-01-01\n")
+    owner = _gated(tmp_path / "owner", "header", "needs-owner")
+    blocked = _depends(tmp_path / "blocked", "depends-on: T-2", "T-2 | spec | high | r | o")
+    before = [_snapshot(root) for root in (hold, owner, blocked)]
+
+    phases = [_next(root)["phase"] for root in (hold, owner, blocked)]
+
+    assert (phases, [_snapshot(root) for root in (hold, owner, blocked)] == before) == (
+        ["hold", "needs-owner", "blocked"], True)
+
+
+def test_stops_lists_the_gate_stops():
+    fixed = {slug for slug, _text in crew_autopilot.FIXED_STOPS}
+
+    assert {"hold", "landing", "needs-owner", "blocked"} <= fixed

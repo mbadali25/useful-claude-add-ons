@@ -116,9 +116,12 @@ force says `take`. Exit 0 valid, 1 not.
   no direction.md                        brainstorm          stop
   INDEX rows here and in main differ     direction-approval  stop (index-disagreement)
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
-  INDEX status `needs-owner` (T-0037)    needs-owner         stop (names open questions)
   INDEX `done` and spec header `done`    (the ship rows below)
   INDEX status done/cancelled/superseded closed              stop (and merged/closed/...)
+  INDEX cell, else header: hold, landing hold, landing,      stop (L-0550: next.md's reason,
+    or needs-owner (crew_autopilot_gates) needs-owner          revisit, next: or questions)
+  header cancelled/superseded (view)     closed              stop (names the successor)
+  gate unknown (INDEX rows disagree)     direction-approval  stop (cannot tell)
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
   spec header cancelled/superseded       closed              stop (quotes split-into:)
   spec header `done`, slice n < m current slices              stop (later slices unbuilt)
@@ -143,6 +146,7 @@ force says `take`. Exit 0 valid, 1 not.
   slices.json unreadable/out of shape    slices              stop (cannot tell the slice)
   non-final slice in `done`              (the ship rows above; merged, or open under
                                           `ship: pr`, names next-slice instead of closed)
+  a depends-on: not closed or unreadable blocked             stop (L-0550; names each one)
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
   no review round under this plan        implement           /crew:implement <id>
@@ -263,6 +267,7 @@ import completion_audit
 import crew_common
 import crew_autopilot_docs
 import crew_autopilot_fences
+import crew_autopilot_gates
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
@@ -308,9 +313,6 @@ HEADER_CLOSED = ("done", "cancelled", "superseded")
 # T-0037's open status that waits on the owner (crew_tracker.OWNER_STATUSES):
 # INDEX and tracker only, never a spec header word.
 NEEDS_OWNER = "needs-owner"
-# The line under a closed spec's header naming what replaced it (T-0037,
-# T-0052): `split-into: T-2, T-3` or `superseded-by: T-9`.
-_SUCCESSOR = re.compile(r"^(?:split-into|superseded-by)\s*:\s*\S.*$", re.IGNORECASE)
 
 # Stops `next` enforces in code, beyond the ones the phase table names.
 FIXED_STOPS = (
@@ -337,6 +339,7 @@ FIXED_STOPS = (
                         "ticket's review ledger: the owner decides, with the history"),
 ) + crew_autopilot_docs.FIXED_STOPS  # T-0022: the docs phase and the tracker step
 FIXED_STOPS += crew_autopilot_split.FIXED_STOPS  # T-0058: the size check
+FIXED_STOPS += crew_autopilot_gates.FIXED_STOPS  # L-0550: hold, landing, needs-owner, blocked
 # Enforced by the command's procedure, not by `next` (which sees them only as
 # `no-progress` when the same command comes round again).
 PROCEDURE_STOPS = (
@@ -839,16 +842,6 @@ def open_index_tickets(top):
     return [ticket for ticket, _from_main in _open_index_rows(top)]
 
 
-def _successor(folder):
-    """` (split-into: ...)` from spec.md's lines above its first `##`, or ''."""
-    for line in (read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
-        if line.startswith("##"):
-            break
-        if _SUCCESSOR.match(line.strip()):
-            return f" ({line.strip()})"
-    return ""
-
-
 def _header_status(spec_text):
     header = crew_ticket.header_line(spec_text)
     marker = "status:"
@@ -1028,12 +1021,6 @@ def _phase(root, ticket, policy=True):
                       + (f" ({row['why']})" if row["why"] else "")
                       + " (Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
-    if status == NEEDS_OWNER:
-        questions = _open_questions(folder)
-        return answer("needs-owner", True, f".work/INDEX.md marks {ticket} `{NEEDS_OWNER}`: it waits "
-                      "on an owner decision - " + ("; ".join(f"{name}: {item}" for name, item in questions[:4])
-                                                    if questions else "no open question recorded - the "
-                                                    "owner says what is needed"))
     if status in INDEX_DONE:
         spec_text = read_text(os.path.join(folder, "spec.md")) if status == "done" else None
         if spec_text is not None and _header_status(spec_text) == "done":
@@ -1041,7 +1028,12 @@ def _phase(root, ticket, policy=True):
             return _done_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
                                "and spec.md's header is `status: done`")
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
-                      "re-driven, whatever spec.md's header says" + _successor(folder))
+                      "re-driven, whatever spec.md's header says"
+                      + crew_autopilot_gates.successor(folder, status))
+    stop, view = crew_autopilot_gates.gate(top, ticket, status, folder,
+                                           lambda: _open_questions(folder), answer, evidence)
+    if stop:
+        return stop
     if status not in DIRECTION_APPROVED:
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
                       f"direction is approved: its .work/INDEX.md status is `{status}`, not one "
@@ -1057,7 +1049,7 @@ def _phase(root, ticket, policy=True):
                            else crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
         return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
-                      "in this ticket" + _successor(folder))
+                      "in this ticket" + crew_autopilot_gates.successor(folder, header))
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -1106,7 +1098,8 @@ def _phase(root, ticket, policy=True):
     if ctx and ctx["piece"]["n"] in ctx["state"]["done"] and ctx["piece"]["n"] < ctx["m"]:
         return sl.with_slice(ctx, _ship_phase(top, ticket, answer, "done by /crew:done "
                                               "(crew_autopilot.py slice-done)", ctx))
-    found = _review_phase(top, ticket, evidence, answer)
+    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(top, ticket, evidence,
+                                                                        answer)
     found = _auto_replan_route(top, ticket, found, answer) if policy else found
     if ctx:
         found = dict(found, reason=f"{sl.label(ctx)}: steps "
@@ -2917,6 +2910,7 @@ WAITING["split-check"] = "autopilot"  # T-0058: autopilot looks, then goes on
 WAITING["ship"] = "owner"
 WAITING["closed"] = "nobody"
 WAITING["drift"] = "owner"
+WAITING.update(crew_autopilot_gates.WAITING)  # L-0550
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -2957,6 +2951,8 @@ def _waiting(top, result, bare):
         return f"unknown (phase {phase!r} is not one status maps)"
     if who == "nobody":
         return "nobody - the ticket is closed"
+    if who in crew_autopilot_gates.ELSEWHERE:
+        return f"{who} - see the phase reason"
     if phase == "drift":
         return ("owner - reverts the paths outside Touch, or amends Touch and approves "
                 "again")

@@ -1554,11 +1554,29 @@ Obsidian vault). A CLI the commands call, not a hook.
   (`plugin/crew/hooks/scripts/crew_autopilot.py:185`, `:188`), used by
   `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:472`) and `_closed`
   (`plugin/crew/hooks/scripts/crew_autopilot.py:1470`), whose closed reason
-  quotes a `split-into:` / `superseded-by:` line (`_successor`,
-  `plugin/crew/hooks/scripts/crew_autopilot.py:295`). `_phase` stops an
-  INDEX `needs-owner` row as phase `needs-owner`
-  (`plugin/crew/hooks/scripts/crew_autopilot.py:454`), waiting on `owner`
-  (`WAITING`, `plugin/crew/hooks/scripts/crew_autopilot.py:1378`).
+  quotes a `split-into:` / `superseded-by:` line (`successor`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:77`, since L-0550; a
+  `superseded` one with none names next.md's `superseded-by:` or says
+  "successor not named").
+- DERIVED (L-0550; measured on this tree): `_phase`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:980`) asks
+  `crew_ticket_state.view` once, after the INDEX `done` branch and before the
+  `DIRECTION_APPROVED` test (`crew_autopilot_gates.gate`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:1033`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:118`): an INDEX cell
+  `hold`/`landing`/`needs-owner`, else that header word as `view` reads it,
+  stops as itself; a header `cancelled`/`superseded` as `closed`; a gate
+  `view` cannot tell as `direction-approval`. Immediately before the review
+  phase `crew_autopilot_gates.blocked`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1101`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:152`) stops `blocked`
+  on a `depends-on:` ticket not closed or a line it cannot read. `FIXED_STOPS`
+  gains the four (`plugin/crew/hooks/scripts/crew_autopilot.py:342`; count it
+  with `crew_autopilot.py stops --json`, never by hand), and `WAITING`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2913`) maps `hold` and
+  `needs-owner` to `owner`, `landing` to `the land step` and `blocked` to
+  `another ticket` (`_waiting`, `plugin/crew/hooks/scripts/crew_autopilot.py:2954`).
+  Writes nothing; the sabotage mutations are L-0686 (harness).
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a

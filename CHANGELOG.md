@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.15: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
+
+- **Summary.** `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the
+  owner, replaced by another, or waiting on a dependency: it stops and says why, and
+  `/crew:autopilot status` says who each of those stops waits on.
+- **Stops.** `next` reads `crew_ticket_state.view` once (new `hooks/scripts/crew_autopilot_gates.py`):
+  an INDEX cell `hold`, `landing` or `needs-owner`, else that word in the spec header, stops as
+  itself. `hold` quotes `next.md`'s `reason:` and `revisit:` ("(passed)" once due; a date never lifts
+  a hold); `landing` stops even with a current receipt; `needs-owner` quotes `next:` and the open
+  questions, or says it cannot tell what is asked. A header `cancelled`/`superseded` is `closed`, and
+  a superseded ticket names its successor or says "successor not named". An approved ticket whose
+  `depends-on:` names a ticket that is not closed, or whose line cannot be read, stops as `blocked`
+  before implement, review and done. Two disagreeing INDEX rows stop as `direction-approval`.
+- **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
+  and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
+- **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
+
 ### Fixed — crew 1.1.22: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
 
 - **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
