@@ -89,6 +89,7 @@ from sabotage_recurring import RECURRING_MUTATIONS
 from sabotage_ticket_state import TICKET_STATE_MUTATIONS
 from sabotage_gitignore import GITIGNORE_MUTATIONS
 from sabotage_coord import COORD_MUTATIONS
+from sabotage_wave import WAVE_MUTATIONS
 import sabotage_bound
 import sabotage_platform
 
@@ -3072,7 +3073,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
               + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
-              + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS
+              + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS
               + sabotage_platform.PLATFORM_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
