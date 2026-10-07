@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T12:24Z
+Last updated: 2026-10-07T12:32Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T12:32Z Owner: ~10 WAVES release->main (one per group). Main has 131 commits release lacks (H1/H3). New order: #549 retire -> main as 1.1.8 (re-set, head d44da6fb) -> SYNC main->release 1.1.9 -> wave 1 release->main -> G2 1.1.10, G3b 1.1.11, G5 1.1.12, G1b 1.1.13 (re-stacked on synced release), each followed by a wave; then G4, G3c, G3d, G6a, G6b each + wave; H2 1.2.0 last. #550/#551/#552 hold until re-stack.
 - 2026-10-07T12:24Z Opened #552 (G5 -> release, crew 1.1.11 / gizmoduck 0.5.10 / windows-ssm 1.0.2, head a3eef820, on G3b), subscribed. G1b (1.1.12) stacking next.
 - 2026-10-07T12:20Z G1b lander done: head 581efa45, merged release 2c911427 (22 conflicts, both kept), full crew 13984 passed/0 failed, Windows 16/16 green (fixed fake codex on Windows; _existing_ticket refuses 'T-1\n'). Added to train stack after G5 as crew 1.1.12. G1b + G5 both change install scripts -> re-pin README URLs after main.
 - 2026-10-07T12:19Z G2 fixed (crew_state split) head 63c0e080 on #550. Opened #551 (G3b -> release, crew 1.1.9, head e924e03b, on G2), subscribed. Builders warned about the 3400-line cap.
