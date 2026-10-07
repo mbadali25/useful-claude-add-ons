@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T15:59Z
+Last updated: 2026-10-07T16:09Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T16:09Z MERGED #550 (G2) into release at bb5b47d5, crew 1.1.10 (CI fully green). Opened WAVE 2 #556 (release -> main), subscribed.
 - 2026-10-07T15:59Z G6a fixed: head 5cc2d616 (1.1.15 placeholder). L-0666 closed sites -> decision look on 'cannot tell' (crew_autopilot_gates.closed); L-0551 unknown when main checkout/INDEX unreadable; owner FIXED_INSTEAD line added (exempted only on accept-review). Sabotage red for each; pylint 0; 2523 targeted passed; Windows 16/16 (runner-acquisition rerun). All builds done.
 - 2026-10-07T15:58Z G3b #551 crew-windows-wallclock red twice (old+new head): test_context_watch_python_resolver crew_py_strict 11.3s > 8s deadline; G2 wallclock passes, no .sh diff G2..G3b. Investigator started (root-cause, no bound loosening), then re-stack G5/G1b.
 - 2026-10-07T15:38Z Re-stack done: G2 7b84845c (1.1.10, + _dead_pid fix), G3b 987f63ad (1.1.11), G5 7c5c73d6 (1.1.12), G1b bdc957d2 (1.1.13, gizmoduck 0.5.11 for drift window). Full crew on G1b 16333/0. #551/#552 retitled; opened #555 (G1b), subscribed.
