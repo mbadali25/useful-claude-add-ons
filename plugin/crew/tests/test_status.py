@@ -902,3 +902,19 @@ def test_owner_and_memory_together_are_refused(tmp_path, other):
     done = _run(_waiting_repo(tmp_path), "--owner", other)
 
     assert (done.returncode, done.stdout) == (2, "")
+
+
+def test_owner_view_never_cuts_a_command():
+    """L-0551 review r1 FIX: an 80-character ticket id keeps its whole command."""
+    long_id = "T-" + "9" * 78
+    got = {"state": "ok", "why": "", "items": [(long_id, "approve", f"/crew:approve {long_id}")],
+           "unread": [long_id], "unknown": []}
+    original = crew_status._owner_read  # pylint: disable=protected-access
+    try:
+        crew_status._owner_read = lambda root: got  # pylint: disable=protected-access
+        lines = crew_status.owner_lines(".")
+    finally:
+        crew_status._owner_read = original  # pylint: disable=protected-access
+
+    assert (lines[1].endswith(f"/crew:approve {long_id}"),
+            lines[2].endswith(f"/crew:autopilot status {long_id}")) == (True, True)

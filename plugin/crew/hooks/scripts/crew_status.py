@@ -485,10 +485,11 @@ def waiting_line(got):
     return f"waiting  {len(got['items'])} on you (/crew:status --owner){extra}"
 
 
-def _one(*fields):
-    """The fields joined by two spaces, each folded to one line; clipped to OWNER_LINE_MAX."""
+def _one(*fields, clip=True):
+    """The fields joined by two spaces, each folded to one line; clipped to
+    OWNER_LINE_MAX unless `clip` is False (a command to paste is never cut)."""
     text = "  ".join(" ".join(str(field).split()) for field in fields)
-    return text if len(text) <= OWNER_LINE_MAX else text[:OWNER_LINE_MAX - 3] + "..."
+    return text if not clip or len(text) <= OWNER_LINE_MAX else text[:OWNER_LINE_MAX - 3] + "..."
 
 
 def owner_lines(root):
@@ -496,8 +497,9 @@ def owner_lines(root):
     clipped to MAX_LINES, the last line `... N more`."""
     got = _owner_read(os.path.abspath(root))
     lines = [waiting_line(got)]
-    lines += [_one(ticket, phase, action) for ticket, phase, action in got["items"]]
-    lines += [_one(ticket, "review-unread", f"/crew:autopilot status {ticket}")
+    lines += [_one(ticket, phase, action, clip=action.startswith("answer: "))
+              for ticket, phase, action in got["items"]]
+    lines += [_one(ticket, "review-unread", f"/crew:autopilot status {ticket}", clip=False)
               for ticket in got["unread"]]
     lines += [_one(ticket, "unknown", f"could not tell ({why})") for ticket, why in got["unknown"]]
     if len(lines) > MAX_LINES:

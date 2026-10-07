@@ -1448,3 +1448,63 @@ def test_phase_deep_default_is_unchanged(tmp_path, monkeypatch):
     assert ((deep["phase"], deep["stop"]), shallow["phase"],
             "deep" in crew_autopilot.next_phase.__code__.co_varnames) == (
         ("done", False), "review-unread", False)
+
+
+def test_owner_items_unlistable_tickets_folder_is_unknown(tmp_path, monkeypatch):
+    """L-0551 review r1 BLOCK: a folder listing that fails is could-not-tell."""
+    root = _approved(tmp_path)
+    real = os.listdir
+
+    def listdir(path):
+        if str(path).endswith("tickets"):
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+
+    monkeypatch.setattr(crew_autopilot_owner.os, "listdir", listdir)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["why"].startswith("could not list .work/tickets/")) == ("unknown", True)
+
+
+@pytest.mark.parametrize("status, line", [("landing", None), ("ready", "blocked")])
+def test_owner_items_leave_out_what_waits_elsewhere(tmp_path, status, line):
+    """L-0551 review r1 BLOCK: `landing` and `blocked` wait on the land step or
+    another ticket (WAITING), never on the owner."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status=status)
+    if line:
+        spec = root / ".work" / "tickets" / T / "spec.md"
+        first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+        _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+        _index(root, f"{T} | ready | high | r | t", "T-2 | spec | high | r | o")
+    approve_as_user(root, T)
+
+    got = crew_autopilot_owner.owner_items(str(root))
+    phase = crew_autopilot._phase(str(root), T, policy=False)["phase"]  # pylint: disable=protected-access
+
+    assert (phase, got["items"]) == (status if status == "landing" else "blocked", [])
+
+
+def test_owner_items_a_missing_row_names_the_status_read(tmp_path):
+    """L-0551 review r1 FIX: no INDEX row is could-not-tell; the action points at
+    the status read (whose reason says to add the row), not /crew:brainstorm."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _ticket(root, ticket="T-2")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = dict(((t, p), a) for t, p, a in crew_autopilot_owner.owner_items(str(root))["items"])
+
+    assert got[("T-2", "direction-approval")] == "see /crew:autopilot status T-2"
+
+
+def test_owner_items_one_ticket_whatever_the_folder_case(tmp_path):
+    """L-0551 review r1 FIX: `T-1` in INDEX and a folder `t-1` (one folder on a
+    case-insensitive filesystem) are one ticket."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    os.makedirs(str(root / ".work" / "tickets" / "t-1"), exist_ok=True)
+
+    names = [t.casefold() for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert names.count("t-1") <= 1

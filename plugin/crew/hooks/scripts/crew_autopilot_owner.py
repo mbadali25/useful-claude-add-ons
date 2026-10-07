@@ -14,6 +14,8 @@ under `.work/tickets/` whose name is a ticket id and that no INDEX line names
 - not a stop, or `closed`: skipped (autopilot drives it, or nobody does);
 - `review-unread`: in `unread` (a finished round, or a ship, not read);
 - `review` with a reserved round: skipped (the reviewer has it);
+- a phase `WAITING` gives to someone else (`landing`: the land step;
+  `blocked`: another ticket): skipped, as `/crew:autopilot status` says;
 - any other stop: an item `(ticket, phase, action)`, the action from
   OWNER_ACTIONS, else FALLBACK;
 - `_phase` raising: in `unknown` with the exception's type name, never dropped
@@ -29,6 +31,7 @@ from __future__ import annotations
 import os
 
 import crew_autopilot
+import crew_autopilot_gates
 import crew_autopilot_stops
 import crew_ticket
 
@@ -46,8 +49,12 @@ OWN_COMMAND = ("spec", "plan")  # the phase's own `command`
 
 
 def action(ticket, result, questions):
-    """What the owner types or answers for one stop."""
+    """What the owner types or answers for one stop. A stop that could not tell
+    (decision `look`: no INDEX row, rows that disagree) names the status read,
+    whose reason says what to fix, never a command that would hide it."""
     phase = result["phase"]
+    if result.get("decision") == "look":
+        return FALLBACK.format(id=ticket)
     if phase == "open-questions" and questions:
         name, item = questions[0]
         return f"answer: {name}: {item}"
@@ -66,22 +73,26 @@ def _index_problem(top):
 
 
 def _tickets(top):
-    """Open INDEX tickets, then folders no INDEX line names."""
+    """`(tickets, why)`: open INDEX tickets, then folders no INDEX line names
+    (compared case-folded: one folder on a case-insensitive filesystem is one
+    ticket); `why` when `.work/tickets/` exists and cannot be listed."""
     found = list(crew_autopilot.open_index_tickets(top))
-    named = {ticket for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
+    seen = {ticket.casefold() for ticket in found} | {
+        ticket.casefold() for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
     folder = os.path.join(top, ".work", "tickets")
     try:
-        names = sorted(os.listdir(folder))
-    except OSError:
-        names = []
+        names = sorted(os.listdir(folder)) if os.path.lexists(folder) else []
+    except OSError as exc:
+        return found, f"could not list .work/tickets/ ({exc.strerror or exc})"
     for name in names:
         try:
             crew_ticket.check_ticket(name)
         except crew_ticket.TicketError:
             continue
-        if name not in named and name not in found and os.path.isdir(os.path.join(folder, name)):
+        if name.casefold() not in seen and os.path.isdir(os.path.join(folder, name)):
+            seen.add(name.casefold())
             found.append(name)
-    return found
+    return found, ""
 
 
 def owner_items(root):
@@ -90,9 +101,10 @@ def owner_items(root):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     got = {"state": "ok", "why": "", "items": [], "unread": [], "unknown": []}
     why = _index_problem(top)
-    if why:
-        return dict(got, state="unknown", why=why)
-    for ticket in _tickets(top):
+    tickets, listing = _tickets(top) if not why else ([], "")
+    if why or listing:
+        return dict(got, state="unknown", why=why or listing)
+    for ticket in tickets:
         try:
             result = crew_autopilot._phase(top, ticket, policy=False, deep=False)  # pylint: disable=protected-access
             if not result["stop"] or result["phase"] == "closed":
@@ -102,6 +114,8 @@ def owner_items(root):
                 continue
             if result["phase"] == "review" and crew_autopilot._reserved_round(top, ticket):  # pylint: disable=protected-access
                 continue
+            if crew_autopilot.WAITING.get(result["phase"]) in crew_autopilot_gates.ELSEWHERE:
+                continue  # landing, blocked: the land step or another ticket, not the owner
             questions = (crew_autopilot._open_questions(crew_ticket.ticket_dir(top, ticket))  # pylint: disable=protected-access
                          if result["phase"] == "open-questions" else [])
             got["items"].append((ticket, result["phase"], action(ticket, result, questions)))
