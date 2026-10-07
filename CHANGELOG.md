@@ -9,6 +9,165 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.12: crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root (T-0502)
+
+- **Summary.** A repo set up by crew now sees a failing check's own error lines in its `_verify`
+  output, and gets a ready diagram check that works as root in CI containers instead of failing with
+  no reason.
+- **Runners.** `templates/_verify/smoke.sh`'s `check()` and `run-all.sh`'s `run()` capture the
+  check's output (into a temp file, so a background child cannot hold the runner open): a failure
+  prints `FAIL <name>: <command>` and the last 5 lines, each as `FAIL <name> | <line>` (crew's
+  verify gate relays only `FAIL` and `SMOKE:` lines of a failed smoke run); exit 77
+  prints `SKIP <name> (exit 77: tool or environment absent)` and is not a failure, and a run
+  with no failure but such a skip exits 77 itself, so the gate records it skipped, not verified. `smoke.sh`'s last
+  line adds the skip count and still starts `SMOKE: `. Known Windows limitation: the capture file
+  is removed on Ctrl+C, a `timeout` or Git Bash's `kill`, but not when the runner is killed hard
+  (Task Manager, closing the window, a non-MSYS parent's TerminateProcess): no trap runs then,
+  the same as SIGKILL on Linux, and one capture file stays in `$TMPDIR`.
+- **`templates/cases/diagrams-render.sh`** (new; setup copies it into `_verify/cases/` only in a
+  repo with `.mmd` files). Renders every source in `$DIAGRAMS_DIR` (default `docs/diagrams`) to a
+  temp directory with the same `--no-sandbox` puppeteer config as `render.sh`, prints mmdc's last 5
+  lines under a failed source's `FAIL` line (every failure printed after the count line, so a runner's
+  5-line tail still shows the cause), treats an empty render as a failure, exits 77 without
+  `mmdc`, and cleans up. `# readonly: yes`; calls nothing in the plugin.
+- **Docs.** crew-setup `phases.md` Phase 3, the template README, the crew-diagrams skill, crew's
+  README (section 6 and the `mmdc` troubleshooting row) and the troubleshooting guide. Repos set up
+  earlier keep their runners; the docs say what to copy by hand.
+- **Tests.** `plugin/crew/tests/test_setup_verify_templates.py` (fake `mmdc`; real `mmdc` as root is
+  not exercised), mapped by a new `.crew/verify.json` rule.
+
+### Added — repository: CI fails a stale built crew guide (L-0657)
+
+- **Summary.** A pull request whose committed crew guide HTML, or generated configuration reference,
+  no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
+- **CI.** `marketplace.yml` installs `markdown==3.11` (the version the committed HTML is
+  byte-for-byte fresh with) and runs `python3 docs/guides/crew/src/build.py --check` and
+  `python3 docs/guides/crew/src/config_reference.py --check` (T-0048's commands) as named steps.
+  HTML only; DOCX and PDF are not byte-reproducible. The pylint job still has no `markdown`.
+- **gate-runner.** Both commands are table steps. A new `module:<name>` need makes `build.py --check`
+  SKIP (NOT VERIFIED) where `markdown` does not import, never PASS; `config_reference.py` needs only
+  the standard library. New case `case_module_need_missing_is_skip`.
+- **CLAUDE.md.** The crew-docs paragraph names the two checks.
+
+### Added — repository: CI checks that a crew code change updates a crew doc, or says why not (T-0055)
+
+- **Summary.** A pull request that changes crew code now fails CI unless it also changes a narrative
+  crew document or carries a `Docs: none - <reason>` line, so the rule that crew docs move with crew
+  code holds even when nobody reads the PR.
+- **`scripts/check-crew-docs.py`.** Reads the branch's own changes (`<base>...HEAD` plus
+  `git status`; the base is the PR's own base branch, or outside a PR the nearest of
+  `origin/main` and `origin/release/*`). CODE is a path under `plugin/crew/` that is not Markdown, a test, a `_test` suite, an
+  eval or `plugin.json`; DOCS are crew's README and CONFIG, its command, agent and SKILL.md files, its
+  `docs/`, and `docs/guides/crew/src/*.md`. `plugin/PLUGINS.md`, `CHANGELOG.md`, `BUDGETS.md`, the code
+  maps, diagrams, graph and built guides count neither way. The declaration is a `Docs:` commit trailer
+  on the branch or a line in the PR body (hyphen, en or em dash); an empty or `<placeholder>` reason is
+  not one. Exit 77 when `origin/main` is not a ref, a git call fails, or a PR body it needed could not
+  be read.
+- **Wiring.** Two `marketplace.yml` steps (the suite, then the check), the matching `gate-runner.py`
+  table entries, and a `.crew/verify.json` rule that runs the suite. `CLAUDE.md` "Scope discipline"
+  gains the crew-docs paragraph; `.crew/standards.md` and `docs/claude-md-evidence.md` follow.
+- **Tests.** `scripts/_test/crew-docs.py`: 10 must-fail, 15 must-pass and 6 could-not-tell cases in
+  throwaway git repos, output checks, and 7 mutation cases that must each flip a named case.
+
+### Changed — repository: the repo's own pwsh launches run on a private startup-profile cache (T-0506)
+
+- **Summary.** Every pwsh this repository's gate scripts start now gets its own throwaway
+  PowerShell startup-profile cache, so two runs at once can no longer corrupt the shared one and
+  make every later pwsh die.
+- **`scripts/pwsh-isolated.sh`** (POSIX sh). Resolves pwsh (`$PWSH`, then `pwsh`, `pwsh.exe` and the
+  four Windows paths the `.ps1` rule used to try; none is `TOOL MISSING`, exit 77), assigns
+  `XDG_CACHE_HOME` inside a fresh `mktemp -d` directory (none creatable: `TOOL BROKEN`, exit 1, pwsh
+  not started), runs pwsh with stdin from /dev/null, forwards TERM/INT/HUP to it so a `timeout`
+  still ends it, removes the directory on every exit path and exits with pwsh's own status. A
+  status of 128 or more adds one `TOOL BROKEN: pwsh` line: the tool died on a private, empty cache,
+  so no `.ps1` failed and the shared profile is ruled out. No retry. On Windows the variable is set
+  and changes nothing; not verified under Git Bash.
+- **Launch sites.** `.crew/verify.json`'s `.ps1` rule, `_verify/smoke.sh` (three launches),
+  `_verify/run-all.sh` (two) and gate-runner's `check-powershell` step all go through it.
+- **Tests.** `scripts/_test/pwsh-isolated.sh` (a stub pwsh under mktemp, one real-pwsh case that
+  says SKIPPED without pwsh; a static case that no gate site launches pwsh directly), run by a new
+  `marketplace.yml` step and gate-runner table step, and `case_no_step_launches_pwsh_directly` in
+  `scripts/_test/gate-runner.py`.
+
+### Changed — gizmoduck 0.5.10: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+
+- **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
+  `--user` installs every tool that needs no package manager into the tool home without root,
+  `--dry-run` shows the plan and changes nothing, and a failed tool now makes it exit 1.
+- **Behaviour change: a partial install exits 1.** The script used to end on a `cat` and exit 0
+  whatever failed. Each install step now really stops at its first failed command (`try_install`
+  ran it inside an `if`, where bash ignores `set -e`, so a failed download followed by a successful
+  last command read as OK); under `--user`, a tool-home directory that is not a git clone is never
+  replaced without `GIZMODUCK_BOOTSTRAP_FORCE=1`. Now: 0 nothing failed, 1 a tool or the template download failed, 2 a usage or
+  precondition error. Skipped-only is 0 with a last line `GIZMODUCK_BOOTSTRAP_SKIPPED: <names>`.
+  Under `--user`, nmap and wkhtmltopdf count as present only when `--version` runs (30s ceiling);
+  one on PATH that fails it is a failure (exit 1), not present and not skipped.
+- **Privilege, decided once.** `id -u` 0: no `sudo` prefix. Otherwise `sudo`, with `-n` when stdin
+  is not a terminal so a password prompt cannot hang a pipeline. Not root and no `sudo`: exit 2,
+  pointing at `--user`. apt runs with `DEBIAN_FRONTEND=noninteractive` (through `env`, so sudo's
+  environment reset cannot drop it).
+- **`--user`.** No elevation anywhere. Nuclei, trivy, sqlmap, dependency-check, ZAP, and testssl.sh
+  and nikto when `hexdump` and `perl` are present, go into the gizmoduck tool home; checkov and
+  semgrep's `pip3 install --user` scripts are linked into its `bin` (L-0684's rule, held together with
+  `scanners/base.py` by a test); downloads stage in `<tool home>/.download`. nmap, wkhtmltopdf and
+  perl are reported present or SKIPPED, never installed; ZAP and dependency-check without a
+  Java 17+ runtime FAIL naming `openjdk-17-jre`. `curl`, `unzip`, `git` and `python3` are checked
+  first (exit 2 naming the missing ones). A tool skipped inside an install step is recorded in a
+  temp file, since each step runs in a subshell, so it reaches the `GIZMODUCK_BOOTSTRAP_SKIPPED:`
+  line. A cached nikto clone is kept with no network call only when `perl nikto.pl -Version` runs;
+  otherwise it is updated in place (`git pull`), never deleted first (`GIZMODUCK_BOOTSTRAP_FORCE=1`
+  always updates it). A nikto directory that is not a git clone is left alone and the step fails
+  naming `GIZMODUCK_BOOTSTRAP_FORCE=1`, which replaces it. A clone that perl still cannot run (no
+  XML::Writer) fails the step naming `libxml-writer-perl`, and so does a failed `git pull` or clone.
+  `--user --dry-run` needs no `HOME`.
+- **`GITHUB_TOKEN`.** Release lookups send it when set, as a header file descriptor, so it is on no
+  command line and never printed.
+- **Docs.** The plugin README's new "CI and containers" section: root in a container, `--user`,
+  the packages to add to an image, the cache paths, secrets from the pipeline's store, the exit
+  statuses and `--dry-run`, and that gizmoduck never drives Docker.
+- **Tests.** `plugin/gizmoduck/scripts/_test/test_bootstrap.py`: every case runs `--dry-run`, `--help`, a refusal or
+  the sourced summary against fakes on a temp PATH; nothing is installed and no network is
+  reached. `test_bootstrap_version.py`'s apt assertions follow the `env DEBIAN_FRONTEND` prefix,
+  and its `sudo` stub treats `env ... apt-get` as apt (it must never run a real apt-get).
+
+### Changed — gizmoduck 0.5.10: one tool lookup order, and an override you set now wins (L-0684)
+
+- **Summary.** Every scanner is found the same way — your override variable, then a tool home,
+  then PATH, then the Windows install folder — and an override that points at nothing now
+  disables that tool instead of quietly using another copy.
+- **Behaviour change: a set override beats PATH.** `GIZMODUCK_ZAP_HOME`, `GIZMODUCK_NIKTO_PL`
+  and `GIZMODUCK_TESTSSL_SH` used to lose to a `zap.sh`, `nikto` or `testssl.sh` on PATH. They
+  now win. `GIZMODUCK_ZAP_HOME` also finds a `zap.sh`/`zap.bat` in the directory or one level
+  down, not only a jar.
+- **Behaviour change: a set but stale override disables the tool.** It used to fall through to
+  whatever else was installed; now the tool is unavailable and `/gizmoduck:doctor` prints
+  `!! <VAR>=<value> does not resolve - <tool> is disabled`. Doctor's exit status is unchanged.
+- **Tool home.** `GIZMODUCK_HOME`, by default `$XDG_DATA_HOME/gizmoduck` or
+  `~/.local/share/gizmoduck` on Linux and macOS (none on Windows). Its `bin/` is searched ahead
+  of PATH by every adapter and by Nuclei's lookup; `zap/`, `nikto/program/nikto.pl` and
+  `testssl.sh/testssl.sh` under it are the second lookup step. Doctor prints it.
+- **Read at call time.** nikto's and testssl's candidate paths were fixed when the module was
+  imported; every variable is now read at lookup. The README's new "Where gizmoduck looks for
+  tools" section documents the order and all five variables. The test suite points
+  `GIZMODUCK_HOME` at an empty directory so no test reads a real tool home.
+
+### Added — `windows-ssm` 1.0.2: Linux tools on Windows, and what SSM will carry (T-0102)
+
+- **Summary.** A new skill for running Linux-style tools on Windows and driving nodes through
+  AWS Systems Manager, with a checker that fails when a Run Command result is or may be cut.
+- **`references/windows-tools.md`.** Which shell a command lands in, resolving
+  `python3`/`python`/`py` and naming `pwsh` by full path, MSYS path conversion
+  (`MSYS_NO_PATHCONV=1`, `cygpath -w`), CRLF and how to measure it, WSL's `/mnt/c` and
+  credential boundary, and one pointer to crew's `shellRoute` for crew users.
+- **`references/ssm-limits.md`.** Each limit with its AWS or Microsoft source on the same row:
+  Run Command's 24,000-character stdout and 8,000-character stderr, document size, Parameter
+  Store tiers, the Session Manager idle timeout, the Windows command-line lengths; the S3 and
+  CloudWatch routes to complete output; staging large payloads in S3 with a hash check.
+- **`scripts/ssm_output.py`.** Reads a `get-command-invocation` result offline and prints
+  `complete` (exit 0), `truncated` (exit 3, naming the S3 URL when there is one) or
+  `could not tell` (exit 4: not finished, stopped early, never started (`ResponseCode` -1), or not a result). Output exactly at a
+  limit counts as cut. It never prints the output it inspects.
+
 ### Changed — crew 1.1.11: `/crew:migrate` finds the other repos that opted in to auto-clear
 
 - **Summary.** When migrating finds auto-clear armed in every repo, it can now look under a folder
