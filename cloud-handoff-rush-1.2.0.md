@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T21:40Z
+Last updated: 2026-10-07T21:56Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T21:56Z H2a opened #564 to main, head a93cd9b8, crew 1.1.17. Moved L-0682 tests to test_config_files.py (pylint cap). Local gates clean. Waiting on CI.
 - 2026-10-07T21:40Z WAVE 7 MERGED #563 to main at 5a017c30 (crew 1.1.16). Closed #336 as landed via port. Next: H2a.
 - 2026-10-07T21:16Z MERGED #562 (G4) into release at b0293543, crew 1.1.16. Opened WAVE 7 #563, subscribed.
 - 2026-10-07T20:57Z G4 ready a4cc6582 (1.1.16; full crew 17040/0; Windows 16/16). Opened #562 (G4 -> release), subscribed.
