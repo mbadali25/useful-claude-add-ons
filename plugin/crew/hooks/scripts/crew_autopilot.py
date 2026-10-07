@@ -1027,7 +1027,7 @@ def _phase(root, ticket, policy=True, deep=True):
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
                       "re-driven, whatever spec.md's header says"
                       + crew_autopilot_gates.successor(folder, status))
-    stop, view = crew_autopilot_gates.gate(top, ticket, status, folder,
+    stop, view = crew_autopilot_gates.gate(top, ticket, status, folder, status in DIRECTION_APPROVED,
                                            lambda: _open_questions(folder), answer, evidence)
     if stop:
         return stop

@@ -88,9 +88,10 @@ def _tickets(top):
     ticket); `why` when `.work/tickets/` exists and cannot be listed."""
     found = list(crew_autopilot.open_index_tickets(top))
     # A `done` row whose spec header is `done` too still ships (`_phase`'s ship rows).
-    found += [ticket for ticket, _line in crew_autopilot._index_rows(top)  # pylint: disable=protected-access
-              if ticket not in found and crew_autopilot._index_status(top, ticket) == "done"  # pylint: disable=protected-access
-              and os.path.isdir(crew_ticket.ticket_dir(top, ticket))]
+    for ticket, _line in crew_autopilot._index_rows(top):  # pylint: disable=protected-access
+        if ticket not in found and crew_autopilot._index_status(top, ticket) == "done" \
+                and os.path.isdir(crew_ticket.ticket_dir(top, ticket)):  # pylint: disable=protected-access
+            found.append(ticket)
     seen = {ticket.casefold() for ticket in found} | {
         ticket.casefold() for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
     folder = os.path.join(top, ".work", "tickets")
@@ -129,9 +130,10 @@ def _hold(view):
 def _needs_owner(view, questions):
     if view["next"]["next"]:
         return f"next: {view['next']['next']}"
-    if questions:
-        return f"answer: {questions[0][0]}: {questions[0][1]}"
     unread = _unread_next(view)
+    if questions:
+        return f"answer: {questions[0][0]}: {questions[0][1]}" + (
+            f" (next.md: cannot tell - {unread})" if unread else "")
     return (f"cannot tell what is asked ({unread})" if unread
             else "cannot tell what is asked (no next: in next.md)")
 

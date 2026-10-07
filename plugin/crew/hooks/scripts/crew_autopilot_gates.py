@@ -89,7 +89,11 @@ def successor(folder, word=None, fields=None, problems=None):
     for `superseded`, next.md's ` (superseded-by: T-9, from next.md)`, a
     could-not-tell naming next.md's problem, or NO_SUCCESSOR; else ''. `fields`
     and `problems` are next.md as `view` read it (read here when None)."""
-    for line in (crew_common.read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
+    spec = os.path.join(folder, "spec.md")
+    text = crew_common.read_text(spec)
+    if text is None and os.path.lexists(spec):  # L-0550 review r5: unreadable is not "none named"
+        return " (successor: cannot tell - spec.md could not be read)"
+    for line in (text or "").splitlines()[1:]:
         if line.startswith("##"):
             break
         if _SUCCESSOR.match(line.strip()) and _names_ids(line, os.path.basename(folder)):
@@ -128,10 +132,12 @@ def _needs_owner_reason(view, questions):
     return "it waits on an owner decision - " + "; ".join(asked)
 
 
-def gate(top, ticket, index_status, folder, questions, answer, evidence):
+def gate(top, ticket, index_status, folder, known, questions, answer, evidence):
     """`(stop, view)`: the gate stop `answer` builds, or None, and the view
     `blocked` reads later. `index_status` is the INDEX cell `_phase` read;
-    `questions` a callable giving `_open_questions(folder)`."""
+    `known` whether it is one autopilot knows (a header gate under an unknown
+    cell stops as the header says, with decision `look`: the cell is not read
+    as approval); `questions` a callable giving `_open_questions(folder)`."""
     view = crew_ticket_state.view(top, ticket)
     nxt = os.path.join(folder, "next.md")
     if os.path.lexists(nxt):
@@ -145,12 +151,15 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
         word, where = index_status, f".work/INDEX.md marks {ticket} `{index_status}`"
     elif view["gate"] and view["gate_source"] == "header":
         word, where = view["gate"], f"spec.md header is `status: {view['gate']}`"
+        if not known:  # L-0666 review r4: an unknown INDEX cell keeps the stop could-not-tell
+            where += f" (and its .work/INDEX.md status `{index_status}` is not one autopilot knows)"
     else:
         return None, view
+    unknown_cell = None if known or word == index_status else "look"
     if word in CLOSING:
         return answer("closed", True, f"{where}: nothing left in this ticket"
-                      + successor(folder, word, view["next"], view["problems"])), view
-    decision = None
+                      + successor(folder, word, view["next"], view["problems"]), decision=unknown_cell), view
+    decision = unknown_cell
     if word == "hold":
         why = _hold_reason(view)
     elif word == "landing":
@@ -158,7 +167,7 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
     else:
         asked = questions()
         why = _needs_owner_reason(view, asked)
-        decision = None if asked or view["next"]["next"] else "look"  # L-0666: nothing asked is no question
+        decision = unknown_cell or (None if asked or view["next"]["next"] else "look")  # nothing asked: look
     problems = _next_problems(view)
     if problems:
         why += " (next.md: cannot tell - " + "; ".join(problems) + ")"

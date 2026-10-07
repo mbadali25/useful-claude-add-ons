@@ -2708,3 +2708,17 @@ def test_an_unreadable_next_md_never_reads_as_successor_not_named(tmp_path):
 
     assert (got["phase"], "successor: cannot tell" in got["reason"],
             "successor not named" in got["reason"]) == ("closed", True, False), got
+
+
+def test_an_unreadable_spec_names_no_successor(tmp_path):
+    """L-0550 review r5 FIX: a spec.md that cannot be read may name a successor;
+    it is could-not-tell, never next.md's T-9 or 'successor not named'."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status="superseded", spec=False)
+    os.makedirs(str(root / ".work" / "tickets" / T / "spec.md"))
+    _next_md(root, "superseded-by: T-9\n")
+
+    got = _next(root)
+
+    assert (got["phase"], "successor: cannot tell - spec.md could not be read" in got["reason"],
+            "T-9" in got["reason"]) == ("closed", True, False), got

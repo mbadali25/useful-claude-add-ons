@@ -916,3 +916,17 @@ def test_the_shared_gate_site_decides_from_its_evidence(tmp_path, status, text, 
     got = _next(root)
 
     assert (got["phase"], got["decision"]) == (status, decision), got
+
+
+@pytest.mark.parametrize("header, phase", [("needs-owner", "needs-owner"), ("cancelled", "closed")])
+def test_a_header_gate_under_an_unknown_index_cell_asks_to_look(tmp_path, header, phase):
+    """L-0666 review r4 BLOCK: a header gate read before the unknown-cell check
+    keeps the stop could-not-tell when the INDEX cell is not a word autopilot knows."""
+    root = _approved(tmp_path, status="mystery")
+    _write(root / ".work" / "tickets" / T / "spec.md", _spec_text(T, f"status: {header}   risk: high"))
+    _write(root / ".work" / "tickets" / T / "next.md", "next: choose A\n")
+
+    got = _next(root)
+
+    assert (got["phase"], got["decision"], "`mystery` is not one autopilot knows" in got["reason"]) == (
+        phase, "look", True), got

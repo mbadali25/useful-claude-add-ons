@@ -56,7 +56,8 @@ Lists what waits on the owner: the `waiting` count line, then one line per
 ticket stopped on a person, `<id>  <phase>  <command or question>` (a due or
 undated hold as `revisit` with its reason, `needs-owner` with next.md's `next:`), from
 autopilot's own phase read (`/crew:autopilot status <id>` agrees). It runs
-nothing, reads no policy and never reads a finished review round or a ship's PR
+nothing, reads no approval or questions policy (only `autopilot.reviewPolicy`, to tell a
+round autopilot fixes itself, which is not yours) and never reads a finished review round or a ship's PR
 (those are `review-unread`, pointing at `/crew:autopilot status <id>`). At most
 40 lines. Not with `--memory` or `--approvals`. Offer it only when asked.
 

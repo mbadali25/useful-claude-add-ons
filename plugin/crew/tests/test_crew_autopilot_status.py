@@ -1635,3 +1635,40 @@ def test_owner_items_an_unreadable_next_md_is_not_an_absent_field(tmp_path, stat
     (action,) = [a for _t, _p, a in got["items"]] or [""]
     assert ("more than once" in action, "no reason given" in action,
             "no next: in next.md" in action) == (True, False, False), action
+
+
+def test_owner_items_two_done_rows_are_one_ticket(tmp_path):
+    """L-0551 review r3 FIX: duplicate done rows list a ticket once."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+    _index(root, f"{T} | done | high | r | t", f"{T} | done | high | r | t")
+
+    assert _owned(root)["unread"] == [T]
+
+
+@pytest.mark.parametrize("policy, listed", [("stop", True), ("fix-and-rereview", False)])
+def test_owner_items_read_the_review_policy_only_to_leave_autopilots_fix_out(tmp_path, policy, listed):
+    """L-0551 review r3 FIX (with T-0067): a FINDINGS round autopilot fixes itself
+    (fix-and-rereview, a round left, fixes owed) is autopilot's, not the owner's."""
+    root = _approved(tmp_path)
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"reviewPolicy": policy}}))
+    line = "FIX|src/app.py|1|x|y"
+    _ledger(root, [dict(_round(1, "FINDINGS"), findings=[line], ignored_lines=0,
+                        counts={"BLOCK": 0, "FIX": 1, "NIT": 0})], state="REVIEWED")
+
+    got = _owned(root)
+
+    assert ([p for _t, p, _a in got["items"]] == ["accept-review"]) is listed, got
+
+
+def test_owner_items_needs_owner_question_keeps_an_unreadable_next_md(tmp_path):
+    """L-0687 review r2 BLOCK: the fallback question never hides next.md's parse failure."""
+    root = _parked(tmp_path, "needs-owner", "next: a\nnext: b\n")
+    _write(root / ".work" / "tickets" / T / "direction.md", "go\n## Open questions\n- which tracker?\n")
+
+    (action,) = [a for _t, _p, a in _owned(root)["items"]] or [""]
+
+    assert ("answer: direction.md: which tracker?" in action, "next.md: cannot tell" in action) == (
+        True, True), action
