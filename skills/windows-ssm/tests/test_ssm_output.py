@@ -137,6 +137,22 @@ class TestCouldNotTell(unittest.TestCase):
         del doc["Status"]
         self.assert_unknown(run(doc), "Status")
 
+    def test_response_code_minus_one_could_not_tell(self):
+        # Group review r3 (G5): -1 means the command never started or never
+        # reached the node; its empty output is not a complete result.
+        for status in ("Success", "Failed"):
+            with self.subTest(status=status):
+                r = run(invocation(stdout="", status=status, ResponseCode=-1))
+                self.assert_unknown(r, "ResponseCode -1")
+
+    def test_missing_or_non_integer_response_code_could_not_tell(self):
+        doc = invocation()
+        del doc["ResponseCode"]
+        self.assert_unknown(run(doc), "ResponseCode is missing")
+        for value in ("0", None, True, 0.0):
+            with self.subTest(value=value):
+                self.assert_unknown(run(invocation(ResponseCode=value)), "ResponseCode is")
+
     def test_missing_identity_could_not_tell(self):
         for key in ("CommandId", "InstanceId"):
             with self.subTest(key=key):

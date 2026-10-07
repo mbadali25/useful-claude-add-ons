@@ -160,7 +160,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   CloudWatch routes to complete output; staging large payloads in S3 with a hash check.
 - **`scripts/ssm_output.py`.** Reads a `get-command-invocation` result offline and prints
   `complete` (exit 0), `truncated` (exit 3, naming the S3 URL when there is one) or
-  `could not tell` (exit 4: not finished, stopped early, or not a result). Output exactly at a
+  `could not tell` (exit 4: not finished, stopped early, never started (`ResponseCode` -1), or not a result). Output exactly at a
   limit counts as cut. It never prints the output it inspects.
 
 ### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)

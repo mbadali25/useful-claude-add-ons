@@ -34,6 +34,10 @@ python3 scripts/ssm_output.py inv.json      # complete=0, truncated=3, could not
 `Status` values `Pending`, `InProgress`, `Delayed` and `Cancelling` mean the command is still
 going; `TimedOut` and `Cancelled` mean it stopped before it finished. Output read in any of
 those states is not the whole answer, which is why the helper reports "could not tell".
+A `Success` or `Failed` result with `ResponseCode` -1 never ran: the command did not start, or the
+node never received it
+([GetCommandInvocation](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetCommandInvocation.html)),
+so that is "could not tell" too.
 
 ## Getting the complete output
 

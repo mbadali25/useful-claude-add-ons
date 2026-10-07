@@ -8,8 +8,9 @@ stdin when no path or `-` is given, and prints one verdict line:
                           under the API's limits
   truncated       exit 3  stdout or stderr is at or over its limit, so the
                           returned text is (or may be) cut
-  could not tell  exit 4  the command has not finished, stopped early, or the
-                          input is not a get-command-invocation result
+  could not tell  exit 4  the command has not finished, stopped early, never
+                          started (ResponseCode -1), or the input is not a
+                          get-command-invocation result
 
 Exit 2 is a usage error. The reason, the lengths and, for a cut output, where
 the full text is go to stderr. The inspected content is never printed.
@@ -108,7 +109,17 @@ def judge(text: str) -> tuple[int, list[str]]:
 
     status = doc.get("Status")
     if status in FINISHED:
-        return COMPLETE, reasons + [f"status {status}"]
+        # ResponseCode -1: the command did not start, or the node never got it
+        # (GetCommandInvocation's ResponseCode). Its empty output is not a result.
+        code = doc.get("ResponseCode")
+        if not isinstance(code, int) or isinstance(code, bool):
+            return UNKNOWN, reasons + [f"status {status} but ResponseCode is "
+                                       f"{'missing' if 'ResponseCode' not in doc else repr(code)}: "
+                                       "not a get-command-invocation result"]
+        if code == -1:
+            return UNKNOWN, reasons + [f"status {status}, ResponseCode -1: the command did not "
+                                       "start or the node did not receive it"]
+        return COMPLETE, reasons + [f"status {status}, ResponseCode {code}"]
     if status in NOT_FINISHED:
         return UNKNOWN, reasons + [f"status {status}: the command has not finished, "
                                    "or stopped before it did"]

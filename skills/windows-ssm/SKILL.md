@@ -55,7 +55,7 @@ py scripts\ssm_output.py inv.json; if ($LASTEXITCODE -ne 0) { throw "SSM output 
 |---|---|---|
 | `complete` | 0 | Use the output. |
 | `truncated` | 3 | Do not parse it. Read the full text from the S3 URL the helper names, or re-run with `--output-s3-bucket-name` / `--cloud-watch-output-config`. |
-| `could not tell` | 4 | The command has not finished, stopped early (`TimedOut`, `Cancelled`), or the input is not a get-command-invocation result. Wait and re-read, or fix the input. |
+| `could not tell` | 4 | The command has not finished, stopped early (`TimedOut`, `Cancelled`), never started (`ResponseCode` -1), or the input is not a get-command-invocation result. Wait and re-read, or fix the input. |
 
 The helper is Python standard library only and offline: it makes no AWS call, reads no
 credentials and writes nothing. It prints lengths and a verdict, never the output itself.
