@@ -26,6 +26,7 @@ if [ -z "$PY" ]; then
 fi
 PASS=0
 FAIL=0
+SKIP=0
 
 winpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi
@@ -485,9 +486,21 @@ echo "== the guard WRAPPERS: python resolution (own PATH, own HOME) =="
 # exited 49 with zero bytes on stderr). Counted as one case here, with its own
 # output shown only when it fails; run it directly for the per-case list.
 sh_suite() {
-  local desc="$1" script="$2" out rc
+  local desc="$1" script="$2" out rc skip_lines skip_count
   out="$(bash "$DIR/_test/$script" 2>&1)"
   rc=$?
+  # A sub-suite's own "SKIP:" lines (its .ps1 cases with no pwsh on this
+  # host) are only visible in $out when the whole file FAILS, below - a
+  # clean exit folds straight into PASS with $out discarded, and until this
+  # fold existed, that discarded output was the ONLY place a skip was ever
+  # recorded. Grepped and re-echoed here regardless of pass/fail so this
+  # file's own RESULT line, not just the sub-suite's, shows it.
+  skip_lines="$(printf '%s\n' "$out" | grep '^SKIP:' || true)"
+  if [ -n "$skip_lines" ]; then
+    skip_count="$(printf '%s\n' "$skip_lines" | grep -c '^SKIP:')"
+    SKIP=$((SKIP+skip_count))
+    printf '%s\n' "$skip_lines"
+  fi
   if [ "$rc" -eq 0 ]; then
     PASS=$((PASS+1))
   else
@@ -498,6 +511,10 @@ sh_suite() {
 }
 
 sh_suite "vault-guard.sh/.ps1: stubs, absence, launch failure" test_vault_guard_sh.sh
+sh_suite "bridge-status.sh/.ps1 + vault-capture.sh/.ps1: stubs, absence, must-run" \
+  test_bridge_capture_sh.sh
+sh_suite "the three .ps1 probes under \$PSNativeCommandArgumentPassing='Legacy'" \
+  test_ps1_legacy_args.sh
 
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with
@@ -510,10 +527,10 @@ sh_suite "vault-guard.sh/.ps1: stubs, absence, launch failure" test_vault_guard_
 fg_out="$("$PY" "$DIR/_test/test_flavour_guard.py" 2>&1)"; fg_rc=$?
 case "$fg_rc" in
   0)  PASS=$((PASS+1)) ;;
-  77) echo "SKIP: PowerShell flavour guard -- $fg_out" ;;
+  77) SKIP=$((SKIP+1)); echo "SKIP: PowerShell flavour guard -- $fg_out" ;;
   *)  FAIL=$((FAIL+1)); echo "FAIL: PowerShell flavour guard (exit $fg_rc)"; echo "$fg_out" ;;
 esac
 
 echo
-echo "RESULT: $PASS passed, $FAIL failed"
+echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]

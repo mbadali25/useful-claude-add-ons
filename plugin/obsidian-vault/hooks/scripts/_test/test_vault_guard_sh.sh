@@ -52,6 +52,7 @@ BASH_BIN="${BASH:-$(command -v bash)}"
 
 PASS=0
 FAIL=0
+SKIP=0
 
 winpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi
@@ -332,6 +333,278 @@ check_err_has "and the failure to reach a verdict is stated" \
   "did not complete the check"
 check_err_has "and it says the write went unchecked" "NOT checked"
 
+# ================================================ non-ASCII stdin round-trip --
+# The wrapper's PATH-resolution defect (above) is not the only "unknown
+# collapsing into the safe-looking value" this hook carried: vault_guard.py's
+# `payload = json.load(sys.stdin)` decodes with whatever the PROCESS's
+# locale/console code page says, not necessarily UTF-8. On Windows, without
+# PYTHONUTF8=1, that is the ANSI code page - and decoding UTF-8 bytes as, say,
+# cp1252 does not raise: three UTF-8 bytes for one em dash (U+2014) silently
+# become three WRONG characters (a, EUR-sign, right-quote), and check_ascii
+# reports the wrong codepoint entirely rather than failing loudly. Reproduced
+# here with PYTHONIOENCODING=cp1252, which forces the same wrong-decode shape
+# `sys.stdin` gets from a non-UTF-8 console code page, without needing a
+# Windows machine to prove it.
+#
+# Two layers were added against this (see vault_guard.py's main() and
+# vault-guard.sh's own `export PYTHONUTF8=1`), but only ONE of them is
+# sabotage-tested BEHAVIOURALLY here, and this header said otherwise until
+# corrected below: the python-level explicit decode, by calling
+# vault_guard.py DIRECTLY (bypassing the wrapper, so the wrapper's own
+# PYTHONUTF8=1 backstop is never in play for these cases) under a forced
+# `PYTHONIOENCODING=cp1252`, then sabotaging that decode on a throwaway COPY
+# and confirming the case goes red. The wrapper's own `export PYTHONUTF8=1`
+# is checked only STATICALLY - a grep that the line still exists - because
+# the behavioural claim a first version of this comment made for it
+# ("removing the python-level fix, the wrapper's backstop alone still saves
+# it") was written, tested, and found FALSE: an explicit PYTHONIOENCODING in
+# the calling environment overrides PYTHONUTF8's encoding choice for every
+# python stream, so the backstop cannot rescue a decode PYTHONIOENCODING has
+# already corrupted. See the "MEASURED, not assumed" comment further down for
+# the disproof and what the backstop actually protects instead.
+ascii_home="$work/ascii-home"
+mkdir -p "$ascii_home/.claude/obsidian"
+"$PY" - "$vault_win" "$ascii_home/.claude/obsidian/config.json" <<'PYEOF'
+import json, sys
+vault, out = sys.argv[1], sys.argv[2]
+json.dump({"vaultPath": vault,
+           "guard": {"asciiOnly": True, "requireFrontmatter": False,
+                     "checkCanvas": False, "notesPrefix": "wiki/"}},
+          open(out, "w", encoding="utf-8"))
+PYEOF
+ascii_home_win="$(winpath "$ascii_home")"
+
+# Written with ensure_ascii=False and encoded UTF-8 explicitly: a real hook
+# payload on the wire carries the note's actual UTF-8 bytes, not a `\uXXXX`
+# escape (json.dumps' DEFAULT), and only the raw-bytes shape can mis-decode
+# under the wrong code page. Using the default helper above would have hidden
+# the whole defect class inside an already-ASCII-safe escape sequence.
+note_rel="wiki/concepts/ascii-roundtrip.md"
+note_abs="$vault/$note_rel"
+mkdir -p "$(dirname "$note_abs")"
+printf 'em dash test \xe2\x80\x94 end\n' > "$note_abs"
+ascii_payload="$work/payload-ascii.json"
+"$PY" - "$(winpath "$note_abs")" "$ascii_payload" <<'PYEOF'
+import json, sys
+path, out = sys.argv[1], sys.argv[2]
+content = "em dash test — end\n"
+with open(out, "wb") as fh:
+    fh.write(json.dumps({"tool_input": {"file_path": path, "content": content}},
+                         ensure_ascii=False).encode("utf-8"))
+PYEOF
+
+echo "== vault_guard.py: non-ASCII stdin round-trip (direct, python-level fix) =="
+
+run_direct_py() {
+  # $1 = payload file. Bypasses the wrapper entirely - straight to the
+  # TRACKED, real vault_guard.py - so this isolates its own decode from
+  # vault-guard.sh's PYTHONUTF8=1 backstop. PYTHONUTF8 explicitly unset (not
+  # just absent from this env block) in case the calling shell already
+  # exports it. Never mutated - see run_direct_py_copy for the sabotage path.
+  local outf="$work/.out" errf="$work/.err"
+  env -u PYTHONUTF8 PYTHONIOENCODING=cp1252 HOME="$ascii_home_win" \
+    "$PY" "$DIR/vault_guard.py" < "$1" > "$outf" 2> "$errf"
+  RC=$?
+  OUT="$(cat "$outf")"
+  ERR="$(cat "$errf")"
+}
+
+# A throwaway COPY the sabotage case below mutates, so the checked-out
+# vault_guard.py is NEVER touched. An earlier version of this suite edited
+# `$DIR/vault_guard.py` in place and restored it from a backup kept only
+# inside `$work` (deleted by the EXIT trap) - an interrupt between the edit
+# and the restore left the real checkout mutated with no backup to recover
+# from, reproduced with SIGTERM. `obsidian_common.py` is copied alongside it
+# because vault_guard.py inserts its OWN directory onto sys.path and imports
+# that module from there; without a copy in $work too, the sandboxed script
+# cannot even start.
+vg_copy="$work/vault_guard_sandbox.py"
+cp "$DIR/vault_guard.py" "$vg_copy"
+cp "$DIR/obsidian_common.py" "$work/obsidian_common.py"
+
+# Snapshot taken before any sabotage in this run - the baseline the later
+# "tracked file was never touched" check compares against.
+vg_pristine="$work/vault_guard.py.pristine"
+cp "$DIR/vault_guard.py" "$vg_pristine"
+
+run_direct_py_copy() {
+  # $1 = payload file. Same shape as run_direct_py, but against the
+  # SANDBOXED copy - use this and only this for anything that sabotages
+  # vault_guard.py's source.
+  local outf="$work/.out" errf="$work/.err"
+  env -u PYTHONUTF8 PYTHONIOENCODING=cp1252 HOME="$ascii_home_win" \
+    "$PY" "$vg_copy" < "$1" > "$outf" 2> "$errf"
+  RC=$?
+  OUT="$(cat "$outf")"
+  ERR="$(cat "$errf")"
+}
+
+# run_sh always uses $home_win (asciiOnly OFF, the shared fixture config
+# above). The round-trip cases need asciiOnly ON, so they go through this
+# instead - same wrapper, different HOME.
+run_sh_ascii() {
+  local outf="$work/.out" errf="$work/.err"
+  PATH="$1" HOME="$ascii_home_win" "$BASH_BIN" "$SH" < "$2" > "$outf" 2> "$errf"
+  RC=$?
+  OUT="$(cat "$outf")"
+  ERR="$(cat "$errf")"
+}
+
+run_direct_py "$ascii_payload"
+check_exit "asciiOnly blocks the em dash, decoded straight" 2
+check_err_has "and the CORRECT codepoint is named" "U+2014"
+check_err_lacks "and NOT the mojibake cp1252 would have produced" "U+00E2"
+
+echo "== vault_guard.py: sabotage the python-level fix, on the SANDBOXED copy only =="
+
+# "$PY", not a bare `python3` - Git Bash ships without one, and this suite
+# already resolved a real interpreter into $PY at the top for exactly this
+# reason; a bare `python3` here would have been the one line in this file
+# that did not follow its own rule.
+cp "$vg_pristine" "$vg_copy"  # fresh baseline for this sabotage test
+"$PY" - "$vg_copy" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+# Two edits, not one: reverting only the parse line while leaving the raw
+# stdin read in place would consume stdin TWICE (once into `raw`, discarded,
+# then again - empty - by `json.load(sys.stdin)`), which fails for a
+# different reason (no bytes left to read) than the bug this case exists to
+# reproduce (locale-dependent decode). Both lines revert together to the
+# pre-fix shape: a single `json.load(sys.stdin)`, decoded however the
+# process's locale says - which is the actual historical bug.
+read_needle = "raw = sys.stdin.buffer.read()"
+parse_needle = 'payload = json.loads(raw.decode("utf-8", errors="surrogateescape"))'
+assert read_needle in text, "fixture assumption broken: the stdin-read line moved"
+assert parse_needle in text, "fixture assumption broken: the parse line moved"
+text = text.replace(read_needle, "pass  # sabotage: stdin read merged into the line below")
+text = text.replace(parse_needle, "payload = json.load(sys.stdin)")
+open(path, "w", encoding="utf-8").write(text)
+PYEOF
+
+run_direct_py_copy "$ascii_payload"
+case "$ERR" in
+  *"U+2014"*) bad "sabotaged python-level fix should mis-decode, but still reported U+2014 correctly (stderr: [$ERR])" ;;
+  *) ok ;;
+esac
+
+echo "== vault_guard.py: the TRACKED file was never touched =="
+
+# The whole point of sabotaging $vg_copy instead of $DIR/vault_guard.py: this
+# passes trivially because nothing here ever wrote to the tracked file, not
+# because anything was restored. Checked against $vg_pristine - a snapshot
+# taken before ANY sabotage in this run, at the top of this section - rather
+# than `git show HEAD:...`, because the tracked file may legitimately be
+# uncommitted mid-development; comparing against git HEAD would report a
+# mutation on every ordinary dirty worktree, not just a real one.
+diff -q "$vg_pristine" "$DIR/vault_guard.py" >/dev/null \
+  && ok || bad "vault_guard.py in the worktree changed during this test run - it should never have been touched"
+
+# MEASURED, not assumed: the obvious next case to write was "sabotage
+# vault_guard.py's fix, keep vault-guard.sh's `export PYTHONUTF8=1`, confirm
+# the backstop alone still saves the decode" - the shape every other backstop
+# case in this file takes. Running it (not shown, since it does not hold)
+# found the opposite: an explicit `PYTHONIOENCODING` in the CALLING
+# environment overrides PYTHONUTF8's encoding choice for every python stream,
+# stdin included, so `export PYTHONUTF8=1` does NOT rescue a stdin decode
+# corrupted by an explicit PYTHONIOENCODING already set before the hook runs.
+# That is real, documented CPython precedence, not a bug in this script - but
+# it means PYTHONUTF8=1 only ever helps the "nothing else named an encoding,
+# so python fell back to the process's default locale" case, which is what
+# Windows actually hits (no PYTHONIOENCODING is normally set; the OS locale
+# supplies the default). This sandbox has no non-UTF-8 default locale to
+# reproduce THAT case behaviourally (`locale -a` here offers only C/POSIX,
+# which python's own PEP 538 coercion turns into UTF-8 anyway, and a list of
+# already-UTF-8 `*.utf8` locales) - so the claim above is not re-asserted as
+# a passing case here. vault-guard.sh's own comment on `export PYTHONUTF8=1`
+# was corrected to say exactly this after the disproof, rather than leaving
+# the stronger, false claim in place. What IS checked, statically, is that
+# the line still exists - so the defense-in-depth intent does not silently
+# regress even though its Windows-only payoff cannot run in this suite.
+if grep -q '^export PYTHONUTF8=1$' "$SH"; then ok
+else bad "vault-guard.sh no longer sets PYTHONUTF8=1 before invoking python"
+fi
+if grep -q '\$env:PYTHONUTF8 = "1"' "$PS1"; then ok
+else bad "vault-guard.ps1 no longer sets \$env:PYTHONUTF8 before invoking python"
+fi
+
+echo "== vault_guard.py: the python-level fix is what actually survives a bad PYTHONIOENCODING =="
+
+# This is the case that DOES hold, and it is the one the round-trip cases
+# above already exercised through the wrapper (which also sets
+# PYTHONIOENCODING=cp1252 no differently from a bare python invocation,
+# since - per the finding above - the wrapper's own PYTHONUTF8=1 cannot
+# override it either). Restated here explicitly as the fix that matters:
+# `sys.stdin.buffer.read().decode("utf-8")` never consults PYTHONIOENCODING
+# at all, because it never asks for a decoded text stream in the first
+# place - it decodes the bytes itself.
+export PYTHONIOENCODING=cp1252
+run_sh_ascii "$realpath_dir:$TOOLS" "$ascii_payload"
+unset PYTHONIOENCODING
+check_exit "wrapper + fixed python: blocks the em dash even under a forced bad PYTHONIOENCODING" 2
+check_err_has "and still names the correct codepoint" "U+2014"
+
+echo "== vault_guard.py: an invalid UTF-8 byte in the content must still BLOCK =="
+
+# Not a decode question this time - a single byte that is not valid UTF-8 AT
+# ALL (0xFF can never start a UTF-8 sequence), the case `errors=` exists for.
+# `bad \xff\xe2\x80\x94 x`: the invalid byte AND a valid em dash in the same
+# payload, so a regression that only re-breaks the em dash half would still
+# be caught even if the invalid byte were somehow tolerated.
+note_bad_abs="$vault/wiki/concepts/invalid-utf8.md"
+note_bad_payload="$work/payload-invalid-utf8.json"
+mkdir -p "$(dirname "$note_bad_abs")"
+
+# The note on disk carries the same invalid byte - it must exist for
+# `edited_paths` to consider it, even though `check_ascii` prefers the
+# payload's own `content` (below) when present.
+"$PY" - "$note_bad_abs" <<'PYEOF'
+import sys
+with open(sys.argv[1], "wb") as fh:
+    fh.write(b"bad \xff\xe2\x80\x94 x")
+PYEOF
+
+# The payload's own JSON, built as raw bytes rather than via json.dumps -
+# json.dumps cannot encode a byte that is not valid Unicode at all, and that
+# is exactly the byte this case needs to carry.
+"$PY" - "$note_bad_abs" "$note_bad_payload" <<'PYEOF'
+import json, sys
+note_path, out = sys.argv[1], sys.argv[2]
+content = b"bad \xff\xe2\x80\x94 x"
+prefix = b'{"tool_input": {"file_path": '
+mid = b', "content": "'
+suffix = b'"}}'
+path_json = json.dumps(note_path).encode("utf-8")
+with open(out, "wb") as fh:
+    fh.write(prefix + path_json + mid + content + suffix)
+PYEOF
+
+run_direct_py "$note_bad_payload"
+check_exit "invalid UTF-8 byte: still blocks, as before this change" 2
+check_err_has "and names the invalid byte as a synthetic codepoint" "U+DCFF"
+check_err_has "and the valid em dash alongside it is still named correctly" "U+2014"
+
+echo "== vault_guard.py: sabotage removes surrogateescape - degrades to a LOUD stand-down, not silence =="
+
+cp "$vg_pristine" "$vg_copy"  # fresh baseline for this sabotage test
+"$PY" - "$vg_copy" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+needle = 'payload = json.loads(raw.decode("utf-8", errors="surrogateescape"))'
+assert needle in text, "fixture assumption broken: the fix text moved"
+text = text.replace(needle, 'payload = json.loads(raw.decode("utf-8"))')
+open(path, "w", encoding="utf-8").write(text)
+PYEOF
+
+run_direct_py_copy "$note_bad_payload"
+check_exit "sabotaged: no longer blocks the invalid byte (fails OPEN, not closed)" 0
+check_err_has "but it is LOUD about not having checked, not silent" "NOT checked"
+check_err_lacks "and does not misreport this as a clean pass" "DOES NOT PARSE"
+
+diff -q "$vg_pristine" "$DIR/vault_guard.py" >/dev/null \
+  && ok || bad "vault_guard.py in the worktree changed during the invalid-UTF-8 sabotage - it should never have been touched"
+
 # =============================================================== vault-guard.ps1
 PWSH="$(command -v pwsh 2>/dev/null || true)"
 if [ -n "$PWSH" ]; then
@@ -364,9 +637,16 @@ if [ -n "$PWSH" ]; then
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
     "no python3/python/py interpreter found on PATH"
 else
-  echo "== vault-guard.ps1: SKIPPED, no pwsh on PATH =="
+  # Counted, not just printed - same reasoning as
+  # test_bridge_capture_sh.sh's twin of this branch: run-tests.sh's
+  # `sh_suite` folds this whole file into one PASS on a clean exit and only
+  # shows this script's OWN stdout when it FAILS, so a host with no pwsh
+  # silently never runs any of the 6 .ps1 cases below and the parent's
+  # RESULT line reads no differently than a run where they all passed.
+  SKIP=$((SKIP+1))
+  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (6 cases not run)"
 fi
 
 echo
-echo "RESULT: $PASS passed, $FAIL failed"
+echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]

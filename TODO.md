@@ -3622,3 +3622,20 @@ context clear, so the open items live here where they are tracked.
   right before the `no_git_description_problems` case). Did not block: this round's QA
   named `count_plugin_commands`/`count_plugin_agents` (`:601`) specifically, not this
   earlier call, and `check_self_claims` predates this ticket entirely.
+
+- **`vault-capture.ps1` discards `vault_capture.py`'s own exit code, unlike its
+  `.sh` twin.** `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:115` runs
+  `& $py (Join-Path $dir 'vault_capture.py') $Trigger` then unconditionally
+  `exit 0`, pre-dating the Windows-audit-wave-3 change to this file (confirmed by
+  reading the version before this ticket's edit - same unconditional `exit 0`).
+  `vault-capture.sh` `exec`s python instead, so its own exit code IS
+  `vault_capture.py`'s. The divergence is invisible for the hook path (SessionEnd/
+  PreCompact ignore a non-blocking hook's exit code either way) but bites the
+  `--selftest` CLI diagnostic specifically: `vault_capture.py --selftest` exits 1
+  and writes "selftest FAIL: no vault resolved" on stderr when no vault is
+  configured, and a human or script driving that through `vault-capture.ps1
+  -Trigger --selftest` sees exit 0 (success) despite the FAIL on stderr - exit code
+  and message disagree. Did not block Windows audit wave 3: that ticket's brief
+  scoped the interpreter-resolver shape and the UTF-8 stdin decode, not
+  `--selftest` exit-code parity between the two flavours, and the asymmetry
+  predates this change.
