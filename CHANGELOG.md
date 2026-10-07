@@ -48,6 +48,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   exits 2 on the option is asked once more without it, inside the same 4-second budget; no other
   failure is retried. The context log's `recall` record gains `project` and `projectUsed`.
 
+### Changed — `crew` 1.1.8: the Stop gate health and QA audit readers move to `crew_health.py` (G2 landing)
+
+- **Summary.** No behaviour change: two readers move out of `crew_state.py` so it stays under its
+  3,400-line pylint cap now that G0, G7 and G2 meet in it.
+- **What changed.** `read_verify_health`, `read_qa_audit`, `VERIFY_MARKER_STALE_COMMITS`,
+  `QA_AUDIT_STAMP` and `QA_AUDIT_PATHS` move unchanged to the new
+  `plugin/crew/hooks/scripts/crew_health.py`; `crew_state` re-exports all five, so every
+  `crew_state.<name>` caller is unchanged, and `test_module_split.py` holds the re-exports to the
+  objects `crew_health` defines. `crew_state.py` goes from 3,405 lines to 3,309, with no pylint
+  disable. `.crew/verify.json`'s crew_state rule maps the new file.
+
 ### Added — `crew` 1.1.8: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
 
 Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.
