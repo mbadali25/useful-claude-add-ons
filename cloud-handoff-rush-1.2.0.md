@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T15:20Z
+Last updated: 2026-10-07T15:36Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T15:36Z h5 ready: rush/h5-ghdeploy-state ac645dcf (C-0060 one line, Codex r2 CLEAN, harness suites green; based on ad36bec5 -> merge main + re-set version at landing). G4 ready except bookkeeping test: 8d7f9374 (verify rule split under 60s budget: 50s + 16s). Order: waves 2-5 (G2,G3b,G5,G1b) -> h5 -> FF release -> G4 -> G3c -> G3d -> G6a -> G6b -> H2.
 - 2026-10-07T15:20Z MERGED WAVE 1 #554 (release -> main) at c996c7f1, main crew 1.1.9 (Windows 6/6 re-run passed once per owner; MCP merge 500 twice, gh api merge OK). 18 source PRs auto-closed as merged; #376 closed with link; #516/#517 stay open until H2 (harness halves). Next: G2 #550 (with pid-reuse test fix) -> release -> wave 2.
 - 2026-10-07T14:58Z Wave 1 #554 Windows 6/6 red: G0 test _dead_pid races Windows pid reuse (code correct). Owner: re-run once (done) + robust test fix rides in G2. G4 at 411b4f07 (1.1.14 placeholder): only red = T-0068 test_every_crew_state_path_is_classified (.crew/.ghdeploy unclassified; fix is 1 line in HARNESS crew_ticket.py). Plan: after wave 5 (release==main) harness PR rush/h5-ghdeploy-state (C-0060) -> main 1.1.14, FF release, G4 1.1.15, then G3c 1.1.16, G3d 1.1.17, G6a 1.1.18, G6b 1.1.19. 12 waves total. Next free C-0061.
 - 2026-10-07T14:36Z G6a r6 review: L-0550 + L-0670 CLEAN; L-0666 BLOCK (crew_autopilot.py:1027/1048 unknown successor -> closed); L-0551 BLOCK (_main_checkout why discarded / unreadable main INDEX -> 'nothing on you'). G6a fixer started incl. owner's 'fixed them instead?' line. C-0059 minted (cp1252 stdout); next free C-0060.
