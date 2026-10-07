@@ -55,6 +55,9 @@ OWNER_ACTIONS = {
                       "(autopilot.reviewPolicy fix-and-rereview fixes a round with one left)"),
 }
 FALLBACK = "see /crew:autopilot status {id}"
+# `_phase`'s evidence line when this checkout's INDEX row answered and the main checkout's
+# could not be read (T-0063): never compared, so never agreement.
+MAIN_NOT_COMPARED = "main checkout's INDEX not compared"
 OWN_COMMAND = ("spec", "plan")  # the phase's own `command`
 
 
@@ -82,6 +85,15 @@ def _index_problem(top):
     return ""
 
 
+def _same_folder(top, path, name, tickets):
+    """Whether `path` is the folder of a ticket in `tickets` named like `name` up to case."""
+    for ticket in tickets:
+        other = crew_ticket.ticket_dir(top, ticket)
+        if ticket.casefold() == name.casefold() and os.path.isdir(other) and os.path.samefile(path, other):
+            return True
+    return False
+
+
 def _tickets(top):
     """`(tickets, why)`: open INDEX tickets, then folders no INDEX line names
     (compared case-folded: one folder on a case-insensitive filesystem is one
@@ -106,7 +118,12 @@ def _tickets(top):
             crew_ticket.check_ticket(name)
         except crew_ticket.TicketError:
             continue
-        if name.casefold() not in seen and name not in named and os.path.isdir(os.path.join(folder, name)):
+        path = os.path.join(folder, name)
+        if name in named or name in found or not os.path.isdir(path):
+            continue
+        # Hidden only when it IS a listed ticket's folder (a case-insensitive filesystem):
+        # a separate case-only folder on a case-sensitive one stays visible (L-0551 r5).
+        if name.casefold() not in seen or not _same_folder(top, path, name, found):
             seen.add(name.casefold())
             found.append(name)
     return found, ""
@@ -163,6 +180,10 @@ def owner_items(root, today=None):
     for ticket in tickets:
         try:
             result = crew_autopilot._phase(top, ticket, policy=False, deep=False)  # pylint: disable=protected-access
+            unread = [e for e in result.get("evidence") or [] if e.startswith(MAIN_NOT_COMPARED)]
+            if unread:  # L-0551 r5: an unreadable main-checkout INDEX is could-not-tell
+                got["unknown"].append((ticket, unread[0]))
+                continue
             if not result["stop"]:
                 continue
             if crew_autopilot_gates.UNKNOWN_CELL in result["reason"]:  # never filtered: could-not-tell

@@ -1507,6 +1507,8 @@ def test_owner_items_one_ticket_whatever_the_folder_case(tmp_path):
     root = make_repo(tmp_path, mode="off")
     _ticket(root)
     os.makedirs(str(root / ".work" / "tickets" / "t-1"), exist_ok=True)
+    if not os.path.samefile(str(root / ".work" / "tickets" / "t-1"), str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-sensitive filesystem: two folders, two tickets (the next test)")
 
     names = [t.casefold() for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
 
@@ -1729,3 +1731,32 @@ def test_owner_items_list_a_ticket_a_person_still_ships(tmp_path):
     got = _owned(root)
 
     assert got["items"] == [(T, "closed", f"see /crew:autopilot status {T}")]
+
+
+def test_owner_items_two_folders_differing_in_case_are_two_tickets(tmp_path):
+    """L-0551 review r5 BLOCK: on a case-sensitive filesystem T-1 and t-1 are separate
+    folders; the unindexed t-1 stays visible."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    os.makedirs(str(root / ".work" / "tickets" / "t-1"), exist_ok=True)
+    if os.path.samefile(str(root / ".work" / "tickets" / "t-1"), str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-insensitive filesystem: one folder")
+    _index(root, f"{T} | ready | high | r | t")
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert "t-1" in names
+
+
+def test_owner_items_an_unreadable_main_index_is_could_not_tell(tmp_path, monkeypatch):
+    """L-0551 review r5 BLOCK: a main-checkout INDEX that could not be compared is
+    could-not-tell, never a bare action."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    real = crew_autopilot._index_row  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_autopilot, "_index_row", lambda top, ticket: dict(
+        real(top, ticket), why="/main/.work/INDEX.md exists but could not be read"))
+
+    got = _owned(root)
+
+    assert ([t for t, _w in got["unknown"]], got["items"]) == ([T], [])

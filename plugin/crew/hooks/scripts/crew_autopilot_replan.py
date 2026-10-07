@@ -34,6 +34,7 @@ from __future__ import annotations
 import collections
 import os
 
+import crew_autopilot_fix
 import crew_ticket
 import review_ledger
 
@@ -57,6 +58,9 @@ def _required(data):
             or any("\n" in f or "\r" in f for f in findings):
         return None, "the rejected round's findings are not a list of one-line strings"
     # Classified as the automatic reject reads them (stripped); compared verbatim.
+    disagree = crew_autopilot_fix._counts_disagree(rows[0].get("counts"), findings)  # pylint: disable=protected-access
+    if disagree:
+        return None, f"the rejected round's {disagree}"
     lines = [f for f in findings if f.strip().startswith(OWED)]
     if not any(f.strip().startswith("BLOCK|") for f in lines):
         return None, "the rejected round lists no BLOCK line, yet an automatic reject needs one"
@@ -94,7 +98,8 @@ def replan_check(root, ticket):
         return _result(False, True, "not NEEDS_REPLAN")
     if "rejected" not in data:  # review_ledger.reject always writes it: a spent budget, no reject
         return _result(False, True, "NEEDS_REPLAN with no reject recorded (the budget was spent)")
-    if not isinstance(rejected, dict) or not isinstance(rejected.get("by"), str):
+    if not isinstance(rejected, dict) or not isinstance(rejected.get("by"), str) \
+            or not rejected["by"].strip():
         # L-0670 review r2: who rejected cannot be told, so neither can whether the guard applies.
         return _result(True, False, f"{CANNOT_TELL}: the ledger is NEEDS_REPLAN and its rejected "
                                     f"record ({rejected!r}) does not say who rejected")

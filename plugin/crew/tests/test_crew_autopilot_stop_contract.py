@@ -39,7 +39,7 @@ import test_crew_autopilot_ship as ship_fixtures
 T = "T-1"
 SCRIPTS = os.path.dirname(crew_autopilot.__file__)
 WALKED = ("crew_autopilot.py", "crew_autopilot_gates.py", "crew_autopilot_docs.py",
-          "crew_autopilot_split.py", "crew_autopilot_fix.py")
+          "crew_autopilot_split.py", "crew_autopilot_fix.py", "crew_ship.py")
 DOCS_OK = {"state": crew_autopilot_docs.DOCS_OK, "missing": [], "reason": ""}
 
 
@@ -602,6 +602,27 @@ def s_slices_fail(tmp, mp):
     return _next(root)
 
 
+def m_merged_closed(tmp, _mp):
+    """crew_ship.merged_phase's own `closed` answer, reached only without `finished`
+    (every `next` path passes one), built with `_phase`'s answer contract."""
+    root = make_repo(tmp, mode="off")
+    head = crew_ship.git_out(str(root), "rev-parse", "HEAD")
+
+    def answer(phase, stop, reason, command="", decision=None):
+        return {"ticket": T, "phase": phase, "stop": stop, "reason": reason, "command": command,
+                **crew_autopilot_stops.decided(phase, stop, decision)}
+
+    return crew_ship.merged_phase(str(root), "b", {"number": 7, "headRefOid": head, "url": "u"}, answer)
+
+
+def m_merged_later(tmp, mp):
+    return _next(_done(tmp, mp, pr=dict(_pr("MERGED"), headRefOid="1" * 40)))
+
+
+def m_merged_unreadable(tmp, mp):
+    return _next(_done(tmp, mp, pr=dict(_pr("MERGED"), headRefOid="")))
+
+
 def _shallow(root):
     return crew_autopilot._phase(str(root), T, policy=False, deep=False)  # pylint: disable=protected-access
 
@@ -706,6 +727,9 @@ CASES = [
     ("which arrives with {SLICES_ARRIVE}", s_slices_unknown, "split-check-unknown", "look"),
     ("the plan's ## PR slices fail", s_slices_fail, "plan", "fix-contract"),
     ("crew_autopilot_stops.UNREAD_REVIEW)", u_review, "review-unread", "look"),
+    ('answer("closed", True, why)', m_merged_closed, "closed", "closed"),
+    ("has commits after PR #", m_merged_later, "ship", "look"),
+    ("is merged, but its", m_merged_unreadable, "ship", "look"),
     ("crew_autopilot_stops.UNREAD_SHIP)", u_ship, "review-unread", "look"),
     ("crew_autopilot_stops.UNREAD_REVIEW)", u_fix, "review-unread", "look"),
 ]
@@ -930,3 +954,18 @@ def test_a_header_gate_under_an_unknown_index_cell_asks_to_look(tmp_path, header
 
     assert (got["phase"], got["decision"], "`mystery` is not one autopilot knows" in got["reason"]) == (
         phase, "look", True), got
+
+
+def test_an_unreadable_next_md_never_yields_a_definite_decision(tmp_path):
+    """L-0666 review r6 BLOCK: a needs-owner question with an unreadable next.md, and a
+    superseded ticket whose successor cannot be read, are decision look."""
+    asks = _approved(tmp_path / "asks", status="needs-owner")
+    _write(asks / ".work" / "tickets" / T / "next.md", "next: a\nnext: b\n")
+    _write(asks / ".work" / "tickets" / T / "direction.md", "go\n## Open questions\n- which?\n")
+    gone = _approved(tmp_path / "gone")
+    _write(gone / ".work" / "tickets" / T / "spec.md", _spec_text(T, "status: superseded   risk: high"))
+    _write(gone / ".work" / "tickets" / T / "next.md", "superseded-by: T-8\nsuperseded-by: T-9\n")
+
+    got = [_next(asks), _next(gone)]
+
+    assert [(g["phase"], g["decision"]) for g in got] == [("needs-owner", "look"), ("closed", "look")], got

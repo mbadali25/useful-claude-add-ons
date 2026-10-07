@@ -767,3 +767,15 @@ def test_replan_check_a_spent_budget_without_a_reject_is_not_checked(tmp_path):
     _ledger(root, state="NEEDS_REPLAN")
 
     assert (_check(root)["applies"], _check(root)["ok"]) == (False, True)
+
+
+@pytest.mark.parametrize("rejected, counts", [
+    ({"by": "", "at": "x", "round": 2}, None), ({"by": "  ", "at": "x", "round": 2}, None),
+    (None, {"BLOCK": 1, "FIX": 2, "NIT": 1})])
+def test_replan_check_a_blank_rejector_or_disagreeing_counts_is_could_not_tell(tmp_path, rejected, counts):
+    """L-0670 review r3 BLOCKs: a blank `rejected.by`, or counts that disagree with
+    the finding lines, cannot tell what is owed: refused."""
+    rows = None if counts is None else [_row(1), _row(2, counts=counts)]
+    got = _check(_auto_rejected_plan(tmp_path, rejected=rejected, rounds=rows))
+
+    assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got

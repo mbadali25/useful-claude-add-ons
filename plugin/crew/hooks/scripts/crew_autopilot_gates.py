@@ -170,8 +170,9 @@ def gate(top, ticket, index_status, folder, known, questions, answer, evidence):
         return None, view
     unknown_cell = None if known or word == index_status else "look"
     if word in CLOSING:
-        return answer("closed", True, f"{where}: nothing left in this ticket"
-                      + successor(folder, word, view["next"], view["problems"]), decision=unknown_cell), view
+        named = successor(folder, word, view["next"], view["problems"])
+        return answer("closed", True, f"{where}: nothing left in this ticket" + named,
+                      decision=unknown_cell or ("look" if "cannot tell" in named else None)), view
     decision = unknown_cell
     if word == "hold":
         why = _hold_reason(view)
@@ -180,7 +181,8 @@ def gate(top, ticket, index_status, folder, known, questions, answer, evidence):
     else:
         asked = questions()
         why = _needs_owner_reason(view, asked)
-        decision = unknown_cell or (None if asked or view["next"]["next"] else "look")  # nothing asked: look
+        unread = bool(_next_problems(view)) and not view["next"]["next"]  # L-0666 r6: next.md unread
+        decision = unknown_cell or (None if (asked or view["next"]["next"]) and not unread else "look")
     problems = _next_problems(view)
     if problems:
         why += " (next.md: cannot tell - " + "; ".join(problems) + ")"
