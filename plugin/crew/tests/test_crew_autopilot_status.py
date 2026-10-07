@@ -1594,3 +1594,44 @@ def test_owner_items_agree_with_phase_over_parked_tickets(tmp_path):
         assert (phase["stop"], phase["phase"]) == (True, status)
         assert (listed or got["held"] or ["skipped"]) == {"hold": [T], "needs-owner": ["needs-owner"],
                                                           "landing": ["skipped"]}[status], status
+
+
+def test_owner_items_a_done_row_that_still_ships_is_not_hidden(tmp_path):
+    """L-0551 review r2 BLOCK: a done row with a done header and autopilot armed
+    is the ship path, which the owner list counts as not read (gh)."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+
+    got = _owned(root)
+
+    assert (got["unread"], got["items"]) == ([T], [])
+
+
+@pytest.mark.parametrize("line, rows", [("depends-on: [T-2", ()),
+                                        ("depends-on: T-7", ())])
+def test_owner_items_an_unreadable_dependency_is_could_not_tell(tmp_path, line, rows):
+    """L-0551 review r2 / L-0687 review r1 BLOCK: blocked because a dependency
+    cannot be told is could-not-tell, never a plain blocked count."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\n{line}\n{rest}")
+    _index(root, f"{T} | ready | high | r | t", *rows)
+    approve_as_user(root, T)
+
+    got = _owned(root)
+
+    assert ([t for t, _why in got["unknown"]], got["blocked"], got["items"]) == ([T], [], [])
+
+
+@pytest.mark.parametrize("status", ["hold", "needs-owner"])
+def test_owner_items_an_unreadable_next_md_is_not_an_absent_field(tmp_path, status):
+    """L-0687 review r1 FIX: a next.md that cannot be read is cannot-tell, never
+    'no reason given' or 'no next: in next.md'."""
+    got = _owned(_parked(tmp_path, status, "reason: a\nreason: b\nnext: x\nnext: y\n"))
+
+    (action,) = [a for _t, _p, a in got["items"]] or [""]
+    assert ("more than once" in action, "no reason given" in action,
+            "no next: in next.md" in action) == (True, False, False), action
