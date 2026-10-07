@@ -276,8 +276,8 @@ def search(tree, sha, seconds):
 
 
 def committed_map_text():
-    """`.crew/verify.json`'s text, read ONCE, and only when those bytes are
-    the map committed at HEAD. The gate refused an uncommitted map before it
+    """`.crew/verify.json`'s text, read ONCE, and - when HEAD carries a map -
+    only when those bytes are the map committed at HEAD. The gate refused an uncommitted map before it
     ran this, but that check and this read are two moments: an opt-out
     written in between would otherwise waive review for a deploy (L-0703
     review r1). git hash-object compares the bytes read, not the file now."""
@@ -294,7 +294,12 @@ def committed_map_text():
         raise CouldNotTell(f"the deployment map could not be read and compared with HEAD: {exc}") \
             from exc
     mine, committed = hashed.stdout.strip(), head.stdout.strip()
-    if hashed.returncode != 0 or head.returncode != 0 or not mine or mine != committed:
+    if head.returncode != 0 and not committed:
+        # No map at HEAD at all: an ignored, never-committed map, which the
+        # gate itself treats as policy (git status cannot see it, so it is not
+        # "dirty"). There is no committed copy to hold the bytes to.
+        return raw.decode("utf-8-sig")
+    if hashed.returncode != 0 or not mine or mine != committed:
         raise CouldNotTell(".crew/verify.json as read now is not the map committed at HEAD, so "
                            "its requireReview cannot be trusted; commit or revert it")
     return raw.decode("utf-8-sig")

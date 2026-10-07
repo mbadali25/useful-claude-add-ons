@@ -207,7 +207,7 @@ PROMOTE_TREE_MUTATIONS = (
      '    jq "$@"\n',
      _R + "test_sh_without_python_blocks_when_jq_stalls"),
     ("_promote_review.py trusts the map as it is now, not as committed", REVIEW,
-     '    if hashed.returncode != 0 or head.returncode != 0 or not mine or mine != committed:\n',
+     '    if hashed.returncode != 0 or not mine or mine != committed:\n',
      '    if False:\n',
      _R + "test_the_helper_refuses_a_map_that_is_not_the_committed_one"),
     ("promote-gate.sh starts its deadline after the first probes", SH,
