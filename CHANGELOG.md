@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.1.8: `/crew:migrate` finds the other repos that opted in to auto-clear
+### Changed — crew 1.1.7: `/crew:migrate` finds the other repos that opted in to auto-clear
 
 - **Summary.** When migrating finds auto-clear armed in every repo, it can now look under a folder
   you name for the other repos that opted in, and propose them too, instead of leaving you to search
@@ -25,7 +25,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   scanned repo could not be read. Every `apply-migrate` note now starts with its file
   (`.crew/config.json: ` or `.crew/crew.json: `).
 
-### Fixed — crew 1.1.8: config delete names the backup after an OS error; a repo `null` that widens is marked
+### Fixed — crew 1.1.7: config delete names the backup after an OS error; a repo `null` that widens is marked
 
 - **Summary.** Deleting a repo's crew config no longer says the file was "left in place" when it had
   already been moved to the backup, and setting a repo value to `null` that inherits a wider machine
@@ -38,7 +38,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `_RATCHETED` keys) is ranked by the machine value it inherits, so a widening is marked and its note
   describes that value.
 
-### Added — crew 1.1.8: vault recall ranks this repo's notes first
+### Added — crew 1.1.7: vault recall ranks this repo's notes first
 
 - **Summary.** crew now tells obsidian-vault which project a session is in, so recalled notes about
   this repository come before other projects' notes; an older obsidian-vault still works as before.
