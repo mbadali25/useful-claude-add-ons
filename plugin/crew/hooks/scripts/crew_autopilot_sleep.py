@@ -222,6 +222,7 @@ def _read_log(top):
     log that is there and cannot be read -- never read as empty."""
     path = log_path(top)
     try:
+        crew_notify_hold.check_dir(top)  # review r7: never read through a link or junction
         with open(path, encoding="utf-8", newline="") as handle:  # byte-exact for `upto`
             return handle.read(), ""
     except FileNotFoundError:
@@ -236,13 +237,16 @@ def _append(top, line):
     not one step, so two writers could overwrite each other's line (Windows
     CI, 2026-10-07); a lock that cannot be had there refuses the append."""
     path = log_path(top)
+    # Review r6/r7: never through a link -- `.work`, `.work/autopilot`, a
+    # parent, a Windows junction or the log itself pointing elsewhere would
+    # append outside `.work`. Checked before the folder is made (so a link
+    # creates nothing outside) and again after.
+    crew_notify_hold.check_dir(top)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Review r6: never through a link -- `.work`, `.work/autopilot` or the log
-    # itself pointing elsewhere would append to a file outside `.work`.
-    for part in (os.path.dirname(os.path.dirname(path)), os.path.dirname(path), path):
-        if os.path.islink(part):
-            raise OSError(f"{os.path.relpath(part, top)} is a link; the sleep log is never "
-                          "written through one")
+    crew_notify_hold.check_dir(top)
+    if os.path.islink(path):
+        raise OSError(f"{os.path.relpath(path, top)} is a link; the sleep log is never "
+                      "written through one")
     data = line.encode("utf-8")
     with _log_lock(path) as lock:
         if not lock.held and os.name == "nt":
@@ -296,23 +300,40 @@ def log_approval(top, ticket, decision):
     return ""
 
 
+def asleep_flag(sleep):
+    """`_decision`'s `asleep`: True asleep, None when the state cannot be
+    told (review r7: never folded into awake), else False."""
+    state = (sleep or {}).get("state")
+    return True if state == crew_sleep.ASLEEP else None if state == crew_sleep.UNKNOWN else False
+
+
+def asleep_word(result):
+    """The `asleep=` a questions recheck prints: `1`, `0`, or `?` for a
+    `result` decided while the sleep state could not be told."""
+    flag = result.get("asleep", False)
+    return "?" if flag is None else str(int(bool(flag)))
+
+
 def sleep_note(root, ticket, kind, text, taken_asleep=None):
     """(exit code, text) for `sleep-note`: one entry, only while asleep. With
-    `taken_asleep` (`1` or `0`, the `asleep=` the recheck of the answer
+    `taken_asleep` (`1`, `0` or `?`, the `asleep=` the recheck of the answer
     printed; review r6): the state when the answer was taken decides, so an
-    answer taken asleep is logged even when the window ended since, and one
-    taken awake never is."""
+    answer taken asleep -- or under the stricter could-not-tell policy (`?`,
+    review r7) -- is logged even when the window ended since, and one taken
+    awake never is."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     if kind not in ("answered", "note"):
         return 2, "refused: --kind is answered or note"
-    if taken_asleep not in (None, "0", "1"):
-        return 2, "refused: --taken-asleep is 1 or 0"
+    if taken_asleep not in (None, "0", "1", "?"):
+        return 2, "refused: --taken-asleep is 1, 0 or ?"
     conf = ap.settings(top)
     asleep = conf["sleep"]["state"] == crew_sleep.ASLEEP
     if taken_asleep == "0" or (taken_asleep is None and not asleep):
         return 2, f"refused: autopilot is not asleep ({conf['sleep']['state']}); nothing written"
-    if kind == "answered":
+    if taken_asleep == "?":
+        setting = "sleep could not be told when taken; the stricter could-not-tell policy applied"
+    elif kind == "answered":
         setting = (_setting(conf, "questions") if asleep
                    else "sleep.questions (asleep when taken; the window has ended since)")
     else:
@@ -329,9 +350,11 @@ def sleep_summary(root):
     and, once delivered (or with no notifier), one marker and the reported
     held pings removed, all under one lock taken before anything is read. A
     failed send keeps both pending. The summary is recorded
-    (`summary-delivered.json`) before it is sent and removed only after its
-    cleanup (or a failed send), so a cleanup that fails is finished by the
-    next run and the summary is never sent twice."""
+    (`summary-delivered.json`) as `sending` before it is sent, as `sent` only
+    once the send is confirmed, and removed only after its cleanup (or a
+    failed send), so a cleanup that fails is finished by the next run, a run
+    that died mid-send is said and printed by the next (review r7), and the
+    summary is never sent twice."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = ap.settings(top)["sleep"]["state"]
     if state not in (crew_sleep.AWAKE, crew_sleep.OFF):
@@ -346,12 +369,12 @@ def sleep_summary(root):
                        "is held); nothing marked or sent")
         unfinished = _finish_delivered(top)
         if unfinished:
-            return 1, unfinished
+            return 1, unfinished  # never a send in the same run: at most once
         code, out, text, held, upto = _summary(top)
         if code or out == NOTHING:
             return code, out
-        try:  # review r6: recorded BEFORE the send, so a send is never repeated
-            crew_notify_hold.write_delivered(top, upto, held)
+        try:  # review r6/r7: recorded `sending` BEFORE the send, so it is never repeated
+            crew_notify_hold.write_delivered(top, upto, held, crew_notify_hold.SENDING, out)
         except OSError as exc:
             return 1, out + (f"\nnotify: not sent - the summary could not be recorded first "
                              f"({type(exc).__name__}); nothing marked, reported again next run")
@@ -362,7 +385,11 @@ def sleep_summary(root):
                 return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
                                  "reported and sent again next run")
             return 1, out + (f"\nnotify: {word}, and its record could not be removed: the next "
-                             "run takes it as delivered and never sends it")
+                             "run says it may not have been delivered and never resends it")
+        try:  # `sent` only after a confirmed send (or no notifier at all)
+            crew_notify_hold.write_delivered(top, upto, held, crew_notify_hold.SENT, out)
+        except OSError:
+            pass  # left `sending`: the next run says so, prints it, and never resends
         left = _cleanup(top, text, upto, held)
         if left is None and not crew_notify_hold.clear_delivered(top):
             left = "the delivered record could not be removed"
@@ -383,10 +410,16 @@ def _cleanup(top, text, upto, held):
     return None
 
 
+MID_SEND = ("the last morning summary may not have been delivered (the run stopped "
+            "mid-send); not resent")
+
+
 def _finish_delivered(top):
-    """"" once no delivered summary is left half cleaned; else why not (exit 1).
-    The record is written before a send (review r6), so one left behind by a
-    run that died mid-send counts as delivered: at most once, never twice."""
+    """"" once no recorded summary is left half cleaned; else what to print
+    (exit 1). A `sent` record is finished quietly. A `sending` one was left
+    by a run that died before its send was confirmed (review r7): it is never
+    resent (at most once), but said, its text printed here, and cleaned up --
+    never taken as delivered in silence."""
     record, why = crew_notify_hold.read_delivered(top)
     if record is None:
         return (f"refused: {crew_notify_hold.DELIVERED_FILE} could not be read ({why}); "
@@ -396,9 +429,13 @@ def _finish_delivered(top):
     text, why = _read_log(top)
     left = (f"the sleep log could not be read ({why})" if text is None
             else _cleanup(top, text, record["upto"], record["keys"]))
-    if left is None and crew_notify_hold.clear_delivered(top):
+    if left is None and not crew_notify_hold.clear_delivered(top):
+        left = "its record could not be removed"
+    if record["state"] == crew_notify_hold.SENDING:
+        return f"{MID_SEND}\n{record['text']}" + (
+            "" if left is None else f"\n(its cleanup is not finished: {left}; said again next run)")
+    if left is None:
         return ""
-    left = left or "its record could not be removed"
     return f"refused: a delivered summary's cleanup is not finished ({left}); nothing sent"
 
 

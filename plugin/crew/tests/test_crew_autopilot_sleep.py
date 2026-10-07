@@ -2371,9 +2371,10 @@ def test_held_pings_belong_to_their_worktree(tmp_path, clock, wire):
         1, 0, True)
 
 
-@pytest.mark.parametrize("link", ["log", "folder"])
+@pytest.mark.parametrize("link", ["log", "folder", "work"])
 def test_the_sleep_log_is_never_written_through_a_link(tmp_path, clock, capsys, link):
-    """L-0653 review r6 (must-block): a link would append outside `.work`."""
+    """L-0653 review r6 (must-block): a link would append outside `.work`.
+    Review r7: `.work -> outside` refuses before any folder is made there."""
     clock(NIGHT)
     root = _approving(tmp_path)
     outside = tmp_path / "outside"
@@ -2384,16 +2385,21 @@ def test_the_sleep_log_is_never_written_through_a_link(tmp_path, clock, capsys, 
         if link == "log":
             os.makedirs(os.path.dirname(_log(root)), exist_ok=True)
             os.symlink(str(target), _log(root))
-        else:
+        elif link == "folder":
             os.makedirs(str(root / ".work"), exist_ok=True)
             os.symlink(str(outside), str(root / ".work" / "autopilot"))
+        else:  # the worktree's `.work` moved outside, and linked back
+            os.replace(str(root / ".work"), str(outside / "work"))
+            os.symlink(str(outside / "work"), str(root / ".work"))
     except (OSError, NotImplementedError):
         pytest.skip("cannot make a symlink here - NOT run")
+    before = sorted(os.listdir(str(outside / "work"))) if link == "work" else None
 
     code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")[0]
 
-    assert (code, target.read_text(encoding="utf-8"), os.listdir(str(outside))) == (
-        1, "keep\n", ["victim.txt"])
+    assert (code, target.read_text(encoding="utf-8"), sorted(os.listdir(str(outside))),
+            sorted(os.listdir(str(outside / "work"))) if link == "work" else None) == (
+        1, "keep\n", ["victim.txt"] + (["work"] if link == "work" else []), before)
 
 
 @pytest.mark.parametrize("taken,when,want", [("1", DAY, 0), ("0", NIGHT, 2), ("1", NIGHT, 0)])
@@ -2431,3 +2437,130 @@ def test_a_summary_is_recorded_before_it_is_sent(tmp_path, clock, wire, capsys, 
 
     assert (refused[0], "could not be recorded first" in refused[1], len(wire), again[0],
             _held(root)) == (1, True, 1, 0, 0)
+
+
+# --- review r7 (L-0653 / L-0656 / T-0053) ----------------------------------------------------
+
+class _BlindPath:  # pylint: disable=too-few-public-methods
+    """`os.path` as Windows sees a junction: `islink` is False."""
+
+    def __getattr__(self, name):
+        return getattr(os.path, name)
+
+    @staticmethod
+    def islink(_path):
+        return False
+
+
+class _BlindOs:  # pylint: disable=too-few-public-methods
+    """`os` as on Windows for a junction: no O_NOFOLLOW, and `path.islink` blind."""
+    path = _BlindPath()
+
+    def __getattr__(self, name):
+        if name == "O_NOFOLLOW":
+            raise AttributeError(name)
+        return getattr(os, name)
+
+
+def _outside_link(tmp_path, root):
+    """`.work/autopilot` -> an `outside` folder holding victim.txt; skips without symlinks."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "victim.txt").write_text("keep\n", encoding="utf-8")
+    os.makedirs(str(root / ".work"), exist_ok=True)
+    try:
+        os.symlink(str(outside), str(root / ".work" / "autopilot"))
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot make a symlink here - NOT run")
+    return outside
+
+
+def test_a_link_islink_cannot_see_is_still_refused(tmp_path, clock, capsys, monkeypatch):
+    """Review r7 (must-block): a Windows junction is no `islink` and O_NOFOLLOW
+    does not exist there; simulated on POSIX, the resolved path still refuses."""
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    outside = _outside_link(tmp_path, root)
+    monkeypatch.setattr(crew_autopilot_sleep, "os", _BlindOs())
+
+    code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")[0]
+
+    assert (code, os.listdir(str(outside))) == (1, ["victim.txt"])
+
+
+def test_held_pings_are_never_written_through_a_link(tmp_path, clock, wire, capsys):
+    """Review r7 (must-block): held.json, the summary record and its lock go
+    through the same check; a ping that cannot be held is sent."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    outside = _outside_link(tmp_path, root)
+
+    got = crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    code = _cmd(root, capsys, "sleep-summary")[0]
+
+    assert (got, len(wire), code, crew_notify_hold.count(str(root))[0],
+            os.listdir(str(outside))) == ("sent", 1, 1, None, ["victim.txt"])
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a junction exists only on Windows")
+def test_a_windows_junction_is_never_written_through(tmp_path, clock, wire, capsys):
+    """Review r7 (must-block): `mklink /J .work\\autopilot outside`."""
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    os.makedirs(str(root / ".work"), exist_ok=True)
+    made = subprocess.run(["cmd", "/c", "mklink", "/J", str(root / ".work" / "autopilot"),
+                           str(outside)], capture_output=True, check=False)
+    if made.returncode != 0:
+        pytest.skip(f"mklink /J failed ({made.returncode}) - NOT run")
+
+    note = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")[0]
+    got = crew_notify.send(str(root), "question", "Claude needs your permission")
+
+    assert (note, got, os.listdir(str(outside))) == (1, "sent", [])
+
+
+def test_an_answer_taken_while_sleep_cannot_be_told_reaches_the_log(tmp_path, clock, capsys):
+    """Review r7: the recheck prints `asleep=?`, never `asleep=0`, and
+    `--taken-asleep ?` logs it as taken under the could-not-tell policy."""
+    clock(NIGHT)
+    root = _repo(tmp_path, questions="self", sleep=dict(TIGHT, questions="risk"), risk="low")
+    _write(root / ".work" / "tickets" / T / "questions.md", QUESTIONS)
+
+    line = crew_autopilot.questions_text(crew_autopilot.questions_check(str(root), T))
+    word = line.split("asleep=")[1].split()[0]
+    code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "answered", "--text",
+                "Q1: Option A", "--taken-asleep", word)[0]
+    entries = crew_sleep.unreported(_log_text(root) or "")
+
+    assert (crew_autopilot.settings(str(root))["sleep"]["state"], word, code,
+            [e["setting"] for e in entries]) == (
+        "unknown", "?", 0,
+        ["sleep could not be told when taken; the stricter could-not-tell policy applied"])
+
+
+def test_a_run_that_died_mid_send_is_said_and_printed_never_resent(tmp_path, clock, wire,
+                                                                  capsys, monkeypatch):
+    """L-0656 review r7 (must-block): a record left `sending` is not taken as
+    delivered in silence: the next run says so, prints the summary, exits 1,
+    cleans up and sends nothing; the run after that is quiet."""
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
+    crew_autopilot.approve(str(root), T)
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    monkeypatch.setattr(crew_notify, "_telegram",
+                        lambda *a: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):  # the run dies inside the send
+        crew_autopilot_sleep.sleep_summary(str(root))
+    monkeypatch.setattr(crew_notify, "_telegram",
+                        lambda token, chat, text, loud: wire.append((text, loud)) or (True, "ok"))
+
+    code, out = _cmd(root, capsys, "sleep-summary")
+    after = _cmd(root, capsys, "sleep-summary")
+
+    assert (code, out.startswith(crew_autopilot_sleep.MID_SEND), "sleep summary: 1" in out,
+            "held pings: 1" in out, wire, _held(root), crew_sleep.unreported(_log_text(root)),
+            after) == (1, True, True, True, [], 0, [], (0, "no unreported sleep decisions\n"))

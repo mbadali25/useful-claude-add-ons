@@ -2148,7 +2148,7 @@ def _decision(top, ticket, key):
     elif key in sleep.get("applied", ()):
         note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
                 f"day value {day})")
-    return conf[key], dict(_ticket_risk(top, ticket), sleep=note, asleep=sleep.get("state") == crew_sleep.ASLEEP), [
+    return conf[key], dict(_ticket_risk(top, ticket), sleep=note, asleep=crew_autopilot_sleep.asleep_flag(sleep)), [
         w for w in conf["warnings"] if f"autopilot.{key} " in w]
 
 
@@ -2437,8 +2437,8 @@ def questions_check(root, ticket):
 def questions_text(result):
     risk = result["risk"] if result.get("known") else "high(unknown)"
     lines = [_line(valid=int(result["valid"]), action=result["action"],
-                   policy=result["policy"], risk=risk, questions=result["questions"],
-                   taken=len(result["taken"]), asleep=int(bool(result.get("asleep"))), reason=result["reason"])]
+                   policy=result["policy"], risk=risk, questions=result["questions"], taken=len(result["taken"]),
+                   asleep=crew_autopilot_sleep.asleep_word(result), reason=result["reason"])]
     lines += [f"problem: {p}" for p in result["problems"]]
     lines += [f"taken: {t}" for t in result["taken"]]
     lines += [f"warning: {w}" for w in result["warnings"]]

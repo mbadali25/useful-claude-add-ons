@@ -897,9 +897,37 @@ def test_the_handoff_reader_matches_discovery_on_names_and_bom(tmp_path, monkeyp
     bom = crew_goal_state.run_state(str(root), slug)["state"]
     os.replace(str(path), str(path.parent / "tmp-name"))
     os.replace(str(path.parent / "tmp-name"), str(path.parent / f"{slug.upper()}.json"))
+    # Review r7: the filesystem itself says whether it folds case (APFS and
+    # NTFS do, ext4 does not) -- never a guess from os.path.normcase.
+    folds = os.path.lexists(str(path))
+    real = crew_goal_state.run_state(str(root), slug)
+    # ...and a case-folding lookup is simulated, so the listdir check runs on
+    # every CI leg: lstat and open find `<SLUG>.json` for `<slug>.json`.
+    _fold_case(monkeypatch, crew_goal_state)
+    folded = crew_goal_state.run_state(str(root), slug)
 
-    assert (bom, crew_goal_state.run_state(str(root), slug.upper().lower())["state"]) == (
-        "running", "missing" if os.path.normcase("A") == "A" else "unknown")
+    assert (bom, real["state"], folded["state"], folded["reason"]) == (
+        "running", "unknown" if folds else "missing", "unknown",
+        "its file name is not the lowercase slug")
+
+
+def _fold_case(monkeypatch, module):
+    """`os.lstat` and `module.open` resolve a missing name case-insensitively."""
+    real_lstat = os.lstat
+
+    def folded(path):
+        try:
+            real_lstat(path)
+            return path
+        except FileNotFoundError:
+            pass
+        parent, name = os.path.split(str(path))
+        hits = [n for n in os.listdir(parent) if n.lower() == name.lower()]
+        return os.path.join(parent, hits[0]) if hits else path
+
+    monkeypatch.setattr(os, "lstat", lambda path, *a, **k: real_lstat(folded(path), *a, **k))
+    monkeypatch.setattr(module, "open", lambda path, *a, **k: open(  # pylint: disable=consider-using-with
+        folded(path), *a, **k), raising=False)
 
 
 def test_a_json_whose_name_is_not_a_slug_is_unknown_never_dropped(tmp_path):

@@ -55,17 +55,42 @@ MAX_SUMMARY = 3500
 def _path(root, name):
     """`<worktree>/.work/autopilot/<name>`: each worktree has its own sleep
     state and sleep log, so it holds, reports and clears only its own pings
-    (L-0656 review r5) -- never another worktree's, still asleep."""
+    (L-0656 review r5) -- never another worktree's, still asleep. Raises
+    OSError (could not tell) when the folder resolves anywhere else
+    (`check_dir`), so nothing is read or written through a link."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    check_dir(top)
     return os.path.join(top, ".work", "autopilot", name)
+
+
+def check_dir(top):
+    """Raise OSError unless `<top>/.work/autopilot` resolves to itself under
+    the real `top` (review r7). A symlink or a Windows junction (which
+    `os.path.islink` does not see and O_NOFOLLOW cannot refuse) at `.work`
+    or `.work/autopilot` would otherwise read or write outside the
+    worktree. It needs no folder to exist, so it runs before any makedirs;
+    writers run it again after theirs."""
+    folder = os.path.join(top, ".work", "autopilot")
+    want = os.path.normcase(os.path.join(os.path.realpath(top), ".work", "autopilot"))
+    if os.path.normcase(os.path.realpath(folder)) != want:
+        raise OSError(".work/autopilot resolves outside the worktree (a link or a junction); "
+                      "nothing is read or written through it")
+
+
+def _write_guarded(root, name, data):
+    """`_write_json` into `.work/autopilot`, re-checked once the folder exists."""
+    path = _path(root, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    check_dir(os.path.dirname(os.path.dirname(os.path.dirname(path))))
+    _write_json(path, data)
 
 
 def read(root):
     """`(record, why)`: the held record (`{"keys": {...}, "first", "last"}`,
     empty when absent), or None with why for one that is there and cannot be
     read -- never read as nothing held."""
-    path = _path(root, HELD_FILE)
     try:
+        path = _path(root, HELD_FILE)
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except FileNotFoundError:
@@ -126,7 +151,7 @@ def _record(root, material):
         record.update(keys=keys, last=stamp)
         record.setdefault("first", stamp)
         try:
-            _write_json(_path(root, HELD_FILE), record)
+            _write_guarded(root, HELD_FILE, record)
         except OSError as exc:
             _say(f"held-ping record not written ({type(exc).__name__}); "
                              "sending this ping")
@@ -146,7 +171,11 @@ def take(root, keys):
     """Remove `keys` (the held pings a delivered summary reported) from the
     record, keeping any held since. Returns how many were removed, or None
     when the record could not be read or written: it is then left as it is."""
-    with _Lock(_path(root, HELD_LOCK)) as lock:
+    try:
+        lock_path = _path(root, HELD_LOCK)
+    except OSError:
+        return None
+    with _Lock(lock_path) as lock:
         if not lock.held:
             return None
         record, _ = read(root)
@@ -157,7 +186,7 @@ def take(root, keys):
             del record["keys"][key]
         try:
             if record["keys"]:
-                _write_json(_path(root, HELD_FILE), record)
+                _write_guarded(root, HELD_FILE, record)
             elif os.path.lexists(_path(root, HELD_FILE)):
                 os.remove(_path(root, HELD_FILE))
         except OSError:
@@ -166,31 +195,38 @@ def take(root, keys):
 
 
 DELIVERED_FILE = "summary-delivered.json"
+SENDING, SENT = "sending", "sent"
 
 
 def read_delivered(root):
-    """`(record, why)`: `{"upto": int, "keys": [...]}` for a summary that was
-    delivered and whose marker or held-key removal has not finished, `{}`
-    when there is none, or None with why for one that cannot be read --
-    never read as none, so a delivered summary is never sent twice."""
-    path = _path(root, DELIVERED_FILE)
+    """`(record, why)`: `{"upto": int, "keys": [...], "state", "text"}` for a
+    summary whose send started (`sending`) or was confirmed (`sent`, or no
+    notifier at all) and whose marker or held-key removal has not finished,
+    `{}` when there is none, or None with why for one that cannot be read --
+    never read as none, so a summary is never sent twice (review r7)."""
     try:
+        path = _path(root, DELIVERED_FILE)
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except FileNotFoundError:
         return ({}, "") if not os.path.lexists(path) else (None, "it is a dangling link")
     except (OSError, ValueError) as exc:
         return None, type(exc).__name__
-    upto, keys = (data.get("upto"), data.get("keys")) if isinstance(data, dict) else (None, None)
-    if (isinstance(upto, bool) or not isinstance(upto, int) or upto < 0
-            or not isinstance(keys, list) or not all(isinstance(k, str) for k in keys)):
-        return None, "it is not {upto: int, keys: [str]}"
-    return {"upto": upto, "keys": keys}, ""
+    if not isinstance(data, dict):
+        data = {}
+    upto, keys, state, text = (data.get(k) for k in ("upto", "keys", "state", "text"))
+    shaped = (isinstance(upto, int) and not isinstance(upto, bool) and upto >= 0
+              and isinstance(keys, list) and all(isinstance(k, str) for k in keys))
+    if not shaped or state not in (SENDING, SENT) or not isinstance(text, str):
+        return None, "it is not {upto: int, keys: [str], state: sending|sent, text: str}"
+    return {"upto": upto, "keys": keys, "state": state, "text": text}, ""
 
 
-def write_delivered(root, upto, keys):
-    """Record a delivered summary before its cleanup (raises OSError)."""
-    _write_json(_path(root, DELIVERED_FILE), {"upto": int(upto), "keys": sorted(keys)})
+def write_delivered(root, upto, keys, state=SENDING, text=""):
+    """Record a summary: `sending` before the send, `sent` only once it is
+    confirmed (review r7). Raises OSError."""
+    _write_guarded(root, DELIVERED_FILE, {"upto": int(upto), "keys": sorted(keys),
+                                          "state": state, "text": text})
 
 
 def clear_delivered(root):
