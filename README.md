@@ -237,6 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 
 - **crew 1.1.15**: After an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line. When autopilot rejects a review round itself and plans again, it no longer approves a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
 - **crew 1.1.15**: The owner list knows hold, blocked, landing and needs-owner. `/crew:status` now counts held and blocked tickets on its `waiting` line (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
+- **crew 1.1.8**: The Stop gate health and QA audit readers move to `crew_health.py` (G2 landing). No behaviour change: two readers move out of `crew_state.py` so it stays under its 3,400-line pylint cap now that G0, G7 and G2 meet in it.
+- **crew 1.1.8**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
