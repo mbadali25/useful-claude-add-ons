@@ -12,6 +12,7 @@ or ~/.claude. `sabotage_wave.py`'s WAVE_MUTATIONS prove these can fail.
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -1041,8 +1042,11 @@ def test_lane_prompt_names_a_script_the_way_a_lanes_bash_reads_it(tmp_path, monk
 
     step = [line for line in _prompt(root).splitlines() if line[:2] == "1."][0]
 
+    # os.path.join is the runner's own (ntpath on Windows), so the POSIX reading is built
+    # from it: only the separator rewrite is under test here, not the join.
+    joined = os.path.join("C:\\crew\\scripts", "crew_wave.py")
     expected = {"nt": "python3 C:/crew/scripts/crew_wave.py lane-init ",
-                "posix": "python3 'C:\\crew\\scripts/crew_wave.py' lane-init "}[platform]
+                "posix": f"python3 {shlex.quote(joined)} lane-init "}[platform]
     assert expected in step, step
 
 
