@@ -124,8 +124,10 @@ import json, os, shutil, subprocess, sys, unicodedata
 # flavours choose the same environment for the same command:
 #   - normalise the command: drop every CR, then trailing newlines; a command
 #     that is then empty or whitespace deploys nothing;
-#   - a declared command matches when either one contains the other,
-#     literally, ignoring case (`*`, `?`, `[` are text, never wildcards);
+#   - a declared command matches when the command CONTAINS it (L-0689: a
+#     fragment of a declared command - `git rev-parse HEAD`, `development` -
+#     is no deploy), literally, ignoring case (`*`, `?`, `[` are text, never
+#     wildcards);
 #   - every key the gate reads (`environments`, `deploy`, and below
 #     `requires`, `rollback`, `rollbackReason`, `requireHuman`) is read
 #     ignoring case, as PowerShell property access does, and a map holding two
@@ -243,6 +245,15 @@ def matching(envs, strict):
             unreadable(f"environment `{name}` in .crew/verify.json has a "
                        "`requireHuman` that is a list or an object, not true or "
                        "false", 4)
+        # L-0648: the gate reads a `github` entry's sha rule, so a `github`
+        # that is not an object or a non-empty list of objects is malformed.
+        has_github = any(fold(k) == fold("github") for k in cfg)
+        github = get_ci(cfg, "github", None)
+        if strict and has_github and not isinstance(github, dict) and not (
+                isinstance(github, list) and github
+                and all(isinstance(e, dict) for e in github)):
+            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "
+                       "that is not an object or a non-empty list of objects", 4)
         declared = deploy_of(cfg)
         if isinstance(declared, str):
             # ONE command, not a list of them: iterating a bare string walked
@@ -256,9 +267,11 @@ def matching(envs, strict):
                            "`deploy` that is not a command or a list of "
                            "commands", 4)
             continue
-        # Substring both ways: the declared command may be run with extra
-        # flags, or wrapped. Deliberately generous - a missed match means no gate.
-        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))
+        # The command contains the declared text: run verbatim, with extra
+        # flags, or wrapped (`cd <dir> && <declared>`). Not the reverse (L-0689):
+        # a fragment of a declared command matched it, so `git rev-parse HEAD`
+        # wrote an in-flight marker for a deploy that never ran.
+        if any(isinstance(d, str) and d and fold(d) in fcmd
                for d in declared):
             hits.append(name)
     return hits
@@ -340,16 +353,6 @@ fi
 # (the Windows pre-flight of L-1503). bad_name refuses a name holding any
 # control character, so removing every CR cannot join or invent a name.
 ENVNAMES=$(crew_strip_cr "$ENVNAMES")
-[ -z "$ENVNAMES" ] && exit 0
-# Several matching environments are named together, `staging,prod`, in every
-# message, skip row and the in-flight marker; their requirements are checked
-# one by one below. (`,`, not `+`: verify-gate.sh greps the marker's name as
-# an ERE, where `+` is a quantifier.)
-ENVLIST=()
-while IFS= read -r line; do ENVLIST+=("$line"); done <<ENVS
-$ENVNAMES
-ENVS
-ENVNAME=$(IFS=,; printf '%s' "${ENVLIST[*]}")
 
 # Emergency lane: an open incident turns every block into a recorded skip.
 # Deliberately here rather than at the top of the script, so the checks still
@@ -364,6 +367,49 @@ block() {
   echo "PROMOTION BLOCKED ($ENVNAME): $1" >&2
   exit 2
 }
+
+# T-0062: read the command as a workflow dispatch too. `_promote_dispatch.py`
+# reads it, and every declared deploy, with T-0009's reader
+# (`crew_dispatch.dispatch_read`, the one cloud_guard.py uses), so
+# `gh workflow run <wf> -f environment=x` and its `gh api -X POST` REST twin
+# with `-f 'inputs[environment]=x'` reach the same environment. It prints
+# `env<TAB>name` per environment, `block<TAB>why` when it cannot tell (or a
+# declared workflow fits no single environment), and nothing when the command
+# is no dispatch of a declared deploy workflow - always nothing in a repo that
+# declares no dispatch deploy. It runs whether or not containment matched
+# (group review r2): `./deploy-dev.sh && gh api ... inputs[environment]=production`
+# matched development only, and production's preconditions went unchecked.
+# Its environments are added to containment's. A helper that FAILS is never
+# "nothing": that is the unknown-as-safe bug class.
+ENVNAME=${ENVNAMES:-workflow dispatch}
+ENVNAME=${ENVNAME//$'\n'/,}
+DISPATCH=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" PYTHONIOENCODING=utf-8 \
+  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \
+  || block "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
+DISPATCH=$(crew_strip_cr "$DISPATCH")
+while IFS=$'\t' read -r kind tok; do
+  case "$kind" in
+    block) block "$tok" ;;
+    env)
+      case $'\n'"$ENVNAMES"$'\n' in
+        *$'\n'"$tok"$'\n'*) ;;
+        *) ENVNAMES="${ENVNAMES:+$ENVNAMES
+}$tok" ;;
+      esac ;;
+  esac
+done <<DISPATCHED
+$DISPATCH
+DISPATCHED
+[ -z "$ENVNAMES" ] && exit 0
+# Several matching environments are named together, `staging,prod`, in every
+# message, skip row and the in-flight marker; their requirements are checked
+# one by one below. (`,`, not `+`: verify-gate.sh greps the marker's name as
+# an ERE, where `+` is a quantifier.)
+ENVLIST=()
+while IFS= read -r line; do ENVLIST+=("$line"); done <<ENVS
+$ENVNAMES
+ENVS
+ENVNAME=$(IFS=,; printf '%s' "${ENVLIST[*]}")
 
 if [ -n "$MAP_DIRTY" ]; then
   block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
@@ -396,6 +442,11 @@ if [ -n "$RUN_CWD" ]; then
 fi
 RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
+# Windows Python ends every record with CRLF and `$(...)` drops only the last
+# line's: a `cd` record followed by another kept its CR, so `cd "<dir>\r"`
+# resolved nowhere. _promote_tree.py turns a CR inside a token into `bad`, so
+# removing every CR here cannot join or invent a path.
+RECORDS=$(crew_strip_cr "$RECORDS")
 TREES=()
 RUNDIRS=()
 BARE=0
@@ -474,6 +525,21 @@ SHA=$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)
 FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 [ -z "$SHA" ] && block "'$TREE' has no commit at HEAD - cannot establish what is being deployed."
 
+# L-0648: a matched environment's `github` entry with a `shaInput` - the
+# command must give that input exactly once, as 40 lowercase hex, equal to
+# the full HEAD of the tree judged here. `_promote_github.py` decides it for
+# both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
+GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
+  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
+  --envs "$ENVNAME" -) \
+  || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
+GH_RULE=$(crew_strip_cr "$GH_RULE")
+while IFS=$'\t' read -r kind tok; do
+  [ "$kind" = block ] && block "$tok"
+done <<GHRULE
+$GH_RULE
+GHRULE
+
 # 4. clean tree - the tree being deployed and the tree the deploy runs in,
 # not the session's checkout. A status that FAILS is could-not-tell, never
 # clean; untracked files are listed whatever status.showUntrackedFiles says;
@@ -536,6 +602,11 @@ if os.path.exists(".work/PROMOTIONS.md"):
     rows = open(".work/PROMOTIONS.md", encoding="utf-8", errors="replace").read()
 
 def passed(name, sha):
+    """The NEWEST row for `name` and `sha` decides (L-0665): rows are appended,
+    so file order is time order, and a later pass clears an earlier failure
+    while a later failure revokes an earlier pass. True / False for that row
+    all-pass or not; None when there is no row."""
+    newest = None
     for line in rows.splitlines():
         if "|" not in line:
             continue
@@ -544,8 +615,8 @@ def passed(name, sha):
             continue
         # when | env | sha | smoke | regression | verify | by
         if cells[1] == name and cells[2].startswith(sha[:7]):
-            return all(c.lower() == "pass" for c in cells[3:6])
-    return False
+            newest = all(c.lower() == "pass" for c in cells[3:6])
+    return newest
 
 # The union rule: every matched environment's requirements, each in its own
 # terms (its upstreams, its runbook, its approval marker). With several, each
@@ -554,9 +625,14 @@ for env in envs:
     cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
     before = len(out)
     for upstream in cfg.get("REQUIRES", []):
-        if not passed(upstream, sha):
+        verdict = passed(upstream, sha)
+        if verdict is None:
             out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
                        f"Run /crew:promote {upstream} first, and let it record the result.")
+        elif not verdict:
+            out.append(f"'{upstream}' has rows for sha {sha} in .work/PROMOTIONS.md, but the "
+                       "newest row is not all-pass: a later failure revokes an earlier pass. "
+                       f"Run /crew:promote {upstream} again, and let it record the result.")
 
     # Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
     # It now means "nobody said". The only way to deploy with no rollback plan is

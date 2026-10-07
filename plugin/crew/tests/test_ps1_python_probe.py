@@ -55,7 +55,8 @@ needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the p
 # unchanged, because a harness PR cannot carry them (scripts/check-tooling-pr.py).
 _HARNESS_CARRIERS = ("completion-audit", "scope-guard", "approval-hook", "verify-gate")
 _OTHER_CARRIERS = ("role-write-guard", "crew-context", "platform-sync", "cloud-guard",
-                   "handoff-read", "notify", "handoff-write", "context-watch", "auto-clear")
+                   "handoff-read", "notify", "handoff-write", "context-watch", "auto-clear",
+                   "promote-gate")
 _CARRIERS = _HARNESS_CARRIERS + _OTHER_CARRIERS
 _NAMES = ("python3", "python", "py")
 
