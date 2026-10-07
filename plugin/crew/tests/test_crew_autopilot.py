@@ -312,20 +312,21 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     assert _next(root)["phase"] == "done"
 
 
-def test_next_accept_review_names_the_refresh_before_the_next_round(tmp_path):
-    """T-0043 FIX 1: the human who fixes after a FINDINGS stop is told to run
-    the refresh check (and commit what it names) before the next round."""
+def test_next_accept_review_names_only_the_owners_decision(tmp_path):
+    """L-0666 (over T-0043's wording): the FINDINGS stop asks the owner to accept or
+    reject and names the policy that fixes unattended; it hands over no refresh and
+    no review round."""
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
 
     got = _next(root)
     reason = got["reason"]
-    refresh = f"crew_refresh_check.py --root . --ticket {T}"
 
-    assert (got["phase"], got["stop"], got["command"]) == ("accept-review", True, "")
-    assert refresh in reason and f"/crew:review {T}" in reason
-    assert reason.index(refresh) < reason.index(f"/crew:review {T}")
-    assert "review_ledger.py --accept --by <owner>" in reason
+    assert (got["phase"], got["stop"], got["command"], got["decision"]) == (
+        "accept-review", True, "", "accept-review")
+    assert ("review_ledger.py --accept --by <owner>" in reason,
+            "autopilot.reviewPolicy fix-and-rereview" in reason,
+            "crew_refresh_check.py" in reason, f"/crew:review {T}" in reason) == (True, True, False, False)
 
 
 @pytest.mark.parametrize("refresh,expected", [
@@ -444,8 +445,8 @@ def test_next_eligible_round_without_receipt_names_auto_accept(tmp_path):
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "review_ledger.py --auto-accept" in got["reason"]) == (
-        "accept-review", True, True), got["reason"]
+    assert (got["phase"], got["stop"], "the --auto-accept guard passes" in got["reason"],
+            "--auto-accept --follow-up" in got["reason"]) == ("accept-review", True, True, False), got["reason"]
 
 
 def test_next_ineligible_findings_quote_the_refusal(tmp_path):

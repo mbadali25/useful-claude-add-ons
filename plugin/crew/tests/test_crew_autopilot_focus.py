@@ -1024,7 +1024,7 @@ def test_drift_cli_prints_a_stop(tmp_path, capsys):
     crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
     out = capsys.readouterr().out
 
-    assert out.startswith("phase=drift stop=1 command= reason=drift: ")
+    assert out.startswith("phase=drift stop=1 command= decision=look reason=drift: ")
 
 
 def test_unfocused_next_unchanged(tmp_path, monkeypatch):

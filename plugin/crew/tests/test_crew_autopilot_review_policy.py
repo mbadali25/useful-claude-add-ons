@@ -162,7 +162,8 @@ def test_policy_stop_keeps_todays_reason(tmp_path):
     stop, missing = _today("stop", tmp_path), _today(None, tmp_path)
 
     assert (stop["phase"], stop["stop"], stop["reason"] == missing["reason"],
-            "reviewPolicy" in stop["reason"]) == ("accept-review", True, True, False)
+            "does not fix it" in stop["reason"], "could not be told" in stop["reason"]) == (
+        "accept-review", True, True, False, False)
 
 
 @pytest.mark.parametrize("policy", ["clean-only"])

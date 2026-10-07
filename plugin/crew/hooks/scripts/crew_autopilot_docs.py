@@ -119,8 +119,7 @@ def before_review(top, ticket, answer):
     tried = _docs_attempts(top, ticket)
     if tried >= DOCS_ATTEMPTS:
         return answer("docs", True, f"documents still MISSING after {tried} "
-                      f"/crew:docs runs: {docs['reason']} - a human looks",
-                      f"/crew:docs {ticket}")
+                      f"/crew:docs runs: {docs['reason']} - a human looks")  # L-0666: no command
     found = answer("docs", False, f"before the refresh and the next review round - "
                    f"{docs['reason']}", f"/crew:docs {ticket}")
     return dict(found, docs_rerun=tried > 0)

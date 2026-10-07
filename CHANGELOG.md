@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.15: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
+
+- **Summary.** When `/crew:autopilot` stops, it now says which decision is yours (accept the
+  review, approve the plan, answer a question, look at something it could not tell, ...) and no
+  longer tells you to run a refresh, a graph build, the next review round or a crew helper.
+- **decision.** Every stop `next` returns carries `decision`, one of a closed list
+  (`crew_autopilot_stops.OWNER_DECISIONS`; `crew_autopilot.py stops --json` lists it as
+  `decisions`), and the CLI prints `decision=<id>` before `reason=` on a stop. A stop's command is
+  empty or that decision's own.
+- **Reworded.** The FINDINGS stop asks only for the owner's accept or reject and names
+  `autopilot.reviewPolicy` (it no longer names the refresh check and the next round, T-0043's
+  wording); the ticket-mismatch stop names only `crew_ticket.py activate`; an unsettled-artifact
+  stop lists only what a refresh cannot settle; the `docs` and size-check stops carry no command;
+  the max-phases stop's command is `/crew:autopilot <id>`.
+- **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
+  site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
+
 ### Added — crew 1.1.15: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
 
 - **Summary.** A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy:

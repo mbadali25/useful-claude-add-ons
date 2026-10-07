@@ -272,6 +272,7 @@ import crew_autopilot_gates
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
+import crew_autopilot_stops
 import crew_config
 import crew_ship
 import crew_sleep
@@ -941,16 +942,13 @@ def _refresh_state(root, ticket):
         return {"state": UNCOMMITTED, "command": "", "reason": result.get("reason", ""),
                 "paths": [p for p in result.get("uncommitted") or [] if isinstance(p, str)]}
     pending = [a for a in result.get("artifacts") or [] if a.get("status") in (STALE, UNKNOWN)]
-    named = [f"{a.get('kind')} {a.get('name')}: {a.get('status')} - {a.get('reason')}"
-             + (f" (refresh: {a.get('command')})" if _settles(a) else " (a refresh cannot "
-                "settle this)") for a in pending]
-    reason = (f"refresh check says {status}: {result.get('reason', '')}"
-              + ("; " + "; ".join(named) if named else ""))
+    reason, unsettled, named = (crew_autopilot_stops.refresh_reason(status, result, pending, _settles, stop)
+                                for stop in (None, "unsettled", "named"))  # L-0666: stops name no command
     overall_unknown = status == UNKNOWN and not any(a.get("status") == UNKNOWN for a in pending)
     if status not in (STALE, UNKNOWN) or not pending or overall_unknown \
             or not all(_settles(a) for a in pending):
-        return {"state": UNSETTLED, "command": "", "reason": reason}
-    return {"state": STALE, "command": pending[0]["command"], "reason": reason}
+        return {"state": UNSETTLED, "command": "", "reason": unsettled}
+    return {"state": STALE, "command": pending[0]["command"], "reason": reason, "stop_reason": named}
 
 
 def _header_only_change(contract, receipt):
@@ -988,9 +986,10 @@ def _phase(root, ticket, policy=True):
 
     source = None
 
-    def answer(phase, stop, reason, command=""):
-        return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
-                "command": command, "evidence": list(evidence), "index_source": source}
+    def answer(phase, stop, reason, command="", decision=None):  # L-0666: a stop's decision
+        return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason, "command": command,
+                "evidence": list(evidence), "index_source": source,
+                **crew_autopilot_stops.decided(phase, stop, decision)}
 
     there, why = _main_folder(top, ticket)
     if there or why:
@@ -1299,7 +1298,7 @@ def _auto_replan_route(top, ticket, found, answer):
                           f"itself (replan {got['used'] + 1} of {got['cap']})",
                           AUTO_REJECT.format(ticket=ticket))
         if got["capped"]:
-            return dict(found, phase="auto-replan-cap", reason=(
+            return dict(found, phase="auto-replan-cap", decision="replan", reason=(
                 f"{got['reason']} ({_successor_rows(got['successors'])}) - the owner "
                 f"decides. {found['reason']}"))
     if found["phase"] == "replan" and found["stop"]:
@@ -1382,7 +1381,7 @@ def _review_phase(top, ticket, evidence, answer):
     if latest.get("status") != "completed":
         return answer("review", True, f"round {latest.get('round')} is reserved with no "
                       "result: a reviewer is running or died, and another /crew:review "
-                      "spends the next round - a human decides")
+                      "spends the next round - a human decides", decision="spend-round-or-replan")
     receipt = ledger.get("receipt") or {}
     # L-0510: the ledger's one predicate decides whether a FINDINGS receipt
     # stands (owner-accepted, or auto-accepted with its row still passing the
@@ -1394,21 +1393,19 @@ def _review_phase(top, ticket, evidence, answer):
         data, state = review_ledger.load(ledger["path"])
         refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
                    else f"ledger is {state}: could not tell")
-        how = ("the --auto-accept guard passes but no receipt was written: run "
-               "review_ledger.py --auto-accept --follow-up <id> (/crew:review step 3), or "
-               if refusal is None else f"review_ledger.py --auto-accept refuses it ({refusal}): ")
-        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; "
-                      f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
-                      "or fixes, then reruns crew_refresh_check.py --root . --ticket "  # T-0043
-                      f"{ticket} until it says fresh (commit what each `refresh with` writes and "
-                      f"each `uncommitted:` path; unknown is a stop), then /crew:review {ticket}" + (fix or ""))
+        how = ("the --auto-accept guard passes but no receipt was written; " if refusal is None
+               else f"review_ledger.py --auto-accept refuses it ({refusal}); ")  # L-0666: decisions only
+        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; {how}the owner "
+                      "accepts it with review_ledger.py --accept --by <owner>, or rejects it; "
+                      "autopilot.reviewPolicy fix-and-rereview makes autopilot fix and re-review a "
+                      "round with one left itself" + (fix or ""))
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
                       f"({message}): /crew:review would reserve a third round and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
-                      "human reverts the edit that staled the receipt, or replans")
+                      "human reverts the edit that staled the receipt, or replans", decision="revert-or-replan")
     if latest.get("refunded") is True and not ok:
         # Marked so `next_phase` does not read this rerun as "no progress"
         # (its docstring says what bounds it). Only the review itself: a
@@ -1421,12 +1418,12 @@ def _review_phase(top, ticket, evidence, answer):
         if ok or message.startswith(RECEIPT_STALE):
             return _toward_review(top, ticket, answer, ok, message)
         return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS and accepted, "
-                      f"but its receipt is not confirmed stale ({message}) - a human looks")
+                      f"but its receipt is not confirmed stale ({message}) - a human looks", decision="look")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
                       "finish reading, and it cannot be accepted - a human reruns "
-                      "/crew:review (spending a round) or replans")
+                      "/crew:review (spending a round) or replans", decision="spend-round-or-replan")
     return _toward_review(top, ticket, answer, ok, message)
 
 
@@ -1452,7 +1449,7 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     if refresh["state"] != FRESH:
         return answer("stale-after-review", True, "an artifact is stale after an "
                       "accepted review; refreshing now would stale the receipt - human "
-                      f"decides. {refresh['reason']}")
+                      f"decides. {refresh.get('stop_reason', refresh['reason'])}")
     return crew_autopilot_docs.after_review(top, ticket, answer) or answer(
         "done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
@@ -1462,7 +1459,7 @@ def _inflight(root, ticket, runner, result):  # T-0049: next_stop's stop or None
         stop = importlib.import_module("crew_inflight").next_stop(root, ticket, runner)
     except Exception as exc:  # pylint: disable=broad-except
         stop = {"phase": "in-flight", "command": "", "reason": f"in-flight: unknown - {ticket}: {_failure(exc)}"}
-    return dict(result, stop=True, **stop) if stop else None
+    return dict(result, stop=True, decision="look", **stop) if stop else None
 
 
 def _commit_refresh(ticket, answer, paths):
@@ -1515,20 +1512,20 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     active, where, broken = crew_ticket.resolve_active(
         crew_ticket.toplevel(root) or os.path.abspath(root))
     if broken or active != ticket:
-        return dict(result, stop=True, reason=(
+        return dict(result, stop=True, decision="activate-ticket", command="", reason=(
             f"ticket mismatch: the scope guard and completion audit judge edits by "
             f"{active or 'no ticket'} ({where}), not {ticket}, so {result['command']} would "
-            f"run under the wrong approval and Touch - run crew_autopilot.py resume, or the "
-            f"human runs crew_ticket.py activate --ticket {ticket}"))
+            f"run under the wrong approval and Touch - the owner re-points this worktree: "
+            f"crew_ticket.py activate --ticket {ticket}"))
     if max_phases is not None and phases_run >= max_phases:
-        return dict(result, stop=True, reason=(
+        return dict(result, stop=True, decision="continue", command=_drive(ticket), reason=(
             f"autopilot.maxPhases ({max_phases}) reached after {phases_run} phases; next "
             f"would be {result['phase']} - run /crew:autopilot {ticket} again"))
     if last_command and result["command"] == last_command and not rerun:
-        return dict(result, stop=True, reason=(
+        return dict(result, stop=True, decision="look", command="", reason=(
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))
-    return result
+    return {key: value for key, value in result.items() if key != "decision"}  # L-0666: stops only
 
 
 # `next`'s phases that stop yet are not a stop for the loop: the T-0010 policy
@@ -1548,7 +1545,7 @@ def _drift(root, ticket, result):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = focus_state(top)
     if state["unknown"]:
-        return dict(result, phase="drift", stop=True, command="", reason=(
+        return dict(result, phase="drift", stop=True, command="", decision="look", reason=(
             f"drift: whether {ticket} is focused, and so whether its tree must stay inside "
             f"Touch, could not be told: {state['unknown']}"))
     if state["focus"] != ticket:
@@ -1558,14 +1555,14 @@ def _drift(root, ticket, result):
             return None
         ok, lines = importlib.import_module("completion_audit").audit(top, ticket)
     except Exception as exc:  # pylint: disable=broad-except
-        return dict(result, phase="drift", stop=True, command="", reason=(
+        return dict(result, phase="drift", stop=True, command="", decision="look", reason=(
             f"drift: the audit could not run ({_failure(exc)}), so whether {ticket}'s tree "
             "stays inside Touch cannot be told"))
     if ok:
         return None
     shown = " ".join(" ".join(str(line).split()) for line in list(lines)[:2]) or (
         "the completion audit failed and gave no reason")
-    return dict(result, phase="drift", stop=True, command="", reason=(
+    return dict(result, phase="drift", stop=True, command="", decision="look", reason=(
         f"drift: {shown} - revert them, or file the finding (crew_autopilot.py focus "
         f"--findings --ticket {ticket}) and amend Touch through /crew:plan"))
 
@@ -2472,7 +2469,8 @@ def stops():
     def rows(pairs):
         return [{"id": slug, "text": text} for slug, text in pairs]
     return {"autonomous": rows(crew_state.AUTONOMOUS_STOPS), "fixed": rows(FIXED_STOPS),
-            "human": rows(HUMAN_STOPS), "procedure": rows(PROCEDURE_STOPS)}
+            "human": rows(HUMAN_STOPS), "procedure": rows(PROCEDURE_STOPS),
+            "decisions": rows(row[:2] for row in crew_autopilot_stops.OWNER_DECISIONS)}  # L-0666
 
 
 def _existing_ticket(top, token):
@@ -3394,9 +3392,9 @@ def main(argv):
         except Exception as exc:  # pylint: disable=broad-except
             # A crash cannot tell the phase: it is a stop, never no answer.
             result = {"ticket": args.ticket, "phase": "invalid", "stop": True,
-                      "command": "", "reason": _failure(exc), "evidence": []}
-        text = _line(phase=result["phase"], stop=int(result["stop"]),
-                     command=result["command"], reason=result["reason"])
+                      "command": "", "reason": _failure(exc), "evidence": [], "decision": "look"}
+        text = _line(phase=result["phase"], stop=int(result["stop"]), command=result["command"],
+                     **({"decision": result["decision"]} if result["stop"] else {}), reason=result["reason"])
     if args.json and args.action != "deploy-allowed":
         # status holds STATUS_MAX_LINES as JSON too: one line, nothing dropped.
         text = json.dumps(result, indent=None if args.action == "status" else 2)

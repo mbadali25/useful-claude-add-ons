@@ -2932,6 +2932,9 @@ gate reaching in afterward to kill what a rule left running.
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
+Every stop names the owner decision it asks for (`decision=`, L-0666) and
+never a refresh, a graph build or a review round autopilot runs itself; no
+setting changes that.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.

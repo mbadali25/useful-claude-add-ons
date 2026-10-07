@@ -1593,6 +1593,19 @@ Obsidian vault). A CLI the commands call, not a hook.
   with its cause appended, and `stop`/`clean-only` keep its reason byte for byte.
   `PROCEDURE_STOPS` gains `fix-refused`
   (`plugin/crew/hooks/scripts/crew_autopilot.py:351`). The mutations are L-0668.
+- DERIVED (L-0666; measured on this tree): every `next` stop carries `decision`.
+  `_phase`'s `answer` adds it from the phase (`crew_autopilot_stops.decided`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:992`; `BY_PHASE`, else `look`)
+  unless the site names one; `next_phase`'s guard stops name theirs
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1515`), and a phase that runs
+  carries none. `_refresh_state` builds three reasons
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:945`): only the non-stop
+  `refresh` phase names commands. `stops()` gains `decisions`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2473`). JUDGEMENT: the stop
+  contract is the test, `plugin/crew/tests/test_crew_autopilot_stop_contract.py`,
+  which walks `crew_autopilot.py` and the `crew_autopilot_*.py` modules handed
+  `answer`; `crew_ship.merged_phase`'s stops reach `next` through the same
+  `answer` but its module is not walked. The mutations are L-0668.
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a
