@@ -1825,6 +1825,47 @@ def test_watch_one_call_ends_inside_the_bash_limit(tmp_path, monkeypatch):
     assert clock["now"] - start < 600
 
 
+def _link_promotions(root, target):
+    """PROMOTIONS.md as a symlink to `target`; skipped where the host cannot
+    make one (Windows without SeCreateSymbolicLink)."""
+    (root / ".work").mkdir(exist_ok=True)
+    link = root / ".work" / "PROMOTIONS.md"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot make a symlink here: {exc}")
+    return link
+
+
+@_scenario
+def test_record_a_dangling_promotions_symlink_is_could_not_tell(tmp_path, monkeypatch):
+    """Group review r2: a dangling PROMOTIONS.md symlink read as an absent
+    log, and the replace put a fresh file where the link was. It is exit 3
+    now, and the link is left as it was."""
+    root = _record_repo(tmp_path, monkeypatch)
+    link = _link_promotions(root, tmp_path / "gone.md")
+    gh = FakeGh({("run", "view"): (0, _FAIL_LOG)})
+    code, lines = _run(monkeypatch, gh, "record", "--root", str(root), "--env", "staging")
+    assert code == 3, lines
+    assert lines[-1] == "result=could-not-tell reason=promotions-unreadable"
+    assert link.is_symlink() and not (tmp_path / "gone.md").exists()
+
+
+@_scenario
+def test_record_through_a_promotions_symlink_keeps_the_link(tmp_path, monkeypatch):
+    """Group review r2: a PROMOTIONS.md symlink is written through, so the
+    next record still lands in the file it points at."""
+    root = _record_repo(tmp_path, monkeypatch)
+    target = tmp_path / "shared-promotions.md"
+    target.write_text(_PREV, encoding="utf-8")
+    link = _link_promotions(root, target)
+    code, lines, _gh, _text = _record(monkeypatch, root)
+    assert code == 0, lines
+    assert link.is_symlink()
+    body = target.read_text(encoding="utf-8")
+    assert body.startswith(_PREV) and f"- deploy staging {_head(root)} github" in body
+
+
 @_scenario
 def test_record_an_unreadable_promotions_file_is_could_not_tell(tmp_path, monkeypatch):
     """A PROMOTIONS.md that cannot be read is exit 3 and left as it was; it

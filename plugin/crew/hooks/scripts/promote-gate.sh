@@ -368,32 +368,38 @@ block() {
   exit 2
 }
 
-# T-0062: containment matched nothing, so read the command as a workflow
-# dispatch. `_promote_dispatch.py` reads it, and every declared deploy, with
-# T-0009's reader (`crew_dispatch.dispatch_read`, the one cloud_guard.py
-# uses), so `gh workflow run <wf> -f environment=x` and its `gh api -X POST`
-# REST twin with `-f 'inputs[environment]=x'` reach the same environment. It
-# prints `env<TAB>name` per environment, `block<TAB>why` when it cannot tell
-# (or a declared workflow fits no single environment), and nothing when the
-# command is no dispatch of a declared deploy workflow - always nothing in a
-# repo that declares no dispatch deploy. A helper that FAILS is never
+# T-0062: read the command as a workflow dispatch too. `_promote_dispatch.py`
+# reads it, and every declared deploy, with T-0009's reader
+# (`crew_dispatch.dispatch_read`, the one cloud_guard.py uses), so
+# `gh workflow run <wf> -f environment=x` and its `gh api -X POST` REST twin
+# with `-f 'inputs[environment]=x'` reach the same environment. It prints
+# `env<TAB>name` per environment, `block<TAB>why` when it cannot tell (or a
+# declared workflow fits no single environment), and nothing when the command
+# is no dispatch of a declared deploy workflow - always nothing in a repo that
+# declares no dispatch deploy. It runs whether or not containment matched
+# (group review r2): `./deploy-dev.sh && gh api ... inputs[environment]=production`
+# matched development only, and production's preconditions went unchecked.
+# Its environments are added to containment's. A helper that FAILS is never
 # "nothing": that is the unknown-as-safe bug class.
-if [ -z "$ENVNAMES" ]; then
-  ENVNAME="workflow dispatch"
-  DISPATCH=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" PYTHONIOENCODING=utf-8 \
-    "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \
-    || block "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
-  DISPATCH=$(crew_strip_cr "$DISPATCH")
-  while IFS=$'\t' read -r kind tok; do
-    case "$kind" in
-      block) block "$tok" ;;
-      env) ENVNAMES="${ENVNAMES:+$ENVNAMES
+ENVNAME=${ENVNAMES:-workflow dispatch}
+ENVNAME=${ENVNAME//$'\n'/,}
+DISPATCH=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" PYTHONIOENCODING=utf-8 \
+  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \
+  || block "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
+DISPATCH=$(crew_strip_cr "$DISPATCH")
+while IFS=$'\t' read -r kind tok; do
+  case "$kind" in
+    block) block "$tok" ;;
+    env)
+      case $'\n'"$ENVNAMES"$'\n' in
+        *$'\n'"$tok"$'\n'*) ;;
+        *) ENVNAMES="${ENVNAMES:+$ENVNAMES
 }$tok" ;;
-    esac
-  done <<DISPATCHED
+      esac ;;
+  esac
+done <<DISPATCHED
 $DISPATCH
 DISPATCHED
-fi
 [ -z "$ENVNAMES" ] && exit 0
 # Several matching environments are named together, `staging,prod`, in every
 # message, skip row and the in-flight marker; their requirements are checked

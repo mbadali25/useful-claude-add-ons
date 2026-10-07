@@ -346,6 +346,24 @@ def test_a_failed_probe_of_promotions_is_deploy_target(tmp_path, monkeypatch):
     assert "promotions-unreadable" in got["reason"]
 
 
+def test_a_failed_probe_of_the_map_is_deploy_target(tmp_path, monkeypatch):
+    """Group review r2: `lexists` read an lstat of .crew/verify.json that
+    failed (not "not found") as no map, so the phase closed as though no
+    github environment was declared."""
+    import os  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, monkeypatch)
+    real = os.lstat
+
+    def denied(path, *a, **k):
+        if str(path).endswith("verify.json"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *a, **k)
+    monkeypatch.setattr(crew_autopilot_deploy.os, "lstat", denied)
+    got = _after(root)
+    assert (got["phase"], got["stop"]) == ("deploy-target", True)
+    assert "verify-json-unreadable" in got["reason"]
+
+
 def _two_entry_env(second):
     """staging with two `github` entries, the second one `second`:
     /crew:promote dispatches both, so both are judged (group review r1)."""

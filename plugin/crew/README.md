@@ -2948,8 +2948,8 @@ working map and, when that is dirty, the committed map alike (L-1503):
   that environment
 
 **A workflow dispatch of a declared deploy is that deploy, in either spelling
-(T-0062, the Bash tool).** When containment matches nothing and a declared
-`deploy` is a GitHub workflow dispatch, `promote-gate.sh` reads the command
+(T-0062, the Bash tool).** When a declared `deploy` is a GitHub workflow
+dispatch, `promote-gate.sh` reads the command, whatever containment matched,
 with T-0009's dispatch reader (`crew_dispatch.dispatch_read`, through
 `_promote_dispatch.py`; no second parser). `gh workflow run deploy.yml -f
 ref=<sha> -f environment=production` (inputs reordered) and `gh api -X POST

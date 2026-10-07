@@ -94,8 +94,14 @@ def _targets(top, sha):
     then those whose class cannot be told, then prod. Raises ValueError for
     a map that cannot be read."""
     path = os.path.join(top, ".crew", "verify.json")
-    if not os.path.lexists(path):
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return []
+    except OSError as exc:
+        # Group review r2: `lexists` read a probe that failed as "no map", so
+        # the phase closed as though no github environment was declared.
+        raise ValueError(f"verify-json-unreadable: {path}: {exc}") from exc
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as fh:
             envs = crew_ghdeploy.load_map(fh.read())

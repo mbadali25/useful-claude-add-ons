@@ -189,6 +189,30 @@ def test_the_helper_failing_blocks(flavour, repo, tmp_path, monkeypatch):
     assert repo.in_flight() is None
 
 
+@pytest.mark.parametrize("lead", ["script", "declared-dispatch"])
+def test_a_contained_deploy_does_not_hide_a_second_dispatch(flavour, tmp_path, lead):
+    """Group review r2 (BLOCK): containment matched the dev deploy, so the
+    dispatch reader never ran and a production dispatch in the same command
+    was gated as dev only. Now both are gated: the prod preconditions block
+    it. `declared-dispatch` leads with a declared deploy the reader cannot
+    read (`$(git rev-parse HEAD)`), which is read again without it."""
+    made = tree.Repo(tmp_path)
+    dev = "./deploy-dev.sh" if lead == "script" else DEV
+    doc = json.loads(json.dumps(MAP))
+    doc["environments"]["dev"]["deploy"] = dev
+    _write_map(made, doc)
+    made.promotions(("dev", made.main_sha))
+    sep = " && " if flavour == "sh" else "; "
+    code, err = gate(made, dev + sep + REST.format(env="production"), flavour)
+    assert code == 2, err
+    assert "PROMOTION BLOCKED (dev,prod" in err, err
+    assert made.in_flight() is None
+    _approve(made, "prod")
+    code, err = gate(made, dev + sep + REST.format(env="production"), flavour)
+    assert code == 0, err
+    assert made.in_flight() == f"dev,prod {made.main_sha}"
+
+
 # --- must-allow -------------------------------------------------------------
 
 def test_the_rest_spelling_of_a_dev_deploy_runs(flavour, repo):
@@ -262,6 +286,20 @@ def test_ps1_without_python_blocks_a_dispatch_the_map_declares(repo, tmp_path, m
     assert code == 2, err
     assert "python could not be found" in err and "This is not a pass" in err
     assert repo.in_flight() is None
+
+
+@_PS1_ONLY
+def test_ps1_without_python_blocks_a_dispatch_beside_a_contained_deploy(tmp_path, monkeypatch):
+    """Group review r2: with no python, a dispatch after a declared deploy
+    containment matched still blocks; only the declared text is set aside."""
+    made = tree.Repo(tmp_path / "r")
+    doc = json.loads(json.dumps(MAP))
+    doc["environments"]["dev"]["deploy"] = "./deploy-dev.sh"
+    _write_map(made, doc)
+    code, err = _gate_without_python(made, "./deploy-dev.sh; " + REST.format(env="production"),
+                                     tmp_path, monkeypatch)
+    assert code == 2, err
+    assert "python could not be found" in err, err
 
 
 @_PS1_ONLY

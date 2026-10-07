@@ -2,8 +2,9 @@
 """promote-gate's dispatch matcher (T-0062): is a workflow dispatch the deploy
 of an environment `.crew/verify.json` declares?
 
-`promote-gate.sh` runs this only when its containment match found nothing. It
-reads the command and every declared `deploy` with T-0009's dispatch reader,
+Both promote gates run this after their containment match, whatever it found,
+and gate every environment it names too (group review r2). It reads the
+command and every declared `deploy` with T-0009's dispatch reader,
 `crew_dispatch.dispatch_read` -- the reader `cloud_guard.py` uses, never a
 second one -- so `gh workflow run <wf> -f environment=x` and its REST twin, `gh api -X POST`
 on the workflow's dispatch endpoint with `-f 'inputs[environment]=x'`, reach
@@ -226,13 +227,51 @@ def working_envs():
         return get_ci(json.load(fh), "environments", {})
 
 
+def without_declared(command, maps):
+    """`command` with every declared deploy it contains (ignoring case, as
+    the gates' containment match reads it) replaced by the word `true`."""
+    texts = set()
+    for _label, envs in maps:
+        for cfg in envs.values():
+            if isinstance(cfg, dict):
+                deploys = get_ci(cfg, "deploy", [])
+                deploys = [deploys] if isinstance(deploys, str) else deploys
+                if isinstance(deploys, list):
+                    texts.update(d for d in deploys if isinstance(d, str) and d.strip())
+    for text in sorted(texts, key=len, reverse=True):
+        folded, needle = fold(command), fold(text)
+        at = folded.find(needle)
+        while at != -1:
+            command = command[:at] + "true" + command[at + len(text):]
+            folded = fold(command)
+            at = folded.find(needle, at + len("true"))
+    return command
+
+
 def decide(command, shell="bash"):
-    """The records to print for `command`, read as `shell` would run it."""
+    """The records to print for `command`, read as `shell` would run it.
+
+    The gates run this whether or not their containment match found an
+    environment (group review r2), and add what it prints. A command holding
+    a declared deploy the reader cannot read (`-f ref=$(git rev-parse HEAD)`)
+    is read again with each declared deploy it contains replaced by `true`:
+    containment already gates that part, and a dispatch in the rest still
+    reads, or blocks."""
     maps = [(label, envs) for label, envs in (
         ("the committed .crew/verify.json", committed_envs()),
         (".crew/verify.json", working_envs())) if isinstance(envs, dict)]
     if not any(any(declared(envs)) for _label, envs in maps):
         return []
+    try:
+        return _decide(command, shell, maps)
+    except Block:
+        rest = without_declared(command, maps)
+        if rest == command:
+            raise
+        return _decide(rest, shell, maps)
+
+
+def _decide(command, shell, maps):
     kind, why, scopes = crew_dispatch.dispatch_read(command, shell)
     if kind == "none" or (kind == "read" and not scopes):
         return []

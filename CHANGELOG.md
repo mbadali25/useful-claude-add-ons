@@ -17,7 +17,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for
   T-0009's class of the entry's dispatch; every non-empty report is printed.
 - **Two stops.** `deploy-target` when the target cannot be told or is not safe to drive (the map
-  unreadable, an entry `check` refuses, `requireHuman`, no `shaInput`, a class unknown, mismatched or
+  unreadable or its probe failing, an entry `check` refuses, `requireHuman`, no `shaInput`, a class unknown, mismatched or
   crashing, any verdict but `allow`); `failed-deploy` when the newest row for the sha is not all-pass
   (never re-deployed). All targets all-pass, or no `github` environment, is `closed`. With
   `deploy: none` (the default) nothing changes. `next` stays read-only: no `gh`, no
@@ -79,7 +79,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   failed-step log (colour codes removed, every pipe shown as a slash, lines clipped to 300) and a
   `not-run` row. Nothing it writes can be read as a pass row: a forged all-pass row in a log is
   recorded and `requires` is still unmet, checked against the real promote gates. The file is
-  rebuilt whole through a temp file and `os.replace`.
+  rebuilt whole through a temp file and `os.replace`; a symlinked PROMOTIONS.md is written through
+  (the link kept), and a dangling one is could-not-tell (exit 3), never a fresh log.
 - **The sequence.** `/crew:promote` gate 2 runs prepare, the dispatch, identify, watch and record
   for a `github` environment, and `--dry-run` prints `check`'s output; the steps, each exit code
   and what is hook-enforced versus prose are in the crew-verification skill's new
@@ -130,8 +131,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Summary.** On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST
   twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now
   the deploy they dispatch, so every pre-deploy check runs for them; before, both passed unchecked.
-- **How it reads them.** Only when containment matches nothing and `.crew/verify.json` declares a
-  dispatch deploy: the new `_promote_dispatch.py` reads the command and each declared deploy with
+- **How it reads them.** Whenever `.crew/verify.json` declares a dispatch deploy, whatever
+  containment matched (a dispatch after a contained deploy is gated too, and a declared deploy the
+  reader cannot read is set aside and the rest read again): the new `_promote_dispatch.py` reads
+  the command and each declared deploy with
   T-0009's reader through the new `crew_dispatch.dispatch_read` (no second parser). A dispatch of a
   declared workflow is the deploy of the one environment whose declared literal inputs all appear
   with the same value; a declared `$(...)` value is not compared. Workflow names compare as file

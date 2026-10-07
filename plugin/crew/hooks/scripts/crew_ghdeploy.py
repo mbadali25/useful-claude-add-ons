@@ -93,6 +93,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import time
@@ -1074,6 +1075,26 @@ def previous_good(text, env):
     return good
 
 
+def _promotions_target(path):
+    """The file `record` reads and replaces: `path`, or what a symlink there
+    points at, so the replace keeps the link (group review r2). A dangling
+    link, or one that cannot be resolved, is unreadable, never absent:
+    reading it as absent replaced the link with a fresh log."""
+    try:
+        link = stat.S_ISLNK(os.lstat(path).st_mode)
+    except FileNotFoundError:
+        return path
+    except OSError as exc:
+        raise CouldNotTell("promotions-unreadable", f"{path}: {exc}") from exc
+    if not link:
+        return path
+    target = os.path.realpath(path)
+    if not os.path.isfile(target):
+        raise CouldNotTell("promotions-unreadable", f"{path} is a symlink to {target}, which "
+                                                    "is not a file: the log cannot be read")
+    return target
+
+
 def record(root, env, index):
     """Lines to print for `record`; rewrites PROMOTIONS.md whole."""
     state = read_state(root, env, index)
@@ -1086,7 +1107,7 @@ def record(root, env, index):
     reason = state.get("verdictReason") if has_run else "identify could not name the run"
     url = state.get("runUrl") if has_run and state.get("runUrl") else "-"
     when = time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(_clock()))
-    path = os.path.join(root, PROMOTIONS)
+    path = _promotions_target(os.path.join(root, PROMOTIONS))
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             old = fh.read()

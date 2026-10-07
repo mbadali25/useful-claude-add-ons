@@ -617,24 +617,30 @@ function Stop-Promotion([string]$Why) {
   exit 2
 }
 
-# L-0664, the twin of promote-gate.sh's T-0062 block: containment matched
-# nothing, so read the command as a workflow dispatch with the same helper
-# and the same reader, told the command is PowerShell. `env<TAB>name` gates it
-# as that environment's deploy, `block<TAB>why` blocks (could not tell, or a
-# declared workflow fitting no single environment), nothing passes. A helper
-# that fails is never "nothing". With no python, a command naming gh with
-# `workflow` or `dispatches` blocks when any declared deploy names them too:
-# an unknown does not become "not a deploy".
-if ($envNames.Count -eq 0) {
-  $envName = "workflow dispatch"
-  $py = Resolve-CrewPython
-  if (-not $py) {
-    $looksLike = { param($t) ($t -match '(?i)(^|[^A-Za-z0-9_.-])gh([^A-Za-z0-9_.-]|$)') -and ($t -match '(?i)workflow|dispatches') }
-    if ((& $looksLike $cmd) -and @($allDeploys | Where-Object { & $looksLike $_ }).Count -gt 0) {
-      Stop-Promotion "python could not be found, so the gate cannot read this command as a workflow dispatch, and the map declares a dispatch deploy. This is not a pass. Install python 3, or put it on PATH."
-    }
-    exit 0
+# L-0664, the twin of promote-gate.sh's T-0062 block: read the command as a
+# workflow dispatch with the same helper and the same reader, told the command
+# is PowerShell. `env<TAB>name` gates it as that environment's deploy too,
+# `block<TAB>why` blocks (could not tell, or a declared workflow fitting no
+# single environment), nothing adds nothing. It runs whether or not
+# containment matched (group review r2): `./deploy-dev.sh; gh api ...
+# inputs[environment]=production` matched development only, and production's
+# preconditions went unchecked. A helper that fails is never "nothing". With
+# no python, a command naming gh with `workflow` or `dispatches` outside the
+# declared deploys it contains blocks when any declared deploy names them
+# too: an unknown does not become "not a deploy".
+$envName = if ($envNames.Count -eq 0) { "workflow dispatch" } else { $envNames -join ',' }
+$py = Resolve-CrewPython
+if (-not $py) {
+  $looksLike = { param($t) ($t -match '(?i)(^|[^A-Za-z0-9_.-])gh([^A-Za-z0-9_.-]|$)') -and ($t -match '(?i)workflow|dispatches') }
+  $rest = $cmd
+  foreach ($dep in $allDeploys) {
+    if ($dep) { $rest = [regex]::Replace($rest, [regex]::Escape($dep), ' ', 'IgnoreCase') }
   }
+  if ((& $looksLike $rest) -and @($allDeploys | Where-Object { & $looksLike $_ }).Count -gt 0) {
+    Stop-Promotion "python could not be found, so the gate cannot read this command as a workflow dispatch, and the map declares a dispatch deploy. This is not a pass. Install python 3, or put it on PATH."
+  }
+  if ($envNames.Count -eq 0) { exit 0 }
+} else {
   $prevConsoleEncoding = [Console]::OutputEncoding
   $prevOutputEncodingVar = $OutputEncoding
   $prevPythonIoEncoding = $env:PYTHONIOENCODING
@@ -667,11 +673,11 @@ if ($envNames.Count -eq 0) {
     $parts = "$line".Replace("`r", "").Split("`t", 2)
     if ($parts.Count -lt 2) { continue }
     if ($parts[0] -ceq 'block') { Stop-Promotion $parts[1] }
-    if ($parts[0] -ceq 'env') { $envNames += $parts[1] }
+    if ($parts[0] -ceq 'env' -and $envNames -cnotcontains $parts[1]) { $envNames += $parts[1] }
   }
-  if ($envNames.Count -eq 0) { exit 0 }
-  $envName = $envNames -join ','
 }
+if ($envNames.Count -eq 0) { exit 0 }
+$envName = $envNames -join ','
 
 # WHICH tree (T-0505). Twin of the block in promote-gate.sh, whose header
 # carries the full reasoning: the sha and the clean-tree check come from the
