@@ -751,6 +751,29 @@ against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdis
 suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
 
+## Sabotage siblings added by the 1.2.0 harness lane (H2a)
+
+DERIVED (rush/h2a-sabotage): each list below is appended to `sabotage.py`'s `MUTATIONS`, either
+through a list `sabotage.py` already concatenates or by its own import; every anchor is held to one
+match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` on the tuple named.
+
+- `TICKET_STATE_MUTATIONS` - `plugin/crew/tests/sabotage_ticket_state.py`, imported by `sabotage.py`
+  (L-0641: L-0639/L-0640's derived ticket state).
+- `GITIGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_gitignore.py`, imported by `sabotage.py`
+  (C-0025: T-0039's nineteen hand-run mutations).
+- `SLEEP_MUTATIONS` and `REPLAN_MUTATIONS` - `plugin/crew/tests/sabotage_autopilot.py`, added to
+  `AUTOPILOT_MUTATIONS` (L-0651 and L-0655's L-0652 part: the sleep window and manual sleep;
+  L-0671: T-0074's auto-replan policy).
+- `RECALL_PROJECT_MUTATIONS` and `MEMORY_MUTATIONS` - `plugin/crew/tests/sabotage_context.py`,
+  added to `CONTEXT_MUTATIONS` (L-0676: recall `--project`; L-0679: `crew_memory.py`'s grammar,
+  vault resolution, save order, migrate and restore).
+- `GRAPH_IGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_refresh.py`, added to `REFRESH_MUTATIONS`
+  (C-0025: T-0064's denylist coverage).
+- Appended to existing lists: `ROUTE_MUTATIONS` (L-0661, L-0663), `CONFIG_MENU_MUTATIONS` (L-0682,
+  C-0028's T-0103 part), `MIGRATE_FIX_MUTATIONS` (L-0683, C-0025's T-0038 part, C-0028's T-0106
+  part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021).
+- `sabotage_platform.PLATFORM_ONLY` declares the entries whose target test runs only on POSIX.
+
 ## Entry points
 
 - `.crew/verify.json:202-208` (rule 9) — the whole-suite pytest rule and its

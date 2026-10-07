@@ -264,7 +264,10 @@ _SAVE = "tests/test_crew_memory_save.py::"
 _MIG = "tests/test_crew_memory_migrate.py::"
 
 MEMORY_MUTATIONS = (
-    ("memory (a): the note path grammar accepts a leading /", MEMORY,
+    # A leading `/` is also an empty first segment, so with the absolute rule
+    # gone the path is still refused, by the segment rule: only the reason the
+    # refusal names shows the absolute rule is there.
+    ("memory (a): the absolute-path rule is gone (refused only as an empty segment)", MEMORY,
      '    if path.startswith("/"):\n',
      "    if False:\n",
      _MEM + "test_an_absolute_note_path_is_refused_as_absolute"),
@@ -303,10 +306,14 @@ MEMORY_MUTATIONS = (
      "    try:\n        apply_pointer(plan)\n    except (OSError, ValueError):\n        pass\n"
      "    try:\n        apply_note(plan)\n",
      _SAVE + "test_note_link_failure_leaves_native_unchanged_and_no_temp"),
-    ("memory (i): save skips the read-back before the pointer", MEMORY,
+    ("memory (i): save skips the read-back's resolve check before the pointer", MEMORY,
      '    if not same or state != "resolved":\n',
-     "    if False:\n",
+     "    if not same:\n",
      _SAVE + "test_read_back_failure_writes_no_pointer"),
+    ("memory (i): save skips the read-back's byte comparison before the pointer", MEMORY,
+     '        same = _read_bytes(plan["note_path"]) == want\n',
+     "        same = True\n",
+     _SAVE + "test_read_back_content_mismatch_writes_no_pointer"),
     ("memory (j): the no-hard-link create truncates a note that appeared", MEMORY,
      '    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)\n',
      '    flags = os.O_CREAT | os.O_TRUNC | os.O_WRONLY | getattr(os, "O_BINARY", 0)\n',
