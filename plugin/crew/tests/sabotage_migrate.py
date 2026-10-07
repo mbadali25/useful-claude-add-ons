@@ -119,6 +119,15 @@ MIGRATE_FIX_MUTATIONS = (
         "        cells = [c.strip() for c in line.split(\"|\")]\n",
         "tests/test_status.py::test_index_rows_with_a_leading_pipe_are_reported_open",
     ),
+    # L-0683: T-0105's two fixes to the 0.20 migration report.
+    ("migrate: the autopilot key falls under unmapped again", MIGRATE,
+     '    ("change", "change"),\n    ("autopilot", "autopilot"),\n)\n',
+     '    ("change", "change"),\n)\n',
+     "tests/test_migrate.py::test_autopilot_key_lands_at_top_level_not_unmapped"),
+    ("migrate: the note naming .crew/config.json is no longer returned", MIGRATE,
+     '    if "autopilot" in legacy:\n        notes.append(AUTOPILOT_FILE_NOTE)\n',
+     "",
+     "tests/test_migrate.py::test_autopilot_key_note_names_config_json"),
     # C-0028: T-0106's apply-migrate --scan-root. Each is a way the scan could
     # read a repo it could not see into as "not opted in", or let --yes-widen
     # write a list that leaves an opted-in repo out (or an empty one).
