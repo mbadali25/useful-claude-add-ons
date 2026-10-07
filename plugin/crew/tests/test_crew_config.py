@@ -403,7 +403,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # top of those 141, both layers, measured by running this test on
     # T-0051-build after merging main abddc302.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    assert len(declared) == 143
+    # 145 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
+    # (/crew:autopilot wave), measured on rush/g0-coord-wave (release/1.2.0).
+    assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
+    assert len(declared) == 145
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
