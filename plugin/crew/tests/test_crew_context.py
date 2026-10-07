@@ -370,17 +370,17 @@ def _inert_lines(text):
 
 
 def test_session_start_names_inert_settings_in_one_line(tmp_path):
-    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    root = make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}})
     lines = _inert_lines(_start(root))
     assert len(lines) == 1, lines
     assert lines[0].startswith("Inert settings (crew ")
-    assert "autopilot.maxTicketsPerRun=3 (L-0541)" in lines[0]
+    assert "autopilot.laterKnob=3 (unknown key)" in lines[0]
 
 
 def test_inert_line_survives_memory_inject_off(tmp_path):
-    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}}, inject=False)
+    root = make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}}, inject=False)
     lines = _inert_lines(_start(root))
-    assert len(lines) == 1 and "autopilot.maxTicketsPerRun=3 (L-0541)" in lines[0]
+    assert len(lines) == 1 and "autopilot.laterKnob=3 (unknown key)" in lines[0]
 
 
 def test_session_start_is_quiet_without_inert_settings(tmp_path):
@@ -412,7 +412,7 @@ def test_a_broken_inert_check_never_silences_session_start(tmp_path, monkeypatch
     def boom(*_args, **_kwargs):
         raise RuntimeError("reader broke")
     monkeypatch.setattr(crew_config, "inert_settings", boom)
-    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    root = make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}})
     text = _start(root)
     assert text.startswith("crew context (startup)")
     assert any(r.get("inert") == "inert-check-failed" for r in log_records(root))

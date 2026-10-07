@@ -28,6 +28,7 @@ L-0656: the summary also carries the pings `autopilot.sleep.notifyHold` held
 and a summary reported awake is passed to the notifier once, under a lock,
 and empties the held record.
 """
+import contextlib
 import datetime
 import importlib
 import json
@@ -35,6 +36,7 @@ import os
 import re
 import stat
 import sys
+import time
 
 import crew_config
 import crew_notify_hold
@@ -242,7 +244,7 @@ def _append(top, line):
             raise OSError(f"{os.path.relpath(part, top)} is a link; the sleep log is never "
                           "written through one")
     data = line.encode("utf-8")
-    with crew_notify_hold._Lock(path[:-len(".md")] + ".lock") as lock:  # pylint: disable=protected-access
+    with _log_lock(path) as lock:
         if not lock.held and os.name == "nt":
             raise OSError("the sleep log lock is busy")
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
@@ -252,6 +254,21 @@ def _append(top, line):
                 raise OSError("short write to the sleep log")
         finally:
             os.close(fd)
+
+
+APPEND_WAIT = 15.0
+
+
+@contextlib.contextmanager
+def _log_lock(path):
+    """`sleep-log.lock`, retried for up to APPEND_WAIT seconds: an append
+    waits its turn behind another writer instead of giving up (Windows CI)."""
+    deadline = time.monotonic() + APPEND_WAIT
+    while True:
+        with crew_notify_hold._Lock(path[:-len(".md")] + ".lock") as lock:  # pylint: disable=protected-access
+            if lock.held or time.monotonic() >= deadline:
+                yield lock
+                return
 
 
 def _setting(conf, key):
@@ -381,8 +398,8 @@ def _finish_delivered(top):
             else _cleanup(top, text, record["upto"], record["keys"]))
     if left is None and crew_notify_hold.clear_delivered(top):
         return ""
-    return (f"refused: a delivered summary's cleanup is not finished ({left or 'its record '
-            'could not be removed'}); nothing sent")
+    left = left or "its record could not be removed"
+    return f"refused: a delivered summary's cleanup is not finished ({left}); nothing sent"
 
 
 SUMMARY_BUDGET = 3000  # characters of decisions in one summary; the rest waits for the next
