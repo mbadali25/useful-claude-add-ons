@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T13:53Z
+Last updated: 2026-10-07T14:20Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T14:20Z G6b fixes done: head ebee2f34 (1.1.16 last); all 6 coordinator findings real and fixed with sabotage-verified tests (case test exercises listdir on Linux; check_dir realpath guard before/after makedirs incl. Windows junction test passing in CI; held/summary files guarded; asleep=? for unknown; summary sending/sent states, death mid-send reported not silent). Full pylint 10.00, 4867 targeted passed, Windows 16/16.
 - 2026-10-07T13:53Z Sync done: head 776393e4 (crew 1.1.9; merges main 7cb44221 + ad36bec5), full crew 14936 passed, harness suites green, Windows 16/16. Opened #553 (sync -> release), subscribed. Next: merge #553, then wave 1 release -> main.
 - 2026-10-07T13:45Z Coordinator review of G6b r6 fixes: L-0541 + T-0056 CLEAN; L-0658 test FIX (case check not exercised on Linux); L-0653 2 FIX + minor (makedirs before link check; Windows junction bypass; held/summary files unguarded; unknown sleep logged as awake); L-0656 BLOCK fail-open (death mid-send silently drops summary). G6b fixer started.
 - 2026-10-07T13:39Z G6b done: head 945b62ef (1.1.16 placeholder), 7 tickets; Windows 16/16 green; L-0656 notify half only (review half -> C-0053). 5 capped r6 fixes (b1ad9cda, 4850aa34, bda1b115, fb541d48, 85a24505) -> coordinator review agent. Classifier outage blocking Bash since ~13:20.
