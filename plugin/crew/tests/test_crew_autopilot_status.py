@@ -10,6 +10,7 @@ repository is built under tmp_path; nothing touches the real one or
 ~/.claude. `sabotage_autopilot.STATUS_MUTATIONS` mutates the must-refuse and
 must-say-unknown branches to prove these tests can fail.
 """
+import datetime
 import json
 import os
 import re
@@ -1512,8 +1513,6 @@ def test_owner_items_one_ticket_whatever_the_folder_case(tmp_path):
 
 # --- L-0687: held, blocked, revisit and needs-owner in the owner list ----------
 
-import datetime  # noqa: E402  pylint: disable=wrong-import-position
-
 TODAY = datetime.date(2026, 10, 7)
 
 
@@ -1558,9 +1557,9 @@ def test_owner_items_skips_landing(tmp_path):
 def test_owner_items_lists_a_due_hold_as_revisit(tmp_path, date):
     got = _owned(_parked(tmp_path, "hold", f"reason: the vendor answers\nrevisit: {date}\n"))
 
-    (ticket, phase, action), = got["items"]
-    assert (ticket, phase, "the vendor answers" in action, f"revisit {date} (due)" in action,
-            got["held"]) == (T, "revisit", True, True, [])
+    ticket, phase, action = (got["items"] or [("", "", "")])[0]
+    assert (len(got["items"]), ticket, phase, "the vendor answers" in action, f"revisit {date} (due)" in action,
+            got["held"]) == (1, T, "revisit", True, True, [])
 
 
 @pytest.mark.parametrize("next_md", [None, "revisit: soon\n"])
