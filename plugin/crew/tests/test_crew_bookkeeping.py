@@ -37,6 +37,7 @@ _VARIABLE_RE = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^>]*>|\{[^}]*
 _DYNAMIC_JOINS = {
     ("crew_migrate.py", "name"): ("pm-journal.md", "pm-standing.md"),  # JOURNAL_FILES
     ("crew_status.py", "name"): ("metrics.jsonl", "metrics.md"),  # _metrics_line, a read
+    ("crew_autoclear_setup.py", "name"): ("config.json", "crew.json"),  # _REPO_CONFIG_NAMES, a read
 }
 
 
