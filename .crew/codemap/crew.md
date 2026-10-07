@@ -1223,7 +1223,7 @@ Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_
 registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json` rule 29
 (`:355-362`; rule 28 at `:310-316` after T-0094 merged `8ab733d7`, `:307-313` before, until L-0516 inserted rule 10), which also maps `commands/autopilot.md` since review round 2.
 
-## Contextual help: /crew:help (T-0025, crew 1.1.6)
+## Contextual help: /crew:help (T-0025, crew 1.1.13)
 
 DERIVED at `b32e9fc9` (T-0025-build); line citations re-read on rush/g1b-ports after the port's
 review fixes (an unreadable command dir or command file raises to `main`'s `help: cannot tell`, and

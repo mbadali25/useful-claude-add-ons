@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
-- **crew 1.1.6**: Complete archive and ticket ids beyond T-. Every crew reader now finds a ticket whether it is live or archived in `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
+- **crew 1.1.13**: Complete archive and ticket ids beyond T-. Every crew reader now finds a ticket whether it is live or archived in `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

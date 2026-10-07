@@ -30,7 +30,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - `scripts/gate-runner.py`'s CI drift strings follow the two changed commands; `AGENTS.md` and the
   verification-harness code map say the same.
 
-### Changed — `crew` 1.1.6: Complete archive and ticket ids beyond T- (L-0509)
+### Changed — `crew` 1.1.13: Complete archive and ticket ids beyond T- (L-0509)
 
 - **Summary.** Every crew reader now finds a ticket whether it is live or archived in
   `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
@@ -75,7 +75,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   this release, one `archive` per ticket, excluding T-0500..T-0507,
   T-0104..T-0108, T-0508 and any ticket a live lane references.
 
-### Added — `crew` 1.1.6: `/crew:help`, contextual help from the files on disk (T-0025)
+### Added — `crew` 1.1.13: `/crew:help`, contextual help from the files on disk (T-0025)
 
 - **Summary.** `/crew:help` tells you where a ticket stands and the one command to type next, in at
   most 8 lines, and explains any crew command or a "how do I" question.
@@ -102,7 +102,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   stubs) is advisory and filed to TODO.md as an owner decision; nothing is hidden or renamed.
   crew registers 37 commands.
 
-### Fixed — `crew` 1.1.6: verify.json agents checked early, a provider probe from the repo root, UPGRADE.md history kept, crew's temp files cleaned (T-0065)
+### Fixed — `crew` 1.1.13: verify.json agents checked early, a provider probe from the repo root, UPGRADE.md history kept, crew's temp files cleaned (T-0065)
 
 - **Summary.** `/crew:status` now names agents your verify map needs that are not installed, a provider
   probe tests Codex from the repo root, `crew_upgrade.py --force` keeps earlier UPGRADE.md runs, and
@@ -150,7 +150,7 @@ sabotage registrations for this ticket's mutations in `sabotage_review.py`,
 **Not crew's:** item 7's heredoc/`python -c`/xargs refusals are TSS's own secrets guard; the
 `gizmoduck-out` / `security-scan-report.md` fixtures need a gizmoduck ticket.
 
-### Added — `crew` 1.1.6: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
+### Added — `crew` 1.1.13: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
 
 - **Summary.** `/crew:reference --integrations` now writes a reference of every outbound call your repo makes,
   with where each credential comes from but never its value, and the refresh check flags it when the
