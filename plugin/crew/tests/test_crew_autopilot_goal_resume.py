@@ -387,8 +387,8 @@ def test_goal_resumes_after_switching_to_the_next_ticket_branch(tmp_path, monkey
     index = root / ".work" / "INDEX.md"
     _write(index, _read(index).replace("T-0002 | ready |", "T-0002 | done |"))
     subprocess.run(["git", "checkout", "-q", "-b", "T-0003-build"], cwd=str(root), check=True)
-    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "ticket 3 starts"],
-                   cwd=str(root), check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit",
+                    "-q", "--allow-empty", "-m", "ticket 3 starts"], cwd=str(root), check=True)
 
     got = crew_autopilot.resume_target(str(root))
 
