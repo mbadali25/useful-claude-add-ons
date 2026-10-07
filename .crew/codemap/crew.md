@@ -4877,7 +4877,7 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `plugin/crew/hooks/scripts/crew_notify_hold.py`'s `holds` after its filters: only `HOLDABLE`
   pings (every `question`, blocker `approval` and `rounds`), only while `crew_autopilot.settings`
   says armed, asleep, not `tightenOnly`, hold on; the ping is recorded in
-  `<git-common-dir>/crew/notify/held.json` (one key per distinct message) or sent.
+  `.work/autopilot/held.json` (per worktree) (one key per distinct message) or sent.
   `crew_autopilot_sleep.sleep_summary` adds `held_line`, and awake, under `summary_lock`, marks
   the log, empties the record (`take`) and calls `send_summary` once. `crew_notify._credentials`
   is `_deliver`'s credential checks, factored out so the summary uses the same ones.

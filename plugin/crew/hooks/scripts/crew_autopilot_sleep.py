@@ -235,12 +235,18 @@ def _append(top, line):
     CI, 2026-10-07); a lock that cannot be had there refuses the append."""
     path = log_path(top)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Review r6: never through a link -- `.work`, `.work/autopilot` or the log
+    # itself pointing elsewhere would append to a file outside `.work`.
+    for part in (os.path.dirname(os.path.dirname(path)), os.path.dirname(path), path):
+        if os.path.islink(part):
+            raise OSError(f"{os.path.relpath(part, top)} is a link; the sleep log is never "
+                          "written through one")
     data = line.encode("utf-8")
     with crew_notify_hold._Lock(path[:-len(".md")] + ".lock") as lock:  # pylint: disable=protected-access
         if not lock.held and os.name == "nt":
             raise OSError("the sleep log lock is busy")
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
-                     0o644)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
+                     | getattr(os, "O_NOFOLLOW", 0), 0o644)
         try:
             if os.write(fd, data) != len(data):
                 raise OSError("short write to the sleep log")
@@ -273,18 +279,28 @@ def log_approval(top, ticket, decision):
     return ""
 
 
-def sleep_note(root, ticket, kind, text):
-    """(exit code, text) for `sleep-note`: one entry, only while asleep."""
+def sleep_note(root, ticket, kind, text, taken_asleep=None):
+    """(exit code, text) for `sleep-note`: one entry, only while asleep. With
+    `taken_asleep` (`1` or `0`, the `asleep=` the recheck of the answer
+    printed; review r6): the state when the answer was taken decides, so an
+    answer taken asleep is logged even when the window ended since, and one
+    taken awake never is."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     if kind not in ("answered", "note"):
         return 2, "refused: --kind is answered or note"
+    if taken_asleep not in (None, "0", "1"):
+        return 2, "refused: --taken-asleep is 1 or 0"
     conf = ap.settings(top)
-    if conf["sleep"]["state"] != crew_sleep.ASLEEP:
+    asleep = conf["sleep"]["state"] == crew_sleep.ASLEEP
+    if taken_asleep == "0" or (taken_asleep is None and not asleep):
         return 2, f"refused: autopilot is not asleep ({conf['sleep']['state']}); nothing written"
-    setting = _setting(conf, "questions") if kind == "answered" else (
-        "sleep=manual" if conf["sleep"].get("source") == "manual"  # review r5
-        else f"sleep={conf['sleep'].get('schedule') or 'manual'}")
+    if kind == "answered":
+        setting = (_setting(conf, "questions") if asleep
+                   else "sleep.questions (asleep when taken; the window has ended since)")
+    else:
+        setting = ("sleep=manual" if conf["sleep"].get("source") == "manual"  # review r5
+                   else f"sleep={conf['sleep'].get('schedule') or 'manual'}")
     _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, kind, text, setting))
     return 0, "noted"
 
@@ -448,7 +464,8 @@ def main(args):
     `wake` prints the summary after its state line. A crash is a refusal (exit 1)."""
     try:
         if args.action == "sleep-note":
-            code, text = sleep_note(args.root, args.ticket, args.kind, args.text)
+            code, text = sleep_note(args.root, args.ticket, args.kind, args.text,
+                                    args.taken_asleep or None)
         elif args.action == "sleep-summary":
             code, text = sleep_summary(args.root)
         elif args.action == "sleep":
@@ -473,3 +490,4 @@ def add_parsers(sub):
     note.add_argument("--ticket", required=True)
     note.add_argument("--kind", required=True)
     note.add_argument("--text", required=True)
+    note.add_argument("--taken-asleep", default="")

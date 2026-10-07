@@ -1981,7 +1981,7 @@ def test_an_unreadable_held_record_sends_and_is_not_read_as_none(tmp_path, clock
                                                                 how):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    path = os.path.join(crew_notify.state_dir(str(root)), crew_notify_hold.HELD_FILE)
+    path = os.path.join(str(root), ".work", "autopilot", crew_notify_hold.HELD_FILE)
     if how == "directory":
         os.makedirs(path)
     else:
@@ -2356,3 +2356,54 @@ def test_holding_never_hides_a_notifier_that_cannot_send(tmp_path, clock, monkey
 
     assert (crew_notify.send(str(root), "question", "q"), _held(root)) == (
         "missing-credentials", 0)
+
+
+def test_held_pings_belong_to_their_worktree(tmp_path, clock, wire):
+    """L-0656 review r5 (must-block): another worktree's summary never clears them."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    other = tmp_path / "other-worktree"
+    os.system(f'git -C "{root}" worktree add -q --detach "{other}"')
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+
+    assert (_held(root), crew_notify_hold.count(str(other))[0],
+            os.path.isfile(os.path.join(str(root), ".work", "autopilot", "held.json"))) == (
+        1, 0, True)
+
+
+@pytest.mark.parametrize("link", ["log", "folder"])
+def test_the_sleep_log_is_never_written_through_a_link(tmp_path, clock, capsys, link):
+    """L-0653 review r6 (must-block): a link would append outside `.work`."""
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "victim.txt"
+    target.write_text("keep\n", encoding="utf-8")
+    try:
+        if link == "log":
+            os.makedirs(os.path.dirname(_log(root)), exist_ok=True)
+            os.symlink(str(target), _log(root))
+        else:
+            os.makedirs(str(root / ".work"), exist_ok=True)
+            os.symlink(str(outside), str(root / ".work" / "autopilot"))
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot make a symlink here - NOT run")
+
+    code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")[0]
+
+    assert (code, target.read_text(encoding="utf-8"), os.listdir(str(outside))) == (
+        1, "keep\n", ["victim.txt"])
+
+
+@pytest.mark.parametrize("taken,when,want", [("1", DAY, 0), ("0", NIGHT, 2), ("1", NIGHT, 0)])
+def test_sleep_note_follows_the_state_the_answer_was_taken_in(tmp_path, clock, capsys,
+                                                              taken, when, want):
+    """L-0653 review r6: an answer taken asleep is logged after the window ends."""
+    clock(when)
+    root = _approving(tmp_path)
+
+    code = _cmd(root, capsys, "sleep-note", "--ticket", T, "--kind", "answered", "--text",
+                "Q1: Option A", "--taken-asleep", taken)[0]
+
+    assert (code, len(crew_sleep.unreported(_log_text(root) or ""))) == (want, 1 if want == 0 else 0)

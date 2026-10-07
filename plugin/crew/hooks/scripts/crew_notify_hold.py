@@ -13,7 +13,7 @@ sent; it answers True only when ALL of these hold:
   asleep and `notifyHold: true`, and the state is not `tightenOnly` -- a manual
   sleep outside the scheduled window may only tighten until L-1504, and hiding
   the owner's pings is not a tightening;
-- the held ping was recorded in `<git-common-dir>/crew/notify/held.json`.
+- the held ping was recorded in `.work/autopilot/held.json` (per worktree).
 
 Anything that cannot be told -- a settings read that raises, a record that
 cannot be read or written, a lock that cannot be had -- sends the ping as
@@ -37,6 +37,7 @@ import json
 import os
 
 import crew_notify
+import crew_ticket
 
 # crew_notify's own helpers, so a held ping says and stores exactly what a sent one would.
 # pylint: disable-next=protected-access
@@ -52,7 +53,11 @@ MAX_SUMMARY = 3500
 
 
 def _path(root, name):
-    return os.path.join(crew_notify.state_dir(root), name)
+    """`<worktree>/.work/autopilot/<name>`: each worktree has its own sleep
+    state and sleep log, so it holds, reports and clears only its own pings
+    (L-0656 review r5) -- never another worktree's, still asleep."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    return os.path.join(top, ".work", "autopilot", name)
 
 
 def read(root):

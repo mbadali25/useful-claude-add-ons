@@ -2244,7 +2244,7 @@ def _question_policy(root, ticket):
         return {"action": STOP, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell the questions policy "
                                            f"({type(exc).__name__}: {exc})")}
-    result = {"action": STOP, "policy": policy, "risk": risk["risk"],
+    result = {"action": STOP, "policy": policy, "risk": risk["risk"], "asleep": risk["asleep"],
               "known": risk["known"], "warnings": warnings, "sleep": risk["sleep"]}
     if policy == UNKNOWN:
         return dict(result, reason=(f"could not tell autopilot.questions "
@@ -2436,7 +2436,7 @@ def questions_text(result):
     risk = result["risk"] if result.get("known") else "high(unknown)"
     lines = [_line(valid=int(result["valid"]), action=result["action"],
                    policy=result["policy"], risk=risk, questions=result["questions"],
-                   taken=len(result["taken"]), reason=result["reason"])]
+                   taken=len(result["taken"]), asleep=int(bool(result.get("asleep"))), reason=result["reason"])]
     lines += [f"problem: {p}" for p in result["problems"]]
     lines += [f"taken: {t}" for t in result["taken"]]
     lines += [f"warning: {w}" for w in result["warnings"]]
