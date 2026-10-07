@@ -1,0 +1,743 @@
+diff --git a/plugin/crew/tests/sabotage.py b/plugin/crew/tests/sabotage.py
+index 1195b626e..98edd60b3 100644
+--- a/plugin/crew/tests/sabotage.py
++++ b/plugin/crew/tests/sabotage.py
+@@ -92,6 +92,8 @@ from sabotage_coord import COORD_MUTATIONS
+ from sabotage_wave import WAVE_MUTATIONS
+ from ghdeploy_mutations import GHDEPLOY_MUTATIONS
+ from promote_tree_mutations import PROMOTE_TREE_MUTATIONS
++from sabotage_contract import CONTRACT_MUTATIONS
++from sabotage_bridge import BRIDGE_MUTATIONS
+ import sabotage_bound
+ import sabotage_platform
+ 
+@@ -3076,7 +3078,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
+               + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
+               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
+               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
+-              + PROMOTE_TREE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
++              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
+ 
+ # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
+ # internal error, 4 usage error (what a collection failure produces), 5 nothing
+diff --git a/plugin/crew/tests/sabotage_autopilot.py b/plugin/crew/tests/sabotage_autopilot.py
+index 1f74b4be7..bbbdb540b 100644
+--- a/plugin/crew/tests/sabotage_autopilot.py
++++ b/plugin/crew/tests/sabotage_autopilot.py
+@@ -20,6 +20,11 @@ AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
+ TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
+ COMMAND = os.path.join(CREW, "commands", "autopilot.md")
+ STATE = os.path.join(SCRIPTS, "crew_state.py")
++REPLAN = os.path.join(SCRIPTS, "crew_autopilot_replan.py")
++GATES = os.path.join(SCRIPTS, "crew_autopilot_gates.py")
++FIX = os.path.join(SCRIPTS, "crew_autopilot_fix.py")
++STOPS = os.path.join(SCRIPTS, "crew_autopilot_stops.py")
++FENCES = os.path.join(SCRIPTS, "crew_autopilot_fences.py")
+ CLOUD = os.path.join(SCRIPTS, "cloud_guard.py")
+ _T = "tests/test_crew_autopilot.py::"
+ _D = "tests/test_crew_autopilot_deploy.py::"
+@@ -1145,6 +1150,7 @@ AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
+ SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
+ AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
+ _Z = "tests/test_crew_autopilot_sleep.py::"
++HOLD = os.path.join(SCRIPTS, "crew_notify_hold.py")
+ 
+ SLEEP_MUTATIONS = (
+     ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
+@@ -1242,18 +1248,87 @@ SLEEP_MUTATIONS = (
+      '    if found["state"] != crew_sleep.ASLEEP and not tightens:\n',
+      "    if False:\n",
+      _Z + "test_sleep_refuses_and_writes_nothing"),
++    # --- H2b: L-0655 (j)-(s), rush G6b's sleep log (L-0653) and deploy override (L-0654)
++    ("L-0655 (j): a newline in --text is written raw", SLEEP,
++     '    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())\n',
++     "    text = text\n",
++     _Z + "test_log_fields_cannot_forge_an_entry"),
++    ("L-0655 (k): a | in a field is written raw", SLEEP,
++     '    return text.replace("|", "/")[:LOG_FIELD_MAX] or "-"\n',
++     '    return text[:LOG_FIELD_MAX] or "-"\n',
++     _Z + "test_a_pipe_in_a_log_field_never_separates_fields"),
++    ("L-0655 (l): sleep-note writes while awake", AUTOSLEEP,
++     '    if taken_asleep == "0" or (taken_asleep is None and not asleep):\n',
++     '    if taken_asleep == "0":\n',
++     _Z + "test_sleep_note"),
++    ("L-0655 (m): sleep-summary marks the log while asleep", AUTOSLEEP,
++     "    if state not in (crew_sleep.AWAKE, crew_sleep.OFF):\n        code, out, _, _, _ = _summary(top)\n",
++     "    if False:\n        code, out, _, _, _ = _summary(top)\n",
++     _Z + "test_summary_asleep_marks_nothing"),
++    ("L-0655 (n): an unreadable sleep log reads as empty", AUTOSLEEP,
++     '    except (OSError, ValueError) as exc:\n        return None, f"{type(exc).__name__}"\n',
++     '    except (OSError, ValueError) as exc:\n        return "", ""\n',
++     _Z + "test_unreadable_log_is_not_empty"),
++    ("L-0655 (o): a failed sleep-log write fails approve", AUTOSLEEP,
++     '    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n'
++     '        return "\\n" + ap._one_line(f"warning: sleep log not written',
++     '    except ZeroDivisionError as exc:  # noqa: BLE001  # pylint: disable=broad-except\n'
++     '        return "\\n" + ap._one_line(f"warning: sleep log not written',
++     _Z + "test_approve_survives_an_unwritable_log"),
++    ("L-0655 (p): sleep.deploy all is applied", SLEEP,
++     'DEPLOY_OVERRIDES = ("nonprod", "none")\n',
++     'DEPLOY_OVERRIDES = ("nonprod", "none", "all")\n',
++     _Z + "test_a_refused_sleep_deploy_keeps_the_day_value"),
++    ("L-0655 (q): a day value all stays all asleep", SLEEP,
++     '    value = "nonprod" if value == "all" else value\n',
++     "    value = value if value else value\n",
++     _Z + "test_sleep_deploy_matrix"),
++    ("L-0655 (r): the deploy override is applied awake", SLEEP,
++     '    if sleep.get("state") != ASLEEP and not woke:\n        return deploy\n',
++     "    if False:\n        return deploy\n",
++     _Z + "test_sleep_deploy_matrix"),
++    ("L-0655 (s): the deploy override is applied when the state is unknown", SLEEP,
++     '    if sleep.get("state") != ASLEEP and not woke:\n        return deploy\n',
++     '    if sleep.get("state") not in (ASLEEP, UNKNOWN) and not woke:\n        return deploy\n',
++     _Z + "test_sleep_deploy_matrix"),
++    # --- H2b: C-0055, L-0656's hold list and send-once summary ------------------------
++    # crew_notify.send asks HOLDABLE before holds() does, so the list itself is aimed at.
++    ("C-0055 L-0656: a deploy failure is on the hold list", HOLD,
++     'HOLDABLE = (("question", "ask"), ("question", "permission"),\n',
++     'HOLDABLE = (("deploy", "fail"), ("question", "ask"), ("question", "permission"),\n',
++     _Z + "test_failure_ping_is_sent_asleep"),
++    ("C-0055 L-0656: pings held awake or when sleep cannot be told", HOLD,
++     '    return (conf.get("armed") is True and sleep.get("state") == "asleep"\n',
++     '    return (conf.get("armed") is True and sleep.get("state") in ("asleep", "awake", "unknown")\n',
++     _Z + "test_hold_is_off_awake_and_when_unknown"),
++    # crew_sleep.resolve reads the key; holds() only sees its answer.
++    ("C-0055 L-0656: a notifyHold that is not exactly true holds", SLEEP,
++     "    if value is None or value is True:\n",
++     '    if value is None or value is True or value == "true":\n',
++     _Z + "test_a_notify_hold_that_is_not_true_holds_nothing"),
++    ("C-0055 L-0656: a summary that died mid-send is sent again", AUTOSLEEP,
++     "        unfinished = _finish_delivered(top)\n",
++     '        unfinished = ""\n',
++     _Z + "test_a_run_that_died_mid_send_is_said_and_printed_never_resent"),
++    ("C-0055 L-0656: a failed summary send marks it reported", AUTOSLEEP,
++     '        if word not in ("sent", "off", "filtered"):\n',
++     "        if False:\n",
++     _Z + "test_a_failed_summary_send_keeps_everything_pending"),
+ )
+ 
+ AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
+ 
+-# L-0671 entries 1-14: T-0074's auto-replan policy. Entries 15-19 (L-0670's
+-# successor-plan check) wait for L-0670, which is not on main.
++# L-0671 entries 1-14: T-0074's auto-replan policy; 15-19 (H2b): L-0670's
++# successor-plan check.
+ _RP = "tests/test_crew_autopilot_replan.py::"
+ _RJ = _RP + "test_auto_reject_refusals_write_nothing"
+ 
+ REPLAN_MUTATIONS = (
+-    # Entry 1 (maxAutoReplans defaults to 1, crew_state.py) is deferred to H2b:
+-    # rush G6b rewrites the crew_state.py defaults line it anchors on.
++    # Entry 1 re-added in H2b, on the defaults line as G6b rewrote it.
++    ("L-0671 1: maxAutoReplans defaults to 1", STATE,
++     '"maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
++     '"maxAutoReplans": 1, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
++     _RP + "test_setting_defaults_to_zero"),
+     ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
+      "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
+      "        replans = 1\n    if replans > MAX_AUTO_REPLANS:\n",
+@@ -1308,6 +1383,276 @@ REPLAN_MUTATIONS = (
+      '                and _count(latest) and rejected.get("round") == latest\n',
+      "                and _count(latest)\n",
+      _RP + "test_replan_stops_when_rejected_round_is_not_latest"),
++    ("L-0671 15: replan_check strips plan lines before comparing", REPLAN,
++     '    return collections.Counter(line[:-1] if line.endswith("\\r") else line\n'
++     '                               for line in text.split("\\n")), None\n',
++     '    return collections.Counter(line.strip() for line in text.split("\\n")), None\n',
++     _RP + "test_replan_check_owes_an_indented_finding_line"),
++    ("L-0671 16: replan_check ignores duplicate counts", REPLAN,
++     "    missing = list((collections.Counter(lines) - have).elements())\n",
++     "    missing = [line for line in dict.fromkeys(lines) if not have[line]]\n",
++     _RP + "test_replan_check_counts_duplicates"),
++    ("L-0671 17: a could-not-tell successor check reads as ok", REPLAN,
++     '    lines, why = _required(data)\n    if why:\n        return _result(True, False, ',
++     '    lines, why = _required(data)\n    if why:\n        return _result(True, True, ',
++     _RP + "test_replan_check_could_not_tell"),
++    ("L-0671 18: approve skips replan_check", AUTOPILOT,
++     '    if replan["applies"] and not replan["ok"]:\n',
++     "    if False:\n",
++     _RP + "test_approve_refuses_successor_that_drops_a_block"),
++    ("L-0671 19: FIX lines are not required of a successor plan", REPLAN,
++     'OWED = ("BLOCK|", "FIX|")\n',
++     'OWED = ("BLOCK|",)\n',
++     _RP + "test_replan_check_fails_on_a_missing_line"),
+ )
+ 
+ AUTOPILOT_MUTATIONS += REPLAN_MUTATIONS
++
++# --- H2b: rush G6a's autopilot stops (L-0686), fix phase (L-0668), T-0043 and
++# the fence parser (L-0643) -------------------------------------------------------
++_RV = "tests/test_crew_autopilot_review_policy.py::"
++_SC = "tests/test_crew_autopilot_stop_contract.py::"
++_FN = "tests/test_crew_autopilot_fences.py::"
++
++# L-0686: L-0550's hold, landing, needs-owner, closed and blocked stops.
++GATE_MUTATIONS = (
++    ("L-0686: a hold in the INDEX cell is driven", GATES,
++     "    if index_status in GATES:\n",
++     '    if index_status in GATES and index_status != "hold":\n',
++     _T + "test_next_hold_stops[index]"),
++    ("L-0686: a hold in the spec header is driven", GATES,
++     '    elif view["gate"] and view["gate_source"] == "header":\n',
++     '    elif view["gate"] and view["gate"] != "hold" and view["gate_source"] == "header":\n',
++     _T + "test_next_hold_stops[header]"),
++    ("L-0686: a landing ticket is driven to done", GATES,
++     "    if index_status in GATES:\n",
++     '    if index_status in GATES and index_status != "landing":\n',
++     _T + "test_next_landing_stops"),
++    ("L-0686: a needs-owner ticket is driven", GATES,
++     "    if index_status in GATES:\n",
++     '    if index_status in GATES and index_status != "needs-owner":\n',
++     _T + "test_next_needs_owner_stops_with_the_next_line"),
++    ("L-0686: a header cancelled is re-driven", GATES,
++     "    if word in CLOSING:\n        named = successor(",
++     "    if False:\n        named = successor(",
++     _T + "test_next_header_cancelled_is_closed"),
++    ("L-0686: a blocked ticket is implemented", AUTOPILOT,
++     "    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(",
++     "    found = None or _review_phase(",
++     _T + "test_next_blocked_stops_before_implement"),
++    ("L-0686: an unknown dependency reads as closed", GATES,
++     '    open_deps = [d for d in view["dependencies"] if d["state"] != "closed"]\n',
++     '    open_deps = [d for d in view["dependencies"] if d["state"] not in ("closed", "unknown")]\n',
++     _T + "test_next_blocked_with_an_unknown_dependency_stops"),
++    ("L-0686: a gate phase reads as autopilot's in status", GATES,
++     'WAITING = {"hold": "owner", NEEDS_OWNER: "owner", "landing": "the land step",\n',
++     'WAITING = {"hold": "autopilot", NEEDS_OWNER: "autopilot", "landing": "autopilot",\n',
++     _S + "test_status_waiting_on_a_gate_is_never_autopilot"),
++)
++
++# L-0668: T-0067's reviewPolicy and fix phase, L-0666's stop contract.
++FIX_MUTATIONS = (
++    ("L-0668 (a): clean-only is treated as fix-and-rereview", FIX,
++     "    if policy in (STOP, CLEAN_ONLY):\n        return None\n",
++     "    if policy == STOP:\n        return None\n    policy = FIX if policy == CLEAN_ONLY else policy\n",
++     _RV + "test_policy_clean_only_stops_as_today"),
++    ("L-0668 (b): the policy value is normalised before comparison", FIX,
++     "    if isinstance(value, str) and value in POLICIES:\n        return value\n",
++     "    if isinstance(value, str) and value.strip().lower() in POLICIES:\n"
++     "        return value.strip().lower()\n",
++     _RV + "test_settings_review_policy_invalid_value_warns_and_reads_stop"),
++    ("L-0668 (c): an unknown policy reads as fix-and-rereview", FIX,
++     "    if policy != FIX:\n        return (",
++     "    if policy not in (FIX, UNKNOWN):\n        return (",
++     _RV + "test_policy_unknown_stops"),
++    # (d) aims at crew_state's defaults: resolve_config fills the autopilot
++    # block from them, so review_policy's own fallback is never reached.
++    ("L-0668 (d): the default reviewPolicy is fix-and-rereview", STATE,
++     '"maxLanes": None, "reviewPolicy": "stop"}',
++     '"maxLanes": None, "reviewPolicy": "fix-and-rereview"}',
++     _RV + "test_settings_review_policy_defaults_to_stop"),
++    ("L-0668 (e): the final round is fixed and re-reviewed", FIX,
++     "    if left < 1:\n        return cause + ",
++     "    if False:\n        return cause + ",
++     _RV + "test_final_round_stops_under_fix_and_rereview"),
++    ("L-0668 (f): a changed bundle alone goes to review", FIX,
++     "    if missing or current == recorded:\n",
++     "    if current == recorded:\n",
++     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
++    ("L-0668 (g): fixes.md alone goes to review", FIX,
++     "    if missing or current == recorded:\n",
++     "    if missing:\n",
++     _RV + "test_complete_fixes_md_with_an_unchanged_bundle_is_no_progress"),
++    ("L-0668 (h): a finding quoted inside a longer line counts", FIX,
++     "    have = collections.Counter(_section_lines(text, number))\n"
++     "    return list((collections.Counter(owed) - have).elements()), None\n",
++     '    section = "\\n".join(_section_lines(text, number))\n'
++     "    return [line for line in owed if line not in section], None\n",
++     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
++    ("L-0668 (i): the ## Round <n> heading is ignored", FIX,
++     "            inside = bool(match) and int(match.group(1)) == number\n",
++     "            inside = True\n",
++     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
++    ("L-0668 (j): a bundle rebuild failure reads as changed", FIX,
++     '        return cause + f"the bundle could not be rebuilt from {base} ({exc}): could not tell"\n',
++     '        current = "0" * 64\n',
++     _RV + "test_a_bundle_rebuild_that_raises_stops"),
++    ("L-0668 (k): a row with no findings list reads as nothing to fix", FIX,
++     '        return cause + f"round {number} carries no list of finding lines: could not tell"\n',
++     "        return None\n",
++     _RV + "test_a_row_it_cannot_read_stops"),
++    ("L-0668 (l): the fix phase drops the test-first rule and the outside-Touch refusal", COMMAND,
++     "write the failing test first, then the fix, inside the spec's Touch;",
++     "write the fix;",
++     _RV + "test_command_describes_the_fix_phase"),
++    ("L-0668 (m): a stop with no decision gets one default decision", STOPS,
++     '    return {"decision": decision or BY_PHASE.get(phase, "look")} if stop else {}\n',
++     '    return {"decision": decision or "look"} if stop else {}\n',
++     _SC + "test_every_stop_names_an_owner_decision[13-b_brainstorm]"),
++    ("L-0668 (n): MECHANICAL is emptied", STOPS,
++     'MECHANICAL = ("graphify update", "graphify . --", "/crew:onboard --refresh",\n',
++     'MECHANICAL = () and ("graphify update", "graphify . --", "/crew:onboard --refresh",\n',
++     _SC + "test_fixed_instead_is_mechanical_outside_the_findings_stop"),
++    ("L-0668 (o): the FINDINGS stop says or fixes then /crew:review again", AUTOPILOT,
++     '"round with one left itself" + (fix or "") + "; " + crew_autopilot_stops.FIXED_INSTEAD)',
++     '"round with one left itself" + (fix or "") + "; or fixes then /crew:review")',
++     _SC + "test_findings_stop_names_the_accept_and_the_policy"),
++)
++
++# L-0643: T-0043's FINDINGS and refresh fixes, L-0642's fence parser.
++FENCE_MUTATIONS = (
++    ("L-0643: an accepted FINDINGS round reads as INCOMPLETE", AUTOPILOT,
++     '    if latest.get("verdict") == "FINDINGS":  # T-0043: its receipt stood; an edit staled it\n',
++     "    if False:  # T-0043: its receipt stood; an edit staled it\n",
++     _T + "test_next_accepted_findings_then_an_edit_goes_through_refresh"),
++    # The spec's test_next_accept_review_names_the_refresh_before_the_next_round
++    # does not exist: L-0666 replaced the refresh clause with FIXED_INSTEAD.
++    ("L-0643: the FINDINGS stop names no refresh", AUTOPILOT,
++     '"round with one left itself" + (fix or "") + "; " + crew_autopilot_stops.FIXED_INSTEAD)',
++     '"round with one left itself" + (fix or ""))',
++     _SC + "test_findings_stop_names_the_accept_and_the_policy"),
++    ("L-0643: a stale artifact marked not refreshable settles", AUTOPILOT,
++     '        return artifact.get("refreshable", True) is not False\n',
++     "        return True\n",
++     _T + "test_refresh_stale_artifact_marked_not_refreshable_stops"),
++    ("L-0643: main's parser is no longer the floor", FENCES,
++     "    items = list(legacy(text))\n    view, unclear",
++     "    items = []\n    view, unclear",
++     _FN + "test_open_questions_fence_corpus_never_below_main"),
++    ("L-0643: an ambiguous fence reads as no questions", FENCES,
++     "    if unclear is not None and names_open_questions(text, heading):\n",
++     "    if False:\n",
++     _FN + "test_open_questions_ambiguous_fence_could_not_tell"),
++    ("L-0643: an indented fence line opens a fence", FENCES,
++     '            if line == line.lstrip() and not (run[0] == "`" and "`" in rest):\n',
++     '            if not (run[0] == "`" and "`" in rest):\n',
++     _FN + "test_open_questions_fence_corpus_never_below_main"),
++    ("L-0643: an indented closer closes a fence", FENCES,
++     "            if shape and line == line.lstrip() and run[0] == fence[0] \\\n",
++     "            if shape and run[0] == fence[0] \\\n",
++     _FN + "test_could_not_tell_names_the_first_unclear_line"),
++    ("L-0643: an unclosed fence at the end is settled", FENCES,
++     "    if fence is not None:\n        unclear = unclear or fence[2]\n",
++     "    if False:\n        unclear = unclear or fence[2]\n",
++     _FN + "test_open_questions_ambiguous_fence_could_not_tell[unclosed-after-section]"),
++    ("L-0643: only an unindented heading names a section", FENCES,
++     "        found = heading.match(line.lstrip())\n",
++     "        found = heading.match(line)\n",
++     _FN + "test_names_open_questions_sees_indented_and_fenced_headings"),
++    ("L-0643: ambiguity stops even with no section (must-allow)", FENCES,
++     '    """Whether any line, indentation stripped, is an Open-questions heading."""\n',
++     '    """Whether any line, indentation stripped, is an Open-questions heading."""\n    return True\n',
++     _FN + "test_open_questions_ambiguous_fence_without_a_section_does_not_stop"),
++)
++
++# --- H2b: rush G6b's goals (L-0660: T-0056, L-0658, L-0659; C-0055: L-0541) -------
++HANDOFF = os.path.join(SCRIPTS, "crew_autopilot_handoff.py")
++GOAL_STATE = os.path.join(SCRIPTS, "crew_goal_state.py")
++BACKLOG = os.path.join(SCRIPTS, "crew_autopilot_backlog.py")
++_GR = "tests/test_crew_autopilot_goal_resume.py::"
++_GL = "tests/test_crew_autopilot_goals.py::"
++
++GOAL_MUTATIONS = (
++    ("L-0660 (a): handoff_resume gives the ticket form with two goals running", HANDOFF,
++     '    if len(goals["running"]) > 1:\n        return {"line": NONE,',
++     '    if False:\n        return {"line": NONE,',
++     _GR + "test_handoff_resume_cases[two-running]"),
++    ("L-0660 (b): handoff_resume gives the ticket form beside an unreadable goal file", HANDOFF,
++     '    if goals["unknown"]:\n        return {"line": NONE,',
++     '    if False:\n        return {"line": NONE,',
++     _GR + "test_handoff_resume_cases[unknown]"),
++    ("L-0660 (c): running_goals drops a goal file it cannot read", HANDOFF,
++     '        except ValueError:\n            out["unknown"].append(f"{rel} (could not read it as JSON)")\n',
++     "        except ValueError:\n            continue\n",
++     _GR + "test_running_goals_unreadable_is_unknown_never_dropped"),
++    ("L-0660 (d): handoff_resume gives the goal form for a stopped goal", HANDOFF,
++     '        out[override["state"] if override else state].append(name)\n',
++     '        out["running" if state == "stopped" else override["state"] if override else state].append(name)\n',
++     _GR + "test_handoff_resume_cases[stopped]"),
++    ("L-0660 (e): goal_mark writes the goal file in place", HANDOFF,
++     "            goal_mod._write_json_atomic(path, data)  # pylint: disable=protected-access\n",
++     '            open(path, "w", encoding="utf-8").write(json.dumps(data))  # pylint: disable=protected-access\n',
++     _GR + "test_goal_mark_failed_replace_keeps_the_old_file"),
++    ("L-0660 (f): the goal-handoff gate takes a stopped goal", GOAL_STATE,
++     '    if state == "running":\n        return "", ""\n',
++     '    if state in ("running", "stopped"):\n        return "", ""\n',
++     _GR + "test_goal_handoff_not_running_is_not_taken"),
++    ("L-0660 (g): the goal-handoff gate takes a missing or unreadable goal file", GOAL_STATE,
++     '    if state == "running":\n        return "", ""\n',
++     '    if state in ("running", "missing", "unknown"):\n        return "", ""\n',
++     _GR + "test_goal_handoff_not_running_is_not_taken"),
++    ("L-0660 (h): a ticket handoff's branch check skipped in crew_autopilot", AUTOPILOT,
++     "    if not branch or branch.group(1) != here_branch:\n",
++     "    if False:\n",
++     _GR + "test_ticket_handoff_branch_mismatch_still_falls_through"),
++    ("L-0660 (j): bare resume takes the first of two running goals", BACKLOG,
++     '    if len(goals["running"]) > 1:\n        return None, None, "goal-file", ',
++     '    if False:\n        return None, None, "goal-file", ',
++     _GR + "test_two_running_goals_stop_and_list_both"),
++    ("L-0660 (k): bare resume reads an unreadable goal file as no goal", BACKLOG,
++     '    if goals["unknown"]:\n        return None, None, "goal-file", ',
++     '    if False:\n        return None, None, "goal-file", ',
++     _GR + "test_unreadable_goal_file_stops_bare_resume"),
++    ("L-0660 (l): bare resume resumes a stopped goal", BACKLOG,
++     '    for slug in goals["stopped"]:\n        fallthrough.append(goal_state.handoff_refusal(top, slug)[1])\n',
++     '    goals["running"] += goals["stopped"]\n',
++     _GR + "test_stopped_goal_is_named_not_resumed"),
++    ("C-0055 L-0541: the picker passes an open dependency", BACKLOG,
++     '        blocked = [states[d] for d in entry["depends_on"] if states[d][1] != "closed"]\n',
++     "        blocked = []\n",
++     _GL + "test_stopped_dependency_blocks"),
++    ("C-0055 L-0541: a ticket state that cannot be told reads as open", BACKLOG,
++     '        if state == "unknown":\n            return stop(f"could not tell whether {ticket}',
++     '        if False:\n            return stop(f"could not tell whether {ticket}',
++     _GL + "test_a_ticket_state_that_cannot_be_told_stops"),
++    ("C-0055 L-0541: a goal whose tickets ended without work reads as done", BACKLOG,
++     "    if settled:  # L-0541 review r5",
++     "    if False:  # L-0541 review r5",
++     _GL + "test_a_goal_whose_tickets_all_ended_without_work_is_not_done"),
++    ("C-0055 L-0541: the ticket cap is off by one", BACKLOG,
++     "                if len(worked) >= cap:\n",
++     "                if len(worked) > cap:\n",
++     _GL + "test_ticket_cap_stops"),
++    ("C-0055 L-0541: the token cap is not held", BACKLOG,
++     "    if tokens > limit:\n",
++     "    if False:\n",
++     _GL + "test_token_cap_stops"),
++    ("C-0055 L-0541: a token count that cannot be told reads as zero", BACKLOG,
++     '    if tokens is None:\n        return dict(base, reason=f"could not tell this session\'s token use ({why})")\n',
++     "    if tokens is None:\n        tokens = 0\n",
++     _GL + "test_a_token_count_that_raises_is_could_not_tell"),
++    ("C-0055 L-0541: plan mode goes on to a second ticket", BACKLOG,
++     '                if conf["mode"] != ap.BACKLOG and worked:\n',
++     "                if False:\n",
++     _GL + "test_plan_mode_stops_after_one"),
++    ("C-0055 L-0541: a cap that is not a positive integer is taken", BACKLOG,
++     "        if isinstance(value, bool) or not isinstance(value, int) or value < 1:\n",
++     "        if not isinstance(value, int):\n",
++     _GL + "test_ticket_cap_setting"),
++    ("C-0055 L-0541: a goal file naming a ticket it did not mint is trusted", BACKLOG,
++     "    if MARK.format(slug=slug, n=n, m=m) not in (line.strip() for line in text.splitlines()):\n",
++     "    if False:\n",
++     _GR + "test_a_goal_file_naming_a_ticket_it_did_not_mint_is_refused"),
++)
++
++AUTOPILOT_MUTATIONS += GATE_MUTATIONS + FIX_MUTATIONS + FENCE_MUTATIONS + GOAL_MUTATIONS
+diff --git a/plugin/crew/tests/sabotage_bridge.py b/plugin/crew/tests/sabotage_bridge.py
+new file mode 100644
+index 000000000..2917f3b2b
+--- /dev/null
++++ b/plugin/crew/tests/sabotage_bridge.py
+@@ -0,0 +1,96 @@
++"""The L-0638 mutations: one per fail-closed decision in `crew_bridge.py`
++(T-0032's cross-session doorbell, L-0636's `pending`, L-0637's hub rule), plus
++C-0051's L-0637 review-round 4-6 cases. Same tuple shape as `sabotage.py`'s
++MUTATIONS -- (label, target, find, replace, test) -- and appended to it
++there. Run `sabotage.py`, not this file.
++
++Each one puts back a way a message from another session is believed without
++the record behind it, a ring is lost or read as answered, or a lane rings a
++peer -- the unknown collapsing into the safe-looking value -- and names the
++must-block case that has to go red.
++"""
++import os
++
++CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++BRIDGE = os.path.join(CREW, "hooks", "scripts", "crew_bridge.py")
++_B = "tests/test_crew_bridge.py::"
++_P = "tests/test_crew_bridge_pending.py::"
++_H = "tests/test_crew_bridge_hub.py::"
++
++BRIDGE_MUTATIONS = (
++    # --- receive (T-0032) ------------------------------------------------------------
++    ("bridge receive: a prefix match passes for the doorbell", BRIDGE,
++     "    found = DOORBELL_RE.fullmatch(body)\n",
++     "    found = DOORBELL_RE.match(body)\n",
++     _B + "test_trailing_extra_field_is_not_a_doorbell"),
++    ("bridge receive: any crew-doorbell/<n> version accepted", BRIDGE,
++     '    r"crew-doorbell/1 channel=(?P<channel>',
++     '    r"crew-doorbell/[0-9]+ channel=(?P<channel>',
++     _B + "test_unknown_version_is_not_a_doorbell"),
++    ("bridge receive: the channel comparison skipped", BRIDGE,
++     '    if fields is None or fields["channel"] != chan.channel:\n',
++     "    if fields is None:\n",
++     _B + "test_other_channel_is_not_a_doorbell"),
++    ("bridge receive: a failed fetch reads as re-read the record", BRIDGE,
++     '    if state == "failed":\n        return f"could not fetch {chan.ref}: {why}"\n',
++     '    if state == "failed":\n        return None\n',
++     _B + "test_receive_failed_fetch_could_not_tell"),
++    ("bridge receive: a non-ancestor tip reads as confirmed", BRIDGE,
++     "    if probe.code == 0:\n        return None\n",
++     "    if probe.code in (0, 1):\n        return None\n",
++     _B + "test_receive_not_an_ancestor_could_not_tell"),
++    ("bridge receive: a non-doorbell printed without safe", BRIDGE,
++     '        print(crew_coord.peer(f"message: {crew_coord.safe(text)}"))\n',
++     '        print(crew_coord.peer(f"message: {text}"))\n',
++     _B + "test_a_non_doorbell_is_printed_only_as_safe_peer_data"),
++
++    # --- ring and pending (T-0032, L-0636) ------------------------------------------
++    ("bridge ring: a doorbell after a failed fetch", BRIDGE,
++     '    tip, state, why = chan.fetch()\n    if state == "failed":\n'
++     '        print(f"unknown - could not fetch {chan.ref} from {crew_coord.safe(chan.remote, 80)}: {why}")\n'
++     '        return crew_coord.EXIT_UNKNOWN\n    if state == "absent":\n        print(f"refused - ',
++     '    tip, state, why = chan.fetch()\n    if False:\n'
++     '        print(f"unknown - could not fetch {chan.ref} from {crew_coord.safe(chan.remote, 80)}: {why}")\n'
++     '        return crew_coord.EXIT_UNKNOWN\n    if state == "absent":\n        print(f"refused - ',
++     _B + "test_ring_failed_fetch_is_unknown_exit_3"),
++    ("bridge pending: a failed fetch reads as no pending doorbells", BRIDGE,
++     '        print(f"unknown - could not fetch {chan.ref} from {crew_coord.safe(chan.remote, 80)}: {why}")\n'
++     '        return crew_coord.EXIT_UNKNOWN\n    if state == "absent":\n        print(f"unknown - ',
++     '        print("no pending doorbells")\n'
++     '        return crew_coord.EXIT_OK\n    if state == "absent":\n        print(f"unknown - ',
++     _P + "test_failed_fetch_is_unknown_never_none_pending"),
++    ("bridge pending: this holder's own later line clears its ring", BRIDGE,
++     '        quiet = {entry["holder"], session}\n',
++     "        quiet = set()\n",
++     _P + "test_own_later_lines_keep_the_ring_pending"),
++    ("bridge pending: a corrupt log line skipped", BRIDGE,
++     "        except ValueError:\n"
++     '            return None, f"log.jsonl line {number} is not JSON"\n',
++     "        except ValueError:\n            continue\n",
++     _P + "test_corrupt_log_line_is_unknown_never_skipped"),
++
++    # --- the hub rule (L-0637) --------------------------------------------------------
++    ("bridge hub: ring in a lane allowed", BRIDGE,
++     '        if where == "lane":\n            print(HUB_REFUSAL)\n',
++     "        if False:\n            print(HUB_REFUSAL)\n",
++     _H + "test_ring_in_a_lane_is_refused"),
++    ("bridge hub: ring with an unreadable lane marker allowed", BRIDGE,
++     '        if where == "unknown":\n'
++     '            print(f"unknown - whether this worktree is a wave lane cannot be told: {why}; ',
++     "        if False:\n"
++     '            print(f"unknown - whether this worktree is a wave lane cannot be told: {why}; ',
++     _H + "test_ring_where_the_lane_marker_is_corrupt_is_unknown"),
++    # C-0051: L-0637's review rounds 4-6.
++    ("bridge hub r4: only the primary checkout's lane files read", BRIDGE,
++     "    for tree in trees:\n        state, why = _lane_in(crew_wave, tree, here)\n",
++     "    for tree in list(trees)[:1]:\n        state, why = _lane_in(crew_wave, tree, here)\n",
++     _H + "test_ring_in_a_lane_of_a_wave_started_from_a_linked_worktree_is_refused"),
++    ("bridge hub r5: a started lane whose file is gone reads as no lane", BRIDGE,
++     "        gone = _started_without_a_file(crew_wave, main, slug, names)\n",
++     "        gone = None\n",
++     _H + "test_a_started_lane_whose_file_is_gone_is_unknown"),
++    ("bridge hub r6: a lane file that is not UTF-8 read with replacements", BRIDGE,
++     '            if state == "ok" and not _strict_utf8(os.path.join(lanes, name)):\n',
++     "            if False:\n",
++     _H + "test_a_lane_file_that_is_not_utf8_is_unknown"),
++)
+diff --git a/plugin/crew/tests/sabotage_contract.py b/plugin/crew/tests/sabotage_contract.py
+new file mode 100644
+index 000000000..e1dd543b1
+--- /dev/null
++++ b/plugin/crew/tests/sabotage_contract.py
+@@ -0,0 +1,110 @@
++"""The L-0635 mutations: every fail-closed branch T-0031 (`crew_contract.py`,
++versioned contracts on the coordination channel), L-0633 (cross-session
++dependencies in `crew_wave.py`) and L-0634 (`check_bindings` and the wave's
++refusal) added. Same tuple shape as `sabotage.py`'s MUTATIONS -- (label,
++target, find, replace, test) -- and appended to it there. Run `sabotage.py`,
++not this file.
++
++Each one puts back a way a contract or a peer's claim that cannot be told, or
++that changed, reads as current, closed or absent -- the unknown collapsing
++into the safe-looking value -- and names the must-block case that has to go
++red.
++"""
++import os
++
++CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++SCRIPTS = os.path.join(CREW, "hooks", "scripts")
++CONTRACT = os.path.join(SCRIPTS, "crew_contract.py")
++COORD = os.path.join(SCRIPTS, "crew_coord.py")
++WAVE = os.path.join(SCRIPTS, "crew_wave.py")
++_C = "tests/test_crew_contract.py::"
++_V = "tests/test_crew_contract_verify.py::"
++_D = "tests/test_crew_wave_coord_deps.py::"
++
++CONTRACT_MUTATIONS = (
++    # --- T-0031: the contract record ---------------------------------------------
++    ("contract: put overwrites a built-against version", CONTRACT,
++     '            if record and record["status"] == FROZEN:\n',
++     "            if False:\n",
++     _C + "test_put_on_a_frozen_version_is_refused"),
++    ("contract: build-against runs without an approved ticket", CONTRACT,
++     '    if approval["status"] != "approved":\n',
++     "    if False:\n",
++     _C + "test_build_against_refuses_an_unapproved_ticket"),
++    ("contract: build-against skips the body-hash comparison", CONTRACT,
++     '        actual = body_hash(found[version][1])\n        if actual != record["hash"]:\n',
++     "        actual = body_hash(found[version][1])\n        if False:\n",
++     _C + "test_build_against_refuses_a_body_that_does_not_match_its_hash"),
++    ("contract: a corrupt earlier version reads as absent", CONTRACT,
++     "        if record is None:\n"
++     '            raise Unknown(crew_coord.peer(f"contract {name} v{number} has a corrupt record '
++     '({why})"))\n',
++     "        if record is None:\n            continue\n",
++     _C + "test_a_corrupt_earlier_version_stops_every_write[put]"),
++    ("contract: build-against reads a corrupt record as absent", CONTRACT,
++     '            return "unknown", crew_coord.peer(f"unknown - contract {name} v{version} has a '
++     'corrupt record "\n',
++     '            return "refused", crew_coord.peer(f"refused: contract {name} v{version} does not '
++     'exist "\n',
++     _C + "test_build_against_reads_a_corrupt_record_as_unknown[not-json]"),
++    ("contract: the channel push gains --force-with-lease", COORD,
++     '        return ["push", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]\n',
++     '        return ["push", "--force-with-lease", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]\n',
++     _C + "test_push_argv_never_forces"),
++    ("contract: put --new-version supersedes a draft", CONTRACT,
++     '            if record["status"] != FROZEN:\n'
++     '                return "refused", (f"refused: contract {name} v{latest} is still a {DRAFT}; ',
++     "            if False:\n"
++     '                return "refused", (f"refused: contract {name} v{latest} is still a {DRAFT}; ',
++     _C + "test_new_version_needs_a_frozen_predecessor_and_a_ticket"),
++
++    # --- L-0633: cross-session dependencies --------------------------------------
++    ("cross dep: a missing peer claim reads as closed", WAVE,
++     '        return f"{unknown}: no claim for {ticket} on crew-coord/{channel}"\n',
++     "        return None\n",
++     _D + "test_missing_peer_claim_is_unknown"),
++    ("cross dep: a working peer claim reads as closed", WAVE,
++     '    if claim["state"] == "done":\n        return None\n',
++     '    if claim["state"] in ("done", "working"):\n        return None\n',
++     _D + "test_working_peer_claim_is_not_closed"),
++    ("cross dep: a released peer claim reads as closed", WAVE,
++     '    if claim["state"] == "done":\n        return None\n',
++     '    if claim["state"] in ("done", "released"):\n        return None\n',
++     _D + "test_released_peer_claim_is_not_closed"),
++    ("cross dep: a failed fetch reads as closed", WAVE,
++     '    files, why = _channel_files(top, channel, channels)\n    if files is None:\n'
++     '        return f"{unknown}: {why}"\n',
++     "    files, why = _channel_files(top, channel, channels)\n    if files is None:\n"
++     "        return None\n",
++     _D + "test_failed_fetch_is_unknown"),
++    ("cross dep: the first of two same-id claims taken", WAVE,
++     "    if len(keys) > 1:\n",
++     "    if False:\n",
++     _D + "test_two_repositories_with_the_id_refuse_the_short_form"),
++    ("cross dep: a malformed cross dependency reads as no dependency", WAVE,
++     "    except crew_ticket.TicketError:\n        return None\n    local = ",
++     "    except crew_ticket.TicketError:\n        return []\n    local = ",
++     _D + "test_index_row_malformed_cross_dep_refuses_as_unknown"),
++
++    # --- L-0634: the hash refusal --------------------------------------------------
++    ("contract check: the record-hash comparison dropped", CONTRACT,
++     '    if record["hash"] != binding["hash"]:\n',
++     "    if False:\n",
++     _V + "test_a_changed_contract_is_a_mismatch[record-hash]"),
++    ("contract check: the body-hash comparison dropped", CONTRACT,
++     '    if body_hash(found[version][1]) != record["hash"]:\n        return "mismatch", ',
++     '    if False:\n        return "mismatch", ',
++     _V + "test_a_changed_contract_is_a_mismatch[body]"),
++    ("contract check: a corrupt bindings file reads as no bindings", CONTRACT,
++     '        return {"status": "unknown", "reason": f"contract bindings unknown ({why})", "lines": []}\n',
++     '        return {"status": "ok", "reason": "", "lines": []}\n',
++     _V + "test_what_cannot_be_checked_is_unknown[bindings-not-json]"),
++    ("contract check: a failed fetch reads as a pass", CONTRACT,
++     '        state, why, newer = ("unknown", why, []) if files is None else ',
++     '        state, why, newer = ("ok", why, []) if files is None else ',
++     _V + "test_what_cannot_be_checked_is_unknown[fetch-fails]"),
++    ("contract check: the wave never calls check_bindings", WAVE,
++     "    refusal = _dep_refusal(top, deps, channels) or _contract_refusal(top, ticket, channels)\n",
++     "    refusal = _dep_refusal(top, deps, channels)\n",
++     _V + "test_wave_refuses_a_contract_mismatch"),
++)
+diff --git a/plugin/crew/tests/sabotage_kimi.py b/plugin/crew/tests/sabotage_kimi.py
+index 36293094b..9a7192f70 100644
+--- a/plugin/crew/tests/sabotage_kimi.py
++++ b/plugin/crew/tests/sabotage_kimi.py
+@@ -846,4 +846,31 @@ KIMI_MUTATIONS = (
+      "    if before is not None:\n        before = _after_the_gates(args, before)\n",
+      "",
+      _R + "test_run_kimi_an_incident_skip_logged_by_crews_gates_is_not_the_reviewers"),
++
++    # --- L-0708 (C-0051, H2b): kimi_probe asks git, not any `.git` ----------------
++    ("kimi probe L-0708: any .git above TMPDIR refuses again", PROBE,
++     "                os.lstat(marker)\n                break\n",
++     '                os.lstat(marker)\n                return f"{marker} exists"\n',
++     _P + "test_l0708_an_empty_dot_git_above_tmpdir_proceeds"),
++    ("kimi probe L-0708: the repository refusal deleted", PROBE,
++     '        return _result("unknown", _repository_refusal(base), alias=alias, exe=exe)\n',
++     "        pass\n",
++     _P + "test_l0708_a_real_repository_above_tmpdir_is_refused"),
++    ("kimi probe L-0708: any other git answer allowed", PROBE,
++     '            and message.startswith(f"fatal: {NOT_A_REPOSITORY}"):\n        return ""\n',
++     '            or True:\n        return ""\n',
++     _P + "test_l0708_any_other_git_answer_is_could_not_tell"),
++    ("kimi probe L-0708: Kimi's project files beside a rejected .git ignored", PROBE,
++     "    said = _git_says(here) or _kimi_project_files(path)\n",
++     "    said = _git_says(here)\n",
++     _P + "test_l0708_kimi_project_files_beside_a_rejected_dot_git_are_refused"),
++    ("kimi probe L-0708: git missing from PATH allowed", PROBE,
++     '        return "git is not on PATH, so whether it is inside a repository cannot be told"\n',
++     '        return ""\n',
++     _P + "test_l0708_git_not_on_path_is_could_not_tell"),
++    ("kimi probe L-0708: git runs with the caller's GIT_* variables", PROBE,
++     "    env = {k: v for k, v in os.environ.items()\n"
++     '           if not k.upper().startswith("GIT_") and k.upper() != "LANGUAGE"}\n',
++     "    env = dict(os.environ)\n",
++     _P + "test_l0708_git_dir_in_the_environment_does_not_change_the_answer"),
+ )
+diff --git a/plugin/crew/tests/sabotage_resume.py b/plugin/crew/tests/sabotage_resume.py
+index 64a9ffa3f..e2c8523ff 100644
+--- a/plugin/crew/tests/sabotage_resume.py
++++ b/plugin/crew/tests/sabotage_resume.py
+@@ -368,6 +368,11 @@ RESUME_MUTATIONS = (
+      'CLAUDE_COMM = "claude"\n',
+      'CLAUDE_COMM = "node"\n',
+      _H + "test_the_writing_session_clear_names_the_command[sh]"),
++    # H2b, L-0660 (i): L-0658's goal bypass widened to a ticket handoff.
++    ("L-0660 (i): a ticket handoff skips the branch and head check too", RESUME,
++     '    if parsed["kind"] == "goal":\n',
++     '    if parsed["kind"] in ("goal", "ticket"):\n',
++     _T + "test_branch_mismatch_waits"),
+ )
+ 
+ 
+diff --git a/plugin/crew/tests/sabotage_wave.py b/plugin/crew/tests/sabotage_wave.py
+index 2e97e0e6b..e95a3f8ee 100644
+--- a/plugin/crew/tests/sabotage_wave.py
++++ b/plugin/crew/tests/sabotage_wave.py
+@@ -26,9 +26,12 @@ WAVE_MUTATIONS = (
+      'None)\n',
+      "        clash = None\n",
+      _W + "test_plan_refuses_overlapping_touch[second0]"),
+-    # "WAVE: unknown dependencies read as none" is deferred to H2b: rush G3c
+-    # (L-0633, <channel>:<id> dependencies) rewrites the dependency parser it
+-    # anchors on, so G3c's CI would fail on a harness file it may not touch.
++    # Re-added in H2b, anchored on G3c's dependency parser (L-0633 added the
++    # cross-session tokens between the search and the id read).
++    ("WAVE: unknown dependencies read as none", WAVE,
++     "    if not found:\n        return None\n    text = found.group(1)\n",
++     "    if not found:\n        return []\n    text = found.group(1)\n",
++     _W + "test_plan_refuses_unknown_dependencies[title]"),
+     # G0's port added an OPEN_STATUSES allowlist (review round 2), which refuses
+     # `direction` too, so dropping the named check alone left it refused: the
+     # mutation opens both.
+diff --git a/plugin/crew/tests/test_crew_autopilot.py b/plugin/crew/tests/test_crew_autopilot.py
+index a4b0cdc91..a294a55b0 100644
+--- a/plugin/crew/tests/test_crew_autopilot.py
++++ b/plugin/crew/tests/test_crew_autopilot.py
+@@ -1465,7 +1465,13 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
+                                 "tests/test_crew_ticket_mint.py::",
+                                 "tests/test_crew_autopilot_assign.py::",
+                                 "tests/test_crew_autopilot_sleep.py::",
+-                                "tests/test_crew_autopilot_replan.py::")), label
++                                "tests/test_crew_autopilot_replan.py::",
++                                # H2b: rush G6a's and G6b's autopilot modules.
++                                "tests/test_crew_autopilot_review_policy.py::",
++                                "tests/test_crew_autopilot_stop_contract.py::",
++                                "tests/test_crew_autopilot_fences.py::",
++                                "tests/test_crew_autopilot_goal_resume.py::",
++                                "tests/test_crew_autopilot_goals.py::")), label
+     # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
+     # share these targets, so an anchor either list moves must stay unique.
+     from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+diff --git a/plugin/crew/tests/test_crew_autopilot_sleep.py b/plugin/crew/tests/test_crew_autopilot_sleep.py
+index 0af3f28f1..1a6f0dd11 100644
+--- a/plugin/crew/tests/test_crew_autopilot_sleep.py
++++ b/plugin/crew/tests/test_crew_autopilot_sleep.py
+@@ -1736,6 +1736,14 @@ def test_log_fields_cannot_forge_an_entry(tmp_path, clock, capsys, text):
+             len(crew_sleep.unreported(_log_text(root)))) == (1, True, 1)
+ 
+ 
++def test_a_pipe_in_a_log_field_never_separates_fields():
++    """H2b (L-0655 (k)): `|` separates a log line's fields, so a field never
++    carries one: the parser reads past it, and only this pins the rule."""
++    line = crew_sleep.log_line(NIGHT, T, "note", "a | b | approved | c", "x|y")
++
++    assert (crew_sleep.log_field("a | b"), line.count(" | ")) == ("a / b", 4)
++
++
+ def test_summary_reports_once(tmp_path, clock, capsys):
+     clock(NIGHT)
+     root = _approving(tmp_path)
