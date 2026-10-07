@@ -2253,16 +2253,13 @@ def inspect_global(root, path=None):
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
-# defaults, so their rows went with it.
+# defaults, so their rows went with it. L-0649 (G4) made `autopilot.deploy`
+# `nonprod` and `all` work (the deploy phase), so their value rows went too.
 INERT_PENDING = {
     "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
                                    "L-0541"),
     ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
                                     "only `plan` arms it today", "L-0541"),
-    ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
-                                      "dispatches a deploy yet", "T-0045"),
-    ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "
-                                  "dispatches a deploy yet", "T-0045"),
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
@@ -2460,7 +2457,7 @@ def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {e
     crew does not act on (T-0070), for `crew_autopilot.settings`. Warns only,
     never refuses: an inert key must not block the run it was meant to speed
     up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
-    which already names T-0045. `failure` renders an exception (autopilot's
+    which names L-0649's deploy phase. `failure` renders an exception (autopilot's
     `_failure`); anything that raises is one could-not-tell warning."""
     try:
         return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
