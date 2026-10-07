@@ -501,14 +501,14 @@ KEY_META = {
     "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "
                                "resolved `pm.maxDispatches`, a larger value is capped to it and "
                                "anything but a positive integer reads as it, each with a "
-                               "warning.", "branch", None, "1.1.9", _S + "crew_wave.py",
+                               "warning.", "branch", None, "1.1.6", _S + "crew_wave.py",
                                type_="positive integer or null"),
     "autopilot.reviewPolicy": _row("What a wave lane does with its review verdict: `stop` ends "
                                    "at the first verdict, `clean-only` takes a CLEAN round on "
                                    "to the done checks, `fix-and-rereview` fixes within the "
                                    "ledger's rounds. Anything else reads as `stop`, with a "
                                    "warning; no setting lets a lane accept a review.", "tuple",
-                                   ("stop", "clean-only", "fix-and-rereview"), "1.1.9"),
+                                   ("stop", "clean-only", "fix-and-rereview"), "1.1.6"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "

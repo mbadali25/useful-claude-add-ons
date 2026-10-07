@@ -84,6 +84,14 @@ SCHEMA = 1
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 
+def _shell_path(path):
+    """`path` as a lane's Bash command line names it: quoted, and on Windows with '/' for
+    '\\'. A lane's Bash is Git Bash there, where '/' is native and needs no quoting, so a
+    rendered command reads as it does on POSIX. On POSIX a backslash is a filename
+    character and is kept."""
+    return shlex.quote(path.replace("\\", "/") if os.name == "nt" else path)
+
+
 class WaveError(RuntimeError):
     """A wave operation that could not be carried out."""
 
@@ -193,6 +201,11 @@ def write_set(root, slug, tickets, deps=None):
     only when given: absent means "read INDEX.md", `[]` means none."""
     check_slug(slug)
     deps = deps or {}
+    stray = sorted(set(deps) - set(tickets))
+    if stray:
+        # A dependency the set does not carry would be dropped without a word (group review r1).
+        raise WaveError(f"--deps names {', '.join(stray)}, which this set does not; "
+                        "nothing written")
     rows = []
     for ticket in tickets:
         _plain_id(ticket)
@@ -202,7 +215,15 @@ def write_set(root, slug, tickets, deps=None):
         rows.append(row)
     if not rows:
         raise WaveError("a set names at least one ticket")
-    _write_json(set_path(_top(root), slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
+    if len(set(tickets)) != len(tickets):
+        raise WaveError("a set names each ticket once")
+    top = _top(root)
+    if os.path.lexists(start_path(top, slug)):
+        # A started set is fixed: a rewrite would let start plan the new tickets without the
+        # running lanes' Touch and maxLanes, and cleanup miss them (group review r8, rush g0).
+        raise WaveError(f"set {slug} was started (.work/autopilot/{slug}/start.json); "
+                        "name a new set instead; nothing written")
+    _write_json(set_path(top, slug), {"schema": SCHEMA, "set": slug, "tickets": rows})
 
 
 def _plain_id(value):
@@ -261,6 +282,9 @@ def _valid_set(data, slug):
         return False
     rows = data.get("tickets")
     if not isinstance(rows, list) or not rows:
+        return False
+    ids = [row.get("id") if isinstance(row, dict) else None for row in rows]
+    if len(set(map(repr, ids))) != len(ids):  # a ticket named twice is one lane listed twice
         return False
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -485,17 +509,32 @@ def touch_overlaps(one, two):
     return any(_entries_overlap(a, b) for a in one for b in two)
 
 
-def _main_version(top):
-    """origin/main's crew version as (major, minor, patch), or None."""
+def _version_at(top, ref):
+    """crew's version in `ref`'s plugin.json as (major, minor, patch), or None."""
     try:
-        done = subprocess.run(["git", "-C", top, "show", f"origin/main:{PLUGIN_JSON}"],
+        done = subprocess.run([crew_common.require_tool("git"), "-C", top, "show", f"{ref}:{PLUGIN_JSON}"],
                               capture_output=True, text=True, check=False, timeout=30,
                               stdin=subprocess.DEVNULL)
         version = json.loads(done.stdout).get("version") if done.returncode == 0 else None
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
         return None
-    found = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version or "")
+    if not isinstance(version, str):  # a number, list or null is unreadable, never a crash
+        return None
+    found = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version)
     return tuple(int(n) for n in found.groups()) if found else None
+
+
+def _main_version(top):
+    """The crew version lanes bump from, as (major, minor, patch), or None.
+
+    origin/main's, unless the checkout the lanes are cut from (HEAD) already
+    declares a higher one -- a release branch ahead of main -- when it is
+    HEAD's: a lane must never be told to lower the declared version (group
+    review, rush g0). Either one unreadable is None, never a guess."""
+    main, head = _version_at(top, "origin/main"), _version_at(top, "HEAD")
+    if main is None or head is None:
+        return None
+    return max(main, head)
 
 
 def _entries(root, slug, tickets):
@@ -507,6 +546,8 @@ def _entries(root, slug, tickets):
         return [(row["id"], row.get("deps")) for row in data["tickets"]]
     for ticket in tickets or []:
         _plain_id(ticket)
+    if len(set(tickets or [])) != len(tickets or []):
+        raise WaveError("a wave names each ticket once")
     return [(ticket, None) for ticket in tickets or []]
 
 
@@ -618,13 +659,37 @@ def lane_path(top, slug, ticket):
 
 def read_lane(root, slug, ticket):
     """(lane, 'ok'|'missing'|'corrupt'). A lane file that parses but is not
-    an object with a known `state` is `corrupt`: unknown, never a state."""
+    an object with a known `state`, naming this set and ticket, with a text
+    `version` and a text or null `worktree` -- the fields `start` writes -- is
+    `corrupt`: unknown, never a state (group review r3, rush g0: a bare
+    `{"state": "clean"}` was collected as a clean lane)."""
     data, state = _read_json(lane_path(_top(root), slug, ticket))
     if state != "ok":
         return None, state
+    return (data, "ok") if _lane_shape_ok(data, slug, ticket) else (None, "corrupt")
+
+
+# States only a lane that lane-init set up can reach honestly: it recorded the branch and
+# the worktree (cleanup later drops the worktree and marks it removed). `failed` is exempt:
+# a lane whose lane-init refused reports failed from where it stands.
+SET_UP = ("running", "clean", "findings", "question")
+
+
+def _lane_shape_ok(data, slug, ticket):
+    """The fields `start` and `lane-init` write (group review r3 and r6, rush g0: a lane file
+    missing them was collected as clean)."""
     if not isinstance(data, dict) or data.get("state") not in LIVE + STATES:
-        return None, "corrupt"
-    return data, "ok"
+        return False
+    if data.get("set") != slug or data.get("ticket") != ticket:
+        return False
+    if not (isinstance(data.get("version"), str) and isinstance(data.get("base"), str) and data["base"]):
+        return False
+    if not isinstance(data.get("worktree"), (str, type(None))):
+        return False
+    if data["state"] not in SET_UP:
+        return True
+    placed = (isinstance(data["worktree"], str) and data["worktree"] != "") or data.get("removed") is True
+    return data.get("branch") == branch_for(ticket) and placed
 
 
 def write_lane(root, slug, ticket, lane):
@@ -638,8 +703,9 @@ def branch_for(ticket):
 def _git(top, *args):
     """(returncode, stdout) of one git call; (None, '') when it could not run."""
     try:
-        done = subprocess.run(["git", "-C", top] + list(args), capture_output=True, text=True,
-                              check=False, timeout=60, stdin=subprocess.DEVNULL)
+        done = subprocess.run([crew_common.require_tool("git"), "-C", top] + list(args),
+                              capture_output=True, text=True, check=False, timeout=60,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None, ""
     return done.returncode, done.stdout.strip()
@@ -697,12 +763,24 @@ def _receipt_mark(top, ticket):
 
 
 def _launch(top, slug, ticket, resume):
-    command = (f"python3 {shlex.quote(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
-               f"--root {shlex.quote(top)} "
+    command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
+               f"--root {_shell_path(top)} "
                f"--set {slug} --ticket {ticket}")
     if resume is not None:
         command += f" --resume-round {resume}"
     return f"launch {ticket}: {LAUNCH} prompt: the output of `{command}`"
+
+
+def _valid_receipts(receipts):
+    """True for start.json's `receipts`: {ticket id: None or [kind, round,
+    accepted_at]}, as `_receipt_mark` writes it. Anything else is no baseline."""
+    if not isinstance(receipts, dict):
+        return False
+    for ticket, mark in receipts.items():
+        if not isinstance(ticket, str) or not (
+                mark is None or (isinstance(mark, list) and len(mark) == 3)):
+            return False
+    return True
 
 
 def start_path(top, slug):
@@ -729,11 +807,23 @@ def start(root, slug):
         # Never rebuilt from nothing: its lanes would drop out of collect's report.
         raise WaveError(f"{start_path(top, slug)} is unreadable; it was left as it is -- the owner "
                         "repairs or removes it")
-    receipts = dict(record.get("receipts") or {})
+    receipts = record.get("receipts", {})
+    if not _valid_receipts(receipts):
+        raise WaveError(f"{start_path(top, slug)} holds a receipts map that is not ticket -> "
+                        "[kind, round, accepted_at] or null; it was left as it is -- the owner "
+                        "repairs or removes it")
+    receipts = dict(receipts)
     lanes = list(record.get("lanes") or [])
     versions = dict(result["land"])
+    started = list(lanes)
     lines = []
     for ticket in result["wave"]:
+        if started and ticket not in started:
+            # A relaunch replans from today's approvals, without the lanes already running:
+            # a newcomer could overlap one or pass maxLanes (group review r9, rush g0).
+            lines.append(f"{ticket} not started: this set's wave already started; a ticket it did "
+                         "not launch goes in a new set")
+            continue
         lane, state = read_lane(top, slug, ticket)
         if state == "corrupt":
             lines.append(f"{ticket} unknown: its lane file is unreadable; not relaunched")
@@ -835,7 +925,12 @@ def lane_init(root, main, slug, ticket):
         return False, refusal
     lane, _ = read_lane(main_top, slug, ticket)
     branch = branch_for(ticket)
-    code, _ = _git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    code, tip = _git(top, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    if code == 0 and lane.get("branch") != branch and tip != lane["base"]:
+        # Not this lane's (it never set one up) and not at the recorded base: an earlier
+        # wave's branch, whose commits this lane must not start from (group review r10).
+        return False, (f"{branch} already exists at {tip[:12]}, not this lane's and not at its base "
+                       f"{lane['base'][:12]}; the owner deletes or renames it")
     args = ["checkout", "-q", branch] if code == 0 else ["checkout", "-q", "-b", branch, lane["base"]]
     if _git(top, *args)[0] != 0:
         return False, f"git {' '.join(args)} failed in {top}"
@@ -910,7 +1005,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
     policy = settings(top)["reviewPolicy"]
 
     def script(name):
-        return "python3 " + shlex.quote(os.path.join(SCRIPTS, name))
+        return "python3 " + _shell_path(os.path.join(SCRIPTS, name))
 
     version = lane.get("version") or UNKNOWN
     if version == "-":
@@ -932,7 +1027,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         resume = (f"Reserve each round with `{script('review_run.py')} ... --reserve-only` "
                   "before the reviewer runs, and record it with `--round N`.")
     shape = "\n".join(f"    {row}" for row in crew_autopilot.QUESTIONS_SHAPE)
-    main = shlex.quote(top)
+    main = _shell_path(top)
     done = (f"{script('crew_wave.py')} lane-done --main {main} --set {slug} --ticket {ticket} "
             "--state <clean|findings|question|failed> --reason \"<one line>\"")
     return "\n".join([
@@ -975,6 +1070,9 @@ def lane_done(main, slug, ticket, state, reason):
     lane, got = read_lane(top, slug, ticket)
     if got != "ok":
         raise WaveError(f"{ticket}'s lane file is {got}; nothing written")
+    if state in SET_UP and not lane.get("branch"):
+        raise WaveError(f"{ticket}'s lane was never set up by lane-init, so it can only end "
+                        "--state failed; nothing written")
     write_lane(top, slug, ticket, dict(lane, state=state, reason=reason or "", step="done"))
 
 
@@ -1013,6 +1111,8 @@ def _lane_row(top, slug, ticket, started, marks):
         return dict(row, reason="the wave was not started (no readable start.json)")
     if ticket not in started:
         return dict(row, state="later", reason="not in a started wave")
+    if marks is None:
+        return dict(row, reason="start.json's receipts map is unreadable; no receipt baseline")
     lane, state = read_lane(top, slug, ticket)
     if state != "ok":
         return dict(row, reason=f"its lane file is {state}")
@@ -1039,7 +1139,9 @@ def collect(root, slug):
     record, rstate = _read_json(start_path(top, slug))
     ok = rstate == "ok" and isinstance(record, dict) and isinstance(record.get("lanes"), list)
     started = record["lanes"] if ok else None
-    marks = (record.get("receipts") or {}) if ok else {}
+    marks = record.get("receipts", {}) if ok else {}
+    if ok and not _valid_receipts(marks):
+        marks = None  # no baseline: every started lane reads unknown, never clean (r1)
     ids = [row["id"] for row in data["tickets"]]
     problems = []
     # A lane that was started stays in the report even if the set file was rewritten without it;
@@ -1097,12 +1199,18 @@ def collect_text(result):
 # --- cleanup: merged lanes' worktrees (Step 11) --------------------------------------------------
 
 def _default_ref(top):
-    """`origin/<default>`, or None when it cannot be told."""
-    code, out = _git(top, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
-    if code == 0 and out:
-        return out
-    code, _ = _git(top, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main")
-    return "origin/main" if code == 0 else None
+    """`origin/<default>` as the remote says it now, or None when it cannot be
+    told. Neither a local origin/HEAD nor a guessed origin/main proves it: the
+    default may have moved since (group review r1, rush g0), so "cannot tell"
+    keeps the lane."""
+    code, out = _git(top, "ls-remote", "--symref", "origin", "HEAD")
+    heads = [line[len("ref: "):].split("\t")[0] for line in out.splitlines()
+             if line.startswith("ref: ") and line.endswith("\tHEAD")] if code == 0 else []
+    if len(heads) != 1 or not heads[0].startswith("refs/heads/"):
+        return None
+    name = heads[0][len("refs/heads/"):]
+    code, _ = _git(top, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{name}")
+    return f"origin/{name}" if code == 0 and name else None
 
 
 def _merged(top, commit, ref):
@@ -1223,10 +1331,15 @@ def _parse_deps(values):
     deps = {}
     for value in values or []:
         ticket, sep, rest = value.partition("=")
-        if not sep:
+        parts = [d.strip() for d in rest.split(",")]
+        # `T-1=` or `T-1=,` is a typo, never "no dependencies": only `none` says that
+        # (group review r5, rush g0).
+        if not sep or (rest.strip() != "none" and not all(parts)):
             raise WaveError(f"--deps {value!r} is not <id>=<id>,<id> or <id>=none")
-        deps[_plain_id(ticket.strip())] = (
-            [] if rest.strip() == "none" else [_dep_id(d.strip()) for d in rest.split(",") if d.strip()])
+        key = _plain_id(ticket.strip())
+        if key in deps:  # a later flag must not quietly replace an earlier one (group review r10)
+            raise WaveError(f"--deps names {key} twice; give its dependencies once")
+        deps[key] = [] if rest.strip() == "none" else [_dep_id(d) for d in parts]
     return deps
 
 
