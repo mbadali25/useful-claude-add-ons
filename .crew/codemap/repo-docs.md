@@ -1,6 +1,15 @@
 # repo-docs
-anchor: useful-claude-add-ons@03b19262
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
+**This pass (`03b19262` -> `5d1fc5fd`) is a per-path diff and a re-read of
+every citation into a changed file — see the bottom-most provenance section
+for the command and output. Its headline is `## Corrected at 5d1fc5fd`
+(just before `## Landmines`): every "not yet reflected in this file's
+`03b19262` anchor" caveat this note carried is now resolved, because the
+rework those caveats were waiting on landed in this range.**
+
+The `ea8a014 -> 84976536` section immediately below is retained as the record
+of that earlier full per-path re-verification and was not redone at this pass.
 Full per-path re-verification of every claim resting on a file the path diff
 named as changed; claims resting on unchanged files are closed by that result
 and were not re-read. See the provenance section immediately below for the
@@ -48,9 +57,13 @@ live and actionable:**
    PR #206), and `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh
    scripts/install-prerequisites.ps1` is empty — both re-verified directly.
    **`docs/guides/Running-a-Mailbox-Job.json:18` was NOT part of that re-pin**
-   and still reads the older `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`, one
-   commit (`d541ee57`) behind both install scripts — re-verified by grep at
-   this pass. Not fixed here; that file is outside this note's write scope.
+   and still reads the older `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one
+   re-pin event (`2cc73a1e`) behind, but **59 commits** behind `d541ee57` in raw
+   git history (`git log --oneline 0a2d49b0..d541ee57 | wc -l` = 59; corrected
+   from "one commit behind" in an earlier version of this bullet, which
+   conflated the single re-pin commit with git-history distance) — re-verified
+   by grep at this pass. Not fixed here; that file is outside this note's
+   write scope.
    `install-scripts.md` carries the corresponding correction to its own pin
    bullet.
 2. **The open `.mmd`-count question from the previous pass is RESOLVED, and the
@@ -61,10 +74,12 @@ live and actionable:**
    `plugin/crew/skills/crew-diagrams/scripts/render.sh:75` is
    `FILES=("$DIR"/*.mmd)` — a glob over the whole directory, under
    `shopt -s nullglob` at `:74`, with no hardcoded list anywhere in the file.
-   (Re-pointed 2026-09-22 against the working tree of a flag-parsing and
-   artifact-check rework not yet reflected in this file's `03b19262` anchor —
-   that rework moved the glob down without changing what it does. Re-verify
-   this pair when the anchor next moves past whatever commit lands it.)
+   (At the `03b19262` anchor this was re-pointed against a flag-parsing and
+   artifact-check rework then still uncommitted on this branch. **That rework
+   has since landed, in the `03b19262 -> 5d1fc5fd` range, and it is now part
+   of this note's own anchor** — re-read directly at `5d1fc5fd`, `:74` and
+   `:75` are byte-identical to what was described then, so the citation needed
+   no repointing, only this note saying so.)
    So `render.sh` renders **all six**, and both "three `.mmd` sources" and
    "six files, three names x two formats" were simply out of date. Corrected in
    place below.
@@ -271,8 +286,12 @@ unchanged position despite the file's other changes.)
   **A third site carries an install-URL SHA and was NOT part of this
   re-pin.** `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell
   one-liner inside a JSON step string; re-checked at this pass, it still reads
-  `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one commit (`d541ee57`) behind
-  both install scripts. `docs/runbooks/rollback.md:55`, which says to replace
+  `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one re-pin event (`2cc73a1e`)
+  behind the README, but **59 commits** behind in raw git history
+  (`git log --oneline 0a2d49b0..d541ee57 | wc -l` = 59, re-measured this
+  pass — "one commit behind" in a previous version of this bullet was wrong;
+  a single re-pin commit does not mean the two SHAs are adjacent commits).
+  `docs/runbooks/rollback.md:55`, which says to replace
   the SHA in "BOTH raw.githubusercontent.com URLs in README.md," is still an
   undercount by this same site, and following it literally now leaves that
   guide installing a script older than the one shipped by PR #205. Not fixed
@@ -295,11 +314,18 @@ unchanged position despite the file's other changes.)
   two formats**, corrected this pass from the "six files, three names" this
   note carried for five anchors. Produced by
   `plugin/crew/skills/crew-diagrams/scripts/render.sh` — output dir created at
-  `:88`, `mmdc` invoked at `:126` and again at `:133` on the failure path.
-  Re-pointed 2026-09-22 against the working tree of a flag-parsing and
-  artifact-check rework not yet reflected in this file's `03b19262` anchor —
-  re-verify these three when the anchor next moves past whatever commit
-  lands it; see "Calls out to" below for the same caveat.
+  `:88`, `mmdc` invoked at `:126` and again at `:133` on the failure path. All
+  three were pointed, at the `03b19262` anchor, at line numbers that did not
+  yet exist there — the file committed at `03b19262` was 63 lines, not the 151
+  these numbers assume. That gap has closed by different mechanisms per line,
+  checked individually rather than assumed uniform: `:88`
+  (`OUT="$DIR/out"; mkdir -p "$OUT"`) is content that already existed at
+  `03b19262` (at `:20` there) and simply moved down, unchanged, because the
+  flag-parsing rework inserted lines above it; `:126` and `:133` are content
+  that is genuinely new — the temp-file-and-`[ -s "$tmp" ]` check is absent
+  from the `03b19262` file entirely (confirmed by diff, not by line-number
+  absence alone). Either way, all three now match the committed file at
+  `5d1fc5fd` — see "Calls out to" below for the `:126`/`:133` confirmation.
   `docs/diagrams/out/` itself is gitignored at
   `.gitignore:409` — unchanged, and `.gitignore` is not in this range's changed
   set. `git ls-files docs/diagrams/` returns **six** `.mmd` sources:
@@ -312,8 +338,8 @@ unchanged position despite the file's other changes.)
   whether "three" had always been correctly scoped to a subset `render.sh`
   targets — deferring it as needing a read of `render.sh`'s invocation site.
   That read is done. DERIVED
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:74-75` (same
-  not-yet-anchored rework caveat as above):
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:74-75` (re-confirmed
+  byte-identical at `5d1fc5fd`, same as the "Owns data" citation above):
   `shopt -s nullglob` then `FILES=("$DIR"/*.mmd)`. It is a glob over the whole
   directory; there is no hardcoded source list anywhere in the file. So
   `render.sh` renders every `.mmd` present, the count was **stale**, and the
@@ -332,13 +358,20 @@ unchanged position despite the file's other changes.)
   none removed). `README.md:154` carries
   `<!-- claim: skills-count -->`, so this number is no longer "checked by
   nothing": `check_self_claims`
-  (`scripts/check-marketplace.py:579-722`, moved from `:430`, and from `:412`
-  before that — re-taken by parsing the function definitions out of the file
-  with `ast` rather than by offsetting, because `check-marketplace.py` gained
-  four whole checks in this range and the insertions are not evenly spaced)
+  (`scripts/check-marketplace.py:649-830`, moved from `:579-722` at the
+  `03b19262` anchor, and from `:430` and `:412` before that — re-taken by
+  grepping the function definition directly at this pass, because
+  `check-marketplace.py` gained two more whole checks
+  (`check_description_claims`, `check_catalog_claims`) between `03b19262` and
+  `5d1fc5fd` and the insertion is not evenly spaced; see
+  `marketplace-registration.md`'s `## Corrected at 5d1fc5fd` for what those two
+  check)
   verifies marked numbers against `marketplace.json`, and this repo's own
-  `CLAUDE.md` documents the convention (`CLAUDE.md:29`; that file is unchanged
-  in this range). `plugin/README.md:414`'s agent count is also no
+  `CLAUDE.md` documents the convention (`CLAUDE.md:29`; `CLAUDE.md` changed
+  between `03b19262` and `5d1fc5fd`, but the edit landed entirely in the
+  `render.sh` regression-test citation further down the file — `:29` is
+  byte-identical at both revisions, re-confirmed by direct read rather than
+  assumed). `plugin/README.md:414`'s agent count is also no
   longer stale — as of `f12003e2` (#166, "fix three stale self-describing
   counts") it read "54 agents, 26 commands, 18 skills, 20 hook entries."
   **That quotation is superseded at this anchor**: the live line now reads 54 /
@@ -350,7 +383,8 @@ unchanged position despite the file's other changes.)
   plugin's own bundled-skill count (`skills-count` only ever checked the
   marketplace-wide total, which is why crew's bundle count had drifted
   uncaught in the first place); its counting helper is `count_plugin_skills`
-  (`scripts/check-marketplace.py:562-576`, moved from `:413-427`). The line
+  (`scripts/check-marketplace.py:563-577`, moved from `:562-576`, and from
+  `:413-427` before that). The line
   still reads "54 agents, 28 commands, 20 skills<!-- claim:
   plugin-skills:crew -->, 18 hook entries" verbatim — re-read at this anchor,
   and `plugin/README.md:414` has not moved. On-disk inventory re-measured this
@@ -378,8 +412,10 @@ unchanged position despite the file's other changes.)
 - DERIVED `mmdc` (mermaid-cli), at
   `plugin/crew/skills/crew-diagrams/scripts/render.sh:126` (`-s 2`, silenced)
   and `:133` (the retry that prints the last five lines of stderr on FAIL).
-  Re-pointed 2026-09-22, same not-yet-anchored rework caveat as the citations
-  above. The `-s 2` call renders to a temp file (`$tmp`, checked with
+  These were pointed at an uncommitted working-tree rework at `03b19262`; that
+  rework landed by `5d1fc5fd` and both lines are confirmed against the
+  committed file at this anchor, not carried over unread. The `-s 2` call
+  renders to a temp file (`$tmp`, checked with
   `[ -s "$tmp" ]`) and only `mv`s it onto the real output path on success, so
   a failed re-render can no longer delete the last good render — different
   in substance from the previous anchor, not just moved.
@@ -438,6 +474,58 @@ JUDGEMENT: the many `docs/adr/` references under `plugin/crew/` —
 repo it is installed into, not claims about this one. Not re-enumerated this
 pass; the previous pass's citations into them were not re-verified and should
 not be trusted without a fresh read if they are needed again.
+
+## Corrected at 5d1fc5fd
+
+**The `render.sh` / `_test/render.sh` "not yet reflected in this file's `03b19262`
+anchor" caveats, scattered through this note above, all resolve the same way:
+the rework landed in `30173e99`'s sibling commits (part of PR #208, crew
+0.20.11) and is now committed history, not a working-tree draft.** Measured
+directly rather than assumed:
+
+- `plugin/crew/skills/crew-diagrams/scripts/render.sh` — **63 lines at
+  `03b19262`, 151 at `5d1fc5fd`** (`git show 03b19262:... | wc -l` vs `wc -l`
+  on the checkout). The file also gained the executable bit
+  (`100644` -> `100755`) in this range. Every citation this note makes into it
+  (`:74-75`, `:88`, `:93-99`, `:100-104`, `:126`, `:133`) was re-read directly
+  against the committed file at `5d1fc5fd` and matches exactly.
+- `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` — **79 lines at
+  `03b19262` (case 2 at `:74`, 2 cases total — `git show
+  03b19262:plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` shows
+  only "1. plain invocation..." and "2. MSYS_NO_PATHCONV=1..."), 279 lines at
+  `5d1fc5fd` (case 2 at `:104`, 12 cases total, per the file's own header
+  comment: "cases 1-2 ... case 3 ... cases 4-12")**. `CLAUDE.md`'s own
+  citation into this file moved the same way, corrected there and
+  cross-checked here.
+- `CHANGELOG.md` gained a 44-line bullet inserted at line 9, immediately after
+  the existing `### Fixed` heading — that heading already existed at `:7` in
+  the `03b19262` file (`git show 03b19262:CHANGELOG.md`, confirmed by direct
+  read), so this is a new entry inside an existing section, not a new
+  section. The `## [Unreleased]` heading at `:5` is unaffected either way.
+  The new bullet documents both the `render.sh` rework and the
+  `check_description_claims`/`check_catalog_claims` fix
+  `marketplace-registration.md` and `install-scripts.md` both cover in full.
+  File is now **7929** lines (was 7885).
+- `TODO.md` grew +81/-5 lines but not at its `:634-761` (agent-count, CLOSED)
+  or `:1061-1091` (render.sh, still open) entries — both re-confirmed at their
+  existing line numbers by grepping their headings, unmoved.
+- `plugin/crew/README.md:2097` — this is the file that actually changed in
+  this range (27 -> 28 commands, now marker-carrying), part of the
+  fifth-inversion fix `marketplace-registration.md` and `install-scripts.md`
+  both cover in full; not the `plugin/README.md:414` catalog row this note's
+  `## Owns data` section cites, which was **not** touched in the
+  `03b19262 -> 5d1fc5fd` range (confirmed absent from the changed-file list
+  above) — its commands figure already read 28 at `03b19262`, and its
+  hook-entry figure is still wrong (18, not 20) and still unmarked, unchanged
+  from the `03b19262` finding. Do not conflate the two `README.md` files —
+  `plugin/README.md` is the top-level catalog table, `plugin/crew/README.md`
+  is crew's own bundled doc.
+- `.crew/verify.json` and `plugin/crew/hooks/scripts/_test/run-tests.sh` also
+  changed in this range. The former is wording-only in unrelated `why` fields
+  (confirmed by diff, not cited by line number in this note). The latter
+  hardens a test fixture's own stub scripts against a gap a review round
+  found; not cited by line number in this note and not read beyond confirming
+  the changed-file result.
 
 ## Landmines
 
@@ -502,15 +590,20 @@ not be trusted without a fresh read if they are needed again.
   when `mmdc` is invoked directly, and the same proposed fix
   (`cygpath -w`), which has since landed —
   `plugin/crew/skills/crew-diagrams/scripts/render.sh:100-104` sets
-  `PCFG_ARG` from `cygpath -w "$PCFG"` when `cygpath` exists, re-read this
-  pass. `plugin/crew/skills/crew-diagrams/scripts/render.sh:93-99` still
+  `PCFG_ARG` from `cygpath -w "$PCFG"` when `cygpath` exists, re-read at
+  `5d1fc5fd`. `plugin/crew/skills/crew-diagrams/scripts/render.sh:93-99` still
   names the real trigger: `MSYS_NO_PATHCONV=1` set in the caller's
-  environment, not a Mermaid problem. (Re-pointed 2026-09-22: a flag-parsing
-  and artifact-check rework on this branch, not yet reflected in this file's
-  `03b19262` anchor, added lines ahead of this block without touching its
-  content, which was re-read verbatim and is byte-identical to the previous
-  anchor. Re-verify these two ranges when the anchor next moves past
-  whatever commit lands that rework.)
+  environment, not a Mermaid problem. **Correction to a claim this note briefly
+  carried between the previous pass and this one: this block is NOT part of
+  the flag-parsing/artifact-check rework and was NOT missing at `03b19262` —
+  it had the cygpath handling already**, at `:25-36` in the file committed
+  there (`git show 03b19262:plugin/crew/skills/crew-diagrams/scripts/render.sh`,
+  confirmed by direct read; `PCFG_ARG="$PCFG"` at `:32`, the `cygpath` branch
+  at `:33-36`). Diffed against the current `:100-104`/`:93-99` content
+  directly (not by line-number offset): the two are the same text. What moved
+  is only the line number, because the flag-parsing rework inserted ~70 lines
+  *above* this block, between `03b19262` and `5d1fc5fd` — this specific
+  passage's content did not change in that range at all.
 
 - **The regression test for that fix is no longer misdocumented — this
   landmine is resolved, not carried forward.** Four previous versions of this
@@ -526,9 +619,15 @@ not be trusted without a fresh read if they are needed again.
   or that file is next edited, per this note's own "A self-referential count
   changes itself" landmine below. Cite the case by name and its own line
   instead: `nonzero_svg "MSYS_NO_PATHCONV=1"` is invoked at
-  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh:104` at this
-  pass (re-pointed 2026-09-22 against the same not-yet-anchored rework as
-  the render.sh citations above — re-verify when the anchor next moves).
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh:104` at
+  `5d1fc5fd`, re-confirmed by direct read. **This was NOT yet true at this
+  note's own `03b19262` anchor** — at that commit the file was 79 lines and
+  the case sat at `:74` (`git show 03b19262:plugin/crew/skills/crew-diagrams/scripts/_test/render.sh
+  | wc -l` = 79); the `:104` citation in the previous version of this bullet
+  was pointed at an in-progress rework on the working branch, not at anything
+  committed at `03b19262`. That rework — 12 cases instead of 2, 279 lines —
+  landed in the `03b19262 -> 5d1fc5fd` range (see `## Corrected at 5d1fc5fd`
+  above), and `:104` is correct now that it has.
   `CLAUDE.md` itself records the correction date as 2026-09-12. Kept as an
   entry here, rather than silently dropped, because a landmine repeated four
   times and then fixed is worth one line saying so — the next reader who
@@ -661,7 +760,10 @@ offset:
   resolves finding 1 from the previous pass ("the install-URL pin is STALE")
   for `README.md` specifically — `docs/guides/Running-a-Mailbox-Job.json:18`
   was checked separately (it is a cited path, unchanged in this diff) and
-  still reads the older `0a2d49b0` SHA, now one commit further behind.
+  still reads the older `0a2d49b0` SHA, now one re-pin further behind (the
+  "one commit" wording this bullet previously used was never true — 59 commits
+  separate `0a2d49b0` from `d541ee57`; corrected where this note first
+  measured that, above).
 - The three `%% Generated from ...` diagrams were re-derived by `2b337296`
   ("diagrams: re-derive data-flow-crew-config, process-bitbucket-svg,
   process-crew-brief"). All three now read line 1 `%% Generated from
@@ -722,3 +824,79 @@ The render gate, which earlier entries record as never run for want of
 `mmdc`, was run by the commit author for `03b19262` with mmdc 11.17.0
 (`render.sh --force`: 3 FAIL before the fix, 12 ok after). That is the
 commit message's claim; this note did not re-run it.
+
+## Re-anchor provenance — 03b19262 -> 5d1fc5fd, 2026-09-22
+
+Per-path check, run over the same pathspec the `ea8a014 -> 84976536` section
+above enumerates as "30 tracked paths" — that figure is corrected below to 32,
+counted directly rather than carried forward:
+
+```
+git diff --name-only 03b19262..5d1fc5fd -- .crew/verify.json CHANGELOG.md \
+  INSTALLATION.md README.md TODO.md docs/diagrams/data-flow-crew-config.mmd \
+  docs/diagrams/process-crew-brief.mmd docs/remaining-setup.md plugin/PLUGINS.md \
+  plugin/README.md plugin/crew/README.md plugin/crew/agents/scribe.md \
+  plugin/crew/hooks/scripts/_test/run-tests.sh plugin/crew/hooks/scripts/crew_state.py \
+  scripts/check-marketplace.py skills/README.md CLAUDE.md docs/HANDOFF.md \
+  docs/adr/0001-promote-stays-unarmed.md docs/diagrams/architecture.mmd \
+  docs/guides/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
+  plugin/crew/commands/handoff.md plugin/crew/hooks/scripts/crew_freshness.py \
+  plugin/crew/skills/crew-context/SKILL.md plugin/crew/skills/crew-diagrams/SKILL.md \
+  plugin/crew/skills/crew-diagrams/scripts/_test/render.sh \
+  plugin/crew/skills/crew-diagrams/scripts/render.sh plugin/crew/skills/crew-docs/SKILL.md \
+  plugin/crew/skills/crew-runbooks/SKILL.md scripts/_test/self-claims.py scripts/sync-updates.py
+```
+```
+.crew/verify.json
+CHANGELOG.md
+CLAUDE.md
+TODO.md
+plugin/PLUGINS.md
+plugin/crew/README.md
+plugin/crew/hooks/scripts/_test/run-tests.sh
+plugin/crew/skills/crew-diagrams/scripts/_test/render.sh
+plugin/crew/skills/crew-diagrams/scripts/render.sh
+scripts/_test/self-claims.py
+scripts/check-marketplace.py
+```
+
+**The pathspec has thirty-two entries, not the thirty a previous pass of this
+note claimed** (re-counted directly by listing them into `wc -l` rather than
+trusting the earlier figure — this is the same class of self-referential
+miscount `INDEX.md` warns about). **Eleven changed, twenty-one did not.** The
+twenty-one unchanged: `INSTALLATION.md`,
+`README.md`, `docs/diagrams/data-flow-crew-config.mmd`,
+`docs/diagrams/process-crew-brief.mmd`, `docs/remaining-setup.md`,
+`plugin/README.md`, `plugin/crew/agents/scribe.md`,
+`plugin/crew/hooks/scripts/crew_state.py`, `skills/README.md`,
+`docs/HANDOFF.md`, `docs/adr/0001-promote-stays-unarmed.md`,
+`docs/diagrams/architecture.mmd`, `docs/guides/Running-a-Mailbox-Job.json`,
+`docs/runbooks/rollback.md`, `plugin/crew/commands/handoff.md`,
+`plugin/crew/hooks/scripts/crew_freshness.py`,
+`plugin/crew/skills/crew-context/SKILL.md`,
+`plugin/crew/skills/crew-diagrams/SKILL.md`,
+`plugin/crew/skills/crew-docs/SKILL.md`,
+`plugin/crew/skills/crew-runbooks/SKILL.md`, `scripts/sync-updates.py` — close
+citations into them by that result alone.
+
+**Seven of the eleven changed files are covered by `## Corrected at 5d1fc5fd`**
+above: `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`,
+`plugin/crew/README.md`, `plugin/crew/hooks/scripts/_test/run-tests.sh`, and
+both `render.sh` files (two files, counted separately). `CLAUDE.md`'s change is covered where this note cites
+`CLAUDE.md:29` (confirmed unaffected — the edit landed in the `render.sh`
+regression-test passage, not near the marker-convention text). `plugin/PLUGINS.md`
+carries the crew version bump (`0.20.10` -> `0.20.11`) already covered under the
+`plugin/README.md:414` bullet's cross-reference. `scripts/_test/self-claims.py`
+grew from 344 to 1382 lines and is not cited by line number in this note.
+`scripts/check-marketplace.py` grew from 1233 to 1627 lines; its
+`check_self_claims` and `count_plugin_skills` citations are corrected above,
+and `marketplace-registration.md` owns the rest of that file's function map.
+
+**Not re-executed at this pass**: `render.sh` itself, `python3
+scripts/check-marketplace.py`, and every suite under `scripts/_test/` or
+`plugin/crew/hooks/scripts/_test/`. Not re-read beyond confirming the
+changed-file result and the specific citations corrected above:
+`plugin/crew/hooks/scripts/_test/run-tests.sh`'s body, `.crew/verify.json`'s
+body beyond the two `why`-field diffs already characterised in
+`marketplace-registration.md`, and `CHANGELOG.md`'s history below the new
+`### Fixed` entry.

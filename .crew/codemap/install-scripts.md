@@ -1,12 +1,14 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b337296
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
 
-**Re-derived, not re-pointed, on 2026-09-22.** The two scripts grew by roughly
-880 lines between `ea8a014` and this anchor and no uniform offset exists, so
-every citation below was relocated by finding its construct again rather than by
+**Re-derived, not re-pointed, at `84976536`.** The two scripts grew by roughly
+880 lines between `ea8a014` and that anchor and no uniform offset existed, so
+every citation was relocated by finding its construct again rather than by
 adding a number to the old one. See `## Re-anchor provenance` at the bottom for
-what that pass did and did not read.
+what that pass did and did not read. **This pass (`2b337296` -> `5d1fc5fd`) is
+narrower**: a per-path diff, not a full re-derivation — see the bottom-most
+provenance section for what changed and what closed unread.
 
 ## History, from the `0a9d8937` pass
 
@@ -46,7 +48,8 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   `install_plugin` out of it with an `eval "$(awk ...)"` over the function body, so the
   update-detection path can be exercised without running the installer. DERIVED, and closed by the
   per-path check: that file has not changed since the previous anchor.
-- `scripts/_test/self-claims.py:307` — module entry point (`main()`), from the graph
+- `scripts/_test/self-claims.py:1166` (was `:307` at `2b337296` - the file grew from 344 lines to
+  1382, per-path re-read at this anchor, not carried) — module entry point (`main()`)
 
 ## Owns data
 
@@ -132,12 +135,19 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   `check_license_consistency` at `:268`, `check_command_backtick_spans` at `:1094`), but neither of
   these two functions' bodies changed - only their position, and not by a uniform amount.
 
-  **The example this bullet carries was live at this anchor, and is now fixed - uncommitted,
-  on branch `post-207-checklist`, not yet part of this file's own `2b337296` history.**
+  **The example this bullet carried at `2b337296` was live then and is FIXED and COMMITTED now,
+  in `30173e99` ("check-marketplace: verify the command and skill counts stated in descriptions
+  and catalogs"), part of PR #208 / this note's `5d1fc5fd` anchor.** Previously this passage said
+  the fix was "uncommitted, on branch `post-207-checklist`" and that
+  `git diff --name-only 2b337296..HEAD` for these paths "still returns empty." Both are now wrong
+  in the direction of being stale, not wrong as written at the time: re-run at this anchor,
+  `git diff --name-only 2b337296..5d1fc5fd` for this note's tracked paths returns nine files, not
+  empty - see the bottom-most provenance section for the full list and output. `30173e99` itself is
+  not a direct ancestor of `5d1fc5fd` (its branch was squash-merged), but its content is present:
+  confirmed by reading `scripts/check-marketplace.py` at `5d1fc5fd` directly, not by sha ancestry.
   `plugin/crew/commands/` holds **28** `.md` files, `plugin/crew/agents/` holds **54**, and
-  `plugin/crew/skills/` holds **20** subdirectories (DERIVED, directory counts at this anchor,
-  unchanged since - only the prose describing them moved). At `2b337296` it was a three-way
-  disagreement:
+  `plugin/crew/skills/` holds **20** subdirectories (DERIVED, re-measured at `5d1fc5fd`, unchanged
+  from `2b337296`). At `2b337296` it was a three-way disagreement:
   - both install scripts read `crew                    - Virtual dev team: 54 agents, 26 commands, safety hooks`
     (`scripts/install-prerequisites.sh:1322`, `scripts/install-prerequisites.ps1:1089`) - agents
     right, commands wrong by two;
@@ -148,55 +158,93 @@ standalone tools through their own package managers (see **Calls out to**). DERI
     named: `plugin/crew/skills/crew-best-practices/SKILL.md:29` said `26 commands` and
     `plugin/crew/README.md:2097` said `27 commands`, both against 28 on disk.
 
-  **All five are now fixed in the uncommitted diff**, and the mechanism changed along with the
-  numbers: `scripts/check-marketplace.py` gained `check_description_claims` (an explicit
-  `DESCRIPTION_CLAIMS` table naming `.claude-plugin/marketplace.json`'s own JSON `description`
-  string, which cannot carry an HTML comment) and `check_catalog_claims` (the same idea, an
-  explicit `CATALOG_CLAIMS` table, for the two install scripts' own catalog labels - scoped to
-  each plugin's own row via `_catalog_name_text`, not a whole-file scan). The two newly-found
-  `.md` sites are ordinary `<!-- claim: plugin-commands:crew -->` markers, the same mechanism
-  `plugin-skills:crew` already used - `check_self_claims` gained a `plugin-commands:` branch
-  alongside `plugin-skills:` for exactly this. So the two scripts now agree with each other, the
+  **All five are now fixed, re-read directly at `5d1fc5fd`:** both install scripts read
+  `54 agents, 28 commands, safety hooks` (`scripts/install-prerequisites.sh:1322`,
+  `scripts/install-prerequisites.ps1:1089`, was `26 commands`); `.claude-plugin/marketplace.json`'s
+  `crew` description reads `28 slash commands, 20 bundled skills` (was `27 slash commands, 19
+  bundled skills`), and its `version` moved `0.20.10` -> `0.20.11` in the same hunk;
+  `plugin/crew/skills/crew-best-practices/SKILL.md:29` reads `54 agents or 28 commands<!--
+  claim: plugin-commands:crew -->` (was `26 commands`, unmarked); `plugin/crew/README.md:2097`
+  reads `28 commands.<!-- claim: plugin-commands:crew -->` (was `27 commands.`, unmarked). The
+  mechanism changed along with the numbers: `scripts/check-marketplace.py` gained
+  `check_description_claims` (`:867`, table `DESCRIPTION_CLAIMS` at `:853`) - naming
+  `.claude-plugin/marketplace.json`'s own JSON `description` string, which cannot carry an HTML
+  comment - and `check_catalog_claims` (`:1030`, table `CATALOG_CLAIMS` at `:975`) for the two
+  install scripts' own catalog labels, scoped to each plugin's own row via `_catalog_name_text`
+  (`:981`), not a whole-file scan. The two newly-found `.md` sites are ordinary
+  `<!-- claim: plugin-commands:crew -->` markers, the same mechanism `plugin-skills:crew` already
+  used - `check_self_claims` gained a `plugin-commands:` branch (`:765-800`, re-counted by
+  `grep -n "" scripts/check-marketplace.py`, elif to its final closing paren - a previous version of
+  this citation said `:793`, which is inside the branch but not its end) alongside
+  `plugin-skills:` (`:737-763`, same method - a previous version said `:761`) for exactly this. So the two scripts now agree with each other, the
   marketplace, `README.md`, and both newly-marked sites, and `python3 scripts/check-marketplace.py`
-  now fails loudly if any one of the five drifts again - confirmed by sabotage (setting either
-  `.md` site back to 26 reproduces the failure, restored). None of this is committed as of this
-  anchor: `git diff --name-only 2b337296..HEAD` for these paths still returns empty until it is,
-  so re-derive this passage rather than trusting it once that lands. **Not fixed here**: this
-  note's scope is the map, and an edit to a shipped install script still requires the README
-  install URLs to be re-pinned (see the next landmine) once committed.
+  now fails loudly if any one of the five drifts again - the sabotage test the earlier pass
+  described (setting either `.md` site back to 26) was not re-run at this pass, but the marker
+  mechanism and its wiring were read directly. **Still open**: an edit to a shipped install script
+  still requires the README install URLs to be re-pinned - see the next landmine, which found this
+  exact commit range is the reason the pin has gone stale again.
 
-  JUDGEMENT, unchanged and now three-times-evidenced at this anchor, **narrower since the
-  uncommitted fix above**: "the pair is in sync" is a weaker statement than it reads. Sync is
-  enforced; correctness of the description text was enforced by nothing at `2b337296`, and a wrong
-  description survived every gate this repo had. `check_description_claims` and
-  `check_catalog_claims` now enforce correctness too, but only for the exact (file, plugin, kind)
-  triples explicitly listed in `DESCRIPTION_CLAIMS`/`CATALOG_CLAIMS` - crew's commands and agents
-  counts in these two scripts and in `marketplace.json`'s description, and nothing else. Any other
+  **`DESCRIPTION_CLAIMS` and `CATALOG_CLAIMS` do not check the same pair of kinds, and the
+  previous wording of this paragraph conflated them - corrected here.**
+  `DESCRIPTION_CLAIMS: dict[str, tuple[str, ...]] = {"crew": ("commands", "skills")}`
+  (`scripts/check-marketplace.py:853-855`) checks *commands and skills* in
+  `marketplace.json`'s own `description` string - never agents, because the description's
+  agent-count phrase ("13 tiered, 40 domain specialists") does not match either regex kind
+  this table implements (`DESCRIPTION_CLAIM_KINDS`, `:861-864`: `commands` and `skills` only).
+  `CATALOG_CLAIMS: tuple[tuple[str, str, tuple[str, ...]], ...] = ((SH, "crew", ("agents",
+  "commands")), (PS1, "crew", ("agents", "commands")))` (`:975-978`) checks the opposite pair -
+  *agents and commands* - in each install script's own catalog label, and never skills, because
+  neither catalog label states a skills count at all. So "crew's commands and agents counts...
+  and nothing else," the previous wording, was wrong in both directions: the description check
+  never touches agents, and the catalog check never touches skills. Read separately, both
+  are correct as far as they check; conflated into one sentence, the sentence claimed a
+  cross-check that does not exist.
+
+  JUDGEMENT, unchanged and now three-times-evidenced at this anchor: "the pair is in sync" is a
+  weaker statement than it reads. Sync is enforced; correctness of the description text was
+  enforced by nothing at `2b337296`, and a wrong description survived every gate this repo had.
+  `check_description_claims` and `check_catalog_claims` now enforce correctness too, but only for
+  the exact (file, plugin, kind) triples explicitly listed in `DESCRIPTION_CLAIMS`/`CATALOG_CLAIMS`
+  - crew's own commands/skills and agents/commands counts respectively, and nothing else. Any other
   plugin's catalog label, or any other stated number, is still unenforced prose - the opt-in design
   this repo insists on (CLAUDE.md: "a checker that guesses which number describes what" is
   rejected) means coverage grows one explicit table row at a time, not by inference. The previous
   pass recorded a cosmetic
   instance of the same class - `rule-of-two`'s `PLUGIN_NAME` row pads its key to 25 characters
   before the ` - ` separator where the other four pad to 24, so its description column sits one
-  character right in the rendered picker. **Still true at this anchor**, still identical in both
-  scripts, still invisible to every check. DERIVED by measuring the padding of all five rows.
+  character right in the rendered picker. **Not re-read at this pass** - neither install script's
+  padding was re-measured; carried forward from the previous anchor, not confirmed unchanged.
 
-- **The README's install URLs are now CURRENT — re-pinned since this note's own anchor, and this
-  bullet previously said the opposite.** Previously: "pinned to a commit that predates this anchor's
-  script changes," citing `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` and a non-empty
-  `git diff --name-only` over both scripts. Re-verified at this anchor: `README.md:12` and `:18` now
-  pin `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (re-pinned by `2cc73a1e`, "README: re-pin install
-  URLs to d541ee57 after PR #205 changed both install scripts (#206)"), and
-  `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1`
-  is **empty** — both re-verified directly at this pass. DERIVED. So a `curl | bash` taken from the
-  README today runs the same script this note describes, including the four subsystems below it.
-  The reversal is the interesting fact, not the current state alone: the previous anchor's finding
-  was accurate on its own day and rotted within the same PR cycle that produced this note, which is
-  the ordinary lifespan of a pin claim, not a special failure.
-  **Not the same as "every pin in the repo is current."** `repo-docs.md` (2026-09-22 pass) found
-  `docs/guides/Running-a-Mailbox-Job.json:18` still pins the *older* `0a2d49b0` SHA, one commit
-  behind `d541ee57` — that file was not part of the `2cc73a1e` re-pin. Not fixed here; that file is
-  outside this note's write scope.
+- **The README's install URLs are STALE again at this anchor — the previous pass's "now CURRENT"
+  finding rotted within the same commit range that produced this pass.** At `2b337296`,
+  `README.md:12` and `:18` pinned `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` and
+  `git diff --name-only d541ee57..2b337296 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` was empty, so the pin was genuinely current then. It is not
+  current at `5d1fc5fd`: **`README.md` did not change between `2b337296` and `5d1fc5fd`** (absent
+  from the nine-file changed set in the bottom provenance section, confirmed by direct re-read -
+  `README.md:12` and `:18` still read `d541ee57`) while both install scripts did (the 26 -> 28
+  commands fix documented in the bullet above touches both). Re-run at this anchor:
+  `git diff --name-only d541ee5708481fbf18c3a5fda050c9e40a40a2d9..5d1fc5fd -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1`
+  returns both files, not empty. So a `curl | bash` taken from the README at `5d1fc5fd` still runs
+  a script that reports `26 commands` in its own catalog label, one release behind the plugin it
+  is installing.
+  **The fix has since landed, but not inside this note's own anchor.** PR #209
+  re-pins both README URLs to `5d1fc5fd` and, checked live via `gh pr view 209` at the time of
+  writing this correction, has been merged as `7f83c812` — one commit past this note's `5d1fc5fd`
+  anchor, on `origin/main`. That does **not** change the fact this bullet exists to record: **at
+  `5d1fc5fd` itself**, the commit this note is anchored to and the commit the task specified as the
+  target, the pin is stale exactly as measured above — `7f83c812` is not an ancestor state this
+  note describes, it is the very next commit. Re-run the diff above against whatever HEAD is current
+  when reading this, rather than trusting either this bullet's "STALE" verdict or the fact that a
+  fix exists past this anchor; a pin claim's lifespan here has twice now been shorter than one
+  commit range, and "a fix merged" is not the same claim as "this anchor's pin is current."
+  **Not the same as "every pin in the repo is current" either way.** `repo-docs.md` records
+  `docs/guides/Running-a-Mailbox-Job.json:18` still pinning the *older* `0a2d49b0` SHA — **59
+  commits** behind `d541ee57` in raw git history (`git log --oneline 0a2d49b0..d541ee57 | wc -l` =
+  59; a previous version of this bullet said "one commit behind," which conflated the single
+  re-pin event with git-history distance) - that file was not part of the `2cc73a1e`
+  re-pin and is not part of PR #209 either, per that note. Not fixed here; that file is outside this
+  note's write scope.
 
 - **`claude mcp add` writes config and never invokes the command, so six rows reported success for
   servers that could not start.** This is the defect `mcp_launcher_resolves`
@@ -417,12 +465,14 @@ The `CursorVisible` swallow is still there (`scripts/install-prerequisites.ps1:1
   (`Get-PickerConsole`, `scripts/install-prerequisites.ps1:1305-1312`, the width read at `:1308`)
   throws inside a redirected host was not tested - `Test-PickerSupported` should have returned
   false before reaching it, and that ordering was read, not run.
-- `scripts/check-marketplace.py` was read for `check_menu_parity` (`:329`) and `check_group_parity`
-  (`:383`) only. The three checks added since the previous anchor
-  (`check_argument_hint_frontmatter` `:176`, `check_license_consistency` `:268`,
-  `check_command_backtick_spans` `:1094`) were located by name and **not read**; nor were
+- `scripts/check-marketplace.py` was read for `check_menu_parity` (`:329`), `check_group_parity`
+  (`:383`), `check_description_claims` (`:867`), `check_catalog_claims` (`:1030`) and the
+  `plugin-commands:`/`plugin-skills:` branches of `check_self_claims` (`:765-800`, `:737-763`)
+  only. `check_argument_hint_frontmatter` (`:176`), `check_license_consistency` (`:268`) and
+  `check_command_backtick_spans` (moved to `:1486`, was `:1094` at `2b337296` - re-taken by
+  grepping the function definition, not offset) were located by name and **not read**; nor were
   `check_registration`, `check_skill_manifests`, `check_plugin_manifests`, `check_catalogs`,
-  `check_docs`, `check_hook_commands`, `check_versions`, `check_self_claims` or
+  `check_docs`, `check_hook_commands`, `check_versions`, the rest of `check_self_claims` or
   `check_crew_ignore_policy`. See `marketplace-registration.md` and `verification-harness.md`.
 - The `ms-mcp` and `obsidian-mcp` install paths were not read; nothing in this note depends on them.
 - `skill_preflight_path` / `Get-SkillPreflightPath`
@@ -524,3 +574,69 @@ is empty.
 Nothing else in this note was re-read at this pass; every other citation is closed by the per-path
 check returning empty for its file. `python3 scripts/check-marketplace.py` was not re-run at this
 pass.
+
+## Re-anchor provenance - 2b337296 -> 5d1fc5fd, 2026-09-22
+
+Per-path check, run rather than skipped, over this note's tracked pathspec plus the two `.md` sites
+the "corrected at this anchor" bullet names by hand (neither was in the tracked pathspec before this
+pass):
+
+```
+git diff --name-only 2b337296..5d1fc5fd -- .claude-plugin/marketplace.json INSTALLATION.md \
+  plugin/PLUGINS.md plugin/README.md README.md scripts/check-marketplace.py \
+  scripts/install-prerequisites.ps1 scripts/install-prerequisites.sh \
+  scripts/_test/drift-detection.sh scripts/_test/self-claims.py TODO.md \
+  plugin/crew/skills/crew-best-practices/SKILL.md plugin/crew/README.md
+```
+```
+.claude-plugin/marketplace.json
+TODO.md
+plugin/PLUGINS.md
+plugin/crew/README.md
+plugin/crew/skills/crew-best-practices/SKILL.md
+scripts/_test/self-claims.py
+scripts/check-marketplace.py
+scripts/install-prerequisites.ps1
+scripts/install-prerequisites.sh
+```
+
+The pathspec has thirteen entries; nine changed, four did not: `INSTALLATION.md`,
+`plugin/README.md`, `README.md` and `scripts/_test/drift-detection.sh`. `README.md` not changing is
+itself load-bearing - see the rewritten pin bullet above, which is precisely the "stale again"
+finding this fact produces.
+
+**What was re-verified by content, not by offset, for each changed file:**
+
+- `.claude-plugin/marketplace.json` - `git diff 2b337296..5d1fc5fd -- .claude-plugin/marketplace.json`
+  is a single hunk: crew's `description` "27 slash commands, 19 bundled skills" ->
+  "28 slash commands, 20 bundled skills", `version` "0.20.10" -> "0.20.11". Re-read directly.
+- `plugin/PLUGINS.md` - one hunk, the same version bump (`plugin/PLUGINS.md:14`,
+  `<!-- claim: plugin-version:crew -->`).
+- Both install scripts - one hunk each, `PLUGIN_NAME`'s crew row: "26 commands" -> "28 commands"
+  (`scripts/install-prerequisites.sh:1322`, `scripts/install-prerequisites.ps1:1089`).
+- `plugin/crew/skills/crew-best-practices/SKILL.md:29` and `plugin/crew/README.md:2097` - both now
+  read `28 commands`, both now carry `<!-- claim: plugin-commands:crew -->`, confirmed by direct
+  read rather than diff (neither was in the previous pass's tracked pathspec, so no prior state to
+  diff against here).
+- `scripts/check-marketplace.py` - grew from 1233 to 1627 lines (`wc -l` both revisions). New in
+  this range: `DESCRIPTION_CLAIMS`/`check_description_claims` (`:853`, `:867`),
+  `CATALOG_CLAIMS`/`check_catalog_claims` (`:975`, `:1030`), a `plugin-commands:` branch in
+  `check_self_claims` (`:765-800`), and `count_plugin_agents` (`:936`). Every citation into this
+  file elsewhere in the note was re-grepped for its function name rather than assumed unchanged;
+  `check_command_backtick_spans` moved `:1094` -> `:1486` (only citation found to have moved -
+  `check_menu_parity`, `check_group_parity`, `check_argument_hint_frontmatter` and
+  `check_license_consistency` did not, because the ~396 new lines land after all of them).
+- `scripts/_test/self-claims.py` - grew from 344 to 1382 lines. `main()` moved `:307` -> `:1166`,
+  corrected above.
+- `TODO.md` - changed (+81/-5 per `git diff --stat`) but not cited by line number anywhere in this
+  note; not re-read beyond confirming the changed-file result.
+
+**Not re-read at this pass**, closed by the per-path check returning them unchanged:
+`scripts/_test/drift-detection.sh` (cited at `:45-48` and by name in "## Unverified"),
+`INSTALLATION.md`, `plugin/README.md`. `README.md` is in the changed-file *pathspec's negative
+space* (it did NOT change) and that absence is itself re-read and used, not merely closed - see the
+pin bullet.
+
+`python3 scripts/check-marketplace.py` was not run at this pass. Per the task that produced this
+pass: run `python3 plugin/crew/hooks/scripts/crew_state.py` after all three notes are updated and
+report whether this file is still in `knowledge.behind`.
