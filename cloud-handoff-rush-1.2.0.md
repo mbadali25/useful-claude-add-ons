@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T10:54Z
+Last updated: 2026-10-07T11:02Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T11:02Z G5 lander: head 84a1139b (crew 1.1.10, gizmoduck 0.5.10, windows-ssm 1.0.2), CI green, full crew 13555 passed, gizmoduck 873. r4 BLOCK (bootstrap --user trusts command -v) unfixed -> sent back to fix (G4 precedent). Asked to justify Windows skip of test_an_interrupted_runner_leaves_no_capture_file. md5 of /usr/local/bin+/opt changed 09:15->later outside its run (investigating). Install scripts changed: re-pin README URLs after main.
 - 2026-10-07T10:54Z Opened #548 (G7 -> release, crew 1.1.7, head cff852dd, contains release 55e45b60), subscribed. G2 (1.1.8) and G3b (1.1.9) restack in progress.
 - 2026-10-07T10:51Z MERGED #546 (G0) into release/1.2.0 at 55e45b60, crew 1.1.6 (all CI green; start-if-stopped non-required). Train lander stacking G7 (1.1.7) -> G2 (1.1.8, on G7) -> G3b (1.1.9, on G2) for parallel CI. Retire PR (main) takes next free after. Next free: 1.1.10. Source PRs #516/#517 close when release reaches main.
 - 2026-10-07T10:49Z G3b lander done: head 04da6c64 (1.1.8 provisional), contains release 2c911427, r1 BLOCK (case-insensitive config.json scan) + r2 BLOCK/2 FIX fixed with sabotage-verified tests; Windows run 37604277431 all 16 green. Queue: G0 -> retire(main) -> G7 -> G2 -> G3b.
