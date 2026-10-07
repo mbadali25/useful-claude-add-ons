@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.7**: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2. Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
+- **crew 1.1.8**: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2. Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
 - **crew 1.1.4**: Pre-review checks, L-0574's round-10 follow-ups. The pre-review linter checks and the review runner no longer crash on Windows timeouts, an unreadable output file or a swapped manifest, escape bidirectional control characters in status lines, and on Linux end a clean linter's leftover background processes before reaping it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
