@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b337296
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
 
 # localgpu
@@ -900,3 +900,58 @@ docstring, the `/api/show` context-length lookup, `_post_ollama`) but still not
 end to end — `ProxyHandler` (`plugin/localgpu/cli/anthropic_proxy.py:947`,
 including `_resolved_num_ctx` at `:975`) and the tool-call translation code
 were located by grep only, not read.
+
+## Re-anchor provenance - 2b337296 -> 5d1fc5fd, 2026-09-22
+
+Re-anchor only. Per-path check over this note's cited paths (extracted the
+same way `_cited_paths` in `plugin/crew/hooks/scripts/crew_freshness.py`
+would - every backtick-quoted repo-relative path in this file that still
+exists):
+
+```
+git diff --name-only 2b337296..5d1fc5fd -- \
+  plugin/localgpu/.claude-plugin/plugin.json plugin/localgpu/pyproject.toml \
+  plugin/localgpu/mcp/_version.py scripts/check-marketplace.py \
+  plugin/localgpu/cli/localgpu_cli.py plugin/localgpu/commands/setup.md \
+  plugin/localgpu/mcp/ollama.py plugin/localgpu/cli/anthropic_proxy.py \
+  plugin/localgpu/mcp/server.py plugin/localgpu/mcp/_test/test_ollama.py \
+  plugin/localgpu/mcp/indexer.py plugin/localgpu/mcp/config.py \
+  plugin/localgpu/mcp/_test/test_config.py plugin/localgpu/skills/localgpu/SKILL.md \
+  plugin/localgpu/mcp/_test/test_secrets.py plugin/localgpu/skills/localgpu/templates/mcp.json \
+  plugin/localgpu/cli/_test/test_cli.py plugin/crew/skills/crew-setup/templates/mcp.json \
+  plugin/localgpu/bootstrap.sh plugin/localgpu/bootstrap.ps1 \
+  plugin/crew/hooks/scripts/crew_config.py plugin/localgpu/mcp/store.py CLAUDE.md \
+  plugin/localgpu/commands/index.md plugin/localgpu/mcp/_test/test_unignore.py
+```
+```
+CLAUDE.md
+scripts/check-marketplace.py
+```
+
+Two files moved. (Not stating a total citation count here: this note's own
+`INDEX.md` entry warns that recording such a total changes it, and this
+provenance paragraph itself adds new backtick-quoted paths to the file,
+which would move the number again on the next mechanical count - re-run the
+extraction instead of trusting a figure written here.) Both moved files were
+checked:
+
+- `CLAUDE.md`: this note has no `CLAUDE.md:<line>` citation anywhere in it -
+  every reference is prose ("this repo's own `CLAUDE.md` says...") with no
+  line number - so there is nothing in this note that the diff (a `render.sh`
+  citation correction, per `CLAUDE.md`'s own changelog) could have moved.
+  Nothing to correct.
+- `scripts/check-marketplace.py`: this note cites `:160-170` (the whole
+  `check_plugin_manifests` function) and `:169` (the `declared != entry["version"]`
+  comparison) at lines 30 and 33, and again spelled out at line 736. The file
+  grew by 394 lines between the two anchors (`wc -l scripts/check-marketplace.py`:
+  1627 at HEAD, 1233 at `2b337296` — was miscounted as 396 in an earlier draft
+  of this entry), but `grep -n "def
+  check_plugin_manifests\|declared != entry" scripts/check-marketplace.py`
+  returns `160:` and `169:` at both `2b337296` and `5d1fc5fd` - the function
+  is untouched; the growth is new checks appended later in the file. Both
+  citations confirmed byte-identical. Nothing to correct.
+
+No content correction was needed. Not re-verified at this pass: nothing
+beyond the two files above was read, and nothing was executed - no Ollama
+server contacted, no index built, no bootstrap script or test suite run. The
+`cli/anthropic_proxy.py` end-to-end gap noted above still stands.
