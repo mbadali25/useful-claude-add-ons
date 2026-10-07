@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T16:40Z
+Last updated: 2026-10-07T16:41Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T16:41Z MERGED #551 (G3b) into release at ae63d3d7, crew 1.1.11. Opened WAVE 3 #557, subscribed.
 - 2026-10-07T16:40Z MERGED WAVE 2 #556 into main at 66d90f66 (crew 1.1.10). G2 sources: #358/#369 auto-closed; #354 #342 #363 #365 #366 closed with link. C-0062 minted (review_checks timeout test flaky under load, harness); next free C-0063. Next: G3b #551 once its rerun is green.
 - 2026-10-07T16:12Z G3b wallclock: single outlier (11.3s vs 7.5-9.4s across 18 runs); same commit 987f63ad passed on dispatch run 37649002217 and G5 (contains G3b) passed; earlier 'twice' was a never-acquired job. Re-ran failed jobs on #551's run once (passed on this exact commit). C-0061 minted (SECONDS granularity); next free C-0062.
 - 2026-10-07T16:09Z MERGED #550 (G2) into release at bb5b47d5, crew 1.1.10 (CI fully green). Opened WAVE 2 #556 (release -> main), subscribed.
