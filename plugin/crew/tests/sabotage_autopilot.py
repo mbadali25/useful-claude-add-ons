@@ -1143,6 +1143,7 @@ AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
 # L-0651: T-0053's sleep window, its resolver and the overlay. Each removes one
 # branch that keeps what crew cannot tell from loosening a policy at night.
 SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
+AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
 _Z = "tests/test_crew_autopilot_sleep.py::"
 
 SLEEP_MUTATIONS = (
@@ -1196,6 +1197,47 @@ SLEEP_MUTATIONS = (
      '    warnings = [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
      '    warnings = [] and [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
      _Z + "test_an_unknown_sleep_key_has_no_other_effect"),
+    # L-0655 (a)-(i): L-0652's manual sleep and wake. (j)-(s) target L-0653's
+    # log and L-0654's deploy override, which are not on main yet.
+    ("L-0655 (a): sleep skips the scope.allowCliApproval check", AUTOSLEEP,
+     "    if not crew_ticket.cli_approval_allowed(top):\n        return 2, (f\"refused: {ap.ALLOW_CLI}",
+     "    if False:\n        return 2, (f\"refused: {ap.ALLOW_CLI}",
+     _Z + "test_sleep_refuses_unless_allow_cli_approval_is_exactly_true"),
+    ("L-0655 (b): sleep skips the armed check", AUTOSLEEP,
+     '    if not conf["armed"]:\n',
+     "    if False:\n",
+     _Z + "test_sleep_refuses_and_writes_nothing"),
+    ("L-0655 (c): an expired until is honoured", SLEEP,
+     "    if until <= when:\n",
+     "    if False:\n",
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (d): an until more than 24 hours after at is honoured", SLEEP,
+     "    if until - at > MANUAL_MAX_REAL or wall > MANUAL_MAX or until <= at:\n",
+     "    if until <= at:\n",
+     _Z + "test_read_manual_caps_at_24_hours"),
+    ("L-0655 (e): an at in the future is honoured", SLEEP,
+     "    if at > when:\n",
+     "    if False:\n",
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (f): a state file that cannot be trusted reads asleep", SLEEP,
+     '        return dict(got, state=UNKNOWN, source="manual")\n',
+     '        return dict(got, state=ASLEEP, source="manual")\n',
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (g): a state outside asleep|awake reads asleep", SLEEP,
+     '    if data["state"] not in MANUAL_STATES:\n        return f"state is',
+     '    if data["state"] not in MANUAL_STATES:\n        data["state"] = ASLEEP\n'
+     '    if False:\n        return f"state is',
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (h): wake inside a window lasts past the window's end", AUTOSLEEP,
+     "        until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)\n"
+     '        record = {"state": crew_sleep.AWAKE',
+     "        until = when + datetime.timedelta(hours=23)\n"
+     '        record = {"state": crew_sleep.AWAKE',
+     _Z + "test_manual_wake_inside_the_window"),
+    ("L-0655 (i): sleep writes with no stricter override configured", AUTOSLEEP,
+     '    if found["state"] != crew_sleep.ASLEEP and not tightens:\n',
+     "    if False:\n",
+     _Z + "test_sleep_refuses_and_writes_nothing"),
 )
 
 AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
