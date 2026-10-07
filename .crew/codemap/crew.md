@@ -1577,6 +1577,21 @@ Obsidian vault). A CLI the commands call, not a hook.
   `needs-owner` to `owner`, `landing` to `the land step` and `blocked` to
   `another ticket` (`_waiting`, `plugin/crew/hooks/scripts/crew_autopilot.py:2954`).
   Writes nothing; the sabotage mutations are L-0686 (harness).
+- DERIVED (T-0067; measured on this tree): `autopilot.reviewPolicy` reaches a
+  single-ticket run. `_settings_at` reads it through
+  `crew_autopilot_fix.review_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1868`,
+  `plugin/crew/hooks/scripts/crew_autopilot_fix.py:55`; anything but the three
+  words is `stop` with a warning, an unreadable config `unknown`). `_review_phase`'s
+  FINDINGS branch asks `crew_autopilot_fix.decide` first
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1391`,
+  `plugin/crew/hooks/scripts/crew_autopilot_fix.py:107`): under
+  `fix-and-rereview`, with a round left and a BLOCK or FIX line, `next` names
+  `fix` (stop=0, `fix-findings <id> round <n>`) until `fixes.md`'s `## Round <n>`
+  quotes every BLOCK and FIX line and the rebuilt bundle differs, then goes
+  through `_toward_review`; every could-not-tell keeps the `accept-review` stop
+  with its cause appended, and `stop`/`clean-only` keep its reason byte for byte.
+  `PROCEDURE_STOPS` gains `fix-refused`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:351`). The mutations are L-0668.
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a

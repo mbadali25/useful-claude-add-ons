@@ -80,6 +80,8 @@ _KNOWN_VALUES = {
     "secondOpinion.mode": ("cli", "api"),
     # plugin/crew/hooks/scripts/crew_autopilot.py:602 arms only on `plan`.
     "autopilot.mode": ("off", "plan"),
+    # plugin/crew/hooks/scripts/crew_autopilot_fix.py and crew_wave.py: anything else reads stop.
+    "autopilot.reviewPolicy": ("stop", "clean-only", "fix-and-rereview"),
     # plugin/crew/hooks/scripts/crew_sleep.py: a policy, or null (not overridden).
     "autopilot.sleep.approval": ("human", "self", "risk", None),
     "autopilot.sleep.questions": ("human", "self", "risk", None),

@@ -151,7 +151,8 @@ force says `take`. Exit 0 valid, 1 not.
   review ledger NEEDS_REPLAN             replan              stop, unless auto-rejected
   no review round under this plan        implement           /crew:implement <id>
   latest round still reserved            review              stop
-  latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan
+  latest round FINDINGS, not accepted    accept-review       stop, unless auto-replan or
+    (T-0067) reviewPolicy fix-and-rereview, a round left: fix  fix-findings <id> round <n>
   no receipt and no round left           review              stop, never a third reserve
   accepted FINDINGS, receipt staled      (the receipt-not-current rows below; T-0043)
   accepted FINDINGS, receipt unchecked   accept-review       stop (not confirmed stale)
@@ -166,13 +167,12 @@ force says `take`. Exit 0 valid, 1 not.
 A sliced plan's other rows carry `slice` and prefix the reason with `slice n
 of m (<name>): steps a-b only` (crew_autopilot_slices.py, T-0059).
 
-T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
-an out-of-rounds FINDINGS round with a BLOCK that `auto_replan_policy` allows
-is `auto-replan`, whose command is `auto-reject`; refused only by the cap it
-is the `auto-replan-cap` stop and names every successor plan. A NEEDS_REPLAN
-that autopilot's own reject of the current plan's latest round wrote, whose
-round still passes the policy's round checks and is still allowed, is `replan`
-without a stop. `status` reads neither route (`policy=False`).
+T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off): an out-of-rounds
+FINDINGS round with a BLOCK that `auto_replan_policy` allows is `auto-replan`, whose command is
+`auto-reject`; refused only by the cap it is the `auto-replan-cap` stop and names every successor
+plan. A NEEDS_REPLAN that autopilot's own reject of the current plan's latest round wrote, whose
+round still passes the policy's round checks and is still allowed, is `replan` without a stop.
+`status` reads neither route (`policy=False`). T-0067's `fix` is crew_autopilot_fix.py's docstring.
 
 The INDEX row (T-0063) is this checkout's; with none, the main checkout's --
 the first record of `git worktree list --porcelain` -- and `index_source`
@@ -267,6 +267,7 @@ import completion_audit
 import crew_common
 import crew_autopilot_docs
 import crew_autopilot_fences
+import crew_autopilot_fix
 import crew_autopilot_gates
 import crew_autopilot_sleep
 import crew_autopilot_slices
@@ -347,7 +348,7 @@ PROCEDURE_STOPS = (
     ("failed-done-check", "a /crew:done check refused: it is not retried around"),
     ("failed-phase", "a phase's own procedure refused or stopped"),
     ("scope-not-enforcing", "`/crew:autopilot wave` runs lanes only while scope.mode is block (T-0029)"),
-)
+) + crew_autopilot_fix.PROCEDURE_STOPS  # T-0067: a finding the fix phase refused
 # A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
     ("brainstorm", "/crew:brainstorm and direction approval are a human dialogue"),
@@ -1387,6 +1388,9 @@ def _review_phase(top, ticket, evidence, answer):
     # stands (owner-accepted, or auto-accepted with its row still passing the
     # guard), so this and /crew:done's --check-receipt cannot disagree.
     if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(receipt, latest, top, ticket):
+        if isinstance(fix := crew_autopilot_fix.decide(top, ticket, settings(top)["reviewPolicy"], ledger,
+                                                       latest, answer, _toward_review), dict):  # T-0067
+            return fix
         data, state = review_ledger.load(ledger["path"])
         refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
                    else f"ledger is {state}: could not tell")
@@ -1397,7 +1401,7 @@ def _review_phase(top, ticket, evidence, answer):
                       f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes, then reruns crew_refresh_check.py --root . --ticket "  # T-0043
                       f"{ticket} until it says fresh (commit what each `refresh with` writes and "
-                      f"each `uncommitted:` path; unknown is a stop), then /crew:review {ticket}")
+                      f"each `uncommitted:` path; unknown is a stop), then /crew:review {ticket}" + (fix or ""))
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
@@ -1751,9 +1755,9 @@ def _unreadable_machine_autopilot():
 
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
-    "questions", "maxAutoReplans", "ship", "knownFailures", "ciTimeoutMinutes",
-    "warnings", "policyWarnings"}` (T-0027: the approval/questions value warnings,
-    also in `warnings`, which `status` leaves out). Read through
+    "questions", "maxAutoReplans", "reviewPolicy" (T-0067: crew_autopilot_fix), "ship",
+    "knownFailures", "ciTimeoutMinutes", "warnings", "policyWarnings"}` (T-0027: the
+    approval/questions value warnings, also in `warnings`, which `status` leaves out). Read through
     `crew_config.resolve_config`, which reads both layers: the autopilot keys
     with a `crew_state.PERSONAL_KEYS` row are personal (T-0050), so where
     `.crew/config.json` and the machine-global file both set one the stricter
@@ -1781,14 +1785,12 @@ def settings(root):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     cause = _unreadable_autopilot(top)
     if cause:
-        return {"mode": "off", "armed": False,
-                "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
-                "saw": None, "deploy": "none", "deploySaw": None,
-                "approval": UNKNOWN, "questions": UNKNOWN, "maxAutoReplans": 0,
+        return {"mode": "off", "armed": False, "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
+                "saw": None, "deploy": "none", "deploySaw": None, "approval": UNKNOWN,
+                "questions": UNKNOWN, "maxAutoReplans": 0, "reviewPolicy": UNKNOWN,  # T-0067
                 "day": {"approval": UNKNOWN, "questions": UNKNOWN},
-                "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None,
-                          "overrides": {key: None for key in crew_sleep.OVERRIDES},
-                          "applied": []},
+                "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None, "applied": [],
+                          "overrides": {key: None for key in crew_sleep.OVERRIDES}},
                 "ship": "pr", "knownFailures": [],
                 "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
@@ -1863,13 +1865,14 @@ def _settings_at(top):
         day[key], warning = _policy_setting(block, key)
         policy_warnings += [warning] if warning else []
     warnings += policy_warnings
+    review = crew_autopilot_fix.review_policy(block, warnings)  # T-0067
     sleep = _sleep_at(top, block)
     warnings += sleep.pop("warnings")
     policies, sleep["applied"] = _overlay(day, sleep)
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
             "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
-            "maxAutoReplans": replans,
+            "maxAutoReplans": replans, "reviewPolicy": review,
             "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
             "day": day, "sleep": sleep, "warnings": warnings, "policyWarnings": policy_warnings}
 
@@ -2910,7 +2913,7 @@ WAITING["split-check"] = "autopilot"  # T-0058: autopilot looks, then goes on
 WAITING["ship"] = "owner"
 WAITING["closed"] = "nobody"
 WAITING["drift"] = "owner"
-WAITING.update(crew_autopilot_gates.WAITING)  # L-0550
+WAITING.update(crew_autopilot_gates.WAITING, fix="owner")  # L-0550; T-0067: `fix` runs at stop=0
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -3362,7 +3365,7 @@ def main(argv):
                                 deploy=result["deploy"],
                                 maxAutoReplans=result["maxAutoReplans"])]
                          + [_line(approval=result["approval"], questions=result["questions"])]
-                         + [_sleep_line(result["sleep"])]
+                         + [_sleep_line(result["sleep"]), _line(reviewPolicy=result["reviewPolicy"])]
                          + [f"warning: {w}" for w in result["warnings"]])
     elif args.action == "deploy-allowed":
         text, json_text, report = _cli_deploy(args)

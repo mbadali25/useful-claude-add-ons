@@ -519,11 +519,14 @@ KEY_META = {
                                "anything but a positive integer reads as it, each with a "
                                "warning.", "branch", None, "1.1.6", _S + "crew_wave.py",
                                type_="positive integer or null"),
-    "autopilot.reviewPolicy": _row("What a wave lane does with its review verdict: `stop` ends "
-                                   "at the first verdict, `clean-only` takes a CLEAN round on "
-                                   "to the done checks, `fix-and-rereview` fixes within the "
-                                   "ledger's rounds. Anything else reads as `stop`, with a "
-                                   "warning; no setting lets a lane accept a review.", "tuple",
+    "autopilot.reviewPolicy": _row("What autopilot does with a review verdict. A wave lane: "
+                                   "`stop` ends at the first verdict, `clean-only` takes a CLEAN "
+                                   "round on to the done checks, `fix-and-rereview` fixes within "
+                                   "the ledger's rounds. A single-ticket run (T-0067): only "
+                                   "`fix-and-rereview` acts, fixing a non-final FINDINGS round's "
+                                   "BLOCK and FIX lines itself (the `fix` phase) and re-reviewing. "
+                                   "Anything else reads as `stop`, with a warning; no setting "
+                                   "accepts a review.", "tuple",
                                    ("stop", "clean-only", "fix-and-rereview"), "1.1.6"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "

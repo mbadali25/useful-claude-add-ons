@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.15**: Autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview`. A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy: fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK and FIX test-first, records the fixes, refreshes and runs the next round itself. The default (`stop`) leaves today's behaviour unchanged.
 - **crew 1.1.15**: Autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked. `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the owner, replaced by another, or waiting on a dependency: it stops and says why, and `/crew:autopilot status` says who each of those stops waits on.
-- **crew 1.1.22**: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read. `/crew:autopilot status` now reads the same whatever `autopilot.approval` and `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read instead of telling you to arm a mode that may already say `plan`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

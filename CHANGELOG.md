@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.15: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
+
+- **Summary.** A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy:
+  fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK
+  and FIX test-first, records the fixes, refreshes and runs the next round itself. The default
+  (`stop`) leaves today's behaviour unchanged.
+- **The `fix` phase** (new `hooks/scripts/crew_autopilot_fix.py`). For a FINDINGS round no receipt
+  stands on, with a round left and at least one BLOCK or FIX line, `next` names `phase=fix stop=0
+  command=fix-findings <id> round <n>`. Once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes
+  every BLOCK and FIX line verbatim (as many times as the round carries it) and the rebuilt bundle
+  differs from the round's, `next` goes on to the refresh and `/crew:review`.
+- **Fail closed.** The policy `unknown` (an unreadable config), a `rounds_left` that is not an
+  integer, the final round, a row without findings, base or bundle hash, a bundle that cannot be
+  rebuilt and a fixes.md that is not UTF-8 each keep the `accept-review` stop, naming the cause. An
+  unrefunded INCOMPLETE round, NEEDS_REPLAN and a reserved round stop as before. `fix` named again
+  right after it ran is `no-progress`. A finding the phase cannot fix inside Touch, or disputes, is
+  the new `fix-refused` procedure stop. Nothing accepts a review.
+- **Settings.** `crew_autopilot.py settings` returns `reviewPolicy` (T-0029's key, now read by
+  single-ticket runs too) and prints `reviewPolicy=<value>` on its own line.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0668.
+
 ### Added — crew 1.1.15: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
 
 - **Summary.** `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the
