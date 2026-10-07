@@ -182,6 +182,23 @@ def test_a_changed_contract_is_a_mismatch(capsys, tmp_path, root, how, needle):
     assert needle in out
 
 
+@pytest.mark.parametrize("changes", [
+    {"built_by": ["bad"]}, {"hash": "not-a-hash"}, {"status": "frozen?"}],
+    ids=["malformed-built-by", "malformed-hash", "unknown-status"])
+def test_a_malformed_field_stays_unknown(capsys, tmp_path, root, changes):
+    """Review round 5: a malformed entry might be this build's; only a
+    well-formed change is a mismatch."""
+    _ticket(root)
+    _built(root, tmp_path)
+    _rewrite_record(root, **changes)
+    capsys.readouterr()
+
+    code, out = _verify(capsys, root)
+
+    assert code == crew_contract.EXIT_UNKNOWN, out
+    assert "its record is corrupt" in out
+
+
 @pytest.mark.parametrize("changes,needle", [
     ({"status": "draft"}, "its status is draft"),
     ({"built_by": []}, "built_by no longer names"),
@@ -368,7 +385,7 @@ def test_verify_messages_are_sanitised(capsys, tmp_path, root):
 
     code, out = _verify(capsys, root)
 
-    assert code == crew_contract.EXIT_REFUSED  # the status is no longer built-against (review round 4)
+    assert code == crew_contract.EXIT_UNKNOWN  # a status that is neither draft nor built-against
     assert "\u202e" not in out and "\x1b" not in out
     assert not any(line.startswith("y") for line in out.splitlines())
     assert all(line.endswith("[peer-written]") for line in out.splitlines() if line.strip())

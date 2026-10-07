@@ -818,3 +818,18 @@ def test_module_runs_as_a_script(tmp_path, wt):
                           stdin=subprocess.DEVNULL)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "no channel yet" in done.stdout
+
+
+@pytest.mark.parametrize("value", [[], "", None, {"name": "origin"}],
+                         ids=["empty-list", "empty-string", "null", "object"])
+def test_a_malformed_coord_remote_is_a_usage_error_never_origin(wt, value):
+    """L-0633 review round 3's sibling: a set coord.remote that is not a
+    non-empty string never falls back to origin."""
+    path = wt / ".crew" / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg["coord"] = {"remote": value}
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    with pytest.raises(crew_coord.UsageError, match="is not a remote name"):
+        crew_contract.coord_remote(str(wt))
+    assert crew_contract.coord_remote(str(wt), "coord") == "coord"

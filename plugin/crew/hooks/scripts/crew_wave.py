@@ -425,14 +425,15 @@ def _channel_files(top, channel, channels, remote=None):
     configured = remote is None
     if configured:
         cfg = crew_config.resolve_config(top).get("coord")
-        remote = (cfg.get("remote") if isinstance(cfg, dict) else None) or "origin"
-    # A malformed config value (a JSON object, say) is unknown, never a crash:
-    # it is not hashable as a cache key (L-0633 r2).
+        # Only an absent coord.remote means origin: a set one that is not a
+        # non-empty string ([], "", an object) is unknown, never origin and
+        # never a crash on the cache key (L-0633 r2, r3).
+        remote = cfg["remote"] if isinstance(cfg, dict) and "remote" in cfg else "origin"
     key = (remote if isinstance(remote, str) else repr(remote), channel)
     if key in channels:
         return channels[key]
     listed = crew_coord.run_git(top, ["remote"])
-    if not isinstance(remote, str):
+    if not isinstance(remote, str) or not remote:
         got = (None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name")
     elif listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
         got = (None, f"{crew_coord.safe(remote)!r}{' (coord.remote)' if configured else ''} "

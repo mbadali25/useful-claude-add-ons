@@ -300,13 +300,16 @@ def test_unconfigured_remote_is_unknown(root):
     _assert_refused(root, "unknown", "'coordhub' (coord.remote) is not a configured remote")
 
 
-def test_a_malformed_coord_remote_is_unknown_never_a_crash(root):
-    """L-0633 review round 2: a dict in coord.remote reached the channel cache's
-    key and raised TypeError, aborting the whole plan."""
+@pytest.mark.parametrize("value", [{"name": "origin"}, [], "", None, 0, False],
+                         ids=["object", "empty-list", "empty-string", "null", "zero", "false"])
+def test_a_malformed_coord_remote_is_unknown_never_a_crash(root, value):
+    """L-0633 review rounds 2 and 3: a dict in coord.remote reached the channel
+    cache's key and raised TypeError; a falsey one ([], "") fell back to origin,
+    where a done claim closed the dependency."""
     _wave(root, ["peers:T-0001"])
     _peer_writes(root, _claim("done"))
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    cfg["coord"] = {"remote": {"name": "origin"}}
+    cfg["coord"] = {"remote": value}
     (root / ".crew" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
 
     _assert_refused(root, "unknown", "is not a remote name")

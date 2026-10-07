@@ -479,12 +479,18 @@ def cmd_status(chan, only):
 # --- the check (L-0634) -----------------------------------------------------------
 
 def coord_remote(top, given=None):
-    """`--remote`, else `coord.remote` in the crew config, else origin."""
+    """`--remote`, else `coord.remote` in the crew config, else origin. A
+    `coord.remote` that is set but is not a non-empty string is a usage
+    error, never origin."""
     if given is not None:
         return given
     import crew_config  # pylint: disable=import-outside-toplevel
     coord = crew_config.resolve_config(top).get("coord")
-    return (coord.get("remote") if isinstance(coord, dict) else None) or "origin"
+    if not isinstance(coord, dict) or "remote" not in coord:
+        return "origin"
+    if not isinstance(coord["remote"], str) or not coord["remote"]:
+        raise crew_coord.UsageError(f"coord.remote {crew_coord.safe(coord['remote'], 60)!r} is not a remote name")
+    return coord["remote"]
 
 
 def channel_reader(top):
@@ -516,23 +522,24 @@ def channel_reader(top):
 
 def _changed_field(blob, binding, repo, ticket):
     """For a record parse_record calls corrupt: why it no longer shows what was
-    built against, read field by field from the raw JSON, or None when it
-    cannot tell (then the record is only unknown)."""
+    built against, read field by field from the raw JSON -- a well-formed other
+    hash, status `draft`, or a well-formed built_by without this build -- or
+    None when it cannot tell (then the record is only unknown)."""
     try:
         raw = json.loads(blob.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         return None
     if not isinstance(raw, dict):
         return None
-    if isinstance(raw.get("hash"), str) and raw["hash"] != binding["hash"]:
+    if isinstance(raw.get("hash"), str) and _HASH_RE.fullmatch(raw["hash"]) and raw["hash"] != binding["hash"]:
         return f"the record's hash is {crew_coord.safe(raw['hash'], HASH_SHOWN)}, built against " \
                f"{binding['hash'][:HASH_SHOWN]}"
-    if isinstance(raw.get("status"), str) and raw["status"] != FROZEN:
+    if raw.get("status") == DRAFT:
         return f"its status is {crew_coord.safe(raw['status'], 40)}, not {FROZEN}"
     built = raw.get("built_by")
-    if isinstance(built, list) and not any(
-            isinstance(e, dict) and (e.get("repo"), e.get("ticket"), e.get("hash")) == (repo, ticket, binding["hash"])
-            for e in built):
+    # Only a well-formed list tells a removal; a malformed entry might be ours (review round 5).
+    if isinstance(built, list) and all(_valid_entry(e) for e in built) and not any(
+            (e["repo"], e["ticket"], e["hash"]) == (repo, ticket, binding["hash"]) for e in built):
         return f"built_by no longer names {repo}:{ticket}"
     return None
 
