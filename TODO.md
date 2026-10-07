@@ -119,6 +119,15 @@ be wrong can be closed on evidence.
   `unaccepted` with its why), so `/crew:implement` step 0 refuses what the scope guard and the
   completion audit refuse even with `scope.mode` off or report (port review of T-0025, BLOCK);
   test it in `test_crew_ticket.py` and keep `test_lifecycle_commands.py`'s exact CLI pin.
+- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 19
+  hand-run mutations listed in `.crew/verify.json`'s T-0039 rule as `GITIGNORE_MUTATIONS` in a new
+  `plugin/crew/tests/sabotage_gitignore.py`, imported and concatenated in
+  `plugin/crew/tests/sabotage.py`. Both paths are `HARNESS` in `scripts/check-tooling-pr.py`, so they
+  could not ride with the feature (CLAUDE.md, T-0087). (b) Apply it to this repo's own `.gitignore`:
+  `python3 plugin/crew/hooks/scripts/crew_gitignore.py check --root .` on 2026-10-04 reported
+  `4 missing (os/editor, secrets)` - `[Dd]esktop.ini`, `*.p12`, `id_rsa`, `id_ed25519` - with no
+  tracked secret (spec Exclusions: not changed by T-0039). (c) A Windows run on win-repo-2 (the
+  script is plain python; CRLF and BOM are tested on Linux only).
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
@@ -2187,7 +2196,7 @@ is a single constant: any prose naming a schema number could be checked against
 it. `plugin/crew/tests/test_pm_brief.py::test_the_brief_and_upgrade_md_agree_on_the_current_migration`
 is the first instance of that idea -- it fails if a future bump ships without
 its `commands/upgrade.md` section 5 entry -- but it covers exactly one pair of
-files. The general sweep is not written.
+files. The general sweep is not written. - moot since T-0038: upgrade.md is a removal stub (the section 5 entries live in `skills/crew-setup/upgrade-report.md`).
 
 ## The sabotage harness could not restore twice on 2026-09-12, and left a live mutation each time
 
@@ -2447,7 +2456,7 @@ older default, and the safe one on the majority case.
 
 **The other three call sites named above are still fixed prose** --
 `commands/onboard.md`, `commands/upgrade.md` and `crew-graph/SKILL.md` -- and
-are the remaining half of this finding. They were out of scope for this change.
+are the remaining half of this finding. They were out of scope for this change. - moot since T-0038: upgrade.md is a removal stub.
 
 Filed 2026-09-13 against `main` at `af9995ed`. Recorded, not to be chased.
 
@@ -2457,7 +2466,7 @@ Four places in crew tell the user to refresh the graph with
 - `plugin/crew/hooks/scripts/pm_brief.py:148` (the pulse text, which is where
   this surfaced)
 - `plugin/crew/commands/onboard.md:14` and `commands/upgrade.md:56`, both
-  saying "both flags required"
+  saying "both flags required" - moot since T-0038: upgrade.md is a removal stub
 - `plugin/crew/skills/crew-graph/SKILL.md:44`
 
 Since #121 this repo's `CLAUDE.md` documents `graphify update .` instead,
@@ -2835,7 +2844,7 @@ Filed 2026-09-18 by the PM. **Does not block crew 0.19.61; not fixed here.**
 
 The remaining half of the CLOSED entry above, re-confirmed at `7c5b884b`:
 `plugin/crew/commands/onboard.md:14` and `plugin/crew/commands/upgrade.md:56`
-(both saying "both flags required"), and
+(both saying "both flags required" - moot since T-0038: upgrade.md is a removal stub), and
 `plugin/crew/skills/crew-graph/SKILL.md:44`. These are fixed prose with no
 access to `reportTracked`, so they cannot interpolate the way the pulse text
 does. Whatever fixes them is a different fix from the one-line bug above, and
@@ -4030,7 +4039,7 @@ repo pins. Needs a crew version bump and a regression case in the upgrade suite.
 
 ### `/crew:upgrade` step 4b treats an absent global file as one finding among six - OPEN
 
-`plugin/crew/commands/upgrade.md:107` lists `absent` alongside the other findings, but on a machine
+`plugin/crew/commands/upgrade.md:107` (moot since T-0038: upgrade.md is a removal stub) lists `absent` alongside the other findings, but on a machine
 with no global file (this host: `--check-global` prints `[absent] no global config at
 /root/.claude/crew/config.json`) every crew repo whose own config does not set `pm.authority`
 resolves to `report-only`. Combined with the freeze above, an upgraded repo is pinned there even
@@ -4041,7 +4050,7 @@ effective authority and `/crew:config` as the fix, not as a list item.
 ### `/crew:upgrade` does not migrate PM spawn or persistence - OPEN (informational)
 
 Nothing in `commands/upgrade.md` or `crew_upgrade.py` touches how the PM is spawned or remembered
-(grep: the only `crew-pm` hit is `upgrade.md:262`, about anchor freshness). This is correct as long
+(grep: the only `crew-pm` hit is `upgrade.md:262`, about anchor freshness - moot since T-0038: upgrade.md is a removal stub). This is correct as long
 as that behaviour lives in the plugin's command/agent text rather than in repo config, so updating
 the plugin is the whole migration. Record it so nobody expects `/crew:upgrade` to fix the teammate bug.
 
@@ -4288,7 +4297,7 @@ Found while deleting the PM, pulse, journal and retired roles; none blocked T2.
 
 ### crew 1.0.1: T2 removal review FIXes (filed 2026-09-23) - OPEN
 Codex r1 on ed91114d..c3bd8dfd (modified files), 0 BLOCK:
-- `plugin/crew/commands/upgrade.md:314` offers provider pins for deleted `infrastructure-architect`/`planner`.
+- `plugin/crew/commands/upgrade.md:314` offers provider pins for deleted `infrastructure-architect`/`planner`. - moot since T-0038: upgrade.md is a removal stub.
 - `plugin/crew/hooks/scripts/crew_context.py:138` unreadable config or non-boolean `memory.inject` (e.g. `"false"`) runs injection; decide: malformed -> off with a one-line warning.
 - `plugin/crew/hooks/scripts/role_write_guard.py:243` retired `pm` still a path-scoped role; an unrelated agent named `pm` is denied ordinary writes.
 - `plugin/crew/skills/crew-verification/SKILL.md:37` example assigns SQL changes to the deleted `dba` agent (use `security` or none; stack-sql skill).

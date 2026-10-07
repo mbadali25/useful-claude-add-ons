@@ -1445,14 +1445,15 @@ def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
     )
 
 
-def test_upgrade_md_documents_the_current_migration():
-    """`commands/upgrade.md` section 5 says what each schema hop does. Carried
-    from test_pm_brief.py's agreement test when crew 1.0 deleted the brief
-    that named the hop: a SCHEMA_CURRENT bump that forgets its section-5
-    entry still has to fail somewhere."""
+def test_upgrade_report_documents_the_current_migration():
+    """`skills/crew-setup/upgrade-report.md` says what each schema hop does --
+    it took over `commands/upgrade.md` section 5 when T-0038 folded
+    `/crew:upgrade` into `/crew:migrate`. Carried from test_pm_brief.py's
+    agreement test when crew 1.0 deleted the brief that named the hop: a
+    SCHEMA_CURRENT bump that forgets its entry still has to fail somewhere."""
     current = crew_state.SCHEMA_CURRENT
-    doc = (pathlib.Path(__file__).resolve().parents[1] / "commands" / "upgrade.md"
-           ).read_text(encoding="utf-8")
+    doc = (pathlib.Path(__file__).resolve().parents[1] / "skills" / "crew-setup"
+           / "upgrade-report.md").read_text(encoding="utf-8")
     assert f"**Schema {current - 1} → {current}**" in doc
 
 
@@ -1608,3 +1609,11 @@ def test_upgrade_report_write_is_atomic(tmp_path, monkeypatch):
     assert b"\r" not in data
     leftovers = [p.name for p in _upgrade_md(root).parent.iterdir() if p.name.endswith(".tmp")]
     assert not leftovers
+
+
+def test_unmigrated_report_points_at_migrate():
+    """T-0038: `/crew:upgrade` is a removal stub, so the report must not send
+    the user back to it."""
+    said = "\n".join(crew_upgrade._config_lines(  # pylint: disable=protected-access
+        crew_upgrade.upgrade_config({"qa": "oops"})[1]))
+    assert ("/crew:migrate" in said, "run `/crew:upgrade` again" in said) == (True, False)

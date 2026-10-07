@@ -1,5 +1,5 @@
 ---
-description: Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff
+description: Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, gitignore, handoff
 argument-hint: "[--memory]"
 allowed-tools: Bash, Read
 ---
@@ -34,6 +34,8 @@ summary above or below it, and do not pad it with advice.
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `agents` | `verify_agents.py`: agents a `.crew/verify.json` rule names that are not installed here (`MISSING <name> (verify.json rule: <paths>)`, at most three names); managed-policy and `--agents` agents are not checked | a plugin registry, settings scope or verify.json that will not parse |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
+| `gitignore` | `crew_gitignore.py summary`: `current` (`current except N conflict(s)` when a human `!` line kept a row out), `N missing (<langs>)`, or `owner: ...` (a tracked secret-shaped file); measured with `git check-ignore`, read-only | git failed or timed out, `.gitignore` not UTF-8, a malformed managed block |
+| `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix (which never overrides a `!` line of yours: it names the line instead) | git missing, a settings file that will not parse, a nested `.graphifyignore`, an unexcluded nested repository, a symlink leaving the repo, a deny-all `Read` rule |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` - in a linked worktree, the main checkout's `.crew/`, named by its path; this worktree's own copies, if any, are named on the same line as `not counted` | `could not tell (...)` when git cannot name the main checkout; nothing is read, and the worktree's own copy is never the fallback |
 | `handoff` | `.work/HANDOFF.md` present | - |
 | `migrate` | a backup under `.crew/backups/` whose apply never finished | - |
@@ -54,6 +56,8 @@ The report is facts, not instructions. When a line points somewhere:
 - `run /crew:migrate` - the repo is still on the 0.20 layout.
 - `run /crew:init` - no crew config at all.
 - `INTERRUPTED apply` - run `/crew:migrate --rollback <dir>` before anything else.
+- `gitignore N missing` - `crew_gitignore.py apply --root .` outside a ticket, or the next `/crew:onboard`.
+  `owner:` - a secret is committed: rotation and history are the owner's call, never an ignore line.
 - `behind: <subsystem>` - `/crew:onboard --refresh <subsystem>` when the
   path diff says the cited files moved.
 

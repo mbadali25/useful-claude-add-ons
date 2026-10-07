@@ -1276,10 +1276,10 @@ def test_two_worktrees_of_one_repo_move_the_same_card(tmp_path, origin):
 
 
 @pytest.mark.parametrize("url,expected", [
-    ("https://User:s3cret@Example.invalid/Owner/Repo.git", "https://example.invalid/owner/repo"),
+    ("https://User:s3cret@Example.invalid/Owner/Repo.git", "https://example.invalid/Owner/Repo"),
     ("https://example.invalid/owner/repo/", "https://example.invalid/owner/repo"),
-    ("ssh://git@Example.invalid:22/Owner/Repo.git", "ssh://git@example.invalid:22/owner/repo"),
-    ("git@GitHub.com:Owner/Repo.git", "git@github.com:owner/repo"),
+    ("ssh://git@Example.invalid:22/Owner/Repo.git", "ssh://git@example.invalid:22/Owner/Repo"),
+    ("git@GitHub.com:Owner/Repo.git", "git@github.com:Owner/Repo"),
 ])
 def test_repo_id_normalises_the_origin_url(tmp_path, url, expected):
     root = make_repo(tmp_path)
@@ -1296,7 +1296,7 @@ def test_note_records_repo_id_without_credentials(tmp_path):
     _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
     note = (vault / "Boards" / "repo" / "T-0060.md").read_text(encoding="utf-8")
 
-    assert ("- repo-id: https://example.invalid/team/repo\n" in note, "s3cret" in note) == (True, False)
+    assert ("- repo-id: https://example.invalid/Team/Repo\n" in note, "s3cret" in note) == (True, False)
 
 
 def test_move_refuses_a_card_no_note_claims(tmp_path):
@@ -1562,7 +1562,10 @@ def test_obsidian_backwards_move_leaves_the_board_alone(tmp_path):
 
     done, untouched = _refused(tmp_path, root, ("move", "--ticket", CARD, "--to", "spec"))
 
-    assert (done.returncode, untouched, "needs --reopen" in done.stdout) == (1, True, True)
+    # T-0071 #3: the board half now follows INDEX, so a board write after the
+    # refusal would leave the card in Review too; the board half must not run.
+    assert (done.returncode, untouched, "needs --reopen" in done.stdout, "obsidian:" in done.stdout) == (
+        1, True, True, False)
 
 
 def test_move_refuses_a_multi_line_card_when_index_has_no_title(tmp_path):
@@ -3306,6 +3309,222 @@ def test_the_new_words_are_table_rows():
         {"needs-owner": "backlog", "cancelled": "done", "superseded": "done"}, ("needs-owner",),
         ("cancelled", "superseded"),
         ("direction", "ready", "spec", "planned", "in-progress", "review", "done"), ("in-progress", "done"))
+
+
+# --- T-0071: the T-0021 accepted findings #1-#6 ------------------------------------
+# pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("origins", [
+    ("ssh://Alice@host.invalid/~/repo.git", "ssh://alice@host.invalid/~/repo.git"),
+    ("https://example.invalid/Team/Repo.git", "https://example.invalid/team/repo.git"),
+])
+def test_origins_differing_only_in_case_are_two_repos(tmp_path, origins):
+    """#1 must-block: the user and the path keep their case, so these are two owners."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _repo_at(tmp_path, "a/app", vault, origin=origins[0])
+    other = _repo_at(tmp_path, "b/app", vault, rows="T-0060 | direction | - | app | B work\n",
+                     origin=origins[1])
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A work").returncode == 0
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", "T-0060", "--to", "done"))
+
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout) == (1, True, True)
+
+
+@pytest.mark.parametrize("urls,expected", [
+    (("HTTPS://Example.invalid/Team/Repo.git", "https://example.invalid/Team/Repo"),
+     "https://example.invalid/Team/Repo"),
+    (("git@GitHub.example:Team/Repo.git",), "git@github.example:Team/Repo"),
+    (("ssh://Alice@Host.invalid:2222/~/Repo.git",), "ssh://Alice@host.invalid:2222/~/Repo"),
+])
+def test_repo_id_folds_only_scheme_and_host(tmp_path, urls, expected):
+    """#1 must-allow: scheme and host are case-insensitive everywhere, so they fold."""
+    ids = set()
+    for number, url in enumerate(urls):
+        root = make_repo(tmp_path / str(number))
+        _git(root, "remote", "add", "origin", url)
+        ids.add(crew_tracker.repo_id(str(root)))
+
+    assert ids == {expected}
+
+
+def test_a_lowercased_old_note_is_refused_with_the_fix(tmp_path):
+    """#1 old note: an older crew lowercased the whole URL; that note stays refused
+    and the refusal names the one-line fix. No automatic acceptance."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, own=False)
+    _git(root, "remote", "add", "origin", "https://example.invalid/Team/Repo.git")
+    (vault / "Boards" / "repo" / f"{CARD}.md").write_text(
+        f"# {CARD}\n\n- repo-id: https://example.invalid/team/repo\n", encoding="utf-8", newline="\n")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout,
+            "repo-id: https://example.invalid/Team/Repo" in done.stdout) == (1, True, True, True)
+
+
+def test_a_foreign_note_differing_in_more_than_case_gets_no_old_note_clause(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, own=False)
+    _git(root, "remote", "add", "origin", "https://example.invalid/Team/Repo.git")
+    (vault / "Boards" / "repo" / f"{CARD}.md").write_text(
+        f"# {CARD}\n\n- repo-id: https://example.invalid/other/repo\n", encoding="utf-8", newline="\n")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout,
+            "older crew" in done.stdout) == (1, True, True, False)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX paths; the Windows branch is "
+                    "test_file_url_drive_prefix_by_platform's")
+def test_file_url_authority_is_not_path_text(tmp_path):
+    """#2: git drops a file:// authority (measured, git 2.53.0), so the id does too."""
+    bare = tmp_path / "srv" / "app.git"
+    commit = _bare_with_commit(bare)
+    origins = (f"file://{bare}", f"file://localhost{bare}", f"file://LOCALHOST{bare}", str(bare))
+    ids = set()
+    for number, origin in enumerate(origins):
+        root = make_repo(tmp_path / f"r{number}")
+        _git(root, "remote", "add", "origin", origin)
+        ids.add(crew_tracker.repo_id(str(root)))
+    answered = subprocess.run(["git", "ls-remote", f"file://localhost{bare}", "main"],
+                              capture_output=True, text=True, check=True,
+                              stdin=subprocess.DEVNULL).stdout.split()[0]
+
+    assert (ids, answered) == ({os.path.realpath(bare)}, commit)
+
+
+@pytest.mark.parametrize("url,windows,expected", [
+    ("file:///C:/repos/app.git", True, "C:/repos/app.git"),
+    ("file://localhost/C:/repos/app.git", True, "C:/repos/app.git"),
+    ("file://LocalHost/C:/repos/a%20b.git", True, "C:/repos/a b.git"),
+    ("file:///C:/repos/app.git", False, "/C:/repos/app.git"),
+    ("file://localhost/srv/app.git", False, "/srv/app.git"),
+    ("file://otherhost/srv/app.git", False, "/srv/app.git"),
+    ("file://server/share/app.git", True, "server/share/app.git"),
+    ("file:///srv/app.git", True, "/srv/app.git"),
+])
+def test_file_url_drive_prefix_by_platform(url, windows, expected):
+    """#2 drive letters, through the pure helper with the platform passed in: a
+    non-localhost authority on Windows keeps today's (relative, so common-dir) answer."""
+    assert crew_tracker._file_url_path(url, windows) == expected
+
+
+def test_overlapping_moves_leave_board_and_index_agreeing(tmp_path, monkeypatch):
+    """#3: move A (to review) pauses after its INDEX write while move B (to done)
+    completes; A's board write must follow INDEX, not the lane A meant."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    real = crew_tracker._files_move
+    raced = {"done": False}
+
+    def paused(where, ticket, status, reopen=False):
+        result = real(where, ticket, status, reopen)
+        if not raced["done"]:
+            raced["done"] = True
+            other = crew_tracker.move(str(root), CARD, "done")
+            assert crew_tracker.exit_code(other) == 0, other
+        return result
+
+    monkeypatch.setattr(crew_tracker, "_files_move", paused)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+    lines = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8").splitlines()
+    card = next(line for line in lines if "[[T-0042]]" in line)
+
+    assert (_index(root), _lane_of("\n".join(lines) + "\n", CARD), card.startswith("- [x] "),
+            lines.index(card) > lines.index("**Complete**"),
+            "Done" in got["results"][1]["reason"], "INDEX moved on to done" in got["results"][1]["reason"],
+            crew_tracker.exit_code(got)) == (
+        ROW.replace("spec", "done"), "Done", True, True, True, True, 0)
+
+
+def test_a_move_landing_between_the_reread_and_the_replace_is_followed(tmp_path, monkeypatch):
+    """#3, review round 1: move B lands after A's last board re-read and before
+    A's replace, so A's replace puts the card back in Review. A's check of INDEX
+    after its write sees done and places the card again."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    real = os.replace
+    raced = {"done": False}
+
+    def late(src, dst, *args, **kwargs):
+        if not raced["done"] and os.path.basename(str(dst)) == "Board.md":
+            raced["done"] = True
+            other = crew_tracker.move(str(root), CARD, "done")
+            assert crew_tracker.exit_code(other) == 0, other
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", late)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+    text = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+
+    assert (raced["done"], _index(root), _lane_of(text, CARD), "INDEX moved on to done" in got["results"][1]["reason"],
+            crew_tracker.exit_code(got)) == (True, ROW.replace("spec", "done"), "Done", True, 0)
+
+
+@pytest.mark.parametrize("index_after", ["", ROW.replace("spec", "bogus")])
+def test_board_is_not_moved_when_index_cannot_be_read_at_write_time(tmp_path, monkeypatch, index_after):
+    """#3 could-not-tell: INDEX gone or unknown at board-write time leaves the board alone."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    before = board.read_bytes()
+    real = crew_tracker._files_move
+
+    def rewritten(where, ticket, status, reopen=False):
+        result = real(where, ticket, status, reopen)
+        (root / ".work" / "INDEX.md").write_text(index_after, encoding="utf-8", newline="\n")
+        return result
+
+    monkeypatch.setattr(crew_tracker, "_files_move", rewritten)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (board.read_bytes() == before, crew_tracker.exit_code(got),
+            got["results"][-1]["state"], "could not tell where INDEX has" in got["results"][-1]["reason"]) == (
+        True, 1, crew_tracker.FAILED, True)
+
+
+@pytest.mark.parametrize("line,owner", [
+    ("- repo-id: /srv/app.git'", crew_tracker.FOREIGN),
+    ("- repo-id: '/srv/app.git", crew_tracker.FOREIGN),
+    ('- repo-id: /srv/app.git"', crew_tracker.FOREIGN),
+    ('- repo-id: "/srv/app.git"', crew_tracker.OURS),
+    ("- repo-id: '/srv/app.git'", crew_tracker.OURS),
+    ("- repo-id: /srv/app.git", crew_tracker.OURS),
+    ("- repo-id: /srv/app.git\r", crew_tracker.OURS),
+    ("repo-id: \"/srv/app.git\" \r", crew_tracker.OURS),
+])
+def test_note_repo_id_quote_is_stripped_only_as_a_matched_pair(tmp_path, line, owner):
+    """#4: a lone quote is part of the id; a matched pair around the whole value is not."""
+    note = tmp_path / "T-0042.md"
+    note.write_bytes(f"# T-0042\n\n{line}\n".encode("utf-8"))
+    paths = {"note": str(note), "noteShown": "T-0042.md"}
+
+    got = crew_tracker._card_owner(paths, "/srv/app.git")
+
+    assert (got[0], len(got), got[2]) == (owner, 3, True)
+
+
+@pytest.mark.parametrize("glued,key,expected", [
+    ("- [ ]T-0042", "done", "- [x] T-0042"),
+    ("- [x]T-0042", "review", "- [ ] T-0042"),
+    ("- [X]T-0042", "done", "- [x] T-0042"),
+])
+def test_checkbox_without_a_space_is_repaired(glued, key, expected):
+    """#6: a marker with no space after it is not a Markdown checkbox; it is repaired."""
+    text = _fixture("board_0_20.md").replace("- [ ] [[T-0042]] Fix token refresh on 401", glued)
+    board, problem = crew_tracker.parse_board(text, COLUMNS)
+    assert problem is None, problem
+
+    new, _, problem = crew_tracker.move_card(board, CARD, key)
+    lines = new.splitlines()
+
+    assert (problem, expected in lines, glued in lines) == (None, True, False)
 
 
 # --- L-0530: a word crew does not know is named, never mapped -----------------

@@ -40,6 +40,10 @@ README embeds of the diagrams and the integrations reference:
            the current MD5 (`ast_hash`) of every committed code path that
            moved since then (T-0063, `_manifest_confirms`). A manifest that
            is missing or does not parse leaves the sha answer.
+           While graphify would read a secrets-denylisted path the root
+           `.graphifyignore` does not exclude, or that cannot be told, the
+           graph is `unknown` and not refreshable, whatever its anchor says
+           (T-0064, `crew_graph_ignore.coverage`): no command is named.
   diagram-embeds  (T-0035) each README whose generated `crew-diagrams`
            section differs from what `crew_diagrams.py embed` writes now,
            judged over every diagram whatever the ticket reached: a drifted
@@ -237,6 +241,7 @@ import sys
 import completion_audit
 import crew_diagrams
 import crew_reference
+import crew_graph_ignore
 import crew_ticket
 import scope_base
 import crew_common
@@ -1389,6 +1394,26 @@ def _manifest_confirms(root, graph_dir, paths):
         if entry.get("ast_hash") != digest:
             return False, ""
     return True, ""
+def _graph_ignore_refusal(root, graph_out, command):
+    """A non-refreshable `unknown` graph entry while graphify would read a
+    secrets-denylisted path (T-0064), else None. Running `command` then
+    would put the secret in the graph, so no refresh may be named; the fix
+    is `crew_graph_ignore.py --write`, which this check never runs: it is
+    read-only, and that write is outside the ticket's Touch."""
+    cover = crew_graph_ignore.coverage(root)
+    if cover["status"] == crew_graph_ignore.UNCOVERED:
+        paths = cover["uncovered"]
+        shown = crew_graph_ignore.listed(paths, 3)
+        return _entry("graph", graph_out, UNKNOWN,
+                      f"graphify would read {len(paths)} secrets-denylisted path(s) "
+                      f".graphifyignore does not exclude: {shown}; run "
+                      f"{crew_graph_ignore.FIX}, and if a graph was built before, see "
+                      "crew-graph SKILL 'Tainted graph'", command, refreshable=False)
+    if cover["status"] != crew_graph_ignore.COVERED:
+        return _entry("graph", graph_out, UNKNOWN,
+                      f"denylist coverage unknown: {cover['reason']}", command,
+                      refreshable=False)
+    return None
 
 
 def _references(root, changed, untracked):
@@ -1438,6 +1463,9 @@ def _graph(root, info, graph_out, code, untracked, which):
                       f"no graph file at {graph_out}/graph.json", command)
     if not code:
         return None
+    refused = _graph_ignore_refusal(root, graph_out, command)
+    if refused:
+        return refused
     if not which("graphify"):
         return _entry("graph", graph_out, UNKNOWN,
                       "graphify missing on this machine, so the graph can be "

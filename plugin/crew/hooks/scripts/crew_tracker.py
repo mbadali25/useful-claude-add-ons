@@ -609,7 +609,12 @@ _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
 
 
 def normal_url(url):
-    """An origin URL as an identity: lowercased, `.git` and secrets dropped.
+    """An origin URL as an identity: scheme and host folded, `.git` and secrets dropped.
+
+    Only the scheme and the host (with its port) are case-folded: they are
+    case-insensitive everywhere. The ssh username and the path keep their case
+    (T-0071 #1): `Alice@host:Repo` and `alice@host:repo` can be two
+    repositories, and folding them made one owner of two.
 
     The identity is written into a vault note a human reads, so no password
     reaches it. Over ssh the username stays: `alice@host:repo.git` and
@@ -618,14 +623,20 @@ def normal_url(url):
     other scheme drops the whole userinfo: the path names the repository
     there, and `https://<token>@host/...` puts a token where a username goes.
     """
-    url = url.strip().lower()
+    url = url.strip()
     # scp-style `user@host:path` is ssh and has no password field: it is kept.
     if "://" in url:
         scheme, rest = url.split("://", 1)
+        scheme = scheme.lower()
         host, slash, path = rest.partition("/")
         user = host.rpartition("@")[0].partition(":")[0]
         keep = f"{user}@" if user and scheme in _SSH_SCHEMES else ""
+        host = host.lower()
         url = f"{scheme}://{keep}{host.rpartition('@')[2]}{slash}{path}"
+    else:
+        head, colon, path = url.partition(":")
+        user, at, host = head.rpartition("@")
+        url = f"{user}{at}{host.lower()}{colon}{path}"
     url = url.rstrip("/")
     return url[:-4] if url.endswith(".git") else url
 
@@ -638,13 +649,36 @@ def _local_path(url):
     `host:path`; anything else is a path.
     """
     if "://" in url:
-        # Git percent-decodes a file:// path: `file:///srv/a%20b.git` is
-        # `/srv/a b.git`, while the bare path `/srv/a%20b.git` is itself.
-        return urllib.parse.unquote(url[len("file://"):]) if url.lower().startswith("file://") else None
+        return _file_url_path(url, os.name == "nt") if url.lower().startswith("file://") else None
     head = url.split("/", 1)[0]
     if ":" in head and not ntpath.splitdrive(url)[0]:
         return None
     return url
+
+
+_DRIVE_AFTER_SLASH = re.compile(r"/[A-Za-z]:")
+
+
+def _file_url_path(url, windows):
+    """The path a `file://` URL names on POSIX (`windows` False) or Windows.
+
+    The authority is not path text (T-0071 #2). POSIX git drops any authority
+    (measured, git 2.53.0: `file://otherhost/srv/app.git` is `/srv/app.git`).
+    On Windows an empty or `localhost` authority is dropped and so is the `/`
+    before a drive letter (`file:///C:/repos/app.git` is `C:/repos/app.git`);
+    any other authority is returned as before, a relative path, so `repo_id`
+    keeps the common-dir identity for it: git for Windows was not measured.
+    Git percent-decodes the path: `file:///srv/a%20b.git` is `/srv/a b.git`,
+    while the bare path `/srv/a%20b.git` is itself.
+    """
+    rest = url[len("file://"):]
+    authority, slash, path = rest.partition("/")
+    if windows and authority.lower() not in ("", "localhost"):
+        return urllib.parse.unquote(rest)
+    local = urllib.parse.unquote(slash + path)
+    if windows and _DRIVE_AFTER_SLASH.match(local):
+        return local[1:]
+    return local
 
 
 def repo_id(root):
@@ -810,7 +844,9 @@ def _files_read(root, ticket):
 _HEADING = re.compile(r"## (.+?)[ \t]*\Z")
 _KANBAN_KEY = re.compile(r"kanban-plugin:\s*['\"]?board['\"]?\s*\Z")
 _CARD_START = re.compile(r"- ")
-_CHECKED = re.compile(r"- \[[xX]\]")
+# A marker is a checkbox only when a space, a tab or the line's end follows it
+# (T-0071 #6): `- [ ]T-0042` is text to Markdown, so `_checkbox` repairs it.
+_CHECKED = re.compile(r"- \[[xX]\](?=[ \t\r\n]|\Z)")
 _FIRST_ID = re.compile(rf"\[\[({crew_common.TICKET_ID_CORE})(?:[|#][^\]]*)?\]\]"
                        rf"|(?<![A-Za-z0-9-])({crew_common.TICKET_ID_CORE})(?![A-Za-z0-9])")
 _COMPLETE = "**Complete**"
@@ -969,15 +1005,18 @@ def _place(board, key, card_lines):
     return "".join(lines)
 
 
-_BOX = re.compile(r"- \[[ xX]\]")
+_BOX = re.compile(r"- \[[ xX]\](?=[ \t\r\n]|\Z)")
+_GLUED_BOX = re.compile(r"- \[[ xX]\]")
 
 
 def _checkbox(line, key):
     """A card's first line checked for lane `key` done, unchecked for any other.
-    A card with no box (`- T-0042`) gets one, so a Done card always reads done."""
+    A card with no box (`- T-0042`) gets one, so a Done card always reads done,
+    and a marker glued to its text (`- [ ]T-0042`) is repaired to marker, one
+    space, text."""
     box = "- [x]" if key == "done" else "- [ ]"
     if not _BOX.match(line):
-        return f"{box} {line[2:]}"
+        return f"{box} {line[5:] if _GLUED_BOX.match(line) else line[2:]}"
     if key == "done" and line.startswith("- [ ]"):
         return "- [x]" + line[5:]
     if key != "done" and _CHECKED.match(line):
@@ -1433,7 +1472,9 @@ def _create_note_once(paths, text):
 # puts `repo-id:` in the note; an existing note is never rewritten.
 # `\r` is trailing space here: `$` under re.M stops before `\n` only, so a
 # CRLF note would otherwise carry the `\r` into the id and read as foreign.
-_NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*['\"]?(.+?)['\"]?[ \t\r]*$", re.M)
+# A quote is stripped only as a matched pair around the whole value (T-0071
+# #4): `_note_text` writes the id unquoted, so a lone quote is part of it.
+_NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*(?:\"(.+?)\"|'(.+?)'|(.+?))[ \t\r]*$", re.M)
 OURS, FOREIGN, UNKNOWN = "ours", "foreign", "unknown"
 
 
@@ -1449,7 +1490,7 @@ def _card_owner(paths, here, label="note"):
     if raw is None:
         return UNKNOWN, f"no {shown} note names its repo-id", False
     text, problem = _decode(raw, shown)
-    found = set() if problem else set(_NOTE_REPO_ID.findall(text))
+    found = set() if problem else {"".join(groups) for groups in _NOTE_REPO_ID.findall(text)}
     if len(found) != 1:
         why = problem or (f"{shown} names no repo-id" if not found
                           else f"{shown} names {len(found)} repo-ids")
@@ -1492,8 +1533,14 @@ def _archived(ticket):
 
 
 def _foreign(paths, ticket, owner, here):
-    return (f"{ticket} on {paths['boardShown']} belongs to another repo ({owner}, per "
-            f"{paths['noteShown']}), not this one ({here}): give this repo its own obsidian.boardDir")
+    refusal = (f"{ticket} on {paths['boardShown']} belongs to another repo ({owner}, per "
+               f"{paths['noteShown']}), not this one ({here}): give this repo its own obsidian.boardDir")
+    if owner != here and owner.lower() == here.lower():
+        # T-0071 #1: an older crew lowercased the whole origin URL. Never
+        # accepted as ours -- that id is exactly the ambiguous one.
+        refusal += (f"; the note may carry this repo's id as an older crew wrote it (lowercased): if the "
+                    f"card is this repo's, change the line to 'repo-id: {here}'")
+    return refusal
 
 
 def _unclaimed(paths, ticket, why, here):
@@ -1583,7 +1630,7 @@ def _obsidian_create(root, settings, ticket, title):
 
 
 def _obsidian_move(root, settings, ticket, status, reopen=False):
-    columns, key = settings["columns"], LANE_FOR_STATUS[status]
+    columns = settings["columns"]
     here = repo_id(root)
     paths, problem = _vault_paths(root, settings, _note_names(settings, ticket))
     where, why = (None, None) if problem else _note_where(paths)
@@ -1608,22 +1655,54 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     if problem:
         return [_result("obsidian", FAILED, problem)]
 
+    placed = {}
+
     def edit(current):
+        # T-0071 #3: the card goes where INDEX has the ticket NOW, read inside
+        # the board's atomic update, not where this call meant to put it, so
+        # two overlapping moves converge on INDEX whichever board write lands
+        # last. `_atomic_update`'s re-read recomputes, and so re-reads INDEX;
+        # the check after the write (below) covers a move that lands between
+        # that re-read and the replace.
+        held = _files_read(root, ticket)
+        if held["state"] != READ or held["status"] not in LANE_FOR_STATUS:
+            why = held["reason"] if held["state"] != READ else f"{held['status']!r} is not a status crew knows"
+            return None, _result("obsidian", FAILED, f"could not tell where INDEX has {ticket} now ({why})")
+        key = LANE_FOR_STATUS[held["status"]]
+        placed["status"] = held["status"]
+        note = "" if held["status"] == status else f" (INDEX moved on to {held['status']})"
         new, moved_from, why = move_card(current, ticket, key)
         if why:
             return None, _result("obsidian", FAILED, why)
         if moved_from == columns[key] and new == "".join(current["lines"]):
-            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}")
+            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}{note}")
         if moved_from == columns[key]:
-            return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card repaired in {moved_from}")
-        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}")
+            return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card repaired in {moved_from}{note}")
+        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}{note}")
 
     # The board follows INDEX: when the INDEX half refuses -- another session
     # moved the ticket on after the read above -- the board is not moved either.
     files = _files_move(root, ticket, status, reopen)
     if files["state"] == FAILED:
         return [files]
-    return [files, _board_write(paths, columns, edit)]
+    return [files, _board_following_index(root, ticket, paths, columns, edit, placed)]
+
+
+def _board_following_index(root, ticket, paths, columns, edit, placed):
+    """`_board_write`, repeated while INDEX moved on after the status `edit`
+    placed the card for (T-0071 #3). Every move writes INDEX before its board,
+    so a board write that lands over another move's is followed by an INDEX
+    read that sees that move, and the card is placed again."""
+    for _ in range(WRITE_TRIES):
+        placed.clear()
+        board = _board_write(paths, columns, edit)
+        if board["state"] == FAILED or "status" not in placed:
+            return board
+        after = _files_read(root, ticket)
+        if after["state"] == READ and after["status"] == placed["status"]:
+            return board
+    return _result("obsidian", FAILED, f"could not tell where INDEX has {ticket} now (it changed during "
+                                       f"each of {WRITE_TRIES} board writes); {paths['boardShown']} may lag it")
 
 
 def _folder_doubt(ticket, probe):

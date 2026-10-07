@@ -1221,6 +1221,26 @@ def test_proposals_writes_the_findings_of_a_recovered_round(tmp_path):
         0, True), result.stderr
 
 
+def test_proposals_proposes_a_round_whose_admission_the_wording_list_misses(tmp_path):
+    """L-0604: the docstring's rule. A shortfall admission outside
+    `review_verdict._SHORTFALL` is recovered as prose, so the round is
+    FINDINGS: its FIX is proposed and the admission is not written."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(
+        "FIX|x.py:1|bad|repro\nI only inspected one of the nine files", encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+
+    result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
+                  str(scratch), "--round", "1")
+
+    text = (root / ".work" / "tickets" / "T-1" / "standards-proposals-r1.md").read_text(
+        encoding="utf-8")
+    assert (result.returncode, "FIX|x.py:1|bad|repro" in text,
+            "nine files" in text) == (0, True, False), result.stderr
+
+
 @pytest.mark.parametrize("out", ["READ|part-001-of-001.patch\nCLEAN\n",
                                  "READ|part-001-of-001.patch\nNIT|d.py:4|style|none\n"])
 def test_proposals_writes_a_round_with_no_block_or_fix(tmp_path, out):
