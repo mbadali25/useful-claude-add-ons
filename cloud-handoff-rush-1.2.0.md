@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T14:34Z
+Last updated: 2026-10-07T14:36Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T14:36Z G6a r6 review: L-0550 + L-0670 CLEAN; L-0666 BLOCK (crew_autopilot.py:1027/1048 unknown successor -> closed); L-0551 BLOCK (_main_checkout why discarded / unreadable main INDEX -> 'nothing on you'). G6a fixer started incl. owner's 'fixed them instead?' line. C-0059 minted (cp1252 stdout); next free C-0060.
 - 2026-10-07T14:34Z G6a done: head 6999aa44 (1.1.15 placeholder), 9 tickets, full crew 15450 passed, Windows green (2 reruns: G0 test_push_argv_never_forces, gizmoduck timeout - both pass on base). 4 capped r6 fixes -> coordinator review agent. Owner: keep L-0666 accept/reject FINDINGS stop + add 'fixed them instead? run the refresh check, then /crew:review' line; keep waiting line default-on (C-0056). Minted C-0056..C-0058; next free C-0059. ALL 14 GROUPS BUILT.
 - 2026-10-07T14:26Z G2 re-stacked: 4df57590 crew 1.1.10 on release 6940da35; #550 retitled. Wave 1 #554 CI: 17 ok, 11 running.
 - 2026-10-07T14:22Z Correction: old train lander IS re-stacking (G2 merge of release in progress since 14:21). Fresh lander stopped untouched (no double-work). Old lander continues G2 1.1.10 -> G3b -> G5 -> G1b.
