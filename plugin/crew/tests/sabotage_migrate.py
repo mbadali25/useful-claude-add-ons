@@ -9,6 +9,8 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATE = os.path.join(CREW, "hooks", "scripts", "crew_migrate.py")
 STATUS = os.path.join(CREW, "hooks", "scripts", "crew_status.py")
 TEST_MIGRATE = os.path.join(CREW, "tests", "test_migrate.py")
+AUTOCLEAR_SETUP = os.path.join(CREW, "hooks", "scripts", "crew_autoclear_setup.py")
+_A = "tests/test_autoclear_setup.py::"
 
 MIGRATE_FIX_MUTATIONS = (
     # Each was also run by hand against the tracked file, restored from a
@@ -117,4 +119,64 @@ MIGRATE_FIX_MUTATIONS = (
         "        cells = [c.strip() for c in line.split(\"|\")]\n",
         "tests/test_status.py::test_index_rows_with_a_leading_pipe_are_reported_open",
     ),
+    # C-0028: T-0106's apply-migrate --scan-root. Each is a way the scan could
+    # read a repo it could not see into as "not opted in", or let --yes-widen
+    # write a list that leaves an opted-in repo out (or an empty one).
+    ("apply-migrate: --yes-widen writes past an unreadable scanned repo", AUTOCLEAR_SETUP,
+     "    if unreadable:\n        return (\"refused --yes-widen: these repos could not be read",
+     "    if False:\n        return (\"refused --yes-widen: these repos could not be read",
+     _A + "test_yes_widen_refuses_when_a_candidate_could_not_be_read"),
+    ("apply-migrate: --yes-widen writes an empty onlyRepos list", AUTOCLEAR_SETUP,
+     '    if not widening["proposedOnlyRepos"]:\n',
+     "    if False:\n",
+     _A + "test_yes_widen_refuses_an_empty_proposal"),
+    ("apply-migrate: the scan descends into a candidate repo", AUTOCLEAR_SETUP,
+     "                    found.add(directory)\n                continue\n",
+     "                    found.add(directory)\n",
+     _A + "test_scan_skips_nested_hidden_vendored_and_symlinked_directories"),
+    ("apply-migrate: an unreadable candidate reads as not opted in", AUTOCLEAR_SETUP,
+     "                if reason:\n                    unreadable[directory] = reason\n",
+     "                if False:\n                    unreadable[directory] = reason\n",
+     _A + "test_unreadable_candidate_is_reported_not_treated_as_not_opted_in"),
+    ("apply-migrate: an opted-in sibling masks an unreadable repo file", AUTOCLEAR_SETUP,
+     '    return present, opted_in, "; ".join(problems)\n',
+     '    return present, opted_in, "" if opted_in else "; ".join(problems)\n',
+     _A + "test_an_unreadable_file_is_not_masked_by_an_opted_in_sibling"),
+    ("apply-migrate: a .crew that cannot be statted reads as no crew here", AUTOCLEAR_SETUP,
+     '        return True, False, f".crew could not be read: {exc}"\n',
+     '        return False, False, ""\n',
+     _A + "test_a_crew_directory_that_cannot_be_statted_is_unreadable"),
+    ("apply-migrate: a .crew that cannot be listed reads as no crew here", AUTOCLEAR_SETUP,
+     '        return True, False, f".crew could not be listed: {exc}"\n',
+     '        return False, False, ""\n',
+     _A + "test_a_crew_directory_that_cannot_be_listed_is_unreadable"),
+    ("apply-migrate: the scan trusts listdir's spelling of the repo files", AUTOCLEAR_SETUP,
+     "        if name not in names:\n            try:\n",
+     "        if name not in names:\n            continue\n            try:\n",
+     _A + "test_a_config_file_listed_in_another_case_is_still_scanned"),
+    ("apply-migrate: a case-variant file that cannot be statted is skipped", AUTOCLEAR_SETUP,
+     "            except OSError as exc:\n                present = True\n"
+     '                problems.append(f".crew/{name}: {exc}")\n                continue\n',
+     "            except OSError:\n                continue\n",
+     _A + "test_a_case_variant_config_that_cannot_be_statted_is_unreadable"),
+    ("apply-migrate: an entry whose type cannot be read is skipped", AUTOCLEAR_SETUP,
+     '                unchecked[entry.path] = f"could not tell whether it is a directory: {exc}"\n',
+     "                pass\n",
+     _A + "test_an_entry_whose_type_cannot_be_read_is_unreadable"),
+    ("apply-migrate: a symlinked .crew is followed", AUTOCLEAR_SETUP,
+     "    if stat.S_ISLNK(mode):\n",
+     "    if False:\n",
+     _A + "test_a_symlinked_crew_directory_is_not_followed"),
+    ("apply-migrate: the scan lists the current repo again", AUTOCLEAR_SETUP,
+     "            if directory == current:\n                continue\n",
+     "",
+     _A + "test_scan_does_not_list_the_current_repo_twice"),
+    ("apply-migrate: the scan reads one level past --scan-depth", AUTOCLEAR_SETUP,
+     "            if level >= depth:\n",
+     "            if level > depth:\n",
+     _A + "test_scan_depth_limits_the_walk"),
+    ("apply-migrate: a note no longer names its file", AUTOCLEAR_SETUP,
+     '        file_notes = [f".crew/{name}: {note}" for note in\n',
+     "        file_notes = [note for note in\n",
+     _A + "test_apply_migrate_notes_name_their_file"),
 )

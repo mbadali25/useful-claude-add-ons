@@ -93,6 +93,9 @@ PLATFORM_ONLY = {
     "the bash gate stops publishing a deadline at all (bash only)":
         (_LINUX, "its target's rule runs GNU `stat -c %Y`, which macOS's stat "
                  "does not take"),
+    "a displaced move back says moved back without checking the inode":
+        (frozenset({"linux", "darwin"}), "its target test is skipped on Windows: "
+                                         "the link-then-park move is POSIX's"),
 }
 
 _VERIFY_SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")

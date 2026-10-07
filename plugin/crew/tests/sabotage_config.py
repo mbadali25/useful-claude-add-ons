@@ -712,4 +712,22 @@ CONFIG_MENU_MUTATIONS = (
      '                  + widening_note(change["path"], change["inForce"]))\n',
      '                  + widening_note(change["path"], change["after"]))\n',
      _C + "test_a_repo_null_that_widens_is_described_by_the_value_in_force"),
+    # C-0028: T-0103's identity checks. A name is trusted as the config only
+    # when it IS the config's inode, taken before the move.
+    ("a delete error trusts the backup name because something is there", MENU,
+     "    at_backup = _same(backup, ident) if moved else (None if moved is None else False)\n",
+     "    at_backup = True if moved else (None if moved is None else False)\n",
+     _M + "test_delete_backup_name_taken_and_config_gone_is_not_called_the_original"),
+    ("a delete error trusts the config path because something is there", MENU,
+     "    here = _same(path, ident) if there else (None if there is None else False)\n",
+     "    here = True if there else (None if there is None else False)\n",
+     _M + "test_delete_replaced_config_and_taken_backup_name_is_not_left_in_place"),
+    ("_same calls any file at a name the config's inode", MENU,
+     "    return None if now is None else os.path.samestat(now, ident)\n",
+     "    return None if now is None else True\n",
+     _M + "test_delete_backup_name_taken_before_the_move_is_not_called_the_original"),
+    ("a displaced move back says moved back without checking the inode", MENU,
+     '            where = ("was moved back there" if _same(path, ident) else\n',
+     '            where = ("was moved back there" if True else\n',
+     _M + "test_delete_move_back_displaced_by_a_replaced_path_does_not_say_moved_back"),
 )
