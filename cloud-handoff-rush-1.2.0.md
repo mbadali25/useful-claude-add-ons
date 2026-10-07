@@ -26,8 +26,11 @@ Last updated: 2026-10-07T09:43Z
 
 ## Standing rules (owner, 2026-10-05)
 
-- **Merge rule:** a group PR merges only when a Codex review (`gpt-6-sol`, high) of its current head
-  has **0 BLOCK and 0 FIX**, and CI is green on that head. Merge commits only.
+- **Merge rule (owner 2026-10-07, replaces the group-review rule):** every source PR / ticket gets its own
+  Codex review (`gpt-6-sol`, high) to 0 BLOCK / 0 FIX. Once the builder has added it to a group (merge
+  train) PR, the group needs NO further Codex review: the group PR merges on green CI on its head (plus
+  the lander's gates and full crew suite). Merge commits only. Codex runs do not count toward the agent
+  cap (10 Claude agents, owner 2026-10-07).
 - **Structure:** groups -> `release/1.2.0` (feature lanes) -> one PR to `main`. Harness lanes go to
   `main` alone (CLAUDE.md T-0087): **H1 -> H3 -> release/1.2.0 -> H2**. H2 is last and sets crew
   **1.2.0**.
