@@ -1247,3 +1247,71 @@ SLEEP_MUTATIONS = (
 )
 
 AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
+
+# L-0671 entries 1-14: T-0074's auto-replan policy. Entries 15-19 (L-0670's
+# successor-plan check) wait for L-0670, which is not on main.
+_RP = "tests/test_crew_autopilot_replan.py::"
+_RJ = _RP + "test_auto_reject_refusals_write_nothing"
+
+REPLAN_MUTATIONS = (
+    ("L-0671 1: maxAutoReplans defaults to 1", STATE,
+     '"maxAutoReplans": 0, "sleep": {',
+     '"maxAutoReplans": 1, "sleep": {',
+     _RP + "test_setting_defaults_to_zero"),
+    ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
+     "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
+     "        replans = 1\n    if replans > MAX_AUTO_REPLANS:\n",
+     _RP + "test_setting_garbage_reads_zero_with_warning"),
+    ("L-0671 3: an unarmed autopilot may auto-reject", AUTOPILOT,
+     '    if not conf["armed"]:\n        return {"reason": "autopilot.mode is not plan, so autopilot '
+     'rejects nothing"}\n',
+     "    if False:\n        return {}\n",
+     _RJ + "[not-armed]"),
+    ("L-0671 4: the approval_policy condition is dropped", AUTOPILOT,
+     '    if approval.get("allow") is not True:\n        return {"cap": cap, "reason": (\n',
+     '    if False:\n        return {"cap": cap, "reason": (\n',
+     _RJ + "[approval-human]"),
+    ("L-0671 5: a ledger state other than REVIEWED is allowed", AUTOPILOT,
+     '    if data.get("state") != review_ledger.REVIEWED:\n',
+     "    if False:\n",
+     _RJ + "[in-review]"),
+    ("L-0671 6: an INCOMPLETE round is treated as FINDINGS", AUTOPILOT,
+     '    if row.get("verdict") != "FINDINGS":\n',
+     '    if row.get("verdict") not in ("FINDINGS", "INCOMPLETE"):\n',
+     _RJ + "[incomplete]"),
+    ("L-0671 7: a BLOCK count of 0 is allowed", AUTOPILOT,
+     '    if counts["BLOCK"] < 1:\n',
+     '    if counts["BLOCK"] < 0:\n',
+     _RJ + "[zero-block]"),
+    ("L-0671 8: a bool BLOCK count is taken as an int", AUTOPILOT,
+     "    if not isinstance(counts, dict) or not all(_count(counts.get(s))\n",
+     "    if not isinstance(counts, dict) or not all(isinstance(counts.get(s), int) "
+     "and counts.get(s) >= 0\n",
+     _RJ + "[block-bool]"),
+    ("L-0671 9: a review round left is ignored", AUTOPILOT,
+     '    if left:\n        return {"round": number, "reason": (\n',
+     '    if False:\n        return {"round": number, "reason": (\n',
+     _RJ + "[round-left]"),
+    ("L-0671 10: the reviewer-family condition is dropped", AUTOPILOT,
+     '    if family:\n        return {"round": number, "reason": family}\n',
+     '    if False:\n        return {"round": number, "reason": family}\n',
+     _RJ + "[provider-claude]"),
+    ("L-0671 11: the cap comparison is off by one", AUTOPILOT,
+     "    if used >= cap:\n",
+     "    if used > cap:\n",
+     _RJ + "[cap-reached]"),
+    ("L-0671 12: auto-reject writes without asking the policy", AUTOPILOT,
+     '    if got["allow"] is not True:\n        return 2, f"refused: {got[\'reason\']}"\n',
+     "    if False:\n        return 2, \"refused\"\n",
+     _RJ + "[key-zero]"),
+    ("L-0671 13: the non-stop replan accepts any rejected.by", AUTOPILOT,
+     'isinstance(rejected, dict) and rejected.get("by") == AUTO_REJECT_BY\n',
+     'isinstance(rejected, dict) and rejected.get("by") is not None\n',
+     _RP + "test_replan_after_owner_reject_still_stops"),
+    ("L-0671 14: the rejected round need not be the latest", AUTOPILOT,
+     '                and _count(latest) and rejected.get("round") == latest\n',
+     "                and _count(latest)\n",
+     _RP + "test_replan_stops_when_rejected_round_is_not_latest"),
+)
+
+AUTOPILOT_MUTATIONS += REPLAN_MUTATIONS
