@@ -399,9 +399,9 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
 - **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
   the crew that read it existed, and nothing said so; 13 of 25 approvals typed
   on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
-  `questions`, and T-0011 `ship`, so they are quiet now. Still named:
-  `autopilot.reviewPolicy` and `maxLanes` (T-0029), `maxTicketsPerRun` and `mode:
-  backlog` (L-0541), and a `deploy` other than `none` (T-0045). A key the
+  `questions`, T-0011 `ship`, and T-0029 (crew 1.1.6) `reviewPolicy` and `maxLanes`, whose
+  `INERT_PENDING` rows this landing deletes, so they are quiet now. Still named:
+  `maxTicketsPerRun` and `mode: backlog` (L-0541), and a `deploy` other than `none` (T-0045). A key the
   global filter drops from `~/.claude/crew/config.json` is named `(global, not
   read)` instead of being dropped silently; that names what this crew does,
   not which file may set it (the owner allows a global `autopilot.deploy`).
