@@ -133,6 +133,7 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0059 | crew_autopilot CLI never reconfigures stdout: on a Windows cp1252 console an owed line with non-cp1252 chars raises UnicodeEncodeError, exit 1 (fails closed, line lost). Use `sys.stdout.reconfigure(errors="backslashreplace")` as crew_autocycle.py:1432 does | G6a review | none | needs ticket |
 | C-0061 | `_common.sh` python-probe deadline counts whole seconds (bash `SECONDS`), so it can overshoot by ~1 s; and bash.exe startup/spawn on Windows sits outside the in-function deadline (one 11.3 s wallclock outlier on G3b, job 112873147791) | G3b investigation | none | needs ticket |
 | C-0062 | `test_review_checks.py::test_the_timeout_holds_when_a_child_keeps_the_output_open[orphan-exit]` exceeds its 2 s bound under CI load (2.106 s on 3.11 in G6a's run; 2.12 s on 3.13, job 112887098729). Harness test (review_checks): root-cause, never loosen the bound | G6a + G3b CI | harness (lands alone) | H2 lane |
+| C-0063 | `test_sabotage_bound.py::test_the_harness_dying_stops_a_running_child` races: waits for the pidfile to EXIST, child killed between open() and write() leaves '' (ValueError at :186; wave 5 #559 test 3.12). Fix: wait for non-empty content or write tmp+rename. Not a HARNESS path | wave 5 CI | none | rides in h5 (C-0060) |
 | _filled as group reports arrive_ | | | | |
 
 ## Summary
