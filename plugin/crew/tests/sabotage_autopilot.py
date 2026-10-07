@@ -1189,6 +1189,12 @@ SLEEP_MUTATIONS = (
      '            take = sleep["state"] == crew_sleep.ASLEEP\n',
      "            take = True\n",
      _Z + "test_outside_the_window_the_day_values_apply"),
+    # (k) and (m) together: an unknown key has no effect, and is reported.
+    ("L-0651 (k): an autopilot.sleep.deploy key is applied while asleep", AUTOPILOT,
+     '            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,\n',
+     '            "saw": mode, "deploy": (_sleep_block(top, block).get("deploy") if '
+     'sleep["state"] == crew_sleep.ASLEEP else None) or deploy, "deploySaw": deploy_saw,\n',
+     _Z + "test_an_unknown_sleep_key_has_no_other_effect"),
     ("L-0651 (l): asleep, approval skips the scope.allowCliApproval check", AUTOPILOT,
      "        allowed = crew_ticket.cli_approval_allowed(top)\n",
      '        allowed = crew_ticket.cli_approval_allowed(top) or risk["sleep"].startswith(" (asleep")\n',
