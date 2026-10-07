@@ -15,7 +15,7 @@ shipped in crew 0.15.1 and is recorded there.
 
 ## Unreleased
 
-**`windows-ssm`** (1.0.1) — running Linux-style tools on a Windows machine
+**`windows-ssm`** (1.0.2) — running Linux-style tools on a Windows machine
 (which shell a command lands in, `python3` and `pwsh` resolution, MSYS path
 conversion, CRLF, WSL) and what AWS Systems Manager will carry, every limit
 cited to its AWS or Microsoft page. Its offline checker reads a
