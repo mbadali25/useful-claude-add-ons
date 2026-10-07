@@ -1139,3 +1139,175 @@ ASSIGN_MUTATIONS = (
 )
 
 AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
+
+# L-0651: T-0053's sleep window, its resolver and the overlay. Each removes one
+# branch that keeps what crew cannot tell from loosening a policy at night.
+SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
+AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
+_Z = "tests/test_crew_autopilot_sleep.py::"
+
+SLEEP_MUTATIONS = (
+    ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
+     "        return start <= minute < end\n",
+     "        return start <= minute <= end\n",
+     _Z + "test_in_window"),
+    ("L-0651 (b): in_window ignores the midnight crossing", SLEEP,
+     "    return minute >= start or minute < end\n",
+     "    return start <= minute < end\n",
+     _Z + "test_in_window"),
+    ("L-0651 (c): parse_schedule accepts a start equal to its end", SLEEP,
+     "    if start == end:\n",
+     "    if False:\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (d): parse_schedule matches a prefix, not the whole string", SLEEP,
+     "    found = _SCHEDULE_RE.fullmatch(value)\n",
+     "    found = _SCHEDULE_RE.match(value)\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (e): parse_schedule accepts hour 24", SLEEP,
+     "    if start_h > 23 or end_h > 23:\n",
+     "    if start_h > 24 or end_h > 24:\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (f): a night value outside POLICIES is applied as written", SLEEP,
+     "    if value is None or (isinstance(value, str) and value in policies):\n",
+     "    if True:\n",
+     _Z + "test_resolve_reads_a_bad_override_as_strictest_and_keeps_the_other"),
+    ("L-0651 (g): a malformed schedule reads asleep", SLEEP,
+     '        return {"state": UNKNOWN, "schedule": None, "overrides": overrides,\n',
+     '        return {"state": ASLEEP, "schedule": None, "overrides": overrides,\n',
+     _Z + "test_a_malformed_schedule_is_unknown_and_warns"),
+    ("L-0651 (h): a raising resolve reads asleep", AUTOPILOT,
+     '        return {"state": crew_sleep.UNKNOWN, "schedule": None, "overrides": found,\n',
+     '        return {"state": crew_sleep.ASLEEP, "schedule": None, "overrides": found,\n',
+     _Z + "test_a_raising_resolve_is_unknown_with_day_values"),
+    ("L-0651 (i): a non-object autopilot.sleep reads asleep", SLEEP,
+     '        return {"state": UNKNOWN, "schedule": None,\n'
+     '                "overrides": read_overrides(block, policies)[0],\n',
+     '        return {"state": ASLEEP, "schedule": None,\n'
+     '                "overrides": read_overrides(block, policies)[0],\n',
+     _Z + "test_a_sleep_value_that_is_not_an_object_is_unknown"),
+    ("L-0651 (j): the night overlay applies while awake", AUTOPILOT,
+     '            take = sleep["state"] == crew_sleep.ASLEEP\n',
+     "            take = True\n",
+     _Z + "test_outside_the_window_the_day_values_apply"),
+    # Item (k) (an autopilot.sleep.deploy key applied while asleep) is deferred
+    # to H2b: its anchor, the `"deploy": deploy` line of crew_autopilot.settings,
+    # is changed by rush G6b (L-0654, the deploy override), so G6b's CI would fail
+    # on a harness file it may not touch. H2b adds it against G6b's code.
+    ("L-0651 (l): asleep, approval skips the scope.allowCliApproval check", AUTOPILOT,
+     "        allowed = crew_ticket.cli_approval_allowed(top)\n",
+     '        allowed = crew_ticket.cli_approval_allowed(top) or risk["sleep"].startswith(" (asleep")\n',
+     _Z + "test_asleep_still_needs_allow_cli_approval_exactly_true"),
+    ("L-0651 (m): an unknown key under autopilot.sleep goes unreported", SLEEP,
+     '    warnings = [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
+     '    warnings = [] and [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
+     _Z + "test_an_unknown_sleep_key_has_no_other_effect"),
+    # L-0655 (a)-(i): L-0652's manual sleep and wake. (j)-(s) target L-0653's
+    # log and L-0654's deploy override, which are not on main yet.
+    ("L-0655 (a): sleep skips the scope.allowCliApproval check", AUTOSLEEP,
+     "    if not crew_ticket.cli_approval_allowed(top):\n        return 2, (f\"refused: {ap.ALLOW_CLI}",
+     "    if False:\n        return 2, (f\"refused: {ap.ALLOW_CLI}",
+     _Z + "test_sleep_refuses_unless_allow_cli_approval_is_exactly_true"),
+    ("L-0655 (b): sleep skips the armed check", AUTOSLEEP,
+     '    if not conf["armed"]:\n',
+     "    if False:\n",
+     _Z + "test_sleep_refuses_and_writes_nothing"),
+    ("L-0655 (c): an expired until is honoured", SLEEP,
+     "    if until <= when:\n",
+     "    if False:\n",
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (d): an until more than 24 hours after at is honoured", SLEEP,
+     "    if until - at > MANUAL_MAX_REAL or wall > MANUAL_MAX or until <= at:\n",
+     "    if until <= at:\n",
+     _Z + "test_read_manual_caps_at_24_hours"),
+    ("L-0655 (e): an at in the future is honoured", SLEEP,
+     "    if at > when:\n",
+     "    if False:\n",
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (f): a state file that cannot be trusted reads asleep", SLEEP,
+     '        return dict(got, state=UNKNOWN, source="manual")\n',
+     '        return dict(got, state=ASLEEP, source="manual")\n',
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (g): a state outside asleep|awake reads asleep", SLEEP,
+     '    if data["state"] not in MANUAL_STATES:\n        return f"state is',
+     '    if data["state"] not in MANUAL_STATES:\n        data["state"] = ASLEEP\n'
+     '    if False:\n        return f"state is',
+     _Z + "test_an_untrusted_state_file_is_ignored_with_a_warning"),
+    ("L-0655 (h): wake inside a window lasts past the window's end", AUTOSLEEP,
+     "        until = crew_sleep.next_edge(crew_sleep.parse_schedule(schedule)[1], when)\n"
+     '        record = {"state": crew_sleep.AWAKE',
+     "        until = when + datetime.timedelta(hours=23)\n"
+     '        record = {"state": crew_sleep.AWAKE',
+     _Z + "test_manual_wake_inside_the_window"),
+    ("L-0655 (i): sleep writes with no stricter override configured", AUTOSLEEP,
+     '    if found["state"] != crew_sleep.ASLEEP and not tightens:\n',
+     "    if False:\n",
+     _Z + "test_sleep_refuses_and_writes_nothing"),
+)
+
+AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
+
+# L-0671 entries 1-14: T-0074's auto-replan policy. Entries 15-19 (L-0670's
+# successor-plan check) wait for L-0670, which is not on main.
+_RP = "tests/test_crew_autopilot_replan.py::"
+_RJ = _RP + "test_auto_reject_refusals_write_nothing"
+
+REPLAN_MUTATIONS = (
+    # Entry 1 (maxAutoReplans defaults to 1, crew_state.py) is deferred to H2b:
+    # rush G6b rewrites the crew_state.py defaults line it anchors on.
+    ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
+     "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
+     "        replans = 1\n    if replans > MAX_AUTO_REPLANS:\n",
+     _RP + "test_setting_garbage_reads_zero_with_warning"),
+    ("L-0671 3: an unarmed autopilot may auto-reject", AUTOPILOT,
+     '    if not conf["armed"]:\n        return {"reason": "autopilot.mode is not plan, so autopilot '
+     'rejects nothing"}\n',
+     "    if False:\n        return {}\n",
+     _RJ + "[not-armed]"),
+    ("L-0671 4: the approval_policy condition is dropped", AUTOPILOT,
+     '    if approval.get("allow") is not True:\n        return {"cap": cap, "reason": (\n',
+     '    if False:\n        return {"cap": cap, "reason": (\n',
+     _RJ + "[approval-human]"),
+    ("L-0671 5: a ledger state other than REVIEWED is allowed", AUTOPILOT,
+     '    if data.get("state") != review_ledger.REVIEWED:\n',
+     "    if False:\n",
+     _RJ + "[in-review]"),
+    ("L-0671 6: an INCOMPLETE round is treated as FINDINGS", AUTOPILOT,
+     '    if row.get("verdict") != "FINDINGS":\n',
+     '    if row.get("verdict") not in ("FINDINGS", "INCOMPLETE"):\n',
+     _RJ + "[incomplete]"),
+    ("L-0671 7: a BLOCK count of 0 is allowed", AUTOPILOT,
+     '    if counts["BLOCK"] < 1:\n',
+     '    if counts["BLOCK"] < 0:\n',
+     _RJ + "[zero-block]"),
+    ("L-0671 8: a bool BLOCK count is taken as an int", AUTOPILOT,
+     "    if not isinstance(counts, dict) or not all(_count(counts.get(s))\n",
+     "    if not isinstance(counts, dict) or not all(isinstance(counts.get(s), int) "
+     "and counts.get(s) >= 0\n",
+     _RJ + "[block-bool]"),
+    ("L-0671 9: a review round left is ignored", AUTOPILOT,
+     '    if left:\n        return {"round": number, "reason": (\n',
+     '    if False:\n        return {"round": number, "reason": (\n',
+     _RJ + "[round-left]"),
+    ("L-0671 10: the reviewer-family condition is dropped", AUTOPILOT,
+     '    if family:\n        return {"round": number, "reason": family}\n',
+     '    if False:\n        return {"round": number, "reason": family}\n',
+     _RJ + "[provider-claude]"),
+    ("L-0671 11: the cap comparison is off by one", AUTOPILOT,
+     "    if used >= cap:\n",
+     "    if used > cap:\n",
+     _RJ + "[cap-reached]"),
+    ("L-0671 12: auto-reject writes without asking the policy", AUTOPILOT,
+     '    if got["allow"] is not True:\n        return 2, f"refused: {got[\'reason\']}"\n',
+     "    if False:\n        return 2, \"refused\"\n",
+     _RJ + "[key-zero]"),
+    ("L-0671 13: the non-stop replan accepts any rejected.by", AUTOPILOT,
+     'isinstance(rejected, dict) and rejected.get("by") == AUTO_REJECT_BY\n',
+     'isinstance(rejected, dict) and rejected.get("by") is not None\n',
+     _RP + "test_replan_after_owner_reject_still_stops"),
+    ("L-0671 14: the rejected round need not be the latest", AUTOPILOT,
+     '                and _count(latest) and rejected.get("round") == latest\n',
+     "                and _count(latest)\n",
+     _RP + "test_replan_stops_when_rejected_round_is_not_latest"),
+)
+
+AUTOPILOT_MUTATIONS += REPLAN_MUTATIONS

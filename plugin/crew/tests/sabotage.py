@@ -86,6 +86,10 @@ from sabotage_kimi import KIMI_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
 from sabotage_prereview import PREREVIEW_MUTATIONS
 from sabotage_recurring import RECURRING_MUTATIONS
+from sabotage_ticket_state import TICKET_STATE_MUTATIONS
+from sabotage_gitignore import GITIGNORE_MUTATIONS
+from sabotage_coord import COORD_MUTATIONS
+from sabotage_wave import WAVE_MUTATIONS
 import sabotage_bound
 import sabotage_platform
 
@@ -1007,7 +1011,7 @@ MUTATIONS = (
         '    "theme": None,\n    "reportTheme": None,',
         '    "theme": "neutral",\n    "reportTheme": None,',
         ("tests/test_upgrade.py::"
-         "test_upgrade_config_adds_the_docs_and_bitbucket_blocks"),
+         "test_upgrade_config_does_not_alias_the_shared_docs_block"),
     ),
     (
         # The migration silently does nothing. The template change alone is
@@ -3067,10 +3071,9 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
               + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
-              + LIMIT_WORKTREE_MUTATIONS
-              + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
-              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS
-              + RECURRING_MUTATIONS + TRAIN_MUTATIONS
+              + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
+              + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS
               + sabotage_platform.PLATFORM_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3

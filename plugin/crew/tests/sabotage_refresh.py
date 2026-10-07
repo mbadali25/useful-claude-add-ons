@@ -355,3 +355,86 @@ if crew_fixtures.resolve_pwsh():
          _PS1_UNMAPPED, "  if ($false) { [void]$unmapped.Add($f) }\n",
          _GB + "test_an_ordinary_unmapped_file_still_fails[ps1]"),
     )
+
+# C-0025: T-0064's denylist coverage, run by hand at T-0064 (fifteen, each red
+# on its named test) and registered here because sabotage*.py is harness.
+IGNORE = os.path.join(_S, "crew_graph_ignore.py")
+STATUS = os.path.join(_S, "crew_status.py")
+_GI = "tests/test_graph_ignore.py::"
+
+GRAPH_IGNORE_MUTATIONS = (
+    ("graph-ignore: .gitignore counts as coverage", IGNORE,
+     "        denied, uncovered = _judge(top, paths, groups, _ignore_lines(top), git)\n",
+     "        denied, uncovered = _judge(top, paths, groups, _ignore_lines(top)\n"
+     '                                   + (_read(top, ".gitignore") or "").splitlines(), git)\n',
+     _GI + "test_gitignore_alone_does_not_cover_a_tracked_file"),
+    ("graph-ignore: an unknown reads as covered", IGNORE,
+     '    except _Unknown as exc:\n        result["reason"] = str(exc)\n        return result\n',
+     '    except _Unknown as exc:\n        result["reason"] = str(exc)\n'
+     "        return dict(result, status=COVERED)\n",
+     _GI + "test_unknowns_never_read_as_covered[git-missing]"),
+    ("graph-ignore: a ! line is read as excluding too", IGNORE,
+     '            if not pattern.startswith("!")}\n',
+     "            if True}\n",
+     _GI + "test_negation_in_graphifyignore_uncovers"),
+    ("graph-ignore: --write truncates .graphifyignore before building the text", IGNORE,
+     '        with open(target, "rb") as handle:\n            before = handle.read()\n',
+     '        with open(target, "rb") as handle:\n            before = handle.read()\n'
+     '        with open(target, "wb"):\n            pass\n',
+     _GI + "test_write_never_truncates_on_a_failed_build"),
+    ("graph-ignore: settings.local.json is dropped as a source", IGNORE,
+     "        for rel in SETTINGS_FILES:\n",
+     "        for rel in SETTINGS_FILES[:1]:\n",
+     _GI + "test_each_source_contributes"),
+    ("graph-ignore: the user's global excludes count as coverage", IGNORE,
+     '        return _run_git(git, scratch, ["-c", f"core.excludesFile={empty}",\n'
+     '                                       "-c", f"core.ignoreCase',
+     '        return _run_git(git, scratch, [\n'
+     '                                       "-c", f"core.ignoreCase',
+     _GI + "test_global_excludes_never_count_as_coverage"),
+    ("graph-ignore: untracked and ignored files are not candidates", IGNORE,
+     '                                "--cached", "--others"])\n',
+     '                                "--cached"])\n',
+     _GI + "test_untracked_and_ignored_files_are_candidates"),
+    ("graph-ignore: a directory git lists without its files passes unread", IGNORE,
+     "    if blind:\n        raise _Unknown(",
+     "    if False:\n        raise _Unknown(",
+     _GI + "test_a_nested_repository_is_unknown_until_excluded"),
+    ("graph-ignore: a symlink is not judged by its target", IGNORE,
+     "    through = {path for path, pair in judged.items() if hits.intersection(pair)}\n",
+     "    through = set()\n",
+     _GI + "test_a_symlink_is_judged_by_its_target"),
+    ("graph-ignore: a .gitignore negation no longer reopens a covered secret", IGNORE,
+     "    uncovered |= _reopened(top, paths, files, git)\n",
+     "",
+     _GI + "test_a_gitignore_negation_reopens_a_covered_secret"),
+    ("graph-ignore: a line with a backslash still counts as covering", IGNORE,
+     '    return ["" if "\\\\" in line else line for line in lines]\n',
+     "    return lines\n",
+     _GI + "test_a_backslash_escaped_line_does_not_count_as_covering"),
+    ("refresh check: the graph skips the denylist coverage call", CHECK,
+     "    refused = _graph_ignore_refusal(root, graph_out, command)\n",
+     "    refused = None\n",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    # T-0064's plan named test_autopilot_does_not_settle_a_refused_graph; that
+    # one stays green, since `_settles` also needs ORPHANED_ANCHOR in the reason
+    # of an `unknown`. The refusal's own test asserts `refreshable` False.
+    ("refresh check: a refused graph stays refreshable", CHECK,
+     "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=False)\n",
+     "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=True)\n",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    ("refresh check: unknown denylist coverage passes", CHECK,
+     "    if cover[\"status\"] != crew_graph_ignore.COVERED:\n        return _entry(\"graph\", graph_out, UNKNOWN,\n"
+     "                      f\"denylist coverage unknown",
+     "    if False:\n        return _entry(\"graph\", graph_out, UNKNOWN,\n"
+     "                      f\"denylist coverage unknown",
+     _T + "test_graph_refresh_unknown_coverage_stops"),
+    ("status: the graph-ignore line hides an uncovered path", STATUS,
+     "    if cover[\"status\"] == crew_graph_ignore.UNCOVERED:\n        paths = cover[\"uncovered\"]\n"
+     "        shown = crew_graph_ignore.listed(paths, 3)\n        return (f\"graph-ignore  UNCOVERED",
+     "    if cover[\"status\"] == crew_graph_ignore.UNCOVERED:\n        return \"graph-ignore  ok\"\n"
+     "    if False:\n        return (f\"graph-ignore  UNCOVERED",
+     "tests/test_status.py::test_status_flags_uncovered_denylisted_path"),
+)
+
+REFRESH_MUTATIONS += GRAPH_IGNORE_MUTATIONS

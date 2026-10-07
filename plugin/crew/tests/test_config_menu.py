@@ -1532,6 +1532,28 @@ def test_delete_refuses_when_the_machine_lock_cannot_be_created(tmp_path, capsys
     assert gpath + ".lock" in capsys.readouterr().err
 
 
+def test_a_refused_delete_names_a_backslash_path_as_written(tmp_path, capsys, monkeypatch):
+    """L-0682: `apply_delete`'s handler names the OSError's path as written.
+    str(exc) repr()s a filename, doubling every backslash of a Windows path."""
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    before = _bytes(_config(root))
+    plan = menu.plan_delete(root, gpath)
+    name = r"C:\Users\o\.claude\crew\config.json.lock"
+    real_open = crew_config_files.os.open
+
+    def _open(path, *args, **kwargs):
+        if str(path).endswith(".lock"):
+            raise PermissionError(errno.EACCES, "Permission denied", name)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_config_files.os, "open", _open)
+
+    code = _apply(root, plan)
+
+    err = capsys.readouterr().err
+    assert (code, _bytes(_config(root)), name in err, name.replace("\\", "\\\\") in err) == (
+        2, before, True, False)
+
+
 def test_restore_refuses_when_the_lock_cannot_be_created(tmp_path, capsys,
                                                          monkeypatch):
     root, gpath = _repo(tmp_path, {"tracker": "jira"})

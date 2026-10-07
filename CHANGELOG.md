@@ -9,6 +9,38 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.17: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
+
+- **Summary.** Crew's mutation suite now proves the guards the 1.2.0 features added on main
+  (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane
+  can no longer accept or reject a review or admin-merge: the scope guard refuses it.
+- **Behaviour change.** `scope_guard.py` (T-0029's harness half) refuses, from a subagent only
+  (a hook payload with a non-empty `agent_type`, as a wave lane's is),
+  `review_ledger.py --accept|--reject` in every abbreviation argparse once expanded, and
+  `gh pr merge --admin`: "a lane may not accept, reject or admin-merge". The main session sends no
+  `agent_type` and is unchanged. Must-block and must-allow cases in `test_scope_guard_wave.py`.
+- **New sabotage lists.** `sabotage_ticket_state.py` (L-0641: L-0639/L-0640's derived ticket
+  state), `sabotage_gitignore.py` (C-0025: T-0039's nineteen hand-run mutations),
+  `sabotage_coord.py` (T-0030's table from its branch, re-anchored to the code G0 landed; one entry
+  retired with its reason) and `sabotage_wave.py` (T-0029's), each registered in `sabotage.py`.
+- **Entries added to existing lists.** Routing rows (L-0661, L-0663); config leaf checks,
+  `os_error_text` and T-0103's delete messages and identity checks (L-0682, C-0028); T-0106's scan
+  refusals, T-0105's migrate mapping and T-0038's upgrade stage (C-0028, L-0683, C-0025); the sleep
+  window, manual sleep and T-0074's auto-replan policy (L-0651, L-0655 part, L-0671 part); recall
+  `--project` and `crew_memory.py` (L-0676, L-0679); T-0071's, T-0081's and L-0530's tracker fixes
+  (L-0669, L-0672, C-0021); T-0064's denylist coverage (C-0025); the PowerShell standards set
+  (C-0042). `sabotage_platform.PLATFORM_ONLY` declares the entries whose test runs only on POSIX.
+- **Fixed vacuous entries.** `docs.theme`'s entry named a renamed test (L-0525). Six entries that
+  stayed green when first run were re-aimed rather than weakened, each with its reason in the file;
+  four tests were strengthened or added where nothing could see a rule (`os_error_text`'s call sites,
+  the absolute note path, the empty origin URL, `crew_gitignore`'s unencodable failure line).
+  `commands/review.md` step 3 names `autopilot.maxAutoReplans`.
+- **Not here (H2b).** Entries whose target code is not on main yet: G6b's goal handoffs and sleep
+  log/deploy (L-0660, L-0655 (j)-(s)), G3c's contracts (L-0635), G6a's autopilot stops and fix phase
+  (L-0686, L-0668, L-0643, L-0671 15-19), G3d's bridge (L-0638), G4's deploy (L-0650);
+  and three whose anchors G6b or G3c rewrite: L-0651 (k) (`crew_autopilot.py`), L-0671 entry 1
+  (`crew_state.py`) and T-0029's "unknown dependencies read as none" (`crew_wave.py`).
+
 ### Added — `crew` 1.1.16: autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge (L-0649)
 
 - **Summary.** With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR

@@ -306,7 +306,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
   `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
-  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 87 by `len()` at `8cabe586`: 81 after review rounds 3 and 4, six more net from T-0077),
+  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 106 by `len()` after C-0021: 81 after review rounds 3 and 4, six more net from T-0077 (87 at `8cabe586`), eleven for T-0071 (L-0669), five for T-0081 (L-0672), three for L-0530 (C-0021); re-measure with `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_tracker as s; print(len(s.TRACKER_MUTATIONS))"`),
   imported by `plugin/crew/tests/sabotage.py:77` and appended at `:3059`.
 - **Rule 30**, new at `eba11657` (`.crew/verify.json:371-380` on T-0094's merge of `8ab733d7`, `:323-331` since T-0010's merge of `e878cc31`, `:318-326` since T-0018 landed on T-0010-solo, `:315-323` on main at `3648f59a`, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it, rule 29 until T-0010's merge): `paths`
@@ -755,6 +755,33 @@ since L-0590 (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AU
 the Windows jobs keep `-n auto`. The `test` job's `max-parallel` is 3 on a pull request and 1 on
 every other event, so a main push runs one Python leg at a time on the self-hosted host; the
 required `test (3.11|3.12|3.13)` checks are that job's legs, as before.
+
+## Sabotage siblings added by the 1.2.0 harness lane (H2a)
+
+DERIVED (rush/h2a-sabotage): each list below is appended to `sabotage.py`'s `MUTATIONS`, either
+through a list `sabotage.py` already concatenates or by its own import; every anchor is held to one
+match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` on the tuple named.
+
+- `TICKET_STATE_MUTATIONS` - `plugin/crew/tests/sabotage_ticket_state.py`, imported by `sabotage.py`
+  (L-0641: L-0639/L-0640's derived ticket state).
+- `GITIGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_gitignore.py`, imported by `sabotage.py`
+  (C-0025: T-0039's nineteen hand-run mutations).
+- `COORD_MUTATIONS` and `WAVE_MUTATIONS` - `plugin/crew/tests/sabotage_coord.py` and
+  `plugin/crew/tests/sabotage_wave.py`, imported by `sabotage.py` (T-0030's and T-0029's harness
+  halves; the wave list also covers `scope_guard.py`'s subagent never-list, whose must-block and
+  must-allow cases are `plugin/crew/tests/test_scope_guard_wave.py`).
+- `SLEEP_MUTATIONS` and `REPLAN_MUTATIONS` - `plugin/crew/tests/sabotage_autopilot.py`, added to
+  `AUTOPILOT_MUTATIONS` (L-0651 and L-0655's L-0652 part: the sleep window and manual sleep;
+  L-0671: T-0074's auto-replan policy).
+- `RECALL_PROJECT_MUTATIONS` and `MEMORY_MUTATIONS` - `plugin/crew/tests/sabotage_context.py`,
+  added to `CONTEXT_MUTATIONS` (L-0676: recall `--project`; L-0679: `crew_memory.py`'s grammar,
+  vault resolution, save order, migrate and restore).
+- `GRAPH_IGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_refresh.py`, added to `REFRESH_MUTATIONS`
+  (C-0025: T-0064's denylist coverage).
+- Appended to existing lists: `ROUTE_MUTATIONS` (L-0661, L-0663), `CONFIG_MENU_MUTATIONS` (L-0682,
+  C-0028's T-0103 part), `MIGRATE_FIX_MUTATIONS` (L-0683, C-0025's T-0038 part, C-0028's T-0106
+  part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021), `STANDARDS_MUTATIONS` (C-0042: the PWSH set).
+- `sabotage_platform.PLATFORM_ONLY` declares the entries whose target test runs only on POSIX.
 
 ## Entry points
 

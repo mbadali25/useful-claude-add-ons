@@ -562,3 +562,25 @@ def test_superseded_with_a_spec_successor_line_is_not_reported(tmp_path, line):
     root = _repo(tmp_path, f"| {T} | superseded | low | r | t |\n")
     _spec(root, T, header="status: superseded   risk: low", line2=line)
     assert _next_view(root)["problems"] == []
+
+
+# --- L-0641: the sabotage entries that prove the rules above -------------------
+
+def test_every_ticket_state_sabotage_anchor_is_present_exactly_once():
+    from sabotage_ticket_state import TICKET_STATE_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, _test in TICKET_STATE_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+
+
+def test_ticket_state_mutations_are_exactly_the_pinned_set():
+    """One entry per fail-closed rule L-0641's spec names, each on its own test:
+    an entry dropped, or moved onto another test, is a rule no longer proven."""
+    from sabotage_ticket_state import TICKET_STATE_MUTATIONS  # pylint: disable=import-outside-toplevel
+    assert sorted(test.split("::")[1] for *_rest, test in TICKET_STATE_MUTATIONS) == sorted([
+        "test_unknown_dependency_blocks", "test_cancelled_dependency_blocks_and_names_it",
+        "test_dependency_row_without_a_status_cell_is_unknown",
+        "test_unreadable_ledger_is_not_read_as_no_replan",
+        "test_cancelled_and_superseded_rows_are_closed",
+        "test_needs_owner_without_next_says_cannot_tell", "test_bad_revisit_date_is_listed",
+        "test_bad_waiting_on_is_reported"])

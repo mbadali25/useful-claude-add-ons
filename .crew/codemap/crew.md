@@ -576,9 +576,11 @@ first (a `Displaced` move-aside exits 1 with every path named), writes the bytes
 `validate_change_set` (`:1010`) and `_usage_problem` (`:1039`) refuse a malformed `--changes`,
 `--pending` (an explicitly empty one included), digest, `--confirm` or `--from` with exit 2.
 Tests: `plugin/crew/tests/test_config_files.py`, `plugin/crew/tests/test_config_menu.py`,
-`plugin/crew/tests/test_crew_config.py`; 98 mutations in `plugin/crew/tests/sabotage_config.py`
-(`CONFIG_MENU_MUTATIONS`, `len()` at `938e3b11`: 50 through review round 2, 31 for round 3, 17
-for round 4; registered in `sabotage.py:79`, appended at `:3065`); `.crew/verify.json` rule 7
+`plugin/crew/tests/test_crew_config.py`; 126 mutations in `plugin/crew/tests/sabotage_config.py`
+(`CONFIG_MENU_MUTATIONS` by `len()` after L-0682: 50 through review round 2, 31 for round 3, 17
+for round 4 (98 at `938e3b11`), 19 more by round 5 and later, 9 for round 6, L-0682; re-measure
+with `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_config as s;
+print(len(s.CONFIG_MENU_MUTATIONS))"`; registered in `sabotage.py:79`, appended at `:3065`); `.crew/verify.json` rule 7
 (`:159-176`, one longer since T-0028 added `plugin/crew/skills/crew-setup/SKILL.md`) maps all of
 them plus the three modules.
 
@@ -1648,6 +1650,12 @@ Obsidian vault). A CLI the commands call, not a hook.
   the gate from `GATING_STATUSES` in the INDEX cell first, then the header,
   and reports a typed derived word as a problem. JUDGEMENT: nothing acts on
   `view` yet; L-0550 and L-0551 are its consumers.
+  DERIVED (L-0641): each fail-closed rule above, the `cancelled` closed word
+  in `crew_state._TABLE_DONE_WORDS` and L-0640's next.md checks have one
+  mutation in `TICKET_STATE_MUTATIONS`
+  (`plugin/crew/tests/sabotage_ticket_state.py`, appended to `sabotage.py`'s
+  `MUTATIONS`), each on the test its label names;
+  `plugin/crew/tests/test_ticket_state.py` pins that set and its anchors.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
   (`_files_create` `:666`, `_files_move` `:692`, `_files_read` `:720`); a row
   with no status cell is `could not update` / `could not read`; `create` on
@@ -1755,7 +1763,9 @@ Obsidian vault). A CLI the commands call, not a hook.
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
   tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:74`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
-  `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
+  `plugin/crew/tests/tracker_fixtures/`, 106 mutations by `len()` after C-0021 (81 before T-0077, 87 at
+  `8cabe586`, then eleven for T-0071 by L-0669, five for T-0081 by L-0672 and three for L-0530 by C-0021; re-measure with
+  `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_tracker as s; print(len(s.TRACKER_MUTATIONS))"`) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
   owner tests skip without it); one `.crew/verify.json` rule, rule 30 (`:363-371`; `:316-323` on T-0094's merge of `8ab733d7`; `:315-322` since T-0010's rule 29 went in above it and T-0075's rule-7 paths landed; `:309-316` on T-0010-solo at `d7c7c75c`; `:307-314` on main at `3648f59a`; `:305-312` on T-0075's branch before its rule-7 paths, `:303-310` after T-0018 landed, `:301-308` before).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by

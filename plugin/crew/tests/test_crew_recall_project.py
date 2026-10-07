@@ -302,3 +302,13 @@ def test_this_repos_concept_outranks_another_projects_note(tmp_path, monkeypatch
     assert (result["status"], result["projectUsed"]) == ("hit", True), result
     first = crew_recall.label(result["snippets"][0])
     assert first.startswith("- [vault:mem] wiki/concepts/sluice-ours.md:"), first
+
+
+# --- L-0676: the sabotage entries that prove the tests above ---------------------
+
+def test_every_recall_project_sabotage_anchor_is_present_exactly_once():
+    from sabotage_context import RECALL_PROJECT_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in RECALL_PROJECT_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_recall_project.py::"), label

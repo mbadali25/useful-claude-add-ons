@@ -1463,7 +1463,9 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
                                 "tests/test_crew_autopilot_deploy.py::",
                                 "tests/test_crew_autopilot_status.py::",
                                 "tests/test_crew_ticket_mint.py::",
-                                "tests/test_crew_autopilot_assign.py::")), label
+                                "tests/test_crew_autopilot_assign.py::",
+                                "tests/test_crew_autopilot_sleep.py::",
+                                "tests/test_crew_autopilot_replan.py::")), label
     # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
     # share these targets, so an anchor either list moves must stay unique.
     from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
@@ -1484,6 +1486,14 @@ def test_status_sabotage_is_registered_with_sabotage_py():
     missing = [m[0] for m in STATUS_MUTATIONS if m not in sabotage.MUTATIONS]
 
     assert (len(STATUS_MUTATIONS), missing) == (45, [])
+
+
+def test_sleep_sabotage_is_registered_with_sabotage_py():
+    """L-0651: SLEEP_MUTATIONS ride AUTOPILOT_MUTATIONS into sabotage.py."""
+    import sabotage  # pylint: disable=import-outside-toplevel
+    from sabotage_autopilot import SLEEP_MUTATIONS  # pylint: disable=import-outside-toplevel
+
+    assert [m[0] for m in SLEEP_MUTATIONS if m not in sabotage.MUTATIONS] == []
 
 
 def test_autopilot_block_is_personal_since_t0050():
