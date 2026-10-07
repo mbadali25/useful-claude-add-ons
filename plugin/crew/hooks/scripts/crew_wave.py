@@ -82,6 +82,14 @@ SCHEMA = 1
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 
+def _shell_path(path):
+    """`path` as a lane's Bash command line names it: quoted, and on Windows with '/' for
+    '\\'. A lane's Bash is Git Bash there, where '/' is native and needs no quoting, so a
+    rendered command reads as it does on POSIX. On POSIX a backslash is a filename
+    character and is kept."""
+    return shlex.quote(path.replace("\\", "/") if os.name == "nt" else path)
+
+
 class WaveError(RuntimeError):
     """A wave operation that could not be carried out."""
 
@@ -606,8 +614,8 @@ def _receipt_mark(top, ticket):
 
 
 def _launch(top, slug, ticket, resume):
-    command = (f"python3 {shlex.quote(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
-               f"--root {shlex.quote(top)} "
+    command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
+               f"--root {_shell_path(top)} "
                f"--set {slug} --ticket {ticket}")
     if resume is not None:
         command += f" --resume-round {resume}"
@@ -831,7 +839,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
     policy = settings(top)["reviewPolicy"]
 
     def script(name):
-        return "python3 " + shlex.quote(os.path.join(SCRIPTS, name))
+        return "python3 " + _shell_path(os.path.join(SCRIPTS, name))
 
     version = lane.get("version") or UNKNOWN
     if version == "-":
@@ -853,7 +861,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         resume = (f"Reserve each round with `{script('review_run.py')} ... --reserve-only` "
                   "before the reviewer runs, and record it with `--round N`.")
     shape = "\n".join(f"    {row}" for row in crew_autopilot.QUESTIONS_SHAPE)
-    main = shlex.quote(top)
+    main = _shell_path(top)
     done = (f"{script('crew_wave.py')} lane-done --main {main} --set {slug} --ticket {ticket} "
             "--state <clean|findings|question|failed> --reason \"<one line>\"")
     return "\n".join([

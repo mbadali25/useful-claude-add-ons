@@ -2418,9 +2418,20 @@ def test_a_file_url_and_a_plain_path_to_one_remote_are_one_claim(capsys, monkeyp
     assert _claims(remote) == [f"claims/{expected}__T-1.json"]
 
 
-def test_a_file_url_and_a_plain_path_to_two_remotes_are_two_claims(capsys, monkeypatch, tmp_path, wt, wt_b,
-                                                                   remote):
-    one, two = _bare(tmp_path / "o1.git"), _bare(tmp_path / "o2.git")
+def _origins_dir(tmp_path_factory):
+    """A directory for origin repositories directly under pytest's base temp, not under
+    the test's own tmp_path: the test's directory name would add ~40 key characters, and
+    on a Windows runner (`C:\\Users\\runneradmin\\AppData\\Local\\Temp\\pytest-of-...`) that
+    put the key past 128, which is could-not-tell by design
+    (test_a_local_key_over_128_characters_is_could_not_tell), so the test never reached
+    what it is about (Windows CI, rush g0)."""
+    return tmp_path_factory.mktemp("o")
+
+
+def test_a_file_url_and_a_plain_path_to_two_remotes_are_two_claims(capsys, monkeypatch, tmp_path_factory, wt,
+                                                                   wt_b, remote):
+    base = _origins_dir(tmp_path_factory)
+    one, two = _bare(base / "o1.git"), _bare(base / "o2.git")
     for root, url in ((wt, "file://" + os.fspath(one)), (wt_b, str(two))):
         _set_origin(root, url)
         _coord(root, remote)
@@ -2440,6 +2451,36 @@ def test_a_file_url_that_names_no_local_path_is_could_not_tell(url):
     key, why = crew_coord.owner_name(url)
 
     assert key is None and "file://" in why
+
+
+def test_a_file_url_with_a_backslashed_drive_is_that_path_on_windows(monkeypatch):
+    # Windows CI (rush g0): `"file://" + str(path)` is `file://C:\\Users\\...`; the authority
+    # ran on through the backslashes and was refused as a host. git reads the drive as the
+    # path's start (has_dos_drive_prefix), so it is one key with the plain path.
+    monkeypatch.setattr(crew_coord.os, "name", "nt")
+
+    got = crew_coord.owner_name("file://C:\\Users\\a\\o1.git")
+
+    assert got == crew_coord.owner_name("C:\\Users\\a\\o1.git") == ("file_._43._55sers.a.o1_2egit", None)
+
+
+@pytest.mark.parametrize("url", ["file://C:\\Users\\a\\o1.git", "file://example.test\\srv\\o1.git"],
+                         ids=["drive", "host"])
+def test_a_backslashed_file_url_stays_could_not_tell_off_windows(monkeypatch, url):
+    # On POSIX git has no drive prefix and a backslash is a filename character: it names a host.
+    monkeypatch.setattr(crew_coord.os, "name", "posix")
+
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and "names the host" in why, why
+
+
+def test_a_backslashed_file_url_naming_a_host_stays_could_not_tell_on_windows(monkeypatch):
+    monkeypatch.setattr(crew_coord.os, "name", "nt")
+
+    key, why = crew_coord.owner_name("file://example.test\\srv\\o1.git")
+
+    assert key is None and "names the host" in why, why
 
 
 # Step 3 (FIX crew_coord.py:816): Azure DevOps markers compared after decoding.
@@ -2503,10 +2544,12 @@ def test_a_local_key_keeps_case_and_dot_git(first, second):
 
 
 @pytest.mark.parametrize("names", [("Repo.git", "repo.git"), ("repo", "repo.git")], ids=["case", "dot-git"])
-def test_two_local_repositories_never_share_a_claim(capsys, monkeypatch, tmp_path, wt, wt_b, remote, names):
+def test_two_local_repositories_never_share_a_claim(capsys, monkeypatch, tmp_path, tmp_path_factory, wt, wt_b,
+                                                    remote, names):
     if names[0].lower() == names[1].lower() and not _case_sensitive(tmp_path):
         pytest.skip("this filesystem is case-insensitive: Repo.git and repo.git are one directory here")
-    one, two = _bare(tmp_path / "g" / names[0]), _bare(tmp_path / "g" / names[1])
+    base = _origins_dir(tmp_path_factory)
+    one, two = _bare(base / names[0]), _bare(base / names[1])
     for root, origin in ((wt, one), (wt_b, two)):
         _set_origin(root, str(origin))
         _coord(root, remote)
@@ -2813,7 +2856,12 @@ def test_two_case_spellings_on_a_case_insensitive_volume_are_one_claim(capsys, m
 
 
 def test_an_unlistable_directory_keys_as_written_where_case_matters(tmp_path, monkeypatch):
+    """Where case matters the spelling is the name, so it keys as written. Where it does
+    not (a default Windows or macOS volume) an unlistable directory's spelling on disk
+    cannot be told, and that stays could-not-tell, never the spelling as written: the
+    outcome is asserted for the filesystem the test runs on, measured, never assumed."""
     real = _bare(tmp_path / "g" / "coord.git")
+    sensitive = _case_sensitive(tmp_path)
     listdir = os.listdir
 
     def fake_listdir(path="."):
@@ -2822,6 +2870,10 @@ def test_an_unlistable_directory_keys_as_written_where_case_matters(tmp_path, mo
         return listdir(path)
     monkeypatch.setattr(os, "listdir", fake_listdir)
 
+    if not sensitive:
+        with pytest.raises(crew_coord.UnknownKey, match="spelling on disk cannot be told"):
+            _resolved(str(real), str(tmp_path))
+        return
     got = _resolved(str(real), str(tmp_path))
 
     assert got == os.path.realpath(real)

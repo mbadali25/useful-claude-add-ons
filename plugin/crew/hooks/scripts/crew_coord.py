@@ -809,11 +809,12 @@ def _local_path(url):
     `[user@]host:path`). A file:// URL is the local path it names, read as
     git's parse_connect_url reads it (connect.c, git v2.53.0): the whole URL
     percent-decoded, then everything after the authority, or the authority
-    itself when it is a drive (`file://C:/x`); a Windows `/C:/x` loses its
-    leading '/'. (None, why) for a file:// URL whose authority is not empty
-    or `localhost`, or whose path is not percent-encoded UTF-8: which
-    directory that names cannot be told here, and a guess would give one
-    repository two keys. Whitespace is kept: it is part of a local path."""
+    itself when it is a drive (`file://C:/x`, and on Windows `file://C:\\x`);
+    a Windows `/C:/x` loses its leading '/'. (None, why) for a file:// URL
+    whose authority is not empty or `localhost`, or whose path is not
+    percent-encoded UTF-8: which directory that names cannot be told here,
+    and a guess would give one repository two keys. Whitespace is kept: it
+    is part of a local path."""
     text = url or ""
     found = _SCHEME_RE.match(text)
     if found and found.group(1).lower() == "file":
@@ -822,7 +823,10 @@ def _local_path(url):
             authority, path = (urllib.parse.unquote_to_bytes(p).decode("utf-8") for p in (authority, path))
         except UnicodeDecodeError:
             return None, "origin's file:// URL is not percent-encoded UTF-8"
-        if re.fullmatch(r"[A-Za-z]:", authority):
+        # git (has_dos_drive_prefix) reads a drive after `file://` as the path's start. On
+        # Windows a backslash may follow the drive, and the authority runs on through it
+        # (`file://C:\x\r.git`): that is the path `C:\x\r.git`, never a host.
+        if re.fullmatch(r"[A-Za-z]:", authority) or (os.name == "nt" and re.match(r"[A-Za-z]:", authority)):
             path, authority = authority + path, ""
         if authority.lower() not in ("", "localhost"):
             return None, (f"origin's file:// URL names the host {safe(authority, 80)!r}, and which directory "

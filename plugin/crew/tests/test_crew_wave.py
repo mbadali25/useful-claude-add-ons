@@ -1029,6 +1029,23 @@ def test_lane_prompt_starts_with_lane_init(tmp_path):
     assert (len(steps), "crew_wave.py lane-init" in steps[0]) == (1, True)
 
 
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+def test_lane_prompt_names_a_script_the_way_a_lanes_bash_reads_it(tmp_path, monkeypatch, platform):
+    # Windows CI (rush g0): SCRIPTS there is `C:\...\scripts`, and shlex.quote put the
+    # whole path in quotes, so `crew_wave.py lane-init` never appeared in step 1. A lane's
+    # Bash is Git Bash on Windows, where '/' is the separator; on POSIX a backslash is a
+    # filename character and stays, quoted.
+    root = _started(tmp_path)
+    monkeypatch.setattr(crew_wave, "SCRIPTS", "C:\\crew\\scripts")
+    monkeypatch.setattr(crew_wave.os, "name", platform)
+
+    step = [line for line in _prompt(root).splitlines() if line[:2] == "1."][0]
+
+    expected = {"nt": "python3 C:/crew/scripts/crew_wave.py lane-init ",
+                "posix": "python3 'C:\\crew\\scripts/crew_wave.py' lane-init "}[platform]
+    assert expected in step, step
+
+
 @pytest.mark.parametrize("policy", ["stop", "clean-only", "fix-and-rereview"])
 def test_lane_prompt_contains_no_forbidden_command(tmp_path, policy):
     text = _prompt(_started(tmp_path, autopilot={"reviewPolicy": policy}), resume_round=2)
