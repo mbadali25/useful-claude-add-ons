@@ -231,9 +231,15 @@ RECALL_PROJECT_MUTATIONS = (
      "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
      "        if done.returncode == 0 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
      _PROJECT + "test_only_exit_2_is_retried"),
+    # The spec named test_the_retry_shares_one_time_budget for this one; that
+    # test holds the no-retry-once-spent gate below, and stays green here.
     ("recall: the retry gets a fresh time budget", RECALL,
      "        left = CLI_TIMEOUT_SECONDS if answered_by == 0 else deadline - _clock()\n",
      "        left = CLI_TIMEOUT_SECONDS\n",
+     _PROJECT + "test_the_retry_gets_only_the_time_left"),
+    ("recall: an exit 2 is retried after the shared deadline is spent", RECALL,
+     "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
+     "        if done.returncode != 2:\n",
      _PROJECT + "test_the_retry_shares_one_time_budget"),
     ("recall: the retry's answer is reported as projectUsed true", RECALL,
      '        result["projectUsed"] = answered_by == 0\n',
