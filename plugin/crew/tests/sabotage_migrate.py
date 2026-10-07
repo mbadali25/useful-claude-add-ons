@@ -171,9 +171,11 @@ MIGRATE_FIX_MUTATIONS = (
      "            if directory == current:\n                continue\n",
      "",
      _A + "test_scan_does_not_list_the_current_repo_twice"),
+    # The walk bounds depth twice (`best`'s default and `level >= depth`), so
+    # loosening either check alone leaves the other holding: start one lower.
     ("apply-migrate: the scan reads one level past --scan-depth", AUTOCLEAR_SETUP,
-     "            if level >= depth:\n",
-     "            if level > depth:\n",
+     "        stack = [(top, 0)]\n",
+     "        stack = [(top, -1)]\n",
      _A + "test_scan_depth_limits_the_walk"),
     ("apply-migrate: a note no longer names its file", AUTOCLEAR_SETUP,
      '        file_notes = [f".crew/{name}: {note}" for note in\n',
