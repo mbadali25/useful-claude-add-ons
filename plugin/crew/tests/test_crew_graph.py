@@ -10,6 +10,7 @@ never agree. Every case builds a throwaway repository under tmp_path, and the
 graphify run is a stand-in that writes a fixture graph and report: no case runs
 the real tool or touches this repository's `graphify-out/`.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -142,6 +143,29 @@ def test_status_names_a_disagreeing_pair(tmp_path, capsys):
     _write(root, "graphify-out/GRAPH_REPORT.md", _report(10, 2))
 
     assert "pair=disagree" in _status(root, capsys)[1]
+
+
+def _manifest(root, rel):
+    """graphify's manifest.json recording `rel`'s current bytes, git-ignored
+    through .git/info/exclude as the refresh check's tests do."""
+    with open(os.path.join(root, ".git", "info", "exclude"), "a", encoding="utf-8") as handle:
+        handle.write("graphify-out/manifest.json\n")
+    with open(os.path.join(root, *rel.split("/")), "rb") as handle:
+        digest = hashlib.md5(handle.read(), usedforsecurity=False).hexdigest()
+    _write(root, "graphify-out/manifest.json", json.dumps(
+        {rel: {"mtime": 0, "seen": 0, "ast_hash": digest, "semantic_hash": ""}}))
+
+
+def test_status_is_fresh_when_the_manifest_confirms_an_unchanged_topology(tmp_path, capsys):
+    """Review round 1: graphify leaves graph.json and its sha alone when the
+    topology did not change; status reads the refresh check's manifest rule."""
+    root = _repo(tmp_path)
+    _write(root, "src/app.py", "print('same topology')\n")
+    commit_file(root, "src/app.py")
+    stale = _status(root, capsys)[1]
+    _manifest(root, "src/app.py")
+
+    assert ("graph=stale" in stale, "graph=fresh" in _status(root, capsys)[1]) == (True, True)
 
 
 def test_status_reads_a_report_git_cannot_list_as_unknown(tmp_path, capsys, monkeypatch):
@@ -292,7 +316,7 @@ def test_refresh_report_git_cannot_list_exits_2(tmp_path, monkeypatch):
 
     code, out = _refresh(root, tool)
 
-    assert (code, "pair=unknown" in out) == (2, True), out
+    assert (code, tool.calls, "nothing built" in out) == (2, [], True), out
 
 
 def test_refresh_never_stages_or_commits(tmp_path):

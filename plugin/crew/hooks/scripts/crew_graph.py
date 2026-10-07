@@ -90,15 +90,40 @@ def _graph_info(top):
     return crew_freshness._read_graph(top, cfg), None  # pylint: disable=protected-access
 
 
-def graph_state(info):
-    """absent, fresh (built at a commit no code moved since), unknown (no
-    `built_at_commit`) or stale (anything else `_read_graph` did not call
-    current, an unresolvable sha included)."""
+def graph_state(top, info):
+    """absent, fresh (built at a commit no code moved since, or T-0063's case:
+    graphify's manifest records the current bytes of every committed code
+    path that moved, because it leaves graph.json and its sha alone when the
+    topology did not change), unknown (no `built_at_commit`) or stale
+    (anything else, an unresolvable sha included)."""
     if not info["present"]:
         return "absent"
     if not info["builtAt"]:
         return "unknown"
-    return "fresh" if info["current"] else "stale"
+    if info["current"]:
+        return "fresh"
+    return "fresh" if _manifest_current(top, info) else "stale"
+
+
+def _manifest_current(top, info):
+    """The refresh check's manifest rule (`_committed_moves`,
+    `_manifest_confirms`) over every code path moved since the graph's sha;
+    False whenever git cannot say."""
+    graph_dir = os.path.dirname(info["path"])
+    out = os.path.relpath(graph_dir, top).replace("\\", "/").rstrip("/")
+    excludes = [f":(exclude){out}/**"] + [f":(exclude){g}" for g in
+                                          crew_freshness.GRAPH_NONCODE_PATHS]
+    listed = _git(top, "diff", "--name-only", "-z", f"{info['builtAt']}..HEAD", "--", ".",
+                  *excludes)
+    moved = [p for p in (listed or "").split("\0") if p]
+    if not moved:
+        return False
+    committed = crew_refresh_check._committed_moves(  # pylint: disable=protected-access
+        top, info["builtAt"], moved, set())
+    if not committed:
+        return False
+    return crew_refresh_check._manifest_confirms(  # pylint: disable=protected-access
+        top, graph_dir, committed)[0]
 
 
 def _summary_counts(report_path):
@@ -176,7 +201,7 @@ def status(root):
     cover = crew_graph_ignore.coverage(top)
     reasons = [r for r in (pair_why if pair in (DISAGREE, PAIR_UNKNOWN) else "",
                            cover["reason"] or "") if r]
-    return {"graph": graph_state(info), "built_at": (info["builtAt"] or "none")[:12],
+    return {"graph": graph_state(top, info), "built_at": (info["builtAt"] or "none")[:12],
             "pair": pair, "ignore": cover["status"],
             "command": crew_refresh_check.graph_command(info), "reasons": reasons}, None
 
@@ -243,6 +268,12 @@ def refresh(root, which=shutil.which, run=_run_graphify, out=print):
     if cover["status"] != crew_graph_ignore.COVERED:
         out(f"crew-graph: unknown - denylist coverage could not be told: {cover['reason']}; "
             "nothing built")
+        return UNKNOWN
+    if _report_tracked(top, info) is None:
+        # `_read_graph` reads a failed listing as untracked, which would pick the
+        # code-only build and leave a tracked report behind its graph.
+        out("crew-graph: unknown - git could not say whether GRAPH_REPORT.md is tracked, so "
+            "which command to run cannot be told; nothing built")
         return UNKNOWN
     command = crew_refresh_check.graph_command(info)
     code, output = run(command, top)

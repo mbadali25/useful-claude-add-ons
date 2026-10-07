@@ -1907,15 +1907,15 @@ line a refresh runs has one definition, `graph_command`
 (`plugin/crew/hooks/scripts/crew_refresh_check.py:1391`, the sabotage-anchored `command = (...)`
 line kept byte-identical inside it); `_graph` (`:1402`) wraps `_graph_entry` and sets every graph
 artifact's `command` to `GRAPH_REFRESH` (`:1388`, `/crew:graph --refresh`) and its new `runs`
-field to that line. `crew_graph.py`: `status` (`:166`) reads freshness from
-`crew_freshness._read_graph` (`graph_state`, `:93`), the pair from `pair_state` (`:144`) and the
+field to that line. `crew_graph.py`: `status` (`:191`) reads freshness from
+`crew_freshness._read_graph` (`graph_state`, `:93`, plus the refresh check's T-0063 manifest rule, `_manifest_current`, `:108`), the pair from `pair_state` (`:169`) and the
 denylist from `crew_graph_ignore.coverage`; `_report_tracked` (`:72`) re-asks git whether
 `GRAPH_REPORT.md` is tracked, because `_read_graph` reads a failed `ls-files` as untracked and
-that would skip the pair check. `refresh` (`:225`) refuses in order (graphify missing, coverage
-uncovered/unknown), runs the line through `crew_shell.run` (`_run_graphify`, `:189`), then
-`_verify` (`:256`): no `built_at_commit` exit 2, `_graph_counts` (`:125`, `nodes` and `links`;
-no `links` list is unknown, never zero), `_summary_counts` (`:104`, the first `- N nodes · M
-edges` line under `## Summary`), and `_changed` (`:208`, `git status --porcelain -z` under the
+that would skip the pair check. `refresh` (`:250`) refuses in order (graphify missing, coverage
+uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:214`), then
+`_verify` (`:287`): no `built_at_commit` exit 2, `_graph_counts` (`:150`, `nodes` and `links`;
+no `links` list is unknown, never zero), `_summary_counts` (`:129`, the first `- N nodes · M
+edges` line under `## Summary`), and `_changed` (`:233`, `git status --porcelain -z` under the
 graph dir). It never stages or commits. Tests: `plugin/crew/tests/test_crew_graph.py`, and the
 `runs` cases in `test_refresh_check.py`; the last `.crew/verify.json` rule maps them.
 
