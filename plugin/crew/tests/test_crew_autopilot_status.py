@@ -1508,3 +1508,90 @@ def test_owner_items_one_ticket_whatever_the_folder_case(tmp_path):
     names = [t.casefold() for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
 
     assert names.count("t-1") <= 1
+
+
+# --- L-0687: held, blocked, revisit and needs-owner in the owner list ----------
+
+import datetime  # noqa: E402  pylint: disable=wrong-import-position
+
+TODAY = datetime.date(2026, 10, 7)
+
+
+def _parked(tmp_path, status, next_md=None):
+    root = _approved(tmp_path, status=status)
+    if next_md is not None:
+        _write(root / ".work" / "tickets" / T / "next.md", next_md)
+    return root
+
+
+def _owned(root):
+    return crew_autopilot_owner.owner_items(str(root), today=TODAY)
+
+
+def test_owner_items_skips_a_future_hold(tmp_path):
+    got = _owned(_parked(tmp_path, "hold", "reason: vendor\nrevisit: 2026-12-01\n"))
+
+    assert (got["held"], got["items"]) == ([T], [])
+
+
+def test_owner_items_counts_a_blocked_ticket_without_listing_it(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+    _index(root, f"{T} | ready | high | r | t", "T-2 | spec | high | r | o")
+    approve_as_user(root, T)
+
+    got = _owned(root)
+
+    assert (got["blocked"], got["items"]) == ([T], [])
+
+
+def test_owner_items_skips_landing(tmp_path):
+    got = _owned(_parked(tmp_path, "landing"))
+
+    assert (got["items"], got["held"], got["blocked"]) == ([], [], [])
+
+
+@pytest.mark.parametrize("date", ["2026-10-07", "2026-01-01"])
+def test_owner_items_lists_a_due_hold_as_revisit(tmp_path, date):
+    got = _owned(_parked(tmp_path, "hold", f"reason: the vendor answers\nrevisit: {date}\n"))
+
+    (ticket, phase, action), = got["items"]
+    assert (ticket, phase, "the vendor answers" in action, f"revisit {date} (due)" in action,
+            got["held"]) == (T, "revisit", True, True, [])
+
+
+@pytest.mark.parametrize("next_md", [None, "revisit: soon\n"])
+def test_owner_items_hold_without_a_usable_revisit_is_listed(tmp_path, next_md):
+    """Must-block: cannot tell when is never "not yet"."""
+    got = _owned(_parked(tmp_path, "hold", next_md))
+
+    assert ([(t, p, "revisit date: cannot tell" in a) for t, p, a in got["items"]], got["held"]) == (
+        [(T, "revisit", True)], [])
+
+
+def test_owner_items_needs_owner_gives_the_next_line(tmp_path):
+    got = _owned(_parked(tmp_path, "needs-owner", "next: say which tracker closes it\n"))
+
+    assert got["items"] == [(T, "needs-owner", "next: say which tracker closes it")]
+
+
+def test_owner_items_needs_owner_without_next_says_cannot_tell(tmp_path):
+    got = _owned(_parked(tmp_path, "needs-owner"))
+
+    assert got["items"] == [(T, "needs-owner", "cannot tell what is asked (no next: in next.md)")]
+
+
+def test_owner_items_agree_with_phase_over_parked_tickets(tmp_path):
+    cases = {"hold": "reason: r\nrevisit: 2026-12-01\n", "needs-owner": "next: n\n",
+             "landing": None}
+    for status, next_md in cases.items():
+        root = _parked(tmp_path / status, status, next_md)
+        got = _owned(root)
+        phase = crew_autopilot._phase(str(root), T, policy=False)  # pylint: disable=protected-access
+        listed = [p for _t, p, _a in got["items"]]
+        assert (phase["stop"], phase["phase"]) == (True, status)
+        assert (listed or got["held"] or ["skipped"]) == {"hold": [T], "needs-owner": ["needs-owner"],
+                                                          "landing": ["skipped"]}[status], status

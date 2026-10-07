@@ -14,8 +14,14 @@ under `.work/tickets/` whose name is a ticket id and that no INDEX line names
 - not a stop, or `closed`: skipped (autopilot drives it, or nobody does);
 - `review-unread`: in `unread` (a finished round, or a ship, not read);
 - `review` with a reserved round: skipped (the reviewer has it);
-- a phase `WAITING` gives to someone else (`landing`: the land step;
-  `blocked`: another ticket): skipped, as `/crew:autopilot status` says;
+- a phase `WAITING` gives to someone else: `landing` (the land step) is
+  skipped; `blocked` (another ticket) goes to `blocked`, counted, never listed;
+- `hold` (L-0687): a hold whose `revisit:` date is still ahead goes to `held`,
+  counted, never listed; one that is due, or whose date is missing or does not
+  parse (`revisit_due` None: cannot tell is never "not yet"), is listed as
+  `revisit` with next.md's `reason:`;
+- `needs-owner`: listed with next.md's `next:` line, else the first open
+  question, else "cannot tell what is asked (no next: in next.md)";
 - any other stop: an item `(ticket, phase, action)`, the action from
   OWNER_ACTIONS, else FALLBACK;
 - `_phase` raising: in `unknown` with the exception's type name, never dropped
@@ -34,6 +40,7 @@ import crew_autopilot
 import crew_autopilot_gates
 import crew_autopilot_stops
 import crew_ticket
+import crew_ticket_state
 
 # The command to type, or the question to answer, per stop phase.
 OWNER_ACTIONS = {
@@ -95,11 +102,31 @@ def _tickets(top):
     return found, ""
 
 
-def owner_items(root):
+def _hold(view):
+    """`("held", "")` for a hold whose date is still ahead, else `("revisit", action)`."""
+    if view["revisit_due"] is False:
+        return "held", ""
+    fields = view["next"]
+    date = (f"revisit {fields['revisit']} (due)" if view["revisit_due"]
+            else "revisit date: cannot tell")
+    return "revisit", f"{date}; reason: {fields['reason'] or 'no reason given'} - lift or keep the hold"
+
+
+def _needs_owner(view, questions):
+    if view["next"]["next"]:
+        return f"next: {view['next']['next']}"
+    if questions:
+        return f"answer: {questions[0][0]}: {questions[0][1]}"
+    return "cannot tell what is asked (no next: in next.md)"
+
+
+def owner_items(root, today=None):
     """`{"state": "ok"|"unknown", "why", "items": [(ticket, phase, action)],
-    "unread": [ticket], "unknown": [(ticket, why)]}`; see the module docstring."""
+    "unread": [ticket], "held": [ticket], "blocked": [ticket], "unknown": [(ticket,
+    why)]}`; see the module docstring. `today` decides a hold's `revisit_due`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    got = {"state": "ok", "why": "", "items": [], "unread": [], "unknown": []}
+    got = {"state": "ok", "why": "", "items": [], "unread": [], "held": [], "blocked": [],
+           "unknown": []}
     why = _index_problem(top)
     tickets, listing = _tickets(top) if not why else ([], "")
     if why or listing:
@@ -114,10 +141,22 @@ def owner_items(root):
                 continue
             if result["phase"] == "review" and crew_autopilot._reserved_round(top, ticket):  # pylint: disable=protected-access
                 continue
+            if result["phase"] == "blocked":
+                got["blocked"].append(ticket)
+                continue
             if crew_autopilot.WAITING.get(result["phase"]) in crew_autopilot_gates.ELSEWHERE:
-                continue  # landing, blocked: the land step or another ticket, not the owner
+                continue  # landing: the land step, not the owner
             questions = (crew_autopilot._open_questions(crew_ticket.ticket_dir(top, ticket))  # pylint: disable=protected-access
-                         if result["phase"] == "open-questions" else [])
+                         if result["phase"] in ("open-questions", "needs-owner") else [])
+            if result["phase"] in ("hold", "needs-owner"):
+                view = crew_ticket_state.view(top, ticket, today)
+                phase, said = (_hold(view) if result["phase"] == "hold"
+                               else ("needs-owner", _needs_owner(view, questions)))
+                if phase == "held":
+                    got["held"].append(ticket)
+                else:
+                    got["items"].append((ticket, phase, said))
+                continue
             got["items"].append((ticket, result["phase"], action(ticket, result, questions)))
         except Exception as exc:  # pylint: disable=broad-except
             got["unknown"].append((ticket, type(exc).__name__))

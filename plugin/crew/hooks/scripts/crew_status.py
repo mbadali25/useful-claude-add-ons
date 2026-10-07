@@ -466,22 +466,26 @@ def _owner_read(root):
     """owner_items' answer, or an `unknown` one naming why it could not run."""
     owner_items, why = _owner()
     if owner_items is None:
-        return {"state": "unknown", "why": why, "items": [], "unread": [], "unknown": []}
+        return {"state": "unknown", "why": why, "items": [], "unread": [], "held": [], "blocked": [],
+                "unknown": []}
     try:
         return owner_items(root)
     except Exception as exc:  # pylint: disable=broad-except
         return {"state": "unknown", "why": f"owner_items raised {type(exc).__name__}",
-                "items": [], "unread": [], "unknown": []}
+                "items": [], "unread": [], "held": [], "blocked": [], "unknown": []}
 
 
 def waiting_line(got):
-    """`waiting  N on you (/crew:status --owner)[, C in review not read][, U could not tell]`."""
+    """`waiting  N on you (/crew:status --owner)[, H held][, B blocked][, C in review
+    not read][, U could not tell]` (each count only when non-zero); `nothing on you`
+    when N is 0 and nothing is unread or unknown."""
     if got["state"] != "ok":
         return f"waiting  unknown ({got['why']})"
-    counts = [(len(got["unread"]), "in review not read"), (len(got["unknown"]), "could not tell")]
+    counts = [(len(got.get("held", [])), "held"), (len(got.get("blocked", [])), "blocked"),
+              (len(got["unread"]), "in review not read"), (len(got["unknown"]), "could not tell")]
     extra = "".join(f", {n} {words}" for n, words in counts if n)
-    if not got["items"] and not extra:
-        return "waiting  nothing on you"
+    if not got["items"] and not got["unread"] and not got["unknown"]:
+        return f"waiting  nothing on you{extra}"
     return f"waiting  {len(got['items'])} on you (/crew:status --owner){extra}"
 
 

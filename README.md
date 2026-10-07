@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.15**: The owner list knows hold, blocked, landing and needs-owner. `/crew:status` now counts held and blocked tickets on its `waiting` line (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
 - **crew 1.1.15**: `/crew:status --owner` and the `waiting` line. `/crew:status` now says how many open tickets are waiting on you, and `/crew:status --owner` lists them, one line each with the command to type or the question to answer.
-- **crew 1.1.15**: Every autopilot stop names the owner decision it asks for, never a mechanical step. When `/crew:autopilot` stops, it now says which decision is yours (accept the review, approve the plan, answer a question, look at something it could not tell, ...) and no longer tells you to run a refresh, a graph build, the next review round or a crew helper.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

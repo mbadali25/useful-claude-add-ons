@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.15: the owner list knows hold, blocked, landing and needs-owner (L-0687)
+
+- **Summary.** `/crew:status` now counts held and blocked tickets on its `waiting` line
+  (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as
+  `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
+- **Rules.** A hold whose `revisit:` date is still ahead is counted, not listed; one that is due,
+  or has no usable date, is listed (cannot tell is never "not yet"). A blocked ticket is counted,
+  not listed; `landing` is the land step's and is left out. The phase still comes from autopilot's
+  `_phase`, so the list and `/crew:autopilot` agree.
+
 ### Added — crew 1.1.15: `/crew:status --owner` and the `waiting` line (L-0551)
 
 - **Summary.** `/crew:status` now says how many open tickets are waiting on you, and

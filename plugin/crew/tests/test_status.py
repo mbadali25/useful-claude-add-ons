@@ -918,3 +918,32 @@ def test_owner_view_never_cuts_a_command():
 
     assert (lines[1].endswith(f"/crew:approve {long_id}"),
             lines[2].endswith(f"/crew:autopilot status {long_id}")) == (True, True)
+
+
+def test_waiting_line_counts_held_and_blocked():
+    got = {"state": "ok", "why": "", "items": [("T-1", "approve", "x")], "unread": [],
+           "held": ["T-2", "T-3"], "blocked": ["T-4"], "unknown": []}
+
+    assert crew_status.waiting_line(got) == (
+        "waiting  1 on you (/crew:status --owner), 2 held, 1 blocked")
+
+
+def test_waiting_line_with_nothing_on_you_still_shows_held_and_blocked():
+    got = {"state": "ok", "why": "", "items": [], "unread": [], "held": ["T-2"],
+           "blocked": ["T-4"], "unknown": []}
+
+    assert crew_status.waiting_line(got) == "waiting  nothing on you, 1 held, 1 blocked"
+
+
+def test_owner_view_is_read_only_with_a_next_md(tmp_path):
+    root = _waiting_repo(tmp_path, approvals=2)
+    (root / ".work" / "INDEX.md").write_text("T-1 | hold | high | r | t\nT-2 | ready | high | r | t\n",
+                                            encoding="utf-8")
+    (root / ".work" / "tickets" / "T-1" / "next.md").write_text("reason: r\nrevisit: 2000-01-01\n",
+                                                              encoding="utf-8")
+    before = _stat_tree(root)
+
+    done = _run(root, "--owner")
+
+    assert (done.returncode, _stat_tree(root) == before, done.stdout.splitlines()[1].startswith(
+        "T-1  revisit  revisit 2000-01-01 (due)")) == (0, True, True), done.stdout

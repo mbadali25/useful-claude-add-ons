@@ -1617,6 +1617,12 @@ Obsidian vault). A CLI the commands call, not a hook.
   `waiting` line (`plugin/crew/hooks/scripts/crew_status.py:522`, `waiting_line` `:477`)
   and `--owner` (`owner_lines` `:494`). It lives outside `crew_autopilot.py` for
   the line cap (C-0034); the spec named `crew_autopilot.owner_items`.
+- DERIVED (L-0687; measured on this tree): `owner_items` also returns `held`
+  and `blocked`: a `hold` stop reads `crew_ticket_state.view` (`_hold`,
+  `plugin/crew/hooks/scripts/crew_autopilot_owner.py:105`); `revisit_due` False is
+  `held`, True or None is listed as `revisit`; `blocked` is counted, `landing`
+  skipped, `needs-owner` listed with next.md's `next:`. The `waiting` line
+  prints `H held, B blocked` when non-zero.
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a

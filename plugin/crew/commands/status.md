@@ -29,7 +29,7 @@ summary above or below it, and do not pad it with advice.
 | `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` / `owner` | `.work/tickets/`, `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | - |
-| `waiting` | `crew_autopilot_owner.owner_items` (L-0551): how many open tickets are stopped on you, from autopilot's own phase read; `, C in review not read` and `, U could not tell` only when non-zero | no `.work/INDEX.md`, or autopilot's module cannot be read |
+| `waiting` | `crew_autopilot_owner.owner_items` (L-0551): how many open tickets are stopped on you, from autopilot's own phase read; `, H held` (a hold whose revisit date is ahead), `, B blocked` (a dependency open), `, C in review not read` and `, U could not tell` only when non-zero | no `.work/INDEX.md`, or autopilot's module cannot be read |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
 | `in-flight` | T-0049's markers under `<git-common-dir>/crew/inflight/` (`crew_inflight.survey`): ticket, state, runner, since, and for stale or unknown the owner's `clear` command; at most 5, then `+N more`; `none` when there are none | the directory unreadable, or `crew_inflight` not importable |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
@@ -53,7 +53,8 @@ case is reported as zero.
 ## `--owner`
 
 Lists what waits on the owner: the `waiting` count line, then one line per
-ticket stopped on a person, `<id>  <phase>  <command or question>`, from
+ticket stopped on a person, `<id>  <phase>  <command or question>` (a due or
+undated hold as `revisit` with its reason, `needs-owner` with next.md's `next:`), from
 autopilot's own phase read (`/crew:autopilot status <id>` agrees). It runs
 nothing, reads no policy and never reads a finished review round or a ship's PR
 (those are `review-unread`, pointing at `/crew:autopilot status <id>`). At most

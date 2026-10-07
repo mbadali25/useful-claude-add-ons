@@ -198,7 +198,9 @@ to type or the question to answer, for example `T-5  approve  /crew:approve
 T-5`. The list comes from the same phase table `/crew:autopilot` uses, so the
 two never disagree. It runs nothing and never rebuilds a review bundle: a
 ticket whose finished review would need one shows as `review-unread`, and
-`/crew:autopilot status <id>` reads it. No `.work/INDEX.md` prints `waiting
+`/crew:autopilot status <id>` reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (`2 held, 1 blocked`); a hold that is due
+is listed as `revisit` with its reason. No `.work/INDEX.md` prints `waiting
 unknown (...)`, never "nothing on you".
 
 ## If something refuses

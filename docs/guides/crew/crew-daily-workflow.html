@@ -271,7 +271,9 @@ to type or the question to answer, for example <code>T-5  approve  /crew:approve
 T-5</code>. The list comes from the same phase table <code>/crew:autopilot</code> uses, so the
 two never disagree. It runs nothing and never rebuilds a review bundle: a
 ticket whose finished review would need one shows as <code>review-unread</code>, and
-<code>/crew:autopilot status &lt;id&gt;</code> reads it. No <code>.work/INDEX.md</code> prints <code>waiting
+<code>/crew:autopilot status &lt;id&gt;</code> reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (<code>2 held, 1 blocked</code>); a hold that is due
+is listed as <code>revisit</code> with its reason. No <code>.work/INDEX.md</code> prints <code>waiting
 unknown (...)</code>, never "nothing on you".</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
