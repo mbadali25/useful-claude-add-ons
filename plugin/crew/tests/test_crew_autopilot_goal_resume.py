@@ -900,3 +900,16 @@ def test_the_handoff_reader_matches_discovery_on_names_and_bom(tmp_path, monkeyp
 
     assert (bom, crew_goal_state.run_state(str(root), slug.upper().lower())["state"]) == (
         "running", "missing" if os.path.normcase("A") == "A" else "unknown")
+
+
+def test_a_json_whose_name_is_not_a_slug_is_unknown_never_dropped(tmp_path):
+    """T-0056 review r6: `ship_it.json` (a renamed goal file) makes the handoff say
+    `resume: none` with a reason, never the ticket form."""
+    root = _repo(tmp_path)
+    _write(root / ".work" / "autopilot" / "ship_it.json", '{"run": {"state": "running"}}')
+    _write(root / ".work" / "autopilot" / "x.proposal.json", "{}")
+
+    got = handoff.running_goals(str(root))
+
+    assert (got["running"], [u for u in got["unknown"] if "ship_it.json" in u] != [],
+            [u for u in got["unknown"] if "proposal" in u]) == ([], True, [])

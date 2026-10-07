@@ -701,6 +701,24 @@ def _credentials(cfg):
     return provider, token, target, None
 
 
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _already_sent(root, cfg, event, reason, ticket, episode, dedupe):
+    """Whether `_deliver` would send nothing for this ping as one already sent
+    (the same waiting episode, or the same message inside realertHours), read
+    without a lock: a held ping is then not counted (L-0656 review r3)."""
+    state = state_dir(root)
+    if episode:
+        seen = _read_json(os.path.join(state, "episodes.json")).get(episode[0])
+        if isinstance(seen, dict) and seen.get("key") == episode[1]:
+            return True
+    material = "|".join([event, ticket or where(root)["ticket"] or "", reason]
+                        + (list(episode) if episode else []) + ([str(dedupe)] if dedupe else []))
+    at = _read_json(os.path.join(state, "sent.json")).get(
+        hashlib.sha256(material.encode("utf-8")).hexdigest())
+    window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
+    return isinstance(at, (int, float)) and time.time() - at < window
+
+
 def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
     """Everything after the filters: credentials, line, episode, dedupe, transport."""
     provider, token, target, stop = _credentials(cfg)
@@ -815,8 +833,9 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
         elif kind not in ("ask", "permission"):
             kind = "ask"
         import crew_notify_hold  # pylint: disable=import-outside-toplevel  # L-0656, imports this
-        if crew_notify_hold.holds(root, event, kind, "|".join(
-                [ticket or "", reason, repr(episode), str(dedupe or "")])):
+        if not _already_sent(root, cfg, event, reason, ticket, episode, dedupe) and \
+                crew_notify_hold.holds(root, event, kind, "|".join(
+                    [ticket or "", reason, repr(episode), str(dedupe or "")])):
             return "held"
         return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except

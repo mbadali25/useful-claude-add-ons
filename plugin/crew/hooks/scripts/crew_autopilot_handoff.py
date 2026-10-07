@@ -165,7 +165,11 @@ def running_goals(root):
         names = []
     for path in (os.path.join(folder, n) for n in names):
         name = os.path.basename(path)[:-len(".json")]
-        if name.lower().endswith(".proposal") or not slug_ok(name.lower()):
+        if name.lower().endswith(".proposal"):
+            continue
+        if not slug_ok(name.lower()):  # T-0056 review r6: a renamed goal file is never dropped
+            out["unknown"].append(f".work/autopilot/{os.path.basename(path)} (a .json whose name "
+                                  "is not a goal slug)")
             continue
         rel = f".work/autopilot/{name}{os.path.basename(path)[-len('.json'):]}"
         if os.path.basename(path) != name.lower() + ".json":

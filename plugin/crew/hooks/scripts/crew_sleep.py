@@ -451,11 +451,19 @@ def unreported(text):
 
 def malformed(text):
     """The 1-based numbers of the non-blank lines that are neither an entry
-    nor a marker (a truncated or hand-edited line): the log then cannot be
-    read as "no decisions" (L-0653 review r2)."""
-    return [n for n, raw in enumerate((text or "").split("\n"), 1)
-            if raw.strip() and not _MARK_RE.match(raw.rstrip("\r"))
-            and not _ENTRY_RE.match(raw.rstrip("\r"))]
+    nor a marker (a truncated or hand-edited line), or a marker whose `upto`
+    is past its own line: the log then cannot be read as "no decisions"
+    (L-0653 review r2, r4)."""
+    bad, offset = [], 0
+    for n, raw in enumerate((text or "").split("\n"), 1):
+        line, mark = raw.rstrip("\r"), _MARK_RE.match(raw.rstrip("\r"))
+        # A marker covers only bytes above it: a larger `upto` would hide
+        # entries below it (review r4), so it is not a marker this log wrote.
+        if raw.strip() and not _ENTRY_RE.match(line) and (
+                not mark or (mark.group(2) and int(mark.group(2)) > offset)):
+            bad.append(n)
+        offset += len(raw.encode("utf-8")) + 1
+    return bad
 
 
 def summary_text(entries):

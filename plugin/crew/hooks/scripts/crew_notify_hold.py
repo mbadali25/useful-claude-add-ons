@@ -220,6 +220,8 @@ def send_summary(root, text, keep=""):
             _say("neither question nor blocker is in notify.events; "
                              "the morning summary is not sent")
             return "filtered"
+        if provider not in ("telegram", "teams"):  # review r3: unknown is not "off"
+            return "failed:unknown notify.provider"
         provider, token, target, stop = crew_notify._credentials(cfg)  # pylint: disable=protected-access
         if stop:
             return stop

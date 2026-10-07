@@ -2266,3 +2266,42 @@ def test_a_failed_cleanup_after_a_send_is_finished_never_resent(tmp_path, clock,
     assert (first[0], "finished by the next run" in first[1], second,
             len(wire), _held(root)) == (
         0, True, (0, "no unreported sleep decisions\n"), 1, 0)
+
+
+def test_a_marker_past_its_own_line_is_malformed():
+    """L-0653 review r4 (must-block): `upto 999999` cannot hide the entries below it."""
+    entry = crew_sleep.log_line(NIGHT, T, "note", "a", "x")
+    text = entry + "- reported 2026-10-05T08:00:00 upto 999999\n" + entry
+    good = entry + f"- reported 2026-10-05T08:00:00 upto {len(entry.encode())}\n" + entry
+
+    assert (crew_sleep.malformed(text), crew_sleep.malformed(good),
+            len(crew_sleep.unreported(good))) == ([2], [], 1)
+
+
+def test_an_unknown_provider_keeps_the_summary_pending(tmp_path, clock, wire, capsys,
+                                                       monkeypatch):
+    """L-0656 review r3 (must-block): a provider crew does not know is not "off"."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    monkeypatch.setattr(crew_notify, "effective_config", lambda root: (
+        {"provider": "pigeon", "events": list(crew_notify.EVENTS)}, []))
+
+    code, out = _cmd(root, capsys, "sleep-summary")
+
+    assert (code, "unknown notify.provider" in out, _held(root)) == (1, True, 1)
+
+
+def test_a_ping_already_sent_before_the_window_is_not_counted(tmp_path, clock, wire):
+    """L-0656 review r3: the same waiting episode, sent awake, repeated asleep."""
+    clock(DAY)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    episode = ("s1", "p1")
+    awake = crew_notify.send(str(root), "question", "Claude needs your permission",
+                             episode=episode)
+    clock(NIGHT)
+    again = crew_notify.send(str(root), "question", "Claude needs your permission",
+                             episode=episode)
+
+    assert (awake, again, len(wire), _held(root)) == ("sent", "episode", 1, 0)
