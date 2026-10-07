@@ -16,7 +16,8 @@
 `fix-and-rereview` fixes only when ALL hold: `rounds_left` is an int (never a
 bool) and at least 1; the round row carries `findings`, a list of one-line
 BLOCK, FIX or NIT strings that agrees with the row's `counts` per severity,
-with at least one `BLOCK|` or `FIX|` line, plus `base` and `bundle_sha256`. The fix is complete when BOTH hold, read from disk:
+with at least one `BLOCK|` or `FIX|` line, plus `base` and `bundle_sha256`.
+The fix is complete when BOTH hold, read from disk:
 `.work/tickets/<id>/fixes.md` has a `## Round <n>` section holding every
 `BLOCK|` and `FIX|` line of the row verbatim as a whole line, as many times as
 the row carries it (`review_ledger.check_follow_up`'s rule; NIT lines are not
