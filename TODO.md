@@ -4,6 +4,19 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **L-0703 follow-ups (promote-gate review evidence).** (a) OWNER DECISION: authenticated review
+  evidence. The ledger is local JSON under `<git-common-dir>/crew/review/`, guarded only by
+  `scope_guard.py` rule 2's textual refusal, so a consistent forged ledger passes
+  `plugin/crew/hooks/scripts/_promote_review.py` (spec review rounds 1-3 held this as BLOCK).
+  Options: a signed receipt, or the forge's own PR review state. (b) Land-time binding: record the
+  landed merge sha against a receipt the land check kept (`crew_ship.py` / `crew_train.py
+  check-land`), so a merge commit whose tree differs from the reviewed head only by the land can be
+  deployed; today it is blocked. (c) Harness, its own tooling-only PR (T-0087): register
+  `_promote_review.py` in `SEAM` (`scripts/check-tooling-pr.py`), and wire L-0703's 11 entries in
+  `plugin/crew/tests/promote_tree_mutations.py` into `sabotage.py`. (d) The approval marker
+  `.crew/.approved-<env>-<sha>` still uses `git rev-parse --short`; consider the full sha.
+  (e) Native Windows: the `.ps1` review path ran only under Linux pwsh with `OS=Windows_NT`.
+
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run

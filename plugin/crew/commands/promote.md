@@ -29,7 +29,13 @@ with the error text verbatim.
 
 **Gate 1 - pre-deploy.**
 - Every environment in `requires` has a `pass` row in `.work/PROMOTIONS.md` for
-  the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*.
+  the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*,
+  written as the full 40-character sha: a short row never counts (L-0703).
+- An accepted review covers this exact tree: a ticket's receipt standing on
+  its latest round, whose reviewed head has the same tree as the sha you are
+  deploying. A merge commit that differs from the reviewed head does not
+  count. Only `requireReview: false` plus a `reviewReason` on the environment
+  waives it; `requireHuman` does not.
 - The tree the deploy runs from is clean, is at the sha you are about to
   deploy, and that sha is pushed. That is the tree `promote-gate` judges: the
   Bash call's working directory, moved by a leading `cd <dir> &&` and named by
@@ -290,7 +296,8 @@ reader needs (`skills/bitbucket/scripts/merge_gate.sh:30-35`):
 ## After
 
 Append one row to `.work/PROMOTIONS.md` with the real result of every gate,
-including failures. Then:
+including failures, and the full 40-character sha (`git rev-parse HEAD` of the
+tree deployed). Then:
 
 - **All gates green:** say which environment now runs which sha, and name the
   next promotion explicitly from this environment's `promotesTo` - e.g.
@@ -313,7 +320,12 @@ a declared `deploy` entry and refuses it unless, for the sha at HEAD **of the tr
 the deploy runs from**: every `requires` environment has an all-pass row in
 `.work/PROMOTIONS.md`; the `rollback` runbook exists with `last verified` inside
 90 days; `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`;
-and that tree is clean. These cannot be skipped by deciding to skip them.
+an accepted review receipt covers that tree (or `requireReview: false` with a
+`reviewReason`); and that tree is clean. A row counts only with the full sha.
+The review evidence proves the tracked tree deployed is one a reviewer was
+shown under a standing receipt - not that paths the bundle left out or ignored
+build output were reviewed, nor who wrote the ledger (local, unauthenticated).
+With no python the gate blocks instead of standing down. These cannot be skipped by deciding to skip them.
 
 The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
 named by git's global `-C <dir>` inside `$(...)` (a `git -C` whose output feeds

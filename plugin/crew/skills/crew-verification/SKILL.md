@@ -404,6 +404,8 @@ the checks are declared, not remembered.
 | `rollback` | Path to the runbook, or the literal `"none"` plus a `rollbackReason`. Required - an absent key blocks the deploy |
 | `rollbackReason` | Required alongside `rollback: "none"`. Why this environment does not need a rollback plan |
 | `requireHuman` | Stop and get explicit approval before deploying |
+| `requireReview` | Default `true`, and absent means `true`: the deploy needs an accepted review receipt whose reviewed head has the deployed commit's tree (L-0703). `false` opts out only with a `reviewReason`; any other value blocks. `requireHuman` does not waive it |
+| `reviewReason` | Required alongside `requireReview: false`. A non-empty string: why this environment may take a build nobody reviewed |
 
 **Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`
 reads `.crew/verify.json` and blocks a matching `deploy` command - but that
@@ -473,11 +475,13 @@ Every promotion appends one line to `.work/PROMOTIONS.md`:
 ```
 | when (UTC) | env | sha | smoke | regression | verify | by |
 |---|---|---|---|---|---|---|
-| 2026-08-23T14:02Z | qa | a1b2c3d | pass | pass | pass | mbadali |
-| 2026-08-23T15:40Z | production | a1b2c3d | pass | pass | FAIL | mbadali |
+| 2026-08-23T14:02Z | qa | a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 | pass | pass | pass | mbadali |
+| 2026-08-23T15:40Z | production | a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 | pass | pass | FAIL | mbadali |
 ```
 
-This is what `requires` reads. It is also the only honest answer to "is prod
+Write the **full** 40-character sha: `requires` counts a row only when its sha
+is the deploying commit's full sha (L-0703); a short row never counts. This is
+what `requires` reads. It is also the only honest answer to "is prod
 running the thing qa signed off on" - compare the shas, not the branch names.
 
 Record failures too. A promotions log with no failures in it is a log nobody

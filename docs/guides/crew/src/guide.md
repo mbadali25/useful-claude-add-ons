@@ -226,8 +226,11 @@ that is T-0044.
 
 **The promote gate** runs on a deploy command declared in
 `.crew/verify.json`. Before the deploy it checks that the upstream environment
-passed for this exact sha, that a rollback is declared, that a person approved
-it when `requireHuman` is set, and that the tree is clean.
+passed for this exact sha (a promotion row carries the full sha), that a
+rollback is declared, that a person approved it when `requireHuman` is set, that
+an accepted review covers the exact tree being deployed (unless the
+environment opts out with `requireReview: false` and a reason), and that the
+tree is clean.
 
 The guards stop drift and accidents, not a session set on forging local
 state: the receipts are files on your machine. The completion audit and the

@@ -292,8 +292,11 @@ a variable or an encoded string. The credentials boundary that would close
 that is T-0044.</p>
 <p><strong>The promote gate</strong> runs on a deploy command declared in
 <code>.crew/verify.json</code>. Before the deploy it checks that the upstream environment
-passed for this exact sha, that a rollback is declared, that a person approved
-it when <code>requireHuman</code> is set, and that the tree is clean.</p>
+passed for this exact sha (a promotion row carries the full sha), that a
+rollback is declared, that a person approved it when <code>requireHuman</code> is set, that
+an accepted review covers the exact tree being deployed (unless the
+environment opts out with <code>requireReview: false</code> and a reason), and that the
+tree is clean.</p>
 <p>The guards stop drift and accidents, not a session set on forging local
 state: the receipts are files on your machine. The completion audit and the
 reviewer are the backstop.</p>

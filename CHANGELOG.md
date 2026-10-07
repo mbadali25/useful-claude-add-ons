@@ -9,6 +9,37 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.5: promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING
+
+- **Summary.** A deploy now needs an accepted review of the exact tree being deployed, and an
+  upstream promotion row counts only when it records the full 40-character sha; an environment
+  that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
+- **Exact sha.** `promote-gate.sh` matched a `.work/PROMOTIONS.md` row with
+  `startswith(sha[:7])` (`.ps1`: `StartsWith` of 7 characters), so a PASS row for a different
+  commit sharing the first 7 characters admitted the deploy, and a longer short sha was cut to 7.
+  A row now counts only when its sha cell is the deploying commit's full sha, case ignored. A short
+  row is never counted, even for the right commit, and the block names it. BREAKING: re-record old
+  short rows (re-run the promotion, or rewrite the row with the full sha after checking it). No
+  back-compat: accepting a short row that resolves to the deploying sha re-opens the hole whenever
+  the row's own commit is no longer in the object store.
+- **Review evidence.** Every gated environment needs an accepted review receipt - a ticket's ledger
+  whose receipt stands on its latest round, whose reviewed head has the same tree as the commit
+  being deployed, confirmed by `review_ledger.check_receipt` in the deploying tree. `requireHuman`
+  does not waive it. The only opt-out is `"requireReview": false` with a non-empty `reviewReason`
+  string; any other value blocks. BREAKING: maps that deploy unreviewed builds must opt out, and a
+  merge commit whose tree differs from the reviewed head (main moved, or a bump landed after the
+  review) is not covered. Both flavours decide through one new helper, `_promote_review.py`. What
+  it does not prove - paths the review bundle left out, ignored build output, and who wrote the
+  (local, unauthenticated) ledger - is stated in promote.md and the README.
+- **Fails closed.** The review search runs in a killable process group under one 17s deadline for
+  the whole gate, inside the 20s hook timeout. Without python `promote-gate.sh` no longer stands
+  down: with `jq` it blocks a command that and a string in the map contain one another, without
+  `jq` every command while a map exists. `promote-gate.ps1` resolves python with the shared
+  `Resolve-CrewPython`; no python, a timeout or a helper failure blocks.
+- **Tests.** `test_promote_gate_review.py` (84 cases, both flavours, ledgers written through
+  `review_ledger` itself) and 11 mutations in `promote_tree_mutations.py`, each RED. Existing
+  promote fixtures opt out of review and write full-sha rows; no assertion changed.
+
 ### Fixed — crew 1.1.4: pre-review checks, L-0574's round-10 follow-ups (L-0605)
 
 - **Summary.** The pre-review linter checks and the review runner no longer crash on Windows timeouts,

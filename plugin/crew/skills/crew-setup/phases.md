@@ -439,9 +439,12 @@ back to me before anything real is deployed.
 runs on `PreToolUse` and refuses a command matching a declared `deploy` entry
 unless, for the sha at HEAD:
 
-- every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
+- every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`, written with the full sha
 - the `rollback` runbook exists and carries `last verified: YYYY-MM-DD` inside 90 days
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
+- an accepted review receipt covers the deployed tree - ask whether any
+  environment (a development box fed from branches, say) deploys unreviewed
+  builds, and if so set `requireReview: false` plus a `reviewReason` on it
 - the working tree is clean
 
 And `verify-gate.sh` will not let the turn end after a deploy that wrote no
