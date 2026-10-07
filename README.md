@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
 - **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
-- **crew 1.1.13**: Complete archive and ticket ids beyond T-. Every crew reader now finds a ticket whether it is live or archived in `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

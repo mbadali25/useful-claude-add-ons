@@ -9,6 +9,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.1.14: a harness test no longer reads a half-written pid file (C-0063)
+
+- `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and `write` (it failed twice in a row on Python 3.12 CI in wave 5). Test-only; no behaviour change.
+
 ### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
 
 - **Summary.** CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
