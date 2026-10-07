@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.9 — sync: main (H3 #540, H1 #542, C-0047 part 1 #549) into release/1.2.0
+
+- **Summary.** release/1.2.0 now carries everything on main: the review harness (H3), its ports
+  (H1) and the retired cloud-guard sabotage entries (C-0047 part 1), beside the release's own
+  features, so it can land on main as one wave.
+- **What changed.** Two merges of `origin/main` (7cb44221, then ad36bec5) into release/1.2.0. Both
+  sides' behaviour is kept; the only code-adjacent resolution is `test_worktree_config.py`'s
+  `ALLOWED` table, which takes both sides' entries and drops `review_gate.py` and
+  `verify_fingerprint.py` because H1 removed their config reads. The daily-workflow,
+  troubleshooting and working-with-codex guides are rebuilt from the merged sources.
+
 ### Removed — crew 1.1.8: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
 
 - **Summary.** Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the
