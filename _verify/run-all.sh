@@ -122,7 +122,10 @@ run "crew-setup: CLAUDE.md heading round-trip" 60 \
 # 5. Every PowerShell artifact, tracked and untracked. See smoke.sh for why the
 #    untracked ones are checked one at a time (param([string]$Path) takes ONE path).
 if [ -n "$PWSH" ]; then
-  run "powershell: tracked (CI mode)" 120 "$PWSH" -NoProfile -File scripts/check-powershell.ps1
+  # Through the launcher: a private startup-profile cache per pwsh (T-0506), and a
+  # timeout's TERM reaches pwsh through it.
+  run "powershell: tracked (CI mode)" 120 env PWSH="$PWSH" sh scripts/pwsh-isolated.sh \
+    -NoProfile -File scripts/check-powershell.ps1
   # Process-substitution redirect, not a pipe: `git ls-files | while read` runs the
   # loop body in a subshell, so a failure `run` records inside it (PASS/FAIL are
   # incremented in the subshell's copy) never reaches the parent shell and run-all
@@ -130,7 +133,8 @@ if [ -n "$PWSH" ]; then
   # this shell.
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    run "powershell: untracked $f" 60 "$PWSH" -NoProfile -File scripts/check-powershell.ps1 -Path "$f"
+    run "powershell: untracked $f" 60 env PWSH="$PWSH" sh scripts/pwsh-isolated.sh \
+      -NoProfile -File scripts/check-powershell.ps1 -Path "$f"
   done < <(git ls-files -o --exclude-standard '*.ps1' '*.psm1')
 else
   skip "powershell" "pwsh not found"

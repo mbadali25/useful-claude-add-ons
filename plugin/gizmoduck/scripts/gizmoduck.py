@@ -142,10 +142,11 @@ def _categories_for(findings):
 
 
 def find_nuclei():
-    for name in ("nuclei", "nuclei.exe"):
-        p = shutil.which(name)
-        if p:
-            return p
+    # scanners.base.which: the tool home's bin first, then PATH (L-0684).
+    from scanners import base as scanner_base  # pylint: disable=import-outside-toplevel
+    p = scanner_base.which_any("nuclei", "nuclei.exe")
+    if p:
+        return p
     # common go install location
     cand = os.path.expanduser("~/go/bin/nuclei")
     return cand if os.path.exists(cand) else None
@@ -1420,6 +1421,30 @@ def _has_templates(tdir):
     return False
 
 
+def _doctor_tool_lookup(scanners_pkg):
+    """The tool home and every lookup override that is set (L-0684). Report
+    only: these lines never change doctor's exit status. A broken override
+    is named with its value and the tool it disables, because it disables
+    that tool instead of falling through to another install."""
+    from scanners import base as scanner_base  # pylint: disable=import-outside-toplevel
+    home = scanner_base.tool_home()
+    if home is None:
+        safe_print("-- tool home: none (GIZMODUCK_HOME not set; Windows has no default)")
+    else:
+        state = "exists" if home.is_dir() else "does not exist yet"
+        safe_print(f"-- tool home: {home} ({state})")
+    adapters = scanners_pkg.ADAPTERS
+    for name, getter in (("zap", "zap_override"), ("nikto", "nikto_override"),
+                         ("testssl", "testssl_override")):
+        ovr = getattr(adapters[name], getter)()
+        if ovr.state == scanner_base.OK:
+            found = ovr.found[1] if isinstance(ovr.found, tuple) else ovr.found
+            safe_print(f"OK {ovr.var}: {found}")
+        elif ovr.state == scanner_base.BROKEN:
+            safe_print(f"!! {ovr.var}={ovr.value} does not resolve - {name} is disabled "
+                       f"until it is fixed or unset (it does not fall back to PATH)")
+
+
 def cmd_doctor():
     """Health check for the local toolchain. Exit non-zero if nuclei is missing."""
     ok = True
@@ -1491,6 +1516,7 @@ def cmd_doctor():
     except ImportError as exc:
         safe_print(f"!! scanner registry unavailable: {exc}")
     else:
+        _doctor_tool_lookup(_scanners)
         missing = []
         for name in sorted(_scanners.ADAPTERS):
             mod = _scanners.ADAPTERS[name]

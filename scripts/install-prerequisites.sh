@@ -1330,6 +1330,7 @@ SKILL_KEYS=(
   "wazuh-onprem"
   "web-research"
   "web-testing-playwright"
+  "windows-ssm"
   "work-log-reporter"
 )
 SKILL_NAME=(
@@ -1367,6 +1368,7 @@ SKILL_NAME=(
   "wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf"
   "web-research            - Live-web research via Perplexity MCP: search, ask, research"
   "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
+  "windows-ssm             - Linux tools on Windows, and SSM output/payload limits"
   "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
 SKILL_SPEC=()

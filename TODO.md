@@ -4,6 +4,17 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **L-0685 follow-ups (gizmoduck bootstrap).** (1) No tool version is pinned: every run takes the
+  newest release. (2) Downloads outside Nuclei and trivy (dependency-check, ZAP) are not checked
+  against a published checksum. (3) Not verified: whether `pip3 install --user` (checkov, semgrep) is
+  refused on Ubuntu 24.04's externally managed Python; if it is, `--user` may want a virtual
+  environment under the tool home (owner question 5 of L-0685). (4) No real end-to-end run of
+  `./bootstrap.sh` as root or `--user` in a throwaway Ubuntu 24.04 container was made when it
+  landed.
+- **L-0684 follow-up (gizmoduck guides).** The built guides under `docs/guides/gizmoduck/` have no
+  source in the repo, so they were not rebuilt for gizmoduck 0.5.10's tool lookup order and do not
+  mention `GIZMODUCK_HOME` or that a broken override disables its tool. The plugin README's "Where
+  gizmoduck looks for tools" is current; rebuild the guides from a source once one exists.
 - **T-0060 harness-only follow-ups (crew blocker pings, T-0087 rule).** Each is a path in
   `scripts/check-tooling-pr.py`'s `HARNESS`, so it lands alone:
   (a) `plugin/crew/hooks/scripts/verify-gate.sh` / `verify-gate.ps1`: pipe the Stop payload to

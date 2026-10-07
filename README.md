@@ -49,7 +49,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 35 of 35 skills  >
+  > [x] This repo's marketplace + 36 of 36 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -151,7 +151,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 35 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 36 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.11**: `/crew:migrate` finds the other repos that opted in to auto-clear. When migrating finds auto-clear armed in every repo, it can now look under a folder you name for the other repos that opted in, and propose them too, instead of leaving you to search the disk by hand.
-- **crew 1.1.11**: Config delete names the backup after an OS error; a repo `null` that widens is marked. Deleting a repo's crew config no longer says the file was "left in place" when it had already been moved to the backup, and setting a repo value to `null` that inherits a wider machine value now shows the widening warning.
+- **crew 1.1.12**: Crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root. A repo set up by crew now sees a failing check's own error lines in its `_verify` output, and gets a ready diagram check that works as root in CI containers instead of failing with no reason.
+- **repository**: CI fails a stale built crew guide. A pull request whose committed crew guide HTML, or generated configuration reference, no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
@@ -369,6 +369,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`wazuh-onprem`](skills/wazuh-onprem) | Security / SIEM | Self-hosted Wazuh across all four surfaces — Server API, Indexer API, Dashboard saved-objects API, and `ossec.conf` over SSH. | Searching `wazuh-alerts` to build an incident timeline; wiring Slack/PagerDuty alerting into `ossec.conf`; onboarding an O365 or Cloudflare log feed; backing up or migrating dashboards. | Automatic |
 | [`web-research`](skills/web-research) | Research | Live-web research through the Perplexity MCP server — registered by hand or by menu row 25 of the install scripts, and routes each question to `perplexity_search`, `_ask`, `_research` or `_reason`, applies recency and domain filters, and hands library/API reference to Context7 instead. | "What's the latest on X?"; current pricing or a CVE for a product; "is this still true"; comparing vendors; anything where training data would be stale. | Automatic |
 | [`web-testing-playwright`](skills/web-testing-playwright) | Testing / QA | Drives a real browser with Playwright — screenshots at multiple viewports, console errors, failed network requests, form and login flows — plus browser setup for Windows and Linux. | "Is my site up?"; a page rendering blank with a JS error; verifying a login or checkout flow end to end; a layout that breaks at mobile viewport. | Automatic |
+| [`windows-ssm`](skills/windows-ssm) | Cloud / Infra | Linux-style tools on a Windows machine — which shell a command lands in, `python3`/`pwsh` resolution, MSYS path conversion and `cygpath`, CRLF, WSL's boundary — and what AWS Systems Manager will carry, with every limit cited and an offline checker that exits non-zero when a Run Command result is or may be cut. | "command not found: python3" in Git Bash; a path that turned into `C:/Program Files/Git/...`; `$'\r': command not found`; SSM output that stops halfway; pushing a large script to a node through SSM. | Automatic |
 | [`work-log-reporter`](skills/work-log-reporter) | Productivity | Keeps a committed per-session `work-log/` of what was done and what was touched, then generates a formatted email report with a PDF attachment and sends it over SMTP. | End-of-day or standup writeup; "email my manager what I worked on"; a billable record of which systems, databases, and tables were touched. | Automatic |
 
 "Automatic" means Claude decides to invoke the skill on its own when the conversation matches the skill's `description` trigger — no slash command needed. "Manual" means the skill sets `disable-model-invocation: true` and must be invoked explicitly (e.g. `/i-have-adhd`).

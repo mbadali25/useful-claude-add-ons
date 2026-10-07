@@ -71,7 +71,7 @@ fi
 """
 
 _SUDO_BODY = """
-if [[ "$1" == apt-get ]]; then
+if [[ "$1" == apt-get || ( "$1" == env && " $* " == *" apt-get "* ) ]]; then
   [[ " $* " == *" install "* && -n "${STUB_APT_FAIL_INSTALL:-}" ]] && exit 100
   exit 0
 fi
@@ -316,7 +316,13 @@ def test_trivy_falls_back_to_the_release_asset_when_its_install_script_fails(stu
     # The official install.sh (fetched with curl) fails, as it does where
     # github.com/<repo>/releases/<tag> is refused; the asset fallback must
     # then resolve the tag via git and fetch the versioned tarball plus its
-    # checksums file. sudo is a logging no-op, so nothing is downloaded.
+    # checksums file. The tarball is served from STUB_ASSETS so the step gets
+    # as far as the checksums download: try_install's set -e (L-0685) stops a
+    # step at its first failed command, which a 404 on the tarball now is.
+    asset_name = {"x86_64": "64bit", "amd64": "64bit", "aarch64": "ARM64",
+                  "arm64": "ARM64"}.get(platform.machine().lower())
+    if asset_name:
+        (stubs["assets"] / f"trivy_0.75.0_Linux-{asset_name}.tar.gz").write_bytes(b"stub")
     proc, log = _run(stubs, 'try_install "trivy" install_trivy', git="ok",
                      tags=["v0.75.0", "v0.76.0-rc1", "v0.9.0"],
                      extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
@@ -473,7 +479,8 @@ def test_ps1_both_fail_throws_naming_the_tool(stubs):
 
 # --- apt-get options (a /tmp at 755 breaks apt's `_apt` sandbox user) -------
 
-_APT_OPTS = "apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600"
+_APT_OPTS = ("env DEBIAN_FRONTEND=noninteractive apt-get -o APT::Sandbox::User=root "
+             "-o DPkg::Lock::Timeout=600")
 
 
 def test_apt_installs_run_the_sandbox_as_root_with_a_lock_timeout_then_clean(stubs):
@@ -500,7 +507,7 @@ def test_every_apt_get_call_goes_through_the_helper():
     calls = [ln for ln in _BOOTSTRAP.read_text().splitlines()
              if "apt-get " in ln and not ln.lstrip().startswith("#")
              and "command -v apt-get" not in ln and "echo" not in ln]
-    assert calls == [f"  sudo {_APT_OPTS} \"$@\""], calls
+    assert calls == [f"  as_root {_APT_OPTS} \"$@\""], calls
 
 
 
@@ -727,7 +734,7 @@ def test_zap_without_its_jar_is_reinstalled_and_with_it_is_skipped(stubs):
 def test_empty_apt_lists_are_refreshed_before_an_install(stubs):
     (stubs["apt_lists"] / "x_Packages").unlink()
     _, log = _run(stubs, "install_nmap", extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
-    lines = [ln for ln in log.splitlines() if ln.startswith("sudo apt-get")]
+    lines = [ln for ln in log.splitlines() if ln.startswith(f"sudo {_APT_OPTS.split(' -o', maxsplit=1)[0]}")]
     assert lines[0] == f"sudo {_APT_OPTS} update -y", lines
     assert lines[1] == f"sudo {_APT_OPTS} install -y nmap", lines
 
