@@ -514,6 +514,29 @@ def channel_reader(top):
     return read
 
 
+def _changed_field(blob, binding, repo, ticket):
+    """For a record parse_record calls corrupt: why it no longer shows what was
+    built against, read field by field from the raw JSON, or None when it
+    cannot tell (then the record is only unknown)."""
+    try:
+        raw = json.loads(blob.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get("hash"), str) and raw["hash"] != binding["hash"]:
+        return f"the record's hash is {crew_coord.safe(raw['hash'], HASH_SHOWN)}, built against " \
+               f"{binding['hash'][:HASH_SHOWN]}"
+    if isinstance(raw.get("status"), str) and raw["status"] != FROZEN:
+        return f"its status is {crew_coord.safe(raw['status'], 40)}, not {FROZEN}"
+    built = raw.get("built_by")
+    if isinstance(built, list) and not any(
+            isinstance(e, dict) and (e.get("repo"), e.get("ticket"), e.get("hash")) == (repo, ticket, binding["hash"])
+            for e in built):
+        return f"built_by no longer names {repo}:{ticket}"
+    return None
+
+
 def _judge_binding(files, binding, repo, ticket):
     """('ok'|'mismatch'|'unknown', why, newer) for one binding on its fetched channel."""
     name, version = binding["name"], binding["version"]
@@ -526,6 +549,9 @@ def _judge_binding(files, binding, repo, ticket):
     newer = [n for n in sorted(found) if n > version]
     record, why = parse_record(name, version, found[version][0])
     if record is None:
+        changed = _changed_field(found[version][0], binding, repo, ticket)
+        if changed:  # a one-field edit makes the record inconsistent; it is still a change (L-0634 r4)
+            return "mismatch", f"{changed}, and its record is corrupt ({why})", newer
         return "unknown", f"its record is corrupt ({why})", newer
     if record["hash"] != binding["hash"]:
         return "mismatch", (f"the record's hash is {record['hash'][:HASH_SHOWN]}, built against "

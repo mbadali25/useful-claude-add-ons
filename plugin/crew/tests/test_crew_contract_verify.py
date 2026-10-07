@@ -182,6 +182,26 @@ def test_a_changed_contract_is_a_mismatch(capsys, tmp_path, root, how, needle):
     assert needle in out
 
 
+@pytest.mark.parametrize("changes,needle", [
+    ({"status": "draft"}, "its status is draft"),
+    ({"built_by": []}, "built_by no longer names"),
+    ({"hash": _sha(b"edited\n")}, "the record's hash is")],
+    ids=["status-only", "built-by-only", "hash-only"])
+def test_a_one_field_edit_is_a_mismatch_not_unknown(capsys, tmp_path, root, changes, needle):
+    """L-0634 review round 4: a single-field edit leaves the record inconsistent,
+    which parse_record calls corrupt; it is still a change, exit 1."""
+    _ticket(root)
+    _built(root, tmp_path)
+    _rewrite_record(root, **changes)
+    capsys.readouterr()
+
+    code, out = _verify(capsys, root)
+
+    assert code == crew_contract.EXIT_REFUSED, out
+    assert "contract api v1 changed since T-1 built against it" in out
+    assert needle in out and "its record is corrupt" in out
+
+
 @pytest.mark.parametrize("how,needle", [
     ("fetch-fails", "could not fetch crew-coord/peers"),
     ("channel-absent", "crew-coord/peers does not exist"),
@@ -348,7 +368,7 @@ def test_verify_messages_are_sanitised(capsys, tmp_path, root):
 
     code, out = _verify(capsys, root)
 
-    assert code == crew_contract.EXIT_UNKNOWN
+    assert code == crew_contract.EXIT_REFUSED  # the status is no longer built-against (review round 4)
     assert "\u202e" not in out and "\x1b" not in out
     assert not any(line.startswith("y") for line in out.splitlines())
     assert all(line.endswith("[peer-written]") for line in out.splitlines() if line.strip())
