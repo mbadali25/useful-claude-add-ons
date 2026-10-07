@@ -53,8 +53,9 @@ def _required(data):
     if not isinstance(findings, list) or not all(isinstance(f, str) for f in findings) \
             or any("\n" in f or "\r" in f for f in findings):
         return None, "the rejected round's findings are not a list of one-line strings"
-    lines = [f for f in findings if f.startswith(OWED)]
-    if not any(f.startswith("BLOCK|") for f in lines):
+    # Classified as the automatic reject reads them (stripped); compared verbatim.
+    lines = [f for f in findings if f.strip().startswith(OWED)]
+    if not any(f.strip().startswith("BLOCK|") for f in lines):
         return None, "the rejected round lists no BLOCK line, yet an automatic reject needs one"
     return lines, None
 

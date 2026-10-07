@@ -736,3 +736,15 @@ def test_replan_check_writes_nothing(tmp_path):
     assert (done.returncode, done.stdout.startswith("applies=1 ok=0 missing=1 reason=successor plan lacks"),
             (_bytes(ledger), _bytes(root / ".work" / "tickets" / T / "plan.md"), _receipts(root)) == before
             ) == (1, True, True), done.stdout + done.stderr
+
+
+def test_replan_check_owes_an_indented_finding_line(tmp_path):
+    """L-0670 review r1 BLOCK: a ` FIX|` line the automatic reject counted is owed
+    too, verbatim (its leading space kept)."""
+    rows = [_row(1), _row(2, findings=[BLOCK_LINE, f" {FIX_LINE}"],
+                      counts={"BLOCK": 1, "FIX": 1, "NIT": 0})]
+
+    dropped = _check(_auto_rejected_plan(tmp_path / "dropped", rounds=rows, quoted=(BLOCK_LINE,)))
+    kept = _check(_auto_rejected_plan(tmp_path / "kept", rounds=rows, quoted=(BLOCK_LINE, f" {FIX_LINE}")))
+
+    assert ((dropped["ok"], dropped["missing"]), kept["ok"]) == ((False, 1), True)
