@@ -311,9 +311,10 @@ def sleep_summary(root):
     asleep or `unknown` (review r3) -- the text passed to the notifier once
     and, once delivered (or with no notifier), one marker and the reported
     held pings removed, all under one lock taken before anything is read. A
-    failed send keeps both pending. A delivered summary is recorded
-    (`summary-delivered.json`) before its cleanup, so a cleanup that fails is
-    finished by the next run and the summary is never sent twice."""
+    failed send keeps both pending. The summary is recorded
+    (`summary-delivered.json`) before it is sent and removed only after its
+    cleanup (or a failed send), so a cleanup that fails is finished by the
+    next run and the summary is never sent twice."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     state = ap.settings(top)["sleep"]["state"]
     if state not in (crew_sleep.AWAKE, crew_sleep.OFF):
@@ -332,20 +333,21 @@ def sleep_summary(root):
         code, out, text, held, upto = _summary(top)
         if code or out == NOTHING:
             return code, out
+        try:  # review r6: recorded BEFORE the send, so a send is never repeated
+            crew_notify_hold.write_delivered(top, upto, held)
+        except OSError as exc:
+            return 1, out + (f"\nnotify: not sent - the summary could not be recorded first "
+                             f"({type(exc).__name__}); nothing marked, reported again next run")
         word = crew_notify_hold.send_summary(
             top, out, crew_notify_hold.held_line(len(held)) if held else "")
         if word not in ("sent", "off", "filtered"):
-            return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
-                             "reported and sent again next run")
-        if word == "sent":
-            try:
-                crew_notify_hold.write_delivered(top, upto, held)
-            except OSError as exc:
-                return 1, out + (f"\nnotify: sent, but the delivery could not be recorded "
-                                 f"({type(exc).__name__}); nothing marked, so it may be sent "
-                                 "again")
+            if crew_notify_hold.clear_delivered(top):
+                return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
+                                 "reported and sent again next run")
+            return 1, out + (f"\nnotify: {word}, and its record could not be removed: the next "
+                             "run takes it as delivered and never sends it")
         left = _cleanup(top, text, upto, held)
-        if left is None and word == "sent" and not crew_notify_hold.clear_delivered(top):
+        if left is None and not crew_notify_hold.clear_delivered(top):
             left = "the delivered record could not be removed"
         return 0, out + ("" if word == "off" else f"\nnotify: {word}") + (
             "" if left is None else f"\n({left}; finished by the next run, never sent again)")
@@ -365,7 +367,9 @@ def _cleanup(top, text, upto, held):
 
 
 def _finish_delivered(top):
-    """"" once no delivered summary is left half cleaned; else why not (exit 1)."""
+    """"" once no delivered summary is left half cleaned; else why not (exit 1).
+    The record is written before a send (review r6), so one left behind by a
+    run that died mid-send counts as delivered: at most once, never twice."""
     record, why = crew_notify_hold.read_delivered(top)
     if record is None:
         return (f"refused: {crew_notify_hold.DELIVERED_FILE} could not be read ({why}); "

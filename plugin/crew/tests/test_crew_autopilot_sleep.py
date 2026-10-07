@@ -2407,3 +2407,27 @@ def test_sleep_note_follows_the_state_the_answer_was_taken_in(tmp_path, clock, c
                 "Q1: Option A", "--taken-asleep", taken)[0]
 
     assert (code, len(crew_sleep.unreported(_log_text(root) or ""))) == (want, 1 if want == 0 else 0)
+
+
+def test_a_summary_is_recorded_before_it_is_sent(tmp_path, clock, wire, capsys, monkeypatch):
+    """L-0656 review r6 (must-block): no record, no send; a record left by a run
+    that died after the send is taken as delivered, never sent twice."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    real = crew_notify_hold.write_delivered
+    monkeypatch.setattr(crew_notify_hold, "write_delivered",
+                        lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    refused = _cmd(root, capsys, "sleep-summary")
+    monkeypatch.setattr(crew_notify_hold, "write_delivered", real)
+    cleanup = crew_autopilot_sleep._cleanup  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_autopilot_sleep, "_cleanup",
+                        lambda *a: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):  # the run dies after the send
+        crew_autopilot_sleep.sleep_summary(str(root))
+    monkeypatch.setattr(crew_autopilot_sleep, "_cleanup", cleanup)
+    again = _cmd(root, capsys, "sleep-summary")
+
+    assert (refused[0], "could not be recorded first" in refused[1], len(wire), again[0],
+            _held(root)) == (1, True, 1, 0, 0)
