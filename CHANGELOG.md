@@ -75,7 +75,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   a superseded ticket names its successor or says "successor not named". An approved ticket whose
   `depends-on:` names a ticket that is not closed, or whose line cannot be read, stops as `blocked`
   before implement, review and done. A `ship` or `next-slice` that would act stops on any of these,
-  and `ship`'s CI wait reads them again on every poll, so a hold set while CI runs stops the merge. Two disagreeing INDEX rows stop as `direction-approval`.
+  and `ship` reads them again on every CI poll and right before `gh pr merge`, with the main
+  checkout's INDEX row as well as this one, so a hold set while CI runs stops the merge. Two disagreeing INDEX rows stop as `direction-approval`.
 - **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
   and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
 - **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.

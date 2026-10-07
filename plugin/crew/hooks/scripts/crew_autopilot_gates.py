@@ -180,6 +180,25 @@ def ship_hold(top, ticket):
     return blocked(view, lambda phase, _stop, reason: (phase, reason))
 
 
+def hold_reason(top, ticket, row):
+    """Why nothing may merge now, or None: `ship`'s CI wait (every poll) and the
+    last look before `gh pr merge` ask it. `row` is `crew_autopilot._index_row`:
+    this checkout's INDEX row and the main checkout's, so a hold set in either
+    stops the merge; rows that disagree, or a main checkout that could not be
+    read, are could-not-tell. Then `ship_hold`."""
+    if row.get("other"):
+        (here, mine), (main, theirs) = row["other"]
+        return (f"{here} says `{mine}` and {main} says `{theirs}` for {ticket}: cannot tell "
+                "whether a gate holds it - nothing ships")
+    if row.get("status") in GATES:
+        return (f"{row.get('source') or '.work/INDEX.md'} says `{row['status']}` for {ticket} - "
+                "nothing ships until the owner changes it")
+    if row.get("why"):
+        return f"cannot tell whether the main checkout holds {ticket}: {row['why']} - nothing ships"
+    held = ship_hold(top, ticket)
+    return held[1] if held else None
+
+
 def before_ship(top, ticket, answer, found):
     """`found` from `_ship_phase`, unless it would act (stop=0: `ship` or
     `next-slice`) while `ship_hold` says nothing ships. A stop (`closed`

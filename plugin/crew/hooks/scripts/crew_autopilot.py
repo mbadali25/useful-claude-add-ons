@@ -82,19 +82,16 @@ FOCUS_REMINDER: Claude Code's built-in `/focus` only toggles the display.
 `autopilot.approval` and `autopilot.questions` are `human|self|risk`
 (default `risk`); any other value reads as `human`, with a warning.
 
-`approval_policy` allows only when `scope.allowCliApproval` is exactly
-`true` in `.crew/config.json` -- at every setting -- and the review ledger is
-readable (a NEEDS_REPLAN one included: a distinct successor plan is its only
-way out, and the ledger refuses a plan approved before); then
-`human` never allows, `self` allows any risk, `risk` only a spec header that
-says `risk: low`. An absent or unparseable risk is `high`
-(`crew_ticket.parse_risk`), never `low`. `approve` also needs autopilot
-armed, writes the receipt with `approved_via: "autopilot"` and prints
-`self-approved <id> under approval=<policy>, risk=<risk>`; a refusal exits 2
-with `refused: <why>`. `crew_ticket.accepted` re-asks `approval_policy` on
-every read, so an `autopilot` receipt stands only while the policy still says
-yes. `question_policy` is the same decision for an open question -- `take`
-the researched recommendation or `stop` -- with no `allowCliApproval` rule.
+`approval_policy` allows only when `scope.allowCliApproval` is exactly `true` in
+`.crew/config.json` -- at every setting -- and the review ledger is readable (a NEEDS_REPLAN one
+included: a distinct successor plan is its only way out, and the ledger refuses a plan approved
+before); then `human` never allows, `self` allows any risk, `risk` only a spec header that says
+`risk: low`. An absent or unparseable risk is `high` (`crew_ticket.parse_risk`), never `low`.
+`approve` also needs autopilot armed, writes the receipt with `approved_via: "autopilot"` and
+prints `self-approved <id> under approval=<policy>, risk=<risk>`; a refusal exits 2 with `refused:
+<why>`. `crew_ticket.accepted` re-asks `approval_policy` on every read, so an `autopilot` receipt
+stands only while the policy still says yes. `question_policy` is the same decision for an open
+question -- `take` the researched recommendation or `stop` -- with no `allowCliApproval` rule.
 
 `questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
 QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
@@ -424,7 +421,7 @@ def _ship_gate(top, ticket):
     if families is None or ledger is None or _ledger_hash(top, ticket) != ledger:
         gate["stop"] = ("the review ledger is unreadable, or changed while it was read, so "
                         "the review families cannot be told")
-    gate["stop"] = gate["stop"] or (crew_autopilot_gates.ship_hold(top, ticket) or (0, None))[1]  # L-0550
+    gate["stop"] = gate["stop"] or crew_autopilot_gates.hold_reason(top, ticket, _index_row(top, ticket))
     return gate
 
 
@@ -593,6 +590,9 @@ def _pre_merge_stop(top, ticket, branch, pr, head, gate, base=None):
                  "could not tell whether the base branch has a merge queue") + ": a queue "
                 "picks its own merge method and keeps merging after ship stops - a person "
                 "merges")
+    held = crew_autopilot_gates.hold_reason(top, ticket, _index_row(top, ticket))  # L-0550
+    if held:
+        return f"{held} - never merged"
     # Last, right before the call: the ledger and this checkout's HEAD again.
     if _ledger_hash(top, ticket) != gate["ledger"]:
         return "the review ledger changed just before the merge - never merged"

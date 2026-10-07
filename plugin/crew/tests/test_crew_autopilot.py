@@ -2650,3 +2650,48 @@ def test_superseded_spec_tbd_line_yields_to_next_md(tmp_path):
 
     assert (got["phase"], "T-9, from next.md" in got["reason"], "TBD" in got["reason"]) == (
         "closed", True, False), got
+
+
+def _main_row(status="hold", other=None, why=""):
+    return lambda top, ticket: {"status": status, "source": "/main/.work/INDEX.md", "other": other,
+                                "why": why, "paths": []}
+
+
+@pytest.mark.parametrize("row, words", [
+    (_main_row(), "/main/.work/INDEX.md says `hold`"),
+    (_main_row(None, (("here", "done"), ("main", "hold"))), "cannot tell whether a gate holds"),
+    (_main_row("done", why="git worktree list failed"), "cannot tell whether the main checkout"),
+])
+def test_ship_gate_reads_the_main_checkouts_row(tmp_path, monkeypatch, row, words):
+    """L-0550 review r3 BLOCK: the CI poll reads the main checkout's row too."""
+    root = _approved(tmp_path)
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    monkeypatch.setattr(crew_autopilot, "_index_row", row)
+
+    stop = crew_autopilot._ship_gate(str(root), T)["stop"]  # pylint: disable=protected-access
+
+    assert words in (stop or ""), stop
+
+
+def test_pre_merge_stop_rereads_the_gate(tmp_path, monkeypatch):
+    """L-0550 review r3 BLOCK: the last look before `gh pr merge` re-reads the gate."""
+    import crew_ship  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp_path)
+    monkeypatch.setattr(review_ledger, "check_receipt", lambda root, ticket: (True, "current"))
+    monkeypatch.setattr(crew_autopilot, "_ledger_hash", lambda top, ticket: "h")
+    monkeypatch.setattr(crew_autopilot, "_head_stop", lambda *a: "")
+    monkeypatch.setattr(crew_ship, "_tree_stop", lambda top: "")
+    monkeypatch.setattr(crew_ship, "read_merge_queue", lambda top, number: False)
+    calls = []
+    monkeypatch.setattr(crew_autopilot, "_index_row", lambda top, ticket: calls.append(1) or {
+        "status": "done" if len(calls) == 1 else "hold", "source": None, "other": None, "why": "",
+        "paths": []})
+    gate = {"ledger": "h"}
+
+    first = crew_autopilot._pre_merge_stop(str(root), T, "b", {"number": 7}, "x", gate)  # pylint: disable=protected-access
+    held = crew_autopilot._pre_merge_stop(str(root), T, "b", {"number": 7}, "x", gate)  # pylint: disable=protected-access
+
+    assert (first.startswith("this checkout's HEAD moved"), "says `hold`" in held,
+            held.endswith("never merged")) == (True, True, True), (first, held)
