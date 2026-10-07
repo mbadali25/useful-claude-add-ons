@@ -40,7 +40,8 @@ changed in 0.16.0 and both are silent if unmentioned:
 - **A repo-only key in this file takes effect nowhere.** The global layer is
   filtered to machine-and-person keys before it is merged, so a `tracker` or a
   `graph.obsidian.dir` set here reaches no repository at all. `--show` names
-  each one it finds.
+  each one it finds, and every session start names it in its `Inert settings`
+  line (`crew_config.py --inert` prints that line, or `inert settings: none`).
 - **What survives is a default, not a lock.** Every key here is overridable in
   a repo's own `.crew/config.json`, which is why step 1's `source` column
   exists. The personal `autopilot` keys are the exception: the STRICTER of the
@@ -86,5 +87,5 @@ How it writes, whatever the arguments say:
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
   under the lock, compared with what the preview read (a changed file is put
-  back and nothing is deleted), and three printed restore lines (sh, cmd,
-  PowerShell).
+  back and nothing is deleted; exit 1 when the file is not, or may not be,
+  at its path, naming the backup), and three printed restore lines.

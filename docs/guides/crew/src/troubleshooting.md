@@ -80,6 +80,12 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
+- **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the
+  completion audit refused the same ticket at Stop twice in a row (`crew_notify.py stop` records it;
+  the gates call it once their harness-only change lands). `Lane stalled` means `/crew:autopilot`
+  found another runner's in-flight marker `stale` (a dead pid, or no heartbeat inside T-0049's
+  30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
+  not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
   `guards.cloudGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
@@ -128,7 +134,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased.
+  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  budget whose last round carries a BLOCK sends the `Review out of rounds` ping when
+  `/crew:autopilot` stops on it.
 
 - **Symptom: a round came back `INCOMPLETE`.**
   **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An
@@ -247,6 +255,11 @@ contract itself. This section is what goes wrong with the approval and the audit
   checkout's settings, and a relative handoff path still names a file in the lane. The verify
   gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
   `emergency.standDown` while the bash gate reads the inherited one.
+- **Symptom: which tickets still need my approval?**
+  **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>` line, with a
+  `  why: <why>` line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  current or spec-only tickets (`nothing needs approval` when there are none). Approving a ticket
+  it does not list changes nothing.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
@@ -487,6 +500,49 @@ it *would* refuse before enforcing with `"block"`.
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through `--profile`/`--subscription` does.
 
+### Unattended launch refuses
+
+`crew_unattended.py launch -- claude ...` starts an unattended session holding sealed, owner-named
+cloud credentials, or refuses and starts nothing (plugin README, "Unattended runs: sealed cloud
+credentials"). Run `python3 "<crew>/hooks/scripts/crew_unattended.py" check --root .` to see every
+check without launching. Each line is `ready`, `refuse` or `unknown` (could not tell, which also
+refuses).
+
+- **`config: no read-only identity named`** (or `no unattendedCloud in the machine config`). The
+  defaults name nothing. **Fix:** name the read-only role in `~/.claude/crew/config.json`, never in
+  the repo (a repo copy is ignored and reported): set `unattendedCloud.aws.readOnly.profile` and
+  `unattendedCloud.aws.readOnly.identity`, the assumed-role ARN prefix ending in `/`.
+- **`config: environment X is not nonProd`** or **`no machine entry for nonProd environment X`.**
+  `--environment` needs both the repo's `environments.nonProd` to match the name and a machine
+  `unattendedCloud.aws.nonProd` entry for it. There is no production entry, by design.
+- **`provider not implemented`.** Only `aws` is read; remove the other key.
+- **`export: no SessionToken ...: these are static keys`.** The profile resolves to long-lived
+  keys. **Fix:** point it at an SSO or assume-role profile; crew never runs `aws sso login` for you.
+- **`export: credentials expire in under 15 minutes`** or `export ... exited`: refresh the
+  profile's session yourself (`aws sso login`), then retry.
+- **`identity: STS says ..., expected ...`.** The exported credentials are a different role than the
+  one named; a `:user/` ARN is a long-lived IAM user and always refuses. Fix the profile, or the
+  prefix if the role was renamed.
+- **`sandbox: unavailable: apply-seccomp: write /proc/self/setgroups ...`.** Claude Code's sandbox
+  starts but cannot run commands on this host (measured with
+  `kernel.apparmor_restrict_unprivileged_userns = 1`). Every launch refuses until the host owner
+  makes the sandbox usable or runs unattended work as a separate OS user or container.
+- **`settings: <file> sets sandbox`** or **`allows Read(...)`.** The repo's `.claude/settings.json`
+  or `.claude/settings.local.json` tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. **Fix:** remove the key
+  from the repo's file, or run that work attended.
+- **`settings: ... sandbox.excludedCommands`**, **`allowRead entry ... could re-open a credential
+  store`** or **`sandbox.filesystem.disabled`.** Your `~/.claude/settings.json` loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. **Fix:** move the entry out of
+  your user settings (or narrow the `allowRead` away from the stores), then retry.
+- **`sandbox: the session can read a store: OPEN <path>`.** The sealed settings did not hold for that
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.
+- **`sandbox: store not reported`, `could not tell`, `no end marker`, or `probe made no tool
+  call`.** The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.
+- **`refuse command: ...`.** `launch` runs `claude` only (an executable file or a name on `PATH`),
+  and supplies `--settings` and `--setting-sources` itself.
+
 ## Obsidian
 
 See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day to day:
@@ -601,6 +657,19 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## A setting seems to do nothing
+
+**Symptom:** you set a key in `.crew/config.json` or `~/.claude/crew/config.json` and crew behaves
+as if it were absent.
+
+- **Check:** the `Inert settings (crew <version> does not act on them): ...` line at session
+  start, the `inert` line in `/crew:status`, or `python3 "<crew>/hooks/scripts/crew_config.py"
+  --root . --inert`. Each names `key=value (why)`: a ticket id means the installed crew does not
+  implement it yet; `unknown key` means a typo or a key from another crew version; `global,
+  repo-only` means the machine file may not set it, so it takes effect nowhere.
+- **Fix:** move a repo-only key into the repo's `.crew/config.json`, correct a typo, or wait for
+  (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.
+
 ## Graph refresh refused: secrets-denylisted path
 
 graphify reads every file its ignore rules do not exclude and records the symbols it finds in
@@ -657,6 +726,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
+| `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
 | `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |

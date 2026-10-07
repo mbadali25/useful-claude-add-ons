@@ -1,0 +1,164 @@
+# SQL candidate standards (not gated)
+
+No gated SQL standards set ships yet (L-0532). Nothing in this file is loaded by
+`crew_standards.py` or asked in the pre-review self-check. It is guidance, kept with its
+evidence so that a rule can be promoted into `crew-standards/references/sql.md` (set `SQL`,
+`applies-to: ["**/*.sql"]`) once three distinct reviewed change sets earn it.
+
+**Why nothing ships.** The bar and the counting rule are `python.md`'s: a change set is a
+crew review, or a fix commit whose own message or CHANGELOG entry records that a review
+found the defect. There is no file-type condition.
+The owner decided on 2026-10-05 that public third-party change sets do not count toward
+that bar. The evidence the spec relies on is the owner's research (SQL-01..SQL-20) and
+review-recorded fix commits in the owner's private repositories. **Owner-private evidence
+was not consulted. The re-check is tracked as C-0020.** What follows comes from a public
+pass on 2026-10-05. The public change sets are recorded as leads, each counted 0 toward
+the bar.
+
+**How the public pass read its evidence.** Commit messages came from GitHub commit
+search. Diffs and changed paths were not read, so whether a fix touched a `.sql` file is
+known only where the message names it. Every Source sentence was string-matched against
+the raw page on 2026-10-05: PostgreSQL docs "Current (18)", and Microsoft Learn
+`view=sql-server-ver17`. The MySQL documentation site failed to load during the pass, so
+no MySQL/MariaDB rule or quote was checked.
+
+**Ids.** `SQL-17` is the owner's research id, and the spec names its content. `SQL-Pn`
+are labels from the public pass, not loader ids. Promotion gives a rule its research id,
+once the owner's file is read. The other research ids are listed at the end as not
+assessed.
+
+## Candidate standards (not gated)
+
+### SQL-P1 PostgreSQL: a `SECURITY DEFINER` function pins `search_path` and revokes `EXECUTE` from `PUBLIC`
+
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+6 public change sets, which do not count.
+
+Every `CREATE [OR REPLACE] FUNCTION ... SECURITY DEFINER` sets `SET search_path =
+<trusted schemas>, pg_temp`, or `''` with fully qualified names. In the same transaction
+it runs `REVOKE ALL ON FUNCTION ... FROM PUBLIC` and grants `EXECUTE` only to the roles
+that need it. `CREATE OR REPLACE` does not keep an earlier `SET` clause, so state it again
+every time. It does keep the function's existing grants, and revoking from `PUBLIC` leaves a
+direct grant to any other role in place. A replace therefore reads the function's full ACL
+from `pg_proc.proacl` (for example `SELECT proacl FROM pg_proc WHERE oid =
+'schema.fn(argtypes)'::regprocedure`, or `\df+`) and revokes every role that should not have
+it. `information_schema.routine_privileges` is not enough, because it shows only grants that
+involve currently enabled roles. Without the pin, a caller can shadow an object the function uses and run it
+with the definer's privileges. The default `EXECUTE` grant to `PUBLIC` makes the function
+callable by every role that has `USAGE` on its schema.
+
+Public change sets (message text only):
+- `contatoatacadista-83e743a6` (felipebalcao/contatoatacadista@83e743a6): "pin search_path
+  on security definer functions ... per code review finding".
+- `avya-9f4a0e85` (upendraprasad19/AVYA@9f4a0e85): a quarterly audit found SECURITY DEFINER
+  functions EXECUTE-able by anon/authenticated, and the fix revokes EXECUTE from PUBLIC.
+- `ruins-45d93489` (coachtomlim/ruins-api@45d93489): a security review found two SECURITY
+  DEFINER functions with `set search_path = public`. The fix is a new `.sql` migration.
+- `miraya-79f8bfe6` (AbhinavGupta707/miraya@79f8bfe6): a deep review found 12 SECURITY
+  DEFINER functions whose `search_path` lacked `pg_temp`.
+- `butlers-c085070c` (tzeusy-org/butlers@c085070c): review feedback asked to pin
+  `search_path` to the home schema plus `pg_temp`. The file type could not be determined.
+- `mytube-33e58055` (ibnetsoft/mytube@33e58055): a static review of a `.sql` migration
+  found EXECUTE granted to PUBLIC and no `SET search_path`.
+
+Rejected leads: an issue sweep, two advisor or CI-tool findings, and one fix with no
+review marker.
+
+Source: https://www.postgresql.org/docs/current/sql-createfunction.html, "Writing SECURITY
+DEFINER Functions Safely": "For security, search_path should be set to exclude any schemas
+writable by untrusted users." "To do this, write pg_temp as the last entry in
+search_path." "Another point to keep in mind is that by default, execute privilege is
+granted to PUBLIC for newly created functions (see Section 5.8 for more information)." Same
+page: "When CREATE OR REPLACE FUNCTION is used to replace an existing function, the ownership
+and permissions of the function do not change."
+
+Public verdict: admitted on public stand-ins (6). That does not count under the owner's
+decision. Its research id would be SQL-19 or SQL-20, the PostgreSQL ids, but which one
+could not be determined.
+
+### SQL-P2 PostgreSQL: index a populated table `CONCURRENTLY`, in a migration that runs outside a transaction
+
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+3 public change sets, which do not count. 2 of them are known to be `.sql`.
+
+`CREATE INDEX` on a shared table that already holds rows uses `CONCURRENTLY`, and `DROP
+INDEX CONCURRENTLY` reverses it. `CONCURRENTLY` cannot run inside a transaction block, so the
+migration opts out of the runner's wrapping transaction (for example sqlx's
+`-- no-transaction` first line) and holds that one statement. An index created in the
+same file as its new table needs neither. A partitioned table is the exception:
+`CONCURRENTLY` does not work on its parent index. Build each partition's index
+concurrently, then create the parent index non-concurrently with `ON ONLY` and attach the
+partition indexes. Two kinds of index cannot be dropped `CONCURRENTLY`: a partitioned table's
+index, and an index that backs a `UNIQUE` or `PRIMARY KEY` constraint. Their rollback
+drops the constraint or the index in an ordinary transaction, and it says so. A temporary
+table needs none of this, because its index build is always non-concurrent.
+This builds on the existing `CREATE INDEX CONCURRENTLY` pitfall in `SKILL.md`.
+
+Public change sets (message text only):
+- `distantsignal-e667de01` (FasterSpeeding/Distant-Signal@e667de01), `.sql`: "Review
+  finding: several migrations build a non-CONCURRENTLY index inside sqlx's default
+  per-file transaction". The fix is a guard test.
+- `mytube-33e58055` (as above), `.sql`: the same static review changed `CREATE INDEX` to
+  `CREATE INDEX CONCURRENTLY` on a live table.
+- `jidou-222cd2bd` (jamesbconner/Jidou@222cd2bd): "Two bugs found in code review: 1. CREATE
+  INDEX CONCURRENTLY cannot run inside a transaction block". This one is an Alembic Python
+  migration, outside `**/*.sql`.
+
+Source: https://www.postgresql.org/docs/current/sql-createindex.html: "When this option is
+used, PostgreSQL will build the index without taking any locks that prevent concurrent
+inserts, updates, or deletes on the table; whereas a standard index build locks out
+writes (but not reads) on the table until it's done." "Another difference is that a
+regular CREATE INDEX command can be performed within a transaction block, but CREATE
+INDEX CONCURRENTLY cannot." "Concurrent builds for indexes on partitioned tables are
+currently not supported." "However, you may concurrently build the index on each
+partition individually and then finally create the partitioned index non-concurrently in
+order to reduce the time where writes to the partitioned table will be locked out."
+https://www.postgresql.org/docs/current/sql-dropindex.html, on `CONCURRENTLY`: "Lastly,
+indexes on partitioned tables cannot be dropped using this option." "Only one index name
+can be specified, and the CASCADE option is not supported. (Thus, an index that supports a
+UNIQUE or PRIMARY KEY constraint cannot be dropped this way.)" CREATE INDEX page: "For
+temporary tables, CREATE INDEX is always non-concurrent, as no other session can access
+them, and non-concurrent index creation is cheaper."
+
+Public verdict: 3 public change sets under the shipped counting rule, which has no
+file-type condition. The research pass left this open because one of them is a Python
+migration, outside this set's `applies-to`. Under the owner's decision the count is 0
+either way. The research id could not be determined.
+
+### SQL-17 SQL Server: session SET options are part of the change
+
+Counted toward the bar: unknown (owner-private evidence not consulted; C-0020).
+0 public change sets found.
+
+Rule text from the public pass (the research's own wording was not read). These settings
+behave differently for two kinds of object:
+- A stored procedure captures the `QUOTED_IDENTIFIER` and `ANSI_NULLS` values in effect
+  when it is created. Its script therefore sets both explicitly before `CREATE`/`ALTER`.
+  The caller's session does not change them later.
+- An index on a computed column, or an indexed view, needs the same seven session options
+  on the connection that creates it and on every later connection that writes to the
+  indexed values: `ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`,
+  `CONCAT_NULL_YIELDS_NULL` and `QUOTED_IDENTIFIER` ON, and `NUMERIC_ROUNDABORT` OFF. A
+  writer with other settings fails. A reader with other settings gets no error, but the
+  optimizer ignores the computed-column index, so the query silently regresses. Writers'
+  and readers' connection options are therefore part of the change too.
+
+Source: https://learn.microsoft.com/en-us/sql/t-sql/statements/set-quoted-identifier-transact-sql?view=sql-server-ver17:
+"When you create a stored procedure, the SET QUOTED_IDENTIFIER and SET ANSI_NULLS settings
+are captured and used for subsequent invocations of that stored procedure." "You must set
+SET QUOTED_IDENTIFIER to ON when you create or change indexes on computed columns or
+indexed views." "If you set SET QUOTED_IDENTIFIER to OFF, CREATE, UPDATE, INSERT, and
+DELETE statements fail on tables with indexes on computed columns, or tables with indexed
+views." https://learn.microsoft.com/en-us/sql/relational-databases/indexes/indexes-on-computed-columns?view=sql-server-ver17:
+"The connection on which the index is created, and all connections trying INSERT, UPDATE,
+or DELETE statements that will change values in the index, must have six SET options set
+to ON and one option set to OFF." "The optimizer ignores an index on a computed column for any
+SELECT statement executed by a connection that doesn't have these same option settings."
+
+## Not assessed
+
+SQL-01 to SQL-16 and SQL-18 to SQL-20 are the owner's research ids. SQL-01..-14 are
+general, -15/-16 MySQL/MariaDB, -17/-18 SQL Server and -19/-20 PostgreSQL. Their content
+and counts are in the owner's research and private repositories, which were not
+consulted (C-0020). Whether SQL-P1 or SQL-P2 duplicates one of them could not be
+determined.

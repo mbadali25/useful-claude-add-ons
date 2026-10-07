@@ -15,6 +15,38 @@ be wrong can be closed on evidence.
   source in the repo, so they were not rebuilt for gizmoduck 0.5.10's tool lookup order and do not
   mention `GIZMODUCK_HOME` or that a broken override disables its tool. The plugin README's "Where
   gizmoduck looks for tools" is current; rebuild the guides from a source once one exists.
+- **T-0060 harness-only follow-ups (crew blocker pings, T-0087 rule).** Each is a path in
+  `scripts/check-tooling-pr.py`'s `HARNESS`, so it lands alone:
+  (a) `plugin/crew/hooks/scripts/verify-gate.sh` / `verify-gate.ps1`: pipe the Stop payload to
+  `crew_notify.py stop --root . --gate verify --refused` (`timeout 12`, errors swallowed) just
+  before the verification-failed `exit 2`, and `--passed` before the final `exit 0`; the gate's exit
+  status unchanged, with a test that a failing notify still exits 2.
+  (b) `plugin/crew/hooks/scripts/completion_audit.py` `stop_hook`: `crew_notify.stop_outcome(root,
+  "audit", refused, raw)` before its block-mode `return 2` and on the ok return, in `try/except`.
+  (c) `plugin/crew/hooks/scripts/review_ledger.py` `record`: after `_mutate` returns, a lazy
+  `crew_notify.rounds_check(root, ticket)` in `try/except`, so a manual `/crew:review` that spends
+  the last round with a BLOCK pings (today only an autopilot stop does).
+  (d) `plugin/crew/commands/review.md`: drop the `notify.sh review` line (a retired caller since
+  T-0060; `test_review_md_legacy_ping_stays_retired` then goes).
+  (e) `plugin/crew/tests/sabotage_notify.py`: the T-0060 rows, one per guard in
+  `plugin/crew/tests/test_crew_notify_blocker.py` (run by hand in PR #363, each red).
+  (f) `docs/diagrams/process-crew-lifecycle.mmd`: the Stop hooks node gains the `stop` call once (a)
+  and (b) land.
+
+- **T-0022 follow-ups (autopilot docs phase and tracker step).** (1) Harness-only PR (T-0087's
+  rule: `plugin/crew/tests/sabotage*.py` is `HARNESS` in `scripts/check-tooling-pr.py`, so it
+  cannot ride with the feature): add `plugin/crew/tests/sabotage_docs.py` with `DOCS_MUTATIONS`
+  (a docs.json reason waives CHANGELOG -> `test_changelog_reason_does_not_waive`; `unknown`
+  read as ok or rerun -> `test_next_docs_unknown_stops_at_once`; docs ordered after review ->
+  `test_next_docs_before_refresh`; tracker `could not update` read as `unchanged` ->
+  `test_tracker_step_could_not_update_stops`, plus the rest run by hand in T-0022's PR body),
+  register it in `plugin/crew/tests/sabotage.py` (the docs code now lives in `crew_autopilot_docs.py`, so its anchors name that file), add
+  `test_every_docs_sabotage_anchor_is_present_exactly_once`, and add `sabotage_docs.py` to the
+  T-0022 rule's paths in `.crew/verify.json`. Unblock: T-0022 merged. (2) ADRs and runbooks are
+  reported `not measured` by `crew_docs_check.py`; measuring them needs a trigger rule (which
+  change owes an ADR) the spec left as `/crew:docs` judgement. Unblock: an owner decision on that
+  rule.
+
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
@@ -63,6 +95,43 @@ be wrong can be closed on evidence.
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
   ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
+  T-0058 (PR #365) appends its own, run by hand on PR #365's branch (each red on its named test;
+  the port onto release/1.2.0 moved the gate to `crew_autopilot_split.py` and `_split_rule` to
+  `crew_autopilot_goal.py`, so the anchors are those files): the jira
+  refusal removed from `ticket_split_policy` (`test_policy_refuses_jira_even_under_self`); the
+  policy re-ask replaced by `policy_at_check` (`test_policy_reasked_at_apply`); the risk rule
+  accepting an unknown risk (`test_policy_refuses_risk_not_low`); the policy's except branch
+  returning allow (`test_policy_crash_refuses_and_apply_writes_nothing`); `_split_rule` outside
+  the could-not-tell boundary (`test_policy_rule_crash_refuses_never_raises[_split_rule]`);
+  `--via autopilot` needing `confirm` (`test_apply_via_autopilot_needs_no_human_turn`) and
+  `--via command` asking the policy (`test_apply_via_command_needs_no_policy`); autopilot
+  skipping the existing-children verification
+  (`test_apply_via_autopilot_refuses_minted_entry_without_provenance`,
+  `test_apply_via_autopilot_refuses_a_stale_child_from_an_edited_proposal`); a closed child
+  row read as open (`test_apply_via_autopilot_remints_a_closed_child`); `apply` not making the
+  record folder (`test_apply_self_files_mode_mints_children`); and in the gate (`crew_autopilot_split.py`,
+  `test_crew_autopilot_split.py`): an unreadable measure, or a plain-bullet acceptance list,
+  read as not fired; an unreadable metrics file counted absent; `answered:` unchecked in the
+  gate or in `split --apply`; an unknown measure ignored by `split --check`/`--apply`
+  (`test_split_check_and_apply_refuse_while_a_measure_is_unknown`); `--check` taking its stage
+  from plan.md's existence instead of the gate's
+  (`test_split_check_uses_the_gate_stage_when_the_plan_fails_validate`); no gate after spec or after plan; a split decision continuing;
+  slices without `parse_slices` continuing; `split-check` becoming a stop; a refused `--apply`
+  not naming `/crew:split`.
+- **T-0059 follow-up (harness PR, T-0087): the PR slices half.** (a) Append T-0059's eight mutations
+  to `SPLIT_MUTATIONS`, each red on its named test (run by hand on PR #366's branch; the port onto
+  release/1.2.0 moved the slice run to `plugin/crew/hooks/scripts/crew_autopilot_slices.py`): the
+  `Base: main` overlap check removed (`test_base_main_with_shared_files_refused`), the contiguity
+  check removed (`test_non_contiguous_slice_refused`), the predecessor-merged check loosened
+  (`test_slice_n_refused_while_n_minus_1_open_under_merge`), `_current_rounds` ignoring slice rows
+  (`test_spent_counts_from_latest_slice_or_successor`), a Step heading after `## PR slices` dropped
+  from the partition (`test_step_heading_after_the_slices_section_is_uncovered`), and glob-vs-glob
+  overlap read as disjoint (`test_base_main_with_two_overlapping_globs_cannot_tell`), a
+  literal-vs-glob pair judged disjoint and a `./` prefix not normalised (both
+  `test_base_main_pair_not_provably_disjoint_refused`). (b)
+  `review_ledger.open_slice` and `_spent` counting the latest slice row (the per-slice budget;
+  `next-slice` refuses until it lands), `review_ledger.summary` carrying `slices`, and
+  `crew_ticket.validate` appending `parse_slices`' problems as `PR slices:`.
 - **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 19
   hand-run mutations listed in `.crew/verify.json`'s T-0039 rule as `GITIGNORE_MUTATIONS` in a new
   `plugin/crew/tests/sabotage_gitignore.py`, imported and concatenated in

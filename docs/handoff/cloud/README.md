@@ -22,6 +22,5 @@ Pick them up in the order below: tickets closest to landing first, then the rest
 | 6 | [T-0500](T-0500.md) - crew init after migrate re-offers phases whose definition changed since marked done, and a | approved | Implement (in progress) | `T-0500-build` | #275 |
 | 7 | [T-0507](T-0507.md) - Refresh the 7 code maps (crew, install-scripts, localgpu, marketplace-registration, obsidi | direction | Direction (seed, not approved) | none | none - not started |
 | 9 | [T-0505](T-0505.md) - PULLED BACK LOCAL 2026-09-30, cloud must not work it - promote-gate judges the main checkout | in-progress (local) | owned by the local lane | `T-0505-promote-gate-cwd` | local lane's PR |
-| 11 | [T-0106](T-0106.md) - crew_autoclear_setup apply-migrate --scan-root finds every repo with autoClear.enabled for | direction | Direction (seed, not approved) | none | none - not started |
 
 Version: bump crew one past whatever version main holds when this ticket lands (main moves; T-0501 #272 and T-0504 #271 both claim 1.0.70, which main now already holds).
