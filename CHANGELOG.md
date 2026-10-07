@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.21: `/crew:graph`, one command for the code graph (L-0667)
+
+- **Summary.** Crew has one command for the code graph: `/crew:graph --status` says in one line
+  whether the graph is current, and `/crew:graph --refresh` runs the refresh this repo sanctions
+  and proves the tracked pair agrees before anyone commits it.
+- **Added.** `plugin/crew/commands/graph.md` and `plugin/crew/hooks/scripts/crew_graph.py`.
+  `status` prints `graph=<fresh|stale|unknown|absent> built_at=<sha|none>
+  pair=<agree|disagree|unknown|untracked> ignore=<covered|uncovered|unknown> command=<line>` and
+  writes nothing. `refresh` stops at the first failure: graphify missing (exit 2), a
+  secrets-denylisted file uncovered (exit 1) or uncertain (exit 2) before anything is built, the
+  graphify line failing (exit 1, its output verbatim), no `built_at_commit` (exit 2), and, where
+  `GRAPH_REPORT.md` is tracked, the report's `## Summary` counts against `graph.json`'s `nodes`
+  and `links` (a mismatch exit 1 with all four numbers; an unreadable side, or a graph with no
+  `links`, exit 2). It never installs, stages or commits.
+- **Changed.** The refresh check's graph artifact names `/crew:graph --refresh` as its `command`
+  and carries the graphify line in a new `runs` field; `/crew:autopilot`'s refresh list, the
+  crew-graph skill (a Refresh section), the README and the guide say so. crew now has 37 commands.
+
 ### Added — crew 1.1.21: the main session is the hub, lanes never ring a peer (L-0637)
 
 - **Summary.** A wave lane can no longer ring another session; it hands a question for another

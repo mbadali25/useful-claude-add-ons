@@ -256,7 +256,7 @@ implement, then refresh, then review, then done.</p>
 <p><code>crew_refresh_check.py --root . --ticket &lt;id&gt;</code> reports each artifact the
 ticket's changes reach as <code>fresh</code>, <code>stale</code> (with the command that refreshes
 it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code> or
-<code>graphify update .</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
+<code>/crew:graph --refresh</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
 commits before review, so the reviewer reads the refreshed files. <code>/crew:done</code>
 runs the same check and refuses anything but <code>fresh</code>. It never refreshes
 anything itself: a write after review would stale the receipt.</p>
