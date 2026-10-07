@@ -615,12 +615,12 @@ CASES = [
     ("a push carries only commits", b_tree, "ship", "look"),
     ('answer("ship", True, order)', b_order, "ship", "look"),
     ("the review receipt no longer stands", b_ship_receipt, "ship", "look"),
-    ("answer(held[0], True, held[1])", b_ship_held, "direction-approval", "direction"),
+    ("answer(held[0], True, held[1], decision=", b_ship_held, "direction-approval", "look"),
     ('answer("folder-elsewhere"', b_folder_elsewhere, "folder-elsewhere", "look"),
     ('answer("brainstorm", True', b_brainstorm, "brainstorm", "direction"),
-    ("index-disagreement: {here} says", b_index_disagreement, "direction-approval", "direction"),
+    ("index-disagreement: {here} says", b_index_disagreement, "direction-approval", "look"),
     ("INDEX.md status is `direction`", b_direction, "direction-approval", "direction"),
-    ("has no table row for {ticket}", b_no_row, "direction-approval", "direction"),
+    ("has no table row for {ticket}", b_no_row, "direction-approval", "look"),
     ("re-driven, whatever spec.md's header says", b_index_closed, "closed", "closed"),
     ("direction is approved: its .work/INDEX.md status is", b_not_approved_direction,
      "direction-approval", "direction"),
@@ -667,7 +667,7 @@ CASES = [
     ("takes no other word", route_no_word, None, None),
     ("reason=NOT_A_TICKET", route_not_ticket, None, None),
     ("reason=refusal", route_focus_refusal, None, None),
-    ("cannot tell whether a gate", g_unknown, "direction-approval", "direction"),
+    ("cannot tell whether a gate (", g_unknown, "direction-approval", "look"),
     ("{where}: nothing left in this ticket", g_header_closed, "closed", "closed"),
     ("answer(word, True", g_hold, "hold", "look"),
     ("'s dependencies: ", g_blocked_unreadable, "blocked", "look"),
@@ -856,3 +856,20 @@ def test_command_reports_the_decision():
             "the decision the owner makes next" in text,
             [shape for shape in crew_autopilot_stops.MECHANICAL
              if f"stop {shape}" in text]) == (True, True, True, [])
+
+
+@pytest.mark.parametrize("status, text, decision", [
+    ("needs-owner", "next: pick the tracker\n", "answer-question"),
+    ("needs-owner", None, "look"),
+    ("landing", None, "look"),
+    ("hold", "reason: vendor\n", "look")])
+def test_the_shared_gate_site_decides_from_its_evidence(tmp_path, status, text, decision):
+    """L-0666 review r1 FIX: one site, several states - a needs-owner stop that
+    cannot tell what is asked is `look`, never a question."""
+    root = _approved(tmp_path, status=status)
+    if text:
+        _write(root / ".work" / "tickets" / T / "next.md", text)
+
+    got = _next(root)
+
+    assert (got["phase"], got["decision"]) == (status, decision), got

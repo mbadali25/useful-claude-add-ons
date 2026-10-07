@@ -17,7 +17,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **decision.** Every stop `next` returns carries `decision`, one of a closed list
   (`crew_autopilot_stops.OWNER_DECISIONS`; `crew_autopilot.py stops --json` lists it as
   `decisions`), and the CLI prints `decision=<id>` before `reason=` on a stop. A stop's command is
-  empty or that decision's own.
+  empty or that decision's own. A stop that cannot tell (no INDEX row, disagreeing rows, a
+  `needs-owner` with nothing asked) is `look`, never a decision it cannot vouch for.
 - **Reworded.** The FINDINGS stop asks only for the owner's accept or reject and names
   `autopilot.reviewPolicy` (it no longer names the refresh check and the next round, T-0043's
   wording); the ticket-mismatch stop names only `crew_ticket.py activate`; an unsettled-artifact

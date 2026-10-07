@@ -137,7 +137,7 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
         why = [p for p in view["problems"] if p.startswith("gate:")]
         return answer("direction-approval", True, f"cannot tell whether a gate ({', '.join(GATES)}, "
                       f"{', '.join(CLOSING)}) holds {ticket}: " + ("; ".join(why) or "unknown")
-                      + " - the human makes .work/INDEX.md say one status for it"), view
+                      + " - the human makes .work/INDEX.md say one status for it", decision="look"), view
     if index_status in GATES:
         word, where = index_status, f".work/INDEX.md marks {ticket} `{index_status}`"
     elif view["gate"] and view["gate_source"] == "header":
@@ -147,16 +147,19 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
     if word in CLOSING:
         return answer("closed", True, f"{where}: nothing left in this ticket"
                       + successor(folder, word, view["next"])), view
+    decision = None
     if word == "hold":
         why = _hold_reason(view)
     elif word == "landing":
         why = "accepted; the land step owns it from here, even with a current receipt"
     else:
-        why = _needs_owner_reason(view, questions())
+        asked = questions()
+        why = _needs_owner_reason(view, asked)
+        decision = None if asked or view["next"]["next"] else "look"  # L-0666: nothing asked is no question
     problems = _next_problems(view)
     if problems:
         why += " (next.md: cannot tell - " + "; ".join(problems) + ")"
-    return answer(word, True, f"{where}: {why}"), view
+    return answer(word, True, f"{where}: {why}", decision=decision), view
 
 
 def ship_hold(top, ticket):
@@ -184,7 +187,9 @@ def before_ship(top, ticket, answer, found):
     if found["stop"]:
         return found
     held = ship_hold(top, ticket)
-    return answer(held[0], True, held[1]) if held else found
+    if not held:
+        return found
+    return answer(held[0], True, held[1], decision="look" if held[0] == "direction-approval" else None)
 
 
 def blocked(view, answer):

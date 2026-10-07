@@ -1011,7 +1011,7 @@ def _phase(root, ticket, policy=True):
         (here, mine), (main, theirs) = row["other"]  # pylint: disable=unpacking-non-sequence
         return answer("direction-approval", True, f"index-disagreement: {here} says "
                       f"`{mine}` and the main checkout's {main} says `{theirs}` for "
-                      f"{ticket} - the human makes them agree")
+                      f"{ticket} - the human makes them agree", decision="look")
     if status == "direction":
         return answer("direction-approval", True, "INDEX.md status is `direction`: "
                       "direction.md waits for the owner's yes in /crew:brainstorm")
@@ -1021,7 +1021,7 @@ def _phase(root, ticket, policy=True):
                       f"direction is approved: {asked} has no table row for {ticket}"
                       + (f" ({row['why']})" if row["why"] else "")
                       + " (Jira and ServiceDesk Plus modes write none). The human adds "
-                      f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
+                      f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed", decision="look")
     if status in INDEX_DONE:
         spec_text = read_text(os.path.join(folder, "spec.md")) if status == "done" else None
         if spec_text is not None and _header_status(spec_text) == "done":
