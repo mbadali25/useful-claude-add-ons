@@ -302,7 +302,7 @@ def default_config():
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
         "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800}},
+                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:
@@ -3759,7 +3759,8 @@ def is_repo_path(dotted):
 
 def repo_widens(dotted, before, after, global_value):
     """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change, plus
-    `widensTo` (the value in force after) for a personal key.
+    `widensTo` (the value in force after) for a personal key, and `inForce`
+    (the inherited machine value) for a repo `null` on a `_RATCHETED` key.
 
     A ratcheted key compares what is IN FORCE before and after, by rank: a
     repo `block` -> `allow` under a machine `allow` widens, and the same edit
@@ -3793,7 +3794,13 @@ def repo_widens(dotted, before, after, global_value):
     if dotted in _RATCHETED:
         rank = _RATCHETED[dotted][0]
         was = before if before is not None else global_value
-        out["widens"] = rank(after) > rank(was)
+        # T-0103: a repo `null` inherits the machine value (`null_means`), so
+        # what takes effect is that value. `inForce` carries it for the `!`
+        # line's note; the printed token stays the written `null`.
+        in_force = after if after is not None else global_value
+        out["widens"] = rank(in_force) > rank(was)
+        if after is None:
+            out["inForce"] = in_force
         return out
     out["widens"] = _consent_widening(dotted, after) and before != after
     return out
@@ -3923,10 +3930,16 @@ def print_changes(changes):
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
         if change["widens"] and (change.get("unset") or "widensTo" in change):
-            granted = change.get("widensTo")
+            # A repo removal on a `_RATCHETED` key carries `inForce` (T-0103).
+            granted = change.get("widensTo", change.get("inForce"))
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
+        elif change["widens"] and "inForce" in change:
+            # T-0103: a repo `null` is described by the value it inherits;
+            # the token stays the written `null`.
+            print(f"  ! {change['path']} widens to `null`: "
+                  + widening_note(change["path"], change["inForce"]))
         elif change["widens"]:
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(change['after']).strip(chr(34))}`: "

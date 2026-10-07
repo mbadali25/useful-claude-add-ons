@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.10**: The Stop gate health and QA audit readers move to `crew_health.py` (G2 landing). No behaviour change: two readers move out of `crew_state.py` so it stays under its 3,400-line pylint cap now that G0, G7 and G2 meet in it.
-- **crew 1.1.10**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
+- **crew 1.1.11**: `/crew:migrate` finds the other repos that opted in to auto-clear. When migrating finds auto-clear armed in every repo, it can now look under a folder you name for the other repos that opted in, and propose them too, instead of leaving you to search the disk by hand.
+- **crew 1.1.11**: Config delete names the backup after an OS error; a repo `null` that widens is marked. Deleting a repo's crew config no longer says the file was "left in place" when it had already been moved to the backup, and setting a repo value to `null` that inherits a wider machine value now shows the widening warning.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

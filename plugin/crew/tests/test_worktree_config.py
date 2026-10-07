@@ -199,7 +199,9 @@ LABELS = {".crew/config.json", ".crew/crew.json"}
 # variable joins that are not config reads are listed here by name.
 ALLOWED = {
     "crew_platform.py": (1, "the writer: CONFIG_PATH, which never follows the main checkout"),
-    "crew_autoclear_setup.py": (2, "the writer: converts the worktree's own two files"),
+    # crew_autoclear_setup.py: the writer's own two files, plus the T-0106
+    # --scan-root walk, which reads (never writes) each candidate's two files.
+    "crew_autoclear_setup.py": (3, "the writer's own two files, the read-only scan"),
     "crew_migrate.py": (9, "the writer and its labels, plus the PM journal archive join; T-0038 "
                         "adds CONFIG_REL, the upgrade stage's own in-place target, and the "
                         "re-run's read of the crew.json it wrote"),

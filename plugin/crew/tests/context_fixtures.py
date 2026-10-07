@@ -18,6 +18,9 @@ STUB_CLI = textwrap.dedent('''\
     if mode == "exit":
         print("usage: vault_ops.py: invalid choice: 'recall'", file=sys.stderr)
         sys.exit(2)
+    if mode == "noproject" and any(a.startswith("--project") for a in args):
+        print("usage: vault_ops.py: unrecognized arguments: --project", file=sys.stderr)
+        sys.exit(2)
     if mode == "badjson":
         print("not json at all")
         sys.exit(0)

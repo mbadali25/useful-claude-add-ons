@@ -201,6 +201,10 @@ KEY_META = {
     "memory.recall.maxChars": _row("Recall output budget; a non-positive or non-integer "
                                    "value reads as 800.", "type", since="1.0.25",
                                    source=_S + "crew_recall.py", type_="positive integer"),
+    "memory.recall.projects": _unv("Project names sent to vault recall as `--project` so this "
+                                   "repo's notes rank first; empty sends the main checkout's "
+                                   "directory name.", "1.1.11", _S + "crew_recall.py",
+                                   "list of project names"),
     "verifyGate": _unv("Run the Stop verify gate.", FIRST, _S + "verify-gate.sh",
                        "boolean"),
     # --- context

@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>149 keys</strong>: 87 settable in the machine-global file, 62 repo-only.</p>
+<p><strong>150 keys</strong>: 87 settable in the machine-global file, 63 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -660,6 +660,14 @@ the plugin.</p>
 <td>positive integer (coerced in <code>plugin/crew/hooks/scripts/crew_recall.py</code>)</td>
 <td>1.0.25</td>
 <td>Recall output budget; a non-positive or non-integer value reads as 800.</td>
+</tr>
+<tr>
+<td><code>memory.recall.projects</code></td>
+<td>repo</td>
+<td><code>[]</code></td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_recall.py</code> (expects list of project names)</td>
+<td>1.1.11</td>
+<td>Project names sent to vault recall as <code>--project</code> so this repo's notes rank first; empty sends the main checkout's directory name.</td>
 </tr>
 </tbody>
 </table>

@@ -9,6 +9,45 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.1.11: `/crew:migrate` finds the other repos that opted in to auto-clear
+
+- **Summary.** When migrating finds auto-clear armed in every repo, it can now look under a folder
+  you name for the other repos that opted in, and propose them too, instead of leaving you to search
+  the disk by hand.
+- **crew `crew_autoclear_setup.py` (T-0106).** `apply-migrate --scan-root <dir>` (repeatable,
+  `--scan-depth <n>`, default 3) walks each folder read-only and adds every repo whose
+  `.crew/config.json` or `.crew/crew.json` still says `context.autoClear.enabled: true` to
+  `proposedOnlyRepos`; a repo it cannot read is listed in `widening.scan.unreadable`, never counted
+  as "not opted in". Repos outside the folders, and repos an earlier migration already converted,
+  cannot be found.
+- **Behaviour change.** `apply-migrate --yes-widen` now exits 1 and writes nothing instead of
+  writing `onlyRepos: []` (which turns auto-clear off in every repo), and also refuses while a
+  scanned repo could not be read. Every `apply-migrate` note now starts with its file
+  (`.crew/config.json: ` or `.crew/crew.json: `).
+
+### Fixed — crew 1.1.11: config delete names the backup after an OS error; a repo `null` that widens is marked
+
+- **Summary.** Deleting a repo's crew config no longer says the file was "left in place" when it had
+  already been moved to the backup, and setting a repo value to `null` that inherits a wider machine
+  value now shows the widening warning.
+- **crew `crew_config_menu.py` (T-0103).** `delete-repo --apply` tells where the file is after an OS
+  error: before the move it exits 2 naming what failed, without "could not be moved to a backup";
+  from the move on it exits 1 and names where the file is (both paths when it cannot tell), or 2 when
+  the file is back at its path. A failed move back names where the changed file is.
+- **crew `crew_config.py`.** A repo `null` on a ratcheted key (`pm.authority` and the other
+  `_RATCHETED` keys) is ranked by the machine value it inherits, so a widening is marked and its note
+  describes that value.
+
+### Added — crew 1.1.11: vault recall ranks this repo's notes first
+
+- **Summary.** crew now tells obsidian-vault which project a session is in, so recalled notes about
+  this repository come before other projects' notes; an older obsidian-vault still works as before.
+- **crew `crew_recall.py` (L-0675).** Each recall sends `--project=<names>`: the repo's new
+  repo-only key `memory.recall.projects`, or the main checkout's folder name (a linked worktree
+  reports the main checkout). A name with a comma or a control character is dropped. A CLI that
+  exits 2 on the option is asked once more without it, inside the same 4-second budget; no other
+  failure is retried. The context log's `recall` record gains `project` and `projectUsed`.
+
 ### Changed — `crew` 1.1.10: the Stop gate health and QA audit readers move to `crew_health.py` (G2 landing)
 
 - **Summary.** No behaviour change: two readers move out of `crew_state.py` so it stays under its
