@@ -1690,6 +1690,30 @@ the plugin.</p>
 <td>Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning.</td>
 </tr>
 <tr>
+<td><code>autopilot.ship</code></td>
+<td>repo</td>
+<td><code>"merge"</code></td>
+<td><code>pr</code> | <code>merge</code></td>
+<td>1.0.349</td>
+<td>After <code>/crew:done</code>: <code>pr</code> pushes and opens the PR; <code>merge</code> also merges it (a merge commit) once the required checks allow. Anything else reads as <code>pr</code>, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.knownFailures</code></td>
+<td>repo</td>
+<td><code>[]</code></td>
+<td>list of check names (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>1.0.349</td>
+<td>Required checks whose <code>fail</code> does not block a merge, matched by exact name; anything but a list of strings reads as <code>[]</code>, with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.ciTimeoutMinutes</code></td>
+<td>repo</td>
+<td><code>60</code></td>
+<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
+<td>1.0.349</td>
+<td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
+</tr>
+<tr>
 <td><code>autopilot.sleep.schedule</code></td>
 <td>repo</td>
 <td><code>null</code></td>
@@ -1720,30 +1744,6 @@ the plugin.</p>
 <td><code>null</code> | <code>nonprod</code> | <code>none</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
 <td>1.1.24</td>
 <td><code>autopilot.deploy</code> inside the sleep window (L-0654): null keeps the day value, <code>nonprod</code> or <code>none</code> replaces it; anything else, <code>all</code> included, is refused with a warning. Asleep, an effective <code>all</code> reads as <code>nonprod</code>: production never runs unattended asleep.</td>
-</tr>
-<tr>
-<td><code>autopilot.ship</code></td>
-<td>repo</td>
-<td><code>"merge"</code></td>
-<td><code>pr</code> | <code>merge</code></td>
-<td>1.0.349</td>
-<td>After <code>/crew:done</code>: <code>pr</code> pushes and opens the PR; <code>merge</code> also merges it (a merge commit) once the required checks allow. Anything else reads as <code>pr</code>, with a warning.</td>
-</tr>
-<tr>
-<td><code>autopilot.knownFailures</code></td>
-<td>repo</td>
-<td><code>[]</code></td>
-<td>list of check names (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.349</td>
-<td>Required checks whose <code>fail</code> does not block a merge, matched by exact name; anything but a list of strings reads as <code>[]</code>, with a warning.</td>
-</tr>
-<tr>
-<td><code>autopilot.ciTimeoutMinutes</code></td>
-<td>repo</td>
-<td><code>60</code></td>
-<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.349</td>
-<td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.maxTicketsPerRun</code></td>
@@ -1827,7 +1827,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>profile name, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.2</td>
+<td>1.1.12</td>
 <td>The AWS profile an unattended run exports credentials from (<code>aws configure export-credentials</code>); it must yield temporary credentials. Machine file only.</td>
 </tr>
 <tr>
@@ -1835,7 +1835,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>ARN prefix ending in <code>/</code>, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.2</td>
+<td>1.1.12</td>
 <td>The assumed-role ARN prefix STS must report for that profile, ending in <code>/</code>; null refuses every launch. Machine file only.</td>
 </tr>
 <tr>
@@ -1843,7 +1843,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>region, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.2</td>
+<td>1.1.12</td>
 <td>The AWS region the unattended run gets; null is <code>us-east-1</code>. Machine file only.</td>
 </tr>
 <tr>
@@ -1851,7 +1851,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>{}</code></td>
 <td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.2</td>
+<td>1.1.12</td>
 <td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
 </tr>
 </tbody>

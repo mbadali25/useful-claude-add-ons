@@ -942,13 +942,13 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
 | `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
 | `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
+| `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
+| `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
+| `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
 | `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.sleep.deploy` | repo | `null` \| `nonprod` \| `none` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
-| `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
-| `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
-| `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
 | `autopilot.maxTicketsPerRun` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `3` |
 | `autopilot.maxTokensPerSession` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `2000000` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |

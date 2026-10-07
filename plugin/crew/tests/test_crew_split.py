@@ -1805,6 +1805,18 @@ def test_slices_carry_each_slices_files():
     assert slices[1]["files"] == ["src/s3.py", "src/s4.py"]
 
 
+@pytest.mark.parametrize("extra, field", [
+    ("Base: slice 1\n", "Base"), ("Steps: 3\n", "Steps"), ("base: main\n", "Base")],
+    ids=["two-bases", "two-step-lists", "same-base-twice-any-case"])
+def test_slice_field_given_twice_refused(extra, field):
+    """Group review (G2) FIX: two Base: or Steps: lines are two instructions
+    for one slice; the first is never silently kept."""
+    second = "### Slice 2: part 2\nSteps: 3-5\nBase: main\n" + extra + "\n"
+    _, problems = crew_split.parse_slices(_plan_with_slices(_slice(1, "1, 2") + second))
+
+    assert f"slice 2: {field}: given more than once" in problems, problems
+
+
 def test_step_in_two_slices_refused():
     _, problems = crew_split.parse_slices(_plan_with_slices(
         _slice(1, "1, 2, 3") + _slice(2, "3, 4, 5")))
