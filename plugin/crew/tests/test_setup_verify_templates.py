@@ -18,6 +18,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 
 import pytest
@@ -317,6 +318,9 @@ def test_smoke_tail_survives_the_verify_gate_filter(tmp_path):
     assert any("the cause" in ln for ln in relayed), relayed
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="POSIX signals: on Windows Popen.send_signal(SIGTERM) is "
+                           "TerminateProcess, which no bash trap can observe")
 @pytest.mark.parametrize("runner", ["run-all", "smoke"])
 def test_an_interrupted_runner_leaves_no_capture_file(tmp_path, runner):
     repo, env = _repo(tmp_path)
