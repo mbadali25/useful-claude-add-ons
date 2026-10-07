@@ -71,6 +71,20 @@ def test_ring_in_a_lane_is_refused(tmp_path, capsys, monkeypatch):
     assert git(root, "ls-remote", "origin", f"refs/heads/crew-coord/{CHANNEL}").split()[0] == tip
 
 
+def test_ring_in_a_lane_of_a_wave_started_from_a_linked_worktree_is_refused(tmp_path, capsys,
+                                                                            monkeypatch):
+    """L-0637 review round 4: `start` writes the lane files in the worktree the
+    main session runs in, which may be a linked one; the primary checkout then
+    holds no marker, and the lane is still a lane."""
+    root, lane, tip = _hub(tmp_path)
+    hub = tmp_path / "hub"
+    git(root, "worktree", "add", "-q", "-b", "hub", str(hub))
+    shutil.move(str(root / ".work" / "autopilot"), str(hub / ".work" / "autopilot"))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "lane-session")
+    assert run(lane, ["ring"], capsys) == (1, [REFUSAL])
+    assert run(hub, ["ring"], capsys) == (0, [bell(tip)])
+
+
 def test_ring_where_the_lane_marker_is_corrupt_is_unknown(tmp_path, capsys):
     root, lane, _ = _hub(tmp_path)
     _lane_file(root).write_text("{not json", encoding="utf-8")

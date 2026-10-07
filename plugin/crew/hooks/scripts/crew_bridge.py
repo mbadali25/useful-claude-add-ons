@@ -161,15 +161,29 @@ def _present(path):
 
 def lane_state(top):
     """('main' | 'lane' | 'not-lane' | 'unknown', why): whether `top` is a wave
-    lane by T-0029's marker. Anything that cannot be read is 'unknown'."""
+    lane by T-0029's marker. Anything that cannot be read is 'unknown'.
+
+    `crew_wave.start` writes the lane files in the worktree the main session
+    starts the wave from, which may be a linked worktree, not the primary
+    checkout (group review, L-0637 round 4), so every worktree git lists is
+    searched for a lane file naming this one."""
     import crew_wave  # pylint: disable=import-outside-toplevel
     trees = crew_wave.worktrees(top)
     if not trees:
         return "unknown", "git could not list this repository's worktrees"
-    main = next(iter(trees))
     here = os.path.normcase(os.path.realpath(top))
-    if here == os.path.normcase(main):
+    if here == os.path.normcase(next(iter(trees))):
         return "main", ""
+    for tree in trees:
+        state, why = _lane_in(crew_wave, tree, here)
+        if state != "not-lane":
+            return state, why
+    return "not-lane", ""
+
+
+def _lane_in(crew_wave, main, here):
+    """lane_state's question asked of the wave lane files under one worktree
+    `main`: 'lane', 'not-lane' or 'unknown'."""
     autopilot = os.path.join(main, ".work", "autopilot")
     present = _present(autopilot)
     if present is None:
