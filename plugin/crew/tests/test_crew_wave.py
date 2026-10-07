@@ -733,6 +733,23 @@ def test_start_refuses_a_corrupt_start_record_and_leaves_it(tmp_path):
     assert (got.returncode, "unreadable" in got.stderr, kept) == (1, True, "{broken")
 
 
+@pytest.mark.parametrize("text", ["{}", '{"lanes": null}', '{"lanes": "T-1"}'])
+def test_start_refuses_a_start_record_without_its_lanes_and_relaunches_nothing(tmp_path, text):
+    # Group review r2 (rush g0): `{}` read as "never started", so a lane whose file was gone
+    # was recreated and launched again although its outcome was unknown.
+    root = _started(tmp_path)
+    os.remove(crew_wave.lane_path(str(root), "s", "T-1"))
+    path = crew_wave.start_path(str(root), "s")
+    _write(path, text)
+
+    got = _cli("start", "--root", root, "--set", "s")
+
+    with open(path, encoding="utf-8") as handle:
+        kept = handle.read()
+    assert (got.returncode, "unreadable" in got.stderr, "launch T-1" in got.stdout, kept,
+            _lane(root, "T-1")[1]) == (1, True, False, text, "missing")
+
+
 def _receipts(root, value):
     path = crew_wave.start_path(str(root), "s")
     with open(path, encoding="utf-8") as handle:
