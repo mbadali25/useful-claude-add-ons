@@ -228,6 +228,7 @@
                 "plugin/crew/hooks/scripts/crew_platform.py",
                 "plugin/crew/hooks/scripts/hook_once.py",
                 "plugin/crew/hooks/scripts/crew_freshness.py",
+                "plugin/crew/hooks/scripts/crew_health.py",
                 "plugin/crew/tests/test_crew_state.py",
                 "plugin/crew/tests/test_module_split.py",
                 "plugin/crew/tests/test_docs_routing.py",

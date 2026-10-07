@@ -65,6 +65,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Resume.** `route` takes `--goal <slug>` and `run --goal <slug>`; `resume_target(goal=)` and a handoff's `resume: /crew:autopilot --goal <slug>` line answer the goal's next ticket; `status` shows that line as usable. The "arrives with L-0541" stops are gone.
 - **Not in this change (harness follow-up, T-0087).** Sabotage entries for the picker, the caps and the per-ticket approval (`plugin/crew/tests/sabotage*.py`); the `armed = mode == "plan"` line stays because a shipped mutation anchors on it.
 - **Tests.** `test_crew_autopilot_goals.py` (mint, picker, caps, transcript could-not-tell, resume), `test_crew_autopilot_policy.py::test_backlog_grants_nothing_plan_does_not`, `test_crew_metrics.py::test_transcript_tokens_fields_sums_only_those`; leaf count 145.
+### Changed — `crew` 1.1.8: the Stop gate health and QA audit readers move to `crew_health.py` (G2 landing)
+
+- **Summary.** No behaviour change: two readers move out of `crew_state.py` so it stays under its
+  3,400-line pylint cap now that G0, G7 and G2 meet in it.
+- **What changed.** `read_verify_health`, `read_qa_audit`, `VERIFY_MARKER_STALE_COMMITS`,
+  `QA_AUDIT_STAMP` and `QA_AUDIT_PATHS` move unchanged to the new
+  `plugin/crew/hooks/scripts/crew_health.py`; `crew_state` re-exports all five, so every
+  `crew_state.<name>` caller is unchanged, and `test_module_split.py` holds the re-exports to the
+  objects `crew_health` defines. `crew_state.py` goes from 3,405 lines to 3,309, with no pylint
+  disable. `.crew/verify.json`'s crew_state rule maps the new file.
 
 ### Added — `crew` 1.1.8: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
 
