@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**151 keys**: 87 settable in the machine-global file, 64 repo-only.
+**153 keys**: 87 settable in the machine-global file, 66 repo-only.
 
 Columns:
 
@@ -391,6 +391,8 @@ Columns:
 | `autopilot.sleep.notifyHold` | repo | `null` | `null` \| `true` (checked in `plugin/crew/hooks/scripts/crew_notify_hold.py`) | 1.1.16 | Inside the sleep window (L-0656): `true` holds the pings that only ask for attention (questions, Approval waiting, Review out of rounds) and counts them; the morning summary carries the count. A failure (a deploy result, a refused Stop gate, a stalled lane) is never held. Only while armed and asleep by the schedule (a manual sleep outside it holds nothing); anything but null or true holds nothing, with a warning. |
 | `autopilot.maxTicketsPerRun` | repo | `3` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.16 | Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning. |
 | `autopilot.maxTokensPerSession` | repo | `2000000` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.16 | Input plus output tokens one goal session may spend before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning. |
+| `autopilot.maxLanes` | repo | `null` | positive integer or null (checked in `plugin/crew/hooks/scripts/crew_wave.py`) | 1.1.6 | Lanes one `/crew:autopilot wave` runs at once; null is the resolved `pm.maxDispatches`, a larger value is capped to it and anything but a positive integer reads as it, each with a warning. |
+| `autopilot.reviewPolicy` | repo | `"stop"` | `stop` \| `clean-only` \| `fix-and-rereview` | 1.1.6 | What a wave lane does with its review verdict: `stop` ends at the first verdict, `clean-only` takes a CLEAN round on to the done checks, `fix-and-rereview` fixes within the ledger's rounds. Anything else reads as `stop`, with a warning; no setting lets a lane accept a review. |
 
 ### `tickets`
 
@@ -408,10 +410,10 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.12 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
-| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.12 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
-| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.12 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
-| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.12 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
+| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
+| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 
@@ -423,13 +425,6 @@ Keys from approved tickets that have not landed. Each moves into the table above
 |---|---|---|---|---|---|
 | `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
 | `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
-
-### T-0029
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `autopilot.maxLanes` | new key | repo | the resolved pm.maxDispatches |  | Parallel lanes one autopilot wave may run; may only lower the limit. |
-| `autopilot.reviewPolicy` | new key | repo | stop | `stop` \| `clean-only` \| `fix-and-rereview` | What a lane does with review findings. |
 
 ### T-0030
 

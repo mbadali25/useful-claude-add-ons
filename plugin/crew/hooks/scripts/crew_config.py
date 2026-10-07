@@ -405,7 +405,8 @@ def default_config():
         # the machine-global file too, combined per key (the stricter of the
         # layers that set it wins; a silent layer imposes nothing).
         # `maxAutoReplans`, `sleep` and T-0011's `ship`, `knownFailures` and
-        # `ciTimeoutMinutes` are `crew_state.REPO_ONLY_AUTOPILOT`.
+        # `ciTimeoutMinutes`, and T-0029's `maxLanes` and `reviewPolicy`, are
+        # `crew_state.REPO_ONLY_AUTOPILOT`.
         # This block is the defaults layer and the prune shape;
         # `template_config` omits the personal keys, so a new repo's file
         # does not shadow the owner's global values. A key added here without
@@ -2210,10 +2211,9 @@ def inspect_global(root, path=None):
 # `(effect, ticket)`. A key-level entry goes dead, and stays harmless, once
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
+# T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
+# defaults, so their rows went with it.
 INERT_PENDING = {
-    "autopilot.reviewPolicy": ("would choose what autopilot does with review findings",
-                               "T-0029"),
-    "autopilot.maxLanes": ("would cap how many tickets autopilot runs at once", "T-0029"),
     ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
                                       "dispatches a deploy yet", "T-0045"),
     ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "

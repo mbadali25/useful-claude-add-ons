@@ -754,7 +754,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 151 keys are settable in the machine-global file (generated; 64 are repo-only, section 11).
+87 of 153 keys are settable in the machine-global file (generated; 66 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -882,7 +882,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-64 of 151 keys are repo-only (generated; 87 are global-settable, section 10).
+66 of 153 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -952,6 +952,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.sleep.notifyHold` | repo | `null` \| `true` (checked in `hooks/scripts/crew_notify_hold.py`) | `null` |
 | `autopilot.maxTicketsPerRun` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `3` |
 | `autopilot.maxTokensPerSession` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `2000000` |
+| `autopilot.maxLanes` | repo | positive integer or null (checked in `hooks/scripts/crew_wave.py`) | `null` |
+| `autopilot.reviewPolicy` | repo | `stop` \| `clean-only` \| `fix-and-rereview` | `"stop"` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2976,6 +2978,8 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 | `autopilot.maxTicketsPerRun` | `3` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Tickets one goal run (one session, recorded in the goal file's `runs`) may start; the next stops the run with its `resume: /crew:autopilot --goal <slug>` line. Anything but a positive integer reads as `3`, with a warning. Repo only. |
 | `autopilot.maxTokensPerSession` | `2000000` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Input + output tokens this session's transcript may hold before a goal run stops (cache tokens are not counted). A transcript that is not found, or a line that does not parse, stops as could-not-tell. Anything but a positive integer reads as `2000000`, with a warning. Repo only. |
+| `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010

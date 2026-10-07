@@ -231,7 +231,9 @@
       "notifyHold": null
     },
     "maxTicketsPerRun": 3,
-    "maxTokensPerSession": 2000000
+    "maxTokensPerSession": 2000000,
+    "maxLanes": null,
+    "reviewPolicy": "stop"
   },
   "tickets": {
     "baseBranch": null

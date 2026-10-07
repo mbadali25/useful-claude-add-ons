@@ -1270,7 +1270,8 @@ def test_autopilot_defaults_are_the_config_block():
         "sleep": {"schedule": None, "approval": None, "questions": None,
                   "deploy": None, "notifyHold": None},  # L-0654, L-0656
         "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
-        "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000}  # L-0541's caps
+        "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,  # L-0541's caps
+        "maxLanes": None, "reviewPolicy": "stop"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1696,19 +1697,19 @@ def _inert(got):
 
 def test_settings_warns_on_inert_autopilot_keys(tmp_path):
     root = make_repo(tmp_path, mode="off")
-    _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3})
+    # T-0029 landed `maxLanes` and `reviewPolicy` (crew 1.1.6): set, they stay quiet.
+    # L-0541 landed `maxTicketsPerRun` (rush G6b): set, it stays quiet too.
+    _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3,
+                   "maxTicketsPerRun": 50, "laterKnob": 50})
 
     got = crew_autopilot.settings(str(root))
 
-    assert [w.split(" - ")[0] for w in _inert(got)] == [
-        "inert: autopilot.maxLanes=3 (T-0029)",
-        "inert: autopilot.reviewPolicy=fix-and-rereview (T-0029)"]
+    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.laterKnob=50 (unknown key)"]
     done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
                           capture_output=True, text=True, check=False)
     lines = done.stdout.splitlines()
     assert lines[0].startswith("mode=plan")
-    assert "warning: inert: autopilot.reviewPolicy=fix-and-rereview (T-0029) - would choose " \
-           "what autopilot does with review findings" in lines
+    assert [line for line in lines if line.startswith("warning: inert: autopilot.laterKnob=50")]
 
 
 def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
@@ -1716,7 +1717,7 @@ def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
     # `inert_items` reaches fails, the run still gets its settings and the
     # warning says the inert keys could not be told.
     root = make_repo(tmp_path, mode="off")
-    _config(root, {"mode": "plan", "maxLanes": 3})
+    _config(root, {"mode": "plan", "laterKnob": 3})
     monkeypatch.setitem(sys.modules, "completion_audit", None)
 
     got = crew_autopilot.settings(str(root))

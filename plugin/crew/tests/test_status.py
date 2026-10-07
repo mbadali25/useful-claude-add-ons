@@ -498,9 +498,9 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
 # --- T-0070: inert settings, and the approvals that actually need you -------
 
 def test_status_names_inert_settings(tmp_path):
-    root = make_repo(tmp_path, config={"autopilot": {"maxLanes": 3}})
+    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
     lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
-    assert lines == ["inert    autopilot.maxLanes=3 (T-0029)"]
+    assert lines == ["inert    autopilot.maxTicketsPerRun=3 (L-0541)"]
 
 
 def test_status_is_quiet_without_inert_settings(tmp_path):

@@ -82,6 +82,8 @@ mutation that reintroduces the bug and turns the suite red. After fixing a guard
 neighbouring case before closing it: in this repo, the next defect was there every time it was
 measured.
 
+Code-level standard: GEN-04 (crew-standards); this rule is its process form.
+
 ## R11 — Each repo carries a steward skill for its PR loop [audited]
 
 `.claude/skills/steward/SKILL.md` holds what an agent driving a PR to green needs in **this**
@@ -99,6 +101,8 @@ Every PR body, written by a person or an agent, carries four sections:
 | Measured | Each number with its ref and the machine it was measured on (a number without them can only be believed) |
 | Verification | Which suites ran, with counts; which sabotage runs went red |
 | Not verified | Every suite skipped, every environment not run (Windows, a missing tool), every heuristic |
+
+Code-level standard: GEN-12 (crew-standards), the evidence this report states.
 
 - **Why.** A reviewer reads "Not verified" first. A PR that omits it reads as fully checked,
   which is the unknown-as-pass failure again, at the level of the whole change.

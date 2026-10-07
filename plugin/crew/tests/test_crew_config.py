@@ -418,7 +418,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "autopilot.sleep.deploy" in declared
     # 147 with L-0656's `autopilot.sleep.notifyHold`, measured the same way.
     assert "autopilot.sleep.notifyHold" in declared
-    assert len(declared) == 147
+    # 149 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
+    # (/crew:autopilot wave), after merging G2 with release/1.2.0 (G0).
+    assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
+    assert len(declared) == 149
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

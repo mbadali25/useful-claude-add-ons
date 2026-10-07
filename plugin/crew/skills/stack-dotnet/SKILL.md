@@ -23,7 +23,8 @@ SDK-style target (`netcoreapp*`, `net5.0`+, `netstandard*`) uses the modern-.NET
   for a reason; capturing one in a singleton or a hosted service that resolves at construction
   produces cross-request data and concurrency exceptions that never show in a single-request test.
 - **`async void` is unobservable** - the exception cannot be caught by the caller and usually
-  kills the process. `.Result`/`.Wait()` deadlock wherever a context is captured.
+  kills the process. `.Result`/`.Wait()` deadlock wherever a context is captured
+  (candidate DOTNET-P1).
 - **A `CancellationToken` accepted and not passed on is worse than none** - it advertises
   cancellation the call chain does not honour. Thread it through every async call, EF Core
   included.
@@ -34,8 +35,20 @@ SDK-style target (`netcoreapp*`, `net5.0`+, `netstandard*`) uses the modern-.NET
   sent - `IEnumerable` vs `IQueryable` decides where the work happens.
 - **`HttpClient`**: a new instance per call exhausts sockets; a static one held forever pins
   connections past a DNS change. `IHttpClientFactory`, or a long-lived client with
-  `PooledConnectionLifetime` set - pick one and say which the repo already uses.
+  `PooledConnectionLifetime` set - pick one and say which the repo already uses (candidate
+  DOTNET-P2).
 - **A connection string in a committed `appsettings.json` is a finding**, not a convenience.
+
+## Standards
+
+No gated .NET standards set ships yet (L-0535). The spec's three rules at the bar
+(DOTNET-08, -13 and -15) rest on the owner's research, which this build did not have, and
+public change sets do not count (owner, 2026-10-05). The candidates, with their sources,
+and the conventions are in `references/candidates.md`. They are guidance, not rows of the
+self-check. Defaults: new test projects use xUnit + NSubstitute + FluentAssertions, and an
+existing project keeps its framework until the owner approves a switch. Expected failures
+return the repository's own `Result<TValue, TError>` or a closed outcome enum; no package
+is mandated.
 
 ## .NET Framework 4.8 (legacy)
 

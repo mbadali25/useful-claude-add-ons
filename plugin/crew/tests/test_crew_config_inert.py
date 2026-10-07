@@ -23,11 +23,11 @@ from test_crew_config import _TEMPLATE_PATH, _global
 # pins to the template), plus `INERT_PENDING`'s value-level entries, plus every
 # path the global filter drops. `autopilot.approval: self` (the incident) landed in
 # T-0010, so it is must-stay-quiet now, and so is `autopilot.ship` since T-0011 landed;
-# `autopilot.maxLanes` (T-0029) carries must-warn.
+# T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy`, so they are
+# must-stay-quiet too, and so are L-0541's `maxTicketsPerRun` and `mode: backlog` (rush G6b).
 
 _INERT_CASES = [
-    ("autopilot.reviewPolicy", "fix-and-rereview", "T-0029"),
-    ("autopilot.maxLanes", 3, "T-0029"), ("autopilot.deploy", "nonprod", "T-0045"),
+    ("autopilot.deploy", "nonprod", "T-0045"),
     ("autopilot.deploy", "all", "T-0045")]
 
 
@@ -117,10 +117,12 @@ def test_an_implemented_value_is_quiet(tmp_path, dotted, value):
 
 
 def test_a_key_entering_the_defaults_goes_quiet(tmp_path, monkeypatch):
-    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"maxLanes": 3}}, git=False)
-    assert [e["key"] for e in crew_config.inert_settings(str(root))] == ["autopilot.maxLanes"]
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}},
+                                   git=False)
+    assert [e["key"] for e in crew_config.inert_settings(str(root))] == [
+        "autopilot.laterKnob"]
     monkeypatch.setattr(crew_state, "AUTOPILOT_DEFAULTS",
-                        dict(crew_state.AUTOPILOT_DEFAULTS, maxLanes=1))
+                        dict(crew_state.AUTOPILOT_DEFAULTS, laterKnob=1))
     assert crew_config.inert_settings(str(root)) == []
 
 
@@ -226,12 +228,12 @@ def test_the_inert_cli_prints_the_line_or_none(tmp_path, capsys):
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     assert crew_config.main(["--root", str(root), "--inert"]) == 0
     assert capsys.readouterr().out.strip() == "inert settings: none"
-    (root / ".crew" / "config.json").write_text(json.dumps({"autopilot": {"maxLanes": 3}}),
+    (root / ".crew" / "config.json").write_text(json.dumps({"autopilot": {"deploy": "nonprod"}}),
                                                  encoding="utf-8")
     assert crew_config.main(["--root", str(root), "--inert"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("Inert settings (crew ")
-    assert "autopilot.maxLanes=3 (T-0029)" in out
+    assert "autopilot.deploy=nonprod (T-0045)" in out
 
 
 # A key and a value come from a file the user (or a cloned repo) wrote, and the line reaches a
