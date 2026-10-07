@@ -136,7 +136,34 @@ null `tokenEnv` / `chatId` - read-only, never the provider. Its example chat id
 |---|---|---|---|
 | `deploy` | Every `/crew:promote` result | `Promotion passed` / `Deploy FAILED` / `Promotion outcome unknown` | all but a pass |
 | `question` | Claude Code stopped and is waiting on you (the `Notification` hook) | `Question` / `Needs permission` | yes |
-| `blocker` | Reserved until T-0060: accepted here, sends nothing | - | - |
+| `blocker` | Work stopped and only you can move it (T-0060): the four reasons below | `Approval waiting` / `Review out of rounds` / `Lane stalled` / `Lane state unknown` / `Stop gate refused` (not wired yet) (`Blocked` with no kind) | yes |
+
+**Blocker reasons.** Each has its own subject, so the line says what happened
+before the repo and branch:
+
+- `Approval waiting` - `/crew:autopilot` stopped at `approve` (a stale receipt
+  included): `plan waiting on approval -> /crew:approve <id>`.
+- `Review out of rounds` - autopilot stopped at `accept-review` or `replan`
+  with the review budget spent and the latest round carrying a BLOCK:
+  `out of review rounds, <n> BLOCK open -> /crew:plan <id>`.
+- `Lane stalled` - autopilot's in-flight check reads another runner's marker
+  as `stale` (a dead pid, or no heartbeat inside T-0049's TTL), naming the
+  runner, `since`, and the owner's `clear` command. `Lane state unknown` when
+  `holds()` answers `unknown` or cannot run: the chat gets a fixed category
+  (`marker unreadable`, `lock held`, `heartbeat in the future`, `could not read
+  state`), never a path or an error text; `/crew:status` prints the detail. A `live`
+  holder, or one driving the ticket from another checkout (`elsewhere`), is
+  work in progress and sends nothing. No timer: it fires only when autopilot
+  checks, and needs T-0049's in-flight markers.
+- `Stop gate refused` (not wired yet) - the verify gate or the completion audit refuses the
+  same ticket at Stop twice in a row (one Stop seen by both Windows flavours
+  counts once; a pass in between resets it). `crew_notify.py stop` records
+  it; the two gates' calls to it land in a harness-only change.
+
+Autopilot's report runs `crew_notify.py run-stop` once at every stop; the
+decision of which stop pings is that tested code, not prose. A new episode is
+not deduped as the old one: approval is keyed on the plan's hash, out-of-rounds
+on the round number, and a refusal streak on its first refusal.
 
 **Question types.** `permission_prompt`, `worker_permission_prompt`,
 `elicitation_dialog`, `elicitation_url_dialog` and `agent_needs_input`, or the
@@ -163,10 +190,11 @@ so a failed send is retried next time rather than lost.
 
 **Retired.** The per-phase, per-review and per-ticket pings are gone. An old
 config's `events` still works: `gate` reads as `deploy`, `waiting` as
-`question`, and `phase`, `review` and `done` as the reserved `blocker` - each
-with a one-line notice, never a silent drop. `/crew:review` still carries its
-`notify.sh review` line until a harness-only change removes it; it maps to
-`blocker` and sends nothing.
+`question`, and `phase`, `review` and `done` as `blocker` - each
+with a one-line notice, never a silent drop. A send under one of those three
+old names is a retired caller and sends nothing: `/crew:review` still carries
+its `notify.sh review` line until a harness-only change removes it, and it
+never pages a round as `Blocked`.
 
 Secrets live in environment variables. The webhook URL **is** the credential for
 Teams — anyone holding it can post to that channel as the Flow bot. Treat it

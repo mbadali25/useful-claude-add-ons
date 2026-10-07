@@ -585,8 +585,9 @@ _LATER = ("wave", "split")
 _PLAIN = [("take care of the login audit", "/crew:autopilot assign the login audit"),
           ("work toward zero flaky tests", "/crew:autopilot goal zero flaky tests"),
           ("run T-1 and T-2 in parallel", "/crew:autopilot wave T-1 T-2"),
-          ("split it", "/crew:autopilot split T-1"),
-          ("T-1 is too big", "/crew:autopilot split T-1")]
+          # T-0058: `split` of the focused ticket runs; of another ticket it is refused.
+          ("split T-2", "/crew:autopilot split T-2"),
+          ("T-2 is too big", "/crew:autopilot split T-2")]
 
 
 def _live(monkeypatch):
@@ -614,9 +615,9 @@ def test_plain_text_routes_with_a_pointer_and_no_focus(tmp_path, monkeypatch, pr
             got["command"], got["unavailable"]) == (T, "route", command, False)
 
 
-@pytest.mark.parametrize("sub", ["assign", "goal", "wave", "split", "deploy"])
+@pytest.mark.parametrize("sub", ["assign", "deploy"])  # T-0058 landed `split`, T-0029 `wave`
 def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
-    """Today's AVAILABLE: assign and goal stop as arriving, an unknown name as
+    """Today's AVAILABLE: assign stops as arriving, an unknown name as
     unknown -- never as focus."""
     root = _pointed(tmp_path)
 
@@ -625,6 +626,23 @@ def test_route_with_a_pointer_and_no_focus_is_mains_answer(tmp_path, sub):
     assert (crew_autopilot.focus_guard(str(root), sub), "focus is on" in got["reason"],
             "arrives with" in got["reason"] or got["reason"] == crew_autopilot.UNKNOWN_SUB) == (
         None, False, True)
+
+
+def test_route_goal_with_a_pointer_and_no_focus_is_available(tmp_path):
+    """T-0012 landed `goal`: a plain pointer is not focus, so it routes."""
+    root = _pointed(tmp_path)
+
+    got = crew_autopilot.route(str(root), "goal")
+
+    assert (crew_autopilot.focus_guard(str(root), "goal"), got["sub"], got["stop"]) == (
+        None, "goal", False)
+
+
+def test_wave_with_a_pointer_and_no_focus_routes(tmp_path):
+    """T-0029: `wave` is live, so with no focus it routes, never stops as focus."""
+    got = crew_autopilot.route(str(_pointed(tmp_path)), "wave")
+
+    assert (got["sub"], got["stop"], got["reason"]) == ("wave", False, "")
 
 
 @pytest.mark.parametrize("prompt,command", _PLAIN)
@@ -1158,3 +1176,12 @@ def test_hooks_json_registers_no_focus_hook():
         data = handle.read()
 
     assert (b"crew_autopilot" in data, b"focus" in data.lower()) == (False, False)
+
+
+def test_plain_text_split_of_the_focused_ticket_routes(tmp_path):
+    """T-0058: `split` of the focused ticket looks at its size; it routes."""
+    root = _focused(tmp_path)
+
+    got = crew_route.decide(str(root), "split it")
+
+    assert (got["outcome"], got["command"]) == ("route", f"/crew:autopilot split {T}"), got

@@ -22,6 +22,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_autopilot_docs
 import crew_state
 import crew_ticket
 import review_ledger
@@ -36,6 +37,15 @@ HEADER = "status: spec   risk: high"
 
 
 # --- fixtures ----------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _documents_ok(monkeypatch):
+    """T-0022's docs phase reads `crew_docs_check`; these tests are about the
+    other phases, so the documents read ok unless a test says otherwise
+    (test_crew_autopilot_docs.py owns the docs phase)."""
+    monkeypatch.setattr(crew_autopilot_docs, "_docs_state", lambda root, ticket: {
+        "state": crew_autopilot_docs.DOCS_OK, "missing": [], "reason": ""})
+
 
 def _write(path, text):
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
@@ -1070,7 +1080,7 @@ def test_resume_goal_line_stops_until_t0012(tmp_path, stub_resume):  # pylint: d
 
     got = crew_autopilot.resume_target(str(root))
 
-    assert (got["ticket"], got["stop"], "T-0012" in got["reason"]) == (None, True, True)
+    assert (got["ticket"], got["stop"], "L-0541" in got["reason"]) == (None, True, True)
 
 
 def test_resume_active_ticket(tmp_path):
@@ -1251,7 +1261,8 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None},
-        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+        "maxLanes": None, "reviewPolicy": "stop"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1336,6 +1347,23 @@ def test_command_never_types_approve():
     rest = text.replace("it writes `approval.json`, `scope-tickets.json`", "", 1)
     assert ("crew_ticket.py approve" in text, "approval.json" in rest, approving,
             text.count("approval.json")) == (False, False, [], 1)
+
+
+def test_autopilot_report_calls_run_stop():
+    """T-0060: which stop pings is decided by `crew_notify.py run-stop`, tested
+    code, not by prose. The report section names it once, for every stop,
+    with `next`'s phase. Group review (G2) BLOCK: never the reason, which can
+    quote ticket text, interpolated into a shell command."""
+    text = _command_text()
+    report = text[text.index("## 5."):]
+    lines = [line for line in text.splitlines() if "crew_notify.py run-stop" in line]
+
+    assert (len(lines), "crew_notify.py run-stop --root . --ticket <ticket> --phase <p>`"
+            in report, "--reason" in lines[0], "at every stop" in report) == (1, True, False, True)
+    # T-0060 port review BLOCK: a claim refused for a stale or unknown marker
+    # stops before `next` names a phase; it stops as `in-flight`, so the ping runs.
+    claim = text[text.index("## 2."):text.index("## 3.")]
+    assert "stops, as phase `in-flight` for section 5's ping" in claim
 
 
 def test_command_drives_through_the_cli_and_writes_the_resume_line():
@@ -1730,6 +1758,93 @@ def test_resume_on_an_archived_active_ticket_names_the_archive(tmp_path):
     assert (got["ticket"], got["stop"]) == (None, True)
     assert "T-1 is archived in Complete/" in got["reason"]
     assert "no .work/tickets/" not in got["reason"]
+
+
+# --- T-0070: settings names the autopilot keys this crew does not act on ----
+
+def _inert(got):
+    return [w for w in got["warnings"] if w.startswith("inert: ")]
+
+
+def test_settings_warns_on_inert_autopilot_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    # T-0029 landed `maxLanes` and `reviewPolicy` (crew 1.1.6): set, they stay quiet.
+    _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3,
+                   "maxTicketsPerRun": 50})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert [w.split(" - ")[0] for w in _inert(got)] == [
+        "inert: autopilot.maxTicketsPerRun=50 (L-0541)"]
+    done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
+                          capture_output=True, text=True, check=False)
+    lines = done.stdout.splitlines()
+    assert lines[0].startswith("mode=plan")
+    assert "warning: inert: autopilot.maxTicketsPerRun=50 (L-0541) - would cap how many " \
+           "tickets one backlog run takes" in lines
+
+
+def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
+    # `settings` warns only, never refuses: when the escaping import that
+    # `inert_items` reaches fails, the run still gets its settings and the
+    # warning says the inert keys could not be told.
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "maxTicketsPerRun": 3})
+    monkeypatch.setitem(sys.modules, "completion_audit", None)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert got["armed"] is True
+    assert [w.split(" (")[0] for w in _inert(got)] == [
+        "inert: could not tell which settings are inert"], got["warnings"]
+
+
+def test_settings_names_the_global_layer(tmp_path, monkeypatch):
+    import crew_config  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "global.json"
+    path.write_text(json.dumps({"autopilot": {"deploy": "nonprod"}}), encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.settings(str(root))
+
+    # Owner, 2026-10-04: a global `autopilot.deploy` MAY be set (T-0050). Before
+    # T-0050 the filter drops it and the line says it is `not read`; after, the
+    # deploy warning names T-0045. Neither may call it repo-only or forbidden.
+    told = " ".join(got["warnings"])
+    for wrong in ("repo-only", "may not set"):
+        assert wrong not in told, got["warnings"]
+    inert = [w.split(" - ")[0] for w in _inert(got)]
+    assert inert in ([], ["inert: autopilot.deploy=nonprod (global, not read)"]), inert
+    assert inert or "T-0045" in told, got["warnings"]
+    assert got["deploy"] == ("none" if inert else "nonprod")
+
+
+def test_settings_is_quiet_for_implemented_keys(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "plan", "maxPhases": 5, "approval": "self", "questions": "risk"})
+
+    assert crew_autopilot.settings(str(root))["warnings"] == []
+
+
+def test_settings_does_not_repeat_the_deploy_warning(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"deploy": "nonprod"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (len(got["warnings"]), _inert(got)) == (1, [])
+    assert "T-0045" in got["warnings"][0]
+
+
+def test_settings_backlog_mode_names_its_ticket(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _config(root, {"mode": "backlog"})
+
+    got = crew_autopilot.settings(str(root))
+
+    assert "'backlog'" in got["warnings"][0]
+    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.mode=backlog (L-0541)"]
 # --- T-0037: cancelled and superseded close; needs-owner waits on the owner ------
 
 def _with_line2(root, line, ticket=T, header=HEADER):

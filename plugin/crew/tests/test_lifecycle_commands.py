@@ -95,8 +95,13 @@ EXPECTED_CLI = {
                      "crew_autopilot.py next --root .",
                      "crew_autopilot.py route --root .",
                      "crew_autopilot.py status --root .",
+                     "crew_autopilot.py goal-propose --root .",
+                     "crew_autopilot.py goal-approve --root .",
+                     "route --root . --first goal",
                      "crew_inflight.py claim --root .",
-                     "crew_inflight.py release --root ."),
+                     "crew_inflight.py release --root .",
+                     "crew_notify.py run-stop --root .",
+                     "crew_autopilot.py split --root ."),
     "promote.md": ("bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy",
                    "--outcome <pass|fail>`"),
 }
@@ -118,6 +123,21 @@ def test_command_names_exact_cli(name, snippets):
 # T-0012 and T-0019 have 3. Past this, detail moves into
 # crew_autopilot.py output (or a backing skill, which is the owner's call).
 AUTOPILOT_MAX_LINES = 117
+
+
+# T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
+WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
+            "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only",
+            # Group review r2 (rush g0): a wave starts only after T-0030's coord check.
+            "section 2's first paragraph (the `coord` check, T-0030)")
+
+
+def test_autopilot_md_names_wave_cli_strings():
+    text = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [snippet for snippet in WAVE_CLI if snippet not in text] == []
 
 
 def test_autopilot_command_at_most_117_lines():

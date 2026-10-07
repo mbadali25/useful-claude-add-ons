@@ -189,10 +189,14 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
-leaves. `leaf_paths(default_config())` yields **141**, so **60** are repo-only.
-For all 141, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **83**
+leaves. `leaf_paths(default_config())` yields **144**, so **61** are repo-only.
+For all 144, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on the L-0675 build branch (release/1.2.0 e84a8bfe): its repo-only
+`memory.recall.projects` moves 83 / 143 / 60 to 83 / 144 / 61; this paragraph
+said 81 / 141 / 60 until then, behind T-0051's two keys in both layers.
+Earlier: measured with `leaf_paths`
 on batch-7-build after merging T-0011: its three repo-only `autopilot.ship`,
 `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes` move 81 / 138 / 57
 to 81 / 141 / 60. 81 / 138 / 57 was measured
@@ -754,7 +758,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-83 of 143 keys are settable in the machine-global file (generated; 60 are repo-only, section 11).
+87 of 150 keys are settable in the machine-global file (generated; 63 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -844,7 +848,14 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `autopilot.questions` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
 | `route.enabled` | both | `false` \| `true` (checked in `hooks/scripts/crew_route.py`) | `false` |
+| `unattendedCloud.aws.readOnly.profile` | machine-only | profile name, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | ARN prefix ending in `/`, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.readOnly.region` | machine-only | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
+| `unattendedCloud.aws.nonProd` | machine-only | None (checked in `hooks/scripts/crew_unattended.py`) | `{}` |
 <!-- generated:config-keys-global end -->
+
+To find the repos to list in `context.autoClear.onlyRepos`, `/crew:migrate`'s
+`apply-migrate --scan-root <dir>` looks for the ones that opted in under 0.20.x (T-0106).
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
@@ -878,7 +889,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-60 of 143 keys are repo-only (generated; 83 are global-settable, section 10).
+63 of 150 keys are repo-only (generated; 87 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -905,6 +916,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.inject` | repo | not validated - read by `hooks/scripts/crew_context.py` (expects boolean) | `true` |
 | `memory.recall.vaults` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of vault names) | `[]` |
 | `memory.recall.maxChars` | repo | positive integer (coerced in `hooks/scripts/crew_recall.py`) | `800` |
+| `memory.recall.projects` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of project names) | `[]` |
 | `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
 | `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
 | `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |
@@ -944,6 +956,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `autopilot.maxLanes` | repo | positive integer or null (checked in `hooks/scripts/crew_wave.py`) | `null` |
+| `autopilot.reviewPolicy` | repo | `stop` \| `clean-only` \| `fix-and-rereview` | `"stop"` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -1963,8 +1977,9 @@ strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
 -e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
 entrypoint. No command-line guard can: unattended work must run interpreters
-and scripts. The real boundary is the credentials an unattended run holds,
-which is T-0044. README, "What the guard does not catch", lists the commands.
+and scripts. The real boundary is the credentials an unattended run holds:
+`crew_unattended.py launch` and `unattendedCloud` below. README, "What the
+guard does not catch", lists the commands.
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of
@@ -2005,6 +2020,54 @@ applies promote-gate's own rule (L-1503): it refuses a map either gate
 refuses and prints, under each dispatch, `gated-as:` - every environment
 whose `deploy` matches it under either gate, whose requirements all apply. A test
 table runs both real gates beside it on the same maps and commands.
+
+### `unattendedCloud` — the identity an unattended run holds (machine only)
+
+Read by `hooks/scripts/crew_unattended.py` (T-0044) from the machine file
+`~/.claude/crew/config.json` **alone**. It is in `default_global_config()` and
+`templates/global.template.json`, and absent from the repo shape: a repo's
+`.crew/config.json` copy is dropped by `resolve_config`, reported as
+`repoIgnored` by `/crew:config --show`, and named as ignored by the launcher. A
+repo travels inside a clone written by someone else, so it must never choose
+credentials on this machine — stronger than `resume.auto`, where a repo may at
+least veto.
+
+```json
+"unattendedCloud": {
+  "aws": {
+    "readOnly": {"profile": "ro", "identity": "arn:aws:sts::123456789012:assumed-role/ReadOnlyAccess/", "region": "eu-west-1"},
+    "nonProd": {"dev": {"profile": "dev-writer", "identity": "arn:aws:sts::123456789012:assumed-role/DevWriter/"}}
+  }
+}
+```
+
+- `identity` is the assumed-role ARN **prefix** exactly as `aws sts
+  get-caller-identity` prints it, ending in `/`, and naming one role
+  (`arn:<partition>:sts::<account>:assumed-role/<role>/`; a bare
+  `.../assumed-role/` would admit every role and is refused). STS's ARN must start with it.
+- `profile` is the `~/.aws/config` profile `aws configure export-credentials`
+  exports; it must yield temporary credentials (`SessionToken` and
+  `Expiration`). `region` defaults to `us-east-1`.
+- `nonProd` maps an environment name to the same three keys, for
+  `launch --environment NAME`. A name is usable only when the repo's
+  `environments.nonProd` also classifies it as nonProd: both layers agree, as
+  with `prodUnattended`. There is no production entry and none can be written.
+- Any provider key other than `aws` refuses as not implemented (the provider
+  seam for Azure and TFC/HCP).
+
+The defaults name nothing (`profile`, `identity`, `region` all `null`,
+`nonProd` empty), so every launch refuses with `no read-only identity named`
+until the owner names one. README, "Unattended runs: sealed cloud
+credentials", lists every check and refusal.
+
+The launched session loads `~/.claude/settings.json` and the sealed
+`--settings` only (`--setting-sources user`): a repo's `.claude/settings.json`
+and `.claude/settings.local.json` never load, and the launcher refuses if
+either has a `sandbox` key or a `Read` allow rule. Your own settings file does
+load, so the launcher refuses while it sets `sandbox.excludedCommands`,
+`sandbox.filesystem.disabled: true`, or a `sandbox.filesystem.allowRead` entry
+that is a glob or sits at or under a credential store. Move such an entry to a
+settings file the unattended run does not need, or run that tool attended.
 
 ### The ratchet is one table, not five copies
 
@@ -2880,6 +2943,17 @@ phase command's procedure in-session, and stops wherever a person is needed.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.
+`/crew:autopilot goal` (T-0012) writes a goal file and asks for its split
+approval under the same `autopilot.approval`, with no key of its own: `self`
+approves the split, `risk` only when every proposed ticket is a known
+`risk: low`, `human` stops, and every setting needs `scope.allowCliApproval:
+true` and `mode: plan`; the owner's `/crew:approve goal:<slug>` receipt
+approves it at any setting (README, "Autopilot"). Autopilot's size check after
+spec and after plan (T-0058) applies a ticket's split, `crew_autopilot.py split
+--apply`, under the same `autopilot.approval` and T-0012's rule on the
+parent's spec risk (`crew_split.ticket_split_policy`), with no key of its own;
+in `tracker: jira` it always stops for the owner's `/crew:split <KEY>`, and in
+`sdp` it stops.
 Since T-0050 every key in its block is **personal**: settable in the machine
 file as the owner's default for every repo, combined per key with the repo's
 value by the rule in §20a (the stricter of the layers that set it wins). The
@@ -2899,6 +2973,8 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
+| `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -3060,7 +3136,9 @@ when you turn it on is `2`.
 **The writers.** `crew_autopilot.py` is read-only except `approve` and
 `auto-reject`, and L-0652's `sleep` and `wake`, which write or remove only
 `<git-common-dir>/crew/autopilot-sleep.json`. `approve` writes only when `autopilot.approval` allows it (a ticket `assign` mints is written by
-`crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
+`crew_ticket.py assign` and `mint`, not by this script; T-0012's `goal-propose`
+and `goal-approve` write only the working file `.work/autopilot/<slug>.json`,
+never a receipt). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
@@ -3164,6 +3242,37 @@ class from T-0005's classifier, proceeds only on the exact verdict `allow`
 persists every report. `allow` is necessary, not sufficient: T-0009's hook,
 promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
+
+### Inert settings (T-0070)
+
+A setting the installed crew does not act on is **named, never silently
+ignored**. `.crew/config.json` once held `autopilot.approval: self` for days
+before the crew that reads it (T-0010) existed, and nothing said so.
+`crew_config.inert_settings` applies one rule: a resolved key that is not a
+key of `default_config()` is inert — outside `platform.*` (machine facts
+`platform-sync` stamps) and `schema`, and a key under an open table such as
+`dev.roles` counts as known. A small `INERT_PENDING` table adds the ticket
+that brings each known-but-unbuilt key, and the values that do nothing yet:
+
+| Key or value | Brought by |
+|---|---|
+| `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
+| `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | L-0541 (T-0012 landed `goal`; backlog and the caps follow) |
+| `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |
+
+Any other unknown key is named `(unknown key)`: a typo, or a key from another
+crew version. A path the global filter drops from the machine file (this crew
+does not read it there, so it takes effect nowhere) is named
+`(global, not read)`. An entry leaves the table when its key enters
+`default_config()`, which the landing ticket does; a value-level row is deleted
+by that ticket.
+
+The same list appears in four places: one `Inert settings (crew <version> does
+not act on them): key=value (ticket), ...` line at SessionStart (capped at 300
+characters with `+N more`, emitted with `memory.inject` off too), an `inert`
+line in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
+`crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
+anything: autopilot still runs with an inert key set.
 
 ---
 

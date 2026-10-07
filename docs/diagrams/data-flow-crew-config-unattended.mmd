@@ -1,0 +1,19 @@
+%% Generated from useful-claude-add-ons@e50ca97b on 2026-10-04. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_unattended.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/cloud_guard.py
+%% Purpose: unattendedCloud (T-0044): read from the MACHINE file only by crew_unattended.py, never through resolve_config; a repo copy is dropped from resolution and reported as ignored.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% Note UCREAD: crew_unattended._read_machine plugin/crew/hooks/scripts/crew_unattended.py:670 reads
+%%    crew_state.GLOBAL_CONFIG_PATH directly; resolve_target (:345) judges it, with the repo's
+%%    environments.nonProd (cloud_guard.environments_config) as the second layer for --environment.
+%% Note UCDROP: resolve_config drops a repo copy (crew_config.py:845); explain_config reports the
+%%    global layer alone and flags repoIgnored (crew_config.py:1730-1785).
+flowchart LR
+    GLB2[("~/.claude/crew/config.json<br/>unattendedCloud")]
+    REPO2[(".crew/config.json")]
+    UCREAD["crew_unattended.py<br/>resolve_target :345"]
+    UCDROP["resolve_config / explain_config<br/>repo copy dropped, repoIgnored"]
+    CHAIN["run_checks :767<br/>settings, export, identity, sandbox probe"]
+    GLB2 -->|"machine file only"| UCREAD
+    REPO2 -.->|"environments.nonProd only"| UCREAD
+    REPO2 -.->|"unattendedCloud ignored"| UCDROP
+    UCREAD --> CHAIN
