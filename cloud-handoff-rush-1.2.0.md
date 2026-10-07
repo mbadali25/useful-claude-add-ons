@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T12:32Z Owner: 10-12 waves, no two massive waves. Plan: wave 1 = what release already holds (G8, G1, G3, G0, G7; unsplittable without 4 extra syncs), then ONE group per wave (G2, G3b, G5, G1b, G4, G3c, G3d, G6a, G6b), then H2 = 11 waves. Rule: no second group merges into release until the previous group's wave reached main.
 - 2026-10-07T12:32Z Owner: ~10 WAVES release->main (one per group). Main has 131 commits release lacks (H1/H3). New order: #549 retire -> main as 1.1.8 (re-set, head d44da6fb) -> SYNC main->release 1.1.9 -> wave 1 release->main -> G2 1.1.10, G3b 1.1.11, G5 1.1.12, G1b 1.1.13 (re-stacked on synced release), each followed by a wave; then G4, G3c, G3d, G6a, G6b each + wave; H2 1.2.0 last. #550/#551/#552 hold until re-stack.
 - 2026-10-07T12:24Z Opened #552 (G5 -> release, crew 1.1.11 / gizmoduck 0.5.10 / windows-ssm 1.0.2, head a3eef820, on G3b), subscribed. G1b (1.1.12) stacking next.
 - 2026-10-07T12:20Z G1b lander done: head 581efa45, merged release 2c911427 (22 conflicts, both kept), full crew 13984 passed/0 failed, Windows 16/16 green (fixed fake codex on Windows; _existing_ticket refuses 'T-1\n'). Added to train stack after G5 as crew 1.1.12. G1b + G5 both change install scripts -> re-pin README URLs after main.
