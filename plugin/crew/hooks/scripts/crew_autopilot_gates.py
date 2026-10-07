@@ -75,6 +75,15 @@ def _rel(top, path):
         return path.replace("\\", "/")
 
 
+def _names_ids(line, ticket):
+    """Whether a `split-into:`/`superseded-by:` line names only ticket ids, none
+    of them `ticket` itself (`crew_ticket_state`'s rule: `TBD` names none)."""
+    value = crew_ticket_state._unbracket(line.split(":", 1)[1].strip())  # pylint: disable=protected-access
+    ids = [part.strip().strip("`") for part in value.split(",")]
+    return all(crew_ticket_state._is_ticket_id(item)  # pylint: disable=protected-access
+               and item.casefold() != ticket.casefold() for item in ids)
+
+
 def successor(folder, word=None, fields=None):
     """` (split-into: ...)` from spec.md's lines above its first `##`; else,
     for `superseded`, next.md's ` (superseded-by: T-9, from next.md)` or
@@ -83,7 +92,7 @@ def successor(folder, word=None, fields=None):
     for line in (crew_common.read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
         if line.startswith("##"):
             break
-        if _SUCCESSOR.match(line.strip()):
+        if _SUCCESSOR.match(line.strip()) and _names_ids(line, os.path.basename(folder)):
             return f" ({line.strip()})"
     if word != "superseded":
         return ""
@@ -150,13 +159,32 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
     return answer(word, True, f"{where}: {why}"), view
 
 
+def ship_hold(top, ticket):
+    """`(phase, reason)` when nothing may ship now, or None: a gate is set or
+    cannot be told, or a dependency is not closed or cannot be told. Read
+    again by `before_ship` and on every poll of `ship`'s CI wait
+    (`crew_autopilot._ship_gate`), so a hold set during the wait stops it."""
+    view = crew_ticket_state.view(top, ticket)
+    if view["gate"] == "unknown":
+        why = [p for p in view["problems"] if p.startswith("gate:")]
+        return "direction-approval", (f"cannot tell whether a gate holds {ticket}: "
+                                      + ("; ".join(why) or "unknown") + " - nothing ships")
+    if view["gate"]:
+        where = ".work/INDEX.md" if view["gate_source"] == "index" else "spec.md's header"
+        return (view["gate"] if view["gate"] in GATES else "closed",
+                f"{where} says `{view['gate']}` for {ticket} - nothing ships until the owner "
+                "changes it")
+    return blocked(view, lambda phase, _stop, reason: (phase, reason))
+
+
 def before_ship(top, ticket, answer, found):
     """`found` from `_ship_phase`, unless it would act (stop=0: `ship` or
-    `next-slice`) while a dependency is not closed or cannot be told: then the
-    `blocked` stop. A stop (`closed` included) is returned as it is."""
+    `next-slice`) while `ship_hold` says nothing ships. A stop (`closed`
+    included) is returned as it is."""
     if found["stop"]:
         return found
-    return blocked(crew_ticket_state.view(top, ticket), answer) or found
+    held = ship_hold(top, ticket)
+    return answer(held[0], True, held[1]) if held else found
 
 
 def blocked(view, answer):

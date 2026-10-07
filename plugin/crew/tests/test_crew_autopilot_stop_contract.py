@@ -178,6 +178,12 @@ def b_ship_receipt(tmp, mp):
     return _next(root)
 
 
+def b_ship_held(tmp, mp):
+    root = _done(tmp, mp, pr=_pr("NONE"), index="done")
+    _index(root, f"{T} | done | high | r | title", f"{T} | hold | high | r | title")
+    return _next(root)
+
+
 def b_folder_elsewhere(tmp, mp):
     root = _approved(tmp)
     mp.setattr(crew_autopilot, "_main_folder", lambda top, ticket: (None, "git worktree list failed"))
@@ -609,6 +615,7 @@ CASES = [
     ("a push carries only commits", b_tree, "ship", "look"),
     ('answer("ship", True, order)', b_order, "ship", "look"),
     ("the review receipt no longer stands", b_ship_receipt, "ship", "look"),
+    ("answer(held[0], True, held[1])", b_ship_held, "direction-approval", "direction"),
     ('answer("folder-elsewhere"', b_folder_elsewhere, "folder-elsewhere", "look"),
     ('answer("brainstorm", True', b_brainstorm, "brainstorm", "direction"),
     ("index-disagreement: {here} says", b_index_disagreement, "direction-approval", "direction"),

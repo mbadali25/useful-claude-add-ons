@@ -2610,3 +2610,43 @@ def test_next_hold_in_the_first_of_two_disagreeing_rows_is_cannot_tell(tmp_path)
 
     assert (got["phase"], got["stop"], "cannot tell whether a gate" in got["reason"]) == (
         "direction-approval", True, True), got
+
+
+def test_next_disagreeing_done_and_hold_rows_never_ship(tmp_path, monkeypatch):
+    """L-0550 review r2 BLOCK: a `done` row then a `hold` row reaches the done
+    branch first; a ship that would act still stops, could-not-tell."""
+    root = _approved(tmp_path, header="status: done   risk: high")
+    _index(root, f"{T} | done | high | r | title", f"{T} | hold | high | r | title")
+    monkeypatch.setattr(crew_autopilot, "_ship_phase",
+                        lambda top, ticket, answer, why, ctx=None: answer("ship", False, why))
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "cannot tell whether a gate" in got["reason"]) == (
+        "direction-approval", True, True), got
+
+
+@pytest.mark.parametrize("row, words", [("hold", "says `hold`"), ("ready", None)])
+def test_ship_gate_rereads_the_hold_on_every_poll(tmp_path, row, words):
+    """L-0550 review r2 BLOCK: `ship`'s CI wait re-reads the gate, so a hold set
+    while CI runs stops the merge."""
+    root = _approved(tmp_path, status=row)
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+
+    stop = crew_autopilot._ship_gate(str(root), T)["stop"]  # pylint: disable=protected-access
+
+    assert (words in stop) if words else stop is None, stop
+
+
+def test_superseded_spec_tbd_line_yields_to_next_md(tmp_path):
+    """L-0550 review r2 FIX: `superseded-by: TBD` names no ticket; next.md's T-9 does."""
+    root = _gated(tmp_path, "index", "superseded")
+    _with_line2(root, "superseded-by: TBD")
+    _next_md(root, "superseded-by: T-9\n")
+
+    got = _next(root)
+
+    assert (got["phase"], "T-9, from next.md" in got["reason"], "TBD" in got["reason"]) == (
+        "closed", True, False), got

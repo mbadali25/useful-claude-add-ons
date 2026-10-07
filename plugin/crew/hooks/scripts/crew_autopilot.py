@@ -429,6 +429,7 @@ def _ship_gate(top, ticket):
     if families is None or ledger is None or _ledger_hash(top, ticket) != ledger:
         gate["stop"] = ("the review ledger is unreadable, or changed while it was read, so "
                         "the review families cannot be told")
+    gate["stop"] = gate["stop"] or (crew_autopilot_gates.ship_hold(top, ticket) or (0, None))[1]  # L-0550
     return gate
 
 
