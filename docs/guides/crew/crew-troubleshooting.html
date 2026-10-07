@@ -410,7 +410,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   <code>emergency.standDown</code> while the bash gate reads the inherited one.</li>
 <li><strong>Symptom: which tickets still need my approval?</strong>
   <strong>Check:</strong> <code>/crew:status --approvals</code>. It prints one ready-to-paste <code>/crew:approve &lt;id&gt;</code> line, with a
-  <code>  why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  <code>why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
   current or spec-only tickets (<code>nothing needs approval</code> when there are none). Approving a ticket
   it does not list changes nothing.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
