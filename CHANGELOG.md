@@ -110,7 +110,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
 - **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
 
-### Fixed — crew 1.1.22: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
+### Fixed — crew 1.1.15: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
 
 - **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
   `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read
@@ -128,7 +128,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this entry.** Two sabotage mutations for these (T-0087 harness): a later tooling PR.
   T-0010 round 6's other findings are L-0542 and L-0543.
 
-### Fixed — crew 1.1.22: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
+### Fixed — crew 1.1.15: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
 
 - **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the
   questions after it from autopilot; a fence autopilot cannot read for certain now stops the run
@@ -148,7 +148,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the new parser; none newly stops.
 - **Not in this entry.** The sabotage mutations for the parser are harness (T-0087): L-0643.
 
-### Fixed — crew 1.1.22: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
+### Fixed — crew 1.1.15: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
 
 - **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
   round, and a review you accepted that a later edit staled goes back through refresh and review
