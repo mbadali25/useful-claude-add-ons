@@ -19,25 +19,38 @@ from crew_fixtures import write_shim
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "hooks", "scripts",
                       "provider_probe.py")
 TRUST = "Not inside a trusted directory and --skip-git-repo-check was not specified."
-OK_EVENTS = ("echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"OK\"}}'\n"
-             "echo '{\"type\":\"turn.completed\"}'\n")
+OK_EVENTS = ('{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}\n'
+             '{"type":"turn.completed"}\n')
+# The stub is Python behind a sh wrapper (POSIX) and a `.cmd` (Windows, the
+# form `shutil.which` finds there), so the same checks run on both: a `.cmd`
+# that only exits 0 printed nothing and read as "no completed turn".
+STUB = """import os, sys, time
+ROOT, BODY, SLEEP, TRUST = {root!r}, {body!r}, {sleep!r}, {trust!r}
 
 
-def _stub(bindir, root, body=OK_EVENTS):
-    write_shim(bindir, "codex", (
-        "#!/bin/sh\n"
-        f"root='{root}'\n"
-        "flag=0; dash_c=0; prev=''\n"
-        "for a in \"$@\"; do\n"
-        "  [ \"$a\" = --skip-git-repo-check ] && flag=1\n"
-        "  [ \"$prev\" = -C ] && [ \"$a\" = \"$root\" ] && dash_c=1\n"
-        "  prev=\"$a\"\n"
-        "done\n"
-        "if [ $flag = 0 ] || [ $dash_c = 0 ] || [ \"$(pwd -P)\" != \"$root\" ]; then\n"
-        f"  echo '{TRUST}' >&2\n"
-        "  echo 'second line' >&2\n"
-        "  exit 1\n"
-        "fi\n" + body))
+def same(path):
+    return os.path.normcase(os.path.realpath(path)) == os.path.normcase(os.path.realpath(ROOT))
+
+
+args = sys.argv[1:]
+flag = "--skip-git-repo-check" in args
+dash_c = any(a == "-C" and same(b) for a, b in zip(args, args[1:]))
+if not (flag and dash_c and same(os.getcwd())):
+    sys.stderr.write(TRUST + "\\nsecond line\\n")
+    sys.exit(1)
+sys.stdout.write(BODY)
+sys.stdout.flush()
+time.sleep(SLEEP)
+"""
+
+
+def _stub(bindir, root, body=OK_EVENTS, sleep=0):
+    os.makedirs(bindir, exist_ok=True)
+    script = os.path.join(bindir, "codex_stub.py")
+    with open(script, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(STUB.format(root=root, body=body, sleep=sleep, trust=TRUST))
+    write_shim(bindir, "codex", f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n',
+               cmd_body=f'@"{sys.executable}" "{script}" %*\r\n@exit /b %ERRORLEVEL%\r\n')
 
 
 @pytest.fixture(name="layout")
@@ -105,7 +118,7 @@ def test_codex_probe_reports_a_non_string_message_as_failed(layout):
 
 def test_codex_probe_reports_a_timeout(layout):
     root, elsewhere, bindir = layout
-    _stub(bindir, root, body="sleep 30\n")
+    _stub(bindir, root, body="", sleep=30)
 
     done = _probe(elsewhere, bindir, "codex", "--root", root, "--timeout", "1")
 
