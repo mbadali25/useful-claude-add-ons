@@ -967,7 +967,12 @@ try {
   if (-not $proc.WaitForExit($waitMs)) {
     # Best effort: whatever is left running, the deploy is refused below.
     try { $proc.Kill($true) } catch {
-      try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { $null = $_ }
+      # Windows PowerShell 5.1 has no Kill($true). taskkill is waited on for at
+      # most 2s, so a stalled one cannot outlive the hook timeout either.
+      try {
+        $tk = Start-Process -FilePath 'taskkill.exe' -ArgumentList '/T', '/F', '/PID', "$($proc.Id)" -NoNewWindow -PassThru -ErrorAction Stop
+        $null = $tk.WaitForExit(2000)
+      } catch { $null = $_ }
       try { $proc.Kill() } catch { $null = $_ }
     }
     Deny-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."

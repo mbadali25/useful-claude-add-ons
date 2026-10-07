@@ -73,6 +73,15 @@ cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 # acted on once the command is known to be a deploy, matched against the
 # working map AND the committed one, so an edit that renames the deploy
 # command cannot make it match nothing.
+# L-0703 review r2: a map that exists but is neither a regular file nor a
+# directory (a FIFO, a socket, a device) would hold `git hash-object` below,
+# and every later read, past the hook timeout - which is not a block. Refuse it
+# here, before anything opens it. (A directory is read below and refused as
+# unreadable, as before.)
+if [ -e .crew/verify.json ] && [ ! -f .crew/verify.json ] && [ ! -d .crew/verify.json ]; then
+  echo "PROMOTION BLOCKED: .crew/verify.json is not a regular file (a FIFO, socket or device), so crew cannot read the deployment map without hanging. This is not a pass. Replace it with the map file." >&2
+  exit 2
+fi
 HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
 MAP_DIRTY=""
 if [ ! -e .crew/verify.json ]; then
@@ -155,7 +164,21 @@ if [ -z "$PY" ]; then
       exit 2
     fi
   }
-  [ -e .crew/verify.json ] && np_scan "$(cat .crew/verify.json 2>/dev/null)" ".crew/verify.json"
+  # A map that is not a regular file (a FIFO with no writer would hold `cat`
+  # past the hook timeout) is refused; the read itself is bounded too.
+  if [ -e .crew/verify.json ]; then
+    if [ ! -f .crew/verify.json ]; then
+      echo "PROMOTION BLOCKED: no usable python, and .crew/verify.json is not a regular file, so crew cannot read the map. This is not a pass." >&2
+      exit 2
+    fi
+    NP_LEFT=$(( GATE_DEADLINE - $(date +%s) ))
+    [ "$NP_LEFT" -ge 1 ] || NP_LEFT=1
+    NP_MAP=$(timeout "$NP_LEFT" cat .crew/verify.json 2>/dev/null) || {
+      echo "PROMOTION BLOCKED: no usable python, and .crew/verify.json could not be read inside the hook's deadline. This is not a pass." >&2
+      exit 2
+    }
+    np_scan "$NP_MAP" ".crew/verify.json"
+  fi
   if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
     np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json"
   fi

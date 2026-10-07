@@ -615,6 +615,77 @@ def test_the_helper_refuses_a_map_that_is_not_the_committed_one(tmp_path):
     assert "not the map committed at HEAD" in proc.stderr
 
 
+def _helper(repo, deadline_in=15, path=None):
+    env = dict(os.environ)
+    env.pop(_BUDGET, None)
+    if path is not None:
+        env["PATH"] = path
+    start = time.monotonic()
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           repo.head, str(int(time.time()) + deadline_in), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60, env=env)
+    return proc, time.monotonic() - start
+
+
+def _git_wrapper(tmp_path, body):
+    shim_dir = tmp_path / "gitwrap"
+    shim_dir.mkdir()
+    shim = shim_dir / "git"
+    shim.write_text(f'#!/bin/sh\n{body}\nexec "{_GIT}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return f"{shim_dir}{os.pathsep}{os.environ['PATH']}"
+
+
+@_POSIX_ONLY
+def test_the_helper_never_reads_a_failed_map_probe_as_no_map(tmp_path):
+    """L-0703 review r2: a failing probe of HEAD's map must not pass for "HEAD
+    has no map", which would let an uncommitted opt-out waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.write_map({"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK,
+                                                     **_OPT_OUT}}})
+    path = _git_wrapper(tmp_path, 'case "$*" in *ls-tree*) exit 128 ;; esac')
+    proc, _ = _helper(repo, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert "could not list" in proc.stderr
+
+
+@_POSIX_ONLY
+def test_the_helper_bounds_its_map_probes_by_the_deadline(tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    path = _git_wrapper(tmp_path, 'case "$*" in *hash-object*) exec sleep 30 ;; esac')
+    proc, took = _helper(repo, deadline_in=3, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert took < 8, took
+
+
+def test_an_unreadable_ledger_is_reported_as_could_not_tell(tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    repo.ledger().write_text("{not json", encoding="utf-8")
+    proc, _ = _helper(repo)
+    assert proc.returncode == 0, proc.stderr
+    assert "requires an accepted review" in proc.stdout
+    assert "could not tell: 1 ledger(s) could not be read (T-0001)" in proc.stdout
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("with_python", [False, True])
+def test_sh_refuses_a_map_that_is_not_a_regular_file(with_python, tmp_path):
+    """A FIFO map held `git hash-object` (and every later read) past the hook
+    timeout, which is not a block (L-0703 review r2)."""
+    if not with_python and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    path = repo.root / ".crew" / "verify.json"
+    path.unlink()
+    os.mkfifo(path)
+    code, err, took = run_gate("sh", repo, "deploy-dev", timeout=30,
+                               path=None if with_python else _path_without_python(tmp_path))
+    assert code == 2, err
+    assert took < 10, took
+
+
 @_POSIX_ONLY
 def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
     """One jq process per map: a fork per string took 20.8s on this repo's

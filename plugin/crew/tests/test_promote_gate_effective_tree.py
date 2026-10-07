@@ -375,7 +375,10 @@ def test_uncommitted_edits_to_the_deploy_map_block(flavour, repo):
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
     assert code == 2, err
-    assert "uncommitted" in err and "verify.json" in err, err
+    # L-0703: the gate's own words, not just "uncommitted" - pytest's tmp
+    # path carries this test's name, which holds that word, so the old
+    # assertion passed on any block (the review helper's refusal included).
+    assert "has uncommitted changes" in err and "verify.json" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)

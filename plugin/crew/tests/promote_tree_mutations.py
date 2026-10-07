@@ -218,4 +218,23 @@ PROMOTE_TREE_MUTATIONS = (
      '[git, "hash-object", "--stdin", "--path", ".crew/verify.json"]',
      '[git, "hash-object", "--stdin"]',
      _R + "test_a_crlf_checkout_of_the_committed_map_is_the_committed_map[sh]"),
+    # --- L-0703 review round 2 ------------------------------------------------
+    ("_promote_review.py reads a failed map listing as no map at HEAD", REVIEW,
+     '    if listed.returncode != 0:\n',
+     '    if False:\n',
+     _R + "test_the_helper_never_reads_a_failed_map_probe_as_no_map"),
+    ("_promote_review.py gives each map probe a flat 10s, not what is left", REVIEW,
+     '                                input=raw, capture_output=True, check=False,\n'
+     '                                timeout=_left(deadline))\n',
+     '                                input=raw, capture_output=True, check=False,\n'
+     '                                timeout=GIT_SECONDS)\n',
+     _R + "test_the_helper_bounds_its_map_probes_by_the_deadline"),
+    ("_promote_review.py reads an unreadable ledger as holding no receipt", REVIEW,
+     '        if digest is None or st.get("state") == review_ledger.UNKNOWN:\n',
+     '        if False:\n',
+     _R + "test_an_unreadable_ledger_is_reported_as_could_not_tell"),
+    ("promote-gate.sh opens a map that is not a regular file", SH,
+     'if [ -e .crew/verify.json ] && [ ! -f .crew/verify.json ] && [ ! -d .crew/verify.json ]; then\n',
+     'if false; then\n',
+     _R + "test_sh_refuses_a_map_that_is_not_a_regular_file[True]"),
 )
