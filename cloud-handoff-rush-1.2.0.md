@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T14:20Z MERGED #553 (sync main->release) at 6940da35, crew 1.1.9. Opened WAVE 1 #554 (release -> main: G8, G1, G3, G0, G7 + sync), subscribed. Train lander re-stacking G2 1.1.10 / G3b 1.1.11 / G5 1.1.12 / G1b 1.1.13 on the new release.
 - 2026-10-07T14:20Z G6b fixes done: head ebee2f34 (1.1.16 last); all 6 coordinator findings real and fixed with sabotage-verified tests (case test exercises listdir on Linux; check_dir realpath guard before/after makedirs incl. Windows junction test passing in CI; held/summary files guarded; asleep=? for unknown; summary sending/sent states, death mid-send reported not silent). Full pylint 10.00, 4867 targeted passed, Windows 16/16.
 - 2026-10-07T13:53Z Sync done: head 776393e4 (crew 1.1.9; merges main 7cb44221 + ad36bec5), full crew 14936 passed, harness suites green, Windows 16/16. Opened #553 (sync -> release), subscribed. Next: merge #553, then wave 1 release -> main.
 - 2026-10-07T13:45Z Coordinator review of G6b r6 fixes: L-0541 + T-0056 CLEAN; L-0658 test FIX (case check not exercised on Linux); L-0653 2 FIX + minor (makedirs before link check; Windows junction bypass; held/summary files unguarded; unknown sleep logged as awake); L-0656 BLOCK fail-open (death mid-send silently drops summary). G6b fixer started.
