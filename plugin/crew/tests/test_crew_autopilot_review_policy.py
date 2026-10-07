@@ -46,6 +46,9 @@ def _findings_round(root, findings=tuple(FINDINGS), policy="fix-and-rereview", r
     git(root, "commit", "-q", "-am", "work")
     found = dict(_round(1, "FINDINGS"), base=base, findings=list(findings) if findings is not None else None,
                  bundle_sha256=review_patch.compute(str(root), base)[0]["bundle_sha256"])
+    lines = found["findings"] if isinstance(found["findings"], list) else []
+    found["counts"] = {sev: sum(1 for f in lines if isinstance(f, str) and f.startswith(sev + "|"))
+                       for sev in ("BLOCK", "FIX", "NIT")}
     found.update(row)
     for key in [k for k, v in row.items() if v is None]:
         del found[key]
@@ -219,7 +222,11 @@ def test_rounds_left_that_is_not_an_int_stops(tmp_path, monkeypatch, left):
 @pytest.mark.parametrize("row, words", [
     ({"findings": None}, "no list of finding lines"),
     ({"findings": ["FIX|a|1|b|c", 3]}, "no list of finding lines"),
-    ({"findings": ["NIT|a|1|b|c"]}, "no BLOCK or FIX line"),
+    ({"findings": ["NIT|a|1|b|c"], "counts": {"BLOCK": 0, "FIX": 0, "NIT": 1}}, "no BLOCK or FIX line"),
+    ({"counts": {"BLOCK": 1, "FIX": 1, "NIT": 1}}, "BLOCK count is 1 but it lists 0"),
+    ({"counts": {"BLOCK": False, "FIX": 1, "NIT": 1}}, "BLOCK count is False"),
+    ({"counts": None}, "counts are None"),
+    ({"findings": ["FIX|a|1|b|c", "WARN|a|1|b|c"]}, "is not a BLOCK, FIX or NIT line"),
     ({"findings": ["FIX|a|1|b\nBLOCK|x"]}, "line break"),
     ({"base": None}, "no round number, base or bundle_sha256"),
     ({"bundle_sha256": None}, "no round number, base or bundle_sha256"),
@@ -347,3 +354,15 @@ def test_fix_module_policies_match_the_wave():
 
 def test_fixes_path_is_in_the_ticket_folder(tmp_path):
     assert crew_autopilot_fix.fixes_path(str(tmp_path)) == os.path.join(str(tmp_path), "fixes.md")
+
+
+def test_an_empty_rebuilt_bundle_stops(tmp_path):
+    """T-0067 review r1 FIX: reverting the work leaves nothing to review; never `/crew:review`."""
+    root = _approved(tmp_path)
+    _findings_round(root)
+    git(root, "revert", "--no-edit", "HEAD")
+    _fixes(root, f"## Round 1\n{FINDINGS[0]}\n")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "is empty" in got["reason"]) == ("accept-review", True, True), got

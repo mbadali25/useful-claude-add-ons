@@ -15,15 +15,16 @@
 
 `fix-and-rereview` fixes only when ALL hold: `rounds_left` is an int (never a
 bool) and at least 1; the round row carries `findings`, a list of one-line
-strings with at least one `BLOCK|` or `FIX|` line, plus `base` and
-`bundle_sha256`. The fix is complete when BOTH hold, read from disk:
+BLOCK, FIX or NIT strings that agrees with the row's `counts` per severity,
+with at least one `BLOCK|` or `FIX|` line, plus `base` and `bundle_sha256`. The fix is complete when BOTH hold, read from disk:
 `.work/tickets/<id>/fixes.md` has a `## Round <n>` section holding every
 `BLOCK|` and `FIX|` line of the row verbatim as a whole line, as many times as
 the row carries it (`review_ledger.check_follow_up`'s rule; NIT lines are not
 owed), and the bundle rebuilt now from the row's `base` has a different
 `bundle_sha256` (`.work/` is outside the bundle, so fixes.md alone never
 does). A missing fixes.md is "not fixed yet"; one that is present but not
-UTF-8, or a bundle that cannot be rebuilt, is could-not-tell and stops.
+UTF-8, or a bundle that cannot be rebuilt or rebuilds empty, is could-not-tell
+and stops.
 
 The loop bound is `next_phase`'s no-progress guard: `fix` named again right
 after a `fix` phase ran stops. An unrefunded INCOMPLETE round, NEEDS_REPLAN and
@@ -104,6 +105,26 @@ def _missing(folder, number, owed):
     return list((collections.Counter(owed) - have).elements()), None
 
 
+def _counts_disagree(counts, findings):
+    """Why the row's `counts` and its finding lines disagree, or ''. Every line
+    must be a BLOCK, FIX or NIT line, and each severity's count a non-negative
+    int (never a bool) equal to its lines: a row claiming a BLOCK it does not
+    list would otherwise send the round to review with the BLOCK unfixed."""
+    if not isinstance(counts, dict):
+        return f"counts are {counts!r}, not a table"
+    seen = dict.fromkeys(("BLOCK", "FIX", "NIT"), 0)
+    for line in findings:
+        sev = line.strip().split("|", 1)[0]
+        if sev not in seen or "|" not in line:
+            return f"finding line {line!r} is not a BLOCK, FIX or NIT line"
+        seen[sev] += 1
+    for sev, number in seen.items():
+        value = counts.get(sev)
+        if isinstance(value, bool) or not isinstance(value, int) or value != number:
+            return f"{sev} count is {value!r} but it lists {number} {sev} line(s)"
+    return ""
+
+
 def decide(top, ticket, policy, ledger, latest, answer, toward):
     """None, a cause string, or the phase dict; see the module docstring."""
     folder = crew_ticket.ticket_dir(top, ticket)
@@ -124,6 +145,9 @@ def decide(top, ticket, policy, ledger, latest, answer, toward):
     if any("\n" in f or "\r" in f for f in findings):
         return cause + f"round {number} lists a finding with a line break: could not tell"
     owed = [f for f in findings if f.strip().startswith(OWED)]
+    disagree = _counts_disagree(latest.get("counts"), findings)
+    if disagree:
+        return cause + f"round {number}'s {disagree}: could not tell"
     if not owed:
         return cause + f"round {number} lists no BLOCK or FIX line"
     base, recorded = latest.get("base"), latest.get("bundle_sha256")
@@ -137,6 +161,9 @@ def decide(top, ticket, policy, ledger, latest, answer, toward):
         current = review_patch.compute(top, base)[0]["bundle_sha256"]
     except (RuntimeError, OSError, KeyError, TypeError) as exc:
         return cause + f"the bundle could not be rebuilt from {base} ({exc}): could not tell"
+    if current is None:
+        return cause + (f"the bundle rebuilt from {base} is empty (nothing left to review): "
+                        "could not tell")
     if missing or current == recorded:
         todo = []
         if missing:
