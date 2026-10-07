@@ -2352,6 +2352,10 @@ def test_claim_is_could_not_tell_for_an_origin_with_an_empty_url(capsys, monkeyp
     out = capsys.readouterr()
 
     assert code == crew_coord.EXIT_UNKNOWN and "wt-a" not in out.out + out.err, out
+    # H2a: the empty URL is named. Without its own check the remote's name is
+    # read as a path and refused further down, which the two lines above
+    # cannot tell from this refusal.
+    assert "origin's URL is empty" in out.out + out.err, out
     assert _remote_files(remote) is None
 
 
