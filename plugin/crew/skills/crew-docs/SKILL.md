@@ -130,7 +130,7 @@ reports rather than fixes, because bulk doc edits are unreviewable.
 
 ---
 
-## References: API and features
+## References: API, features and integrations
 
 `/crew:reference` writes these, in the session that runs it. They are
 separate from everything above because they are **enumerations**, not narratives
@@ -140,6 +140,7 @@ separate from everything above because they are **enumerations**, not narratives
 |---|---|
 | `docs/reference/api.md` | What can I call, with what, and what does it do to the system |
 | `docs/reference/features.md` | What can this system do, including the parts with no UI |
+| `docs/reference/integrations.md` | What does this system call out to, with what credential source, and how does each call fail ([format](integrations.md)) |
 
 ### Why the codemap does not cover this
 

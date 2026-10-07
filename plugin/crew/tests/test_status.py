@@ -495,6 +495,49 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
     assert len(lines) <= 40 and len(_inflight(lines)) == 6
 
 
+# --- the Complete/ archive (L-0509) ------------------------------------------------
+
+def _ticket_tree(tmp_path, live=(), archived=(), complete=True):
+    root = tmp_path / "r"
+    tickets = root / ".work" / "tickets"
+    tickets.mkdir(parents=True)
+    for name in live:
+        (tickets / name).mkdir()
+    if complete:
+        (tickets / "Complete").mkdir()
+    for name in archived:
+        (tickets / "Complete" / name).mkdir()
+    return root
+
+
+def test_status_counts_archived_tickets_apart(tmp_path):
+    root = _ticket_tree(tmp_path, live=("T-1", "L-0509"), archived=("T-2", "T-3", "W-0001"))
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  2 ticket dir(s), 3 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_never_counts_complete_as_a_ticket(tmp_path):
+    root = _ticket_tree(tmp_path)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
+    root = _ticket_tree(tmp_path, live=("T-1",), archived=("T-2",))
+    real = os.listdir
+
+    def listdir(path):
+        if os.path.basename(os.fspath(path)) == "Complete":
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")
+
+
 # --- T-0070: inert settings, and the approvals that actually need you -------
 
 def test_status_names_inert_settings(tmp_path):
@@ -718,7 +761,7 @@ def test_status_lists_needs_owner_line(tmp_path):
     rows = "".join(f"T-{n} | needs-owner | low | r | t\n" for n in range(1, 8)) + "T-9 | review | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-9",
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-9",
         "owner    T-1, T-2, T-3, T-4, T-5 (+2) (needs-owner)"]
 
 
@@ -726,7 +769,7 @@ def test_status_hides_closed_words(tmp_path):
     rows = "T-1 | cancelled | low | r | t\n| T-2 | Superseded | low | r | t |\nT-3 | Needs-Owner | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "owner    T-3 (needs-owner)"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "owner    T-3 (needs-owner)"]
 
 
 def test_status_unchanged_without_new_words(tmp_path):
@@ -735,7 +778,63 @@ def test_status_unchanged_without_new_words(tmp_path):
             "T-3 | done | low\nT-4 | review | low\nT-5 | spec | low\n")
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-1, T-2, T-4"]
+
+
+# --- T-0065 item 3: the agents line --------------------------------------------
+
+
+def _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}'):
+    """A fake `~/.claude` with no agents of its own, so nothing real is read."""
+    config = tmp_path / "home" / ".claude"
+    (config / "plugins").mkdir(parents=True)
+    (config / "plugins" / "installed_plugins.json").write_text(registry, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+
+def _verify_names(root, *agents):
+    rules = [{"paths": ["**/*.php"], "run": ["true"], "agents": list(agents)}]
+    (root / ".crew" / "verify.json").write_text(json.dumps({"rules": rules}), encoding="utf-8")
+
+
+def test_status_flags_uncovered_verify_agent(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "php-developer")
+
+    lines = crew_status.collect(str(root))
+
+    agents = [line for line in lines if line.startswith("agents   ")]
+    assert agents == ["agents   MISSING php-developer (verify.json rule: **/*.php)"]
+
+
+@pytest.mark.parametrize("case", ["ok", "unknown"])
+def test_status_agents_ok_and_unknown(tmp_path, monkeypatch, case):
+    _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}' if case == "ok" else "{not json")
+    root = make_repo(tmp_path)
+    _verify_names(root, "security" if case == "ok" else "voltagent:security-auditor")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    if case == "ok":
+        assert agents == ["agents   ok (1 named)"]
+    else:
+        assert len(agents) == 1 and agents[0].startswith("agents   unknown - ")
+        assert "installed_plugins.json" in agents[0]
+
+
+def test_status_shows_at_most_three_missing_agents(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "a1", "a2", "a3", "a4", "a5")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    assert len(agents) == 1
+    assert agents[0].startswith("agents   MISSING a1, a2, a3 (+2 more)")
+
+
 # --- T-0039: the gitignore line ---------------------------------------------------------
 
 def _gitignore_line(lines):

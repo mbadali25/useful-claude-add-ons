@@ -32,6 +32,14 @@ jobs:
     runs-on: ${{ (vars.CREW_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","crew"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
+      # One leg at a time on every non-PR event (push to main, schedule,
+      # dispatch). Those run all three legs, and the self-hosted pool is six
+      # runners on ONE 16-vCPU host: three Python legs at once there were the
+      # source of main's timing-test flakes (BRIEF 2026-10-01). No merge
+      # waits on a non-PR run (protection requires a PR up to date with main,
+      # not main green), so main pays the serial time (L-0590). A PR does
+      # work on 3.12 only and keeps its three legs parallel.
+      max-parallel: ${{ github.event_name == 'pull_request' && 3 || 1 }}
       matrix:
         # Matches the pylint job's floor: pylint 4 needs >=3.10, and these
         # scripts are stdlib-only so there is nothing else to pin against.
@@ -135,16 +143,23 @@ jobs:
       # the yaml import locally, which reproduces the same 12 collection
       # errors the runner logs.
       #
-      # -n auto (pytest-xdist): the crew suite is subprocess-bound, not CPU-
-      # bound -- serially it held one core at ~33% -- so workers overlap the
-      # waits. EXCEPT the `wallclock` set (crew's conftest): those assert
+      # -n 16 --dist worksteal (pytest-xdist): the crew suite is subprocess-
+      # bound, not CPU-bound -- serially it held one core at ~33% -- so
+      # workers overlap the waits. The count is fixed, not `auto`: on the
+      # self-hosted pool `auto` meant 4 (the runner's
+      # PYTEST_XDIST_AUTO_NUM_WORKERS). Benchmarked there (L-0590, 5 runs per
+      # setting): p50 260 s at 4/load, 211 s at 8/load, 171 s at 12/load,
+      # 145 s at 8/worksteal; then, beside a busy slow-set chain (the PR
+      # shape), 221 s at 8/worksteal, 197 s at 12, 135 s at 16 (runs
+      # 37058615163 and 37080675891).
+      # EXCEPT the `wallclock` set (crew's conftest): those assert
       # elapsed time against a real hook timeout, and beside busy workers one
       # read 10.25s against its 10s bound on 2 of 6 jobs. They run in the
       # step below, serially, so the bound stays the real one.
       run: |
         # Unquoted on purpose: the output is a space-separated path list.
         # shellcheck disable=SC2086
-        pytest ${PYTEST_COMBINED:-plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ skills/windows-ssm/tests/} -c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck -n auto -m "not wallclock" -v
+        pytest ${PYTEST_COMBINED:-plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ skills/windows-ssm/tests/} -c plugin/gizmoduck/pytest.ini --rootdir plugin/gizmoduck -n 16 --dist worksteal -m "not wallclock" -v
     - name: Run crew's wall-clock-bounded tests serially
       if: env.RUN_LEG == 'true' && steps.select.outputs.crew != 'false'
       run: pytest plugin/crew/tests/ -m wallclock -v
@@ -239,7 +254,13 @@ jobs:
         pip install "pytest~=8.0" pytest-xdist pyyaml
     - name: Run crew's slow set (the full per-shell hook matrix)
       if: steps.select.outputs.crew != 'false'
-      run: python -m pytest plugin/crew/tests -m slow -n auto -v
+      # -n 8, not `auto` (= 4 on the self-hosted pool). Benchmarked there
+      # (L-0590, 5 runs per setting): p50 154 s at 4, 92 s at 8; worksteal
+      # did not help (161 s at 4, 98 s at 8); then, beside a busy default-
+      # set chain, 110 s at 8, 96 s at 12, 89 s at 16. 8, because on a PR
+      # this leg runs beside the `test` job's 16 workers and is not the
+      # critical path there.
+      run: python -m pytest plugin/crew/tests -m slow -n 8 -v
 
   # ---- crew on Windows: three parallel sets, one required fan-in -----------
   #

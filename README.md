@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.12**: Crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root. A repo set up by crew now sees a failing check's own error lines in its `_verify` output, and gets a ready diagram check that works as root in CI containers instead of failing with no reason.
-- **repository**: CI fails a stale built crew guide. A pull request whose committed crew guide HTML, or generated configuration reference, no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
+- **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
+- **crew 1.1.13**: Complete archive and ticket ids beyond T-. Every crew reader now finds a ticket whether it is live or archived in `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
