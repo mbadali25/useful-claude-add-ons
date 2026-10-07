@@ -45,7 +45,7 @@ import shlex
 # machines would be indefensible.
 INSTALL_POLICIES = ("manual", "ask", "auto")
 INSTALL_POLICY_DEFAULT = "manual"
-INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}
+INSTALL_DEFAULTS = {"policy": "auto"}
 
 # The ONLY commands `auto` can ever reach, as literal argv tuples keyed by the
 # plugin name crew routes to.
