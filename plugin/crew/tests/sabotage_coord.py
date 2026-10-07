@@ -55,7 +55,9 @@ COORD_MUTATIONS = (
      '        return ["push", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]\n',
      '        return ["push", "--force-with-lease", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]\n',
      _T + "test_push_argv_never_forces"),
-    ("crew_coord reads a stale claim as free", COORD,
+    # A stale claim still refuses a new claim (as held, not owner unknown), so
+    # the label names the classification the mutation changes.
+    ("crew_coord reads a stale working claim as a live holder", COORD,
      '    return claim["state"] == "working" and (age is None or age > ttl_minutes * 60)\n',
      "    return False\n",
      _T + "test_stale_working_claim_reads_owner_unknown_and_blocks_claim"),
@@ -262,7 +264,7 @@ COORD_MUTATIONS = (
      "    if not (a and b):\n        return False\n",
      '    if not (a and b):\n        return False\n    return a["session"] == b["session"]\n',
      _T + "test_claim_by_the_same_session_from_another_live_process_is_refused[other-worktree]"),
-    ("crew_coord ignores the process (pid and start) in a holder's identity", COORD,
+    ("crew_coord ignores the pid in a holder's identity", COORD,
      ('    if a.get("pid") is None or b.get("pid") is None:\n'
       "        return False  # an unknown pid cannot establish identity: two processes would match\n"
       '    if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):\n'
@@ -276,6 +278,12 @@ COORD_MUTATIONS = (
       "        return False\n"
       '    return os.path.normcase(a["worktree"]) == os.path.normcase(b["worktree"])\n'),
      _T + "test_claim_by_the_same_session_from_another_live_process_is_refused[same-worktree]"),
+    ("crew_coord reads a one-sided start time as the same holder", COORD,
+     ('    if bool(a.get("pid_start")) != bool(b.get("pid_start")):\n'
+      "        return False  # one side's start time unknown: a reused pid cannot be told apart\n"
+      '    return not (a.get("pid_start") and a["pid_start"] != b["pid_start"])\n'),
+     '    return not (a.get("pid_start") and b.get("pid_start") and a["pid_start"] != b["pid_start"])\n',
+     _T + "test_an_unknown_pid_or_start_time_is_not_the_same_holder"),
     ("crew_coord matches ls-remote by tail", COORD,
      "        tips = [row[0] for row in rows if len(row) == 2 and row[1] == self.ref]\n",
      "        tips = [row[0] for row in rows if len(row) == 2 and row[1].endswith(self.ref)][:1]\n",
