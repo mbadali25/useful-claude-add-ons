@@ -479,7 +479,7 @@ def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
 def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
     """Default budget: a python that costs 2.5s per start (crew_py's probe and
     every interpreter the gate runs, about 12s before the search starts) plus
-    a receipt check that never ends. The gate's own 17s deadline must still
+    a receipt check that never ends. The gate's own 16s deadline must still
     land it inside the 20s hook; a search that took a fixed 12s from its own
     start would not."""
     repo = Repo(tmp_path, REVIEW_MAP)
@@ -532,6 +532,38 @@ def test_sh_without_python_passes_an_unrelated_command(tmp_path):
     repo = Repo(tmp_path, SHA_MAP)
     code, err, _ = run_gate("sh", repo, "ls -la", path=_path_without_python(tmp_path))
     assert code == 0, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_refuses_a_map_with_a_repeated_key(tmp_path):
+    """jq keeps only the last of two equal keys, so the first deploy would
+    never be scanned; python refuses such a map, and so does the fallback."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    (repo.root / ".crew" / "verify.json").write_text(
+        '{"environments": {"development": {"deploy": "ship-it", "deploy": "other", '
+        '"rollback": "none", "rollbackReason": "x"}}}\n', encoding="utf-8")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-q", "-m", "twin keys")
+    code, err, _ = run_gate("sh", repo, "ship-it", path=_path_without_python(tmp_path))
+    assert code == 2, err
+    assert "repeats a key" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
+    """One jq process per map: a fork per string took 20.8s on this repo's
+    own 847-string map, past the hook timeout."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    big = {"environments": {f"env{i}": {"deploy": f"deploy-number-{i}", "rollback": "none",
+                                        "rollbackReason": f"reason {i}", "smoke": [f"s{i}"] * 5}
+                            for i in range(400)}}
+    repo = Repo(tmp_path, big)
+    code, err, took = run_gate("sh", repo, "npm test", path=_path_without_python(tmp_path))
+    assert code == 0, err
+    assert took < 5, took
 
 
 @_POSIX_ONLY

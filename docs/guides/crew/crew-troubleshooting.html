@@ -645,7 +645,7 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
   the reviewed head (main moved, or a bump landed after the review) is not covered: deploy the
   reviewed head, or review the merged tree. An environment that genuinely takes unreviewed builds
   sets <code>requireReview: false</code> plus a <code>reviewReason</code> in the committed map. "could not tell ... did
-  not finish" means the receipt check ran past the gate's 17s deadline; "no usable python" means
+  not finish" means the receipt check ran past the gate's 16s deadline; "no usable python" means
   the gate cannot evaluate at all - install python 3.8+.</li>
 <li>Never route around a block by running the deploy yourself with <code>!</code>. <code>/crew:promote</code> fixes the
   precondition the message names and asks you only for a <code>requireHuman</code> yes or a genuinely

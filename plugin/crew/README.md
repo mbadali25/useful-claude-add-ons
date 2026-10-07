@@ -2837,7 +2837,7 @@ it is local JSON, protected only by the scope guard's refusal to write under
 from the reviewed head (main moved, or a version bump landed after the review)
 is NOT covered: deploy the reviewed head, or review the merged tree.
 
-The review search is bounded: one 17s deadline for the whole gate, under the
+The review search is bounded: one 16s deadline for the whole gate, under the
 20s hook timeout, after which it is killed and the deploy blocks as
 could-not-tell. Without python the gate no longer stands down: with `jq` it
 blocks any command that and a string in the map contain one another, and

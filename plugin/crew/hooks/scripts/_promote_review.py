@@ -67,7 +67,7 @@ MIN_SECONDS = 1.0
 BUDGET_ENV = "CREW_PROMOTE_REVIEW_BUDGET"
 SEP = "\x1e"
 GIT_SECONDS = 10
-_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
 
 class CouldNotTell(Exception):
@@ -166,7 +166,7 @@ def _accepted(tree, ledger_dir, names):
             continue
         head = rounds[-1].get("head")
         if rounds[-1].get("round") != receipt.get("round") or not isinstance(head, str) \
-                or not _FULL_SHA.match(head):
+                or not _FULL_SHA.fullmatch(head):
             continue
         found.append((ticket, head, os.path.join(ledger_dir, name)))
     return found
@@ -277,7 +277,7 @@ def main(argv):
               file=sys.stderr)
         return 2
     tree, sha, deadline, envs = argv[0], argv[1].lower(), argv[2], argv[3:]
-    if not _FULL_SHA.match(sha):
+    if not _FULL_SHA.fullmatch(sha):
         print(f"_promote_review.py: not a full sha: {sha!r}", file=sys.stderr)
         return 2
     try:

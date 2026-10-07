@@ -13,12 +13,15 @@
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
-# L-0703: one deadline for the whole gate, under the 20s hook timeout
-# (hooks.json), measured from here - Resolve-CrewPython's probe (up to 8s)
-# included. The review search below gets only what is left of it.
-$gateClock = [System.Diagnostics.Stopwatch]::StartNew()
-$gateDeadline = 17
-$gateDeadlineEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + $gateDeadline
+# L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
+# (hooks.json) with room for the helper's 2s reap. Measured from this
+# process's own start, so PowerShell's start-up (seconds on a cold, scanned
+# host) and Resolve-CrewPython's probe (up to 8s) both count against it. The
+# review search below gets only what is left.
+$gateDeadline = 16
+try { $gateStart = [DateTimeOffset](Get-Process -Id $PID -ErrorAction Stop).StartTime }
+catch { $gateStart = [DateTimeOffset]::Now }
+$gateDeadlineEpoch = $gateStart.ToUnixTimeSeconds() + $gateDeadline
 
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
@@ -951,13 +954,17 @@ try {
   $errTask = $proc.StandardError.ReadToEndAsync()
   # The helper kills its own search at the deadline; this wait is the backstop
   # for a helper that cannot even start its clock.
-  $waitMs = [int][Math]::Max(1000, ($gateDeadline - $gateClock.Elapsed.TotalSeconds) * 1000)
+  $waitMs = [int][Math]::Max(1000, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds() + 1) * 1000)
   if (-not $proc.WaitForExit($waitMs)) {
     try { $proc.Kill($true) } catch { try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }; try { $proc.Kill() } catch { } }
     Stop-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
   }
-  $null = $outTask.Wait(2000)
-  $null = $errTask.Wait(2000)
+  # Bounded too: a helper that exited while something it started still holds
+  # its stdout or stderr would otherwise leave .Result waiting past the hook
+  # timeout, and a timed-out hook is not a block.
+  if (-not $outTask.Wait(2000) -or -not $errTask.Wait(2000)) {
+    Stop-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
+  }
   if ($proc.ExitCode -ne 0) {
     $errText = "$($errTask.Result)".Trim()
     if ($errText) { [Console]::Error.WriteLine($errText) }

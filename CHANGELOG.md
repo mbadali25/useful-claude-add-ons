@@ -31,7 +31,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   review) is not covered. Both flavours decide through one new helper, `_promote_review.py`. What
   it does not prove - paths the review bundle left out, ignored build output, and who wrote the
   (local, unauthenticated) ledger - is stated in promote.md and the README.
-- **Fails closed.** The review search runs in a killable process group under one 17s deadline for
+- **Fails closed.** The review search runs in a killable process group under one 16s deadline for
   the whole gate, inside the 20s hook timeout. Without python `promote-gate.sh` no longer stands
   down: with `jq` it blocks a command that and a string in the map contain one another, without
   `jq` every command while a map exists. `promote-gate.ps1` resolves python with the shared

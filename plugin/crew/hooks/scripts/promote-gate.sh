@@ -81,11 +81,11 @@ elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/de
   MAP_DIRTY="untracked - in no commit"
 fi
 
-# L-0703: one deadline for the whole gate, under the 20s hook timeout
-# (hooks.json), as a Unix time. A hook that runs out of time is not a block,
+# L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
+# (hooks.json) with room for the helper's 2s reap, as a Unix time. A hook that runs out of time is not a block,
 # so the review search below is given this deadline, never a fixed slice of
 # its own: python's start-up and every check before it count against it.
-GATE_DEADLINE=$(( $(date +%s) + 17 ))
+GATE_DEADLINE=$(( $(date +%s) + 16 ))
 
 # No python is NOT an opt-out (L-0703). It used to `exit 0` here, so a host
 # without python ran every declared deploy ungated. Without python the map
@@ -98,7 +98,7 @@ GATE_DEADLINE=$(( $(date +%s) + 17 ))
 #     two-way rule, ASCII case ignored), blocks. That is a superset of the
 #     declared `deploy` commands. A map jq cannot read blocks;
 #   - with neither: the command cannot even be read, and a textual key scan
-#     is evadable (`"deploy"`), so every command blocks while a map
+#     is evadable (`"depl\u006fy"`), so every command blocks while a map
 #     exists. Doubly degraded, a deploy cannot be told from anything else.
 PY=$(crew_py) || PY=""
 if [ -z "$PY" ]; then
@@ -110,26 +110,31 @@ if [ -z "$PY" ]; then
   [ -z "${NP_CMD//[[:space:]]/}" ] && exit 0
   NP_FCMD=$(printf '%s' "$NP_CMD" | LC_ALL=C tr 'A-Z' 'a-z')
   NP_HIT=""
+  # ONE jq process per map, never one per string: a fork per value cost 20.8s
+  # on this repo's own 847-string map, past the hook timeout (L-0703 security
+  # review). An empty text, a map jq cannot parse, and a key repeated in one
+  # object (jq keeps only the last value, so the first would never be
+  # scanned; python refuses such a map) all block as unreadable.
   np_scan() {
-    local text=$1 where=$2 v fv
-    if ! printf '%s' "$text" | jq empty >/dev/null 2>&1; then
-      echo "PROMOTION BLOCKED: no usable python, and $where could not be read by jq either, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
+    local text=$1 where=$2 dup
+    dup=$(printf '%s' "$text" | jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
+    if [ -z "${text//[[:space:]]/}" ] || [ "$dup" != "false" ]; then
+      echo "PROMOTION BLOCKED: no usable python, and $where is empty, does not parse, or repeats a key, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
       exit 2
     fi
-    while IFS= read -r -d '' v; do
-      [ -z "$v" ] && continue
-      fv=$(printf '%s' "$v" | LC_ALL=C tr 'A-Z' 'a-z')
-      case "$NP_FCMD" in *"$fv"*) NP_HIT=$v ;; esac
-      case "$fv" in *"$NP_FCMD"*) NP_HIT=$v ;; esac
-    done < <(printf '%s' "$text" | jq -j '.. | strings | (., "\u0000")' 2>/dev/null)
+    NP_HIT=$(printf '%s' "$text" | jq -r --arg c "$NP_FCMD" \
+      'first(.. | strings | select(length > 0) | select((ascii_downcase as $v | ($c | contains($v))) or (ascii_downcase | contains($c)))) // empty' 2>/dev/null) || {
+      echo "PROMOTION BLOCKED: no usable python, and jq could not scan $where, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
+      exit 2
+    }
+    if [ -n "$NP_HIT" ]; then
+      echo "PROMOTION BLOCKED: no usable python, and this command and the map's string '$NP_HIT' contain one another, so it may be a declared deploy. Without python crew cannot evaluate any pre-deploy check. This is not a pass. Install python 3.8+." >&2
+      exit 2
+    fi
   }
   [ -e .crew/verify.json ] && np_scan "$(cat .crew/verify.json 2>/dev/null)" ".crew/verify.json"
   if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
     np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json"
-  fi
-  if [ -n "$NP_HIT" ]; then
-    echo "PROMOTION BLOCKED: no usable python, and this command and the map's string '$NP_HIT' contain one another, so it may be a declared deploy. Without python crew cannot evaluate any pre-deploy check. This is not a pass. Install python 3.8+." >&2
-    exit 2
   fi
   exit 0
 fi
