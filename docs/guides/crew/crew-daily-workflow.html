@@ -273,8 +273,8 @@ the claims use, as a numbered version with a content hash:</p>
    While it is a draft, <code>put</code> replaces it in place.</li>
 <li>Each side, once its ticket is approved, records what it built against:
    <code>crew_contract.py build-against --name &lt;n&gt; --version &lt;N&gt; --ticket &lt;id&gt;</code>.
-   That freezes the version and writes the binding to
-   <code>.work/tickets/&lt;id&gt;/contracts.json</code>.</li>
+   That freezes the version and writes the binding, with the remote it was
+   built on, to <code>.work/tickets/&lt;id&gt;/contracts.json</code>.</li>
 <li>A frozen version is never edited. A change is a new version tied to a new
    ticket on each side: <code>put --name &lt;n&gt; --file &lt;path&gt; --new-version --ticket &lt;new id&gt;</code>.</li>
 </ol>

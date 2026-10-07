@@ -62,17 +62,17 @@ def _ticket(root, ticket="T-1", touch=("src/**",)):
     approve_as_user(root, ticket)
 
 
-def _contract(root, *args):
-    return crew_contract.main([args[0], "--root", str(root), "--remote", "origin"] + list(args[1:]))
+def _contract(root, *args, remote="origin"):
+    return crew_contract.main([args[0], "--root", str(root), "--remote", remote] + list(args[1:]))
 
 
-def _built(root, tmp_path, ticket="T-1", name="api"):
+def _built(root, tmp_path, ticket="T-1", name="api", remote="origin"):
     """`name` v1 put on the channel and built against by the approved `ticket`."""
     body = tmp_path / f"{name}.txt"
     body.write_bytes(BODY)
-    assert _contract(root, "put", "--channel", CHANNEL, "--name", name, "--file", str(body)) == 0
+    assert _contract(root, "put", "--channel", CHANNEL, "--name", name, "--file", str(body), remote=remote) == 0
     assert _contract(root, "build-against", "--channel", CHANNEL, "--name", name, "--version", "1",
-                     "--ticket", ticket) == 0
+                     "--ticket", ticket, remote=remote) == 0
 
 
 def _files(root):
@@ -82,8 +82,8 @@ def _files(root):
     return chan.read(tip)
 
 
-def _peer_rewrites(root, files, drop=()):
-    chan = crew_coord.Channel(str(root), "origin", CHANNEL)
+def _peer_rewrites(root, files, drop=(), remote="origin"):
+    chan = crew_coord.Channel(str(root), remote, CHANNEL)
 
     def change(tree):
         for path in drop:
@@ -103,8 +103,8 @@ def _rewrite_record(root, **changes):
     _peer_rewrites(root, {"contracts/api/v1.json": json.dumps(record).encode()})
 
 
-def _verify(capsys, root, ticket="T-1"):
-    code = crew_contract.main(["verify", "--root", str(root), "--ticket", ticket])
+def _verify(capsys, root, ticket="T-1", extra=()):
+    code = crew_contract.main(["verify", "--root", str(root), "--ticket", ticket] + list(extra))
     out = capsys.readouterr()
     return code, out.out + out.err
 
@@ -191,9 +191,9 @@ def test_a_changed_contract_is_a_mismatch(capsys, tmp_path, root, how, needle):
     ("bindings-not-json", "contract bindings unknown"),
     ("bindings-schema", "contract bindings unknown"),
     ("binding-field-missing", "contract bindings unknown"),
-    ("remote-not-configured", "is not a configured remote")],
+    ("remote-gone", "'origin' is not a configured remote")],
     ids=["fetch-fails", "channel-absent", "record-missing", "body-missing", "record-corrupt",
-         "bindings-not-json", "bindings-schema", "binding-field-missing", "remote-not-configured"])
+         "bindings-not-json", "bindings-schema", "binding-field-missing", "remote-gone"])
 def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, needle):
     _ticket(root)
     _built(root, tmp_path)
@@ -215,16 +215,58 @@ def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, nee
     elif how == "binding-field-missing":
         _write(binding, json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api",
                                                                "version": 1}]}))
-    else:
-        cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-        cfg["coord"] = {"remote": "coordhub"}
-        (root / ".crew" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    else:  # the remote the binding was built on is gone (renamed)
+        git(root, "remote", "rename", "origin", "elsewhere")
     capsys.readouterr()
 
     code, out = _verify(capsys, root)
 
     assert code == crew_contract.EXIT_UNKNOWN, out
     assert "unknown" in out and needle in out
+
+
+@pytest.fixture(name="alt")
+def _alt(tmp_path, root):
+    """A second remote, `alt`, with its own bare repository; `coord.remote`
+    stays the default `origin`."""
+    bare = tmp_path / "alt.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True,
+                   capture_output=True, stdin=subprocess.DEVNULL)
+    git(root, "remote", "add", "alt", str(bare))
+    return bare
+
+
+def test_a_binding_is_checked_on_the_remote_it_was_built_on(capsys, tmp_path, root, alt):
+    """L-0634 review round 2: a binding built with `--remote alt` was checked on
+    `coord.remote` (origin), where an unchanged copy read current while the
+    contract on alt had been rewritten."""
+    _ticket(root)
+    _built(root, tmp_path)
+    (tmp_path / "api.txt").unlink()
+    _built(root, tmp_path, remote="alt")
+    bound = crew_contract.read_bindings(crew_contract.binding_path(str(root), "T-1"))[0]
+    assert sorted(b["remote"] for b in bound) == ["alt", "origin"]
+    _peer_rewrites(root, {"contracts/api/v1.body": b"edited\n"}, remote="alt")
+    capsys.readouterr()
+
+    code, out = _verify(capsys, root)
+
+    assert code == crew_contract.EXIT_REFUSED, out
+    assert "contract api v1 changed since T-1 built against it" in out
+    assert f"contract api v1 current: {_sha(BODY)[:19]} on crew-coord/{CHANNEL}" in out
+
+
+def test_verify_remote_naming_another_remote_is_unknown(capsys, tmp_path, root, alt):
+    _ticket(root)
+    _built(root, tmp_path, remote="alt")
+    capsys.readouterr()
+
+    code, out = _verify(capsys, root, "T-1", ["--remote", "origin"])
+
+    assert code == crew_contract.EXIT_UNKNOWN, out
+    assert "built against on remote alt, not origin" in out
+    code, out = _verify(capsys, root, "T-1", ["--remote", "alt"])
+    assert code == 0, out
 
 
 def test_no_bindings_means_no_fetch(capsys, root, calls):
@@ -348,6 +390,19 @@ def test_wave_refuses_a_contract_mismatch(tmp_path, root):
     started = crew_wave.start(str(root), "s")
     assert started["plan"]["wave"] == []
     assert not os.path.exists(os.path.join(crew_wave.lanes_dir(str(root), "s"), "T-1.json"))
+
+
+def test_wave_reads_a_binding_from_its_own_remote(tmp_path, root, alt):
+    _ticket(root)
+    _built(root, tmp_path, remote="alt")
+    _index(root, ["T-1"])
+    assert _plan_rows(root, ["T-1"])["T-1"]["eligible"] is True
+
+    _peer_rewrites(root, {"contracts/api/v1.body": b"edited\n"}, remote="alt")
+    got = _plan_rows(root, ["T-1"])["T-1"]
+
+    assert got["eligible"] is False
+    assert "contract api v1 changed since T-1 built against it" in got["reason"]
 
 
 def test_wave_refuses_an_unknown_contract(tmp_path, root):

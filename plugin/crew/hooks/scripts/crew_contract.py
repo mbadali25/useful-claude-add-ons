@@ -43,7 +43,7 @@ ticket the owner approved binds to a version.
 
 The binding. `build-against` records the build twice: a `built_by` entry on
 the channel, and `.work/tickets/<id>/contracts.json`, `{"schema": 1,
-"bindings": [{"channel", "name", "version", "hash"}]}`, written after the push
+"bindings": [{"remote", "channel", "name", "version", "hash"}]}`, written after the push
 through a temp file and os.replace. The local copy is the evidence a later
 check compares the channel against, because a peer can rewrite the channel
 without this tool; this script cannot prevent that. Running `build-against`
@@ -54,10 +54,13 @@ The check (L-0634). `verify` and the autopilot wave (`crew_wave.py plan` and
 `start`) call check_bindings: every binding in the ticket's contracts.json must
 still find, on the fetched channel, that version with the bound hash, a body
 whose sha256 is that hash, status `built-against`, and this repository and
-ticket in `built_by`. Anything else is a mismatch (exit 1, the wave refuses
-the ticket); a binding that cannot be checked -- the fetch fails, the channel
-is absent, the version's files are missing, the record is corrupt, the
-bindings file does not parse -- is unknown (exit 3), never "no bindings". A
+ticket in `built_by`. Each binding is read from the remote it was built on
+(the binding's `remote`), never from whichever remote is configured now; a
+`verify --remote` naming another remote reads that binding unknown. Anything
+else is a mismatch (exit 1, the wave refuses the ticket); a binding that
+cannot be checked -- the fetch fails, the channel is absent, the version's
+files are missing, the record is corrupt, the bindings file cannot be checked
+or does not parse -- is unknown (exit 3), never "no bindings". A
 ticket with no contracts.json is not checked and fetches nothing. A newer
 version on the channel is information only. The check never repairs: it
 writes nothing and never picks the newer version.
@@ -103,7 +106,9 @@ _VERSION_RE = re.compile(r"[1-9][0-9]{0,8}")
 _FILE_RE = re.compile(r"v([1-9][0-9]{0,8})\.(json|body)")
 _HASH_RE = re.compile(r"sha256:[0-9a-f]{64}")
 _ENTRY_KEYS = ("repo", "ticket", "hash", "at")
-_BINDING_KEYS = ("channel", "name", "version", "hash")
+# A git remote name as a binding records it: no whitespace or control
+# character, no leading dash (it would read as an option).
+_REMOTE_RE = re.compile(r"[^\s\x00-\x1f\x7f-][^\s\x00-\x1f\x7f]{0,254}")
 HASH_SHOWN = len("sha256:") + 12
 
 
@@ -235,22 +240,31 @@ def binding_path(top, ticket):
 
 
 def _valid_binding(binding):
-    """A channel and name by the name rule, a version >= 1 (an int, not a
-    bool), and a sha256 hash."""
+    """The remote it was built on, a channel and name by the name rule, a
+    version >= 1 (an int, not a bool), and a sha256 hash."""
     if not isinstance(binding, dict):
         return False
     version = binding.get("version")
-    return (all(isinstance(binding.get(key), str) and NAME_RE.fullmatch(binding[key]) for key in ("channel", "name"))
+    return (isinstance(binding.get("remote"), str) and bool(_REMOTE_RE.fullmatch(binding["remote"]))
+            and all(isinstance(binding.get(key), str) and NAME_RE.fullmatch(binding[key])
+                    for key in ("channel", "name"))
             and isinstance(version, int) and not isinstance(version, bool) and version >= 1
             and isinstance(binding.get("hash"), str) and bool(_HASH_RE.fullmatch(binding["hash"])))
 
 
 def read_bindings(path):
     """(bindings, None), or (None, why) when the file exists and is not
-    `{"schema": 1, "bindings": [{channel, name, version, hash}]}`. No file
-    is ([], None): a ticket that never built against a contract."""
-    if not os.path.lexists(path):
+    `{"schema": 1, "bindings": [{remote, channel, name, version, hash}]}`.
+    No file is ([], None): a ticket that never built against a contract. Only
+    an lstat that says the file is not there means that; any other lstat error
+    (a denied search, say) is (None, why), never "no bindings" -- which
+    `os.path.lexists` would make of it."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return [], None
+    except OSError as exc:
+        return None, f"{path} could not be checked ({type(exc).__name__})"
     try:
         with open(path, "rb") as handle:
             data = json.loads(handle.read().decode("utf-8"))
@@ -261,7 +275,7 @@ def read_bindings(path):
             or not isinstance(data.get("bindings"), list):  # 1.0 and true are not the schema 1
         return None, f"{path} is not {{\"schema\": {SCHEMA}, \"bindings\": [...]}}"
     if not all(_valid_binding(binding) for binding in data["bindings"]):
-        return None, f"{path} has a binding without a valid channel, name, version or sha256 hash"
+        return None, f"{path} has a binding without a valid remote, channel, name, version or sha256 hash"
     return data["bindings"], None
 
 
@@ -332,7 +346,8 @@ def cmd_build_against(chan, top, name, version, ticket, repo):
     if bindings is None:
         print(f"unknown - {why}; nothing was written. Fix or remove it, then run build-against again")
         return EXIT_UNKNOWN
-    held = [b for b in bindings if (b["channel"], b["name"], b["version"]) == (chan.channel, name, version)]
+    held = [b for b in bindings
+            if (b["remote"], b["channel"], b["name"], b["version"]) == (chan.remote, chan.channel, name, version)]
     built = {}
 
     def change(files):
@@ -378,7 +393,8 @@ def cmd_build_against(chan, top, name, version, ticket, repo):
     if result.status not in ("ok", "noop"):
         return _exit(result)
     print(result.message)
-    problem = _bind(local, {"channel": chan.channel, "name": name, "version": version, "hash": built["hash"]})
+    problem = _bind(local, {"remote": chan.remote, "channel": chan.channel, "name": name, "version": version,
+                            "hash": built["hash"]})
     if problem:
         print(f"unknown - the channel records the build, but {problem}; fix it and run build-against again")
         return EXIT_UNKNOWN
@@ -389,13 +405,13 @@ def _bind(path, binding):
     """Add `binding` to the ticket's bindings file, re-read under its lock, so
     two builds for one ticket never drop each other's entry. None, or why it
     was not written."""
-    key = (binding["channel"], binding["name"], binding["version"])
+    key = (binding["remote"], binding["channel"], binding["name"], binding["version"])
     try:
         with crew_config_files.Lock(path):
             bindings, why = read_bindings(path)
             if bindings is None:
                 return why
-            same = [b for b in bindings if (b["channel"], b["name"], b["version"]) == key]
+            same = [b for b in bindings if (b["remote"], b["channel"], b["name"], b["version"]) == key]
             if any(b["hash"] != binding["hash"] for b in same):
                 return f"{path} already binds {binding['name']} v{binding['version']} to another hash"
             if not same:
@@ -466,29 +482,30 @@ def coord_remote(top, given=None):
     return (coord.get("remote") if isinstance(coord, dict) else None) or "origin"
 
 
-def channel_reader(top, remote):
-    """read(channel) -> (files, None) or (None, why) for the fetched
-    `crew-coord/<channel>` on `remote`, each channel fetched once. The fetch
+def channel_reader(top):
+    """read(remote, channel) -> (files, None) or (None, why) for the fetched
+    `crew-coord/<channel>` on `remote`, each pair fetched once. The fetch
     writes objects and nothing else."""
     seen = {}
 
-    def read(channel):
-        if channel not in seen:
+    def read(remote, channel):
+        key = (remote, channel)
+        if key not in seen:
             listed = crew_coord.run_git(top, ["remote"])
             if listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
-                seen[channel] = (None, f"{crew_coord.safe(remote)!r} is not a configured remote")
-                return seen[channel]
+                seen[key] = (None, f"{crew_coord.safe(remote)!r} is not a configured remote")
+                return seen[key]
             chan = crew_coord.Channel(top, remote, channel)
             tip, state, why = chan.fetch()
             if state == "failed":
-                seen[channel] = (None, f"could not fetch crew-coord/{channel} from {remote}: {why}")
+                seen[key] = (None, f"could not fetch crew-coord/{channel} from {remote}: {why}")
             elif state == "absent":
-                seen[channel] = (None, f"crew-coord/{channel} does not exist on {remote}")
+                seen[key] = (None, f"crew-coord/{channel} does not exist on {remote}")
             else:
                 files = chan.read(tip)
-                seen[channel] = (files, None) if files is not None else (
+                seen[key] = (files, None) if files is not None else (
                     None, f"could not read crew-coord/{channel}")
-        return seen[channel]
+        return seen[key]
     return read
 
 
@@ -520,8 +537,10 @@ def _judge_binding(files, binding, repo, ticket):
 def check_bindings(top, ticket, read=None, remote=None):
     """`{"status": "ok"|"mismatch"|"unknown", "reason", "lines"}` for every
     binding in `.work/tickets/<ticket>/contracts.json`. No file: ok with no
-    line and no fetch. `read(channel)` is a channel_reader (the wave shares its
-    own). `reason` is the first refusal, `lines` one line per binding, each
+    line and no fetch. `read(remote, channel)` is a channel_reader (the wave
+    shares its own); each binding is read from the remote it records. `remote`
+    (verify's `--remote`) only narrows: a binding built on another remote is
+    unknown, never checked against this one. `reason` is the first refusal, `lines` one line per binding, each
     peer-labelled; a mismatch outranks an unknown in `status`."""
     bindings, why = read_bindings(binding_path(top, ticket))
     if bindings is None:
@@ -533,11 +552,15 @@ def check_bindings(top, ticket, read=None, remote=None):
     except (crew_coord.UnknownKey, crew_coord.UsageError) as exc:
         return {"status": "unknown", "reason": f"contract bindings unknown (this repository's key cannot be "
                                                f"told: {exc})", "lines": []}
-    read = read or channel_reader(top, coord_remote(top, remote))
+    read = read or channel_reader(top)
     lines, firsts = [], {}
     for binding in bindings:
         label = f"contract {binding['name']} v{binding['version']}"
-        files, why = read(binding["channel"])
+        if remote is not None and binding["remote"] != remote:
+            files, why = None, (f"built against on remote {binding['remote']}, not {remote}; "
+                                f"verify it without --remote or with --remote {binding['remote']}")
+        else:
+            files, why = read(binding["remote"], binding["channel"])
         state, why, newer = ("unknown", why, []) if files is None else _judge_binding(files, binding, repo, ticket)
         if state == "ok":
             line = f"{label} current: {binding['hash'][:HASH_SHOWN]} on crew-coord/{binding['channel']}"

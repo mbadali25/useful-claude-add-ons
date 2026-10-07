@@ -417,17 +417,21 @@ def _dep_refusal(top, deps, channels=None):
     return None
 
 
-def _channel_files(top, channel, channels):
+def _channel_files(top, channel, channels, remote=None):
     """(files, None) for the fetched `crew-coord/<channel>`, or (None, why).
-    Read once per plan. The remote is crew_coord's `coord.remote` (default
+    Read once per plan and remote. The remote is `remote` when given (a
+    contract binding's own, L-0634), else crew_coord's `coord.remote` (default
     origin). Fetching writes objects and nothing else: no ref, no FETCH_HEAD."""
-    if channel in channels:
-        return channels[channel]
-    cfg = crew_config.resolve_config(top).get("coord")
-    remote = (cfg.get("remote") if isinstance(cfg, dict) else None) or "origin"
+    configured = remote is None
+    if configured:
+        cfg = crew_config.resolve_config(top).get("coord")
+        remote = (cfg.get("remote") if isinstance(cfg, dict) else None) or "origin"
+    if (remote, channel) in channels:
+        return channels[(remote, channel)]
     listed = crew_coord.run_git(top, ["remote"])
     if listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
-        got = (None, f"{crew_coord.safe(remote)!r} (coord.remote) is not a configured remote")
+        got = (None, f"{crew_coord.safe(remote)!r}{' (coord.remote)' if configured else ''} "
+                     "is not a configured remote")
     else:
         chan = crew_coord.Channel(top, remote, channel)
         tip, state, why = chan.fetch()
@@ -438,7 +442,7 @@ def _channel_files(top, channel, channels):
         else:
             files = chan.read(tip)
             got = (files, None) if files is not None else (None, f"could not read crew-coord/{channel}")
-    channels[channel] = got
+    channels[(remote, channel)] = got
     return got
 
 
@@ -577,7 +581,8 @@ def _contract_refusal(top, ticket, channels):
     Checked after the dependencies, so the cheaper refusals come first, and
     through this plan's channel cache."""
     try:
-        result = crew_contract.check_bindings(top, ticket, read=lambda channel: _channel_files(top, channel, channels))
+        result = crew_contract.check_bindings(
+            top, ticket, read=lambda remote, channel: _channel_files(top, channel, channels, remote))
     except Exception as exc:  # pylint: disable=broad-except
         return f"its contract bindings could not be checked ({type(exc).__name__})"
     return result["reason"] or None

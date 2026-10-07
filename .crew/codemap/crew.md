@@ -2308,8 +2308,10 @@ this map's `anchor:`; re-find each name by content.
   `.work/tickets/<id>/contracts.json` (`read_bindings`, `write_bindings`) after the push.
 - DERIVED (L-0634): `check_bindings` compares each binding with its fetched channel (`_judge_binding`:
   the record's hash, the body's sha256, status `built-against`, this repo and ticket in `built_by`)
-  and returns ok / mismatch / unknown; `verify --ticket` prints it, and `crew_wave._judge` calls it
-  through `_contract_refusal` after the dependencies, sharing the plan's channel cache.
+  and returns ok / mismatch / unknown; each binding is read from the `remote` it records
+  (`channel_reader` keyed by remote and channel). `verify --ticket` prints it, and `crew_wave._judge`
+  calls it through `_contract_refusal` after the dependencies, sharing the plan's channel cache
+  (`_channel_files` with the binding's remote).
 - JUDGEMENT: the local binding, not the channel, is the evidence: a peer can rewrite the channel.
   `check_bindings` compares the two and never repairs either. Tests: `plugin/crew/tests/test_crew_contract.py`,
   under the last rule of `.crew/verify.json`. Sabotage is L-0635, a harness PR.

@@ -315,9 +315,10 @@ def test_build_against_freezes_and_writes_the_binding(capsys, tmp_path, wt, hub)
     assert entry["repo"] == _repo(wt) and entry["ticket"] == "T-1" and entry["hash"] == _sha(BODY)
     assert crew_coord.parse_stamp(entry["at"]) is not None
     assert json.loads(_binding_path(wt).read_text(encoding="utf-8")) == {
-        "schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1, "hash": _sha(BODY)}]}
+        "schema": 1, "bindings": [{"remote": "coord", "channel": CHANNEL, "name": "api", "version": 1,
+                                   "hash": _sha(BODY)}]}
     assert crew_contract.read_bindings(str(_binding_path(wt))) == (
-        [{"channel": CHANNEL, "name": "api", "version": 1, "hash": _sha(BODY)}], None)
+        [{"remote": "coord", "channel": CHANNEL, "name": "api", "version": 1, "hash": _sha(BODY)}], None)
 
 
 def test_build_against_is_idempotent(capsys, tmp_path, wt, hub, calls):
@@ -478,7 +479,7 @@ def test_build_against_refuses_an_unreadable_binding_file(capsys, tmp_path, wt, 
 def test_build_against_refuses_a_binding_with_another_hash(capsys, tmp_path, wt, hub):
     _approved(wt)
     _put(capsys, wt, _body(tmp_path))
-    stale = {"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1,
+    stale = {"schema": 1, "bindings": [{"remote": "coord", "channel": CHANNEL, "name": "api", "version": 1,
                                         "hash": _sha(b"what was built\n")}]}
     _binding_path(wt).write_text(json.dumps(stale), encoding="utf-8")
     before = git(hub, "rev-parse", REF)
@@ -588,15 +589,26 @@ def test_status_still_prints_the_versions_beside_a_stray_file(capsys, tmp_path, 
     assert any(line.startswith("api v1 draft") for line in out.splitlines())
 
 
+def _bound(**fields):
+    return json.dumps({"schema": 1, "bindings": [dict({"remote": "coord", "channel": CHANNEL, "name": "api",
+                                                       "version": 1, "hash": _sha(BODY)}, **fields)]})
+
+
 @pytest.mark.parametrize("text", [
     json.dumps({"schema": True, "bindings": []}),
     json.dumps({"schema": 1.0, "bindings": []}),
-    json.dumps({"schema": 1, "bindings": [{"channel": "", "name": "api", "version": 1, "hash": _sha(BODY)}]}),
-    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "", "version": 1, "hash": _sha(BODY)}]}),
-    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": -1, "hash": _sha(BODY)}]}),
-    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": True, "hash": _sha(BODY)}]}),
-    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1, "hash": "bad"}]})],
-    ids=["schema-true", "schema-float", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash"])
+    _bound(channel=""),
+    _bound(name=""),
+    _bound(version=-1),
+    _bound(version=True),
+    _bound(hash="bad"),
+    json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api", "version": 1, "hash": _sha(BODY)}]}),
+    _bound(remote=""),
+    _bound(remote="-upload-pack=x"),
+    _bound(remote="co ord"),
+    _bound(remote=1)],
+    ids=["schema-true", "schema-float", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash",
+         "no-remote", "empty-remote", "dash-remote", "space-remote", "int-remote"])
 def test_a_malformed_binding_file_reads_as_unknown(tmp_path, text):
     """Review round 4: the binding reader checked types only."""
     path = tmp_path / "contracts.json"
@@ -605,6 +617,23 @@ def test_a_malformed_binding_file_reads_as_unknown(tmp_path, text):
     bindings, why = crew_contract.read_bindings(str(path))
 
     assert bindings is None and why
+
+
+def test_a_binding_file_that_cannot_be_checked_is_never_no_bindings(tmp_path, monkeypatch):
+    """L-0634 review round 2: `os.path.lexists` is False when lstat fails for
+    any reason, so a denied search read as "no bindings" and the check passed."""
+    path = str(tmp_path / "contracts.json")
+    real = os.lstat
+
+    def denied(target, *args, **kwargs):
+        if os.fspath(target) == path:
+            raise PermissionError(13, "Permission denied", path)
+        return real(target, *args, **kwargs)
+    monkeypatch.setattr(crew_contract.os, "lstat", denied)
+
+    bindings, why = crew_contract.read_bindings(path)
+
+    assert bindings is None and "could not be checked (PermissionError)" in why
 
 
 def test_status_sanitises_peer_written_fields(capsys, tmp_path, wt, hub):

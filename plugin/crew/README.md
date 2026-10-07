@@ -2653,17 +2653,21 @@ push, never a force push, claims and every other file carried through.
 - **Two copies of the binding.** `build-against` appends this repository and
   ticket to `built_by` on the channel (running it again adds nothing), and
   writes `.work/tickets/<id>/contracts.json` (`{"schema": 1, "bindings":
-  [{channel, name, version, hash}]}`) locally, the only local file it writes.
+  [{remote, channel, name, version, hash}]}`, `remote` being the git remote it
+  was built on) locally, the only local file it writes.
 - **What a peer can rewrite.** Anything on the channel: a peer pushing without
   this tool can edit a frozen record or body. This tool cannot prevent that;
   the local binding is the evidence `verify` compares the channel against.
 - **`verify` and the wave refusal** (L-0634). `verify --ticket <id>` checks every
   binding in the ticket's `contracts.json`: the channel must still show that
   version with the bound hash, a body whose sha256 is that hash, status
-  `built-against`, and this repository and ticket in `built_by`. Exit 0 when
+  `built-against`, and this repository and ticket in `built_by`, read from the
+  remote the binding records (never whatever `coord.remote` says now; a
+  `verify --remote` naming another remote reads that binding unknown). Exit 0 when
   every binding holds, 1 on a mismatch, 3 when it cannot tell (the fetch fails,
   the channel is absent, the version's record or body is missing, the record is
-  corrupt, the bindings file does not parse — never read as "no bindings"). A
+  corrupt, the bindings file cannot be checked or does not parse — never read
+  as "no bindings"). A
   ticket with no `contracts.json` is not checked and fetches nothing; a newer
   version on the channel is information only. `crew_wave.py plan` and `start`
   run the same check after a ticket's dependencies and refuse it with

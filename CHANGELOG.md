@@ -17,8 +17,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Added.** `crew_contract.py verify --ticket <id>` and `check_bindings`: every binding in
   `.work/tickets/<id>/contracts.json` must still find its version on the channel with the bound
   hash, a body whose sha256 is that hash, status `built-against` and this repository and ticket in
-  `built_by` (exit 0); anything else is a mismatch (exit 1), and what cannot be checked is unknown
-  (exit 3), never "no bindings". A ticket with no bindings fetches nothing; a newer version is
+  `built_by`, read from the remote the binding records (exit 0); anything else is a mismatch
+  (exit 1), and what cannot be checked is unknown (exit 3), never "no bindings": a bindings file
+  that cannot be checked, a remote no longer configured, or `verify --remote` naming another remote. A ticket with no bindings fetches nothing; a newer version is
   information only; nothing is repaired. `crew_wave.py plan` and `start` refuse such a ticket after
   its dependencies (`contract <n> v<N> changed since <id> built against it` / `... unknown`). README
   and the troubleshooting guide describe the refusal and the way out.
@@ -49,7 +50,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `build-against --name <n> --version <N> --ticket <id>` needs the ticket approved
   (`crew_ticket.accepted`), checks the body's sha256 against the record, sets `built-against`,
   appends this repository and ticket to `built_by` once, and writes the local binding
-  `.work/tickets/<id>/contracts.json`; `status` lists every version, labelled `[peer-written]`, and
+  `.work/tickets/<id>/contracts.json` (remote, channel, name, version, hash); `status` lists every version, labelled `[peer-written]`, and
   reads anything it cannot parse as `unknown` (exit 3). Writes go through T-0030's `Channel`: a
   plain push on the fetched tip, never a force push, claims carried through. The README's
   "Versioned contracts" section and the daily-workflow guide describe it.
