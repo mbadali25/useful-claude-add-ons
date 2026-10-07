@@ -29,6 +29,7 @@ import crew_platform
 import crew_state
 import crew_status
 import crew_ticket
+import review_run
 from review_fixtures import git, init_repo
 from scope_fixtures import edit, make_repo, ready, run_hook
 
@@ -202,7 +203,6 @@ ALLOWED = {
     "crew_migrate.py": (9, "the writer and its labels, plus the PM journal archive join; T-0038 "
                         "adds CONFIG_REL, the upgrade stage's own in-place target, and the "
                         "re-run's read of the crew.json it wrote"),
-    "verify_fingerprint.py": (1, "a fingerprint input list, not a read of the config"),
     "webtest_rules.py": (1, "a secret-file glob, not a read of the config"),
     "crew_route.py": (1, "a message label naming the repo layer"),
     "role_write_guard.py": (1, "a message label naming the corrupt layer"),
@@ -218,12 +218,13 @@ ALLOWED = {
     # - the delete path's backup file name `.crew/<BACKUP_PREFIX><stamp>`, own path;
     # - the scratch repo's config.json written to preview the post-heal rows.
     "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
-    # review_gate.py reads the stand-down flag exactly where verify-gate.sh does,
-    # the worktree's own file, until T-0096 routes the shell gate; pinned by
-    # test_review_gate.py's lane test.
-    "review_gate.py": (1, "mirrors verify-gate.sh's own-file stand-down read (T-0096)"),
     "crew_wave.py": (1, ("lane-init's copy of the main checkout's own .crew/config.json "
                          "into the lane, own paths")),
+    # T-0068: CREW_CONTENT_PATHS names the two config files as content that is
+    # never crew bookkeeping (always reviewed and judged); a list entry, not a read.
+    "crew_ticket.py": (2, "CREW_CONTENT_PATHS lists the config files, not a config read"),
+    "review_run.py": (2, "CREW_CONFIG_PATHS: the fingerprint's two config path constants, "
+                         "never a config read"),
 }
 
 
@@ -387,3 +388,28 @@ def test_explain_names_the_main_config_a_worktree_own_config_shadows(tmp_path):
     in_wt = _explain(wt, "--explain").stdout
 
     assert "not read" in in_wt and str(main / ".crew") in in_wt
+
+
+# --- review_run.graph_out reads the resolved config (T-0028, owner 2026-09-30) ---------
+
+def test_graph_out_in_a_lane_reads_the_main_checkouts_config(tmp_path):
+    """Must-block: a linked worktree with no `.crew/` config of its own
+    resolves graph.out from the main checkout, as crew_freshness does."""
+    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
+
+    assert review_run.graph_out(str(wt)) == "build/graph"
+
+
+def test_graph_out_in_a_lane_with_its_own_config_reads_its_own(tmp_path):
+    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
+    _own(wt, "config.json", {"graph": {"out": "own/graph"}})
+
+    assert review_run.graph_out(str(wt)) == "own/graph"
+
+
+def test_graph_out_is_none_when_git_could_not_tell_whose_config(tmp_path, monkeypatch):
+    """`unknown` sets nothing aside: an excused directory is never guessed."""
+    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
+    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
+
+    assert review_run.graph_out(str(wt)) is None

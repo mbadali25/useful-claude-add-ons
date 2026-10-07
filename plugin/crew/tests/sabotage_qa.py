@@ -108,6 +108,14 @@ QA_AUDIT_MUTATIONS = (
         _P + "test_wait_for_pidfile_waits_past_an_empty_file_for_the_pid",
     ),
     (
+        # L-0690: a probe that ran out of time is reported as "no usable python".
+        "completion-audit.ps1 reports a timed-out probe as no python",
+        PS1_AUDIT,
+        "  $crewTimedOut = $script:CrewPythonOutcome -eq 'timed-out'\n",
+        "  $crewTimedOut = $false\n",
+        "tests/test_ps1_python_probe.py::test_a_timed_out_probe_says_so_and_never_no_python",
+    ),
+    (
         # Only the launcher dies; its python child outlives the probe.
         "the ps1 probe kills only the launcher",
         PS1_AUDIT,

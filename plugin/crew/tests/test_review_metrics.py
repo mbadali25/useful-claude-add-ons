@@ -92,12 +92,13 @@ def test_clean_round_appends_a_zero_row(repo, tmp_path):
 
 
 def test_incomplete_round_is_recorded_as_incomplete_not_zero(repo, tmp_path):
+    """A failed call is retried once (L-0514): one row per round, both INCOMPLETE."""
     result = _codex(repo, tmp_path, "fail")
 
     rows = _rows(repo)
-    assert (result.returncode, len(rows), _cells(rows[0])[3:],
+    assert (result.returncode, len(rows), [_cells(r)[3:] for r in rows],
             crew_state.read_metrics(str(repo))["tickets"]) == (
-        3, 1, ["INCOMPLETE", "INCOMPLETE"], 0), result.stdout + result.stderr
+        3, 2, [["INCOMPLETE", "INCOMPLETE"]] * 2, 0), result.stdout + result.stderr
 
 
 def test_two_rounds_write_two_rows_for_one_ticket(repo, tmp_path):

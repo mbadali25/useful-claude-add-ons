@@ -161,9 +161,15 @@ def _stop(proc):
         proc.kill()
 
 
+def data_cap_bytes(mem_mib):
+    """The RLIMIT_DATA cap in bytes, or 0 where no cap is enforced. Shared with
+    `sabotage_platform.run_target`, the runner `sabotage.py` uses (L-0608)."""
+    return mem_mib << 20 if _absent(mem_mib) is None else 0
+
+
 def run(argv, cwd, env, mem_mib, timeout_s):
     """Run `argv` bounded; return (exit_code, stdout + stderr)."""
-    cap = mem_mib << 20 if _absent(mem_mib) is None else 0
+    cap = data_cap_bytes(mem_mib)
     kwargs = {}
     if os.name == "posix":
         kwargs["start_new_session"] = True

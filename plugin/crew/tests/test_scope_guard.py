@@ -647,3 +647,165 @@ def test_touch_is_judged_from_the_bytes_the_approval_hashed(flavour, repo, monke
     code = scope_guard.decide(edit(repo, repo / "other" / "keep.py"))
 
     assert code == 2
+
+
+# --- T-0068: crew's own bookkeeping is allowed outside Touch ------------------------
+
+@pytest.mark.parametrize("approved", [True, False], ids=["approved", "no-approval"])
+@pytest.mark.parametrize("rel", [".crew/metrics.md"])
+def test_an_edit_to_bookkeeping_is_allowed_outside_touch(repo, rel, approved):
+    """Must-allow: `/crew:review` step 6 appends `.crew/metrics.md` with Edit.
+    Under `block`, with Touch `src/**` (or no approval at all), that append
+    is crew's bookkeeping, not a scope change."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    if approved:
+        ready(repo)
+    else:
+        make_ticket(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.write_text("| row |\n", encoding="utf-8")
+
+    code, _, err = _guard("module", repo, edit(repo, target, "Edit"))
+    approval = crew_ticket.accepted(str(repo), "T-1")
+    verdict = scope_guard.classify(str(repo), common_dir(repo), "T-1", approval["touch"],
+                                   approval, str(target), str(repo))
+
+    assert (code, err, verdict) == (0, "", (True, "crew bookkeeping"))
+
+
+@pytest.mark.parametrize("mode", ["report", "block", "auto"])
+@pytest.mark.parametrize("tool", ["Write", "Edit"])
+def test_scope_base_stays_refused_though_it_is_bookkeeping(tmp_path, mode, tool):
+    """Must-block: being bookkeeping for the audit and the bundle does not make
+    the scope base writable -- it is what the audit trusts (rule 2)."""
+    repo = make_repo(tmp_path, mode=mode)
+    ready(repo)
+
+    code, _, err = _guard("module", repo, edit(repo, repo / ".crew" / ".scope-base", tool))
+
+    assert (code, "approval/ledger state" in err) == (2, True)
+
+
+@pytest.mark.parametrize("approved", [True, False], ids=["approved", "no-approval"])
+@pytest.mark.parametrize("mode", ["report", "block", "auto"])
+@pytest.mark.parametrize("tool", ["Write", "Edit"])
+@pytest.mark.parametrize("rel", [".crew/guard.log", ".crew/.autoclear.log",
+                                 ".crew/.cloud-guard-unpinned-noted"])
+def test_a_log_left_out_of_the_audit_is_refused_to_write(tmp_path, rel, mode, tool, approved):
+    """Must-block (round-2 review of 1292b863): `.crew/guard.log` -- and the
+    other pure log and notice marker -- are bookkeeping now, invisible to the
+    audit and the bundle, so Write/Edit may never forge or erase a row: rule
+    2 refuses them whatever Touch says, as it does the scope base."""
+    repo = make_repo(tmp_path, mode=mode)
+    if approved:
+        ready(repo)
+        spec = repo / ".work" / "tickets" / "T-1" / "spec.md"
+        assert "`src/**`" in spec.read_text(encoding="utf-8")
+    else:
+        make_ticket(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.write_text("1\tscope\tblock\tblock\tT-1\tlib/b.py\twhy\n", encoding="utf-8")
+
+    code, _, err = _guard("module", repo, edit(repo, target, tool))
+
+    assert (code, "approval/ledger state" in err) == (2, True)
+
+
+@pytest.mark.parametrize("rel", [".crew/metrics.md.bak", ".crew/metricsX.md",
+                                 "docs/.crew/guard.log", ".crew/verify.json"])
+def test_a_bookkeeping_lookalike_is_still_judged(repo, rel):
+    ready(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    code, _, err = _guard("module", repo, edit(repo, target))
+
+    assert (code, "outside T-1's spec ## Touch" in err) == (2, True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation needs privilege on Windows")
+@pytest.mark.parametrize("link,points_to", [(".crew/metrics.md", "secret/x.py"),
+                                            ("other/link.md", ".crew/metrics.md")])
+def test_one_side_of_a_link_being_bookkeeping_does_not_decide(repo, link, points_to):
+    """Must-block: BOTH the named and the real path must be bookkeeping, as for
+    refresh artifacts -- a link cannot carry a write out of `.crew/`."""
+    ready(repo)
+    real = repo.joinpath(*points_to.split("/"))
+    real.parent.mkdir(parents=True, exist_ok=True)
+    real.write_text("x\n", encoding="utf-8")
+    os.symlink(real, repo.joinpath(*link.split("/")))
+
+    code, _, _ = _guard("module", repo, edit(repo, repo.joinpath(*link.split("/"))))
+
+    assert code == 2
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation needs privilege on Windows")
+def test_a_bookkeeping_name_linked_outside_the_worktree_is_not_bookkeeping(repo, tmp_path):
+    """Must-block: a real path outside the worktree is never bookkeeping,
+    whatever the name says (refresh artifacts' rule)."""
+    make_ticket(repo)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x\n", encoding="utf-8")
+    os.symlink(outside, repo / ".crew" / "metrics.md")
+
+    code, _, _ = _guard("module", repo, edit(repo, repo / ".crew" / "metrics.md"))
+
+    assert code == 2
+
+
+# --- review of 514ca132: rule 5a opens ONLY crew_ticket.CREW_WRITE_ALLOWED_PATHS ---
+
+@pytest.mark.parametrize("approved", [True, False], ids=["approved", "no-approval"])
+@pytest.mark.parametrize("rel", [".crew/tfplan/x.json", ".crew/incident.json",
+                                 ".crew/.deploy-in-flight", ".crew/handoffs/x.md"])
+def test_a_trust_input_crew_writes_is_judged_against_touch(repo, rel, approved):
+    """Must-block (FIX 1): crew writes these, but crew also READS them -- a
+    `tfplan` sidecar with `deletes: []` would let `terraform apply` run
+    unattended, `incident.json` stands the Stop gate down -- so an Edit out
+    of Touch is refused like any other file, never opened by rule 5a."""
+    if approved:
+        ready(repo)
+    else:
+        make_ticket(repo)
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    code, _, _ = _guard("module", repo, edit(repo, target, "Write"))
+    approval = crew_ticket.accepted(str(repo), "T-1")
+    verdict = scope_guard_classify(repo, approval, target)
+
+    assert (code, verdict[0]) == (2, False)
+
+
+def scope_guard_classify(repo, approval, target):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    return scope_guard.classify(str(repo), common_dir(repo), "T-1", approval["touch"],
+                                approval, str(target), str(repo))
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit"])
+@pytest.mark.parametrize("rel", [".crew/.verify-gate.record.json", ".crew/.verify-gate.fingerprint",
+                                 ".crew/.verify-verified-at", ".crew/.verify-gate.timings.json",
+                                 ".crew/.verify-gate.lock/owner", ".crew/metrics.jsonl"])
+def test_the_gates_records_are_refused_even_inside_touch(tmp_path, rel, tool):
+    """Must-block (FIX 2): the review gate reads VERIFIED from the marker and
+    the (unkeyed) fingerprint, and the bundle and the audit leave them out,
+    so a Write/Edit to one is a forged green gate nobody would see. Refused
+    by rule 2 even when Touch names `.crew/**`, and with no ticket active."""
+    repo = make_repo(tmp_path, mode="block")
+    ready(repo, touch=("src/**", ".crew/**"))
+    target = repo.joinpath(*rel.split("/"))
+
+    code, _, err = _guard("module", repo, edit(repo, target, tool))
+
+    assert (code, "approval/ledger state" in err) == (2, True)
+
+
+@pytest.mark.parametrize("mode", ["report", "auto"])
+def test_the_gates_marker_is_refused_with_no_ticket_in_every_mode(tmp_path, mode):
+    repo = make_repo(tmp_path, mode=mode)
+
+    code, _, err = _guard("module", repo, edit(repo, repo / ".crew" / ".verify-verified-at"))
+
+    assert (code, "approval/ledger state" in err) == (2, True)
