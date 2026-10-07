@@ -31,7 +31,7 @@ the ticket the way `/crew:brainstorm` step 1 does (next free id, this box's pref
 If a line says `id taken`, that id is not yours: pick the next free id, run
 `create` again, and write nothing under the taken one. On any other failure,
 stop: show me its lines and write nothing under that id. Only then create
-`.work/tickets/<id>/`. **Jira and ServiceDesk Plus**: no local `T-####`;
+`.work/tickets/<id>/`. **Jira and ServiceDesk Plus**: no locally minted id;
 create the item through MCP as `/crew:brainstorm` step 1 says, use its key as
 `<id>`, and cache it at `.work/tickets/<KEY>/`; a `delegated` line or exit 3
 from `create` is that instruction, not a failure to stop on. Then write

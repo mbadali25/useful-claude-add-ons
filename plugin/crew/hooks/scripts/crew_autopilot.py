@@ -2515,7 +2515,11 @@ def stops():
 def _existing_ticket(top, token):
     """Whether `token` is a plain ticket id naming a ticket folder, live or
     `Complete/`, or one whose place cannot be told: that is taken as a ticket
-    so the phase step stops naming why, never refused as "not a ticket"."""
+    so the phase step stops naming why, never refused as "not a ticket". A
+    token that is not a plain id (`T-1\n`: `check_ticket`'s `$` admits the
+    newline, `PLAIN_ID` does not) names no folder and is not a ticket."""
+    if not crew_common.PLAIN_ID.match(token):
+        return False
     try:
         where = _where(top, crew_ticket.check_ticket(token))[1]
     except crew_ticket.TicketError:
