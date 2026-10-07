@@ -9,6 +9,195 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.1.14: a harness test no longer reads a half-written pid file (C-0063)
+
+- `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and `write` (it failed twice in a row on Python 3.12 CI in wave 5). Test-only; no behaviour change.
+
+### Changed - repository CI: Linux pytest legs tuned on the self-hosted pool (L-0590)
+
+- **Summary.** CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
+- **What.** In `.github/workflows/pytest-crew.yml` the `test` job's default set runs
+  `-n 16 --dist worksteal` instead of `-n auto` (which is 4 workers on the self-hosted pool, the
+  runners' PYTEST_XDIST_AUTO_NUM_WORKERS), still followed by the `-m wallclock` set serially. On
+  every event but a pull request the three Python legs run one at a time (`max-parallel` 1), so a
+  main push no longer puts three Python legs on the one 16-vCPU host. The ubuntu `crew-shell-matrix`
+  leg runs `-n 8`. The Windows jobs keep `-n auto`. Required check names are unchanged.
+- **Measured.** Serial benchmark, 5 runs per setting (runs 37058615163, 37080675891): default set
+  p50 260 s at 4/load, 211 s at 8/load, 171 s at 12/load, 145 s at 8/worksteal; beside the slow-set
+  chain 221 s at 8/worksteal, 197 s at 12, 135 s at 16. Slow set p50 154 s at 4, 92 s at 8;
+  worksteal no better there. On the real workflow (PR runs interleaved before/after, identical
+  collections): time to `test (3.12)` p50 420 s / p90 464 s before -> p50 292 s / p90 307 s after.
+  Measured on L-0590's own branch before it was ported onto release/1.2.0; not re-measured since.
+- **Dropped.** Running the wallclock set as its own parallel job was dropped by the owner after
+  review (one failure in 36 legs beside the default set's workers). A pip/uv cache: `Install
+  pytest` already takes 0-2 s on the pool.
+- `scripts/gate-runner.py`'s CI drift strings follow the two changed commands; `AGENTS.md` and the
+  verification-harness code map say the same.
+
+### Changed — `crew` 1.1.13: Complete archive and ticket ids beyond T- (L-0509)
+
+- **Summary.** Every crew reader now finds a ticket whether it is live or archived in
+  `.work/tickets/Complete/`, and ticket ids are no longer limited to `T-`.
+- **What changed.** One resolver, `crew_common.locate_ticket(top, ticket)`,
+  finds a ticket folder live (`.work/tickets/<ID>/`) or archived
+  (`.work/tickets/Complete/<ID>/`), and answers `could not tell` -- never
+  `absent` -- when a `stat` fails with anything but not-found or when both
+  folders exist. Every reader outside the review/gate harness routes through
+  it: `crew_autopilot` (resume, phase, status, questions), `crew_route`,
+  `crew_resume` (the resume decision and progress fingerprint),
+  `webtest_guard` (exclusions and findings), `crew_standards` (self-check and
+  proposals) and `recurring_findings`; each turns could-not-tell into a
+  stop, an `ask`, a `wait` or an `UNKNOWN` naming why. The id shapes live
+  once in `crew_common` (`TICKET_ID`, `TICKET_ID_SEARCH`, `PLAIN_ID`,
+  ASCII digits, any `LETTERS-` prefix: `T-`, `L-`, `W-`), and `Complete` is
+  reserved, never an id. `crew_status` prints `<n> ticket dir(s), <m>
+  archived in Complete/` (`archived: could not tell` when it cannot list
+  them); `crew_migrate` labels a cache file by the configured tracker rather
+  than the `T-` prefix and never gives an archived ticket a second live
+  folder. `crew_tracker.py`: `read` reports an archived ticket (lane
+  `Complete/`), `move` refuses it (`--reopen` too), `create` treats an
+  archived note or folder as a taken id, a note in both places is could not
+  tell, and the new `archive --ticket <ID>` moves one done/merged ticket's
+  folder, note and Done-lane card (refusing a ticket a worktree has active,
+  an unreadable pointer map, an existing destination and a card outside
+  Done; idempotent per half; never edits INDEX.md). `/crew:brainstorm` and
+  `/crew:fix` take the next number above every INDEX id with this box's
+  prefix; no command hard-codes `T-####`.
+- **Why.** Done tickets are to move into `Complete/` (owner, 2026-09-30), and
+  every reader had to find them there first; `L-`/`W-` ids are the new
+  Linux/Windows prefixes.
+- **Harness follow-up (T-0087: lands alone).** `crew_ticket.ticket_dir` /
+  `check_ticket` / `resolve_active` / `mint`, the scope guard's own-files
+  prefix, `approval_hook`, `review_prompt`, `review_run` and
+  `review_ledger` still read the live folder only, and the sabotage rows
+  for this ticket belong in `sabotage_*.py`. Until it lands a session cannot
+  write into an archived ticket's folder (the guard refuses), and `mint`
+  still mints `T-`.
+- **Unchanged.** No hook, command, skill or config key added (CONFIG.md:
+  none). INDEX readers, approval receipts and review ledgers are untouched.
+- **Ops step.** The one-time archive of the existing done tickets runs after
+  this release, one `archive` per ticket, excluding T-0500..T-0507,
+  T-0104..T-0108, T-0508 and any ticket a live lane references.
+
+### Added — `crew` 1.1.13: `/crew:help`, contextual help from the files on disk (T-0025)
+
+- **Summary.** `/crew:help` tells you where a ticket stands and the one command to type next, in at
+  most 8 lines, and explains any crew command or a "how do I" question.
+- `/crew:help` with no argument prints at most 8 lines: where you are (ticket, where it came
+  from, phase), what it waits on, ONE `next:` command and why, and 2-3 `also:` commands for that
+  phase. State comes only from `crew_autopilot.status` (T-0004's `resume_target`/`next_phase`,
+  T-0018's waiting-on mapping); `crew_help.py` parses no INDEX, receipt or ledger itself. A stop's
+  `next:` is what you type, and approval is always "you type `/crew:approve <id>`". Several open
+  tickets with no pointer are listed and never picked; a broken pointer or no ticket says so.
+- `/crew:help <command>` prints purpose, when, arguments and next for every command file (with or
+  without `/crew:`); `/crew:help <question>` resolves through T-0023's `crew_route.match`, the one
+  phrase table (a test finds no pattern module or compile call in `crew_help.py`); `/crew:help
+  <id>` is the same 8 lines for that ticket; `/crew:help commands` lists every command by an
+  advisory group, core first. Read-only and exit 0: the tests snapshot every file and mtime.
+- `crew_route.PHRASES` gains `help` (`help`, `what now`, `what's next`, `where are we`) and
+  `help-topic` (`how do i [use] <x>` -> `/crew:help <x>`, never for approval). Bare `next` and
+  `done` still route nowhere.
+- `/crew:implement` step 0 runs `crew_ticket.py status` (validate checks the contract, not the
+  approval) and names the one fix - `/crew:plan $1`, or the user types `/crew:approve $1` -
+  instead of `/crew:plan $1 --approve`, which records nothing.
+- Not in this release (review-harness paths, a harness-only follow-up in TODO.md): the scope
+  guard's no-approval deny text, `review.md`'s no-ticket stop, and `sabotage_help.py`.
+- The command surface recommendation (core, through-help, merge candidates, specialist, removal
+  stubs) is advisory and filed to TODO.md as an owner decision; nothing is hidden or renamed.
+  crew registers 37 commands.
+
+### Fixed — `crew` 1.1.13: verify.json agents checked early, a provider probe from the repo root, UPGRADE.md history kept, crew's temp files cleaned (T-0065)
+
+- **Summary.** `/crew:status` now names agents your verify map needs that are not installed, a provider
+  probe tests Codex from the repo root, `crew_upgrade.py --force` keeps earlier UPGRADE.md runs, and
+  crew's own tests and hooks stop leaving files in your temp directory.
+
+TheSelectSource (crew 1.0.41) reported four gaps; these are crew's halves of them.
+
+- **Agents a verify.json rule names that are not installed (item 3).** New
+  `hooks/scripts/verify_agents.py --root . --check` resolves every named agent against crew's
+  roles and agents, user and project agents, and the agents of every plugin the settings scopes
+  enable (narrowest scope first). Exit 1 lists each missing name with its rule's paths; an
+  unparseable plugin registry, settings scope or verify.json makes the names it could have
+  supplied `unknown` (exit 2), never installed. `/crew:status` shows it as an `agents` line and
+  `/crew:verify` step 8 reports it. Managed-policy and `--agents` agents are not checked.
+- **A real provider call from the repo root (item 10).** New `hooks/scripts/provider_probe.py codex
+  --root .` builds the call with `review_run.command_for` and runs it with `review_run.launch`, so
+  `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory and Codex's "Not inside a
+  trusted directory" cannot happen. An incomplete event stream or a 120 s timeout is `FAILED`
+  (exit 1), a missing CLI exit 2. `/crew:model`, the providers skill and `providers.sh` name it
+  instead of a hand-typed `codex exec`.
+- **`crew_upgrade.py --force` (`/crew:onboard --refresh`) keeps `UPGRADE.md`'s history (item 8).** Each run puts its report on
+  top and keeps the earlier file byte for byte below one marker line, newest first; an unverified
+  contradictions list is no longer erased. Only the newest run's annotated contradictions are
+  carried. The write is a pid-named sibling plus `os.replace`, LF-only. The config backup stays
+  T-0050's.
+- **Crew's own temp files (item 7, crew's part).** Measured on the host TSS shares: 2,999 `tmp.*`
+  entries (913 auto-clear sender scripts, 824 `run-tests.sh` fixtures, ...) and 7,798
+  `crew-completion-audit.*` markers in `/tmp`, exhausting its inodes, after which the guard and
+  the Stop verify-gate failed closed. None were git-archive exports. Now every crew pytest test
+  runs with its own `TMPDIR`/`TEMP`/`TMP` (conftest, carried by `shim_env`), the auto-clear sender
+  unlinks itself before it sleeps (so a SIGKILLed sender leaves nothing), and `run-tests.sh`
+  removes every fixture it makes behind one EXIT trap (121 passed before and after; 6 leftovers
+  before, 0 after). The leftover sender scripts came from a test whose `bash` shim reads the
+  sender and never runs it. Existing leftovers are not deleted: the troubleshooting guide names
+  the patterns and the owner-run cleanup.
+- Tests: `test_verify_agents.py` (17), `test_provider_probe.py` (8), `test_tmp_hygiene.py` (6),
+  4 in `test_status.py`, 5 in `test_upgrade.py`. Three `.crew/verify.json` rules.
+
+**Harness follow-ups (T-0087 tooling-PR rule; each lands alone):** register `verify-gate.sh`'s
+`CHANGED_FILE` with its cleanup registry (`RULE_OUT_FILE` is registered on main already), with
+`test_verify_gate_temp_files_removed_on_term[rule|matcher]` and the clean-run neighbour; the
+sabotage registrations for this ticket's mutations in `sabotage_review.py`,
+`sabotage_autocycle.py` and `sabotage_migrate.py` (each was run by hand here and went red); and
+`commands/review.md` naming `verify_agents.py` (step 3) and `provider_probe.py` (step 1).
+**Not crew's:** item 7's heredoc/`python -c`/xargs refusals are TSS's own secrets guard; the
+`gizmoduck-out` / `security-scan-report.md` fixtures need a gizmoduck ticket.
+
+### Added — `crew` 1.1.13: `/crew:reference --integrations`, linted before it is written, judged by the refresh check (T-0036)
+
+- **Summary.** `/crew:reference --integrations` now writes a reference of every outbound call your repo makes,
+  with where each credential comes from but never its value, and the refresh check flags it when the
+  code it cites changes.
+- **What changed.** `/crew:reference --integrations` writes `docs/reference/integrations.md`: every
+  outbound call, one `##` per external system, one `###` entry per call with a `path:line` anchor
+  and an `Auth:` line naming where the credential comes from (env var, secret name, config key,
+  `none`, or `undocumented - needs a human`), never its value. The format and the draft-lint-copy
+  steps are `plugin/crew/skills/crew-docs/integrations.md`. A new standard-library script,
+  `plugin/crew/hooks/scripts/crew_reference.py lint --root . --kind integrations <file>`, must exit
+  0 before the draft is copied in: it refuses a doc whose first non-blank line is not the `>
+  Generated from <repo>@<sha> on <date>` header (one inside a fenced example does not count), an
+  entry with no anchor or no (or an empty) `Auth:` line - a `###` inside a fenced example is not an
+  entry - an anchor to a missing file, outside the repo (symlinks
+  resolved), absolute or `../`, at line 0 or past the file's end, a doc with no entry (a repo with
+  no outbound calls writes no file), and seventeen secret pattern classes (AWS access key id and
+  secret access key, private-key block, GitHub token and PAT, Slack token and webhook URL, `sk-`,
+  Stripe, Google, npm and SendGrid keys, JWT, credentials in a URL, an `Authorization:` value, a
+  quoted (spaces and all) or unquoted literal assigned to a password/secret/token/API-key name), naming the pattern
+  and line but never the value, nor an anchor's text on that line. The patterns are known shapes
+  only: a novel token format passes (a stated gap; `crew:security` reviews auth lines). Exit 2 for a usage error or an unreadable file, never 0. `--audit` gains calls with no
+  entry and entries whose anchor no longer holds.
+- **Behaviour change at `/crew:implement` step 6 and `/crew:done` check 4.** `crew_refresh_check.py`
+  judges `docs/reference/integrations.md` as a `reference` artifact against its header sha when a
+  path it cites changed: `stale` with `refresh with /crew:reference --integrations`; no header or
+  no citation is `unknown` and refreshable; an unreadable doc, or one whose presence cannot be told,
+  is `unknown` and a stop. `api.md`, `features.md` and `flows/` are not judged.
+  The one file `docs/reference/integrations.md` joins `REFRESH_ARTIFACT_PATHS` (matched exactly,
+  `REFRESH_ARTIFACT_FILES`), so an approved ticket may write it without Touch (the same approval
+  conditions as the four dirs, pinned by the scope-guard and completion-audit must-block cases,
+  which also refuse `docs/referenceX/a.md`, `api.md`, `flows/` and `integrations.md.bak`), and a
+  refresh commit of it stales nothing. The rest of `docs/reference/` stays judged against Touch.
+- **Split out (L-0549).** `--flows [<name>]`, the flow-doc lint and the flow parts of the docs.
+  The refresh check judges no `docs/reference/flows/` doc until a command writes one.
+- **Tests and sabotage.** `plugin/crew/tests/test_reference_docs.py` (must-allow and must-block,
+  every secret class asserting the value never reaches stdout, stderr or the problem list, the
+  placeholders and prose that must pass, the CLI exit codes) and ten new `test_refresh_check.py`
+  cases. 42 mutations of the new guards were applied by hand, each red on its named test; the `sabotage*.py` registrations are harness paths
+  and are filed in `TODO.md`.
+- **Docs.** `reference.md`, `implement.md` step 6, `onboard.md`, the crew-docs skill, the crew
+  README (7b, the CLI row, "Artifacts stay current", "What the guard judges", the command row),
+  `plugin/PLUGINS.md`, the code map and the crew guide (rebuilt).
+
 ### Changed — crew 1.1.12: crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root (T-0502)
 
 - **Summary.** A repo set up by crew now sees a failing check's own error lines in its `_verify`

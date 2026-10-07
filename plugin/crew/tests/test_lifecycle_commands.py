@@ -28,7 +28,7 @@ SKILLS = os.path.join(CREW, "skills")
 MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
-                "done.md", "fix.md", "approve.md", "autopilot.md")
+                "done.md", "fix.md", "approve.md", "autopilot.md", "help.md")
 NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute", "crew-standards")
 
 
@@ -80,8 +80,11 @@ def test_skill_frontmatter_and_budget(name):
 # that already exists in review.md (`--ticket "$TICKET" --check-receipt`).
 EXPECTED_CLI = {
     "plan.md": ("`/crew:approve $1`",),
-    "implement.md": ("crew_ticket.py validate --ticket $1",
+    "implement.md": ("crew_ticket.py status --ticket $1",
+                      "crew_ticket.py validate --ticket $1",
                       "scope_base.py --root . --record $1"),
+    "help.md": ("crew_help.py\" where --root .",
+                "crew_help.py\" about --root . -- '$ARGUMENTS'"),
     "done.md": ('review_ledger.py --ticket "$1" --check-receipt',
                 'completion_audit.py --check --ticket "$1"',
                 'crew_metrics.py record --ticket "$1"'),
@@ -154,19 +157,36 @@ def test_autopilot_command_names_the_sleep_and_wake_calls():
 
 
 IMPLEMENT_APPROVAL_TEXT = (
-    "This command refuses to edit anything unless that call reports the plan\n"
-    "approved."
+    "This command refuses to edit anything unless `status` reports the plan\n"
+    "approved**"
 )
 
 
 def _implement_refuses_without_approval(text):
     return (IMPLEMENT_APPROVAL_TEXT in text
-            and "crew_ticket.py validate --ticket $1" in text)
+            and "crew_ticket.py status --ticket $1" in text)
 
 
 def test_implement_refuses_without_approval():
     text = _read(os.path.join(COMMANDS, "implement.md"))
     assert _implement_refuses_without_approval(text)
+
+
+def _step_zero(text):
+    return text.split("## 0.", 1)[1].split("\n## 1.", 1)[0]
+
+
+def _implement_names_the_fix(text):
+    """T-0025: step 0's refusal names the one command that fixes it -- the
+    user types `/crew:approve $1`, or `/crew:plan $1` -- and never the old
+    `/crew:plan $1 --approve`, which records nothing."""
+    step = _step_zero(text)
+    return ("the user types `/crew:approve $1`" in step and "`/crew:plan $1`" in step
+            and "--approve" not in step)
+
+
+def test_implement_refusal_names_the_fix():
+    assert _implement_names_the_fix(_read(os.path.join(COMMANDS, "implement.md")))
 
 
 def test_implement_names_every_checklist_exit_1_prefix():
@@ -260,6 +280,11 @@ def _sabotage(path, target, checker, expected_before=True):
 def test_sabotage_drop_the_approval_check_from_implement_goes_red():
     path = os.path.join(COMMANDS, "implement.md")
     _sabotage(path, IMPLEMENT_APPROVAL_TEXT, _implement_refuses_without_approval)
+
+
+def test_sabotage_drop_the_approve_fix_from_implement_goes_red():
+    path = os.path.join(COMMANDS, "implement.md")
+    _sabotage(path, "the user types `/crew:approve $1`", _implement_names_the_fix)
 
 
 @pytest.mark.parametrize("missing", DONE_CHECKS)
@@ -474,6 +499,30 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+# --- ticket ids beyond T- (L-0509) --------------------------------------------------
+
+PREFIX_RULE = "with the prefix this box mints (`T-` when it has minted none"
+
+
+def test_no_command_hard_codes_the_t_prefix():
+    found = [name for name in sorted(os.listdir(COMMANDS)) if name.endswith(".md")
+             and re.search(r"T-#{4}|T-N{4}", _read(os.path.join(COMMANDS, name)))]
+
+    assert found == []
+
+
+def test_brainstorm_and_fix_name_the_box_prefix_rule():
+    brainstorm = " ".join(_read(os.path.join(COMMANDS, "brainstorm.md")).split())
+    fix = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+
+    assert (PREFIX_RULE in brainstorm, "above every id in `.work/INDEX.md`" in brainstorm,
+            "`/crew:brainstorm` step 1" in fix and "prefix" in fix) == (True, True, True)
+
+
+def test_status_names_the_archive():
+    assert ".work/tickets/Complete/" in _read(os.path.join(COMMANDS, "status.md"))
 
 
 def test_review_names_the_train_exit():

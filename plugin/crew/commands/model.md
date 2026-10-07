@@ -97,8 +97,8 @@ second erased the other — and if the erased one wrote the diff, its family was
 never struck. The PM dispatches up to three roles at a time.
 
 Presence on `PATH` is not working auth. If the user is deciding anything based
-on this, make one real call per configured provider — `codex exec
---skip-git-repo-check "reply OK"`, `copilot -p "reply OK" -s` — and report what
+on this, make one real call per configured provider — `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py codex
+--root .` (review's own flags, run from the repo root), `copilot -p "reply OK" -s` — and report what
 came back. A provider that fails silently turns every gate green, which is the
 one failure mode this whole design exists to prevent.
 

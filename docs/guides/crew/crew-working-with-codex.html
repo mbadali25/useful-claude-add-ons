@@ -145,6 +145,14 @@ settings explicitly instead:</p>
 <pre><code class="language-bash">codex exec --json --sandbox read-only &quot;&lt;review prompt&gt;&quot;   # the reviewer (review_run.py's command_for)
 codex exec --sandbox workspace-write &quot;&lt;task&gt;&quot;              # only if you choose Codex to implement
 </code></pre>
+<p>To check that Codex answers before you rely on it, run the probe from anywhere:</p>
+<pre><code class="language-bash">python3 &quot;${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py&quot; codex --root &lt;repo&gt;
+</code></pre>
+<p>It makes one real call with the reviewer's own command line (<code>review_run.command_for</code>, which adds
+<code>--skip-git-repo-check</code> and <code>-C &lt;repo&gt;</code>) and runs it with the repo root as its working directory, so
+it does not hit "Not inside a trusted directory" the way a <code>codex exec</code> typed in a <code>/tmp</code> export
+does. <code>codex: ok</code> is exit 0; <code>codex: FAILED - &lt;reason&gt;</code> (a failed call, an incomplete event stream,
+or a 120 s timeout) is exit 1; <code>codex: not installed</code> is exit 2.</p>
 <p>If you want named <code>review</code>/<code>work</code> profiles for convenience, they are a <strong>user-level</strong> concept, not
 a project one: <code>codex exec --help</code> (codex-cli 0.155.1) documents <code>--profile NAME</code> as layering
 <code>$CODEX_HOME/NAME.config.toml</code> on top of the base user config -- a file under <code>$CODEX_HOME</code>, never

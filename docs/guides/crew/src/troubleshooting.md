@@ -278,6 +278,18 @@ the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. T
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
+- **Symptom: a done ticket "has no .work/tickets/ folder".**
+  **Check:** `.work/tickets/Complete/<id>/`. `crew_tracker.py archive --ticket <id>` moves a done
+  or merged ticket's folder there (and, under Obsidian, its note to `<boardDir>/Complete/`), and
+  `/crew:status` counts those apart (`<m> archived in Complete/`).
+  **Fix:** none needed: every crew reader finds it there. To reopen it, move the folder and the
+  note back by hand; `move --reopen` refuses an archived ticket.
+
+- **Symptom: `could not tell where <id> lives`.**
+  **Check:** both `.work/tickets/<id>/` and `.work/tickets/Complete/<id>/` exist (a half-finished
+  archive, or a copy made by hand), or one of them cannot be read.
+  **Fix:** compare the two, keep the right one, remove the stray copy. Crew never picks one.
+
 - **Symptom: a lane worktree does not see my settings** (a CLI approval refused, `scope.mode`
   read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
   checkout with no crew config.
@@ -717,6 +729,50 @@ setting that changes when Claude Code's auto-compact fires.
 `/clear` or `/compact` — self-initiated or Claude Code's own auto-compact — `handoff-read.sh`
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
+
+## An agent named in verify.json is not installed
+
+`.crew/verify.json` travels with the repo; the agents its rules name do not. A rule asking for an
+agent this machine lacks reviews less, and nothing in the output says so.
+
+- **Symptom:** `/crew:status` prints `agents   MISSING <name> (verify.json rule: <paths>)`, or
+  `/crew:review` reports a requested agent as a gap.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/verify_agents.py" --root . --check
+  ```
+  Exit 1 lists each missing name with its rule's paths. Exit 2 (`unknown`) means a plugin registry,
+  a settings file or `verify.json` itself would not parse, so it could not tell; it never reads that
+  as installed. Managed-policy agents and `--agents` agents are not checked.
+  **Fix:** install the plugin or agent, enable the plugin (`enabledPlugins`; a narrower settings
+  scope's `false` wins), or change the rule to an agent this machine has.
+
+## The temp directory fills with crew files
+
+Earlier crew releases' test suites and auto-clear sender could leave files in the
+system temp directory: `crew-completion-audit.*` markers, `tmp.*` auto-clear sender scripts
+(`tmux send-keys ...` / `xdotool ...` followed by `rm -f -- <itself>`) and `tmp.*` fixture
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
+guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
+`TMPDIR`, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
+makes.
+
+- **Symptom:** `df -i /tmp` near 100%, or hooks failing on `mktemp`.
+  **Check** (read-only):
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  ls -d crew-completion-audit.* 2>/dev/null | wc -l
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | wc -l
+  ```
+  **Fix (an owner action; crew itself never runs it):** with no crew session or test run active,
+  remove what the check counted:
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | xargs -r rm -f --
+  ```
+  Old shell-suite fixture directories are ordinary `tmp.*` directories (a `.crew/` and a
+  `.git/` inside); read each before removing it.
 
 ## A setting seems to do nothing
 

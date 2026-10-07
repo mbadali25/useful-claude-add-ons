@@ -82,7 +82,8 @@ def test_a_timeout_stops_the_whole_group_and_returns_124(tmp_path):
     pidfile = tmp_path / "grandchild.pid"
     child = ("import subprocess, sys, time; "
              "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)']); "
-             f"open({str(pidfile)!r}, 'w').write(str(p.pid)); "
+             f"open({str(pidfile) + '.tmp'!r}, 'w').write(str(p.pid)); "
+             f"import os; os.replace({str(pidfile) + '.tmp'!r}, {str(pidfile)!r}); "
              "time.sleep(300)")
 
     started = time.monotonic()
@@ -170,7 +171,10 @@ def test_the_harness_dying_stops_a_running_child(tmp_path, monkeypatch):
     """No test process outlives the harness: a SystemExit raised inside the
     wait (what sabotage.py's signal handler does) stops the group first."""
     pidfile = tmp_path / "child.pid"
-    child = (f"import os, time; open({str(pidfile)!r}, 'w').write(str(os.getpid())); "
+    # The pid is written to a temp file and renamed into place, so the file exists only once
+    # it holds the pid: a kill between open() and write() can't leave an empty one (C-0063).
+    child = (f"import os, time; open({str(pidfile) + '.tmp'!r}, 'w').write(str(os.getpid())); "
+             f"os.replace({str(pidfile) + '.tmp'!r}, {str(pidfile)!r}); "
              "time.sleep(300)")
 
     def _interrupted(self, *args, **kwargs):

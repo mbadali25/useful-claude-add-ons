@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.12**: Crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root. A repo set up by crew now sees a failing check's own error lines in its `_verify` output, and gets a ready diagram check that works as root in CI containers instead of failing with no reason.
-- **repository**: CI fails a stale built crew guide. A pull request whose committed crew guide HTML, or generated configuration reference, no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
+- **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
+- **repository CI**: Linux pytest legs tuned on the self-hosted pool. CI's Linux test legs run with fixed worker counts and one Python leg at a time on main, which is faster on a pull request and stops main's timing-test flakes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
