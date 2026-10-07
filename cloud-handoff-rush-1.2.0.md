@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T21:16Z
+Last updated: 2026-10-07T21:40Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T21:40Z WAVE 7 MERGED #563 to main at 5a017c30 (crew 1.1.16). Closed #336 as landed via port. Next: H2a.
 - 2026-10-07T21:16Z MERGED #562 (G4) into release at b0293543, crew 1.1.16. Opened WAVE 7 #563, subscribed.
 - 2026-10-07T20:57Z G4 ready a4cc6582 (1.1.16; full crew 17040/0; Windows 16/16). Opened #562 (G4 -> release), subscribed.
 - 2026-10-07T20:40Z H2a ready at d2c52fc0 (crew 1.1.17; 3 entries moved to H2b; 416/418 touched sabotage RED, 2 pre-existing greens C-0038/C-0064). Opens after G4's wave 7 lands (merge main first).
