@@ -58,9 +58,14 @@ WAVE_MUTATIONS = (
      '        if mode != "block":\n',
      '        if mode not in ("block", "report"):\n',
      _W + "test_scope_not_enforcing_stops_the_wave[config2]"),
+    # The main checkout is not under .claude/worktrees either, so both checks go:
+    # with only the first removed it is still refused, by the second.
     ("WAVE: lane-init runs in the main checkout", WAVE,
-     "    if os.path.normcase(top) == os.path.normcase(main_top):\n",
-     "    if False:\n",
+     "    if os.path.normcase(top) == os.path.normcase(main_top):\n"
+     '        return "this is the main checkout; a lane runs only in its own isolated worktree"\n'
+     "    agents = os.path.join(main_top, AGENT_DIR)\n"
+     "    if not os.path.normcase(top).startswith(os.path.normcase(agents) + os.sep):\n",
+     "    agents = os.path.join(main_top, AGENT_DIR)\n    if False:\n",
      _W + "test_lane_init_refuses_main_checkout"),
     ("WAVE: lane-init skips the worktree's scope mode", WAVE,
      "    ok, why = scope_enforcing(top, [ticket])\n    if not ok:\n        return False, why\n"
