@@ -138,7 +138,8 @@ def sha_problems(picked, command, shell, full, where=None):
     entries `picked` (every entry of a matched environment whose prefix is in
     the command; `where[i]` = (environment, prefix length), default one
     environment each): [] when they do. Each dispatch of a picked entry's
-    workflow is bound to the picked entries whose declared inputs it gives -
+    workflow is bound to the picked entries whose ref and declared inputs it
+    gives (`_fits`) -
     it must fit at least one, and carries the sha input of the entry it runs
     in each environment (`_runs`), on its own inputs: neither another
     dispatch's sha input nor the declared text elsewhere on the line (an
@@ -163,7 +164,7 @@ def sha_problems(picked, command, shell, full, where=None):
                _workflow(scope.get("workflow")) and _fits(scope, e)]
         if not fit:
             return [f"a dispatch of `{scope.get('workflow')}` in the command does not give any "
-                    "matched entry's declared inputs, so it fits no declared environment and "
+                    "matched entry's `ref` and declared inputs, so it fits no declared environment and "
                     "which environment's preconditions apply cannot be told"]
         seen.update(fit)
         try:
@@ -186,8 +187,15 @@ def sha_problems(picked, command, shell, full, where=None):
 
 
 def _fits(scope, entry):
-    """Whether the dispatch gives every one of the entry's declared inputs,
-    with the same value."""
+    """Whether the dispatch gives the entry's `ref`, exactly once and ignoring
+    case as the prefix match does, and every one of its declared inputs, with
+    the same value. Without the ref, two entries differing only in `ref` both
+    fit and the longer one's (maybe absent) sha input stood in for the other's."""
+    refs = scope.get("refs", [])
+    ref = entry.get("ref")
+    if not (isinstance(ref, str) and len(refs) == 1 and isinstance(refs[0], str)
+            and fold(refs[0]) == fold(ref)):
+        return False
     given = {}
     for got, value, _why in scope.get("inputs", []):
         if isinstance(got, str):

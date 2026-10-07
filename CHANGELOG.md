@@ -36,6 +36,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   run contains. promote-gate.ps1 uses the same literal, case-insensitive containment at both sites;
   `crew_ghdeploy.py check`'s gate simulation follows. A marker an older crew left is documented,
   not deleted.
+- **Windows.** promote-gate.sh drops every CR from `_promote_tree.py`'s records: Windows Python
+  ends each with CRLF and `$(...)` strips only the last, so in Git Bash `cd <dir> && <declared>`
+  with a further record (`$(git rev-parse HEAD)`) blocked as a directory that does not resolve.
 
 ### Fixed — `crew` 1.1.4: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
 
@@ -49,9 +52,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 - **Summary.** When a command matches an environment with `github` entries, both promote gates bind
   each dispatch in it to the entry it runs (of the entries whose canonical prefix is in the command
-  and whose inputs the dispatch gives, the longest); if that entry sets `shaInput`, the dispatch
-  must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase hex, equal to
-  the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
+  and whose `--ref` and inputs the dispatch gives, the longest); if that entry sets `shaInput`, the
+  dispatch must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase
+  hex, equal to the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
   name, a substitution such as `$(git rev-parse HEAD)`, or another commit blocks and says which.
 - **Malformed map.** A `github` that is not an object or a non-empty list of objects makes the map
   unreadable (blocks every command). One helper, `_promote_github.py`, decides the rule for both

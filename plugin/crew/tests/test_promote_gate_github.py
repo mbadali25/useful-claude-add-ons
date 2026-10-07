@@ -360,3 +360,35 @@ def test_a_shorter_entrys_dispatch_is_checked_beside_a_longer_one(flavour, ghrep
     code, err = tree.run_gate(flavour, ghrepo, "gh workflow run a.yml --ref main -f sha=" + full
                               + sep + "gh workflow run long-deploy.yml --ref main -f target=dev")
     assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
+@pytest.mark.parametrize("form", ["two-dispatches", "echoed-longer"])
+def test_an_entry_with_another_ref_does_not_stand_in(flavour, form, ghrepo):
+    """Group review r1 (2b63497): development has two entries of one
+    workflow and inputs, `--ref main` with `shaInput` and a longer
+    `--ref release-candidate` without. A `--ref main` dispatch with no sha is
+    blocked: the dispatch is bound by its ref too, so the longer entry's
+    absent sha input does not stand in for it."""
+    doc = json.loads(json.dumps(_GH_MAP))
+    main = {"workflow": "deploy.yml", "ref": "main", "inputs": {"target": "dev"},
+            "shaInput": "sha"}
+    other = {"workflow": "deploy.yml", "ref": "release-candidate", "inputs": {"target": "dev"}}
+    doc["environments"]["development"]["github"] = [main, other]
+    doc["environments"]["development"]["deploy"] = [
+        _prefix("dev"), "gh workflow run deploy.yml --ref release-candidate -f target=dev"]
+    (ghrepo.main / ".crew" / "verify.json").write_text(json.dumps(doc, indent=2) + "\n",
+                                                       encoding="utf-8")
+    _git(ghrepo.main, "add", "-A")
+    _git(ghrepo.main, "commit", "-q", "-m", "two refs")
+    full = _git(ghrepo.main, "rev-parse", "HEAD")
+    sep = " && " if flavour == "sh" else "; "
+    longer = "gh workflow run deploy.yml --ref release-candidate -f target=dev"
+    lead = "echo " if form == "echoed-longer" else ""
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev") + sep + lead + longer)
+    assert code == 2, err
+    assert "carries no `-f sha=<sha>`" in err, err
+    assert ghrepo.in_flight() is None
+    code, err = tree.run_gate(flavour, ghrepo, _prefix("dev") + f" -f sha={full}" + sep
+                              + lead + longer)
+    assert code == 0, err

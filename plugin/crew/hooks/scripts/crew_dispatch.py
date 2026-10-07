@@ -816,7 +816,8 @@ def _dispatch_from_run(rest, options):
     inputs = [f for f in (_field_input(v, api=False) for n, v in options
                           if n in _GH_FIELD_OPTS) if f is not None]
     return {"form": "workflow run", "workflow": rest[0] if rest else None,
-            "extra": rest[1:], "inputs": inputs}
+            "extra": rest[1:], "inputs": inputs,
+            "refs": [v for n, v in options if n in ("-r", "--ref")]}
 
 
 def _dispatch_from_api(rest, options):
@@ -840,8 +841,10 @@ def _dispatch_from_api(rest, options):
         return None
     inputs = [f for f in (_field_input(v, api=True) for v in fields)
               if f is not None]
+    refs = [value for key, sep, value in (str(v).partition("=") for v in fields)
+            if sep and key == "ref"]
     return {"form": "api", "workflow": workflow, "extra": [],
-            "inputs": inputs}
+            "inputs": inputs, "refs": refs}
 
 
 def dispatch_what(scope):
@@ -856,7 +859,8 @@ def dispatch_what(scope):
 def dispatch_scopes(args):
     """The workflow dispatch gh's arguments `args` send, as a list of zero or
     one scope in the shape both forms share: `{"op": "deploy", "form",
-    "workflow", "extra", "inputs": [(name, value-or-None, why)], "reads",
+    "workflow", "extra", "inputs": [(name, value-or-None, why)], "refs":
+    [every `--ref`/`-r` value, or the REST body's top-level `ref`], "reads",
     "what"}`. None for a help request (`--help`) and for a `gh api` call
     that is not a dispatch. Read only after the grammar passed the line."""
     positionals, options, helped = _gh_words(args)

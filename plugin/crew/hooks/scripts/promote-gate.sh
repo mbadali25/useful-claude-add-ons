@@ -436,6 +436,11 @@ if [ -n "$RUN_CWD" ]; then
 fi
 RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
+# Windows Python ends every record with CRLF and `$(...)` drops only the last
+# line's: a `cd` record followed by another kept its CR, so `cd "<dir>\r"`
+# resolved nowhere. _promote_tree.py turns a CR inside a token into `bad`, so
+# removing every CR here cannot join or invent a path.
+RECORDS=$(crew_strip_cr "$RECORDS")
 TREES=()
 RUNDIRS=()
 BARE=0

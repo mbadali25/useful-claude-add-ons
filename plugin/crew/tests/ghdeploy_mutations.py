@@ -685,6 +685,10 @@ GHDEPLOY_MUTATIONS = (
      "                         f\"--env {env}` prints\")\n"
      "    return [max(fits, key=lambda fit: fit[0])]\n",
      _G + "test_a_shorter_entrys_dispatch_is_checked_beside_a_longer_one[sh]"),
+    ("promote-gate: a dispatch is bound to entries without reading its ref", GHRULE,
+     "            and fold(refs[0]) == fold(ref)):\n        return False\n",
+     "            and fold(refs[0]) == fold(ref)):\n        pass\n",
+     _G + "test_an_entry_with_another_ref_does_not_stand_in[two-dispatches-sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
     ("promote-gate: the sha rule compares against the project dir's HEAD", SH,
      '--shell bash --full "$FULL" \\\n',
