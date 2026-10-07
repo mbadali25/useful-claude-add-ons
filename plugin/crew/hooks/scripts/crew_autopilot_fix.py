@@ -16,7 +16,8 @@
 `fix-and-rereview` fixes only when ALL hold: `rounds_left` is an int (never a
 bool) and at least 1; the round row carries `findings`, a list of one-line
 BLOCK, FIX or NIT strings that agrees with the row's `counts` per severity,
-with at least one `BLOCK|` or `FIX|` line, plus `base` and `bundle_sha256`.
+with at least one `BLOCK|` or `FIX|` line, an `ignored_lines` of 0 (a verdict
+recovered from stray lines is the owner's), plus `base` and `bundle_sha256`.
 The fix is complete when BOTH hold, read from disk:
 `.work/tickets/<id>/fixes.md` has a `## Round <n>` section holding every
 `BLOCK|` and `FIX|` line of the row verbatim as a whole line, as many times as
@@ -151,6 +152,12 @@ def decide(top, ticket, policy, ledger, latest, answer, toward):
         return cause + f"round {number}'s {disagree}: could not tell"
     if not owed:
         return cause + f"round {number} lists no BLOCK or FIX line"
+    ignored = latest.get("ignored_lines")  # review_ledger's rule: absent is could-not-tell, never 0
+    if isinstance(ignored, bool) or not isinstance(ignored, int) or ignored < 0:
+        return cause + f"round {number} has no readable ignored_lines ({ignored!r}): could not tell"
+    if ignored:
+        return cause + (f"round {number}'s verdict was recovered from {ignored} stray line(s) "
+                        "(ignored_lines); a recovered round is the owner's")
     base, recorded = latest.get("base"), latest.get("bundle_sha256")
     if isinstance(number, bool) or not isinstance(number, int) or not base or not recorded:
         return cause + (f"round {number!r} has no round number, base or bundle_sha256: "

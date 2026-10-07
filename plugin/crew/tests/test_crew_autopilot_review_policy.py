@@ -49,6 +49,7 @@ def _findings_round(root, findings=tuple(FINDINGS), policy="fix-and-rereview", r
     lines = found["findings"] if isinstance(found["findings"], list) else []
     found["counts"] = {sev: sum(1 for f in lines if isinstance(f, str) and f.startswith(sev + "|"))
                        for sev in ("BLOCK", "FIX", "NIT")}
+    found["ignored_lines"] = 0
     found.update(row)
     for key in [k for k, v in row.items() if v is None]:
         del found[key]
@@ -227,6 +228,9 @@ def test_rounds_left_that_is_not_an_int_stops(tmp_path, monkeypatch, left):
     ({"counts": {"BLOCK": 1, "FIX": 1, "NIT": 1}}, "BLOCK count is 1 but it lists 0"),
     ({"counts": {"BLOCK": False, "FIX": 1, "NIT": 1}}, "BLOCK count is False"),
     ({"counts": None}, "counts are None"),
+    ({"ignored_lines": 1}, "recovered from 1 stray line"),
+    ({"ignored_lines": None}, "no readable ignored_lines"),
+    ({"ignored_lines": True}, "no readable ignored_lines"),
     ({"findings": ["FIX|a|1|b|c", "WARN|a|1|b|c"]}, "is not a BLOCK, FIX or NIT line"),
     ({"findings": ["FIX|a|1|b\nBLOCK|x"]}, "line break"),
     ({"base": None}, "no round number, base or bundle_sha256"),
