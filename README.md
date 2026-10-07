@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.90**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (294 new entries, 2093 to 2387, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
 - **crew 1.1.12**: Crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root. A repo set up by crew now sees a failing check's own error lines in its `_verify` output, and gets a ready diagram check that works as root in CI containers instead of failing with no reason.
-- **repository**: CI fails a stale built crew guide. A pull request whose committed crew guide HTML, or generated configuration reference, no longer matches its sources now fails CI, so a stale guide cannot merge on green checks.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

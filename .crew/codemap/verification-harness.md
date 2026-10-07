@@ -761,6 +761,10 @@ match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` o
   (L-0641: L-0639/L-0640's derived ticket state).
 - `GITIGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_gitignore.py`, imported by `sabotage.py`
   (C-0025: T-0039's nineteen hand-run mutations).
+- `COORD_MUTATIONS` and `WAVE_MUTATIONS` - `plugin/crew/tests/sabotage_coord.py` and
+  `plugin/crew/tests/sabotage_wave.py`, imported by `sabotage.py` (T-0030's and T-0029's harness
+  halves; the wave list also covers `scope_guard.py`'s subagent never-list, whose must-block and
+  must-allow cases are `plugin/crew/tests/test_scope_guard_wave.py`).
 - `SLEEP_MUTATIONS` and `REPLAN_MUTATIONS` - `plugin/crew/tests/sabotage_autopilot.py`, added to
   `AUTOPILOT_MUTATIONS` (L-0651 and L-0655's L-0652 part: the sleep window and manual sleep;
   L-0671: T-0074's auto-replan policy).
@@ -771,7 +775,7 @@ match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` o
   (C-0025: T-0064's denylist coverage).
 - Appended to existing lists: `ROUTE_MUTATIONS` (L-0661, L-0663), `CONFIG_MENU_MUTATIONS` (L-0682,
   C-0028's T-0103 part), `MIGRATE_FIX_MUTATIONS` (L-0683, C-0025's T-0038 part, C-0028's T-0106
-  part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021).
+  part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021), `STANDARDS_MUTATIONS` (C-0042: the PWSH set).
 - `sabotage_platform.PLATFORM_ONLY` declares the entries whose target test runs only on POSIX.
 
 ## Entry points
