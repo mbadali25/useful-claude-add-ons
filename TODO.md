@@ -132,11 +132,9 @@ be wrong can be closed on evidence.
   `review_ledger.open_slice` and `_spent` counting the latest slice row (the per-slice budget;
   `next-slice` refuses until it lands), `review_ledger.summary` carrying `slices`, and
   `crew_ticket.validate` appending `parse_slices`' problems as `PR slices:`.
-- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 19
-  hand-run mutations listed in `.crew/verify.json`'s T-0039 rule as `GITIGNORE_MUTATIONS` in a new
-  `plugin/crew/tests/sabotage_gitignore.py`, imported and concatenated in
-  `plugin/crew/tests/sabotage.py`. Both paths are `HARNESS` in `scripts/check-tooling-pr.py`, so they
-  could not ride with the feature (CLAUDE.md, T-0087). (b) Apply it to this repo's own `.gitignore`:
+- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Done by the harness lane (C-0025): the 19
+  hand-run mutations are `GITIGNORE_MUTATIONS` in `plugin/crew/tests/sabotage_gitignore.py`,
+  registered in `plugin/crew/tests/sabotage.py`. (b) Apply it to this repo's own `.gitignore`:
   `python3 plugin/crew/hooks/scripts/crew_gitignore.py check --root .` on 2026-10-04 reported
   `4 missing (os/editor, secrets)` - `[Dd]esktop.ini`, `*.p12`, `id_rsa`, `id_ed25519` - with no
   tracked secret (spec Exclusions: not changed by T-0039). (c) A Windows run on win-repo-2 (the
