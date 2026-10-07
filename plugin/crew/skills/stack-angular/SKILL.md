@@ -5,6 +5,7 @@ description: |
   composition, subscription leaks, injector hierarchy. Use when the repo has angular.json or
   @angular/core, or an AngularJS 1.x app, or the user asks to write or review a component,
   service, RxJS pipeline, or asks why a list keeps re-rendering or a subscription never cleans up.
+  Candidate standards (Angular 2+ only; AngularJS gets pitfalls, no standards) are listed too.
 ---
 
 # Stack: Angular
@@ -33,11 +34,21 @@ version-gated. Write in the idiom the repo already uses unless the ticket is the
   state quietly forks.
 - **Template-driven and reactive forms behave differently on validation timing** - a control
   added to a `FormGroup` after init needs `updateValueAndValidity` to be believed.
-- **`bypassSecurityTrust*` and `[innerHTML]` are XSS sinks** - sanitisation is the default
-  these turn off.
+- **`bypassSecurityTrust*` is an XSS sink** - it turns off the sanitisation an `[innerHTML]`
+  binding otherwise applies (candidate NG-P1 in `references/candidates.md`).
+- **A failed read is not empty data.** A view whose write controls depend on a read shows
+  "could not verify" when it fails and gates every write on that state (candidate NG-07).
 - **A guard returning an observable that never emits hangs navigation** - the router takes the
   first emission and unsubscribes. A lazy route pulling a shared module drags it into its own
   chunk; check the bundle, not the intent.
+
+## Standards
+
+No gated Angular standards set ships yet (L-0538). NG-07, the one rule at the bar in the
+owner's private count, needs the coordinator's publishable evidence text, and public change
+sets do not count (owner, 2026-10-05). When earned, the set is `references/angular.md` in
+`crew-standards`, set `NG`. The candidates and their sources are in
+`references/candidates.md`; they are guidance, not rows of the self-check.
 
 ## AngularJS (1.x) additions
 
