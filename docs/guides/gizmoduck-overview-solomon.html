@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Gizmoduck Plugin: An Overview for Everyone</title>
+<style>
+body { font-family:'Franklin Gothic Book','Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#0E2841; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#0E2841; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#0E2841; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #0E2841;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #0E2841;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#0E2841; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #0E2841;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#0E2841; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body>
+
+<h1>The Gizmoduck Plugin: An Overview for Everyone</h1>
+<p><img src="assets/solomon-logo-on-light.png" alt="Solomon" style="height:32px;margin:0 0 6pt;"></p>
+<p class="muted">Generated from useful-claude-add-ons@541b2b70 on 2026-09-22. Verify before trusting.<br>
+The high-level guide. No code knowledge needed. A companion technical reference covers the same ground in depth. Written against gizmoduck 0.5.3.</p>
+
+<div class="box">
+<p><b>In one paragraph.</b> Gizmoduck scans a website or host for known vulnerabilities, tells you what it found in plain terms, and — only after you say go — opens ServiceDesk Plus tickets for the ones worth fixing. It runs entirely on tools you install yourself; nothing is sent to a third-party scanning service, and nothing is ever ticketed without a person confirming the exact list first.</p>
+</div>
+
+<h2>1. What It Does</h2>
+<ul>
+<li><b>Scans.</b> Point it at a URL, a host, or a file listing several targets, and it runs <a href="https://github.com/projectdiscovery/nuclei">Nuclei</a>, a signature-based vulnerability scanner, against them.</li>
+<li><b>Reports.</b> It turns the raw findings into a report — on screen, as a web page, or as a PDF — ordered so the most serious finding is read first.</li>
+<li><b>Tickets.</b> For the findings serious enough to act on, it can open ServiceDesk Plus tickets, but only after showing you the exact batch and getting one explicit go-ahead.</li>
+<li><b>Diffs.</b> Given an old scan and a new one, it tells you what changed — the question "did we introduce anything new" answered directly, rather than by re-reading two full reports.</li>
+</ul>
+<p>Only scan a website or host you own or have written permission to test.</p>
+
+<h2>2. How a Scan Goes</h2>
+<ol>
+<li>You give it a target: a web address, a host name or IP, or a text file with one target per line.</li>
+<li>It runs the scan and writes every finding to a file, then shows you the counts by severity.</li>
+<li>It writes a report. Critical, High and Medium findings are described in full; Low and Informational findings are only counted, because a scanner's low-priority output is mostly inventory — version numbers, DNS records, "a form exists on this page" — and listing all of it buries what someone actually has to fix. The report always says how many were left out, so nothing goes missing quietly.</li>
+<li>If any findings are serious enough to be worth a ticket, it shows you the exact list — severity and one-line subject each — and a short code standing for that exact list. Nothing is created yet.</li>
+<li>You look at the list and say go. It reruns with that same code attached, and only then does it open or update the tickets. If anything about the list has changed in the meantime — a different scan, a different cut-off severity — the code no longer matches and it refuses, rather than silently ticketing a different batch than the one you approved.</li>
+</ol>
+
+<h2>3. What You Can Ask For</h2>
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>/gizmoduck:scan</code></td><td>Scan a target, then report and offer to open tickets for the serious findings.</td></tr>
+<tr><td><code>/gizmoduck:report</code></td><td>Rebuild a report from a previous scan's findings, without scanning again.</td></tr>
+<tr><td><code>/gizmoduck:tickets</code></td><td>Confirm, then open or update ServiceDesk Plus tickets from a findings file.</td></tr>
+<tr><td><code>/gizmoduck:diff</code></td><td>Show what is new since a previous scan.</td></tr>
+<tr><td><code>/gizmoduck:update</code></td><td>Update the scan engine and its vulnerability signatures.</td></tr>
+<tr><td><code>/gizmoduck:doctor</code></td><td>Check that everything the tool needs is actually installed.</td></tr>
+</tbody>
+</table>
+
+<h2>4. Safety and Permission</h2>
+<ul>
+<li><b>Only scan what you are allowed to.</b> The scanner is self-hosted and runs end to end with no export step, which also means there is no external gatekeeper stopping a scan of the wrong target — that responsibility sits with the person running it.</li>
+<li><b>Ticketing asks first, always.</b> Creating a real support ticket is never the default action. The tool shows the batch, waits for a person to look at it, and only proceeds against the exact list that was shown — never a wider or different one.</li>
+<li><b>A degraded scan says so.</b> If a supporting tool is not installed, gizmoduck records that clearly rather than pretending the check ran clean.</li>
+</ul>
+
+<h2>5. Getting It Working</h2>
+<ol>
+<li>Run the installer once — <code>bootstrap.sh</code> on Linux/WSL, <code>bootstrap.ps1</code> on Windows. It fetches the scan engine and its signature set, and the tool used to turn reports into PDF.</li>
+<li>Run <code>/gizmoduck:doctor</code> to confirm everything it found is actually usable.</li>
+<li>Point <code>/gizmoduck:scan</code> at a target you own or have written permission to test.</li>
+</ol>
+<p>A free API key from the National Vulnerability Database speeds up one of the supporting checks considerably on a first run; it is optional, and gizmoduck says so rather than failing without one.</p>
+
+<h2>6. Glossary</h2>
+<table>
+<thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Finding</td><td>One reported issue: a template match, a version, a misconfiguration.</td></tr>
+<tr><td>Severity</td><td>Critical, High, Medium, Low or Informational, from most to least serious.</td></tr>
+<tr><td>Batch</td><td>The exact set of findings a ticketing run is about to act on.</td></tr>
+<tr><td>Digest</td><td>The short code standing for one exact batch, so a rerun cannot silently widen it.</td></tr>
+<tr><td>Diff</td><td>What changed between an earlier scan's findings and a later one's.</td></tr>
+</tbody>
+</table>
+
+<p class="muted">Provenance: read from <code>plugin/gizmoduck/README.md</code>, <code>commands/</code>, <code>scripts/gizmoduck.py</code> and <code>skills/gizmoduck/SKILL.md</code> at commit 541b2b70 (gizmoduck 0.5.3). Not verified: behaviour of a live scan against a real target; this document describes the code's stated behaviour, not an observed run.</p>
+
+</body>
+</html>

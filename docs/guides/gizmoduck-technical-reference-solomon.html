@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Gizmoduck Plugin: Technical Reference</title>
+<style>
+body { font-family:'Franklin Gothic Book','Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#0E2841; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#0E2841; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#0E2841; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #0E2841;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #0E2841;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#0E2841; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #0E2841;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#0E2841; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body>
+
+<h1>The Gizmoduck Plugin: Technical Reference</h1>
+<p><img src="assets/solomon-logo-on-light.png" alt="Solomon" style="height:32px;margin:0 0 6pt;"></p>
+<p class="muted">Generated from useful-claude-add-ons@541b2b70 on 2026-09-22. Verify before trusting.<br>
+The low-level guide, for the people who install, run and extend gizmoduck. A companion overview covers the same ground in plain language. Written against gizmoduck 0.5.3, commit 541b2b70.</p>
+
+<div class="box">
+<p><b>Scope.</b> Gizmoduck runs <a href="https://github.com/projectdiscovery/nuclei">Nuclei</a> (MIT-licensed, self-hosted) end to end — scan, normalise, report, ticket, diff — with no export step and no third-party API in the loop. Runs on WSL/Linux and Windows.</p>
+</div>
+
+<h2>1. Layout</h2>
+<table>
+<thead><tr><th>Path</th><th>Contents</th></tr></thead>
+<tbody>
+<tr><td><code>.claude-plugin/plugin.json</code></td><td>Name, version (0.5.3), description, licence (GPL-2.0-only).</td></tr>
+<tr><td><code>bootstrap.sh</code> / <code>bootstrap.ps1</code></td><td>Installers for Linux/WSL and Windows: fetch Nuclei and community templates, and install <code>wkhtmltopdf</code> plus the nine multi-tool-routine scanners (nmap, nikto, testssl, trivy, checkov, semgrep, dependency-check, sqlmap, zap).</td></tr>
+<tr><td><code>scripts/gizmoduck.py</code></td><td>The CLI: <code>scan</code>, <code>summary</code>, <code>parse</code>, <code>report</code>, <code>tickets</code>, <code>diff</code>, <code>doctor</code>, <code>update</code>.</td></tr>
+<tr><td><code>scripts/normalize.py</code></td><td>Finding shape and severity normalisation shared by every scanner adapter; imports nothing from <code>gizmoduck.py</code> so adapters and their tests load without the CLI.</td></tr>
+<tr><td><code>scripts/report_template.py</code></td><td>HTML and PDF rendering, via <code>wkhtmltopdf</code> (Qt WebKit 4.8 — no flexbox, grid or custom properties in its CSS).</td></tr>
+<tr><td><code>scripts/routine.py</code></td><td>Manifest-driven, multi-tool scan orchestrator over the nine adapters in <code>scripts/scanners/</code>, with an authorisation gate. Not wired to any command in this repository as of this commit — nothing outside <code>scripts/_test/</code> imports it.</td></tr>
+<tr><td><code>scripts/scanners/</code></td><td>One adapter module per tool: <code>nuclei</code>, <code>nmap</code>, <code>nikto</code>, <code>testssl</code>, <code>trivy</code>, <code>checkov</code>, <code>semgrep</code>, <code>depcheck</code>, <code>sqlmap</code>, <code>zap</code>, plus <code>base.py</code> for the shared contract.</td></tr>
+<tr><td><code>commands/</code></td><td>Six command files: <code>scan</code>, <code>report</code>, <code>tickets</code>, <code>diff</code>, <code>update</code>, <code>doctor</code>.</td></tr>
+<tr><td><code>skills/gizmoduck/SKILL.md</code></td><td>The workflow the agent follows: scan, summarise, report, ticket.</td></tr>
+<tr><td><code>docs/antivirus-exclusions.md</code></td><td>What to exclude so an AV/EDR does not quarantine nikto, sqlmap, ZAP or a Nuclei template mid-install.</td></tr>
+<tr><td><code>scripts/_test/</code></td><td>23 test modules.</td></tr>
+</tbody>
+</table>
+
+<h2>2. The CLI</h2>
+<table>
+<thead><tr><th>Subcommand</th><th>Positional args</th><th>Severity floor</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>scan</code></td><td>target/host/URL/file</td><td>n/a</td><td><code>--severity</code> passed straight through as Nuclei's own filter; <code>--extra</code> passes through additional Nuclei args; writes JSONL to <code>--out</code> (default <code>findings.jsonl</code>).</td></tr>
+<tr><td><code>summary</code></td><td>findings.jsonl</td><td>info (everything)</td><td>Prints the severity counts as JSON.</td></tr>
+<tr><td><code>parse</code></td><td>findings.jsonl</td><td>info</td><td>Prints the raw findings at or above <code>--min-severity</code> as JSON.</td></tr>
+<tr><td><code>report</code></td><td>findings.jsonl</td><td>medium</td><td>Itemises Critical/High/Medium; Low/Info are counted and dropped, with the suppressed count stated. <code>--format md|html|pdf</code>; PDF falls back to HTML with a message and exit 2 if no PDF engine is found.</td></tr>
+<tr><td><code>tickets</code></td><td>findings.jsonl</td><td>high</td><td>Gated: without <code>--yes &lt;digest&gt;</code>, prints the candidate list and a digest, then exits 3 with no ticket records emitted. A wrong or stale digest exits 3 as <code>GIZMODUCK_APPROVAL_MISMATCH</code>. Zero qualifying findings prints <code>[]</code> and exits 0 either way.</td></tr>
+<tr><td><code>diff</code></td><td>baseline.jsonl, current.jsonl</td><td>low</td><td>What is new in <code>current</code> relative to <code>baseline</code>.</td></tr>
+<tr><td><code>doctor</code></td><td>none</td><td>n/a</td><td>Checks <code>nuclei</code>, its templates directory, Python, <code>wkhtmltopdf</code>, <code>NVD_API_KEY</code> (presence only, never the value), and every registered scanner adapter's <code>is_available()</code>. Exits 1 only if <code>nuclei</code> or its templates are missing; a missing supporting tool or an unset <code>NVD_API_KEY</code> is reported but never flips the exit code.</td></tr>
+<tr><td><code>update</code></td><td>none</td><td>n/a</td><td>Updates the Nuclei engine and community templates.</td></tr>
+</tbody>
+</table>
+<p><code>argparse</code> runs with <code>allow_abbrev=False</code>, so <code>--yes</code> must be spelled out in full — an abbreviation cannot trip the ticketing gate by accident. <code>--yes</code> is refused with a named error on every subcommand except <code>tickets</code>, rather than being silently ignored.</p>
+
+<h2>3. The Ticketing Gate</h2>
+<p><code>cmd_tickets</code> computes a digest over the exact record set (<code>_records_digest</code>) and requires it back, verbatim, on <code>--yes</code>:</p>
+<ul>
+<li>No <code>--yes</code>: prints one line per candidate ticket (severity + subject), the digest, and the exact rerun command carrying it; exits 3 with <code>GIZMODUCK_CONFIRMATION_REQUIRED</code> and no JSON.</li>
+<li><code>--yes</code> present but not equal to the freshly recomputed digest: exits 3 with <code>GIZMODUCK_APPROVAL_MISMATCH</code> — a different findings file, a different <code>--min-severity</code>, or findings that changed in between all produce this.</li>
+<li><code>--yes</code> matching: emits the JSON ticket records for the caller (the <code>/gizmoduck:scan</code> and <code>/gizmoduck:tickets</code> command prose) to act on.</li>
+</ul>
+<p>The severity floor for <code>tickets</code> defaults to High rather than the CLI-wide Info default, specifically so a bare invocation cannot open a ticket per informational finding.</p>
+
+<h2>4. Severity Model</h2>
+<p><code>SEV_NUM</code> (<code>gizmoduck.py:38</code>, mirrored in <code>normalize.py</code> with a parity note): <code>critical=4, high=3, medium=2, low=1, info=0, unknown=0</code>. <code>normalize.py</code> maps a handful of legacy tool vocabularies onto this scale (Bridgecrew's "moderate"/"important", ZAP's numeric riskcode 0-3) and reports anything it cannot map as <code>unknown</code> rather than guessing a severity for it.</p>
+
+<h2>5. The Routine Orchestrator (Not yet a Command)</h2>
+<p><code>scripts/routine.py</code> implements a manifest-driven, multi-tool scan (<code>run_routine</code>), each of the nine adapters conforming to one contract: <code>run(location, outdir, opts) -&gt; (raw_path | None, ToolResult)</code> and <code>parse(raw_path, name) -&gt; list[dict]</code>, called with plain strings rather than a <code>Target</code> object. <code>result.returncode is None</code> means an adapter declined to run an active scan before firing anything (currently only <code>sqlmap</code>'s active mode) — reported as <code>skipped-active</code>, never as an error. <code>doctor</code> already surfaces every adapter's availability under <code>-- scanners --</code>, driven off the same registry, so a tool added to <code>scanners/</code> can never go unmentioned there — but as of this commit nothing in <code>commands/</code> or <code>skills/gizmoduck/SKILL.md</code> calls <code>run_routine</code>; the only exercised path into it is <code>scripts/_test/</code>.</p>
+
+<h2>6. Bootstrap and Dependencies</h2>
+<table>
+<thead><tr><th>Dependency</th><th>Installed by bootstrap</th><th>If missing</th></tr></thead>
+<tbody>
+<tr><td>Nuclei + community templates</td><td>Yes</td><td><code>scan</code> reports it and stops.</td></tr>
+<tr><td><code>wkhtmltopdf</code></td><td>Yes (Linux via apt; Windows via <code>winget install wkhtmltopdf</code>)</td><td><code>report --format pdf</code> falls back to writing HTML and exits 2 with a message.</td></tr>
+<tr><td>nmap, nikto, testssl, trivy, checkov, semgrep, dependency-check, sqlmap, zap</td><td>Yes, for the routine orchestrator</td><td>A degraded routine run per <code>doctor</code>'s per-adapter report; none of this affects the <code>scan</code>/<code>report</code>/<code>tickets</code> path, which only needs Nuclei.</td></tr>
+<tr><td><code>NVD_API_KEY</code> (environment variable)</td><td>Not installed — optional, user-supplied</td><td>dependency-check's first NVD sync rate-limits to about 5 requests/30s instead of about 50/30s; <code>doctor</code> reports the variable's presence only, never its value.</td></tr>
+</tbody>
+</table>
+
+<h2>7. Known Items</h2>
+<ul>
+<li>The nine-tool <code>routine.py</code> orchestrator has no slash command or skill entry point in this repository yet, despite <code>doctor</code> already reporting on all nine adapters' availability.</li>
+<li><code>docs/antivirus-exclusions.md</code> documents that an AV/EDR quarantining or deleting nikto, sqlmap, ZAP or a Nuclei template mid-install is an expected interaction with this toolchain, not a broken install — worth checking before assuming <code>doctor</code>'s report of a missing tool means the bootstrap script failed.</li>
+</ul>
+
+<p class="muted">Provenance: read from <code>plugin/gizmoduck/README.md</code>, <code>scripts/gizmoduck.py</code>, <code>scripts/normalize.py</code>, <code>scripts/routine.py</code>, <code>scripts/report_template.py</code>, <code>bootstrap.sh</code> and <code>scripts/_test/</code> at commit 541b2b70 (gizmoduck 0.5.3, confirmed in both <code>.claude-plugin/plugin.json</code> and <code>CHANGELOG.md</code>). Not verified: a live scan or ticketing run against a real ServiceDesk Plus instance.</p>
+
+</body>
+</html>

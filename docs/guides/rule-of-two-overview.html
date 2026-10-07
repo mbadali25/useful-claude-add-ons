@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Rule-of-Two Plugin: An Overview for Everyone</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#1F4E79; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#1F4E79; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#1F4E79; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #1F4E79;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #1F4E79;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#1F4E79; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #1F4E79;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#1F4E79; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body>
+
+<h1>The Rule-of-Two Plugin: An Overview for Everyone</h1>
+<p class="muted">Generated from useful-claude-add-ons@541b2b70 on 2026-09-22. Verify before trusting.<br>
+The high-level guide. No code knowledge needed. A companion technical reference covers the same ground in depth. Written against rule-of-two 0.1.3.</p>
+
+<div class="box">
+<p><b>In one paragraph.</b> Rule-of-two has two AI reviewers from two different companies read the same skill, agent or plugin definition against the same checklist, without either seeing the other's notes, and tells you whether the artifact is worth shipping. Its whole job is to never claim two independent opinions when it only managed to get one — if the second reviewer could not run, the report says so in its own title, in plain words, rather than quietly presenting one opinion as two.</p>
+</div>
+
+<h2>1. What It Is For</h2>
+<p>It reviews the building blocks of Claude Code itself — an agent definition, a skill, or a whole plugin — as artifacts, checking whether they are well-formed, whether their descriptions will actually trigger them, and whether they duplicate something that already exists. It does <b>not</b> review application code, architecture, or product ideas; the crew plugin's own reviewer, planner and architect roles are built for that.</p>
+
+<h2>2. Why Two Reviewers, and Why It Matters That They Differ</h2>
+<p>One AI reviewing its own kind of output can miss the same blind spots its own family has. Rule-of-two dispatches a Claude-family reviewer and a Codex-family reviewer at the same artifact, with no visibility between them, and then checks — mechanically, not by asking either model — whether the two really came from different families. In its own early self-reviews, the two reviewers agreed on very little at first look and, between them, found every blocking problem; neither one alone found all of them.</p>
+
+<h2>3. What You Can Ask For</h2>
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>/rule-of-two:review &lt;path&gt;</code></td><td>Runs both reviewers on an agent, skill or plugin and renders one combined report.</td></tr>
+<tr><td><code>/rule-of-two:config</code></td><td>Shows which two models it will use, where that setting came from, and whether the second reviewer can actually run right now.</td></tr>
+</tbody>
+</table>
+
+<h2>4. What the Report Is Honest About</h2>
+<ul>
+<li><b>Only one reviewer ran.</b> If the second reviewer is missing, cannot authenticate, or its model has been retired, the report's own title says this is one review, not two.</li>
+<li><b>The two reviewers turned out to be the same family after all.</b> A same-family pairing is reported as one perspective wearing two names, and is called out as not meeting the bar.</li>
+<li><b>It could not tell.</b> If a reviewer's recorded identity does not resolve to a known family, the report says the question is unanswered — never quietly treated as a pass.</li>
+</ul>
+<p>What the report cannot tell you: which underlying model actually served each request (only what was configured and asked for), or whether the review that ran actually inspected the artifact thoroughly rather than skimming it.</p>
+
+<h2>5. What It Needs to Work</h2>
+<ul>
+<li>The plugin installed, for the Claude-side reviewer to exist at all as a dispatchable role.</li>
+<li>A working, authenticated <code>codex</code> command-line tool, for the second, independent reviewer.</li>
+<li>Nothing from the crew plugin. Rule-of-two keeps its own configuration entirely separate.</li>
+</ul>
+
+<h2>6. Glossary</h2>
+<table>
+<thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Coverage</td><td>The report's own judgement of how independent the two reviews actually were, printed as one of a fixed set of outcomes.</td></tr>
+<tr><td>Family</td><td>Which company's model line a reviewer belongs to — the thing that has to differ for "two independent reviews" to be true.</td></tr>
+<tr><td>Rubric</td><td>The one written checklist both reviewers work from.</td></tr>
+<tr><td>Artifact</td><td>The agent, skill or plugin definition being reviewed — never the application code it might operate on.</td></tr>
+</tbody>
+</table>
+
+<p class="muted">Provenance: read from <code>plugin/rule-of-two/README.md</code>, <code>commands/</code> and <code>.claude-plugin/plugin.json</code> at commit 541b2b70 (rule-of-two 0.1.3). Not verified: the outcome of a live review against a real artifact in this session.</p>
+
+</body>
+</html>
