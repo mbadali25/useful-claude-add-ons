@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.21**: An empty `/tmp/.git` no longer refuses every Kimi probe. Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi probe read any `.git` above the temporary directory as a repository, so every Kimi probe and review was refused while it existed. Git is now asked instead.
 - **crew 1.1.21**: `/crew:graph`, one command for the code graph. Crew has one command for the code graph: `/crew:graph --status` says in one line whether the graph is current, and `/crew:graph --refresh` runs the refresh this repo sanctions and proves the tracked pair agrees before anyone commits it.
-- **crew 1.1.21**: The main session is the hub, lanes never ring a peer. A wave lane can no longer ring another session; it hands a question for another session back to the main session, which files it in the record and rings.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

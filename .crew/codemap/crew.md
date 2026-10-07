@@ -2024,16 +2024,19 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
   launchable (`:194`); `resolve_alias` (`:257`) maps an id to the config.toml alias served by a
-  `type = "kimi"` provider; `probe` (`:506`) runs one live call in a throwaway directory with the
+  `type = "kimi"` provider; `probe` (`:603`) runs one live call in a throwaway directory with the
   read-only agent file (`write_agent_file`, `:214`; `read_only_flags`, `:236`) and a scrubbed env
-  (`kimi_env`, `:205`), and `classify` (`:478`) reads its stream through `final_message`
+  (`kimi_env`, `:205`), and `classify` (`:575`) reads its stream through `final_message`
   (`:151`), the stream-json parser, which lives here so the review harness can import it. A
   timed-out probe's process group is killed and the follow-up read is bounded (`_run`). `probe`
   refuses (`unknown`) when the temporary directory lies inside a repository
-  (`_inside_a_repository`, `:382`), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
+  (`_inside_a_repository`, `:469`; L-0708: git is asked, `git rev-parse --git-dir` with every
+  `GIT_*` removed and `LC_ALL=C`, and only its exit-128 "not a git repository" allows; any other
+  answer is could-not-tell; a `.git` git rejects refuses only when Kimi Code 2.1.1, which takes
+  any `.git` as its project root, would read one of `KIMI_PROJECT_FILES` from there down), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
   Round 7: a non-string `default_model` is `unknown`; only the provider's own credential file
   (`credentials/<name>.json` for `key = "oauth/<name>"`) counts as a login; each output pipe is
-  drained by `_CappedReader` (`:440`) keeping at most `OUTPUT_CAP`, past which the call is
+  drained by `_CappedReader` (`:537`) keeping at most `OUTPUT_CAP`, past which the call is
   `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`

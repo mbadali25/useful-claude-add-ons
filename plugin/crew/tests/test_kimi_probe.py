@@ -482,7 +482,7 @@ def test_probe_refuses_a_scratch_directory_inside_a_repository(fake, home, monke
     """Round 6 FIX 3: with TMPDIR inside a repository the throwaway directory would sit
     under it, where the CLI can discover that repository's instructions."""
     repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
+    _git_repo(repo, commit=True)  # L-0708: a real repository, not any `.git`
     (repo / "tmp").mkdir()
     monkeypatch.setattr(kimi_probe.tempfile, "tempdir", str(repo / "tmp"))
     calls = []
@@ -492,6 +492,181 @@ def test_probe_refuses_a_scratch_directory_inside_a_repository(fake, home, monke
     assert (result["state"], calls) == ("unknown", [])
     assert "inside a repository" in result["reason"]
     assert list((repo / "tmp").iterdir()) == []
+
+
+# --- L-0708: git, not the file system, says whether TMPDIR is in a repository ------------
+
+def _git(cwd, *args):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
+    subprocess.run(["git", *args], cwd=str(cwd), env=env, check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL, timeout=30)
+
+
+def _git_repo(path, commit):
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    if commit:
+        (path / "f.txt").write_text("x\n", encoding="utf-8")
+        _git(path, "add", "f.txt")
+        _git(path, "commit", "-q", "-m", "c")
+
+
+def _tmp_under(monkeypatch, top):
+    scratch = top / "tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(kimi_probe.tempfile, "tempdir", str(scratch))
+    return scratch
+
+
+def _refused(fake, home, monkeypatch, scratch):
+    calls = []
+    result = _probe(fake, home, monkeypatch, runner=lambda *a, **k: calls.append(a))
+    return result, calls, list(scratch.iterdir())
+
+
+def _ran(fake, home, monkeypatch):
+    calls = []
+
+    def runner(cmd, *_args, **_kwargs):
+        calls.append(cmd)
+        return '{"role": "assistant", "content": "PROBE_OK"}\n', "", 0, False
+
+    result = _probe(fake, home, monkeypatch, runner=runner)
+    return result, calls
+
+
+@pytest.mark.parametrize("commit", [True, False])
+def test_l0708_a_real_repository_above_tmpdir_is_refused(fake, home, monkeypatch, tmp_path,
+                                                         commit):
+    repo = tmp_path / "repo"
+    _git_repo(repo, commit)
+    scratch = _tmp_under(monkeypatch, repo)
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made) == ("unknown", [], [])
+    assert result["reason"] == (f"the temporary directory {scratch} is inside a repository; "
+                                "set TMPDIR outside it")
+
+
+def test_l0708_a_linked_worktree_above_tmpdir_is_refused(fake, home, monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    _git_repo(repo, commit=True)
+    _git(repo, "worktree", "add", "-q", str(tmp_path / "wt"))
+    assert (tmp_path / "wt" / ".git").is_file()
+    scratch = _tmp_under(monkeypatch, tmp_path / "wt")
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made, "inside a repository" in result["reason"]) == \
+        ("unknown", [], [], True)
+
+
+@pytest.mark.parametrize("mode", [None, 0o555])
+def test_l0708_an_empty_dot_git_above_tmpdir_proceeds(fake, home, monkeypatch, tmp_path, mode):
+    """must-allow: the empty (bwrap: read-only) /tmp/.git Codex's sandbox mounts."""
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    _tmp_under(monkeypatch, top)
+    if mode is not None:
+        (top / ".git").chmod(mode)
+
+    result, calls = _ran(fake, home, monkeypatch)
+
+    assert (result["state"], len(calls)) == ("ok", 1), result
+
+
+def test_l0708_git_dir_in_the_environment_does_not_change_the_answer(fake, home, monkeypatch,
+                                                                     tmp_path):
+    real = tmp_path / "real"
+    _git_repo(real, commit=True)
+    monkeypatch.setenv("GIT_DIR", str(real / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(real))
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    _tmp_under(monkeypatch, top)
+
+    result, calls = _ran(fake, home, monkeypatch)
+
+    assert (result["state"], len(calls)) == ("ok", 1), result
+
+
+@pytest.mark.parametrize("name", ["AGENTS.md", "agents.md", ".kimi-code", ".agents", ".mcp.json"])
+def test_l0708_kimi_project_files_beside_a_rejected_dot_git_are_refused(fake, home, monkeypatch,
+                                                                        tmp_path, name):
+    """U1: Kimi Code 2.1.1 takes the nearest directory holding any `.git` as its
+    project root and reads these there, so the empty `.git` allows only when
+    none is present."""
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    if name.startswith(".") and "." not in name[1:]:
+        (top / name).mkdir()
+    else:
+        (top / name).write_text("planted\n", encoding="utf-8")
+    scratch = _tmp_under(monkeypatch, top)
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made) == ("unknown", [], [])
+    assert str(top / name) in result["reason"] and "Kimi Code" in result["reason"], result
+
+
+def test_l0708_git_not_on_path_is_could_not_tell(fake, home, monkeypatch, tmp_path):
+    (tmp_path / "top" / ".git").mkdir(parents=True)
+    scratch = _tmp_under(monkeypatch, tmp_path / "top")
+    monkeypatch.setattr(kimi_probe, "_git_path", lambda: None)
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made, "git is not on PATH" in result["reason"]) == \
+        ("unknown", [], [], True), result
+
+
+def _git_answers(monkeypatch, code=None, stderr=b"", raise_=None):
+    real = subprocess.run
+
+    def fake_run(argv, *args, **kwargs):
+        if list(argv[1:]) != ["rev-parse", "--git-dir"]:
+            return real(argv, *args, **kwargs)
+        assert kwargs["env"]["LC_ALL"] == "C" and kwargs["stdin"] is subprocess.DEVNULL \
+            and kwargs["timeout"] and not any(k.startswith("GIT_") for k in kwargs["env"])
+        if raise_ is not None:
+            raise raise_
+        return subprocess.CompletedProcess(argv, code, b"", stderr)
+
+    monkeypatch.setattr(kimi_probe.subprocess, "run", fake_run)
+
+
+@pytest.mark.parametrize("code, stderr, raise_, named", [
+    (None, b"", subprocess.TimeoutExpired(["git"], 10), "did not answer within"),
+    (128, b"fatal: detected dubious ownership in repository at '/x'\n", None,
+     "dubious ownership"),
+    (1, b"error: something else\n", None, "exited 1"),
+    (129, b"", None, "exited 129"),
+])
+def test_l0708_any_other_git_answer_is_could_not_tell(fake, home, monkeypatch, tmp_path,
+                                                      code, stderr, raise_, named):
+    (tmp_path / "top" / ".git").mkdir(parents=True)
+    scratch = _tmp_under(monkeypatch, tmp_path / "top")
+    _git_answers(monkeypatch, code, stderr, raise_)
+
+    result, calls, made = _refused(fake, home, monkeypatch, scratch)
+
+    assert (result["state"], calls, made) == ("unknown", [], [])
+    assert "could not be told" in result["reason"] and named in result["reason"], result
+
+
+def test_l0708_only_the_exact_not_a_repository_answer_allows(fake, home, monkeypatch, tmp_path):
+    (tmp_path / "top" / ".git").mkdir(parents=True)
+    _tmp_under(monkeypatch, tmp_path / "top")
+    _git_answers(monkeypatch, 128, b"fatal: not a git repository (or any of the parent "
+                                   b"directories): .git\n")
+
+    result, calls = _ran(fake, home, monkeypatch)
+
+    assert (result["state"], len(calls)) == ("ok", 1), result
 
 
 # --- review round 7 (T-0028); their mutations are L-0527's (sabotage*.py is harness) ----

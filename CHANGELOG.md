@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.1.21: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
+
+- **Summary.** Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi
+  probe read any `.git` above the temporary directory as a repository, so every Kimi probe and
+  review was refused while it existed. Git is now asked instead.
+- **Fixed.** `kimi_probe._inside_a_repository` runs `git rev-parse --git-dir` in the resolved
+  temporary directory (every `GIT_*` variable removed, `LC_ALL=C`, 10-second bound, stdin
+  closed). A repository, a linked worktree included, is refused as before; only git's exit-128
+  "not a git repository" answer allows; git missing, a timeout, "dubious ownership" or any other
+  answer is could-not-tell and refuses, naming what happened.
+- **Kept.** Kimi Code 2.1.1 takes the nearest directory holding any `.git` as its project root
+  (read from its bundle), so a `.git` git rejects still refuses when `AGENTS.md`, `agents.md`,
+  `.kimi-code`, `.agents` or `.mcp.json` sits in a directory from there down to the temporary
+  directory: Kimi would read it.
+
 ### Added — crew 1.1.21: `/crew:graph`, one command for the code graph (L-0667)
 
 - **Summary.** Crew has one command for the code graph: `/crew:graph --status` says in one line
