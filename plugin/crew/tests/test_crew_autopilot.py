@@ -437,13 +437,92 @@ def test_next_stale_after_review_stops_without_writing(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
     _receipt_ok(monkeypatch, True)
-    _refresh(monkeypatch, "stale")
+    _refresh(monkeypatch, "unsettled")
     before = _snapshot(root)
 
     got = _next(root)
 
     assert ((got["phase"], got["stop"], got["command"]), _snapshot(root) == before) == (
         ("stale-after-review", True, ""), True)
+
+
+_BEYOND = ("receipt is stale: round 1 accepted bundle aaaa, the tree now builds bbbb; the change "
+           "was edited after review; delta gate: anchored artifact changed beyond its anchor: "
+           ".crew/codemap/crew.md")
+
+
+def _receipt_says(monkeypatch, ok, message):
+    calls = []
+
+    def check(root, ticket):
+        calls.append(ticket)
+        return ok, message
+    monkeypatch.setattr(review_ledger, "check_receipt", check)
+    return calls
+
+
+def test_autopilot_stale_artifact_after_review_stops_with_commit_then_rerun(tmp_path,
+                                                                           monkeypatch):
+    """L-0522: a stale artifact after an accepted review routes to its refresh
+    and STOPS - the receipt is re-checked on the next run, on the committed
+    refresh, never in this one."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    calls = _receipt_says(monkeypatch, True, "receipt current")
+    _refresh(monkeypatch, "stale", command="/crew:onboard --refresh crew")
+    before = _snapshot(root)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == (
+        "refresh", True, "/crew:onboard --refresh crew"), got
+    assert "commit the anchor-only refresh, then rerun autopilot" in got["reason"], got
+    assert (len(calls), _snapshot(root) == before) == (1, True)
+
+
+def test_autopilot_committed_anchor_only_refresh_reaches_done(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_says(monkeypatch, True, "receipt kept by delta gate: round 1 clean, reviewed head "
+                  "aaaa, base bbbb via main; 3 paths identical, 1 anchor-only, 0 exempt: "
+                  ".crew/codemap/crew.md")
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("done", False, f"/crew:done {T}")
+
+
+def test_autopilot_refresh_beyond_anchor_stops_for_a_human(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    path = _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_says(monkeypatch, False, _BEYOND)
+    _refresh(monkeypatch, "fresh")
+    with open(path, encoding="utf-8") as fh:
+        before = fh.read()
+
+    got = _next(root)
+
+    with open(path, encoding="utf-8") as fh:
+        after = fh.read()
+    assert (got["phase"], got["stop"]) == ("stale-after-review", True), got
+    assert "the refresh changed more than anchor lines" in got["reason"], got
+    assert before == after and got["command"] == ""
+
+
+def test_autopilot_refresh_beyond_anchor_with_zero_rounds_left_names_the_refresh(tmp_path,
+                                                                                 monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN"), _round(2, "CLEAN")], state="ACCEPTED",
+            receipt=_receipt(2))
+    _receipt_says(monkeypatch, False, _BEYOND)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("stale-after-review", True), got
+    assert "the refresh changed more than anchor lines" in got["reason"], got
+    assert "no review round left" not in got["reason"], got
 
 
 def test_next_done(tmp_path, monkeypatch):

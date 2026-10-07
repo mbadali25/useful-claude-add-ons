@@ -122,9 +122,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   A round's outcome is `CLEAN`, `FINDINGS` or `INCOMPLETE`. A completed round 2 — either `FINDINGS`
   or `INCOMPLETE` — leaves the ticket state `REVIEWED`, so its `FINDINGS` can still be accepted. A
   **third** reservation attempt is refused outright and the state becomes `NEEDS_REPLAN`; that
-  refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN` (autopilot's
-  `crew_autopilot.py auto-reject`, under `autopilot.maxAutoReplans`, is a `--reject` by the name
-  `autopilot (policy: autopilot.maxAutoReplans)`).
+  refusal, an explicit `--reject`, and `--reject --supersede-accepted` on an `ACCEPTED` ticket are
+  the only ways into `NEEDS_REPLAN` (autopilot's `crew_autopilot.py auto-reject`, under
+  `autopilot.maxAutoReplans`, is a `--reject` by the name `autopilot (policy: autopilot.maxAutoReplans)`).
   **Fix:** a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: `review: auto-accept: eligible`, then
   `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
@@ -152,7 +152,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
-  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  `review: round N was a tool failure (...); refunded`. `review_run.py` retries it once by itself
+  (L-0514), except a usage limit or a timeout; `review: retry: not retried - <why>` says when it
+  did not. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
   too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
   Codex is out of quota, use the next eligible provider. A third tool failure under
@@ -174,8 +176,22 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   fails unless the hash still matches, the receipt is for the **latest** recorded round, and the
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
+  One exception, the delta gate: after a catch-up merge, a version bump or an anchor-only refresh,
+  committed on a clean checkout, the receipt is kept (`receipt kept by delta gate: ...`) when the
+  ticket's own delta is byte-identical to the reviewed one. Its stale line names what differed
+  (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
+  integration ref` - the merge train is not armed in this clone, so the gate keeps nothing yet); a
+  code map, rules file or diagram may move only its anchor sha after review.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
-  was accidental, revert the edit and re-check.
+  was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
+  (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
+  leaves `crew_ticket.CREW_BOOKKEEPING_PATHS` out, whatever `.gitignore` says.
+
+- **Symptom: a receipt accepted under an older crew reads stale after the upgrade.** The upgrade
+  to the release that brought T-0068 drops crew's bookkeeping from the bundle, so a receipt whose
+  bundle held a non-ignored bookkeeping file (a repository that does not ignore `.crew/*`) no
+  longer matches the rebuilt hash.
+  **Fix:** one re-review of that ticket. Later bookkeeping writes cannot stale the new receipt.
 
 - **Symptom: Codex hit a usage limit.** The probe printed `PROBE=limited` (exit 5) with the
   error on `PROBE_DETAIL=...`, or a round printed `review: codex usage limit in round N: ...`.
@@ -192,10 +208,33 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
-  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
+  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`. An `ACCEPTED` ticket whose
+  head proved unshippable takes the explicit flag, the owner's call:
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who> \
+    --supersede-accepted
+  ```
+  It moves the ticket to `NEEDS_REPLAN`, keeps the old receipt in the `superseded` list with who
+  and when, and clears it; only an approved successor plan continues. It refuses, changing nothing,
+  on any other state, a name starting `auto:`, or a receipt or round it cannot read. `--by` is a
+  recorded name, not a check of who is calling.
 
-- **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
-  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+- **Symptom: the receipt names the wrong accepter** (a peer ran `--accept --by` under its own name
+  for a decision the owner made).
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --correct-acceptance \
+    --by <who> --reason "<why, one line>"
+  ```
+  Rewrites `accepted_by` on an `owner-accepted` receipt and appends `{round, was, now, reason, at}`
+  to `acceptance_corrections` (shown by `--status`). Nothing else changes, so `--check-receipt`
+  answers the same. Refuses a `clean` or `auto-accepted` receipt, a name starting `auto:`, the
+  name already recorded, and an empty or multi-line `--by` or `--reason`. A wrong correction is
+  fixed by another one; rows are never removed.
+
+- **Symptom: `crew_train.py acquire` exits 1, or `/crew:review` stops with exit 10 and
+  `review-run: train: waiting behind <ticket>`.** The clone's merge train is armed (L-0520; the
+  gate round takes it since L-0526, and no round was spent) and an overlapping ticket holds it,
+  or queued first on the same base.
   **Check:**
   ```bash
   python3 "<crew>/hooks/scripts/crew_train.py" --root . status
@@ -203,11 +242,13 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   Each waiting entry lists the ticket it is behind and every colliding pair (`<mine> x <theirs>`);
   `touch: undeclared: <why>` means that ticket's spec has no usable `## Touch`, which overlaps
   everything.
-  **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
+  **Fix:** wait for the holder to land and release, then review again; fix an
   undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
   run `crew_train.py catch-up --ticket <id>` (resolve any conflict), bump the version one past
-  the base's, refresh the artifacts, commit, gate the merged head, review it again if
-  `review_ledger.py --check-receipt` reads stale, then acquire again. `could not tell` (exit 3)
+  the base's, refresh the artifacts, commit, gate the merged head, and review it again if
+  `review_ledger.py --check-receipt` reads stale: the delta gate keeps the receipt only when none
+  of the ticket's own code moved and the clone's merge train is armed (it keeps nothing until
+  `crew_train.py arm`). Then acquire again. `could not tell` (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.
 
 - **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it
@@ -264,9 +305,11 @@ contract itself. This section is what goes wrong with the approval and the audit
   `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
-  checkout's settings, and a relative handoff path still names a file in the lane. The verify
-  gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
-  `emergency.standDown` while the bash gate reads the inherited one.
+  checkout's settings, and a relative handoff path still names a file in the lane. Since
+  L-0681 the verify gate (both flavours), `review_gate.py` and the scope and completion
+  wrappers inherit as well: an inherited `"verifyGate": false` stands a lane's Stop gate down,
+  and with no python a lane whose main checkout has a config blocks writes and the Stop (the
+  PowerShell 7 wrappers still allow one that strictly says `scope.mode: off`).
 - **Symptom: which tickets still need my approval?**
   **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>` line, with a
   `  why: <why>` line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
@@ -335,6 +378,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   A value that names no commit here, or a config that does not parse, reads as **could not tell**:
   `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
   back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
+- **Symptom: the completion audit or the verify gate lists `.crew/.scope-base`,
+  `.crew/metrics.md` or `.crew/.verify-gate.record.json`.** Only a crew from before T-0068 does
+  that, in a repository whose `.gitignore` does not ignore `.crew/*`.
+  **Fix:** update crew. These are crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
+  never a changed path for the audit, the gate or the review bundle; do not add them to Touch.
+  A `.crew/` path the audit still lists (`.crew/verify.json`, `.crew/config.json`, a committed
+  `.crew/incident.json` or `.crew/tfplan/` file, a session marker) is a real change: only the
+  ticket-flow bookkeeping and the hook logs (`.crew/guard.log`, `.crew/.autoclear.log`) are left
+  out, never a file crew reads as a trust input.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and
@@ -350,6 +402,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   prove `off` (a corrupt file, `report`, `auto`, `block`, or no `scope` key at all) fails **closed**
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
+- **"the python probe timed out" (the PowerShell scope guard, completion audit, approval hook and
+  verify gate, crew 1.1.4, L-0690).** The probe gives each candidate 3 s and the whole walk 8 s; when
+  it runs out of time, or kills a candidate at its bound, it says "the python probe timed out" (could
+  not tell) instead of "no usable python", with the same exit code. Whenever the probe finds nothing,
+  `python probe:` lines follow on stderr: a summary (`found`, `not-found`, `rejected` or
+  `timed-out`, the elapsed milliseconds and both bounds), then each candidate tried with its path,
+  its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
+  `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
+  re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
 
 ## Verify gate says COULD NOT TELL
 

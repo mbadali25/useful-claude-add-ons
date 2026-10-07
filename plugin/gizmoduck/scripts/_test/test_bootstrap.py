@@ -221,7 +221,7 @@ def test_github_token_reaches_curl_as_a_header_file_not_an_argument(env, tmp_pat
                            str(_BOOTSTRAP)], env=e, capture_output=True, text=True,
                           timeout=30, check=False)
     assert _TOKEN not in log.read_text(), "the token was on curl's command line"
-    assert Path(str(log) + ".hdr").read_text() == f"Authorization: Bearer {_TOKEN}\n"
+    assert Path(str(log) + ".hdr").read_text(encoding="utf-8") == f"Authorization: Bearer {_TOKEN}\n"
     assert _TOKEN not in proc.stdout + proc.stderr
 
 
@@ -380,7 +380,8 @@ def test_user_mode_forced_nikto_refresh_whose_pull_fails_is_a_failure(env, tmp_p
     (opt / "nikto" / "program").mkdir(parents=True)
     (opt / "nikto" / ".git").mkdir()
     (opt / "nikto" / "program" / "nikto.pl").write_text("#!/usr/bin/perl\n", newline="\n")
-    script = f'source "$0"; USER_MODE=1; OPT_DIR={opt}; try_install nikto install_nikto_user; echo "failed=${{FAILED[*]}}"'
+    script = (f'source "$0"; USER_MODE=1; OPT_DIR={opt}; '
+              'try_install nikto install_nikto_user; echo "failed=${FAILED[*]}"')
     proc = subprocess.run([_BASH, "-c", script, str(_BOOTSTRAP)], env=e, capture_output=True,
                           text=True, timeout=30, check=False)
     assert "pull" in log.read_text()

@@ -48,10 +48,15 @@ REAL = os.path.realpath(sys.executable)
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 probe was NOT run")
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the parity half was NOT run")
 
-# Every crew .ps1 that resolves python carries this function byte for byte.
-_CARRIERS = ("role-write-guard", "completion-audit", "scope-guard", "approval-hook",
-             "crew-context", "platform-sync", "cloud-guard", "verify-gate", "handoff-read",
-             "notify", "handoff-write", "context-watch", "auto-clear")
+# Every crew .ps1 that resolves python carries this function, in two groups
+# until L-0690's follow-up (the other carriers and the bash twins) rejoins them:
+# the four review/gate harness carriers share the probe that reports a timeout
+# and a trail (L-0690); the rest still share role-write-guard.ps1's copy,
+# unchanged, because a harness PR cannot carry them (scripts/check-tooling-pr.py).
+_HARNESS_CARRIERS = ("completion-audit", "scope-guard", "approval-hook", "verify-gate")
+_OTHER_CARRIERS = ("role-write-guard", "crew-context", "platform-sync", "cloud-guard",
+                   "handoff-read", "notify", "handoff-write", "context-watch", "auto-clear")
+_CARRIERS = _HARNESS_CARRIERS + _OTHER_CARRIERS
 _NAMES = ("python3", "python", "py")
 
 
@@ -173,8 +178,16 @@ def _runs(interpreter):
 
 # --- one probe, everywhere -----------------------------------------------------
 
-@pytest.mark.parametrize("stem", _CARRIERS)
-def test_every_ps1_carries_the_one_probe_byte_for_byte(stem):
+@pytest.mark.parametrize("stem", _HARNESS_CARRIERS)
+def test_the_harness_carriers_share_one_probe(stem):
+    """L-0690: the four harness carriers are byte-identical to each other."""
+    assert _resolver(stem) == _resolver("completion-audit")
+
+
+@pytest.mark.parametrize("stem", _OTHER_CARRIERS)
+def test_the_other_carriers_still_match_role_write_guard(stem):
+    """Until L-0690's follow-up rejoins the two groups, the other carriers keep
+    role-write-guard.ps1's probe byte for byte."""
     assert _resolver(stem) == _resolver("role-write-guard")
 
 
@@ -421,6 +434,155 @@ def test_no_python_lets_the_stop_through_when_scope_is_provably_off(tmp_path):
     code, err = _stop_audit(tmp_path, None)
 
     assert (code, "no usable python - not audited (scope.mode is off)" in err) == (0, True)
+
+
+# --- L-0690: a timed-out probe says so, and a failed probe shows its trail -----
+
+def _hook_run(tmp_path, stem, path_entries, payload, config=None, args=(), root=None):
+    """`stem`.ps1 with only `path_entries` on PATH, in a repo whose
+    `.crew/config.json` is `config` (none when None)."""
+    root = root or tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True, exist_ok=True)
+    if config is not None:
+        (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    env = dict(os.environ, OS="Windows_NT", CLAUDE_PROJECT_DIR=str(root),
+               PATH=os.pathsep.join(map(str, path_entries)))
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / (stem + ".ps1")), *args],
+                          input=payload, cwd=str(root), env=env, capture_output=True,
+                          text=True, check=False, timeout=120)
+    return done.returncode, done.stderr
+
+
+def _stop(tmp_path, path_entries, config, session="l0690"):
+    payload = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
+                          "session_id": f"{session}-{tmp_path.name}",
+                          "cwd": str(tmp_path / "repo")})
+    return _hook_run(tmp_path, "completion-audit", path_entries, payload, config)
+
+
+def _trail(err):
+    return [line for line in err.splitlines() if line.startswith("python probe: ")]
+
+
+def _ms(line):
+    words = line.split()
+    return int(words[words.index("ms") - 1])
+
+
+@needs_pwsh
+def test_a_timed_out_probe_says_so_and_never_no_python(tmp_path):
+    hang = tmp_path / "hang"
+    _hung(hang)
+
+    code, err = _stop(tmp_path, [hang, _tools(tmp_path)], {"scope": {"mode": "block"}})
+
+    assert code == 2, err
+    assert "COMPLETION AUDIT: the python probe timed out" in err
+    assert "no usable python" not in err
+    summary, *rows = _trail(err)
+    assert "timed-out" in summary
+    here = [r for r in rows if str(hang) in r]
+    # On Windows `_stub` also writes the extensionless sh twin beside the
+    # .cmd (for Git Bash); the probe lists it as skipped-extension, never
+    # launched. Exactly one candidate here was launched, and it was killed.
+    [row] = [r for r in here if "skipped-extension" not in r]
+    assert "killed-at-bound" in row and _ms(row) >= 3000, here
+    skipped = [r for r in here if "skipped-extension" in r]
+    assert len(skipped) <= (1 if os.name == "nt" else 0), here
+
+
+@needs_pwsh
+@pytest.mark.wallclock
+def test_a_spent_budget_is_timed_out_and_names_the_untried_candidate(tmp_path):
+    hangs = _many_hung(tmp_path, 4)
+    real = tmp_path / "real"
+    _working(real, ("python3",))
+
+    done = _print_python_run([*hangs, real, _tools(tmp_path)])
+
+    assert done.stdout.strip() == ""
+    summary, *rows = _trail(done.stderr)
+    assert "timed-out" in summary
+    assert rows[-1].endswith("not-tried-budget-spent"), rows
+
+
+@needs_pwsh
+def test_a_refused_candidate_is_still_no_usable_python(tmp_path):
+    apps = tmp_path / "Microsoft" / "WindowsApps"
+    _broken(apps)
+
+    code, err = _stop(tmp_path, [apps, _tools(tmp_path)], {"scope": {"mode": "block"}})
+
+    assert code == 2, err
+    assert ("COMPLETION AUDIT: no usable python - the tree was not audited against the "
+            "ticket's scope.") in err.splitlines()
+    assert "rejected" in _trail(err)[0]
+    assert "timed out" not in err
+
+
+@needs_pwsh
+def test_no_python_on_path_is_not_found(tmp_path):
+    code, err = _stop(tmp_path, [_tools(tmp_path)], {"scope": {"mode": "block"}})
+
+    assert code == 2, err
+    assert ("COMPLETION AUDIT: no usable python - the tree was not audited against the "
+            "ticket's scope.") in err.splitlines()
+    assert len(_trail(err)) == 1, _trail(err)
+    assert "not-found" in _trail(err)[0]
+
+
+@needs_pwsh
+@pytest.mark.parametrize("stem", _HARNESS_CARRIERS)
+def test_a_found_python_prints_no_probe_line(tmp_path, stem):
+    real = tmp_path / "real"
+    _working(real)
+
+    done = _print_python_run([real, _tools(tmp_path)], stem)
+
+    assert (done.stdout.strip(), done.stderr) == (REAL, "")
+
+
+@needs_pwsh
+def test_block_once_and_scope_off_keep_their_exit_codes_on_a_timeout(tmp_path):
+    hang = tmp_path / "hang"
+    _hung(hang)
+    path = [hang, _tools(tmp_path)]
+
+    first = _stop(tmp_path, path, {"scope": {"mode": "block"}})
+    second = _stop(tmp_path, path, {"scope": {"mode": "block"}})
+    off_root = tmp_path / "off"
+    off = _hook_run(tmp_path, "completion-audit", path,
+                    json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
+                                "session_id": "l0690-off"}), root=off_root)
+
+    assert first[0] == 2, first[1]
+    assert second[0] == 0 and "Not blocking again" in second[1], second[1]
+    assert "the python probe timed out" in second[1]
+    assert off[0] == 0, off[1]
+    assert ("completion audit: the python probe timed out - not audited (scope.mode is off)."
+            in off[1].splitlines())
+
+
+@needs_pwsh
+@pytest.mark.parametrize("stem,payload,args,code,text", [
+    ("scope-guard", json.dumps({"tool_name": "Write",
+                                "tool_input": {"file_path": "src/a.py", "content": "x"}}),
+     (), 2, "SCOPE GUARD: the python probe timed out"),
+    ("approval-hook", json.dumps({"prompt": "/crew:approve T-1"}), (), 2,
+     "the python probe timed out"),
+    ("verify-gate", "{}", ("-Price",), 1, "the python probe timed out"),
+], ids=["scope-guard", "approval-hook", "verify-gate-price"])
+def test_each_harness_hook_names_a_timeout(tmp_path, stem, payload, args, code, text):
+    hang = tmp_path / "hang"
+    _hung(hang)
+
+    got, err = _hook_run(tmp_path, stem, [hang, _tools(tmp_path)], payload,
+                         {"scope": {"mode": "block"}}, args)
+
+    assert got == code, err
+    assert text in err
+    assert "timed-out" in _trail(err)[0]
+    assert "no usable python" not in err and "no python available" not in err
 
 
 # --- a hung candidate ----------------------------------------------------------

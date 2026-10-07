@@ -36,7 +36,11 @@ the individual causes; a new way to move what a check reads without moving the
 digest fails there even when nobody thought to add a case for it.
 * **`.crew/verify.json`.** It decides which commands run at all.
 * **`.crew/config.json`.** It carries `verify.stopBudgetSeconds`, so it
-  decides which of them fit.
+  decides which of them fit. The RESOLVED file (`crew_common.repo_config_file`,
+  L-0681): in a linked worktree with no config of its own that is the main
+  checkout's, the one the gate reads its budget from, so an edit there moves
+  this digest too. Hashed under the label `repo-config` either way, so the
+  first gate run after the upgrade re-runs once; it never credits a stale pass.
 
 ## What is deliberately NOT in it
 
@@ -78,8 +82,9 @@ _VERSION = b"crew-verify-fingerprint-v1"
 
 # Hashed alongside the changed files because they decide, respectively, WHICH
 # commands run and HOW MANY of them fit in the budget.
-_DECIDERS = (os.path.join(".crew", "verify.json"),
-             os.path.join(".crew", "config.json"))
+# The repo config is not a path here: it is read through the resolver below.
+_CONFIG = "repo-config"
+_DECIDERS = (os.path.join(".crew", "verify.json"), _CONFIG)
 
 # NOT in _DECIDERS, deliberately, and NOT hashed by content at all - see
 # _corrupt_cache below for why. These are the per-rule record and the
@@ -346,7 +351,10 @@ def fingerprint(root, changed, _depth=0):
         digest.update(b"\0decider=")
         digest.update(rel.encode("utf-8", "replace"))
         digest.update(b":")
-        digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
+        # L-0681: the config the gate reads, which a lane may inherit.
+        path = (crew_common.repo_config_file(root, "config.json") if rel == _CONFIG
+                else os.path.join(root, rel))
+        digest.update(_file_digest(path).encode("ascii"))
 
     # Sorted so the shell's ordering cannot move the answer on its own.
     index = _index_entries(root)

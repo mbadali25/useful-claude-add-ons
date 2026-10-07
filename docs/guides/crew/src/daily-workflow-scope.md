@@ -91,8 +91,15 @@ Before every Write, Edit, MultiEdit or NotebookEdit, the guard checks the target
 - Any other file needs a current approval and a path inside Touch.
 - The code map, the diagrams dir, the graph dir and `.claude/rules/` are writable for an approved
   ticket, because `/crew:implement` step 6 refreshes them.
-- Nothing else is exempt: `.crew/` beyond the code map, `TODO.md`, the rest of `.claude/` and
-  crew's own policy files. If the ticket changes one of them, list it in Touch.
+- `.crew/metrics.md` is writable with or without an approval: `/crew:review` appends its row by
+  hand when the script could not (`crew_ticket.CREW_WRITE_ALLOWED_PATHS`, that one file).
+- The scope base, the verify gate's records and marker and `.crew/metrics.jsonl` are refused to
+  Write/Edit in every mode but `off`, even inside Touch: the audit and the review bundle leave
+  them out, so a write to them would be invisible.
+- Nothing else is exempt: `.crew/` beyond the code map and the metrics row (`config.json`,
+  `verify.json`, `standards.md`, and files crew writes but also trusts, such as `.crew/tfplan/`,
+  `incident.json` and `.deploy-in-flight`), `TODO.md`, the rest of `.claude/` and crew's own
+  policy files. If the ticket changes one of them, list it in Touch.
 - Approval receipts, the review ledger and the scope base are always refused.
 
 The guard checks the real file a symlink points to and the path as written, so a link cannot
@@ -113,7 +120,10 @@ change files. So when the session stops, the completion audit compares the whole
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
 both ends of a rename. After you merge main, a file byte-identical to the merged main commit is
 not counted: it is main's change, not the ticket's; the verdict names that commit. If any changed path is outside Touch, the audit blocks the stop and lists
-the paths in six lines or fewer. It never blocks the continuation it caused.
+the paths in six lines or fewer. It never blocks the continuation it caused. crew's own ticket-flow
+bookkeeping (the scope base, the gate's records, the metrics files) is never a changed path,
+whatever `.gitignore` says, so a `.crew/` path the audit lists (say `.crew/verify.json` or a
+committed `.crew/incident.json`) is a real finding, not crew's noise.
 
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a

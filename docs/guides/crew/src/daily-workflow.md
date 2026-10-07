@@ -102,12 +102,13 @@ file on its own.
 
 With parallel lanes in one clone, arm its **merge train** once (`crew_train.py arm`, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
-Before the review round, `crew_train.py acquire --ticket T-0091` takes the train: a ticket whose
-Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
-order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
+The review round takes the train itself (L-0526; `crew_train.py acquire --ticket T-0091` does
+the same by hand): a ticket whose Touch overlaps one already holding it waits - `/crew:review`
+stops with exit 10, colliding paths named, no round spent - and gates next, in the order the lanes
+reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time. A replay is left unstaged and listed: inspect it, `git add` it, and show
-it to the reviewer. crew never turns on `rerere.autoupdate`, and the version files
+once replays next time. A replay is left unstaged and listed: inspect it and `git add` it; the
+review prompt lists it for the reviewer. crew never turns on `rerere.autoupdate`, and the version files
 (`plugin.json`, `marketplace.json`, `PLUGINS.md`, `CHANGELOG.md`) are never replayed - they come
 back conflicted, named as forgotten, for you to resolve by hand.
 

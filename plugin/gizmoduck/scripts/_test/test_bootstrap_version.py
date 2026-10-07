@@ -734,7 +734,7 @@ def test_zap_without_its_jar_is_reinstalled_and_with_it_is_skipped(stubs):
 def test_empty_apt_lists_are_refreshed_before_an_install(stubs):
     (stubs["apt_lists"] / "x_Packages").unlink()
     _, log = _run(stubs, "install_nmap", extra_env={"GIZMODUCK_BOOTSTRAP_FORCE": "1"})
-    lines = [ln for ln in log.splitlines() if ln.startswith(f"sudo {_APT_OPTS.split(' -o')[0]}")]
+    lines = [ln for ln in log.splitlines() if ln.startswith(f"sudo {_APT_OPTS.split(' -o', maxsplit=1)[0]}")]
     assert lines[0] == f"sudo {_APT_OPTS} update -y", lines
     assert lines[1] == f"sudo {_APT_OPTS} install -y nmap", lines
 

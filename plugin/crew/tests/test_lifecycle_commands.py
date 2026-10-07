@@ -523,3 +523,17 @@ def test_brainstorm_and_fix_name_the_box_prefix_rule():
 
 def test_status_names_the_archive():
     assert ".work/tickets/Complete/" in _read(os.path.join(COMMANDS, "status.md"))
+
+
+def test_review_names_the_train_exit():
+    """L-0526: `review_run.py` exit 10 (the merge train) is named where the
+    command reads `$REVIEW_STATUS`, explained with its order among the other
+    refusals, and counted among the reasons the Claude fallback gets no ROUND."""
+    text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
+
+    assert "10 train wait" in text
+    assert "Exit 10 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
+    assert "then the merge train with exit 10" in text
+    assert "exit 10 above - the merge train" in text
+    assert "A spent budget skips the train" in text
+    assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text
