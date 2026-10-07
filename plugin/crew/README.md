@@ -962,7 +962,7 @@ An assigned ticket is approved under `autopilot.approval` like any other ticket 
 
 **The size check after spec and after plan (T-0058).** Once the spec validates, and again once the plan validates, `next` runs the split rulebook's measures (`crew_split.measure` and `triggers`, below: acceptance checks, codemap subsystems, the findings rate, and plan steps after plan). **A trigger means look, never split.** Nothing fired continues. A fired trigger with no current `split.md` decision is `split-check` — not a stop: autopilot runs `crew_autopilot.py split --root . --ticket <id>`, judges the boundaries by the rulebook (crew:explorer), writes `split.md` with `answered:` naming every fired trigger, and runs `split --check`; a decision is current only while it passes the rulebook and names every trigger now fired, so a trigger that first fires after plan re-opens a decision taken after spec. `not-too-big` continues. `slices` continues after spec; after plan only when the plan's `## PR slices` validate through T-0059's `crew_split.parse_slices`, and until that lands it stops as `split-check-unknown` naming T-0059 — never continuing as though the slices were checked. `split` is `split-approval`, a stop: `crew_autopilot.py split --apply` runs `crew_split.apply --via autopilot`, which is allowed only by `crew_split.ticket_split_policy` — T-0012's split rule on the parent's spec risk (`self` any risk, `risk` only a known `risk: low`, `human` never; always `scope.allowCliApproval: true` and `autopilot.mode: plan`), asked at apply time and never read from a record. **In Jira mode a split always stops for the owner**, whatever `autopilot.approval` says: autopilot never creates a Jira issue, and the owner runs `/crew:split <KEY>`. SDP stops: SDP is a service desk, not where this work gets decomposed. Any caller may pass `--via autopilot` — as with `crew_ticket.approve`, whoever calls, the gate is the repository's policy, not the caller, and out of the box it refuses (`scope.allowCliApproval` false, autopilot off). `split --check` and `split --apply` apply the gate's rules at the gate's stage (`plan` only once plan.md validates): both refuse while a measure is unknown, with the gate's `split-check-unknown` wording, and both hold `split.md`'s `answered:` to every trigger firing now. A refusal prints `owner: the human types /crew:split <id>` last; autopilot never runs `/crew:split` itself. Once applied the parent is `superseded` and reads `closed`. A measure whose source is there and cannot be read or counted stops as `split-check-unknown`, naming the fix: a `.crew/codemap/` with no readable subsystem, an unreadable `.crew/metrics.md`, and T-0052's zero counts — an Acceptance section of plain `- ` bullets with no `- [ ]`, a plan whose steps are `## Step` rather than `### Step`, a Touch entry no codemap subsystem covers; a source the repository does not have at all — no codemap, no review recorded yet — is printed as `unmeasured: <name> (<why>)` and does not stop (`crew_split.absent_sources`). `/crew:autopilot split <id>` runs the same check on demand. At a `split-approval` stop the report's `crew_notify.py run-stop` sends T-0060's blocker `Approval waiting -> /crew:split <id>` (once per `split.md`).
 
-**Settings** (`.crew/config.json`, and since T-0050 the machine-global file too for `mode`, `maxPhases`, `deploy`, `approval` and `questions`: the stricter of the two layers wins, a silent layer imposes nothing — CONFIG.md §20a; `maxAutoReplans`, `sleep`, `ship`, `knownFailures` and `ciTimeoutMinutes` stay repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. `autopilot.deploy` — `none` (default), `nonprod` or `all`: where a deploy may run without asking. Production needs `all` **and** `environments.prodUnattended: true` in **both** config layers, with `guards.cloudGuard` armed in `block`; anything crew cannot tell asks, and an active emergency refuses. `crew_autopilot.py deploy-allowed --env <name> --class <class>` answers `allow`, `ask` or `refuse` and prints a report line for every production decision. Nothing in this version dispatches a deploy — the key is inert until T-0045 consumes it (CONFIG.md §20). `autopilot.maxAutoReplans` (T-0074) — `0` (default, off) or an integer from 1 to 5: how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for you again. At 1 or more, armed, and only where `autopilot.approval` would approve the successor plan, autopilot rejects a final FINDINGS round with a BLOCK itself (`crew_autopilot.py auto-reject`), runs `/crew:plan` for a successor plan, approves it under the policy and reviews again; an INCOMPLETE round, a same-family or unknown reviewer, a round still left, or anything it cannot tell is today's stop. The cap counts every successor plan on the ledger, yours included; the recommended value when you turn it on is 2. Anything but a non-negative integer reads as 0 with a warning, and anything above 5 reads as 5. `autopilot.ship` (T-0011) — `merge` (default) or `pr`; anything else reads as `pr` with a warning. `autopilot.knownFailures` — `[]`; anything but a list of strings reads as `[]`. `autopilot.ciTimeoutMinutes` — `60`; anything but a positive integer reads as 60. All three are read by `ship` (below) and shown by `settings --json`. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored; `/crew:migrate` carries the block to crew.json's top-level `autopilot` with a note that this copy is never read: crew reads `.crew/config.json`, and the personal keys also the machine-global file, where the stricter value wins (CONFIG.md §20a). `crew_autopilot.py settings --root .` shows what is in force: `mode`, `maxPhases`, `deploy` and `maxAutoReplans` on its first line, `approval` and `questions` on the second, the sleep window's `sleep=` line on the third, and all of it with `--json`. A key this crew does not act on yet (`maxTicketsPerRun`, `mode: backlog`, or a typo) adds a `warning: inert:` line naming the ticket that brings it; it never stops a run. The same keys are named in one `Inert settings` line at every session start and an `inert` line in `/crew:status` (T-0070, CONFIG.md §20).
+**Settings** (`.crew/config.json`, and since T-0050 the machine-global file too for `mode`, `maxPhases`, `deploy`, `approval` and `questions`: the stricter of the two layers wins, a silent layer imposes nothing — CONFIG.md §20a; `maxAutoReplans`, `sleep`, `ship`, `knownFailures` and `ciTimeoutMinutes` stay repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. `autopilot.deploy` — `none` (default), `nonprod` or `all`: where a deploy may run without asking. Production needs `all` **and** `environments.prodUnattended: true` in **both** config layers, with `guards.cloudGuard` armed in `block`; anything crew cannot tell asks, and an active emergency refuses. `crew_autopilot.py deploy-allowed --env <name> --class <class>` answers `allow`, `ask` or `refuse` and prints a report line for every production decision. The deploy phase (L-0649) consumes it: after the PR merges, `next` names `/crew:promote <env>` for the first `github` environment with no PROMOTIONS row for the sha (nonProd first) when `deploy-allowed` answers exactly `allow`, and stops with `deploy-target` (cannot tell, or not safe to drive) or `failed-deploy` (the newest row is not all-pass); autopilot itself dispatches nothing (CONFIG.md §20). `autopilot.maxAutoReplans` (T-0074) — `0` (default, off) or an integer from 1 to 5: how many successor plans one ticket may have before an out-of-rounds BLOCK round stops for you again. At 1 or more, armed, and only where `autopilot.approval` would approve the successor plan, autopilot rejects a final FINDINGS round with a BLOCK itself (`crew_autopilot.py auto-reject`), runs `/crew:plan` for a successor plan, approves it under the policy and reviews again; an INCOMPLETE round, a same-family or unknown reviewer, a round still left, or anything it cannot tell is today's stop. The cap counts every successor plan on the ledger, yours included; the recommended value when you turn it on is 2. Anything but a non-negative integer reads as 0 with a warning, and anything above 5 reads as 5. `autopilot.ship` (T-0011) — `merge` (default) or `pr`; anything else reads as `pr` with a warning. `autopilot.knownFailures` — `[]`; anything but a list of strings reads as `[]`. `autopilot.ciTimeoutMinutes` — `60`; anything but a positive integer reads as 60. All three are read by `ship` (below) and shown by `settings --json`. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored; `/crew:migrate` carries the block to crew.json's top-level `autopilot` with a note that this copy is never read: crew reads `.crew/config.json`, and the personal keys also the machine-global file, where the stricter value wins (CONFIG.md §20a). `crew_autopilot.py settings --root .` shows what is in force: `mode`, `maxPhases`, `deploy` and `maxAutoReplans` on its first line, `approval` and `questions` on the second, the sleep window's `sleep=` line on the third, and all of it with `--json`. A key this crew does not act on yet (`maxTicketsPerRun`, `mode: backlog`, or a typo) adds a `warning: inert:` line naming the ticket that brings it; it never stops a run. The same keys are named in one `Inert settings` line at every session start and an `inert` line in `/crew:status` (T-0070, CONFIG.md §20).
 
 **Approval and questions policies** (T-0010). `autopilot.approval` and `autopilot.questions` are `human`, `self` or `risk` (default `risk`); any other value reads as `human`, with a warning, and `human` always stops. At the plan-approval phase autopilot runs `crew_autopilot.py approve --root . --ticket <id>`: `self` approves at any risk, `risk` only when the spec's header says `risk: low` (a missing or unparseable risk is `high`). **Every `autopilot.approval` setting also needs `scope.allowCliApproval: true`** (`autopilot.questions` does not), a readable config (a `.crew/config.json` that exists but cannot be read as a JSON object, or an `autopilot` value that is not an object, reads both policies as `unknown` — could not tell — so `approve` refuses, a question stops and autopilot reads as off; an absent file or block still reads the defaults), autopilot armed, and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving a different successor plan is its only way out, and the ledger still refuses a plan approved before (`crew_autopilot.py approve` exits 3 and says so). The receipt says `approved_via: "autopilot"`, the command prints `self-approved <id> under approval=<policy>, risk=<risk>`, and `crew_ticket.accepted` re-asks the policy on every read — a later spec edit, `approval: human` or `allowCliApproval: false` demotes it. The scope guard allows only that bare command, only while the policy says yes; `crew_ticket.py approve` stays refused. Autopilot never uses the group confirm ("Approving several tickets at once"): that stays the owner's own prompt, and `crew_ticket.approve` refuses an `autopilot` approval that carries a group's hashes, whatever the policy says. At an open question autopilot researches it (crew:explorer, crew:researcher), writes `.work/tickets/<id>/questions.md` — 2-4 options per question, the recommendation first, each with a `Cost:`, plus a `Research:` line — and `crew_autopilot.py questions-check --root . --ticket <id>` validates it and prints `action=take|stop`: `self` takes the recommendation, `risk` only on `risk: low`, `human` stops. A taken answer is recorded as `taken: Option <id> by autopilot (<policy>)`, naming the policy that took it; the check refuses one naming a policy that never takes (only `self` or `risk` does), and every `taken:` line while the policy in force says `stop` — a later switch between `self` and `risk` does not void an earlier honest record. Every self-approval and taken answer is reported by name.
 
@@ -1421,7 +1421,8 @@ Six keys added by schema 6, in **two vocabularies**: four are
 `block` | `ask` | `allow`, shipping as `block`; the two production-access keys
 are `none` | `read` | `full`, shipping as `none`. Since then `guards.roleWrites`
 (see §18 of CONFIG.md) and, with the cloud guard, `guards.cloudDestructive`,
-`guards.sqlDestructive` and the `guards.cloudGuard` switch. The command keys
+`guards.sqlDestructive`, `guards.deployWorkflow` and the `guards.cloudGuard`
+switch. The command keys
 below govern something **only while `guards.cloudGuard` is `report` or
 `block`** — it ships `off`; see [Cloud guard](#cloud-guard).
 
@@ -1435,9 +1436,11 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.prodServer` | `ssh`/`plink`/`scp` aimed at a `production.hosts` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.deployWorkflow` | `gh workflow run` / `gh api .../dispatches` of a workflow listed in `environments.workflows`; `allow` covers nonProd only | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
 | `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `environments.workflows` | **repo-only** map of workflow globs to `input:<name>` or a fixed environment, naming the deploy workflows `guards.deployWorkflow` judges (default `{}`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -1497,6 +1500,7 @@ below: it makes the line one crew could not tell.
 | `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
+| `gh workflow run <wf>` and `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when `<wf>` matches an `environments.workflows` key | `guards.deployWorkflow` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
 | `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.sqlDestructive` |
 | a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.prodDatabase` / `guards.prodServer` |
@@ -1581,6 +1585,86 @@ terraform "$file"`). A PowerShell line follows the same command-word rule:
 `git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
 not.
 
+**Workflow dispatches (T-0009).** `environments.workflows` is a repo-only map
+from a workflow glob (fnmatch, case-insensitive, against the argument as
+written) to where its environment comes from: `input:<name>` (the dispatch
+input) or a fixed environment name.
+
+```json
+"environments": {
+  "nonProd": ["dev", "qa", "staging"],
+  "workflows": {"deploy.yml": "input:environment", "deploy-prod.yml": "production"}
+}
+```
+
+A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.deployWorkflow`
+finding, and so is the REST call it makes, `gh api` with method POST (`-X
+POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
+classifier. The input comes from `-f`/`-F`/`--raw-field`/`--field` (`<name>=v`
+for `gh workflow run`, `inputs[<name>]=v` for the REST form, whose top-level
+`ref` is the branch and never an input), and every occurrence must agree.
+Under `ask` (in **both** layers — the ratchet), a nonProd environment runs
+unattended and is logged as `env:nonProd:<name>`; production runs unattended
+only with `environments.prodUnattended` true in both layers, and says so on
+screen. **`allow` covers nonProd only**: production without `prodUnattended`,
+and an environment crew cannot identify, still ask when attended and are
+refused unattended. Unknown is: no input given (the workflow's default is not
+read), conflicting values, a second workflow argument, and no workflow named
+(gh prompts). A workflow matching no key is **not judged**, as before; so with
+`workflows` at `{}` no `gh` line is judged at all. `environments.workflows`
+does not engage the terraform layer. A deploy command also declared in
+`.crew/verify.json` still passes through `promote-gate.sh`, whose
+`requireHuman` is independent of `prodUnattended`.
+
+**The dispatch grammar.** A line that sends a dispatch is judged only when
+every word on it is a plain literal (letters, digits and `_./:=@%+,-`) or one
+whole single-quoted word, and its only operators are `;`, `&&`, `||`, `&`, a
+newline, `>`/`>>`/`&>`/`&>>` to a plain word, and `2>&1`. Anything else on it
+is **could not tell**: asked about when someone is attending, refused
+unattended at every setting, and approved one command at a time by the marker
+the refusal names, which covers those exact bytes and nothing else. So is a
+dispatch the guard does not follow — inside `bash -c`, `eval` or `pwsh -c`,
+behind `xargs`, `parallel` or `find -exec`, through an alias or a copy of `gh`
+made on the line, or a command word made at run time — and gh reading its
+inputs from stdin or a file. Crew never reads stdin. A command word made at run
+time is judged by the shape of what follows it, not by what the line mentions:
+`$X $Y run deploy.yml`, `$C` alone (bash may split it into a whole dispatch),
+`xargs -I CMD CMD workflow run ...`, `Start-Process $x -ArgumentList
+'workflow run ...'` and an alias pointed at a run-time value all ask, while
+`$X pr create` does not. So does every dispatch while the machine-global
+config's `environments` block is malformed. A PowerShell launcher or alias
+line (`Start-Process`, `saps`, `Set-Alias`, `New-Alias`, an `alias:` path)
+holding gh, `workflow` or a word made at run time is could not tell unless
+every parameter on it is a full, value-taking name: a switch (`-NoNewWindow`,
+`-Wait`, `-Force`), an abbreviation (`-Fi`) or a parameter alias (`-Args`)
+refuses it, even on a line that sends nothing (`Start-Process $exe -Wait`).
+gh and `workflow` must be in the same command to count, so `alias g=gh; echo
+workflow` is not judged, while an `alias` or `hash -p` pointing at gh makes
+that name gh for the rest of the line — the commands after it, or the whole
+line when a loop, a function or a `trap` on it can run earlier text later.
+An alias counts only when its value's last command runs gh (`alias g='env
+gh'` does, `alias g='echo gh'` does not). In PowerShell a comma inside one
+whole single-quoted word is text (`-f 'environment=staging,west'`); a bare
+comma makes an array and is refused. Refused, and how to write it instead:
+
+| Refused | Write instead |
+|---|---|
+| `--json` / `--input -` with a body on stdin, `-F name=@file` | `-f name=value` fields |
+| `"Deploy Staging"` (double quotes) | `'Deploy Staging'` |
+| `repos/{owner}/{repo}/...` unquoted, `-f inputs[environment]=x` | quote the word: `'repos/{owner}/{repo}/...'`, `-f 'inputs[environment]=x'` |
+| `... \| tee log`, `echo x \| gh ...` | `... > log` |
+| `-f environment=$ENV`, `${ENV}`, `$(...)` | the literal value |
+| `bash -c 'gh workflow run ...'` | the `gh` command itself |
+| `Start-Process -NoNewWindow $x ...`, `-Fi`, `-Args`, `Set-Alias -Force g gh` | full parameter names and no switches, or `gh workflow run ...` directly |
+
+A literal `gh workflow run ... --help` (or `-h`) prints help and dispatches
+nothing, so it is not judged; `-f environment=--help` is a value, and after
+`--` a `--help` is a second workflow argument. Other `gh` commands (`gh pr
+create --title "..."`) are never gated. `crew_dispatch.dispatch_answer` is the
+one entry point a caller (autopilot, the promote path) uses, and it answers
+`nonProd`, `prod`, `unknown` or `unlisted`.
+
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
@@ -1618,9 +1702,13 @@ runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
 calls. For the terraform name specifically: a name built at run time from
 parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
 PowerShell string concatenation) and a wildcard that keeps fewer than three
-letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+letters of it (`t*`) are not read as terraform. For workflow dispatches: a
+spelling of a deploy workflow not listed as a key (its display name or numeric
+id — list every spelling you use), the workflow YAML (`environment:` keys,
+`${{ inputs.* }}`), `gh run rerun`, and a dispatch sent with `curl`. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
-(the environment layer and the sidecar), and the `cloud-guard.sh` section of
+(the environment layer and the sidecar), `tests/test_cloud_guard_deploy.py`
+(workflow dispatches), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.
 
 #### What the guard does not catch
@@ -3255,7 +3343,7 @@ The sequence lives in the `environments` block of `.crew/verify.json`, beside th
 
 `/crew:init` Phase 8 builds this by asking, per environment, what actually deploys it and what actually proves it worked. It fills in only what exists. A block with `deploy` and `smoke` and nothing else is honest; one with five aspirational commands nobody has run is worse than an empty file, because it reads as coverage.
 
-**A GitHub Actions deploy** (first slice only) is described by a `github` entry in the environment: the workflow filename, a branch-name `ref` (checked as a name only: a bare tag name is not detected), fixed `inputs`, and optionally `shaInput`, `correlationInput`, `deployJob`, `watchMinutes` and `identifySeconds`. `deploy` must list each entry's canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`). `python3 hooks/scripts/crew_ghdeploy.py check --root . --env <name>` validates the entry, refuses any value outside `[A-Za-z0-9._/@:+-]` by name, refuses a map either promote gate refuses, and prints the literal dispatch for HEAD with `gated-as:` - every environment the gates apply to it (the union rule of L-1503: a command matching several environments carries all their requirements); it writes nothing and runs no `gh`. Dispatching, identifying, watching and recording the run are not built yet. The key table is in the crew-verification skill, section 4.
+**A GitHub Actions deploy** (first slice only) is described by a `github` entry in the environment: the workflow filename, a branch-name `ref` (checked as a name only: a bare tag name is not detected), fixed `inputs`, and optionally `shaInput`, `correlationInput`, `deployJob`, `watchMinutes` and `identifySeconds`. `deploy` must list each entry's canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`). `python3 hooks/scripts/crew_ghdeploy.py check --root . --env <name>` validates the entry, refuses any value outside `[A-Za-z0-9._/@:+-]` by name, refuses a map either promote gate refuses, and prints the literal dispatch for HEAD with `gated-as:` - every environment the gates apply to it (the union rule of L-1503: a command matching several environments carries all their requirements); it writes nothing and runs no `gh`. `crew_ghdeploy.py prepare` (L-0644) runs before the dispatch: it refuses (exit 2, nothing written) on an entry problem, an unmapped workflow, a class T-0009's classifier cannot name or that does not match the environment's, an unreadable actor, a sha not on the remote, a branch tip that is not HEAD (no `shaInput`) or an unreadable run list; otherwise it snapshots the actor's existing runs into `.crew/.ghdeploy/<env>-<N>.json` and prints the dispatch, which the session runs as its own Bash call. It never dispatches. `crew_ghdeploy.py identify` (L-0645) then names the one new run (not in the snapshot, `workflow_dispatch`, on the ref, created no earlier than `t0` minus 30 seconds, and titled with the correlation id when one was sent), polling for up to `identifySeconds`; two candidates, none, or anything unreadable is could-not-tell (exit 3) and names no run. `crew_ghdeploy.py watch` (L-0646) follows that run in slices of at most 570 seconds (exit 75: call again) and answers pass (exit 0), fail (1) or unknown (3) from `gh run view` - the conclusion, the `deployJob` job and, with no `shaInput`, the head sha - never from the watch's exit code; it never cancels a run. `crew_ghdeploy.py record` (L-0647) writes the outcome into `.work/PROMOTIONS.md`: a detail line with no pipe and, on anything but pass, the previous good sha, a cleaned failed-step log excerpt and a `not-run` row that never satisfies `requires`. `/crew:promote` gate 2 runs the five steps for a `github` environment (prepare, dispatch, identify, watch, record); the sequence and its exit codes are in `skills/crew-verification/github-deploy.md`. The key table is in the crew-verification skill, section 4.
 
 ### The promotion record
 
@@ -3271,8 +3359,11 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 
 ### What a hook enforces, and what it cannot
 
-`promote-gate.sh` fires on `PreToolUse` and refuses any command matching a
-declared `deploy` entry unless, for the sha at HEAD of **the tree the deploy
+`promote-gate.sh` fires on `PreToolUse` and refuses any command that contains the declared text of a
+`deploy` entry (L-0689: verbatim, with arguments after it, or wrapped; a fragment such as `git
+rev-parse HEAD` is no deploy - a breaking change for a map whose real runs are SHORTER than the
+declared text: declare the shortest text every real run contains. A "DEPLOY NOT RECORDED" for a sha
+no deploy ran at, left by an older crew, is this bug) unless, for the sha at HEAD of **the tree the deploy
 runs from** (the Bash call's `cwd`, moved by a leading `cd <dir> &&` and named
 by any `git -C <dir>`; it must be a worktree of the same repository, and any
 literal sha in the command must be its HEAD):
@@ -3287,9 +3378,11 @@ working map and, when that is dirty, the committed map alike (L-1503):
 
 - the command loses every CR and its trailing newlines; a command that is then
   empty or only whitespace deploys nothing and passes
-- a declared command matches when either one contains the other - a plain
+- a declared command matches when the command contains it - a plain
   substring test, ignoring case (on Windows `./Deploy.ps1` and `./deploy.ps1`
-  are one file). `*`, `?` and `[...]` are literal text, never wildcards
+  are one file). `*`, `?` and `[...]` are literal text, never wildcards. A
+  fragment of a declared command (`git push` of `git push prod main`) is no
+  deploy (L-0689)
 - every key the gates read - `environments`, `deploy`, `requires`,
   `rollback`, `rollbackReason`, `requireHuman` - is read ignoring case
   (`"RequireHuman": true` requires a human); a map with a key repeated in one
@@ -3307,8 +3400,9 @@ working map and, when that is dirty, the committed map alike (L-1503):
   requirements applies: every matched environment's `requires`, `rollback`
   and `requireHuman` must hold. They are named together - `staging,prod` - in
   the block message and in `.crew/.deploy-in-flight`, so the promotions row
-  that clears the Stop check names `staging,prod` too. So `git push`, inside
-  both `git push staging main` and `git push prod main`, needs prod's approval.
+  that clears the Stop check names `staging,prod` too. So `./deploy.sh
+  --prod`, which contains both `./deploy.sh` and `./deploy.sh --prod`, needs
+  every requirement of both environments.
   That combined row is not a row for `staging` or for `prod`: after such a
   deploy, an environment that `requires` one of them still needs an
   unambiguous deploy record for it first - deploy with a command that matches
@@ -3316,6 +3410,40 @@ working map and, when that is dirty, the committed map alike (L-1503):
   matched environment instead)
 - if the comparison itself fails, the command blocks rather than skipping
   that environment
+
+**A workflow dispatch of a declared deploy is that deploy, in either spelling
+(T-0062, the Bash tool).** When a declared `deploy` is a GitHub workflow
+dispatch, `promote-gate.sh` reads the command, whatever containment matched,
+with T-0009's dispatch reader (`crew_dispatch.dispatch_read`, through
+`_promote_dispatch.py`; no second parser). `gh workflow run deploy.yml -f
+ref=<sha> -f environment=production` (inputs reordered) and `gh api -X POST
+repos/<o>/<r>/actions/workflows/deploy.yml/dispatches -f ref=main -f
+'inputs[environment]=production'` both reach the environment whose declared
+dispatch names `deploy.yml` and whose declared literal inputs all appear with
+the same value; extra inputs are allowed, and a declared input whose value is a
+`$(...)` or backtick substitution is not compared. Workflow names compare as
+file names, a leading `.github/workflows/` dropped. Blocked:
+
+- a declared workflow whose inputs fit no environment, or more than one
+- **could not tell**, naming why: a dispatch-shaped line the reader refuses (a
+  variable, a substitution, double quotes, a pipe, `--json`, `--input`,
+  `-F k=@file`, a nested shell, an alias of `gh`), a command input it cannot
+  name, an input given two values, a workflow named by id or display name,
+  and a declared dispatch the reader itself cannot read. The spelling that
+  passes is plain literal words, as the declared deploy is written
+
+A dispatch of a workflow file no declared deploy names, `--help`, a GET and
+every command in a repo that declares no dispatch deploy pass untouched. The
+committed map's dispatches are matched too while the map is dirty, and an
+open incident turns each block into a skip row. A `requires` environment is judged by its NEWEST row for the sha in `.work/PROMOTIONS.md` (L-0665): a later failure revokes an earlier pass, a later pass clears an earlier failure. For an environment with a `github` entry
+whose `shaInput` is set, both flavours also require that input once, as the
+full lowercase HEAD of the judged tree (L-0648). The PowerShell tool is read the
+same way (L-0664), python found by the shared `Resolve-CrewPython` probe; with
+no python, a command naming `gh` with `workflow` or `dispatches` blocks when a
+declared deploy names them too. Not seen: `curl`, a script file, `gh run
+rerun`, a `gh alias` set by an earlier command, and symbolic refs (`--ref
+<branch>`, `inputs[ref]=<branch>`), as T-0505 decided; a literal sha anywhere
+in the command must still be the tree's HEAD.
 
 So a clean worktree deploys while the main checkout is dirty, and a clean main
 checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
@@ -3602,7 +3730,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha** is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |

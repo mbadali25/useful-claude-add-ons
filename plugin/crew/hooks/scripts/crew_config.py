@@ -374,7 +374,9 @@ def default_config():
         # `production`'s reason -- which workspaces are non-production is a
         # fact about this checkout -- and `prodUnattended` is in both layers
         # because it ratchets: production runs unattended only when the repo
-        # AND the machine owner both said `true`.
+        # AND the machine owner both said `true`. T-0009's `workflows` map is
+        # REPO ONLY too: which workflow file deploys where is a fact about
+        # this checkout.
         "environments": copy.deepcopy(crew_state.ENVIRONMENTS_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
@@ -1281,6 +1283,12 @@ def environments_block_problem(block):
     A malformed block is never "nothing is nonProd" -- `cloud_guard` reads
     it as "no environment can be classified", which nothing allows
     unattended.
+
+    T-0009's `workflows`, when present, must be an object mapping a non-blank
+    workflow glob to either `input:<name>` (a GitHub input name: a letter or
+    `_`, then letters, digits, `_` or `-`) or a non-blank fixed environment
+    name. A malformed map is never "no workflow listed": `cloud_guard` reads
+    every dispatch as an unknown environment while it stands.
     """
     if not isinstance(block, dict):
         return "`environments` is not an object"
@@ -1291,7 +1299,40 @@ def environments_block_problem(block):
     if "prodUnattended" in block \
             and not isinstance(block["prodUnattended"], bool):
         return "`environments.prodUnattended` is not true or false"
+    workflows = block.get("workflows", {})
+    if not isinstance(workflows, dict):
+        return "`environments.workflows` is not an object"
+    for key, source in workflows.items():
+        if not key.strip():
+            return "`environments.workflows` has a blank workflow key"
+        if not isinstance(source, str) or not source.strip():
+            return (f"`environments.workflows[{key!r}]` is not `input:<name>` "
+                    "or an environment name")
+        if source.startswith("input:") \
+                and not _WORKFLOW_INPUT_RE.match(source[len("input:"):]):
+            return (f"`environments.workflows[{key!r}]` names no input "
+                    "(`input:<name>`)")
     return ""
+
+
+def global_environments_problem(path=None):
+    """Why the machine-global layer's `environments` block cannot be read, or
+    `""` when it is absent or reads. `cloud_guard.environments_config` joins
+    it to the repo layer's problem (T-0009 review round 3): the global layer
+    answers `environments.prodUnattended`, and a malformed one is "could not
+    tell" -- never the block's absence, which is what `read_global_config`'s
+    collapse would make it. An unreadable file is `resolve_mode`'s already."""
+    path = GLOBAL_CONFIG_PATH if path is None else path
+    if layer_state(path, environments=True) != "corrupt":
+        return ""
+    parsed = read_global_config(path)
+    detail = environments_block_problem(parsed["environments"]) \
+        if "environments" in parsed else "the file cannot be read"
+    return f"the machine-global config: {detail}"
+
+
+# A GitHub `workflow_dispatch` input name, as `input:<name>` spells it.
+_WORKFLOW_INPUT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def environments_findings(root):
@@ -2212,16 +2253,13 @@ def inspect_global(root, path=None):
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
-# defaults, so their rows went with it.
+# defaults, so their rows went with it. L-0649 (G4) made `autopilot.deploy`
+# `nonprod` and `all` work (the deploy phase), so their value rows went too.
 INERT_PENDING = {
     "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
                                    "L-0541"),
     ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
                                     "only `plan` arms it today", "L-0541"),
-    ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
-                                      "dispatches a deploy yet", "T-0045"),
-    ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "
-                                  "dispatches a deploy yet", "T-0045"),
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
@@ -2419,7 +2457,7 @@ def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {e
     crew does not act on (T-0070), for `crew_autopilot.settings`. Warns only,
     never refuses: an inert key must not block the run it was meant to speed
     up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
-    which already names T-0045. `failure` renders an exception (autopilot's
+    which names L-0649's deploy phase. `failure` renders an exception (autopilot's
     `_failure`); anything that raises is one could-not-tell warning."""
     try:
         return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
@@ -2962,6 +3000,8 @@ _GUARD_ACTIONS = {
     "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
                       "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
     "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
+    "deployWorkflow": "a `gh workflow run` or `gh api .../dispatches` of a "
+                      "workflow listed in `environments.workflows`",
 }
 
 
@@ -3124,6 +3164,17 @@ _RATCHETED.update({
     )
     for _name in crew_state.GUARD_NAMES
 })
+# `deployWorkflow`'s `allow` is narrower than every other policy guard's
+# (T-0009 amendment): it covers nonProd only, so the generic "run WITHOUT
+# asking" would describe a grant the guard never makes.
+_RATCHETED["guards.deployWorkflow"][2]["allow"] = (
+    f"crew will run {_GUARD_ACTIONS['deployWorkflow']} WITHOUT asking when "
+    "its environment is nonProd, and write a row to "
+    f"`{crew_state.GUARD_LOG_PATH}`. It still asks -- and refuses when nobody "
+    "is attending -- for production unless environments.prodUnattended is "
+    "true in both config layers, and for an environment crew cannot "
+    "identify, whatever this key says."
+)
 # The two production guards, whose vocabulary is `none`/`read`/`full` rather
 # than `block`/`ask`/`allow`. They ratchet by the same table and warn on the
 # same line; only the words differ, and they differ because reusing the other

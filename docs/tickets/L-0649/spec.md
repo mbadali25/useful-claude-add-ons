@@ -1,0 +1,71 @@
+# L-0649: autopilot's deploy phase - promote to the first nonProd GitHub environment after the merge          status: spec   risk: high
+Split from T-0045. Filed as L-0649.
+## Intent
+With `autopilot.deploy` set to `nonprod` or `all`, once T-0011's ship phase reports the ticket's PR merged, `crew_autopilot.py next` answers `phase=deploy stop=0 command=/crew:promote <env>` for the first `.crew/verify.json` environment, in file order, that has a `github` entry and for which `deploy_allowed(root, env, class)` returns exactly `allow`. The class comes from T-0009's classifier applied to the entry's dispatch. It stops with `deploy-target` when the target cannot be told or is not safe to drive, and with `failed-deploy` when a row for that environment and sha exists and is not all-pass. An all-pass row closes the ticket. With `deploy: none` nothing changes.
+## Exclusions
+- Autopilot runs no `gh` command and calls no `crew_ghdeploy.py` subcommand itself: `next` is read-only and names `/crew:promote`.
+- Never writes a `.crew/.approved-*` marker, never re-deploys after a non-pass row, never rolls back, never promotes past the first allowed environment in one ticket.
+- Never targets an environment with `requireHuman: true`, one whose entry lacks `shaInput`, or one whose class is unknown.
+- No change to `deploy_allowed`'s rows, `AUTOPILOT_DEFAULTS`, `DEPLOY_VALUES`, the config templates or T-0011's merge behaviour.
+- No edit to `plugin/crew/tests/sabotage*.py` (harness); mutations go in `ghdeploy_mutations.py`.
+- `crew_autopilot.py` and `commands/autopilot.md` are `SEAM` files: this PR must change no `HARNESS` path.
+## Evidence
+Read at origin/main `155fe6d8` on 2026-10-04, except where a branch or ticket is named.
+- plugin/crew/hooks/scripts/crew_autopilot.py:137-140 the consumer contract ("calls it immediately before each dispatch, passes the class from T-0005's classifier, proceeds only on the exact verdict `allow`, and persists every non-empty `report`"); :162 `DEPLOY_VALUES`; :186-198 `FIXED_STOPS`; :434 and :445 where `_phase` answers `closed`; :568 `next_phase`; :809-812 the "nothing in this crew version dispatches a deploy: T-0045 consumes it" warning; :880-928 `_decide`; :957 `deploy_allowed`.
+- plugin/crew/hooks/scripts/crew_state.py:1134 `AUTOPILOT_DEFAULTS` holds `"deploy": "none"`.
+- plugin/crew/hooks/scripts/cloud_guard.py:1568 the class names `nonProd`, `prod`, `unknown`.
+- plugin/crew/commands/autopilot.md is 109 lines; :97 says "No deploy (T-0005), merge or PR (T-0011)". plugin/crew/tests/test_lifecycle_commands.py:112-119 caps it at 110. plugin/crew/tests/test_crew_autopilot.py:1256-1260 requires every FIXED, HUMAN and PROCEDURE stop slug to appear in it in backticks.
+- plugin/crew/CONFIG.md:2716-2717 "Inert until T-0045"; plugin/crew/README.md:917 "the key is inert until T-0045 consumes it".
+- plugin/crew/tests/test_crew_autopilot_deploy.py exists (T-0072's 70 tests for `deploy_allowed`); .crew/verify.json:348-359 maps it.
+- scripts/check-tooling-pr.py:89-95 `SEAM` lists `crew_autopilot.py` and `commands/autopilot.md`; they block only when a `HARNESS` path changes in the same PR.
+- T-0011 is not on main: `git grep -n "_ship_phase\|merge_argv" origin/main -- plugin/crew/hooks/scripts` prints nothing. Its spec is `.work/tickets/T-0011/spec.md` (approved).
+- T-0009 is not on main; on `origin/T-0009-deploy-guard` (`f08ae7fb`) the classifier is plugin/crew/hooks/scripts/crew_guards.py:2865 `dispatch_environment`.
+## Unknowns
+- T-0011's merged shape (where the ship phase answers and what it returns about the PR). Resolved at plan: re-read `crew_autopilot.py` on origin/main after T-0011 lands; this spec's hook point is re-anchored then.
+- Owner decision - production under `all` (direction.md). Default taken: follow `deploy_allowed`.
+- Owner decision - autopilot.md's one spare line (direction.md). Default taken: reword in place.
+- T-0053 (sleep mode) will overlay `deploy`; it reads settings through the same resolver, so no coupling is added here.
+## Size
+About 140 added production lines in `crew_autopilot.py` (`_deploy_target` about 60, `_deploy_phase` about 50, two stop rows and wiring about 30). One fail-closed state machine. No harness path.
+## Touch
+- plugin/crew/hooks/scripts/crew_autopilot.py
+- plugin/crew/commands/autopilot.md
+- plugin/crew/tests/test_crew_autopilot_deploy_phase.py
+- plugin/crew/tests/test_crew_autopilot_deploy.py
+- plugin/crew/tests/test_crew_autopilot.py
+- plugin/crew/tests/ghdeploy_mutations.py
+- plugin/crew/CONFIG.md
+- plugin/crew/skills/crew-verification/github-deploy.md
+- docs/guides/crew/src/daily-workflow.md
+- `docs/guides/crew/**` - rebuilt HTML, DOCX and PDF from docs/guides/crew/src/build.py
+- plugin/crew/README.md
+- plugin/crew/BUDGETS.md
+- plugin/crew/.claude-plugin/plugin.json
+- .claude-plugin/marketplace.json
+- plugin/PLUGINS.md
+- CHANGELOG.md
+- .crew/verify.json
+- `.crew/codemap/**` - refresh and re-anchor only
+- `.claude/rules/**` - regenerated by the code map refresh
+- `graphify-out/**` - rebuilt by graphify update
+- `docs/diagrams/**` - re-anchor only, no node or edge changes
+## Acceptance checks
+Run: `python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_autopilot_deploy_phase.py plugin/crew/tests/test_crew_autopilot_deploy.py plugin/crew/tests/test_crew_autopilot.py plugin/crew/tests/test_lifecycle_commands.py -q`
+- [ ] must-block, each `stop=1` with `deploy-target` and a reason naming the cause: `require-human-target`; `no-sha-input`; `class-unknown`; `classifier-raises`; `deploy-allowed-ask` (surfaced with its reason); `deploy-allowed-refuse` (an incident file present); `head-not-pr-head`; `verify-json-unreadable`; `nonprod-name-dispatches-prod` (the entry's inputs classify prod under a nonProd environment name)
+- [ ] must-block `row-not-pass`: a `not-run` or FAIL row for the environment and sha stops with `failed-deploy`, and `next` never names `/crew:promote` again for that sha
+- [ ] must-allow `deploy-none-default`: a merged PR is `closed`, exactly as T-0011 leaves it
+- [ ] must-allow `no-github-env`: `closed`, the reason says promotion is a person's
+- [ ] must-allow `nonprod-deploy-phase`: `phase=deploy stop=0 command=/crew:promote <env>`
+- [ ] must-allow `after-pass-row`: `closed`, naming the environment and sha
+- [ ] must-allow `prod-under-all`: with `deploy: all`, `prodUnattended` true in both layers and `cloudGuard: block`, a prod target is named only after every nonProd target has an all-pass row; with any of the three missing it is `deploy-target`
+- [ ] every non-empty `report` from `deploy_allowed` is printed by `next` (the contract at `crew_autopilot.py:137-140`)
+- [ ] `settings` no longer warns that nothing dispatches a deploy; T-0072's tests for that warning are updated, the rest of `test_crew_autopilot_deploy.py` is unedited and green
+- [ ] `autopilot.md` stays at or under 110 lines and names `deploy-target` and `failed-deploy` in backticks (`test_lifecycle_commands.py`, `test_crew_autopilot.py`)
+- [ ] mutations: one `ghdeploy_mutations.py` entry per refusing branch plus two must-allow non-vacuity entries, each red with no ANCHOR LOST: `cd plugin/crew/tests && python3 -c "import sabotage, ghdeploy_mutations as m; sabotage.MUTATIONS = m.GHDEPLOY_MUTATIONS; raise SystemExit(sabotage.main())"`
+- [ ] `python3 scripts/check-tooling-pr.py` exits 0
+- [ ] docs: CONFIG.md section 20 and README replace "inert until T-0045" with what the phase does and its two stops; `github-deploy.md` gains the unattended path; the daily-workflow guide names the deploy phase and the guide outputs are rebuilt; the PR body states `Docs:` for the diagrams
+- [ ] `python3 scripts/check-marketplace.py` passes after the commit
+- [ ] crew version is one patch above origin/main's at landing, in `plugin.json`, `marketplace.json` and `PLUGINS.md`, as the last `plugin/crew` commit, with a CHANGELOG entry; BUDGETS.md's `crew-markdown-lines` claim is re-measured
+
+## Approval
+Spec approved for cloud hand-off by the orchestrator under the owner's standing authority, 2026-10-04. Plan: to be written by the implementing session.

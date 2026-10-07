@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.15**: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands. `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
-- **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
+- **crew 1.1.16**: Autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge. With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>` for the first `.crew/verify.json` environment with a `github` entry (file order, nonProd before prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for T-0009's class of the entry's dispatch; every non-empty report is printed.
+- **crew 1.1.16**: Promote-gate no longer matches a fragment of a declared deploy. Both promote gates treated a command as a declared deploy when either text contained the other, so `git rev-parse HEAD`, `HEAD` or `development` matched a declared `gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)`: the gate wrote `.crew/.deploy-in-flight` and the Stop gate reported "DEPLOY NOT RECORDED" for a deploy that never ran (reproduced). Now a command is a deploy only when it contains the declared text - verbatim, with arguments after it, or wrapped (`cd <dir> && <declared>`), as before.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
