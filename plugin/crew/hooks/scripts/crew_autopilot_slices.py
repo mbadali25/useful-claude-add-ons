@@ -77,6 +77,18 @@ def _slice_state(top, ticket, count):
         return None, (f"{_ap()._rel(top, path)} is unreadable or out of shape "  # pylint: disable=protected-access
                       f"(current 1-{count}, done and shipped lists): cannot tell which "
                       "slice is current - a human looks")
+    numbers = [e["slice"] for e in shipped]
+    # next-slice moves `current` past slice k only once k shipped, and a slice
+    # is recorded once: a duplicate, an out-of-range number or an earlier
+    # slice with no record leaves the history unknown, never a known slice.
+    if (len(set(numbers)) != len(numbers) or len(set(done)) != len(done)
+            or not all(1 <= k <= count for k in numbers + done)
+            or not all(k in numbers for k in range(1, current))):
+        unshipped = [k for k in range(1, current) if k not in numbers]
+        return None, (f"{_ap()._rel(top, path)} is out of shape (" + (  # pylint: disable=protected-access
+            f"slice {current} is current but slice {unshipped[0]} has no shipped record"
+            if unshipped else f"a slice recorded twice or outside 1-{count}")
+                      + "): cannot tell the slice history - a human looks")
     return data, ""
 
 
@@ -336,7 +348,12 @@ def branch_stop(ctx, branch):
     """The reason `branch` is not the current slice's, or "". Slice 1 ships
     from the ticket's branch; slice n >= 2 only from `<slice 1's>-s<n>`."""
     n = ctx["piece"]["n"]
-    expected = slice_branches(ctx).get(n) if n > 1 else branch
+    # Slice 1 ships from the ticket's branch until it is recorded; after that
+    # only from the recorded branch, so a second branch never ships it again.
+    expected = slice_branches(ctx).get(n) if n > 1 else (slice_branches(ctx).get(1) or branch)
+    if n == 1 and branch != expected:
+        return (f"slice 1 is recorded on {expected}, not {branch} - ship it from "
+                f"{expected}")
     if branch != expected:
         return (f"slice {n} ships from {expected or '(unknown: slice 1 recorded no branch)'}, "
                 f"not {branch} - run crew_autopilot.py next-slice to open it")

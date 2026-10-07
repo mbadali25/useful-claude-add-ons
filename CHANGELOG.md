@@ -87,6 +87,11 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   malformed state anywhere on the chain, a recorded base included, is a stop), and an earlier slice's PR merged elsewhere does not count as
   merged for the next slice's order check; two Step headings with one number
   are refused.
+- **Group review fixes (G2 landing).** Once slice 1 is recorded on its
+  branch, `ship` refuses it from any other branch (a second branch never opens
+  another slice-1 PR or replaces the record); `slices.json` with a slice
+  recorded twice, a slice number outside the plan, or `current` past a slice
+  with no shipped record is out of shape and stops as `slices`.
 
 ### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
@@ -344,6 +349,8 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   mention inside another entry) with that why and unblock, its continuation ending at any
   bullet (`-`, `*`, `+`, `1.`), heading or blank line; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
   earlier plan do not stop a successor plan's first docs run.
+- Group review fix (G2 landing): a malformed docs attempt (a `round` or `plan` that is not an
+  integer, or an entry that is not an object) reads the record as spent, never skipped.
 - Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
   its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
 

@@ -155,6 +155,10 @@ def _review_position(top, ticket):
         return -1, -1
 
 
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _docs_attempts(top, ticket):
     """`/crew:docs` runs autopilot recorded since the latest review round of the
     current plan. An unreadable record counts as spent: it can only stop, never
@@ -166,9 +170,12 @@ def _docs_attempts(top, ticket):
     attempts = data.get("attempts") if isinstance(data, dict) else None
     if not isinstance(attempts, list):
         return DOCS_ATTEMPTS
+    # A malformed attempt is a record that cannot be read: spent, never skipped.
+    if not all(isinstance(a, dict) and _is_int(a.get("round")) and _is_int(a.get("plan", 0))
+               for a in attempts):
+        return DOCS_ATTEMPTS
     plan, rounds = _review_position(top, ticket)
-    return sum(1 for a in attempts if isinstance(a, dict) and a.get("round") == rounds
-               and a.get("plan", 0) == plan)
+    return sum(1 for a in attempts if a["round"] == rounds and a.get("plan", 0) == plan)
 
 
 def record_docs_attempt(root, ticket):
