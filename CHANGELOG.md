@@ -12,7 +12,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Added — crew 1.1.90: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
 
 - **Summary.** Crew's mutation suite now proves the guards the 1.2.0 features added on main
-  (294 new entries, 2093 to 2387, each red on its named test), and a `/crew:autopilot wave` lane
+  (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane
   can no longer accept or reject a review or admin-merge: the scope guard refuses it.
 - **Behaviour change.** `scope_guard.py` (T-0029's harness half) refuses, from a subagent only
   (a hook payload with a non-empty `agent_type`, as a wave lane's is),
@@ -37,7 +37,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `commands/review.md` step 3 names `autopilot.maxAutoReplans`.
 - **Not here (H2b).** Entries whose target code is not on main yet: G6b's goal handoffs and sleep
   log/deploy (L-0660, L-0655 (j)-(s)), G3c's contracts (L-0635), G6a's autopilot stops and fix phase
-  (L-0686, L-0668, L-0643, L-0671 15-19), G3d's bridge (L-0638), G4's deploy (L-0650).
+  (L-0686, L-0668, L-0643, L-0671 15-19), G3d's bridge (L-0638), G4's deploy (L-0650);
+  and three whose anchors G6b or G3c rewrite: L-0651 (k) (`crew_autopilot.py`), L-0671 entry 1
+  (`crew_state.py`) and T-0029's "unknown dependencies read as none" (`crew_wave.py`).
 
 ### Fixed — `crew` 1.1.14: a harness test no longer reads a half-written pid file (C-0063)
 

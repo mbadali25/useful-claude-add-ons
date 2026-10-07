@@ -1189,12 +1189,10 @@ SLEEP_MUTATIONS = (
      '            take = sleep["state"] == crew_sleep.ASLEEP\n',
      "            take = True\n",
      _Z + "test_outside_the_window_the_day_values_apply"),
-    # (k) and (m) together: an unknown key has no effect, and is reported.
-    ("L-0651 (k): an autopilot.sleep.deploy key is applied while asleep", AUTOPILOT,
-     '            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,\n',
-     '            "saw": mode, "deploy": (_sleep_block(top, block).get("deploy") if '
-     'sleep["state"] == crew_sleep.ASLEEP else None) or deploy, "deploySaw": deploy_saw,\n',
-     _Z + "test_an_unknown_sleep_key_has_no_other_effect"),
+    # Item (k) (an autopilot.sleep.deploy key applied while asleep) is deferred
+    # to H2b: its anchor, the `"deploy": deploy` line of crew_autopilot.settings,
+    # is changed by rush G6b (L-0654, the deploy override), so G6b's CI would fail
+    # on a harness file it may not touch. H2b adds it against G6b's code.
     ("L-0651 (l): asleep, approval skips the scope.allowCliApproval check", AUTOPILOT,
      "        allowed = crew_ticket.cli_approval_allowed(top)\n",
      '        allowed = crew_ticket.cli_approval_allowed(top) or risk["sleep"].startswith(" (asleep")\n',
@@ -1254,10 +1252,8 @@ _RP = "tests/test_crew_autopilot_replan.py::"
 _RJ = _RP + "test_auto_reject_refusals_write_nothing"
 
 REPLAN_MUTATIONS = (
-    ("L-0671 1: maxAutoReplans defaults to 1", STATE,
-     '"maxAutoReplans": 0, "sleep": {',
-     '"maxAutoReplans": 1, "sleep": {',
-     _RP + "test_setting_defaults_to_zero"),
+    # Entry 1 (maxAutoReplans defaults to 1, crew_state.py) is deferred to H2b:
+    # rush G6b rewrites the crew_state.py defaults line it anchors on.
     ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
      "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
      "        replans = 1\n    if replans > MAX_AUTO_REPLANS:\n",

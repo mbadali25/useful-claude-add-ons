@@ -26,10 +26,9 @@ WAVE_MUTATIONS = (
      'None)\n',
      "        clash = None\n",
      _W + "test_plan_refuses_overlapping_touch[second0]"),
-    ("WAVE: unknown dependencies read as none", WAVE,
-     "    if not found:\n        return None\n    ids = _ID_RE.findall(found.group(1))\n",
-     "    if not found:\n        return []\n    ids = _ID_RE.findall(found.group(1))\n",
-     _W + "test_plan_refuses_unknown_dependencies[title]"),
+    # "WAVE: unknown dependencies read as none" is deferred to H2b: rush G3c
+    # (L-0633, <channel>:<id> dependencies) rewrites the dependency parser it
+    # anchors on, so G3c's CI would fail on a harness file it may not touch.
     # G0's port added an OPEN_STATUSES allowlist (review round 2), which refuses
     # `direction` too, so dropping the named check alone left it refused: the
     # mutation opens both.
