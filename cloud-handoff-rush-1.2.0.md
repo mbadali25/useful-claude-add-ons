@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T16:09Z
+Last updated: 2026-10-07T16:12Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T16:12Z G3b wallclock: single outlier (11.3s vs 7.5-9.4s across 18 runs); same commit 987f63ad passed on dispatch run 37649002217 and G5 (contains G3b) passed; earlier 'twice' was a never-acquired job. Re-ran failed jobs on #551's run once (passed on this exact commit). C-0061 minted (SECONDS granularity); next free C-0062.
 - 2026-10-07T16:09Z MERGED #550 (G2) into release at bb5b47d5, crew 1.1.10 (CI fully green). Opened WAVE 2 #556 (release -> main), subscribed.
 - 2026-10-07T15:59Z G6a fixed: head 5cc2d616 (1.1.15 placeholder). L-0666 closed sites -> decision look on 'cannot tell' (crew_autopilot_gates.closed); L-0551 unknown when main checkout/INDEX unreadable; owner FIXED_INSTEAD line added (exempted only on accept-review). Sabotage red for each; pylint 0; 2523 targeted passed; Windows 16/16 (runner-acquisition rerun). All builds done.
 - 2026-10-07T15:58Z G3b #551 crew-windows-wallclock red twice (old+new head): test_context_watch_python_resolver crew_py_strict 11.3s > 8s deadline; G2 wallclock passes, no .sh diff G2..G3b. Investigator started (root-cause, no bound loosening), then re-stack G5/G1b.
