@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.8**: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2. Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
 - **crew 1.1.7**: A `stack-node` skill and Node.js candidate standards, no gated Node set yet. crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript, with pitfalls and verify rules, and lists four candidate Node standards with the evidence each has. None is enforced.
-- **crew 1.1.7**: The PowerShell standards set, PWSH-16, and PowerShell candidates. A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one PowerShell standard in its pre-review self-check: resolve an external program to an Application that is proven to run, never to whatever name lookup returns first.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

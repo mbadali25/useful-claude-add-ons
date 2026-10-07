@@ -9,6 +9,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Removed — crew 1.1.8: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
+
+- **Summary.** Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the
+  environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
+- **Why.** T-0009 (PR #336, rush group G4) rewrites the command-word trigger in `cloud_guard.py`
+  and `crew_guards.py` and moves the dispatch reader into `crew_dispatch.py`. That removes the line
+  each of these entries is anchored to, so `test_every_shipped_anchor_is_present_in_its_target_exactly_once`
+  fails once it lands, and `check-tooling-pr.py` keeps a harness edit out of a feature PR. Harness
+  only (owner 2026-10-07): nothing else changes, and no guard behaviour changes.
+- **Kept.** Each removed entry is in `docs/tickets/C-0047/retired-entries.md` verbatim (label,
+  target, anchor, mutation, test) for H2 to re-add. The other 203 cloud-guard entries are untouched.
+
 ### Added — crew 1.1.7: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
 
 - **Summary.** crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript,
