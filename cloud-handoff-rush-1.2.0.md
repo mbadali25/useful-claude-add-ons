@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T13:18Z
+Last updated: 2026-10-07T13:39Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T13:39Z G6b done: head 945b62ef (1.1.16 placeholder), 7 tickets; Windows 16/16 green; L-0656 notify half only (review half -> C-0053). 5 capped r6 fixes (b1ad9cda, 4850aa34, bda1b115, fb541d48, 85a24505) -> coordinator review agent. Classifier outage blocking Bash since ~13:20.
 - 2026-10-07T13:18Z MERGED #549 (C-0047 pt1 retire, harness-only) into main at ad36bec5, crew 1.1.8 (CI all green). Sync lander told to merge main and set 1.1.9.
 - 2026-10-07T13:00Z G3c done: head 64758505 (placeholder 1.1.13), L-0633 r6 CLEAN, L-0634 capped -> coordinator reviewed 0fd24f13 CLEAN; Windows 16/16. Owner accepted 5-field binding (C-0052). G3d done: head acf00f60 (1.1.14 placeholder), T-0032/L-0636/L-0637/L-0667/L-0708 built, L-0637 r6 fix e56c54a9 coordinator-reviewed CLEAN; L-0708 U1 resolved (Kimi roots at any .git -> refuse when Kimi project files exist); Windows 16/16. Minted C-0049..C-0052; next free C-0053. Sync lander told to drop stray diff3 marker in CHANGELOG:632.
 - 2026-10-07T12:34Z #552 G5 pylint red: test_crew_config.py 3406/3400 (stack), gizmoduck test_bootstrap C0301/W1514, test_bootstrap_version C0207. Sent to train lander for the re-stack; full CI-identical pylint now required on every stacked head.
