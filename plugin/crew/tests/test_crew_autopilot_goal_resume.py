@@ -592,8 +592,13 @@ def test_goal_run_unarmed_marks_the_goal_stopped(tmp_path, monkeypatch):
         True, "stopped")
 
 
-def test_a_failed_stop_mark_is_named_in_the_stop(tmp_path, monkeypatch):
+@pytest.mark.parametrize("fallback", [True, False], ids=["stop-file", "nothing-writable"])
+def test_a_failed_stop_mark_is_named_in_the_stop(tmp_path, monkeypatch, fallback):
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
     root, slug = _minted_goal(tmp_path, monkeypatch)
+    if not fallback:
+        monkeypatch.setattr(handoff, "stop_mark_fallback",
+                            lambda *a: (_ for _ in ()).throw(OSError("read-only")))
     for ticket in ("T-0002", "T-0003"):
         index = root / ".work" / "INDEX.md"
         _write(index, _read(index).replace(f"{ticket} | ready |", f"{ticket} | done |"))
@@ -606,7 +611,8 @@ def test_a_failed_stop_mark_is_named_in_the_stop(tmp_path, monkeypatch):
     got = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(tmp_path / "t.jsonl"))
 
     assert (got["stop"], got["done"], "may still say running" in got["reason"],
-            "goal-mark" in got["reason"]) == (True, True, True, True)
+            "goal-mark" in got["reason"], crew_goal_state.run_state(str(root), slug)["state"]) == (
+        True, True, not fallback, not fallback, "done" if fallback else "running")
 
 
 def test_a_goal_file_that_cannot_be_looked_up_is_unknown(tmp_path, monkeypatch):
@@ -783,3 +789,69 @@ def test_a_usage_count_that_is_not_a_non_negative_integer_is_unknown(tmp_path, u
         "message": {"usage": {"input_tokens": n, "output_tokens": 0}}}) + "\n" for n in usage))
 
     assert crew_autopilot_backlog.session_tokens(str(transcript))[0] is None
+
+
+def test_a_stop_that_cannot_reach_the_goal_file_is_still_a_stop(tmp_path, monkeypatch):
+    """T-0056 review r4 (must-block): the stop goes to `<slug>.stop`, which every
+    reader takes over a goal file still saying running; an explicit run clears it."""
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    real = handoff.goal_mark
+
+    def refuse(top, goal, state, *rest, **kw):
+        if state != "running":
+            raise handoff.MarkError("goal lock busy")
+        return real(top, goal, state, *rest, **kw)
+    monkeypatch.setattr(handoff, "goal_mark", refuse)
+
+    got = crew_autopilot_backlog._marked(str(root), slug, {  # pylint: disable=protected-access
+        "ticket": None, "stop": True, "done": False, "reason": "owner decides"})
+    stopped = (crew_goal_state.run_state(str(root), slug)["state"],
+               handoff.running_goals(str(root))["stopped"],
+               handoff.handoff_resume(str(root), "T-0002")["kind"])
+    monkeypatch.setattr(handoff, "goal_mark", real)
+    handoff.goal_mark(str(root), slug, "running", "T-0002")
+
+    assert (".stop instead" in got["reason"], stopped,
+            crew_goal_state.run_state(str(root), slug)["state"]) == (
+        True, ("stopped", [slug], "ticket"), "running")
+
+
+def test_goal_mark_reads_the_stop_reason_from_a_file(tmp_path, monkeypatch):
+    """T-0056 review r4: the reason never goes on a command line."""
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    _write(root / ".work" / "autopilot" / f"{slug}.reason", "waiting on the owner's `$(x)` call\n")
+
+    code = crew_autopilot.main(["goal-mark", "--root", str(root), "--goal", slug, "--state",
+                                "stopped", "--reason-file",
+                                str(root / ".work" / "autopilot" / f"{slug}.reason")])
+
+    assert (code, crew_goal_state.run_state(str(root), slug)["reason"]) == (
+        0, "waiting on the owner's `$(x)` call")
+
+
+def test_a_discovered_goal_run_never_resumes_past_a_stop(tmp_path, monkeypatch):
+    """L-0659 review r2 (must-block): a goal found by discovery or a handoff is
+    run only while it still reads running; the owner's `--goal` still restarts it."""
+    import crew_autopilot_backlog  # pylint: disable=import-outside-toplevel
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    handoff.goal_mark(str(root), slug, "stopped", None, "the owner stopped it")
+    transcript = tmp_path / "t.jsonl"
+
+    found = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(transcript),
+                                            discovered=True)
+    kept = crew_goal_state.run_state(str(root), slug)
+    refused = None
+    try:
+        handoff.goal_mark(str(root), slug, "running", "T-0002", only_if_running=True)
+    except handoff.MarkError as exc:
+        refused = str(exc)
+    chosen = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(transcript))
+
+    assert (found["stop"], "no longer running" in found["reason"], kept["state"],
+            kept["reason"], "no longer running" in (refused or ""), chosen["ticket"],
+            crew_goal_state.run_state(str(root), slug)["state"]) == (
+        True, True, "stopped", "the owner stopped it", True, "T-0002", "running")

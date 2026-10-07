@@ -3012,10 +3012,13 @@ marker is reported next time. `wake` prints the summary after its state line
 `settings` warns `<n> sleep decisions are unreported`. **Held pings
 (L-0656).** With `autopilot.sleep.notifyHold: true`, the pings held while
 asleep are counted, `settings` warns `<n> pings were held while asleep`, and
-the summary ends `held pings: <n>`; reported awake, it empties the count and
-passes the same text to the notifier once (silent, through the configured
-provider, only when `question` or `blocker` is in `notify.events`), under a
-lock so two runs never both send. A
+the summary ends `held pings: <n>`; reported awake, it passes the same text to
+the notifier once (silent, through the configured provider, only when
+`question` or `blocker` is in `notify.events`), under a lock so two runs never
+both send, and only once it was delivered (or no notifier is set up) marks the
+log reported and removes the pings it counted: a failed send exits 1 and keeps
+both for the next run. A log line that is neither an entry nor a marker makes
+the log could-not-tell. A
 log that cannot be written never undoes an approval (`warning: sleep log not
 written`); a log that is there and cannot be read is said so, never "nothing
 to report".

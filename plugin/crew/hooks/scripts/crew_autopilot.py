@@ -1772,8 +1772,8 @@ def settings(root):
     after its own per-layer checks, not this."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     cause = _unreadable_autopilot(top)
-    if cause:
-        return {"mode": "off", "armed": False,
+    if cause:  # L-0653 review r2: the sleep-log warnings survive an unreadable config
+        return crew_autopilot_sleep.with_log_warnings(top, {"mode": "off", "armed": False,
                 "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
                 "saw": None, "deploy": "none", "deploySaw": None,
                 "approval": UNKNOWN, "questions": UNKNOWN, "maxAutoReplans": 0,
@@ -1786,7 +1786,7 @@ def settings(root):
                 **{key: crew_state.AUTOPILOT_DEFAULTS[key] for key in BACKLOG_CAPS},
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
-                              "approves or takes an answer) and autopilot reads as off")]}
+                              "approves or takes an answer) and autopilot reads as off")]})
     result = crew_autopilot_sleep.with_log_warnings(top, _settings_at(top))  # L-0653
     result["warnings"] += crew_config.autopilot_inert_warnings(top, _failure)  # T-0070  # T-0070
     return result
@@ -2146,7 +2146,7 @@ def _decision(top, ticket, key):
     elif key in sleep.get("applied", ()):
         note = (f" (sleep could not be told; the stricter autopilot.sleep.{key} over "
                 f"day value {day})")
-    return conf[key], dict(_ticket_risk(top, ticket), sleep=note), [
+    return conf[key], dict(_ticket_risk(top, ticket), sleep=note, asleep=sleep.get("state") == crew_sleep.ASLEEP), [
         w for w in conf["warnings"] if f"autopilot.{key} " in w]
 
 
@@ -2203,7 +2203,7 @@ def _approval_policy(root, ticket):
         return {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell whether autopilot may approve "
                                            f"({type(exc).__name__}: {exc})")}
-    result = {"allow": False, "policy": policy, "risk": risk["risk"],
+    result = {"allow": False, "policy": policy, "risk": risk["risk"], "asleep": risk["asleep"],
               "known": risk["known"], "warnings": warnings, "sleep": risk["sleep"]}
     if policy == UNKNOWN:
         why = (f"could not tell autopilot.approval ({'; '.join(warnings) or 'unreadable'}); "
@@ -2310,7 +2310,7 @@ def approve(root, ticket):
         _PINNED.decisions = {}
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}{got.get('sleep', '')}")
-    text += crew_autopilot_sleep.log_approval(top, ticket)  # L-0653: asleep, the log entry
+    text += crew_autopilot_sleep.log_approval(top, ticket, got)  # L-0653: asleep, the log entry
     if successor is not None and not successor[0]:
         return 3, f"{text}\nreview is still NEEDS_REPLAN -- {successor[1]}"
     return 0, text

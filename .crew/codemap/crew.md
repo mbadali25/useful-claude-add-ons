@@ -4884,3 +4884,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 - JUDGEMENT. The review half (`autopilot.sleep.reviewPolicy`) waits for T-0029 / T-0067; that
   key still reads "not available". Fail direction is send: anything that cannot be told sends
   the ping.
+- DERIVED. Review round 2 (L-0653 r2, L-0656 r1): `sleep_summary` sends first and marks / `take`s
+  the reported keys only on `sent`, `off` or `filtered`; `crew_sleep.malformed` makes a bad log
+  line could-not-tell; `log_approval` reads the pinned decision's `asleep`. T-0056 r4 and L-0659
+  r2: `crew_autopilot_handoff.stop_mark_fallback` writes `.work/autopilot/<slug>.stop`, which
+  `crew_goal_state.stop_override` lays over a `running` goal file; `goal-mark --reason-file`;
+  `goal_run(discovered=True)` and `goal_mark(only_if_running=True)` never overwrite a stop.

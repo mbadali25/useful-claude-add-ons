@@ -479,13 +479,19 @@ def _runs(goal):
     return runs
 
 
-def goal_run(root, slug, session=None, transcript=None):
+def goal_run(root, slug, session=None, transcript=None, discovered=False):
     """`resume`'s fields (`ticket`, `source`, `stop`, `activate`, `reason`,
-    ...) plus `goal`, `done`, `run` -- the module docstring's run."""
+    ...) plus `goal`, `done`, `run` -- the module docstring's run.
+    `discovered` (L-0659 review r2): the goal came from a goal file or a
+    handoff, not the owner's `--goal`, so it runs only while it still reads
+    `running` -- a stop marked since is never resumed past or overwritten."""
     top = _top(root)
     base = {"ticket": None, "source": f"goal:{slug}", "stop": True, "hint": "",
             "disagreement": "", "fallthrough": [], "next": None, "activate": False,
             "goal": slug, "done": False, "run": None}
+    if discovered and goal_state.run_state(top, slug)["state"] != "running":
+        return dict(base, reason=f"goal {slug} is no longer running - /crew:autopilot "
+                                 f"--goal {slug} resumes it once you choose to")
     conf = ap.settings(top)
     if not conf["armed"]:  # T-0056 review r2: a goal left running is marked stopped
         return _marked(top, slug, dict(base, reason="autopilot.mode is not plan or backlog, so "
@@ -494,26 +500,35 @@ def goal_run(root, slug, session=None, transcript=None):
     if picked["stop"]:
         return _marked(top, slug, dict(base, **{k: picked[k] for k in ("source", "fallthrough")},
                                        done=bool(picked.get("done")), reason=picked["reason"]))
-    return _marked(top, slug, _run_caps(top, slug, conf, picked, session, transcript))
+    return _marked(top, slug, _run_caps(top, slug, conf, picked, session, transcript),
+                   discovered)
 
 
-def _marked(top, slug, result):
+def _marked(top, slug, result, discovered=False):
     """T-0056: the run state `result` leaves -- `running` with its ticket,
     `done`, or `stopped` with its reason -- noted in the goal file, best
     effort: a note that cannot be written is a warning, never a second stop."""
     state = "done" if result["done"] else "stopped" if result["stop"] else "running"
+    handoff = importlib.import_module("crew_autopilot_handoff")
     try:
-        importlib.import_module("crew_autopilot_handoff").goal_mark(
-            top, slug, state, result["ticket"], "" if state == "running" else result["reason"])
+        handoff.goal_mark(top, slug, state, result["ticket"],
+                          "" if state == "running" else result["reason"],
+                          only_if_running=discovered and state == "running")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         if state == "running":  # unmarked, every handoff would drop the goal: stop
             return dict(result, ticket=None, stop=True, activate=False, run=None,
                         reason=f"could not record goal {slug} as running ({exc}), so a "
                                "handoff could not name it")
+        try:  # T-0056 review r4: never leave a stale `running` usable
+            handoff.stop_mark_fallback(top, slug, state, result["reason"])
+            where = f"recorded in .work/autopilot/{slug}.stop instead, which every reader takes"
+        except OSError as fallback:
+            where = (f"nor could .work/autopilot/{slug}.stop ({type(fallback).__name__}), so the "
+                     "goal file may still say running - do not resume it before "
+                     f"crew_autopilot.py goal-mark --root . --goal {slug} --state {state} "
+                     "records it")
         result = dict(result, reason=f"{result['reason']}; and its {state} state could not be "
-                                     f"written ({exc}), so the goal file may still say running - "
-                                     f"crew_autopilot.py goal-mark --root . --goal {slug} "
-                                     f"--state {state} records it")
+                                     f"written to the goal file ({exc}): {where}")
     return result
 
 

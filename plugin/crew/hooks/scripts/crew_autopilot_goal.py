@@ -556,7 +556,7 @@ def main(args):
                             "([a-z0-9][a-z0-9-]{0,63})")
         elif args.action == "goal-run":
             result = backlog.goal_run(args.root, args.goal, args.session or None,
-                                      args.transcript or None)
+                                      args.transcript or None, args.discovered)
             code, text = 0, backlog.goal_run_text(result)
         elif args.ticket:
             code, text = backlog.ticket_approve(args.root, args.goal, args.ticket)
@@ -592,3 +592,4 @@ def add_parsers(sub):
     sub.choices["goal-approve"].add_argument("--ticket", default="")
     sub.choices["goal-run"].add_argument("--session", default="")
     sub.choices["goal-run"].add_argument("--transcript", default="")
+    sub.choices["goal-run"].add_argument("--discovered", action="store_true")

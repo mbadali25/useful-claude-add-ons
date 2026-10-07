@@ -1555,17 +1555,33 @@ def test_awake_production_is_unchanged(tmp_path, monkeypatch, clock):
 _MATRIX = {
     # awake: the day value alone
     ("awake", "none", None): ("ask", "ask"), ("awake", "none", "nonprod"): ("ask", "ask"),
+    ("awake", "none", "none"): ("ask", "ask"),
     ("awake", "nonprod", None): ("allow", "ask"), ("awake", "nonprod", "none"): ("allow", "ask"),
+    ("awake", "nonprod", "nonprod"): ("allow", "ask"),
     ("awake", "all", None): ("allow", "allow"), ("awake", "all", "nonprod"): ("allow", "allow"),
+    ("awake", "all", "none"): ("allow", "allow"),
     # asleep: the override, then `all` reads as `nonprod`
     ("asleep", "none", None): ("ask", "ask"), ("asleep", "none", "nonprod"): ("allow", "ask"),
+    ("asleep", "none", "none"): ("ask", "ask"),
     ("asleep", "nonprod", None): ("allow", "ask"), ("asleep", "nonprod", "none"): ("ask", "ask"),
+    ("asleep", "nonprod", "nonprod"): ("allow", "ask"),
     ("asleep", "all", None): ("allow", "ask"), ("asleep", "all", "nonprod"): ("allow", "ask"),
     ("asleep", "all", "none"): ("ask", "ask"),
     # unknown: neither rule, the day value stands (all included)
-    ("unknown", "none", "nonprod"): ("ask", "ask"), ("unknown", "nonprod", "none"): ("allow", "ask"),
-    ("unknown", "all", "nonprod"): ("allow", "allow"),
+    ("unknown", "none", None): ("ask", "ask"), ("unknown", "none", "nonprod"): ("ask", "ask"),
+    ("unknown", "none", "none"): ("ask", "ask"),
+    ("unknown", "nonprod", None): ("allow", "ask"), ("unknown", "nonprod", "none"): ("allow", "ask"),
+    ("unknown", "nonprod", "nonprod"): ("allow", "ask"),
+    ("unknown", "all", None): ("allow", "allow"), ("unknown", "all", "nonprod"): ("allow", "allow"),
+    ("unknown", "all", "none"): ("allow", "allow"),
 }
+
+
+def test_the_deploy_matrix_has_every_cell():
+    """L-0654 review r3: 3 states x 3 day values x 3 overrides, all written out."""
+    assert sorted(_MATRIX, key=str) == sorted(
+        ((s, d, o) for s in ("awake", "asleep", "unknown") for d in ("none", "nonprod", "all")
+         for o in (None, "nonprod", "none")), key=str)
 
 
 @pytest.mark.parametrize("state,day,override", sorted(_MATRIX, key=str))
@@ -2126,3 +2142,79 @@ def test_held_ping_is_not_sent_asleep_through_the_wrappers(tmp_path, fake, flavo
     assert (asked.returncode, held, failed.returncode,
             [text.split(" [")[0] for text in _FakeTelegram.texts], _held(root)) == (
         0, ([], 1), 0, ["Deploy FAILED"], 1)
+
+
+# --- review round 2 (L-0653) / round 1 (L-0656) ---------------------------------------------
+
+def test_a_failed_summary_send_keeps_everything_pending(tmp_path, clock, wire, capsys, monkeypatch):
+    """Must-block: nothing is marked reported or removed until the summary is delivered."""
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
+    crew_autopilot.approve(str(root), T)
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    monkeypatch.setattr(crew_notify, "_telegram", lambda *a: (False, "HTTP 500"))
+
+    failed = _cmd(root, capsys, "sleep-summary")
+    pending = (len(crew_sleep.unreported(_log_text(root))), _held(root))
+    monkeypatch.setattr(crew_notify, "_telegram",
+                        lambda token, chat, text, loud: wire.append((text, loud)) or (True, "ok"))
+    sent = _cmd(root, capsys, "sleep-summary")
+
+    assert (failed[0], "nothing marked reported" in failed[1], pending, sent[0],
+            len(wire), crew_sleep.unreported(_log_text(root)), _held(root)) == (
+        1, True, (1, 1), 0, 1, [], 0)
+
+
+def test_a_long_summary_still_carries_the_held_count(tmp_path, wire):
+    text = "\n".join(f"line {n} " + "x" * 80 for n in range(100))
+
+    crew_notify_hold.send_summary(str(tmp_path), text, crew_notify_hold.held_line(3))
+
+    assert (len(wire[0][0]) <= crew_notify_hold.MAX_SUMMARY,
+            wire[0][0].endswith(crew_notify_hold.held_line(3))) == (True, True)
+
+
+def test_take_removes_only_the_reported_pings(tmp_path, clock, wire):
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    crew_notify.send(str(root), "question", "first")
+    reported = sorted(crew_notify_hold.read(str(root))[0]["keys"])
+    crew_notify.send(str(root), "question", "second, held while the summary was sent")
+
+    assert (crew_notify_hold.take(str(root), reported), _held(root)) == (1, 1)
+
+
+def test_a_malformed_log_line_is_not_read_as_no_decisions(tmp_path, clock, capsys):
+    clock(DAY)
+    root = _approving(tmp_path)
+    _write(_log(root), "- 2026-10-04T23:00:00 | T-1 | appro\n")
+
+    warnings = crew_autopilot.settings(str(root))["warnings"]
+    code, out = _cmd(root, capsys, "sleep-summary")
+
+    assert (any("sleep log could not be read" in w for w in warnings), code,
+            "not entries" in out, "no unreported" in out) == (True, 1, True, False)
+
+
+def test_the_approval_entry_follows_the_pinned_decision(tmp_path, clock):
+    """L-0653 review r2: the window may end between the receipt and the log."""
+    clock(DAY)
+    root = _approving(tmp_path)
+
+    crew_autopilot_sleep.log_approval(str(root), T, {
+        "asleep": True, "policy": "self", "sleep": " (asleep 22:00-07:00; day value human)"})
+
+    assert crew_sleep.unreported(_log_text(root))[0]["setting"] == "sleep.approval=self (day human)"
+
+
+def test_an_unreadable_config_keeps_the_unreported_warning(tmp_path, clock):
+    clock(NIGHT)
+    root = _approving(tmp_path)
+    crew_autopilot.approve(str(root), T)
+    clock(DAY)
+    _write(root / ".crew" / "config.json", "{not json")
+
+    warnings = crew_autopilot.settings(str(root))["warnings"]
+
+    assert [w for w in warnings if "sleep decisions are unreported" in w] != []

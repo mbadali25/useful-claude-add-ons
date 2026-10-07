@@ -4,7 +4,7 @@ line. Split out of `crew_autopilot.py` (pylint's module-length limit);
 `crew_autopilot.py goal-mark` and `handoff-resume` dispatch here.
 
     python3 crew_autopilot.py goal-mark --root . --goal <slug> --state <s>
-                                        [--ticket <id>] [--reason <r>]
+                                        [--ticket <id>] [--reason-file <path>]
     python3 crew_autopilot.py handoff-resume --root . [--ticket <id>]
 
 THE RUN STATE. `goal_mark` writes the goal file's `run` block,
@@ -39,6 +39,7 @@ import os
 import sys
 
 import crew_autopilot as ap
+import crew_goal_state as goal_state
 import crew_ticket
 from crew_common import read_text
 
@@ -67,10 +68,15 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def goal_mark(root, slug, state, ticket=None, reason=""):
+def goal_mark(root, slug, state, ticket=None, reason="", only_if_running=False):
     """Write the goal file's `run` block; MarkError (nothing written) for a
     state outside RUN_STATES, a slug outside T-0006's grammar, a bad ticket
-    id, or a goal file that is missing, unreadable or not a JSON object."""
+    id, or a goal file that is missing, unreadable or not a JSON object.
+    `only_if_running` (L-0659 review r2: a goal-run the goal file chose, not
+    the owner) refuses unless the goal still reads `running` under the lock,
+    so a stop marked meanwhile is never overwritten. A written mark removes a
+    `<slug>.stop` file (`stop_mark_fallback`); one that cannot be removed is
+    a MarkError."""
     goal_mod = _goal()
     if state not in RUN_STATES:
         raise MarkError(f"state {state!r} is not one of {'|'.join(RUN_STATES)}")
@@ -94,11 +100,42 @@ def goal_mark(root, slug, state, ticket=None, reason=""):
                 raise MarkError(f".work/autopilot/{slug}.json is not JSON") from exc
             if not isinstance(data, dict):
                 raise MarkError(f".work/autopilot/{slug}.json is not a JSON object")
+            if only_if_running and goal_state.run_state(top, slug)["state"] != "running":
+                raise MarkError(f"goal {slug} is no longer running - /crew:autopilot --goal "
+                                f"{slug} resumes it once you choose to")
             data["run"] = {"state": state, "ticket": ticket or None,
                            "reason": ap._one_line(reason or ""), "at": _now()}
             goal_mod._write_json_atomic(path, data)  # pylint: disable=protected-access
+            try:
+                os.remove(goal_state.stop_file(top, slug))
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise MarkError(f".work/autopilot/{slug}.stop could not be removed "
+                                f"({type(exc).__name__}); the goal still reads stopped") from exc
     except goal_mod.GoalError as exc:
         raise MarkError(str(exc)) from exc
+
+
+def stop_mark_fallback(root, slug, state, reason):
+    """T-0056 review r4: a `stopped`/`done` mark that could not reach the goal
+    file is written to `.work/autopilot/<slug>.stop` instead (whole text to a
+    temp file, then os.replace), which every reader takes over a `running`
+    goal file. Raises OSError when that cannot be written either."""
+    path = goal_state.stop_file(_top(root), slug)
+    text = json.dumps({"state": state, "reason": ap._one_line(reason or ""), "at": _now()})
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    os.replace(temp, path)
+
+
+def read_reason_file(path):
+    """`goal-mark --reason-file`: the stop reason the command wrote with its
+    Write tool, so the reason (it can quote ticket text) is never put on a
+    command line. Its first 200 characters, one line."""
+    with open(path, encoding="utf-8") as handle:
+        return ap._one_line(handle.read(4096))[:200]
 
 
 def running_goals(root):
@@ -155,7 +192,11 @@ def running_goals(root):
             out["unknown"].append(f"{rel} (its run state is {state!r}, not one of "
                                   f"{'|'.join(RUN_STATES)})")
             continue
-        out[state].append(name)
+        override = goal_state.stop_override(top, name) if state == "running" else None
+        if override and override["state"] == "unknown":
+            out["unknown"].append(f".work/autopilot/{name}.stop (could not read it)")
+            continue
+        out[override["state"] if override else state].append(name)
     return out
 
 
@@ -216,7 +257,8 @@ def main(args):
                          + "\n")
         return 0
     try:
-        goal_mark(args.root, args.goal, args.state, args.ticket or None, args.reason)
+        reason = read_reason_file(args.reason_file) if args.reason_file else args.reason
+        goal_mark(args.root, args.goal, args.state, args.ticket or None, reason)
     except MarkError as exc:
         sys.stdout.write(ap._one_line(ap._line(marked=0, reason=str(exc))) + "\n")
         return 2
@@ -235,6 +277,7 @@ def add_parsers(sub):
     mark.add_argument("--state", required=True)
     mark.add_argument("--ticket", default="")
     mark.add_argument("--reason", default="")
+    mark.add_argument("--reason-file", default="")
     line = sub.add_parser("handoff-resume")
     line.add_argument("--root", default=".")
     line.add_argument("--ticket", default="")

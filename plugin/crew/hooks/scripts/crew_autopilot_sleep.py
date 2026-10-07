@@ -32,6 +32,7 @@ import datetime
 import importlib
 import json
 import os
+import re
 import stat
 import sys
 
@@ -247,15 +248,19 @@ def _setting(conf, key):
     return f"{key}={conf[key]}"
 
 
-def log_approval(top, ticket):
+def log_approval(top, ticket, decision):
     """`approve`'s entry, after its receipt (L-0653): "" when awake or written,
-    else a warning line -- an approval is never undone by its log."""
+    else a warning line -- an approval is never undone by its log. Judged by
+    the pinned `decision` the receipt was written under, never a second
+    settings read (review r2: the window may end in between)."""
     try:
-        conf = ap.settings(top)
-        if conf["sleep"]["state"] != crew_sleep.ASLEEP:
+        if not decision.get("asleep"):
             return ""
+        day = re.search(r"day value (\w+)", decision.get("sleep") or "")
+        setting = (f"sleep.approval={decision['policy']} (day {day.group(1)})" if day
+                   else f"approval={decision['policy']}")
         _append(top, crew_sleep.log_line(crew_sleep.now(), ticket, "approved",
-                                         "plan approved by autopilot", _setting(conf, "approval")))
+                                         "plan approved by autopilot", setting))
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return "\n" + ap._one_line(f"warning: sleep log not written ({ap._failure(exc)})")
     return ""
@@ -278,45 +283,58 @@ def sleep_note(root, ticket, kind, text):
 
 def sleep_summary(root):
     """(exit code, text) for `sleep-summary`: the unreported entries and the
-    held pings (L-0656), then -- not while asleep -- one marker, the held
-    record emptied and the text passed to the notifier once, all under one
-    lock that is taken before anything is read. Nothing unreported and
-    nothing held writes and sends nothing."""
+    held pings (L-0656), then -- not while asleep -- the text passed to the
+    notifier once and, only once it was delivered (or no notifier is set up),
+    one marker and the reported held pings removed, all under one lock taken
+    before anything is read. A failed send keeps both pending, so the next run
+    reports them again (review r1/r2). Nothing unreported and nothing held
+    writes and sends nothing."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     if ap.settings(top)["sleep"]["state"] == crew_sleep.ASLEEP:
-        code, out, _ = _summary(top)
+        code, out, _, _ = _summary(top)
         return code, out + ("" if code or out == NOTHING else
                             "\n(still asleep: reported again after the window ends)")
     with crew_notify_hold.summary_lock(top) as lock:
         if not lock.held:
             return 1, ("refused: another run is reporting the sleep summary (the summary lock "
                        "is held); nothing marked or sent")
-        code, out, text = _summary(top)
+        code, out, text, held = _summary(top)
         if code or out == NOTHING:
             return code, out
+        word = crew_notify_hold.send_summary(
+            top, out, crew_notify_hold.held_line(len(held)) if held else "")
+        if word not in ("sent", "off", "filtered"):
+            return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
+                             "reported and sent again next run")
         if crew_sleep.unreported(text):
             _append(top, crew_sleep.marker_line(crew_sleep.now(), len(text.encode("utf-8"))))
-        if crew_notify_hold.count(top)[0]:
-            out += "" if crew_notify_hold.take(top) is not None else (
-                "\n(the held record could not be emptied)")
-        word = crew_notify_hold.send_summary(top, out)
+        if held and crew_notify_hold.take(top, held) is None:
+            out += "\n(the held record could not be emptied)"
         return 0, out + ("" if word == "off" else f"\nnotify: {word}")
 
 
 def _summary(top):
-    """(exit code, text, log text): the summary of what is unreported and
-    held, or why not; the log text is what the summary was made from."""
+    """(exit code, text, log text, held keys): the summary of what is
+    unreported and held, or why not; the log text and the held keys are what
+    the summary was made from."""
     text, why = _read_log(top)
     if text is None:
-        return 1, f"refused: the sleep log could not be read ({why}); it is not empty", None
-    held, held_why = crew_notify_hold.count(top)
+        return 1, f"refused: the sleep log could not be read ({why}); it is not empty", None, []
+    bad = crew_sleep.malformed(text)
+    if bad:
+        return 1, (f"refused: the sleep log has {len(bad)} line(s) that are not entries (line "
+                   f"{', '.join(map(str, bad[:5]))}); it is not read as empty - fix or remove "
+                   f"them in {log_path(top)}"), None, []
+    record, held_why = crew_notify_hold.read(top)
+    held = sorted(record["keys"]) if record is not None else []
     entries = crew_sleep.unreported(text)
-    if not entries and held == 0:
-        return 0, NOTHING, text
-    if not entries and held is None:
-        return 1, f"refused: {crew_notify_hold.held_line(held, held_why)}", text
+    if not entries and record is not None and not held:
+        return 0, NOTHING, text, []
+    if not entries and record is None:
+        return 1, f"refused: {crew_notify_hold.held_line(None, held_why)}", text, []
     return 0, crew_sleep.summary_text(entries) + (
-        "" if held == 0 else "\n" + crew_notify_hold.held_line(held, held_why)), text
+        "" if record is not None and not held else "\n" + crew_notify_hold.held_line(
+            None if record is None else len(held), held_why)), text, held
 
 
 def with_log_warnings(top, conf):
@@ -332,6 +350,8 @@ def log_warnings(top, conf):
     found = []
     try:
         text, why = _read_log(top)
+        if text is not None and crew_sleep.malformed(text):
+            text, why = None, "it has lines that are not entries"
         if text is None:
             found.append(f"sleep log could not be read ({why}); {log_path(top)} is not read as "
                          "empty")

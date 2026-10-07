@@ -438,6 +438,15 @@ def unreported(text):
     return [entry for start, entry in entries if start >= cutoff]
 
 
+def malformed(text):
+    """The 1-based numbers of the non-blank lines that are neither an entry
+    nor a marker (a truncated or hand-edited line): the log then cannot be
+    read as "no decisions" (L-0653 review r2)."""
+    return [n for n, raw in enumerate((text or "").split("\n"), 1)
+            if raw.strip() and not _MARK_RE.match(raw.rstrip("\r"))
+            and not _ENTRY_RE.match(raw.rstrip("\r"))]
+
+
 def summary_text(entries):
     """The morning summary: a heading line, then the entries grouped by ticket."""
     tickets = []

@@ -25,8 +25,9 @@ episode/dedupe material `crew_notify._deliver` fingerprints), so a ping
 repeated in one waiting episode counts once.
 
 The morning summary: crew_autopilot_sleep.sleep_summary, not asleep, appends
-`held_line` to L-0653's summary, empties the record (`take`) and passes the
-text to `send_summary` once, under SUMMARY_LOCK so two runs never both send.
+`held_line` to L-0653's summary and passes the text to `send_summary` once,
+under SUMMARY_LOCK so two runs never both send; only a delivered summary (or
+no notifier at all) removes the reported keys from the record (`take`).
 `send_summary` uses the configured provider and credentials, silently, and only
 when `question` or `blocker` is in `notify.events`: no new event exists.
 """
@@ -136,22 +137,27 @@ def held_line(n, why=""):
     return f"held pings: {n} (asked for your attention while asleep; not sent)"
 
 
-def take(root):
-    """Empty the held record, returning how many it held. None when it could
-    not be read or emptied: the record is then left as it is."""
+def take(root, keys):
+    """Remove `keys` (the held pings a delivered summary reported) from the
+    record, keeping any held since. Returns how many were removed, or None
+    when the record could not be read or written: it is then left as it is."""
     with _Lock(_path(root, HELD_LOCK)) as lock:
         if not lock.held:
             return None
         record, _ = read(root)
         if record is None:
             return None
-        n = len(record["keys"])
-        if n:
-            try:
+        gone = [key for key in keys if key in record["keys"]]
+        for key in gone:
+            del record["keys"][key]
+        try:
+            if record["keys"]:
+                _write_json(_path(root, HELD_FILE), record)
+            elif os.path.lexists(_path(root, HELD_FILE)):
                 os.remove(_path(root, HELD_FILE))
-            except OSError:
-                return None
-        return n
+        except OSError:
+            return None
+        return len(gone)
 
 
 def summary_lock(root):
@@ -159,9 +165,11 @@ def summary_lock(root):
     return _Lock(_path(root, SUMMARY_LOCK))
 
 
-def send_summary(root, text):
+def send_summary(root, text, keep=""):
     """Pass the morning summary to the notifier once. Returns `sent`, `off`,
-    `filtered`, `missing-credentials` or `failed:<why>`; never raises."""
+    `filtered`, `missing-credentials` or `failed:<why>`; never raises. A text
+    over MAX_SUMMARY is cut, and `keep` (the held-count line) is put back at
+    its end, so the count always reaches the owner (review r1)."""
     try:
         cfg, notices = crew_notify.effective_config(root)
         for notice in notices:
@@ -177,7 +185,10 @@ def send_summary(root, text):
         if stop:
             return stop
         repo = crew_notify._one_line(crew_notify.where(root)["repo"])  # pylint: disable=protected-access
-        body = crew_notify.redact(f"Morning summary [{repo}]\n{text}")[:MAX_SUMMARY]
+        body = crew_notify.redact(f"Morning summary [{repo}]\n{text}")
+        if len(body) > MAX_SUMMARY:
+            tail = "\n...\n" + crew_notify.redact(keep) if keep else "\n..."
+            body = body[:MAX_SUMMARY - len(tail)] + tail
         if provider == "telegram":
             ok, why = crew_notify._telegram(token, target, body, False)  # pylint: disable=protected-access
         else:

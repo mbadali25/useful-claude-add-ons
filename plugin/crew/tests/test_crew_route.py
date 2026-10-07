@@ -736,7 +736,7 @@ def test_policy_subcommands_are_not_command_subcommands(tmp_path):
 # T-0020 added `focus` to AVAILABLE, so "focus on T-1" routes now
 # (test_crew_autopilot_focus.py::test_plain_text_focus_on_routes_now_that_focus_is_available).
 # T-0012 landed `goal`: "work toward ..." routes (test_goal_routes_without_patching).
-_RESERVED = ["take care of the login audit", "pick the goal back up"]
+_RESERVED = ["take care of the login audit"]  # L-0541: goal-resume asks for a slug now
 _NEW_ROWS = ["autopilot status", "take care of the login audit",
              "work toward zero flaky tests", "focus on T-1", "pick the goal back up"]
 _UNDO = "After it runs, tell the user in one line what changed and how to undo it."

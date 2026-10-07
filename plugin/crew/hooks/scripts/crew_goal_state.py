@@ -10,7 +10,9 @@ same answer feeds `crew_autopilot._handoff_ticket` and status's resume line.
 `state` is T-0056's `run.state` (`running`, `stopped`, `done`), or `none`
 (no `run` block: proposed, not started), `missing` (no goal file) or
 `unknown` (a file that cannot be read, is not a JSON object, or has a `run`
-block that is not one of the three). Only `running` is usable. `unknown` is
+block that is not one of the three). Only `running` is usable, and a
+goal file saying `running` beside a `<slug>.stop` file (a stop mark that
+could not reach the goal file, T-0056 review r4) reads as that stop. `unknown` is
 could-not-tell, never "no goal". A `stopped` goal is named with its recorded
 reason and the command that resumes it, and is never taken.
 """
@@ -31,6 +33,32 @@ def _clean(text):
 
 def goal_file(root, slug):
     return os.path.join(root, ".work", "autopilot", f"{slug}.json")
+
+
+def stop_file(root, slug):
+    """`.work/autopilot/<slug>.stop` (T-0056 review r4): written only when a
+    `stopped` or `done` mark could not reach the goal file, so a goal file
+    still saying `running` is never taken as running."""
+    return os.path.join(root, ".work", "autopilot", f"{slug}.stop")
+
+
+def stop_override(root, slug):
+    """None when there is no stop file; else `{"state", "ticket", "reason"}`:
+    its `stopped` or `done`, or `unknown` for one that cannot be read."""
+    path = stop_file(root, slug)
+    if not os.path.lexists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        data = None
+    if not isinstance(data, dict) or data.get("state") not in ("stopped", "done"):
+        return {"state": "unknown", "ticket": None,
+                "reason": f"{slug}.stop (a stop that could not reach the goal file) cannot be read"}
+    return {"state": data["state"], "ticket": None,
+            "reason": _clean(f"{data.get('reason') or ''} (recorded in {slug}.stop: the goal "
+                             "file could not be written)")}
 
 
 def run_state(root, slug):
@@ -64,6 +92,8 @@ def run_state(root, slug):
         return {"state": "unknown", "ticket": None,
                 "reason": "its run state is not running, stopped or done"}
     ticket = run.get("ticket")
+    if state == "running" and stop_override(root, slug) is not None:
+        return stop_override(root, slug)
     return {"state": state, "ticket": ticket if isinstance(ticket, str) else None,
             "reason": _clean(run.get("reason"))}
 
