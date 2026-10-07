@@ -147,8 +147,15 @@ function Resolve-CrewPython {
   # file already contained that guard and the scope report's resolver did
   # not -- one file, two resolvers, one of them hardened.
   #
-  # Two live failure modes, both of which `Get-Command python3, python |
-  # Select-Object -First 1` walks straight into:
+  # Windows audit wave 3, 2026-09-22: widened from metadata-only
+  # (`Get-Command ... | Select-Object -First 1`) to the same execute-and-
+  # verify probe role-write-guard.ps1's copy already carried, matching
+  # `_common.sh`'s `crew_py_strict` twin -- comments elsewhere in THIS file
+  # (see "Built from Resolve-CrewPython, the PROVED resolver" near the shim
+  # build below) already claimed this function ran the candidate; until this
+  # pass it did not.
+  #
+  # Live failure modes this now catches:
   #
   #   1. A `function python { ... }` in a PowerShell profile is returned
   #      AHEAD of any python.exe and its .Source is empty. hooks.json passes
@@ -156,21 +163,84 @@ function Resolve-CrewPython {
   #      rather than a theoretical one. The empty .Source then failed the
   #      `if ($scopePy)` test and the gate reported "no python" on a machine
   #      with python installed -- an unknown wearing the label of a check.
-  #   2. The Store's python.exe App Execution Alias in WindowsApps is a real
-  #      Application with a real .Source, so it resolves and is INVOKED; the
-  #      stub opens the Store instead of running the script.
+  #   2. A WindowsApps App Execution Alias placeholder (no real Python behind
+  #      it) is a real Application with a real .Source, so metadata alone
+  #      resolves and would invoke it; it produces no usable stdout when run
+  #      non-interactively via `-c`, so the execute-and-verify probe below
+  #      rejects it on that, not on its path.
   #
-  # Only real executables, never the WindowsApps shim. Unlike the bash
-  # resolver there is no System32 shim to exclude -- WSL ships a bash
-  # launcher there, nothing ships a python one -- so that filter is
-  # deliberately absent rather than forgotten.
-  $names = @('python3', 'python')
+  # NOT a blanket "reject anything containing WindowsApps" -- that used to
+  # sit here and rejected a genuine Microsoft Store Python install too: the
+  # alias AND the real interpreter it relays to both resolve under a
+  # WindowsApps-rooted path, so the substring match caught the working case
+  # as well as the broken one. See role-write-guard.ps1's copy of this same
+  # function, or `_common.sh`'s `crew_py_strict` header, for the full
+  # rationale.
+  #
+  # Review, 2026-09-22: widened again, from `Select-Object -First 1` back
+  # to `Get-Command -All`, walking and probing EVERY match for a name
+  # before giving up on it. `-First 1` cannot see a real interpreter
+  # shadowed by a same-named profile function -- confirmed directly,
+  # `Get-Command python3 -All` against a PATH carrying both returns
+  # `[Function, Application]` in that order every time, and `-First 1`
+  # keeps only the function, which fails the CommandType check below and
+  # moves to the NEXT NAME rather than trying a further match for the SAME
+  # one. The identical shape applies to a WindowsApps stub ahead of a real
+  # interpreter under the SAME name further down PATH -- exactly the
+  # scope-report "no python; scope not checked" regression, and (for the
+  # matcher run further below, via `$matchPy`) the gate exiting 0 having
+  # verified nothing, this file's own history already names, reintroduced
+  # by a different mechanism. Every candidate is still proved by execution
+  # before being trusted, so walking every match for a name costs nothing
+  # in safety.
+  $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
     foreach ($cmd in $candidates) {
       if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-      if ($cmd.Source -match 'WindowsApps') { continue }
-      return $cmd.Source
+      $global:LASTEXITCODE = $null
+      $output = $null
+      try {
+        # Captured WHOLE, not piped through `Select-Object -First 1` -- see
+        # role-write-guard.ps1's copy of this function for why: that
+        # cmdlet can stop reading as soon as it has one object, racing the
+        # native process's own exit and leaving $LASTEXITCODE unreliable.
+        $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      } catch {
+        $output = $null
+      }
+      if ($LASTEXITCODE -ne 0 -or -not $output) { continue }
+      # MULTI-LINE stdout is rejected, not silently truncated to its first
+      # line -- bash's crew_py_strict captures the WHOLE output as one
+      # string via `$(...)`, so an embedded newline can never equal a real
+      # file's path and its `-x` check fails structurally; PowerShell
+      # instead splits multi-line native output into an array, so that has
+      # to be checked explicitly to reject the same shape.
+      $lines = @($output)
+      if ($lines.Count -ne 1) { continue }
+      $real = $lines[0]
+      if ([string]::IsNullOrEmpty($real)) { continue }
+      # LEADING WHITESPACE is never trimmed away -- bash does not trim it
+      # either, so a leading space prepended to an otherwise-real path
+      # fails the existence check below exactly as it fails bash's `-x`,
+      # and that implicit rejection is the correct parity, not a dedicated
+      # whitespace check.
+      #
+      # Exit 0 and non-empty output is still not proof: a wrapper could
+      # print a plausible-looking path to something that is not actually
+      # there.
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      # NON-EXECUTABLE TARGET: Test-Path above only proves EXISTENCE. On
+      # Windows there is no POSIX-style executable bit to check further --
+      # an .exe's "executability" is its extension, which is already the
+      # proof this file uses. On a POSIX host (the Linux test harness, or
+      # a genuine WSL/Linux run) existence is not enough, matching bash's
+      # `-x`, so UnixMode is checked there too.
+      if ($env:OS -ne 'Windows_NT') {
+        $item = Get-Item -LiteralPath $real -ErrorAction SilentlyContinue
+        if (-not $item -or $item.UnixMode -notmatch 'x') { continue }
+      }
+      return $real
     }
   }
   return ''

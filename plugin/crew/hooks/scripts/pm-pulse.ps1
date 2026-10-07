@@ -42,23 +42,62 @@ function Resolve-CrewPython {
   # copies still agree, because a hand-copy with no guard is this repository's
   # most repeated defect.
   #
-  # What the old one-liner cost HERE is worse than in verify-gate. This hook
-  # exits 2 to block the stop and hand the PM's findings back to the model.
-  # hooks.json registers it with no -NoProfile, so a `function python { }` in
-  # a user profile is returned AHEAD of any python.exe with an empty .Source;
-  # that empty value then failed `if (-not $py)` and the hook exited 0. The
-  # PM's findings, including the blocking ones, were dropped in silence on a
-  # machine with python installed -- the gate wearing the exit code of a pass.
-  # The WindowsApps App Execution Alias fails the other way: it is a real
-  # Application with a real .Source, so it resolved and was INVOKED, and the
-  # Store stub does not run pm_pulse.py.
-  $names = @('python3', 'python')
+  # Windows audit wave 3, 2026-09-22: widened from metadata-only to the same
+  # execute-and-verify probe role-write-guard.ps1 and verify-gate.ps1 already
+  # carry, per TODO.md's own entry filed against this file -- this was the
+  # weaker of the two, having neither the execute-to-verify probe nor the
+  # third `py` name. What the gap cost HERE is worse than in verify-gate:
+  # this hook exits 2 to block the stop and hand the PM's findings back to
+  # the model. hooks.json registers it with no -NoProfile, so a
+  # `function python { }` in a user profile used to be returned AHEAD of any
+  # python.exe with an empty .Source; that empty value then failed
+  # `if (-not $py)` and the hook exited 0. The PM's findings, including the
+  # blocking ones, were dropped in silence on a machine with python
+  # installed -- the gate wearing the exit code of a pass.
+  #
+  # NOT a blanket "reject anything containing WindowsApps" -- see
+  # verify-gate.ps1's copy of this function, or `_common.sh`'s
+  # `crew_py_strict` header, for why that also rejected a genuine Microsoft
+  # Store Python install. The execute-and-verify probe below proves the
+  # difference instead of guessing from the path.
+  #
+  # Review, 2026-09-22: widened again, from `Select-Object -First 1` back
+  # to `Get-Command -All`, walking and probing EVERY match for a name
+  # before giving up on it. `-First 1` cannot see a real interpreter
+  # shadowed by a same-named profile function -- confirmed directly,
+  # `Get-Command python3 -All` against a PATH carrying both returns
+  # `[Function, Application]` in that order every time, and `-First 1`
+  # keeps only the function -- which is EXACTLY the profile-function-python
+  # failure mode this file's history already names, now reintroduced by a
+  # different mechanism: the function fails the CommandType check and the
+  # loop moves to the NEXT NAME rather than trying a further match for the
+  # SAME one. The identical shape applies to a WindowsApps stub ahead of a
+  # real interpreter under the SAME name further down PATH. Every
+  # candidate is still proved by execution before being trusted, so
+  # walking every match for a name costs nothing in safety.
+  $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
     foreach ($cmd in $candidates) {
       if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-      if ($cmd.Source -match 'WindowsApps') { continue }
-      return $cmd.Source
+      $global:LASTEXITCODE = $null
+      $output = $null
+      try {
+        $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      } catch {
+        $output = $null
+      }
+      if ($LASTEXITCODE -ne 0 -or -not $output) { continue }
+      $lines = @($output)
+      if ($lines.Count -ne 1) { continue }
+      $real = $lines[0]
+      if ([string]::IsNullOrEmpty($real)) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      if ($env:OS -ne 'Windows_NT') {
+        $item = Get-Item -LiteralPath $real -ErrorAction SilentlyContinue
+        if (-not $item -or $item.UnixMode -notmatch 'x') { continue }
+      }
+      return $real
     }
   }
   return ''

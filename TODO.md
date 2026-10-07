@@ -3643,3 +3643,110 @@ context clear, so the open items live here where they are tracked.
   that prints a plausible path via shell metadata alone (not proven by execution) would
   still be accepted by pm-pulse.ps1 where pm-pulse.sh would reject it. Did not block:
   fixing it means widening a file this ticket did not name.
+
+  **FIXED, a later ticket (crew 0.20.12, ".ps1 WindowsApps parity"), which is exactly the
+  ticket this entry asked for.** `pm-pulse.ps1`'s `Resolve-CrewPython` now carries the same
+  execute-and-verify, three-name (`python3`/`python`/`py`) resolver as
+  `role-write-guard.ps1`'s and the newly-widened `verify-gate.ps1`'s — see
+  `plugin/crew/tests/test_pm_pulse_python_resolver.py`'s
+  `test_the_two_copies_of_the_resolver_still_agree` and
+  `plugin/crew/tests/test_role_write_guard.py`'s
+  `test_role_write_guard_resolver_now_matches_the_others`, both of which now assert
+  equality (not divergence) across all three `.ps1` twins. Left here rather than deleted,
+  matching this file's own convention elsewhere of correcting a stale entry in place
+  instead of removing the record of what it once said.
+
+  **A related, still-open gap found while fixing the above, deliberately NOT fixed here
+  either — same reasoning, narrower scope.** `verify-gate.ps1`'s `-Price` switch (used
+  only by `verify-gate.sh -Price`'s own operator-only entry point, never by the Stop hook)
+  resolves its interpreter with a SEPARATE, still-metadata-only `Resolve-CrewPythonEarly`
+  (`plugin/crew/hooks/scripts/verify-gate.ps1:67-77`), which still carries a blanket
+  `-notmatch 'WindowsApps'` filter. This is the same shape as `verify_price.py`'s already-
+  logged landmine above, and by design: bash's `--price` resolves via plain `crew_py()`,
+  NOT `crew_py_strict` (`plugin/crew/hooks/scripts/verify-gate.sh:18`), so
+  `Resolve-CrewPythonEarly`'s blanket WindowsApps reject is actually STRICTER than its own
+  bash twin, not weaker — the mismatch runs the opposite direction from every other one in
+  this section. Did not fix: `-Price` is operator-only and out of the five resolvers this
+  ticket named (`role-write-guard.ps1`, `pm-brief.ps1`, `platform-sync.ps1`,
+  `verify-gate.ps1`'s MAIN `Resolve-CrewPython`, and `pm-pulse.ps1`); widening it means
+  either adding a `crew_py_strict`-shaped resolver to the bash `--price` path too (a second
+  shim to build, per the entry above) or accepting the asymmetry as intentional, and both
+  are a decision for whoever owns `--price`, not a blocking part of WindowsApps parity for
+  the Stop-hook-reachable resolvers.
+
+  **CORRECTED, same review round that filed the entry above.** Two things about the
+  "FIXED" paragraph above were wrong by the time review finished, both worth recording
+  rather than silently editing away: (1) "across all three `.ps1` twins" should have said
+  five — `pm-brief.ps1` and `platform-sync.ps1` carry the identical resolver too, and are
+  asserted against it by `test_pm_brief_platform_sync_python_resolver.py`'s own parity
+  tests. (2) The resolver shape itself changed again, one review round later: the
+  `Select-Object -First 1` per-name walk that paragraph describes was ITSELF a regression,
+  reverted back to `Get-Command -All` (probing every match for a name, in order, before
+  giving up on it) because `-First 1` cannot see a real interpreter behind a same-named
+  PowerShell profile function — `Get-Command name -All` against a function-shadowed name
+  returns `[Function, Application]`, in that rank order, every time (confirmed directly in
+  `plugin/crew/tests/test_ps1_python_resolver_parity.py`), and hooks.json registers every
+  one of these hooks with no `-NoProfile`, so that shadow is live, not theoretical. The
+  identical shape also hid a real interpreter behind a same-named WindowsApps stub further
+  down PATH. All five `.ps1` resolvers now also match `crew_py_strict` on three further
+  axes review round asked for: a multi-line proof output is rejected rather than silently
+  truncated to its first line, leading whitespace is never trimmed away (both fail the
+  existence check the same way bash's `-x` would), and a non-executable target is rejected
+  via `UnixMode` on a POSIX host (native Windows keeps `Test-Path -PathType Leaf` alone, as
+  before — there is no POSIX executable bit there to check).
+
+- **`verify-gate.ps1` and `pm-pulse.ps1` exit 0 (non-blocking) when NO python resolves at
+  all, unlike `verify-gate.sh`'s bash twin, which the 2026-09-22 "PM ruling" comment
+  (`plugin/crew/hooks/scripts/verify-gate.sh:630-644`) deliberately made fail CLOSED (exit
+  2) for exactly this case: "no python resolving at all must NOT exit 0 ... indistinguishable
+  from a turn that actually passed." `pm-pulse.ps1:110-111` (`if (-not $py) { exit 0 }`) and
+  `verify-gate.ps1`'s `$matchPy = Resolve-CrewPython` (no check on emptiness at all,
+  `plugin/crew/hooks/scripts/verify-gate.ps1:927`, letting an empty `$matchPy` flow
+  downstream into the matcher/classification helpers) both let a python-less Windows host
+  read as an unblocked, silently-unverified turn — the same "unknown collapsing into the
+  safe-looking value" shape CLAUDE.md already names as this repository's recurring defect,
+  just on the flavour the bash-side fix did not reach. Filed rather than fixed here:
+  explicitly out of scope for the ".ps1 WindowsApps parity" review round that found it —
+  "the one that matters" was the WindowsApps rejection itself, and this is a different,
+  pre-existing gap between the two flavours' failure-closed posture that a WindowsApps fix
+  should not also try to close in the same pass.
+
+- **`role-write-guard.sh` fails OPEN (not closed) on the WindowsApps-stub-before-real-python
+  PATH shape, allowing an out-of-scope write through unjudged.** Found by review round 3
+  correcting this ticket's own earlier "bash fails closed here" framing, which was wrong in
+  the direction that matters: `_resolve_role_write_python` (bash's `command -v` sees only the
+  FIRST PATH match for a name and cannot retry a rejected one) legitimately returns nothing
+  when the only `python3` on PATH is a WindowsApps stub with a real interpreter of the SAME
+  name further down — but `role-write-guard.sh:115-117`'s own handling of that is
+  `PY=$(_resolve_role_write_python) || { echo "...allowing it unjudged." >&2; exit 0; }`. No
+  python to judge WITH means the write is ALLOWED, not blocked, so under `guards.roleWrites:
+  block` a `pm`-role write outside its own allowed pattern set goes through unjudged on this
+  exact machine shape — the opposite of what the config asked for. `role-write-guard.ps1`
+  (Windows audit wave 3 + the `.ps1` WindowsApps-parity round) does not have this gap: its
+  `-All` walk finds the real interpreter under the same name and judges the write normally,
+  so the two flavours diverge here on PURPOSE, in the safe direction, and that divergence is
+  asserted (not treated as a bug) by
+  `plugin/crew/tests/test_role_write_guard.py::test_bash_allows_the_write_unjudged_in_the_same_layout`
+  and `::test_windowsapps_stub_with_only_one_name_present_still_resolves`. Filed rather than
+  fixed: closing bash's own fail-open here means widening `_resolve_role_write_python` past
+  what `command -v` alone can do (a second search construct, `command -v -a` / `type -a`,
+  walking every match the same way `-All` does on the ps1 side) — a change to
+  `role-write-guard.sh` itself, out of scope for a `.ps1`-side review round.
+
+- **Every `Resolve-CrewPython` execute-probe (all five `.ps1` resolvers: role-write-guard,
+  pm-pulse, verify-gate, pm-brief, platform-sync) and `crew_py_strict`'s bash twin have NO
+  timeout on the candidate they launch.** `& $cmd.Source -c 'import sys; print(sys.executable)'`
+  (ps1) and `"$candidate" -c '...'` (bash, `_common.sh`'s `crew_py_strict`) both block
+  synchronously on whatever the candidate does — a `python3` on PATH that hangs (waiting on
+  stdin because a wrapper script forgot `-c` handling, a policy-wrapped launcher stuck behind
+  a network call, a genuinely stuck process) hangs the WHOLE hook, not just that one
+  candidate, and `-All`'s walk-every-match widening (this round) makes that WORSE in the worst
+  case: a hung first candidate now blocks the resolver from ever reaching a working second
+  one under the same name, where the pre-`-All` `-First 1` shape at least gave up on the name
+  after one hang (for the wrong reason, but with that one accidental upside). Found while
+  implementing the `-All` widening this round, deliberately not fixed here: a timeout needs a
+  decision about WHAT it should be (long enough for a slow-but-real interpreter's first
+  import, short enough not to make every hook noticeably slower) that is not this round's
+  call, and PowerShell's own timeout mechanisms for a synchronous `&` invocation
+  (`Start-Job`/`Wait-Job`, or `System.Diagnostics.Process` with `WaitForExit(ms)`) are a
+  materially bigger change than anything else in this ticket.

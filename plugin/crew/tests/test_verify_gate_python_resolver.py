@@ -60,11 +60,45 @@ _NEEDS_BASH = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 
 def _stub(path):
-    """A file Get-Command resolves as an Application. -PrintPython never runs
-    it, so the contents are irrelevant -- only the .exe extension matters."""
+    """A file Get-Command resolves as an Application. Windows audit wave 3
+    widened Resolve-CrewPython to execute-and-verify, so -PrintPython DOES
+    now attempt to run this -- and garbage content behind a real-looking
+    .exe extension fails to launch (not a valid PE), which is exactly the
+    rejection these must-block cases below depend on. The .exe extension is
+    what makes Get-Command classify it as an Application in the first
+    place; the content only needs to make the LAUNCH fail, not merely look
+    unused."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="ascii") as fh:
-        fh.write("rem stub, never executed by -PrintPython" + chr(10))
+        fh.write("rem stub, not a valid executable when actually launched" + chr(10))
+    return path
+
+
+def _real_stub(path):
+    """A REAL, launchable `.cmd` batch file that echoes its OWN path when
+    run -- never the inert `_stub()` above. Review round, 2026-09-22: two
+    must-allow cases below (`test_a_real_python_beside_a_stub_still_
+    resolves`, `test_a_profile_function_named_python_does_not_shadow_the_
+    interpreter`) used `_stub()` for the interpreter they expect the
+    resolver to FIND, which only ever looked like a real Application to
+    Get-Command's metadata and was never actually launchable -- once
+    Resolve-CrewPython started executing every candidate (Windows audit
+    wave 3), both cases would have failed closed for the WRONG reason (no
+    candidate anywhere actually runs), silently passing only because
+    neither was ever driven on a real Windows host to notice. Matches
+    test_role_write_guard.py's own `_stub(path, reports=...)` convention.
+
+    LIMITATION, noted rather than worked around: `echo <path>` is
+    UNESCAPED cmd.exe text -- `tmp_path`'s own fixtures never contain `&`,
+    `^`, `%`, parens, or non-ASCII characters, so this has never needed to
+    quote or escape them, but a profile whose OWN path did (a Windows
+    username with an accent, for instance) would need this stub widened
+    first; batch-quoting rules are their own trap (`%` needs doubling,
+    `^` is the escape character, `&`/`(`/`)` break the command
+    unless quoted) and are not worth adding speculatively."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="ascii") as fh:
+        fh.write("@echo off\r\necho " + path + "\r\n")
     return path
 
 
@@ -106,6 +140,38 @@ def test_the_windowsapps_stub_is_never_returned(tmp_path):
 
 
 @_WINDOWS_ONLY
+def test_a_store_python_alias_relaying_to_a_real_interpreter_still_resolves(tmp_path):
+    """Must-allow: Windows audit wave 3. A genuine Microsoft Store Python
+    install resolves through EXACTLY this layout -- the alias at
+    `...\\WindowsApps\\python3.exe` relays to a real interpreter whose own
+    `sys.executable` is ALSO WindowsApps-rooted. Before this fix
+    Resolve-CrewPython was metadata-only here (no execute-and-verify probe
+    at all, unlike role-write-guard.ps1's copy), so any real Application
+    with a real .Source was returned unproven -- and the STUB (not the
+    relay) is what would have been handed to the matcher and the shim
+    build. This test proves the widened resolver both executes the
+    candidate AND does not reject a working relay for its WindowsApps
+    path."""
+    apps = tmp_path / "WindowsApps"
+    relay_target = str(
+        apps / "PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0"
+        / "python.exe")
+    os.makedirs(os.path.dirname(relay_target), exist_ok=True)
+    with open(relay_target, "w", encoding="ascii") as fh:
+        fh.write("placeholder")
+    stub = apps / "python3.cmd"
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.write_text("@echo off\r\necho " + relay_target + "\r\n",
+                     encoding="ascii")
+
+    resolved = _print_python([str(apps)])
+    assert resolved == relay_target, (
+        "a Store-Python alias relaying to a real interpreter under "
+        "WindowsApps must be ACCEPTED, not rejected for its path. got: "
+        + resolved)
+
+
+@_WINDOWS_ONLY
 def test_a_real_python_beside_a_stub_still_resolves(tmp_path):
     """Must-allow, and the half that stops the fix above becoming "never find
     python". A genuine python3.exe must still be returned even when a
@@ -113,11 +179,11 @@ def test_a_real_python_beside_a_stub_still_resolves(tmp_path):
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     _stub(str(apps / "python3.exe"))
-    _stub(str(real / "python3.exe"))
+    real_exe = _real_stub(str(real / "python3.cmd"))
 
     resolved = _print_python([str(apps), str(real)])
-    assert resolved.lower().startswith(str(real).lower()), (
-        "the real python3.exe must win over the WindowsApps stub. got: "
+    assert resolved == real_exe, (
+        "the real python3.cmd must win over the WindowsApps stub. got: "
         + resolved
     )
 
@@ -150,7 +216,7 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
     test here may do.
     """
     real = tmp_path / "tools"
-    _stub(str(real / "python3.exe"))
+    real_exe = _real_stub(str(real / "python3.cmd"))
 
     script = (
         _resolver_source() + chr(10) +
@@ -170,10 +236,11 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
     )
     assert result.returncode == 0, result.stderr
     resolved = result.stdout.strip()
-    assert resolved.lower().startswith(str(real).lower()), (
+    assert resolved == real_exe, (
         "a PowerShell function named python/python3 shadowed the real "
-        "interpreter. Get-Command returns it first and its .Source is empty, "
-        "so the gate reports 'no python' on a machine that has python. got: "
+        "interpreter. Get-Command puts it FIRST in -All's own result order, "
+        "so a resolver that only ever looks at the first match can never "
+        "reach the real one behind it. got: "
         + repr(resolved)
     )
 

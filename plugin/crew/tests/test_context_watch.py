@@ -27,7 +27,15 @@ _BASH = crew_fixtures.resolve_bash()
 _HAS_BASH = _BASH is not None
 _HAS_PWSH = shutil.which("pwsh") is not None
 
-FLAVORS = [f for f, have in (("sh", _HAS_BASH), ("ps1", _HAS_PWSH)) if have]
+# Parametrized with BOTH ids always present, each carrying its own skip --
+# not `[f for f, have in (...) if have]`, which drops a missing flavour's id
+# from collection entirely rather than reporting it. A vanished [ps1] case
+# reads identically to one that never existed; a skipped one names why it
+# did not run.
+FLAVORS = [
+    pytest.param("sh", marks=pytest.mark.skipif(not _HAS_BASH, reason="no bash on PATH")),
+    pytest.param("ps1", marks=pytest.mark.skipif(not _HAS_PWSH, reason="no pwsh on PATH")),
+]
 
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
 
@@ -141,9 +149,11 @@ def _usage_transcript(root, model, used, peak=None, sidechain_total=None,
 
 
 def test_flavors_are_discoverable():
-    # If neither interpreter is on PATH, the parametrized tests below
-    # silently collect zero cases and the suite still reports green.
-    assert FLAVORS, "neither bash nor pwsh is on PATH; cannot test context-watch"
+    # If neither interpreter is on PATH, every [sh]/[ps1] case above still
+    # collects (see FLAVORS above) but reports skipped rather than passed --
+    # this is the one case that must not be silently green either way.
+    assert _HAS_BASH or _HAS_PWSH, (
+        "neither bash nor pwsh is on PATH; cannot test context-watch")
 
 
 @by_flavor

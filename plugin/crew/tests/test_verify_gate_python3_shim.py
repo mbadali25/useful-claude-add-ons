@@ -44,6 +44,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import uuid
 
 import pytest
 
@@ -454,10 +455,19 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     # pre-existing C:\fakepy directory of the user's own was silently
     # reused (`exist_ok=True`) and then DELETED (`shutil.rmtree`) in the
     # `finally` block below - a real, destructive side effect on a real
-    # user's filesystem, not a throwaway fixture. `tmp_path`'s own basename
-    # is already unique per test (pytest guarantees it), so reusing it as
-    # the token needs no extra uniqueness machinery.
-    token = os.path.basename(str(tmp_path))
+    # user's filesystem, not a throwaway fixture.
+    #
+    # `tmp_path`'s own basename is NOT unique ACROSS pytest runs, despite
+    # this comment previously claiming otherwise - pytest numbers tmp_path
+    # leaves as `<test_name><index>` relative to a per-SESSION parent
+    # directory, and that leaf name repeats identically every run. A run
+    # killed before the `finally` block below could run left `/c/<token>`
+    # behind, and the next run's `mkdir(parents=True)` (deliberately with
+    # no `exist_ok`, per the comment above) then raised FileExistsError on
+    # its own leftover. A uuid suffix makes the token unique per RUN, not
+    # only per test within one run, while the no-`exist_ok` guarantee above
+    # still holds: a collision now means something is genuinely wrong.
+    token = os.path.basename(str(tmp_path)) + "-" + uuid.uuid4().hex[:8]
 
     # A "python" whose sys.executable reports a NATIVE WINDOWS path -
     # otherwise a real, working interpreter, so the MATCHER's own
@@ -500,13 +510,20 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     # collision, or a previous run's leftover) and must not be silently
     # reused, let alone later deleted.
     windows_target_dir.mkdir(parents=True)
-    windows_target = windows_target_dir / "python.exe"
-    windows_target.write_text(
-        "#!/bin/sh\nexec \"" + real_py + "\" \"$@\"\n",
-        encoding="utf-8", newline="\n")
-    os.chmod(windows_target, 0o755)
-
+    # write_text/chmod moved INSIDE the try (round-2 review, 2026-09-22):
+    # they used to run before it, so a failure in either one (a full disk,
+    # a permission error) left `windows_target_dir` created but never
+    # cleaned up -- the exact `/c/<token>` FileExistsError landmine this
+    # file's token-uniqueness fix elsewhere exists to prevent, reintroduced
+    # through a different code path. The `finally` below now covers the
+    # whole lifetime of the directory it removes, not just the run.
     try:
+        windows_target = windows_target_dir / "python.exe"
+        windows_target.write_text(
+            "#!/bin/sh\nexec \"" + real_py + "\" \"$@\"\n",
+            encoding="utf-8", newline="\n")
+        os.chmod(windows_target, 0o755)
+
         result = _run(root, tools_dir)
     finally:
         # Removes only the unique directory THIS test just created above -
@@ -641,11 +658,13 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
     header comment claimed this file "fails closed" there; it did not,
     until this fix.
 
-    crew_py_strict already rejects any candidate whose resolved path
-    contains WindowsApps (`*/WindowsApps/*` - see _common.sh), so the
-    top-level $PY resolution (now via crew_py_strict, not plain crew_py)
-    skips this stub outright and, with nothing else on PATH, fails closed
-    before the matcher ever runs."""
+    crew_py_strict rejects this candidate not because its path contains
+    WindowsApps (that blanket match was removed - it also caught a genuine
+    Store Python install - see _common.sh's own header) but because
+    running it with `-c "import sys; print(sys.executable)"` proves
+    nothing: the stub prints no output, so the top-level $PY resolution
+    (via crew_py_strict, not plain crew_py) skips it and, with nothing
+    else on PATH, fails closed before the matcher ever runs."""
     marker = tmp_path / "repo" / "ran.marker"
     vmap = {
         "version": 1,
@@ -664,9 +683,10 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
         if real:
             os.symlink(real, os.path.join(tools_dir, name))
     # The real shape: a WindowsApps App Execution Alias, in a directory
-    # whose path literally contains "WindowsApps" - crew_py_strict's own
-    # rejection pattern - that prints nothing and exits 0 for ANY
-    # invocation, exactly the observed stub behaviour.
+    # whose path literally contains "WindowsApps", that prints nothing and
+    # exits 0 for ANY invocation - exactly the observed stub behaviour. The
+    # WindowsApps-shaped path is not itself what gets this rejected any
+    # more (see the docstring above); the empty output is.
     windows_apps_dir = os.path.join(tools_dir, "WindowsApps")
     os.makedirs(windows_apps_dir, exist_ok=True)
     stub = os.path.join(windows_apps_dir, "python3")
@@ -674,8 +694,8 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
         fh.write("#!/bin/sh\nexit 0\n")
     os.chmod(stub, 0o755)
     # WindowsApps stubs are typically encountered ahead of a user's real
-    # tools on a fresh PATH - putting it first here proves the REJECTION
-    # PATTERN is what saves this, not merely a favourable PATH order.
+    # tools on a fresh PATH - putting it first here proves the EMPTY-OUTPUT
+    # PROOF FAILURE is what saves this, not merely a favourable PATH order.
     combined_path = windows_apps_dir + os.pathsep + tools_dir
 
     env = dict(os.environ, PATH=combined_path, CLAUDE_PROJECT_DIR=str(root))
