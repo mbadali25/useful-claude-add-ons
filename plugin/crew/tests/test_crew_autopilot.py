@@ -2659,6 +2659,8 @@ def _main_row(status="hold", other=None, why=""):
 
 @pytest.mark.parametrize("row, words", [
     (_main_row(), "/main/.work/INDEX.md says `hold`"),
+    (_main_row("cancelled"), "/main/.work/INDEX.md says `cancelled`"),
+    (_main_row("superseded"), "/main/.work/INDEX.md says `superseded`"),
     (_main_row(None, (("here", "done"), ("main", "hold"))), "cannot tell whether a gate holds"),
     (_main_row("done", why="git worktree list failed"), "cannot tell whether the main checkout"),
 ])
@@ -2695,3 +2697,14 @@ def test_pre_merge_stop_rereads_the_gate(tmp_path, monkeypatch):
 
     assert (first.startswith("this checkout's HEAD moved"), "says `hold`" in held,
             held.endswith("never merged")) == (True, True, True), (first, held)
+
+
+def test_an_unreadable_next_md_never_reads_as_successor_not_named(tmp_path):
+    """L-0550 review r4 FIX: a next.md that cannot be read is could-not-tell."""
+    root = _gated(tmp_path, "index", "superseded")
+    _next_md(root, "superseded-by: T-8\nsuperseded-by: T-9\n")
+
+    got = _next(root)
+
+    assert (got["phase"], "successor: cannot tell" in got["reason"],
+            "successor not named" in got["reason"]) == ("closed", True, False), got

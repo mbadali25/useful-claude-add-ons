@@ -84,11 +84,11 @@ def _names_ids(line, ticket):
                and item.casefold() != ticket.casefold() for item in ids)
 
 
-def successor(folder, word=None, fields=None):
+def successor(folder, word=None, fields=None, problems=None):
     """` (split-into: ...)` from spec.md's lines above its first `##`; else,
-    for `superseded`, next.md's ` (superseded-by: T-9, from next.md)` or
-    NO_SUCCESSOR; else ''. `fields` is next.md as `view` read it (read here
-    when None and needed)."""
+    for `superseded`, next.md's ` (superseded-by: T-9, from next.md)`, a
+    could-not-tell naming next.md's problem, or NO_SUCCESSOR; else ''. `fields`
+    and `problems` are next.md as `view` read it (read here when None)."""
     for line in (crew_common.read_text(os.path.join(folder, "spec.md")) or "").splitlines()[1:]:
         if line.startswith("##"):
             break
@@ -97,9 +97,12 @@ def successor(folder, word=None, fields=None):
     if word != "superseded":
         return ""
     if fields is None:
-        fields = crew_ticket_state.read_next(folder)[0]
+        fields, problems = crew_ticket_state.read_next(folder)
     if fields.get("superseded-by"):
         return f" (superseded-by: {fields['superseded-by']}, from next.md)"
+    unread = [p for p in problems or [] if p.startswith("next.md")]
+    if unread:
+        return f" (successor: cannot tell - {'; '.join(unread)})"
     return NO_SUCCESSOR
 
 
@@ -146,7 +149,7 @@ def gate(top, ticket, index_status, folder, questions, answer, evidence):
         return None, view
     if word in CLOSING:
         return answer("closed", True, f"{where}: nothing left in this ticket"
-                      + successor(folder, word, view["next"])), view
+                      + successor(folder, word, view["next"], view["problems"])), view
     decision = None
     if word == "hold":
         why = _hold_reason(view)
@@ -190,7 +193,7 @@ def hold_reason(top, ticket, row):
         (here, mine), (main, theirs) = row["other"]
         return (f"{here} says `{mine}` and {main} says `{theirs}` for {ticket}: cannot tell "
                 "whether a gate holds it - nothing ships")
-    if row.get("status") in GATES:
+    if row.get("status") in GATES + CLOSING:
         return (f"{row.get('source') or '.work/INDEX.md'} says `{row['status']}` for {ticket} - "
                 "nothing ships until the owner changes it")
     if row.get("why"):
