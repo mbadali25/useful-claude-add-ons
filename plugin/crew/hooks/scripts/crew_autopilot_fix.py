@@ -40,6 +40,7 @@ import collections
 import os
 import re
 
+import crew_autopilot_stops
 import crew_ticket
 import review_patch
 
@@ -127,7 +128,7 @@ def _counts_disagree(counts, findings):
     return ""
 
 
-def decide(top, ticket, policy, ledger, latest, answer, toward):
+def decide(top, ticket, policy, ledger, latest, answer, toward, deep=True):
     """None, a cause string, or the phase dict; see the module docstring."""
     folder = crew_ticket.ticket_dir(top, ticket)
     if policy in (STOP, CLEAN_ONLY):
@@ -136,6 +137,8 @@ def decide(top, ticket, policy, ledger, latest, answer, toward):
     if policy != FIX:
         return (" - autopilot.reviewPolicy could not be told (the config could not be read), "
                 "so autopilot does not fix it")
+    if not deep:  # L-0551: whether the fix is complete needs a bundle rebuild
+        return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_REVIEW)
     left = ledger.get("rounds_left")
     if isinstance(left, bool) or not isinstance(left, int):
         return cause + f"rounds_left is {left!r}, not an integer: could not tell"

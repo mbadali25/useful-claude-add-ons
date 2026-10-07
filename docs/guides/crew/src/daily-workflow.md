@@ -190,6 +190,17 @@ not match CI's font hinting and subpixel rendering, and fails every later run fo
 reasons unrelated to the change under test. Outside that image the visual rule reports
 **UNVERIFIED**, not a pass; see [Troubleshooting](troubleshooting.md).
 
+## What is waiting on me
+
+`/crew:status` prints one `waiting` line: how many open tickets are stopped on
+you. `/crew:status --owner` lists them, one line per ticket with the command
+to type or the question to answer, for example `T-5  approve  /crew:approve
+T-5`. The list comes from the same phase table `/crew:autopilot` uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as `review-unread`, and
+`/crew:autopilot status <id>` reads it. No `.work/INDEX.md` prints `waiting
+unknown (...)`, never "nothing on you".
+
 ## If something refuses
 
 | Refusal | Means | Do |

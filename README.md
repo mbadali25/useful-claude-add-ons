@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.15**: `/crew:status --owner` and the `waiting` line. `/crew:status` now says how many open tickets are waiting on you, and `/crew:status --owner` lists them, one line each with the command to type or the question to answer.
 - **crew 1.1.15**: Every autopilot stop names the owner decision it asks for, never a mechanical step. When `/crew:autopilot` stops, it now says which decision is yours (accept the review, approve the plan, answer a question, look at something it could not tell, ...) and no longer tells you to run a refresh, a graph build, the next review round or a crew helper.
-- **crew 1.1.15**: Autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview`. A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy: fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK and FIX test-first, records the fixes, refreshes and runs the next round itself. The default (`stop`) leaves today's behaviour unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

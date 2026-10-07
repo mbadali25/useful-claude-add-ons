@@ -39,7 +39,7 @@ import test_crew_autopilot_ship as ship_fixtures
 T = "T-1"
 SCRIPTS = os.path.dirname(crew_autopilot.__file__)
 WALKED = ("crew_autopilot.py", "crew_autopilot_gates.py", "crew_autopilot_docs.py",
-          "crew_autopilot_split.py")
+          "crew_autopilot_split.py", "crew_autopilot_fix.py")
 DOCS_OK = {"state": crew_autopilot_docs.DOCS_OK, "missing": [], "reason": ""}
 
 
@@ -602,6 +602,28 @@ def s_slices_fail(tmp, mp):
     return _next(root)
 
 
+def _shallow(root):
+    return crew_autopilot._phase(str(root), T, policy=False, deep=False)  # pylint: disable=protected-access
+
+
+def u_review(tmp, _mp):
+    root = _approved(tmp)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    return _shallow(root)
+
+
+def u_ship(tmp, mp):
+    return _shallow(_done(tmp, mp, pr=_pr("NONE")))
+
+
+def u_fix(tmp, _mp):
+    root = _approved(tmp)
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"reviewPolicy": "fix-and-rereview"}}))
+    _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
+    return _shallow(root)
+
+
 # (site fragment, builder, phase, decision); decision None: a resume or route stop.
 CASES = [
     ('answer("closed", True, reason)', b_finished_closed, "closed", "closed"),
@@ -680,6 +702,9 @@ CASES = [
     ('answer("split-approval"', s_approval, "split-approval", "approve-split"),
     ("which arrives with {SLICES_ARRIVE}", s_slices_unknown, "split-check-unknown", "look"),
     ("the plan's ## PR slices fail", s_slices_fail, "plan", "fix-contract"),
+    ("crew_autopilot_stops.UNREAD_REVIEW)", u_review, "review-unread", "look"),
+    ("crew_autopilot_stops.UNREAD_SHIP)", u_ship, "review-unread", "look"),
+    ("crew_autopilot_stops.UNREAD_REVIEW)", u_fix, "review-unread", "look"),
 ]
 IDS = [f"{i:02d}-{case[1].__name__}" for i, case in enumerate(CASES)]
 

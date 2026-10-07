@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.15: `/crew:status --owner` and the `waiting` line (L-0551)
+
+- **Summary.** `/crew:status` now says how many open tickets are waiting on you, and
+  `/crew:status --owner` lists them, one line each with the command to type or the question to
+  answer.
+- **How.** New `hooks/scripts/crew_autopilot_owner.py`: `owner_items` asks autopilot's own phase
+  table (`_phase(policy=False, deep=False)`) about every open ticket and every ticket folder with no
+  INDEX row, so the list agrees with `/crew:autopilot`. `deep=False` stops at `review-unread` where
+  `next` would rebuild a review bundle or ask gh; the list never does either and writes nothing.
+- **Could not tell.** No `.work/INDEX.md`, or a module that cannot be imported, prints `waiting
+  unknown (<why>)`; a ticket whose phase read raises is counted as could-not-tell, never dropped.
+- **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
+  the line and 0.13s without, on a 4-CPU container shared with other builders.
+
 ### Changed — crew 1.1.15: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
 
 - **Summary.** When `/crew:autopilot` stops, it now says which decision is yours (accept the

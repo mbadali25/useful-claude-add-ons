@@ -1606,6 +1606,17 @@ Obsidian vault). A CLI the commands call, not a hook.
   which walks `crew_autopilot.py` and the `crew_autopilot_*.py` modules handed
   `answer`; `crew_ship.merged_phase`'s stops reach `next` through the same
   `answer` but its module is not walked. The mutations are L-0668.
+- DERIVED (L-0551; measured on this tree): `_phase` takes `deep`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:977`); `deep=False` stops at
+  `review-unread` (`crew_autopilot_stops.UNREAD`) where `next` would rebuild a
+  bundle (`plugin/crew/hooks/scripts/crew_autopilot.py:1401`, and in
+  `crew_autopilot_fix.decide`) or ask gh
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:460`). `crew_autopilot_owner.owner_items`
+  (`plugin/crew/hooks/scripts/crew_autopilot_owner.py:87`, actions in `OWNER_ACTIONS` `:36`)
+  reads every open ticket that way; `crew_status.py` prints its count as the
+  `waiting` line (`plugin/crew/hooks/scripts/crew_status.py:522`, `waiting_line` `:477`)
+  and `--owner` (`owner_lines` `:494`). It lives outside `crew_autopilot.py` for
+  the line cap (C-0034); the spec named `crew_autopilot.owner_items`.
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a

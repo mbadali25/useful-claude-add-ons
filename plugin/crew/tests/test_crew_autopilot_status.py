@@ -1289,3 +1289,162 @@ def test_closed_reads_a_cancelled_header(tmp_path):
     _ticket(root, header="status: cancelled   risk: high")
 
     assert crew_autopilot._closed(str(root), T) is True  # pylint: disable=protected-access
+
+
+# --- L-0551: owner_items, what waits on the owner -----------------------------
+
+import crew_autopilot_owner  # noqa: E402  pylint: disable=wrong-import-position
+import review_patch  # noqa: E402  pylint: disable=wrong-import-position
+
+
+def _owner_fixture(tmp_path):
+    """One ticket per owner stop, plus the ones autopilot drives or nobody does."""
+    root = make_repo(tmp_path, mode="off")
+    rows = []
+
+    def add(ticket, status="ready", **kwargs):
+        _ticket(root, ticket=ticket, status=status, **kwargs)
+        rows.append(f"{ticket} | {status} | high | r | t")
+
+    add("T-1", direction=False)                                   # brainstorm
+    add("T-2", status="direction")                                 # direction-approval
+    add("T-3")                                                     # open-questions
+    _write(root / ".work" / "tickets" / "T-3" / "spec.md",
+           _spec_text("T-3") + "\n## Open questions\n- which tracker?\n")
+    add("T-4", plan=False)                                         # spec fails validate
+    _write(root / ".work" / "tickets" / "T-4" / "spec.md", "# T-4 bad          status: spec\n")
+    add("T-5")                                                     # approve
+    for ticket in ("T-6", "T-7", "T-8", "T-9", "T-10"):
+        add(ticket)
+    add("T-11", status="merged")                                   # closed
+    _index(root, *rows)
+    for ticket in ("T-6", "T-7", "T-8", "T-9", "T-10"):
+        approve_as_user(root, ticket)
+    ledger = {"T-6": ([_round(1, "FINDINGS"), _round(2, "FINDINGS")], "NEEDS_REPLAN"),  # replan
+              "T-7": ([_round(1, "FINDINGS")], "REVIEWED"),                           # accept-review
+              "T-9": ([_round(1, status="reserved")], None)}                          # reviewer
+    for ticket, (rounds, state) in ledger.items():
+        path = review_ledger.ledger_path(str(root), ticket)
+        _write(path, json.dumps({"ticket": ticket, "budget": 2, "rounds": rounds, "refused": [],
+                                 "state": state or "IN_REVIEW", "receipt": None}))
+    _write(review_ledger.ledger_path(str(root), "T-8"), "{not json")                   # review
+    return root
+
+
+EXPECTED = [("T-1", "brainstorm", "/crew:brainstorm T-1"),
+            ("T-2", "direction-approval", "/crew:brainstorm T-2"),
+            ("T-3", "open-questions", "answer: spec.md: which tracker?"),
+            ("T-4", "spec", "/crew:spec T-4"),
+            ("T-5", "approve", "/crew:approve T-5"),
+            ("T-6", "replan", "/crew:plan T-6, then /crew:approve T-6"),
+            ("T-7", "accept-review", None),
+            ("T-8", "review", "see /crew:autopilot status T-8")]
+
+
+def test_owner_items_lists_each_stop_with_its_action(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    items = {ticket: (phase, action) for ticket, phase, action in got["items"]}
+    assert [(t, items.get(t, (None, None))[0]) for t, _p, _a in EXPECTED] == [
+        (t, p) for t, p, _a in EXPECTED]
+    assert [items[t][1] for t, _p, a in EXPECTED if a] == [a for _t, _p, a in EXPECTED if a]
+    assert "--accept --ticket T-7" in items["T-7"][1]
+
+
+def test_owner_items_skips_what_autopilot_drives(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    assert [t for t, _p, _a in got["items"] if t == "T-10"] == []  # approved, no round
+
+
+def test_owner_items_skips_closed_tickets(tmp_path):
+    root = _owner_fixture(tmp_path)
+    _write(root / ".work" / "tickets" / "T-5" / "spec.md", _spec_text("T-5", "status: done   risk: high"))
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert ("T-11" in names, "T-5" in names) == (False, False)
+
+
+def test_owner_items_skips_a_reserved_round(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    assert "T-9" not in [t for t, _p, _a in got["items"]] + got["unread"]
+
+
+def test_owner_items_agree_with_phase(tmp_path):
+    root = _owner_fixture(tmp_path)
+    got = crew_autopilot_owner.owner_items(str(root))
+    listed = {ticket: phase for ticket, phase, _a in got["items"]}
+
+    for ticket in [f"T-{n}" for n in range(1, 12)]:
+        phase = crew_autopilot._phase(str(root), ticket, policy=False)  # pylint: disable=protected-access
+        reserved = crew_autopilot._reserved_round(str(root), ticket)  # pylint: disable=protected-access
+        wants = phase["stop"] and phase["phase"] != "closed" and not reserved
+        assert (ticket in listed, listed.get(ticket, phase["phase"])) == (wants, phase["phase"]), ticket
+
+
+def test_owner_items_never_rebuilds_a_bundle(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED",
+            receipt={"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+                     "verdict": "CLEAN"})
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("a bundle rebuild from the owner list")
+
+    monkeypatch.setattr(review_ledger, "check_receipt", boom)
+    monkeypatch.setattr(review_patch, "compute", boom)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["unread"], got["items"], got["unknown"]) == ([T], [], [])
+
+
+def test_owner_items_phase_that_raises_is_unknown_not_dropped(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(crew_autopilot, "_phase", boom)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["unknown"], got["items"]) == ("ok", [(T, "RuntimeError")], [])
+
+
+def test_owner_items_without_an_index_is_unknown(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["why"]) == ("unknown", "no .work/INDEX.md")
+
+
+def test_owner_items_lists_a_folder_with_no_index_row(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _ticket(root, ticket="T-2")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert ("T-2", "direction-approval") in [(t, p) for t, p, _a in got["items"]]
+
+
+def test_phase_deep_default_is_unchanged(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED",
+            receipt={"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+                     "verdict": "CLEAN"})
+    monkeypatch.setattr(review_ledger, "check_receipt", lambda root, ticket: (True, "receipt current"))
+    monkeypatch.setattr(crew_autopilot, "_refresh_state", lambda root, ticket: {
+        "state": "fresh", "command": "", "reason": ""})
+    monkeypatch.setattr(crew_autopilot.crew_autopilot_docs, "_docs_state", lambda root, ticket: {
+        "state": "ok", "missing": [], "reason": ""})
+
+    deep = crew_autopilot._phase(str(root), T)  # pylint: disable=protected-access
+    shallow = crew_autopilot._phase(str(root), T, deep=False)  # pylint: disable=protected-access
+
+    assert ((deep["phase"], deep["stop"]), shallow["phase"],
+            "deep" in crew_autopilot.next_phase.__code__.co_varnames) == (
+        ("done", False), "review-unread", False)

@@ -159,7 +159,7 @@ to CI or to branch protection.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
 | `/crew:spec <ticket id>` | Fill the ticket contract from an approved direction - Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
 | `/crew:split <ticket-id-or-ISSUE-KEY> [--dry-run]` | Split an oversized ticket into 2-5 children with evidence and one confirmation, through `crew_split.py`'s rulebook: files/Obsidian children are minted and the parent becomes `superseded`; Jira as before; SDP stops |
-| `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
+| `/crew:status [--memory \| --approvals \| --owner]` | Read-only crew status for this repo - config, roster, tickets, what waits on you (`--owner`), review budget, gate, codemap, handoff |
 | `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
 | `/crew:upgrade` | Removed - use /crew:migrate, which upgrades a pre-0.20 config itself |

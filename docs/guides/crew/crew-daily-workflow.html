@@ -264,6 +264,15 @@ triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or 
 not match CI's font hinting and subpixel rendering, and fails every later run for
 reasons unrelated to the change under test. Outside that image the visual rule reports
 <strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="what-is-waiting-on-me">What Is Waiting on Me</h2>
+<p><code>/crew:status</code> prints one <code>waiting</code> line: how many open tickets are stopped on
+you. <code>/crew:status --owner</code> lists them, one line per ticket with the command
+to type or the question to answer, for example <code>T-5  approve  /crew:approve
+T-5</code>. The list comes from the same phase table <code>/crew:autopilot</code> uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as <code>review-unread</code>, and
+<code>/crew:autopilot status &lt;id&gt;</code> reads it. No <code>.work/INDEX.md</code> prints <code>waiting
+unknown (...)</code>, never "nothing on you".</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>

@@ -788,3 +788,117 @@ def test_status_gitignore_line_unknown_when_git_fails(tmp_path, monkeypatch):
     lines = crew_status.collect(str(make_repo(tmp_path / "second")))
     assert _gitignore_line(lines) == "gitignore unknown (crew_gitignore.py not importable)"
     assert len(lines) <= crew_status.MAX_LINES
+
+
+# --- L-0551: the waiting line and --owner ---------------------------------------
+
+def _waiting_repo(tmp_path, approvals=2):
+    """`approvals` tickets each awaiting approval (spec and plan, no receipt)."""
+    import scope_fixtures  # pylint: disable=import-outside-toplevel
+    root = scope_fixtures.make_repo(tmp_path, mode="off")
+    rows = []
+    for n in range(1, approvals + 1):
+        ticket = f"T-{n}"
+        folder = root / ".work" / "tickets" / ticket
+        folder.mkdir(parents=True)
+        (folder / "direction.md").write_text("go\n", encoding="utf-8")
+        body = scope_fixtures.SPEC.format(ticket=ticket, touch="- `src/**`")
+        first, rest = body.split("\n", 1)
+        (folder / "spec.md").write_text(f"{first} t          status: spec   risk: high\n{rest}",
+                                        encoding="utf-8")
+        (folder / "plan.md").write_text(scope_fixtures.PLAN.format(files="src/app.py"),
+                                        encoding="utf-8")
+        rows.append(f"{ticket} | ready | high | r | t")
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "INDEX.md").write_text("".join(f"{row}\n" for row in rows), encoding="utf-8")
+    return root
+
+
+def _waiting(out):
+    return [line for line in out.splitlines() if line.startswith("waiting ")]
+
+
+def test_default_report_has_a_waiting_line(tmp_path):
+    done = _run(_waiting_repo(tmp_path))
+
+    assert _waiting(done.stdout) == ["waiting  2 on you (/crew:status --owner)"], done.stdout
+
+
+def test_waiting_line_says_nothing_on_you(tmp_path):
+    assert _waiting(_run(_waiting_repo(tmp_path, approvals=0)).stdout) == ["waiting  nothing on you"]
+
+
+def test_waiting_line_names_unread_and_unknown_counts():
+    got = {"state": "ok", "why": "", "items": [("T-1", "approve", "x")], "unread": ["T-2"],
+           "unknown": [("T-3", "RuntimeError"), ("T-4", "OSError")]}
+
+    assert crew_status.waiting_line(got) == (
+        "waiting  1 on you (/crew:status --owner), 1 in review not read, 2 could not tell")
+
+
+def test_waiting_line_is_unknown_when_autopilot_cannot_be_imported(tmp_path, monkeypatch):
+    root = _waiting_repo(tmp_path)
+    real = crew_status.importlib.import_module
+
+    def broken(name, *args):
+        if name == "crew_autopilot_owner":
+            raise ImportError("broken install")
+        return real(name, *args)
+
+    monkeypatch.setattr(crew_status.importlib, "import_module", broken)
+    lines = crew_status.collect(str(root))
+
+    assert [l for l in lines if l.startswith("waiting ")] == [
+        "waiting  unknown (crew_autopilot_owner could not be imported: ImportError)"]
+
+
+def test_waiting_line_is_unknown_without_an_index(tmp_path):
+    root = _waiting_repo(tmp_path, approvals=0)
+    (root / ".work" / "INDEX.md").unlink()
+
+    assert _waiting(_run(root).stdout) == ["waiting  unknown (no .work/INDEX.md)"]
+
+
+def test_owner_view_lists_one_line_per_ticket_with_its_command(tmp_path):
+    done = _run(_waiting_repo(tmp_path), "--owner")
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "waiting  2 on you (/crew:status --owner)",
+        "T-1  approve  /crew:approve T-1", "T-2  approve  /crew:approve T-2"]), done.stdout
+
+
+def test_owner_view_is_read_only(tmp_path):
+    import review_ledger as ledger  # pylint: disable=import-outside-toplevel,reimported
+    root = _waiting_repo(tmp_path, approvals=3)
+    for ticket, rounds, receipt in (
+            ("T-2", [{"round": 1, "status": "completed", "verdict": "FINDINGS",
+                      "bundle_sha256": "a" * 64, "base": "HEAD"}], None),
+            ("T-3", [{"round": 1, "status": "completed", "verdict": "CLEAN",
+                      "bundle_sha256": "a" * 64, "base": "HEAD"}],
+             {"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+              "verdict": "CLEAN"})):
+        path = ledger.ledger_path(str(root), ticket)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"ticket": ticket, "budget": 2, "rounds": rounds,
+                                     "refused": [], "state": "REVIEWED", "receipt": receipt}))
+    (root / "src" / "app.py").write_text("x = 3\n", encoding="utf-8")  # uncommitted
+    before = _stat_tree(root)
+
+    done = _run(root, "--owner")
+
+    assert (done.returncode, _stat_tree(root) == before) == (0, True), done.stdout
+
+
+def test_owner_view_fits_forty_lines(tmp_path):
+    lines = _run(_waiting_repo(tmp_path, approvals=60), "--owner").stdout.splitlines()
+
+    assert (len(lines), lines[0], lines[-1]) == (
+        crew_status.MAX_LINES, "waiting  60 on you (/crew:status --owner)", "... 22 more")
+
+
+@pytest.mark.parametrize("other", ["--memory", "--approvals"])
+def test_owner_and_memory_together_are_refused(tmp_path, other):
+    done = _run(_waiting_repo(tmp_path), "--owner", other)
+
+    assert (done.returncode, done.stdout) == (2, "")

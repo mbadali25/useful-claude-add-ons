@@ -2594,7 +2594,7 @@ def test_next_blocked_stops_a_ship_that_would_act(tmp_path, monkeypatch, ship, p
     first, rest = _spec_text(T, "status: done   risk: high").split("\n", 1)
     _write(root / ".work" / "tickets" / T / "spec.md", f"{first}\ndepends-on: T-2\n{rest}")
     monkeypatch.setattr(crew_autopilot, "_ship_phase",
-                        lambda top, ticket, answer, why, ctx=None: answer(ship[0], ship[1], why))
+                        lambda top, ticket, answer, why, ctx=None, deep=True: answer(ship[0], ship[1], why))
 
     got = _next(root)
 
@@ -2618,7 +2618,7 @@ def test_next_disagreeing_done_and_hold_rows_never_ship(tmp_path, monkeypatch):
     root = _approved(tmp_path, header="status: done   risk: high")
     _index(root, f"{T} | done | high | r | title", f"{T} | hold | high | r | title")
     monkeypatch.setattr(crew_autopilot, "_ship_phase",
-                        lambda top, ticket, answer, why, ctx=None: answer("ship", False, why))
+                        lambda top, ticket, answer, why, ctx=None, deep=True: answer("ship", False, why))
 
     got = _next(root)
 

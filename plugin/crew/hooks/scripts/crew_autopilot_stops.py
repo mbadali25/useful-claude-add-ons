@@ -44,6 +44,12 @@ DECISIONS = tuple(row[0] for row in OWNER_DECISIONS)
 MECHANICAL = ("graphify update", "graphify . --", "/crew:onboard --refresh",
               "/crew:diagram refresh", "/crew:graph --refresh", "--auto-accept --follow-up",
               "crew_autopilot.py resume", "crew_refresh_check.py", "then /crew:review")
+# L-0551: `_phase(deep=False)`'s stop where `next` would rebuild a bundle or ask gh.
+UNREAD = "review-unread"
+UNREAD_REVIEW = ("a finished review round: whether its receipt is current needs a bundle rebuild, "
+                 "which the owner list never runs - see /crew:autopilot status")
+UNREAD_SHIP = ("closed by /crew:done and armed to ship: the PR state needs gh, which the owner list "
+               "never asks - see /crew:autopilot status")
 # The decision a stop at each phase asks for, unless its site names another.
 BY_PHASE = {"brainstorm": "direction", "direction-approval": "direction",
             "open-questions": "answer-question", "needs-owner": "answer-question",

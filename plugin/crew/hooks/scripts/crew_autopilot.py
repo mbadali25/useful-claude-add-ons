@@ -59,28 +59,23 @@ which records `.crew/.scope-base`); `focus --off` drops only the marker entry
 
 ## focus -- a scope lock on one ticket (T-0020)
 
-Focus is explicit (owner decision, 2026-10-05): it is on only once `focus
-<id>` writes this worktree's entry in the focus marker (`focus_path`), and
-`focus off` is the only thing that drops it. The active-ticket pointer alone is
-never a focus, so with no marker entry `route` answers exactly as without
-T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
-cannot be read, is not a file, or holds an entry that is not a ticket is
-`unknown` -- could-not-tell, its own value, never "no focus" -- and
-`focus_guard` then refuses everything but `status`, `sleep` and `wake`, `next`
-stops as `drift`, and `focus off` refuses rather than delete it; each such
-message ends with the removal command for the marker's path
-(`_focus_remedy`). `focus` and `focus off` hold `_focus_lock` around the
-marker's read-modify-write, so two worktrees cannot drop each other's entry. While
-focused, `focus_guard` refuses `run` of any other ticket (named, or from the
-handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
-`focus <id>` while the pointer disagrees with the focus; `sleep` and `wake`
-always run (L-0652). Once the focused ticket's plan is approved, every `next`
-runs the completion audit's own `audit(root, ticket)` (read-only): a changed
-path outside Touch, or an audit that could not run, stops as `drift`.
-`findings_target` names where an out-of-scope finding goes: `TODO.md` when the
-approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every
-`focus` output ends with FOCUS_REMINDER: Claude Code's built-in `/focus` only
-toggles the display.
+Focus is explicit (owner decision, 2026-10-05): it is on only once `focus <id>` writes this
+worktree's entry in the focus marker (`focus_path`), and `focus off` is the only thing that drops
+it. The active-ticket pointer alone is never a focus, so with no marker entry `route` answers
+exactly as without T-0020. No new hook. `focus_state` reads the marker; one that does not parse,
+cannot be read, is not a file, or holds an entry that is not a ticket is `unknown` --
+could-not-tell, its own value, never "no focus" -- and `focus_guard` then refuses everything but
+`status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses rather than delete
+it; each such message ends with the removal command for the marker's path (`_focus_remedy`).
+`focus` and `focus off` hold `_focus_lock` around the marker's read-modify-write, so two worktrees
+cannot drop each other's entry. While focused, `focus_guard` refuses `run` of any other ticket
+(named, or from the handoff in `resume`), `assign`, `goal` and any other subcommand, and all but
+`focus <id>` while the pointer disagrees with the focus; `sleep` and `wake` always run (L-0652).
+Once the focused ticket's plan is approved, every `next` runs the completion audit's own
+`audit(root, ticket)` (read-only): a changed path outside Touch, or an audit that could not run,
+stops as `drift`. `findings_target` names where an out-of-scope finding goes: `TODO.md` when the
+approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`. Every `focus` output ends with
+FOCUS_REMINDER: Claude Code's built-in `/focus` only toggles the display.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -437,7 +432,7 @@ def ship_command(ticket):
     return f"crew_autopilot.py ship --ticket {ticket}"
 
 
-def _ship_phase(top, ticket, answer, why, ctx=None):
+def _ship_phase(top, ticket, answer, why, ctx=None, deep=True):
     """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
     this HEAD (or, under `ship: pr`, once one is open), `ship` while there is work
     left, and a stop for every state that cannot be read. Unarmed, it is
@@ -462,6 +457,8 @@ def _ship_phase(top, ticket, answer, why, ctx=None):
         return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
                       "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
                       "merges")
+    if not deep:  # L-0551: the owner list never asks gh
+        return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_SHIP)
     branch = crew_ship._branch(top)
     if not branch:
         return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
@@ -977,10 +974,11 @@ def _header_only_change(contract, receipt):
     return None
 
 
-def _phase(root, ticket, policy=True):
+def _phase(root, ticket, policy=True, deep=True):
     """`next`'s phase table (module docstring), with no session guard.
     `policy=False` is `status`'s read: the approve and open-questions reasons
-    then name no policy, so status reads the same under every setting."""
+    then name no policy, so status reads the same under every setting. `deep=False` (L-0551's
+    owner list) stops at `review-unread` where a bundle rebuild or a gh call would come."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
@@ -1027,7 +1025,7 @@ def _phase(root, ticket, policy=True):
         if spec_text is not None and _header_status(spec_text) == "done":
             evidence.append(_rel(top, os.path.join(folder, "spec.md")))
             return _done_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
-                               "and spec.md's header is `status: done`")
+                               "and spec.md's header is `status: done`", deep=deep)
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
                       "re-driven, whatever spec.md's header says"
                       + crew_autopilot_gates.successor(folder, status))
@@ -1045,8 +1043,8 @@ def _phase(root, ticket, policy=True):
     header = None if contract["spec.md"] is None else _header_status(
         crew_ticket._text(contract["spec.md"]))  # pylint: disable=protected-access
     if header == "done":
-        return _done_phase(top, ticket, answer, "spec.md header is `status: done`",
-                           None if contract["plan.md"] is None
+        return _done_phase(top, ticket, answer, "spec.md header is `status: done`", deep=deep,
+                           plan_text=None if contract["plan.md"] is None
                            else crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
         return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
@@ -1098,8 +1096,8 @@ def _phase(root, ticket, policy=True):
         return answer("slices", True, ctx["error"])
     if ctx and ctx["piece"]["n"] in ctx["state"]["done"] and ctx["piece"]["n"] < ctx["m"]:
         return sl.with_slice(ctx, crew_autopilot_gates.before_ship(top, ticket, answer, _ship_phase(
-            top, ticket, answer, "done by /crew:done (crew_autopilot.py slice-done)", ctx)))
-    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(top, ticket, evidence, answer)
+            top, ticket, answer, "done by /crew:done (crew_autopilot.py slice-done)", ctx, deep)))
+    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(top, ticket, evidence, answer, deep)
     found = _auto_replan_route(top, ticket, found, answer) if policy else found
     if ctx:
         found = dict(found, reason=f"{sl.label(ctx)}: steps "
@@ -1107,7 +1105,7 @@ def _phase(root, ticket, policy=True):
     return sl.with_slice(ctx, found)
 
 
-def _done_phase(top, ticket, answer, why, plan_text=None):
+def _done_phase(top, ticket, answer, why, plan_text=None, deep=True):
     """The header reads `done`: `_ship_phase`, except on a sliced plan whose
     current slice is not the last (closing now would leave the later slices
     unbuilt) or whose slice state cannot be read (T-0059)."""
@@ -1122,7 +1120,7 @@ def _done_phase(top, ticket, answer, why, plan_text=None):
                       "`in-progress` and runs crew_autopilot.py slice-done - a human "
                       "puts the header back")
     return sl.with_slice(ctx, crew_autopilot_gates.before_ship(top, ticket, answer, _ship_phase(
-        top, ticket, answer, why, ctx)))
+        top, ticket, answer, why, ctx, deep)))
 
 
 def _current_rounds(ledger):
@@ -1363,7 +1361,7 @@ def auto_reject(root, ticket):
 RECEIPT_STALE = "receipt is stale"  # T-0043: check_receipt's one confirmed-stale answer
 
 
-def _review_phase(top, ticket, evidence, answer):
+def _review_phase(top, ticket, evidence, answer, deep=True):
     ledger = _ledger_status(top, ticket)
     evidence.append(_rel(top, ledger["path"]))
     if ledger["state"] == review_ledger.UNKNOWN:
@@ -1389,7 +1387,7 @@ def _review_phase(top, ticket, evidence, answer):
     # guard), so this and /crew:done's --check-receipt cannot disagree.
     if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(receipt, latest, top, ticket):
         if isinstance(fix := crew_autopilot_fix.decide(top, ticket, settings(top)["reviewPolicy"], ledger,
-                                                       latest, answer, _toward_review), dict):  # T-0067
+                                                       latest, answer, _toward_review, deep), dict):  # T-0067
             return fix
         data, state = review_ledger.load(ledger["path"])
         refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
@@ -1400,6 +1398,8 @@ def _review_phase(top, ticket, evidence, answer):
                       "accepts it with review_ledger.py --accept --by <owner>, or rejects it; "
                       "autopilot.reviewPolicy fix-and-rereview makes autopilot fix and re-review a "
                       "round with one left itself" + (fix or ""))
+    if not deep:  # L-0551: the owner list never rebuilds a bundle
+        return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_REVIEW)
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
