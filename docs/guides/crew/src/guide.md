@@ -230,7 +230,11 @@ passed for this exact sha (a promotion row carries the full sha), that a
 rollback is declared, that a person approved it when `requireHuman` is set, that
 an accepted review covers the exact tree being deployed (unless the
 environment opts out with `requireReview: false` and a reason), and that the
-tree is clean.
+tree is clean. The review evidence proves only that the tracked tree deployed
+is one a reviewer was shown under a standing receipt: it does not prove that
+paths the review bundle left out (identical to merged main, or under
+`.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a
+deploy script ships were reviewed, nor who wrote the local ledger.
 
 The guards stop drift and accidents, not a session set on forging local
 state: the receipts are files on your machine. The completion audit and the

@@ -228,7 +228,11 @@ def child_main(tree, sha):
 def _kill_group(proc):
     """Kill the child and everything it started."""
     if os.name == "nt":
-        taskkill = crew_common.resolve_tool("taskkill")
+        # PATH first, then the system copy: a PATH without System32 must not
+        # leave the search's descendants running.
+        taskkill = crew_common.resolve_tool("taskkill") or next(
+            (p for p in (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32",
+                                      "taskkill.exe"),) if os.path.isfile(p)), None)
         if taskkill:
             subprocess.run([taskkill, "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
                            check=False, timeout=5, stdin=subprocess.DEVNULL)
@@ -262,11 +266,38 @@ def search(tree, sha, seconds):
                        "and was stopped")
     try:
         answer = json.loads(out.decode("utf-8", errors="replace"))
+        if proc.returncode != 0:
+            raise ValueError(f"exit {proc.returncode}")
         return answer["covered"] is True, str(answer["detail"])
     except (ValueError, KeyError, TypeError):
         tail = err.decode("utf-8", errors="replace").strip().splitlines()[-1:] or ["no output"]
         return False, (f"could not tell: the receipt check failed (exit {proc.returncode}: "
                        f"{tail[0]})")
+
+
+def committed_map_text():
+    """`.crew/verify.json`'s text, read ONCE, and only when those bytes are
+    the map committed at HEAD. The gate refused an uncommitted map before it
+    ran this, but that check and this read are two moments: an opt-out
+    written in between would otherwise waive review for a deploy (L-0703
+    review r1). git hash-object compares the bytes read, not the file now."""
+    try:
+        with open(".crew/verify.json", "rb") as fh:
+            raw = fh.read()
+        git = crew_common.require_tool("git")
+        hashed = subprocess.run([git, "hash-object", "--stdin"], input=raw, capture_output=True,
+                                check=False, timeout=GIT_SECONDS)
+        head = subprocess.run([git, "rev-parse", "-q", "--verify", "HEAD:./.crew/verify.json"],
+                              capture_output=True, check=False, timeout=GIT_SECONDS,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CouldNotTell(f"the deployment map could not be read and compared with HEAD: {exc}") \
+            from exc
+    mine, committed = hashed.stdout.strip(), head.stdout.strip()
+    if hashed.returncode != 0 or head.returncode != 0 or not mine or mine != committed:
+        raise CouldNotTell(".crew/verify.json as read now is not the map committed at HEAD, so "
+                           "its requireReview cannot be trusted; commit or revert it")
+    return raw.decode("utf-8-sig")
 
 
 def main(argv):
@@ -281,12 +312,10 @@ def main(argv):
         print(f"_promote_review.py: not a full sha: {sha!r}", file=sys.stderr)
         return 2
     try:
-        seconds = budget(deadline)
+        doc = json.loads(committed_map_text(), object_pairs_hook=no_case_twins)
     except CouldNotTell as exc:
         print(f"_promote_review.py: {exc}", file=sys.stderr)
-        return 2
-    with open(".crew/verify.json", encoding="utf-8-sig") as fh:
-        doc = json.load(fh, object_pairs_hook=no_case_twins)
+        return 3
     environments = doc.get("ENVIRONMENTS", {}) if isinstance(doc, dict) else {}
     problems, needing = [], []
     for env in envs:
@@ -297,6 +326,12 @@ def main(argv):
         elif need:
             needing.append(env)
     if needing:
+        # The budget is taken only now, so the map read above counts too.
+        try:
+            seconds = budget(deadline)
+        except CouldNotTell as exc:
+            print(f"_promote_review.py: {exc}", file=sys.stderr)
+            return 2
         covered, detail = search(tree, sha, seconds)
         if not covered:
             for env in needing:

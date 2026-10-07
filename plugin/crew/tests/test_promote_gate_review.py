@@ -218,7 +218,7 @@ def test_a_pass_row_for_a_same_prefix_different_sha_is_refused(flavour, tmp_path
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
-@pytest.mark.parametrize("length", [7, 12, 39])
+@pytest.mark.parametrize("length", [1, 6, 7, 12, 39])
 def test_a_short_row_for_the_deploying_sha_is_refused(flavour, length, tmp_path):
     repo = Repo(tmp_path, SHA_MAP)
     repo.promotions(("development", repo.head[:length], "pass"))
@@ -494,6 +494,30 @@ def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flav
                                path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
     assert code == 2, err
     assert took < 20, took
+    assert pids.exists(), "the hung git was never reached: the case proves nothing"
+    assert _all_dead(pids)
+
+
+@_POSIX_ONLY
+@pytest.mark.slow
+def test_a_slow_first_git_probe_counts_against_the_deadline(tmp_path):
+    """L-0703 review r1: the deadline is taken before the payload read and the
+    map probe, so 8s lost there plus a hung receipt check still end inside
+    the 20s hook timeout."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    shim_dir, pids = _git_shim(tmp_path)
+    once = tmp_path / "slow-once"
+    shim = shim_dir / "git"
+    shim.write_text(
+        "#!/bin/sh\n"
+        f'case "$*" in *HEAD:./.crew/verify.json*) [ -e "{once}" ] || {{ : > "{once}"; sleep 8; }} ;; esac\n'
+        + shim.read_text(encoding="utf-8").split("\n", 1)[1], encoding="utf-8")
+    code, err, took = run_gate("sh", repo, "deploy-dev",
+                               path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    assert code == 2, err
+    assert once.exists(), "the slow probe never ran: the case proves nothing"
+    assert took < 20, took
     assert _all_dead(pids)
 
 
@@ -549,6 +573,46 @@ def test_sh_without_python_refuses_a_map_with_a_repeated_key(tmp_path):
     code, err, _ = run_gate("sh", repo, "ship-it", path=_path_without_python(tmp_path))
     assert code == 2, err
     assert "repeats a key" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_sees_a_match_after_a_newline_only_value(tmp_path):
+    """A value of only newlines matched first and was stripped to nothing by
+    $(...), which read as "no match" (L-0703 review r1)."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, {"environments": {"development": {
+        "note": "\n", "deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}})
+    code, err, _ = run_gate("sh", repo, "x\ndeploy-dev", path=_path_without_python(tmp_path))
+    assert code == 2, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_blocks_when_jq_stalls(tmp_path):
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    bin_dir = pathlib.Path(_path_without_python(tmp_path))
+    (bin_dir / "jq").unlink()
+    (bin_dir / "jq").write_text("#!/bin/sh\nexec sleep 60\n", encoding="utf-8")
+    (bin_dir / "jq").chmod(0o755)
+    code, err, took = run_gate("sh", repo, "deploy-dev", path=str(bin_dir))
+    assert code == 2, err
+    assert took < 20, took
+
+
+def test_the_helper_refuses_a_map_that_is_not_the_committed_one(tmp_path):
+    """The gate refuses an uncommitted map, then the helper reads the map
+    again: an opt-out written in between must not waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    loose = {"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}}
+    repo.write_map(loose)
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           repo.head, str(int(time.time()) + 15), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60)
+    assert proc.returncode != 0, proc.stdout
+    assert "not the map committed at HEAD" in proc.stderr
 
 
 @_POSIX_ONLY

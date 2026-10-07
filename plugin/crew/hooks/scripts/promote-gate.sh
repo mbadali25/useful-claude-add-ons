@@ -44,6 +44,14 @@
 # refusing to end a turn that deployed and recorded nothing.
 set -uo pipefail
 
+# L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
+# (hooks.json) with room for the helper's 2s reap, as a Unix time. A hook that runs out of time is not a block,
+# so the review search below is given this deadline, never a fixed slice of
+# its own: python's start-up and every check before it count against it.
+# Taken FIRST, before the payload read and every git probe (L-0703 review r1),
+# and backdated by SECONDS, the time this shell has already run.
+GATE_DEADLINE=$(( $(date +%s) - SECONDS + 16 ))
+
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 INPUT=$(cat)
@@ -81,11 +89,6 @@ elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/de
   MAP_DIRTY="untracked - in no commit"
 fi
 
-# L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
-# (hooks.json) with room for the helper's 2s reap, as a Unix time. A hook that runs out of time is not a block,
-# so the review search below is given this deadline, never a fixed slice of
-# its own: python's start-up and every check before it count against it.
-GATE_DEADLINE=$(( $(date +%s) + 16 ))
 
 # No python is NOT an opt-out (L-0703). It used to `exit 0` here, so a host
 # without python ran every declared deploy ungated. Without python the map
@@ -106,7 +109,24 @@ if [ -z "$PY" ]; then
     echo "PROMOTION BLOCKED: no usable python and no jq, and this repository has a deployment map (.crew/verify.json). Crew cannot read the command or the map, so it cannot tell whether this command deploys. This is not a pass. Install python 3.8+ (every crew hook needs it)." >&2
     exit 2
   fi
-  NP_CMD=$(crew_strip_cr "$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)")
+  # Every jq call is bounded by what is left of GATE_DEADLINE (a stalled jq
+  # would otherwise outlive the hook timeout, which is not a block); a jq that
+  # runs out of it, or no `timeout` to bound it with, blocks: every caller
+  # treats a non-zero status as could-not-tell (it runs inside $(...), where an
+  # `exit` would leave only the subshell).
+  np_jq() {
+    local left=$(( GATE_DEADLINE - $(date +%s) ))
+    if [ "$left" -lt 1 ] || ! command -v timeout >/dev/null 2>&1; then
+      echo "PROMOTION BLOCKED: no usable python, and the jq fallback cannot be bounded inside the hook's deadline (no time left, or no timeout command). This is not a pass. Install python 3.8+." >&2
+      return 2
+    fi
+    timeout "$left" jq "$@"
+  }
+  NP_RAW=$(printf '%s' "$INPUT" | np_jq -r '.tool_input.command // empty') || {
+    echo "PROMOTION BLOCKED: no usable python, and jq could not read the tool payload, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
+    exit 2
+  }
+  NP_CMD=$(crew_strip_cr "$NP_RAW")
   [ -z "${NP_CMD//[[:space:]]/}" ] && exit 0
   NP_FCMD=$(printf '%s' "$NP_CMD" | LC_ALL=C tr 'A-Z' 'a-z')
   NP_HIT=""
@@ -117,18 +137,21 @@ if [ -z "$PY" ]; then
   # scanned; python refuses such a map) all block as unreadable.
   np_scan() {
     local text=$1 where=$2 dup
-    dup=$(printf '%s' "$text" | jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
+    dup=$(printf '%s' "$text" | np_jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
     if [ -z "${text//[[:space:]]/}" ] || [ "$dup" != "false" ]; then
       echo "PROMOTION BLOCKED: no usable python, and $where is empty, does not parse, or repeats a key, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
       exit 2
     fi
-    NP_HIT=$(printf '%s' "$text" | jq -r --arg c "$NP_FCMD" \
-      'first(.. | strings | select(length > 0) | select((ascii_downcase as $v | ($c | contains($v))) or (ascii_downcase | contains($c)))) // empty' 2>/dev/null) || {
+    # The hit is printed as JSON (`tojson`), never raw: a value of only
+    # newlines would otherwise be stripped by $(...) to nothing and read as
+    # "no match" (L-0703 review r1).
+    NP_HIT=$(printf '%s' "$text" | np_jq -r --arg c "$NP_FCMD" \
+      'first(.. | strings | select(length > 0) | select((ascii_downcase as $v | ($c | contains($v))) or (ascii_downcase | contains($c))) | tojson) // empty' 2>/dev/null) || {
       echo "PROMOTION BLOCKED: no usable python, and jq could not scan $where, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
       exit 2
     }
     if [ -n "$NP_HIT" ]; then
-      echo "PROMOTION BLOCKED: no usable python, and this command and the map's string '$NP_HIT' contain one another, so it may be a declared deploy. Without python crew cannot evaluate any pre-deploy check. This is not a pass. Install python 3.8+." >&2
+      echo "PROMOTION BLOCKED: no usable python, and this command and the map's string $NP_HIT contain one another, so it may be a declared deploy. Without python crew cannot evaluate any pre-deploy check. This is not a pass. Install python 3.8+." >&2
       exit 2
     fi
   }
@@ -606,7 +629,7 @@ def row_sha(cell, full):
     cell = cell.strip().lower()
     if cell == full:
         return "full"
-    if 7 <= len(cell) < len(full) and full.startswith(cell):
+    if 0 < len(cell) < len(full) and full.startswith(cell):
         return "short"
     return None
 

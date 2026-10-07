@@ -680,7 +680,7 @@ function Test-Promoted([string]$name, [string]$sha) {
     # StartsWith(7 characters) admitted any commit sharing the prefix. A
     # strict prefix of the full sha is a short row: never counted, but named.
     $cell = $cells[2].ToLowerInvariant()
-    if ($cell.Length -ge 7 -and $cell.Length -lt $sha.Length -and $sha.StartsWith($cell, [System.StringComparison]::Ordinal)) {
+    if ($cell.Length -ge 1 -and $cell.Length -lt $sha.Length -and $sha.StartsWith($cell, [System.StringComparison]::Ordinal)) {
       if (-not $script:shortRows.ContainsKey($name)) { $script:shortRows[$name] = $cells[2] }
       continue
     }
