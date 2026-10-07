@@ -43,6 +43,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `next` would rebuild a review bundle or ask gh; the list never does either and writes nothing.
 - **Could not tell.** No `.work/INDEX.md`, or a module that cannot be imported, prints `waiting
   unknown (<why>)`; a ticket whose phase read raises is counted as could-not-tell, never dropped.
+  So is a linked worktree whose main checkout cannot be named or whose main `.work/INDEX.md`
+  cannot be read: its open rows would otherwise vanish into "nothing on you".
 - **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
   the line and 0.13s without, on a 4-CPU container shared with other builders.
 
@@ -61,7 +63,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `autopilot.reviewPolicy` (it no longer names the refresh check and the next round, T-0043's
   wording); the ticket-mismatch stop names only `crew_ticket.py activate`; an unsettled-artifact
   stop lists only what a refresh cannot settle; the `docs` and size-check stops carry no command;
-  the max-phases stop's command is `/crew:autopilot <id>`.
+  the max-phases stop's command is `/crew:autopilot <id>`. Owner decision 2026-10-07: the
+  FINDINGS stop then ends "fixed them instead? run the refresh check, then /crew:review"
+  (`FIXED_INSTEAD`, the one mechanical line a stop may carry, on `accept-review` only). A `closed`
+  stop whose successor cannot be told (next.md names `superseded-by:` twice) is `look`.
 - **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
   site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
 

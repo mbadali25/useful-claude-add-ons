@@ -369,7 +369,8 @@ TODAYS_ACCEPT_REVIEW = (
     "round 2 is FINDINGS; review_ledger.py --auto-accept refuses it (round 2 has 1 BLOCK "
     "finding(s); a BLOCK is never auto-accepted); the owner accepts it with review_ledger.py "
     "--accept --by <owner>, or rejects it; autopilot.reviewPolicy fix-and-rereview makes "
-    "autopilot fix and re-review a round with one left itself")  # L-0666: decisions only
+    "autopilot fix and re-review a round with one left itself; fixed them instead? run the "
+    "refresh check, then /crew:review")  # L-0666: decisions only; the last line, owner 2026-10-07
 
 
 def test_default_zero_changes_nothing(tmp_path):

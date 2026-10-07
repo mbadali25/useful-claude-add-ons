@@ -123,6 +123,13 @@ def successor(folder, word=None, fields=None, problems=None):
     return NO_SUCCESSOR
 
 
+def closed(reason, folder, word):
+    """A `closed` stop's `(reason, command, decision)`: `reason` plus the successor;
+    one that cannot be told is a decision for a person to look at (L-0666)."""
+    named = successor(folder, word)
+    return reason + named, "", "look" if "cannot tell" in named else None
+
+
 def _next_problems(view):
     return [p for p in view["problems"] if p.startswith("next.md")]
 

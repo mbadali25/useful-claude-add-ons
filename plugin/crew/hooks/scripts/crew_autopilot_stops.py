@@ -49,6 +49,10 @@ DECISIONS = tuple(row[0] for row in OWNER_DECISIONS)
 MECHANICAL = ("graphify update", "graphify . --", "/crew:onboard --refresh",
               "/crew:diagram refresh", "/crew:graph --refresh", "--auto-accept --follow-up",
               "crew_autopilot.py resume", "crew_refresh_check.py", "then /crew:review")
+# Owner decision 2026-10-07 (L-0666): the FINDINGS stop keeps its accept/reject and adds this one
+# line for an owner who fixed the findings by hand. The only MECHANICAL text a stop may carry, and
+# only an `accept-review` stop (`mechanical`'s `decision`).
+FIXED_INSTEAD = "fixed them instead? run the refresh check, then /crew:review"
 # L-0551: `_phase(deep=False)`'s stop where `next` would rebuild a bundle or ask gh.
 UNREAD = "review-unread"
 UNREAD_REVIEW = ("a finished review round: whether its receipt is current needs a bundle rebuild, "
@@ -81,9 +85,10 @@ def commands(decision, ticket):
     return ("",) + tuple(c.replace(ID, ticket) for c in found)
 
 
-def mechanical(text):
-    """The MECHANICAL shapes `text` holds."""
-    return [shape for shape in MECHANICAL if shape in (text or "")]
+def mechanical(text, decision=None):
+    """The MECHANICAL shapes `text` holds; an `accept-review` stop's FIXED_INSTEAD is not one."""
+    text = (text or "").replace(FIXED_INSTEAD, "") if decision == "accept-review" else text or ""
+    return [shape for shape in MECHANICAL if shape in text]
 
 
 def refresh_reason(status, result, pending, settles, stop=None):

@@ -2710,6 +2710,24 @@ def test_an_unreadable_next_md_never_reads_as_successor_not_named(tmp_path):
             "successor not named" in got["reason"]) == ("closed", True, False), got
 
 
+@pytest.mark.parametrize("where", ["index", "header", "loose"])
+@pytest.mark.parametrize("text, decision", [
+    ("superseded-by: T-8\nsuperseded-by: T-9\n", "look"), ("superseded-by: T-9\n", "closed")])
+def test_a_successor_that_cannot_be_told_is_a_decision_not_closed(tmp_path, where, text, decision):
+    """L-0666 fixer BLOCK: `closed` with "successor: cannot tell" asks a person
+    to look; a named successor stays decision `closed`."""
+    root = _gated(tmp_path, "index" if where == "index" else "header", "superseded")
+    if where == "loose":  # the header site `_phase` reads itself (no `status:` gate line)
+        spec = root / ".work" / "tickets" / T / "spec.md"
+        _write(spec, f"# {T} title status: superseded\n" + spec.read_text(encoding="utf-8").split("\n", 1)[1])
+    _next_md(root, text)
+
+    got = _next(root)
+
+    assert (got["phase"], got["decision"], ("cannot tell" in got["reason"]) == (decision == "look")) == (
+        "closed", decision, True), got
+
+
 def test_an_unreadable_spec_names_no_successor(tmp_path):
     """L-0550 review r5 FIX: a spec.md that cannot be read may name a successor;
     it is could-not-tell, never next.md's T-9 or 'successor not named'."""

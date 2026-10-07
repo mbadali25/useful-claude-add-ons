@@ -1764,6 +1764,29 @@ def test_owner_items_an_unreadable_main_index_is_could_not_tell(tmp_path, monkey
     assert ([t for t, _w in got["unknown"]], got["items"]) == ([T], [])
 
 
+@pytest.mark.parametrize("main_index, words", [
+    (None, "git worktree list failed"), ("unreadable", "could not read"), ("readable", "")])
+def test_owner_items_a_main_checkout_it_cannot_read_is_could_not_tell(
+        tmp_path, monkeypatch, main_index, words):
+    """L-0551 fixer BLOCK: open rows only the main checkout holds must not vanish
+    into "nothing on you" when that checkout cannot be named or its INDEX read."""
+    root = make_repo(tmp_path / "here", mode="off")
+    _index(root, "T-1 | merged | high | r | t")
+    main = tmp_path / "main"
+    if main_index == "unreadable":
+        os.makedirs(str(main / ".work" / "INDEX.md"))
+    elif main_index == "readable":
+        _write(main / ".work" / "INDEX.md", "T-2 | ready | high | r | t\n")
+    found = (str(main), "") if main_index else (None, "git worktree list failed, so the main "
+                                                  "checkout cannot be named")
+    monkeypatch.setattr(crew_autopilot, "_main_checkout", lambda top: found)
+
+    got = _owned(root)
+
+    assert (got["state"], "cannot tell the main checkout's open rows" in got["why"]
+            and words in got["why"]) == (("unknown", True) if words else ("ok", False)), got
+
+
 def test_owner_items_read_an_open_row_whose_folder_is_elsewhere(tmp_path):
     """L-0551 review r6 BLOCK: an open INDEX row with no folder in this checkout stops at
     folder-elsewhere (or no folder) for a person; it is never dropped from the list."""

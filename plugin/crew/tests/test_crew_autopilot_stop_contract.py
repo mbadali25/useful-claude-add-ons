@@ -670,7 +670,7 @@ CASES = [
     ("re-driven, whatever spec.md's header says", b_index_closed, "closed", "closed"),
     ("direction is approved: its .work/INDEX.md status is", b_not_approved_direction,
      "direction-approval", "look"),
-    ("`: nothing left \" \"in this ticket", b_header_closed_loose, "closed", "closed"),
+    ("`: \" \"nothing left in this ticket", b_header_closed_loose, "closed", "closed"),
     ("unanswered under ## Open questions", b_open_questions, "open-questions", "answer-question"),
     ("spec.md fails crew_ticket.validate", b_spec_invalid, "spec", "fix-contract"),
     ("plan.md fails crew_ticket.validate", b_plan_invalid, "plan", "fix-contract"),
@@ -799,7 +799,7 @@ def test_a_stop_command_is_the_decisions_own_command(results, case_id, case):
 @pytest.mark.parametrize("case_id", IDS)
 def test_no_stop_hands_the_owner_a_mechanical_step(results, case_id):
     got = results[case_id]
-    assert crew_autopilot_stops.mechanical(got["reason"]) == [], got["reason"]
+    assert crew_autopilot_stops.mechanical(got["reason"], got.get("decision")) == [], got["reason"]
 
 
 def test_every_stop_site_has_a_case():
@@ -847,7 +847,16 @@ def test_findings_stop_names_the_accept_and_the_policy(tmp_path):
         _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
         reason = _next(root)["reason"]
         assert ("--accept --by <owner>" in reason, "autopilot.reviewPolicy" in reason,
-                "--auto-accept --follow-up" in reason) == (True, True, False), reason
+                "--auto-accept --follow-up" in reason, reason.endswith(
+                    "; " + crew_autopilot_stops.FIXED_INSTEAD)) == (True, True, False, True), reason
+
+
+def test_fixed_instead_is_mechanical_outside_the_findings_stop():
+    """Owner decision 2026-10-07: the carve-out is the one line, on `accept-review` only."""
+    line = crew_autopilot_stops.FIXED_INSTEAD
+    assert (crew_autopilot_stops.mechanical(line, "accept-review"), crew_autopilot_stops.mechanical(
+        line, "look"), crew_autopilot_stops.mechanical(line + "; then /crew:review", "accept-review")) == (
+        [], ["then /crew:review"], ["then /crew:review"])
 
 
 def test_mismatch_stop_names_only_activate(tmp_path, monkeypatch):

@@ -100,14 +100,19 @@ def _same_folder(top, path, name, tickets):
 def _tickets(top):
     """`(tickets, why)`: open INDEX tickets, then folders no INDEX line names
     (compared case-folded: one folder on a case-insensitive filesystem is one
-    ticket); `why` when `.work/tickets/` exists and cannot be listed."""
+    ticket); `why` when `.work/tickets/` exists and cannot be listed, or the main
+    checkout (a linked worktree's) cannot be named or its INDEX cannot be read."""
     found = list(crew_autopilot.open_index_tickets(top))
     # An open row whose folder is not in this checkout (only the main checkout's, or none):
     # `_phase` stops at folder-elsewhere, which a person settles, so it is read too (L-0551 r6).
-    main, _why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
+    main, why = crew_autopilot._main_checkout(top)  # pylint: disable=protected-access
     rows = list(crew_autopilot._index_rows(top))  # pylint: disable=protected-access
+    main_index = os.path.join(main, ".work", "INDEX.md") if main else ""
+    if not why and main_index and os.path.lexists(main_index) and crew_autopilot.read_text(main_index) is None:
+        why = f"could not read {main_index}"  # `_index_rows` reads that as no rows (L-0551 fixer)
+    if why:  # rows only the main checkout holds would vanish: could-not-tell, never "nothing on you"
+        return found, f"cannot tell the main checkout's open rows: {why}"
     if main:
-        main_index = os.path.join(main, ".work", "INDEX.md")
         rows += crew_autopilot._index_rows(top, main_index)  # pylint: disable=protected-access
     for ticket, line in rows:
         if ticket not in found and crew_autopilot._is_open(ticket, line):  # pylint: disable=protected-access

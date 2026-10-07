@@ -1024,9 +1024,8 @@ def _phase(root, ticket, policy=True, deep=True):
             evidence.append(_rel(top, os.path.join(folder, "spec.md")))
             return _done_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
                                "and spec.md's header is `status: done`", deep=deep)
-        return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
-                      "re-driven, whatever spec.md's header says"
-                      + crew_autopilot_gates.successor(folder, status))
+        return answer("closed", True, *crew_autopilot_gates.closed(f".work/INDEX.md marks {ticket} `{status}`: "
+                      "never re-driven, whatever spec.md's header says", folder, status))
     stop, view = crew_autopilot_gates.gate(top, ticket, status, folder, status in DIRECTION_APPROVED,
                                            lambda: _open_questions(folder), answer, evidence)
     if stop:
@@ -1045,8 +1044,8 @@ def _phase(root, ticket, policy=True, deep=True):
                            plan_text=None if contract["plan.md"] is None
                            else crew_ticket._text(contract["plan.md"]))  # pylint: disable=protected-access
     if header in HEADER_CLOSED:
-        return answer("closed", True, f"spec.md header is `status: {header}`: nothing left "
-                      "in this ticket" + crew_autopilot_gates.successor(folder, header))
+        return answer("closed", True, *crew_autopilot_gates.closed(f"spec.md header is `status: {header}`: "
+                      "nothing left in this ticket", folder, header))
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -1297,7 +1296,7 @@ def _auto_replan_route(top, ticket, found, answer):
         if got["capped"]:
             return dict(found, phase="auto-replan-cap", decision="replan", reason=(
                 f"{got['reason']} ({_successor_rows(got['successors'])}) - the owner "
-                f"decides. {found['reason']}"))
+                f"decides. {found['reason'].replace('; ' + crew_autopilot_stops.FIXED_INSTEAD, '')}"))
     if found["phase"] == "replan" and found["stop"]:
         why = _auto_rejected(top, ticket)
         if why:
@@ -1395,7 +1394,7 @@ def _review_phase(top, ticket, evidence, answer, deep=True):
         return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; {how}the owner "
                       "accepts it with review_ledger.py --accept --by <owner>, or rejects it; "
                       "autopilot.reviewPolicy fix-and-rereview makes autopilot fix and re-review a "
-                      "round with one left itself" + (fix or ""))
+                      "round with one left itself" + (fix or "") + "; " + crew_autopilot_stops.FIXED_INSTEAD)
     if not deep:  # L-0551: the owner list never rebuilds a bundle
         return answer(crew_autopilot_stops.UNREAD, True, crew_autopilot_stops.UNREAD_REVIEW)
     ok, message = review_ledger.check_receipt(top, ticket)
