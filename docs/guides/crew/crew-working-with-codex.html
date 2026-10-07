@@ -153,7 +153,9 @@ this project's <code>.codex/config.toml</code>. Create <code>$CODEX_HOME/review.
 those.</p>
 <p>A review that exits non-zero, prints nothing, times out or ends in a failed turn is INCOMPLETE,
 never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
-(for example when Codex answers with its usage-limit <code>error</code> event). What crew relies on from
+(for example when Codex answers with its usage-limit <code>error</code> event). A refunded round that was not a
+usage limit or a timeout is retried once by <code>review_run.py</code> itself, after a 30-second backoff; a
+<code>review: retry:</code> line says whether it was, and why not. What crew relies on from
 Codex's <code>--json</code> stream is in <code>plugin/crew/docs/external-tool-formats.md</code>.</p>
 <p>The review prompt Codex reads ends with a <strong>development standards checklist</strong>: the rules and
 self-check questions of every standard that applies to the change (crew's generic set, any
@@ -168,20 +170,34 @@ self-check is complete and stamped for the exact bundle Codex is about to read. 
 approval receipt is told the gate does not apply, and during a declared incident
 (<code>/crew:emergency</code>) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
-has not passed is refused (exit 5) before it.</p>
+has not passed is refused (exit 9) before it.</p>
 <p>After the standards checklist comes the <strong>recurring-findings checklist</strong>: the defect classes earlier
 reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,
 fail-open handling, PowerShell/Bash drift, guard bypass, version and registration), only those whose
 path globs meet the files the diff changes, a few probes each. It is the same list
 <code>/crew:implement</code> showed the developer before the first plan step. It does not bound the review,
 and an item the diff does not touch is not a finding. When the bundle's manifest cannot say which
-files changed, every class is listed under an <code>UNKNOWN:</code> line rather than none.</p>
+files changed, every class is listed under an <code>UNKNOWN:</code> line rather than none. Each class names
+the development standards it is a concrete instance of (its <code>seen:</code> line, for example GEN-09): the
+list is derived from the standards, a test holds every id it names to one that exists, and where a
+probe and its standard disagree the standard wins.</p>
 <p>Between the verify gate and the self-check, <code>review_run.py</code> lints the bundle's changed files with
 the linters <code>.crew/verify.json</code> lists under <code>preReview</code> (L-0574). Each file is linted at its base
-and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
+and at the bundle, and a finding the bundle adds refuses the round (exit 9, nothing spent) before
 Codex is launched. <code>--allow-unverified</code> does not override a new finding. A linter that could not run,
 or could not parse a changed file, reads <code>COULD NOT CHECK</code>, never a pass. It refuses too, unless
-<code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.</p>
+<code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.
+When the verify gate has not passed the tree, the prompt's test receipts keep their <code>MISSING</code> and
+<code>Gate answer for HEAD</code> lines and add one line saying such a round runs only under
+<code>--allow-unverified</code>, recorded as <code>gate.overridden</code> in <code>review.json</code>, that <code>/crew:done</code> still needs
+a clean gate, and that the missing pass alone is that recorded override, not a defect (T-0101).</p>
+<p>Once the clone's merge train is armed (<code>crew_train.py arm</code>), the gate round takes it before any of
+that linting (L-0526): after the CLEAN receipt and the verify gate, <code>review_run.py</code> calls
+<code>crew_train.acquire</code>, and a ticket that is waiting behind an overlapping one, must merge its base
+first, or meets a train it cannot read is refused with exit 10, nothing spent and Codex not
+launched. An unarmed clone never asks. The prompt also carries a <code>== Catch-up merges (rerere) ==</code>
+block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
+reviews each as a change; a merge log it cannot read is written there as <code>UNREADABLE</code>.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,

@@ -44,8 +44,14 @@ and drops the ones whose content and mode match the base. That is the only
 file content read, and it is what `git diff` read to decide the same thing.
 
 What it cannot see, stated rather than implied: files git ignores (`.crew/*`
-among them) and `.work/`, which is excluded on purpose (as the review bundle
-excludes it).
+among them where the repository's `.gitignore` says so), `.work/`, and crew's
+own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`: the scope base, the
+verify gate's records, the metrics files, logs, markers, locks). The last two
+are excluded on purpose, by name and whatever `.gitignore` says, as the review
+bundle excludes them (T-0068): no ticket makes those changes, and listing them
+deadlocked `/crew:done` in a repository that does not ignore `.crew/`. The
+exclusion is root-anchored (`sub/.crew/.scope-base` is judged), and what crew
+READS -- `.crew/verify.json`, `.crew/config.json`, the code map -- still is.
 
 Paths are printed with control characters escaped (`\n` in a filename would
 otherwise add lines), and the whole message is capped at six PHYSICAL lines.
@@ -76,6 +82,17 @@ failed, no base) is a failure, never a pass.
 
 `completion_audit.py --check --ticket <id> [--root <dir>]` runs the same audit
 whatever `scope.mode` says, prints the verdict, and exits 0 only on a pass.
+
+## As the verify gate's classifier (T-0068)
+
+`completion_audit.py --classify [--root <dir>]` reads newline-separated
+repo-relative paths on stdin and prints one `<kind>\t<path>` line per input
+line, in input order: `bookkeeping` (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
+`artifact` (`crew_refresh_check.REFRESH_ARTIFACT_PATHS` for this repo) or
+`other`. A path holding a tab or a carriage return is `other`, never dropped.
+`classify_paths` is the same judgement in-process: `verify-gate.sh` imports
+it and `verify-gate.ps1` pipes its changed list here, so the two flavours
+share one definition. It reads nothing but the crew config.
 """
 import argparse
 import json
@@ -91,9 +108,10 @@ import scope_base
 
 MAX_LINES = 6
 GIT_TIMEOUT = 60
-# The review bundle's `.work` exclusion: crew's scratch space is never a changed path.
-# `review_patch._EXCLUDE_SPEC` also drops generated `graphify-out/`; this audit keeps it.
-_ONLY = ["--", ".", ":(exclude).work"]
+# The review bundle's `.work` and bookkeeping exclusions: crew's scratch space and
+# its own records are never a changed path (T-0068). `review_patch._EXCLUDE_SPEC`
+# also drops generated `graphify-out/`; this audit keeps it.
+_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()
 
 
 _NULL_OID = frozenset("0")
@@ -265,6 +283,53 @@ def _outside_refresh_artifacts(top, paths, approval):
     return [p for p in paths if not crew_refresh_check.is_refresh_artifact(p, dirs)]
 
 
+BOOKKEEPING, ARTIFACT, OTHER = "bookkeeping", "artifact", "other"
+
+
+def classify_paths(root, paths):
+    """One kind per path in `paths` (module docstring, "As the verify gate's
+    classifier"). When the refresh-artifact list cannot be read, that is
+    said on stderr and nothing is an artifact: an unknown fails toward
+    unmapped, never toward mapped."""
+    try:
+        import crew_refresh_check  # pylint: disable=import-outside-toplevel
+        # Review of f4f9c691, BLOCK: a crew config that exists but does not
+        # parse is could-not-tell, never the default artifact dirs (which would
+        # map an unmapped path under docs/diagrams/).
+        cfg, why = crew_refresh_check._read_config(root)  # pylint: disable=protected-access
+        if why is not None:
+            raise ValueError(f"the crew config is unreadable: {why}")
+        dirs = crew_refresh_check.refresh_artifact_paths(root, cfg)
+        is_artifact = crew_refresh_check.is_refresh_artifact
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        sys.stderr.write(f"completion audit: could not tell which paths are refresh artifacts "
+                         f"({type(exc).__name__}: {shown(str(exc))}); none is treated as one\n")
+        dirs, is_artifact = [], None
+    kinds = []
+    for path in paths:
+        if not isinstance(path, str) or any(c in path for c in "\t\r\n"):
+            kinds.append(OTHER)
+        elif crew_ticket.is_crew_bookkeeping(path):
+            kinds.append(BOOKKEEPING)
+        elif is_artifact is not None and is_artifact(path, dirs):
+            kinds.append(ARTIFACT)
+        else:
+            kinds.append(OTHER)
+    return kinds
+
+
+def _classify_main(root):
+    data = sys.stdin.buffer.read().decode("utf-8", errors="surrogateescape")
+    lines = data.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines = [line[:-1] if line.endswith("\r") else line for line in lines]
+    kinds = classify_paths(os.path.abspath(root), lines)
+    out = "".join(f"{kind}\t{line}\n" for kind, line in zip(kinds, lines))
+    sys.stdout.buffer.write(out.encode("utf-8", errors="surrogateescape"))
+    return 0
+
+
 def audit(root, ticket):
     """(ok, lines). `lines` explains a failure; on a pass it is the merged-main
     line when paths identical to merged main were not counted, else empty."""
@@ -381,10 +446,15 @@ def main(argv):
     if not argv:
         return stop_hook(_payload())
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true", required=True)
-    parser.add_argument("--ticket", required=True)
+    parser.add_argument("--classify", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--ticket")
     parser.add_argument("--root", default=".")
     args = parser.parse_args(argv)
+    if args.classify:
+        return _classify_main(args.root)
+    if not args.check or not args.ticket:
+        parser.error("--check and --ticket are required unless --classify is given")
     try:
         crew_ticket.check_ticket(args.ticket)
         ok, lines = audit(os.path.abspath(args.root), args.ticket)

@@ -168,11 +168,11 @@ shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
 names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
 `.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
-resolve one). Still
-own-file only: the verify gate, the scope and completion wrappers, and
-`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
-lane's own `emergency.standDown` while the bash verify gate and
-`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
+resolve one). The
+verify gate (both flavours), `review_gate.py`, the gate's fingerprint and the
+scope and completion wrappers' no-python proof read the resolved file too
+(L-0681); in those wrappers `unknown` is never proof that `scope.mode` is off.
+`.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -759,7 +759,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-84 of 145 keys are settable in the machine-global file (generated; 61 are repo-only, section 11).
+84 of 147 keys are settable in the machine-global file (generated; 63 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -884,7 +884,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-61 of 145 keys are repo-only (generated; 84 are global-settable, section 10).
+63 of 147 keys are repo-only (generated; 84 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -951,6 +951,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `autopilot.maxLanes` | repo | positive integer or null (checked in `hooks/scripts/crew_wave.py`) | `null` |
+| `autopilot.reviewPolicy` | repo | `stop` \| `clean-only` \| `fix-and-rereview` | `"stop"` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
 <!-- generated:config-keys-repo end -->
 
@@ -2826,8 +2828,11 @@ re-ran from that same old commit, forever. That was the actual 7+ minute Stop
 gate defect this section exists to explain the fix for.
 
 **The per-rule record replaces "everything or nothing."**
-`.crew/.verify-gate.record.json` (machine-local, gitignored, never tracked —
-see the `.crew/*` ignore policy in root `CLAUDE.md`) now tracks status per
+`.crew/.verify-gate.record.json` (machine-local, gitignored by the shipped
+`.crew/*` template — see the ignore policy in root `CLAUDE.md`; where a repo
+does not ignore it, it is crew bookkeeping, `crew_ticket.CREW_BOOKKEEPING_PATHS`,
+excluded by name from the review bundle, the completion audit and the gate's
+own changed list, and refused to Write/Edit by the scope guard, T-0068) now tracks status per
 rule, keyed by a content hash of that rule's `paths`/`run` so it survives
 `.crew/verify.json` being reordered:
 
@@ -3060,6 +3065,8 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
+| `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010

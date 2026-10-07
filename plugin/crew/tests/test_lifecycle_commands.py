@@ -117,6 +117,21 @@ def test_command_names_exact_cli(name, snippets):
 AUTOPILOT_MAX_LINES = 117
 
 
+# T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
+WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
+            "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only",
+            # Group review r2 (rush g0): a wave starts only after T-0030's coord check.
+            "section 2's first paragraph (the `coord` check, T-0030)")
+
+
+def test_autopilot_md_names_wave_cli_strings():
+    text = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [snippet for snippet in WAVE_CLI if snippet not in text] == []
+
+
 def test_autopilot_command_at_most_117_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 
@@ -454,3 +469,17 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+def test_review_names_the_train_exit():
+    """L-0526: `review_run.py` exit 10 (the merge train) is named where the
+    command reads `$REVIEW_STATUS`, explained with its order among the other
+    refusals, and counted among the reasons the Claude fallback gets no ROUND."""
+    text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
+
+    assert "10 train wait" in text
+    assert "Exit 10 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
+    assert "then the merge train with exit 10" in text
+    assert "exit 10 above - the merge train" in text
+    assert "A spent budget skips the train" in text
+    assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text

@@ -503,6 +503,17 @@ KEY_META = {
                                        "with a warning.", "branch", None, "1.0.349",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
+    "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "
+                               "resolved `pm.maxDispatches`, a larger value is capped to it and "
+                               "anything but a positive integer reads as it, each with a "
+                               "warning.", "branch", None, "1.1.6", _S + "crew_wave.py",
+                               type_="positive integer or null"),
+    "autopilot.reviewPolicy": _row("What a wave lane does with its review verdict: `stop` ends "
+                                   "at the first verdict, `clean-only` takes a CLEAN round on "
+                                   "to the done checks, `fix-and-rereview` fixes within the "
+                                   "ledger's rounds. Anything else reads as `stop`, with a "
+                                   "warning; no setting lets a lane accept a review.", "tuple",
+                                   ("stop", "clean-only", "fix-and-rereview"), "1.1.6"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -533,12 +544,6 @@ COMING = (
     _coming("autopilot.mode", "T-0012", "changes values",
             "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
             ("off", "plan", "backlog")),
-    _coming("autopilot.maxLanes", "T-0029", "new key",
-            "Parallel lanes one autopilot wave may run; may only lower the limit.",
-            "the resolved pm.maxDispatches", "repo"),
-    _coming("autopilot.reviewPolicy", "T-0029", "new key",
-            "What a lane does with review findings.", "stop", "repo",
-            ("stop", "clean-only", "fix-and-rereview")),
     _coming("coord.ttlMinutes", "T-0030", "new key",
             "Lifetime of a cross-session coordination claim (1-10080).", "30",
             "set when T-0030 lands"),

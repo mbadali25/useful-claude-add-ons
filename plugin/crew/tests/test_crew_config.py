@@ -408,7 +408,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `dev.roles`) on top of those 143, ported onto release/1.2.0.
     assert "guards.deployWorkflow" in declared
     assert "environments.workflows" in declared
-    assert len(declared) == 145
+    # 147 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
+    # (/crew:autopilot wave) on top of those 145, merging release/1.2.0 into G4.
+    assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
+    assert len(declared) == 147
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

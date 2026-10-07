@@ -17,6 +17,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import ci_receipt
 import review_gate
+import review_prompt
 import review_run
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
@@ -77,6 +78,19 @@ def test_review_run_reserves_on_the_receipt_and_refuses_without_it(monkeypatch, 
 
     assert (code == review_run.EXIT_UNVERIFIED) is refused, capsys.readouterr().err
     assert review_run.gate_record(args)["state"] == (V if upgraded else U)
+
+
+@pytest.mark.parametrize("at_record, overridden", [(U, True), (K, True), (V, False)])
+def test_the_override_line_says_when_review_json_records_it(monkeypatch, at_record, overridden):
+    """Review of 4357247c, FIX2: the prompt is built before the round, and
+    gate_record reads the gate again when review.json is written, so a gate
+    that passes meanwhile records no override. The prompt's line says when."""
+    _wire(monkeypatch, (at_record, "at record time"), (U, "no receipt"))
+    args = types.SimpleNamespace(root="/r", allow_unverified=True)
+
+    assert review_run.gate_record(args)["overridden"] is overridden
+    assert ("records gate.overridden when the gate still does not accept the tree"
+            in review_prompt.OVERRIDE_LINE)
 
 
 def test_the_receipt_builder_never_consults_receipts():

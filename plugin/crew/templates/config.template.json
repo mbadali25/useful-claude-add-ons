@@ -229,7 +229,9 @@
     },
     "ship": "merge",
     "knownFailures": [],
-    "ciTimeoutMinutes": 60
+    "ciTimeoutMinutes": 60,
+    "maxLanes": null,
+    "reviewPolicy": "stop"
   },
   "tickets": {
     "baseBranch": null

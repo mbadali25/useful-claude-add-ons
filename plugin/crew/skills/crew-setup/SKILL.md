@@ -234,7 +234,8 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
   "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null },
-                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60 },
+                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                 "maxLanes": null, "reviewPolicy": "stop" },
   "tickets": { "baseBranch": null },
   "route": { "enabled": false }
 }

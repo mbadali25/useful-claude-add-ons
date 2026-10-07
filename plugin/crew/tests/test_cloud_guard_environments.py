@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 
 import pytest
 
@@ -1183,8 +1184,23 @@ def _special_file(path, kind):
         os.symlink("/dev/zero", path)
 
 
+# L-0608: the hook child's own address-space ceiling. A mutated hook that reads
+# `/dev/zero` unbounded otherwise grows until the sabotage run's cgroup kills
+# it, and systemd then stops every process in that run. 1 GiB is far above
+# what the real hook uses and dies in under a second when the read is
+# unbounded. Linux only: macOS treats RLIMIT_AS as an alias of RLIMIT_RSS, and
+# Windows has no preexec_fn (the special-file tests skip there anyway).
+_HOOK_MEMORY_CAP = 1 << 30
+
+
+def _cap_memory():
+    import resource  # pylint: disable=import-outside-toplevel
+    resource.setrlimit(resource.RLIMIT_AS, (_HOOK_MEMORY_CAP, _HOOK_MEMORY_CAP))
+
+
 def _run_bounded(tmp_path, command):
-    """The python driver with a 30-second ceiling: a hang is a failure."""
+    """The python driver with a 30-second ceiling: a hang is a failure. On
+    Linux the child also has a memory ceiling (`_cap_memory`)."""
     import subprocess  # pylint: disable=import-outside-toplevel
     body = {"tool_name": "Bash", "tool_input": {"command": command},
             "cwd": str(tmp_path / "repo")}
@@ -1193,7 +1209,8 @@ def _run_bounded(tmp_path, command):
             [tcg.sys.executable, tcg._PY],  # pylint: disable=protected-access
             input=json.dumps(body).encode("utf-8"), capture_output=True,
             env=tcg._clean_env(tmp_path, UNATTENDED),  # pylint: disable=protected-access
-            cwd=str(tmp_path), timeout=30, check=False)
+            cwd=str(tmp_path), timeout=30, check=False,
+            preexec_fn=_cap_memory if sys.platform.startswith("linux") else None)
     except subprocess.TimeoutExpired:
         pytest.fail(f"the hook hung on {command!r}: it would time out and "
                     "Claude Code would run the command anyway")
@@ -1203,6 +1220,24 @@ def _run_bounded(tmp_path, command):
     doc = json.loads(lines[-1])
     return doc["hookSpecificOutput"]["permissionDecision"], \
         doc["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"),
+                    reason="the address-space cap is applied on Linux only")
+def test_run_bounded_caps_the_hook_childs_memory(tmp_path, monkeypatch):
+    """L-0608. A mutated hook that reads `/dev/zero` unbounded reached the
+    gate's 6G cgroup in six seconds; the kernel killed it and systemd stopped
+    the whole sabotage run. The child must carry its own ceiling."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import json, resource\n"
+        "soft, _ = resource.getrlimit(resource.RLIMIT_AS)\n"
+        "print(json.dumps({'hookSpecificOutput': {'permissionDecision': 'deny',"
+        " 'permissionDecisionReason': str(soft)}}))\n", encoding="utf-8")
+    monkeypatch.setattr(tcg, "_PY", str(probe))
+    (tmp_path / "repo").mkdir()
+    _, reason = _run_bounded(tmp_path, "true")
+    assert reason == str(_HOOK_MEMORY_CAP), reason
 
 
 @_special

@@ -140,7 +140,8 @@ force says `take`. Exit 0 valid, 1 not.
                                                              (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
-  receipt current, artifacts stale       stale-after-review  stop, nothing written
+  receipt current, artifacts stale       refresh             stop: run it, commit, rerun (L-0522)
+  moved beyond an anchor, or unsettled   stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
 
 T-0074, only with `autopilot.maxAutoReplans` 1 or more (default 0, off):
@@ -335,6 +336,7 @@ PROCEDURE_STOPS = (
     ("review-verdict", "a review phase ends at its verdict: never fix and rerun inside it"),
     ("failed-done-check", "a /crew:done check refused: it is not retried around"),
     ("failed-phase", "a phase's own procedure refused or stopped"),
+    ("scope-not-enforcing", "`/crew:autopilot wave` runs lanes only while scope.mode is block (T-0029)"),
 )
 # A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
@@ -355,8 +357,8 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-SUBCOMMANDS += ("sleep", "wake")  # L-0652: manual sleep mode
-AVAILABLE = frozenset({"status", "run", "focus", "sleep", "wake"})
+SUBCOMMANDS += ("sleep", "wake", "wave")  # L-0652: manual sleep mode; T-0029: crew_wave.py
+AVAILABLE = frozenset({"status", "run", "focus", "sleep", "wake", "wave"})
 # L-0652: the subcommands that take no ticket, not even a second word.
 NO_TICKET = frozenset({"sleep", "wake"})
 ARRIVES = {"assign": "T-0019", "goal": "T-0012"}
@@ -365,6 +367,7 @@ UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
 # The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
 _INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+WAVE = "wave"
 
 # --- ship (T-0011) -------------------------------------------------------------
 # The pure merge rule and the gh/git adapter live in crew_ship.py (batch 7: this
@@ -1271,6 +1274,8 @@ def _review_phase(top, ticket, evidence, answer):
                       f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes then /crew:review")
     ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:
+        return answer(*review_ledger.review_delta.beyond_anchor_stop(message))
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
@@ -1294,8 +1299,7 @@ def _review_phase(top, ticket, evidence, answer):
 
 
 def _toward_review(top, ticket, answer, ok, message, note=""):
-    """Refresh before the next review round, then review; or done once a
-    receipt stands. `note` prefixes the review reason (a refunded round)."""
+    """Refresh, then review; or done once a receipt stands (`note`: a refunded round)."""
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
@@ -1308,10 +1312,8 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     if not ok:
         return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
-    if refresh["state"] != FRESH:
-        return answer("stale-after-review", True, "an artifact is stale after an "
-                      "accepted review; refreshing now would stale the receipt - human "
-                      f"decides. {refresh['reason']}")
+    if refresh["state"] != FRESH:  # L-0522: a refresh command settles it, then a rerun
+        return answer(*review_ledger.review_delta.after_review_refresh(refresh, STALE))
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
@@ -2471,15 +2473,13 @@ def _existing_ticket(top, token):
 
 
 def route(root, first, ticket=""):
-    """`{"sub", "stop", "reason"}` for the command's first argument. First
-    match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
-    (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
-    Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
-    is refused here rather than driven as a ticket. Then T-0020's
-    `focus_guard`, before the AVAILABLE check, so `assign` and `goal` are
-    refused under an explicit focus whether or not they have landed. `ticket` is the word
-    after the subcommand when `route_args` knows it (FOCUS_OFF for `focus
-    off`); a bare id is its own ticket."""
+    """`{"sub", "stop", "reason"}` for the command's first argument. First match, exact and case-
+    sensitive: a SUBCOMMANDS name; nothing or `--goal` (run); an INDEX-shaped id or an existing
+    `.work/tickets/<token>/` (run). Anything else stops: `crew_ticket` accepts `stauts` as an id,
+    so a typo is refused here rather than driven as a ticket. Then T-0020's `focus_guard`, before
+    the AVAILABLE check, so `assign` and `goal` are refused under an explicit focus whether or not
+    they have landed. `ticket` is the word after the subcommand when `route_args` knows it
+    (FOCUS_OFF for `focus off`); a bare id is its own ticket."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     token = first or ""
     if token in SUBCOMMANDS:
@@ -2508,14 +2508,12 @@ NOT_A_TICKET = ("not a ticket id: at most one, INDEX-shaped (T-0018) or naming a
 
 
 def route_args(root, text):
-    """`route` for the command's whole argument string, plus `ticket`: the
-    word after a subcommand, or a bare ticket id itself. The command passes
-    `$ARGUMENTS` whole because Claude Code numbers positional arguments from
-    `$0` and leaves an out-of-range `$N` literal. A second word that is not a
-    ticket, or a third word, stops; it is never read as a ticket -- except
-    `focus off`, exactly, which sets `off` (T-0020): the only route to
-    `focus --off`, so focus is released only when the owner's own arguments
-    say so. A ticket is held to `focus_guard` once it is known."""
+    """`route` for the command's whole argument string, plus `ticket`: the word after a subcommand, or
+    a bare ticket id itself. The command passes `$ARGUMENTS` whole because Claude Code numbers
+    positional arguments from `$0` and leaves an out-of-range `$N` literal. A second word that is
+    not a ticket, or a third word, stops; it is never read as a ticket -- except `focus off`,
+    exactly, which sets `off` (T-0020): the only route to `focus --off`, so focus is released only
+    when the owner's own arguments say so. A ticket is held to `focus_guard` once it is known."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
@@ -2525,6 +2523,9 @@ def route_args(root, text):
         got["off"] = off
     if got["stop"]:
         return got
+    if words[:1] == [WAVE]:  # T-0029: also `set` and `tickets`; crew_wave.py imports this module
+        import crew_wave  # pylint: disable=import-outside-toplevel,cyclic-import
+        return crew_wave.wave_args(top, got, rest)
     if words[:1] and words[0] in NO_TICKET and rest:
         return dict(got, stop=True, reason=f"{AUTOPILOT} {words[0]} takes no other word")
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
@@ -2698,17 +2699,15 @@ def focus_state(root):
 
 
 def focus_guard(root, sub, ticket=""):
-    """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`)
-    may run under this worktree's focus, else the refusal, naming the focused
-    ticket and `/crew:autopilot focus off`. `status`, `focus off` and the
-    NO_TICKET subcommands (L-0652's `sleep` and `wake`, which neither start nor
-    switch work) always run. No marker entry: no focus, everything runs. A
-    marker that could not be read refuses everything else -- whether focus is
-    on cannot be told, so nothing may start or switch work. Focused on T-A: a
-    pointer naming anything but T-A refuses all but `focus T-A` (which
-    re-points it); else `run` with no ticket or T-A, and `focus` alone or
-    `focus T-A`, run; anything else -- another ticket, `assign`, `goal`, a
-    subcommand this does not know -- is refused."""
+    """None when `sub` (with `ticket`, "" for none, FOCUS_OFF for `focus off`) may run under this
+    worktree's focus, else the refusal, naming the focused ticket and `/crew:autopilot focus off`.
+    `status`, `focus off` and the NO_TICKET subcommands (L-0652's `sleep` and `wake`, which neither
+    start nor switch work) always run. No marker entry: no focus, everything runs. A marker that
+    could not be read refuses everything else -- whether focus is on cannot be told, so nothing may
+    start or switch work. Focused on T-A: a pointer naming anything but T-A refuses all but `focus
+    T-A` (which re-points it); else `run` with no ticket or T-A, and `focus` alone or `focus T-A`,
+    run; anything else -- another ticket, `assign`, `goal`, a subcommand this does not know -- is
+    refused."""
     if sub == "status" or sub in NO_TICKET or (sub == "focus" and ticket == FOCUS_OFF):
         return None
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
@@ -3203,12 +3202,10 @@ def _cli_value(value, token=False):
 
 
 def _cli_deploy(args):
-    """deploy-allowed's `(text, json_text, report)`; never raises. Stage 1
-    builds all three from `deploy_allowed` inside one try. Stage 2, on any
-    exception from stage 1 (a raise, a result missing a key, a value JSON
-    cannot dump), builds them from the literal verdict `ask`; the exception
-    only decorates the reason, and one that cannot be described gets a
-    constant."""
+    """deploy-allowed's `(text, json_text, report)`; never raises. Stage 1 builds all three from
+    `deploy_allowed` inside one try. Stage 2, on any exception from stage 1 (a raise, a result
+    missing a key, a value JSON cannot dump), builds them from the literal verdict `ask`; the
+    exception only decorates the reason, and one that cannot be described gets a constant."""
     try:
         result = deploy_allowed(args.root, args.env, args.env_class)
         text = _line(**{"verdict": result["verdict"],
@@ -3346,6 +3343,8 @@ def main(argv):
         fields = {"sub": result["sub"], "stop": int(result["stop"]), "ticket": result["ticket"]}
         if "off" in result:
             fields["off"] = int(result["off"])
+        if result["sub"] == WAVE:
+            fields.update(set=result.get("set", ""), tickets=",".join(result.get("tickets", [])))
         text = _line(**fields, reason=result["reason"])
     elif args.action == "stops":
         result = stops()

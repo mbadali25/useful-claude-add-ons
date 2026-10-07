@@ -112,10 +112,10 @@ AUTOPILOT_MUTATIONS = (
      "(no pointer is set)",
      _T + "test_command_activates_the_ticket_only_without_a_pointer"),
     ("stale-after-review writes crew state", AUTOPILOT,
-     "        return answer(\"stale-after-review\", True, ",
+     "        return answer(*review_ledger.review_delta.after_review_refresh(refresh, STALE))\n",
      "        os.close(os.open(os.path.join(crew_ticket.state_dir(top), \"x\"), "
      "os.O_CREAT | os.O_WRONLY))\n"
-     "        return answer(\"stale-after-review\", True, ",
+     "        return answer(*review_ledger.review_delta.after_review_refresh(refresh, STALE))\n",
      _T + "test_next_stale_after_review_stops_without_writing"),
     # ---- round-2 fixes: human-stop bypasses found after round 1
     ("a blank or unknown INDEX status reads as an approved direction", AUTOPILOT,
