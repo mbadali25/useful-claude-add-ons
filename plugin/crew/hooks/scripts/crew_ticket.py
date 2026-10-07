@@ -520,6 +520,7 @@ CREW_STATE_PATHS = (
     ".crew/incidents/**",                 # crew_incident.py:38 (ARCHIVE_DIR)
     ".crew/backups/**",                   # crew_migrate.py:140 (BACKUP_DIR)
     ".crew/tfplan/**",                    # crew_tfplan.py (read: cloud_guard.py:1858)
+    ".crew/.ghdeploy/**",  # crew_ghdeploy.py STATE_DIR (read: identify, watch, record)
 )
 
 # What crew READS as configuration, policy, approval or a map. It stays

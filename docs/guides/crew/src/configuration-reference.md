@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**150 keys**: 87 settable in the machine-global file, 63 repo-only.
+**152 keys**: 88 settable in the machine-global file, 64 repo-only.
 
 Columns:
 
@@ -321,6 +321,7 @@ Columns:
 | `guards.mergeGate` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | Taking a live repo's merge gate down (read by `/crew:gate`). |
 | `guards.cloudDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive cloud CLI commands. |
 | `guards.sqlDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive SQL. |
+| `guards.deployWorkflow` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.1.16 | A `gh workflow run` or `gh api .../dispatches` of a workflow `environments.workflows` lists. |
 | `guards.prodDatabase` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production database crew may reach. |
 | `guards.prodServer` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production host crew may reach. |
 | `guards.roleWrites` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 0.19.92 | Enforce each role's write scope. Default `off`; a malformed value reads as `block`. |
@@ -347,6 +348,7 @@ Columns:
 |---|---|---|---|---|---|
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
+| `environments.workflows` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects object of glob to string) | 1.1.16 | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
 
 ### `change`
 
@@ -415,13 +417,6 @@ Columns:
 ## Coming (not in code yet)
 
 Keys from approved tickets that have not landed. Each moves into the table above when its ticket lands, because it is then in the code; a test fails until it does (`test_no_coming_key_is_in_code`).
-
-### T-0009
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
-| `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
 
 ### T-0012
 

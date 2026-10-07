@@ -41,6 +41,263 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and three whose anchors G6b or G3c rewrite: L-0651 (k) (`crew_autopilot.py`), L-0671 entry 1
   (`crew_state.py`) and T-0029's "unknown dependencies read as none" (`crew_wave.py`).
 
+### Added — `crew` 1.1.16: autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge (L-0649)
+
+- **Summary.** With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR
+  merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>`
+  for the first `.crew/verify.json` environment with a `github` entry (file order, nonProd before
+  prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for
+  T-0009's class of the entry's dispatch; every non-empty report is printed.
+- **Two stops.** `deploy-target` when the target cannot be told or is not safe to drive (the map
+  unreadable or its probe failing, an entry `check` refuses, `requireHuman`, no `shaInput`, a class unknown, mismatched or
+  crashing, any verdict but `allow`); `failed-deploy` when the newest row for the sha is not all-pass
+  (never re-deployed). All targets all-pass, or no `github` environment, is `closed`. With
+  `deploy: none` (the default) nothing changes. `next` stays read-only: no `gh`, no
+  `crew_ghdeploy.py` subcommand. `settings` no longer says nothing dispatches a deploy.
+
+### Fixed — `crew` 1.1.16: promote-gate no longer matches a fragment of a declared deploy (L-0689)
+
+- **Summary.** Both promote gates treated a command as a declared deploy when either text contained
+  the other, so `git rev-parse HEAD`, `HEAD` or `development` matched a declared
+  `gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)`: the gate
+  wrote `.crew/.deploy-in-flight` and the Stop gate reported "DEPLOY NOT RECORDED" for a deploy that
+  never ran (reproduced). Now a command is a deploy only when it contains the declared text -
+  verbatim, with arguments after it, or wrapped (`cd <dir> && <declared>`), as before.
+- **Breaking.** A map whose real runs are shorter than the declared text (`cd infra && ./deploy.sh
+  prod` declared, `./deploy.sh prod` run) is no longer matched: declare the shortest text every real
+  run contains. promote-gate.ps1 uses the same literal, case-insensitive containment at both sites;
+  `crew_ghdeploy.py check`'s gate simulation follows. A marker an older crew left is documented,
+  not deleted.
+- **Windows.** promote-gate.sh drops every CR from `_promote_tree.py`'s records: Windows Python
+  ends each with CRLF and `$(...)` strips only the last, so in Git Bash `cd <dir> && <declared>`
+  with a further record (`$(git rev-parse HEAD)`) blocked as a directory that does not resolve.
+
+### Fixed — `crew` 1.1.16: promote-gate reads the newest PROMOTIONS.md row for an environment and sha, not the first (L-0665)
+
+- **Summary.** Both promote gates decided `requires` from the FIRST row matching the upstream and the
+  sha, so a failure followed by a fixed re-run stayed blocked, and a pass followed by a later failure
+  still admitted the deploy. Now the newest row (file order) decides; a revoked pass is blocked with
+  "the newest row is not all-pass". No row still blocks as before. A `not-run` row written by
+  `crew_ghdeploy.py record` is revoked by promote's later all-pass row for the same sha.
+
+### Added — `crew` 1.1.16: promote-gate holds a `github` entry's sha input to the reviewed HEAD (L-0648)
+
+- **Summary.** When a command matches an environment with `github` entries, both promote gates bind
+  each dispatch in it to the entry it runs (of the entries whose canonical prefix is in the command
+  and whose `--ref` and inputs the dispatch gives, the longest); if that entry sets `shaInput`, the
+  dispatch must give `-f|--raw-field|-F|--field <shaInput>=<sha>` exactly once, as 40 lowercase
+  hex, equal to the full HEAD of the tree the gate judges. Missing, repeated, short, uppercase, a branch
+  name, a substitution such as `$(git rev-parse HEAD)`, or another commit blocks and says which.
+- **Malformed map.** A `github` that is not an object or a non-empty list of objects makes the map
+  unreadable (blocks every command). One helper, `_promote_github.py`, decides the rule for both
+  flavours, reading the command's inputs with T-0009's reader. An environment with no `github` key,
+  or an entry without `shaInput`, decides as before.
+
+### Added — `crew` 1.1.16: promote-gate.ps1 gates a workflow dispatch of a declared deploy too (L-0664)
+
+- **Summary.** On the PowerShell tool, a command no declared `deploy` contains is now read as a
+  workflow dispatch by the same helper and reader as the Bash flavour (`_promote_dispatch.py
+  --shell powershell`), so `gh workflow run <wf>` with reordered inputs and its `gh api .../dispatches`
+  twin are gated as the environment they deploy, and a dispatch crew cannot read blocks. Before,
+  the PowerShell flavour was containment-only.
+- **Python.** promote-gate.ps1 now resolves python with the shared `Resolve-CrewPython` probe. With no
+  python, a command naming `gh` with `workflow` or `dispatches` blocks when a declared deploy names
+  them too ("This is not a pass"); any other command behaves as before. promote-gate.sh is unchanged.
+
+### Added — `crew` 1.1.16: `crew_ghdeploy.py record` and the `/crew:promote` github sequence (L-0647)
+
+- **Summary.** `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`: a detail line with
+  no pipe character, and on anything but pass the previous all-pass sha, the last 40 lines of the
+  failed-step log (colour codes removed, every pipe shown as a slash, lines clipped to 300) and a
+  `not-run` row. Nothing it writes can be read as a pass row: a forged all-pass row in a log is
+  recorded and `requires` is still unmet, checked against the real promote gates. The file is
+  rebuilt whole through a temp file and `os.replace`; a symlinked PROMOTIONS.md is written through
+  (the link kept), and a dangling one is could-not-tell (exit 3), never a fresh log.
+- **The sequence.** `/crew:promote` gate 2 runs prepare, the dispatch, identify, watch and record
+  for a `github` environment, and `--dry-run` prints `check`'s output; the steps, each exit code
+  and what is hook-enforced versus prose are in the crew-verification skill's new
+  `github-deploy.md`. No automatic rollback: the record names the previous good sha and a person
+  chooses. The troubleshooting guide gains "The run could not be identified".
+
+### Added — `crew` 1.1.16: `crew_ghdeploy.py watch` answers pass, fail or unknown from the run and its deploy job (L-0646)
+
+- **Summary.** `watch` follows the identified run with `gh run watch` in slices that fit the Bash
+  tool's limit (exit 75: call again), then reads `gh run view`. A green run is not a deploy: pass
+  needs conclusion `success`, the `deployJob` job(s) succeeded, and with no `shaInput` the run's head
+  sha is the one deployed. A skipped or absent deploy job, a cancelled run or a sha mismatch is fail;
+  an unreadable view or a run still going at the deadline is unknown (the run is left running).
+- **The watch exit code never decides**, and the run is never cancelled, re-run or approved. The
+  verdict and its reason go into the state file. Each call, run views included, ends inside the Bash
+  tool's 600-second limit; a status `gh` does not report as running or completed is unknown.
+
+### Added — `crew` 1.1.16: `crew_ghdeploy.py identify` names exactly one new workflow run, or could-not-tell (L-0645)
+
+- **Summary.** After the dispatch, `identify` finds the one run it created: a run of `gh run list`
+  that was not in `prepare`'s snapshot, is a `workflow_dispatch` on the ref, was created no earlier
+  than 30 seconds before `prepare`, and carries the correlation id in its title when one was sent.
+  Its id and URL go into the state file.
+- **Never a guess.** Two candidates, none within `identifySeconds`, an unparseable `createdAt`, or a
+  state file that is missing, unreadable or older than 600 seconds is could-not-tell (exit 3) and
+  writes no run id, as is a `run list` answer that arrives after `identifySeconds` (each call is
+  bounded by the time left) or a run with no URL. Its only `gh` call is `run list`.
+
+### Added — `crew` 1.1.16: `crew_ghdeploy.py prepare` refuses or snapshots before a GitHub Actions dispatch (L-0644)
+
+- **Summary.** Before a `github` environment's dispatch, `prepare` checks the entry, asks T-0009's
+  classifier which environment the dispatch deploys to, and confirms the actor, the sha on the remote
+  and (with no `shaInput`) the branch tip; it then records the actor's existing runs so the new one
+  can be found afterwards, and prints the dispatch for the session to run itself.
+- **Refusals** (exit 2, nothing written), in order: an entry problem or `github-none`,
+  `deploy-prefix-mismatch`, `unmapped-workflow`, `unknown-environment`, `class-mismatch`,
+  `actor-unreadable`, `sha-not-on-remote`, `branch-tip-not-head`, `snapshot-unreadable`; a classifier
+  that raises is `classifier-failed`, and an environment name that cannot name a state file is
+  `env-name-path`. A corrupt machine-global `environments` block is `unknown-environment`, as the
+  dispatch guard reads it.
+- **State.** `.crew/.ghdeploy/<env>-<N>.json`, written through a temp file and `os.replace`. Its only
+  `gh` calls are `api user`, two GETs and `run list`; it never dispatches. A `refs/heads/<name>` ref
+  is dispatched as written and queried by its branch name. `check` and `prepare` now
+  share one entry validator (`validated`).
+
+### Added — `crew` 1.1.16: promote-gate gates a workflow dispatch of a declared deploy, in either spelling (T-0062)
+
+- **Summary.** On the Bash tool, `gh workflow run <wf>` with its inputs in any order and its REST
+  twin `gh api -X POST .../actions/workflows/<wf>/dispatches -f 'inputs[environment]=...'` are now
+  the deploy they dispatch, so every pre-deploy check runs for them; before, both passed unchecked.
+- **How it reads them.** Whenever `.crew/verify.json` declares a dispatch deploy, whatever
+  containment matched (a dispatch after a contained deploy is gated too, and a declared deploy the
+  reader cannot read is set aside and the rest read again): the new `_promote_dispatch.py` reads
+  the command and each declared deploy with
+  T-0009's reader through the new `crew_dispatch.dispatch_read` (no second parser). A dispatch of a
+  declared workflow is the deploy of the one environment whose declared literal inputs all appear
+  with the same value; a declared `$(...)` value is not compared. Workflow names compare as file
+  names.
+- **New refusals, in repos that declare a dispatch deploy.** A dispatch-shaped command crew cannot
+  read (a variable, a substitution, double quotes, a pipe, `--json`, `--input`, `-F k=@file`, a
+  workflow id or display name) is could-not-tell and blocks, as does a declared workflow whose
+  inputs fit no environment or several. A repo with no dispatch deploy sees no change.
+- **Not yet:** symbolic refs stay unresolved (T-0505); the PowerShell tool is L-0664's, below.
+  Five mutations in `promote_tree_mutations.py`, each red on a named case.
+
+### Added — `crew` 1.1.16: environment-scoped workflow deploys in the cloud guard (T-0009)
+
+- **`guards.deployWorkflow` and `environments.workflows`.** While
+  `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
+  `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches` (also
+  `--method POST`, `-XPOST`, or fields/`--input` with no method), are judged
+  when `<wf>` matches a key of the new repo-only `environments.workflows` map
+  (`{"deploy.yml": "input:environment", "deploy-prod.yml": "production"}`).
+  Both forms go through one classifier. `deployWorkflow` ships `block` (its
+  floor) and ratchets, so upgrading grants nothing: a repo that lists
+  workflows gets **a new refusal** for every listed dispatch until
+  `deployWorkflow: ask` is set in **both** layers. Under `ask`, a nonProd
+  environment runs unattended and is logged as `env:nonProd:<name>`;
+  production does only with `environments.prodUnattended` true in both layers.
+- **`allow` covers nonProd only for a deploy.** Production without
+  `prodUnattended` in both layers, and an unknown environment, still ask when
+  attended and are denied unattended, whatever `deployWorkflow` says.
+- **The dispatch grammar: judged only when every word is a plain literal.**
+  A dispatch line is classified only when every word on it is a
+  `[A-Za-z0-9_./:=@%+,-]` word or one whole single-quoted word, joined only
+  by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain word and
+  `2>&1` — T-0005's literal-word allowlist, extended to `gh`. Everything else
+  is **could not tell**, asked when attended and denied unattended at every
+  setting: a pipe, any `<` form, any other `N>&M`, `<(`/`>(`, double quotes,
+  `$'...'`, a backslash, `$`, a backquote, a glob or brace, `~`; a dispatch
+  inside `bash -c`/`eval`/`pwsh -c`, behind `xargs`/`parallel`/`find -exec`,
+  through an alias or copy of `gh` made on the line, or from a command word
+  made at run time; gh reading stdin or a file (`--json`, `--input`,
+  `-F k=@f` — **stdin is never read**); and every dispatch-shaped line while
+  the `environments` block does not validate. A single-quoted workflow name
+  holding a character that does not show (a control, a line or paragraph
+  separator, a bidi or zero-width mark, a blank other than a plain space) is
+  could-not-tell too, never `unlisted`. Review rounds 1 and 2 found
+  nine ways past a parser that read the lexer's output (a filter or `<` on
+  stdin, `0>&3`, a variable, a bracket glob, a script piped into bash, a
+  marker that covered another file): each is now a must-block row, watched
+  red on `b979d640` first, with a sabotage entry on T-0009's branch (the
+  sabotage entries land separately, as harness work).
+- **A command word made at run time is read by its argv's shape** (review
+  round 3): `$X $Y run deploy.yml` with both words built at run time, `$C`
+  alone (bash may split it into a whole dispatch), an `xargs -I CMD CMD` or
+  `parallel {}` placeholder, `Start-Process $x -ArgumentList 'workflow run
+  ...'` (or `-FilePath $x`), `gh $w run ...` in PowerShell, and an alias
+  (`Set-Alias`, `New-Alias`, `alias:`) pointed at a run-time value are
+  could-not-tell, where they used to be judged only if the raw line happened
+  to name `gh` and `workflow`. `$X pr create` is still not gated. An xargs
+  placeholder dispatch now asks as `[deployWorkflow]` instead of cloudGuard's
+  unconditional "unreadable" refusal. A malformed `environments` block in the
+  **machine-global** layer now engages the gate and makes every dispatch
+  could-not-tell, as a malformed repo block does; the terraform layer's
+  reading of it is unchanged.
+- **PowerShell launchers and aliases need full parameter names** (review
+  round 4). A `Start-Process`/`saps`, `Set-Alias`/`New-Alias` or `alias:`
+  path line holding gh, `workflow` or a run-time word is could-not-tell
+  unless every parameter on it is a full, value-taking name: a switch
+  (`-NoNewWindow`, `-Wait`, `-Force`), an abbreviation (`-Fi`), a parameter
+  alias (`-Args`, `-PSPath`) or `-RedirectStandardInput` used to hide the
+  target and now refuses the line — so `Start-Process $exe -Wait ...` asks
+  though it may send nothing. A trusted launcher passes gh only its
+  positional values and `-ArgumentList` (`-WindowStyle Hidden` no longer
+  reads as gh's first argument), and a module-qualified or en-dash spelling
+  is read as the command it is. **gh and `workflow` must be in the same
+  command:** `alias g=gh; echo workflow` is no longer refused, while `alias
+  g=gh`, `alias g='env gh'` and `hash -p /usr/bin/gh g` make `g` gh for the
+  rest of the line, and `New-Item -Path alias: -Name g -Value gh` and
+  `alias:\g` are read as aliases.
+- **Review round 5.** Two dispatches the line leaves unknown (`gh workflow
+  run; gh workflow run deploy.yml`) are asked about instead of refused as an
+  internal error; a marker covers every dispatch judged on the line, so a
+  config edit reclassifying a second one does not carry an approval across;
+  a bash alias or `hash -p` counts only for the commands after it (the whole
+  line under a loop, a function or a `trap`, and a name it copied counts as
+  gh inside `trap '...'`), and only when the alias value's last command runs
+  gh (`alias g='echo gh'` is not judged; `alias g='$x'` is could-not-tell);
+  a PowerShell comma inside one whole single-quoted word is text.
+- **BREAKING for the dispatch forms that ran in T-0009's first build:** a
+  `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
+  double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of
+  `gh` now ask (denied unattended). Write `-f` fields, `'Deploy Staging'`,
+  `'repos/{owner}/{repo}/...'` and `> log` instead (README "The dispatch
+  grammar").
+- **Unknown on a literal line:** no input given, conflicting values, a second
+  workflow argument, no workflow named.
+- **`--help` settled.** A standalone `-h`/`--help` before `--` prints help
+  and sends nothing, so the line is not judged; `-f environment=--help` is a
+  value and `-- --help` is a second workflow argument. Terraform's `--help`
+  is unchanged.
+- **Markers cover exact bytes.** A dispatch marker is keyed on the whole
+  command text — plus, when classified, the workflow key and environment — so
+  an approval of `--json < prod-one.json` covers neither `< prod-two.json` nor
+  a config edit inside the 15 minutes.
+- **One road in.** `crew_dispatch.dispatch_answer(text, shell, envs)` returns
+  `(state, why, scope)`, `state` in `nonProd | prod | unknown | unlisted`,
+  could-not-tell being `unknown` with `op: line-not-literal`; the hook's
+  `_classify` reaches the parser only through it (T-0045, T-0072).
+- **Unchanged:** a workflow matching no key is not judged, and with
+  `workflows` at `{}` no `gh` line is. Other `gh` commands are never gated.
+  `environments.workflows` does not engage the terraform layer. Not seen: an
+  unlisted spelling of a deploy workflow, the workflow YAML, `gh run rerun`,
+  `gh alias`, `curl`.
+- **Docs:** the troubleshooting guide now documents T-0005's
+  `environments.nonProd`, `environments.prodUnattended` (both layers) and the
+  destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
+  rebuilt.
+- **Ported onto release/1.2.0 (PR #336).** The dispatch reader is its own module,
+  `hooks/scripts/crew_dispatch.py`: merged with main's T-0047 wrapper reading it took
+  `crew_guards.py` past `.pylintrc`'s 3400-line ceiling, and the section imports
+  `crew_guards` one way only. `sabotage_cloud.py`'s T-0009 mutations are harness work
+  (T-0087) and are not in this port.
+
+### Changed — crew 1.1.15: C-0060: classify G4's `.crew/.ghdeploy` state path so T-0068's bookkeeping test passes when G4 lands
+
+- **Summary.** `.crew/.ghdeploy/**`, where G4's `crew_ghdeploy.py` keeps each dispatch's state between
+  prepare, identify, watch and record, is listed as crew state, so review and the audit still judge it.
+- **Why.** `test_every_crew_state_path_is_classified` (T-0068) fails for any `.crew/` path a crew
+  script spells that no list names. `crew_ghdeploy.py`'s stateful deploy steps (prepare, identify,
+  watch, record) land with G4 on release/1.2.0, and the lists live in `crew_ticket.py`, a harness
+  path, so the line lands here first, harness-only (owner 2026-10-07). On main no script spells the
+  path yet; nothing checks that a listed path is used, and nothing else changes.
+
 ### Fixed — `crew` 1.1.14: a harness test no longer reads a half-written pid file (C-0063)
 
 - `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and `write` (it failed twice in a row on Python 3.12 CI in wave 5). Test-only; no behaviour change.

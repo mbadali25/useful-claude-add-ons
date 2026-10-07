@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bd3e9ad1daac89654e0134be1cc56c79612be535/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9b3ff4f2a3cb93c78f7a25eeb100a69b809e87e0/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bd3e9ad1daac89654e0134be1cc56c79612be535/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9b3ff4f2a3cb93c78f7a25eeb100a69b809e87e0/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.1.90**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
-- **crew 1.1.14**: A harness test no longer reads a half-written pid file. `test_sabotage_bound.py`: the test's child writes its pid to a temp file and renames it into place, so `test_the_harness_dying_stops_a_running_child` can no longer read an empty pid file when the harness stops the child between `open` and ...
+- **crew 1.1.16**: Autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge. With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>` for the first `.crew/verify.json` environment with a `github` entry (file order, nonProd before prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for T-0009's class of the entry's dispatch; every non-empty report is printed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

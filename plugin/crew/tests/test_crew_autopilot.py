@@ -1899,13 +1899,14 @@ def test_settings_names_the_global_layer(tmp_path, monkeypatch):
 
     # Owner, 2026-10-04: a global `autopilot.deploy` MAY be set (T-0050). Before
     # T-0050 the filter drops it and the line says it is `not read`; after, the
-    # deploy warning names T-0045. Neither may call it repo-only or forbidden.
+    # deploy warning names L-0649's deploy phase (T-0045 before G4). Neither may
+    # call it repo-only or forbidden.
     told = " ".join(got["warnings"])
     for wrong in ("repo-only", "may not set"):
         assert wrong not in told, got["warnings"]
     inert = [w.split(" - ")[0] for w in _inert(got)]
     assert inert in ([], ["inert: autopilot.deploy=nonprod (global, not read)"]), inert
-    assert inert or "T-0045" in told, got["warnings"]
+    assert inert or "L-0649" in told, got["warnings"]
     assert got["deploy"] == ("none" if inert else "nonprod")
 
 
@@ -1923,7 +1924,7 @@ def test_settings_does_not_repeat_the_deploy_warning(tmp_path):
     got = crew_autopilot.settings(str(root))
 
     assert (len(got["warnings"]), _inert(got)) == (1, [])
-    assert "T-0045" in got["warnings"][0]
+    assert "L-0649" in got["warnings"][0]
 
 
 def test_settings_backlog_mode_names_its_ticket(tmp_path):

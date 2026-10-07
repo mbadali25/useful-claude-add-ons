@@ -21,7 +21,11 @@ _SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 SH = os.path.join(_SCRIPTS, "promote-gate.sh")
 PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
 TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
+DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
+_D = "tests/test_promote_gate_dispatch.py::"
+_R = "tests/test_promote_gate_rows.py::test_the_newest_row_decides"
+_M = "tests/test_promote_gate_match.py::"
 
 PROMOTE_TREE_MUTATIONS = (
     # Retargeted after review r1: the dirty-worktree case is now also caught by
@@ -150,4 +154,99 @@ PROMOTE_TREE_MUTATIONS = (
      '  catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }\n',
      '  catch { exit 0 }\n',
      _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[ps1]"),
+    # T-0062: promote-gate reads a workflow dispatch with T-0009's reader.
+    ("promote-gate.sh no longer reads an unmatched command as a dispatch", SH,
+     '  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \\\n',
+     '  true) \\\n',
+     _D + "test_the_rest_spelling_of_a_prod_deploy_is_gated[sh]"),
+    ("_promote_dispatch.py does not read a command again without its declared deploys",
+     DISPATCH, "        return _decide(rest, shell, maps)\n", "        return []\n",
+     _D + "test_a_contained_deploy_does_not_hide_a_second_dispatch[sh-declared-dispatch]"),
+    ("promote-gate.sh reads a dispatch only when containment matched nothing", SH,
+     'ENVNAME=${ENVNAMES:-workflow dispatch}\n',
+     '[ -n "$ENVNAMES" ] && CMD=true\nENVNAME=${ENVNAMES:-workflow dispatch}\n',
+     _D + "test_a_contained_deploy_does_not_hide_a_second_dispatch[sh-script]"),
+    ("promote-gate.ps1 reads a dispatch only when containment matched nothing", PS1,
+     "$envName = if ($envNames.Count -eq 0) { \"workflow dispatch\" } else { $envNames -join ',' }\n",
+     "if ($envNames.Count -gt 0) { $cmd = 'true' }\n"
+     "$envName = if ($envNames.Count -eq 0) { \"workflow dispatch\" } else { $envNames -join ',' }\n",
+     _D + "test_a_contained_deploy_does_not_hide_a_second_dispatch[ps1-script]"),
+    ("_promote_dispatch.py reads a dispatch it cannot read as no match", DISPATCH,
+     '    if kind == "unsure":\n        raise Block(',
+     '    if kind == "unsure":\n        return []\n        raise Block(',
+     _D + "test_a_dispatch_the_gate_cannot_read_is_could_not_tell"
+     "[sh-gh workflow run deploy.yml -f environment=$E]"),
+    ("_promote_dispatch.py picks the environment by workflow alone", DISPATCH,
+     '        if scope_inputs.get(name) != value:\n',
+     '        if False:\n',
+     _D + "test_the_rest_spelling_of_a_dev_deploy_runs[sh]"),
+    ("_promote_dispatch.py drops the committed map's declared dispatches", DISPATCH,
+     '        ("the committed .crew/verify.json", committed_envs()),\n',
+     '        ("the committed .crew/verify.json", None),\n',
+     _D + "test_a_dispatch_deploy_removed_from_the_working_map_still_matches[sh]"),
+    ("promote-gate.sh reads the dispatch helper's failure as empty output", SH,
+     '  || block "the command could not be read as a workflow dispatch',
+     '  || true "the command could not be read as a workflow dispatch',
+     _D + "test_the_helper_failing_blocks[sh]"),
+    # L-0664: promote-gate.ps1 reads a workflow dispatch with the same helper.
+    ("promote-gate.ps1 no longer reads an unmatched command as a dispatch", PS1,
+     "    $dispatch = @($cmd | & $py (Join-Path $scriptDir '_promote_dispatch.py') --shell powershell -)\n",
+     "    $dispatch = @()\n",
+     _D + "test_the_rest_spelling_of_a_prod_deploy_is_gated[ps1]"),
+    ("promote-gate.ps1 reads the helper's could-not-tell as no match", PS1,
+     "    if ($parts[0] -ceq 'block') { Stop-Promotion $parts[1] }\n",
+     "    if ($parts[0] -ceq 'block') { continue }\n",
+     _D + "test_a_dispatch_the_gate_cannot_read_is_could_not_tell"
+     "[ps1-gh workflow run deploy.yml -f environment=$E]"),
+    ("promote-gate.ps1 with no python lets a declared dispatch through", PS1,
+     "    Stop-Promotion \"python could not be found, so the gate cannot read",
+     "    exit 0; Stop-Promotion \"python could not be found, so the gate cannot read",
+     _D + "test_ps1_without_python_blocks_a_dispatch_the_map_declares"),
+    ("promote-gate.ps1 reads the dispatch helper's failure as empty output", PS1,
+     "  if ($dispatchExit -ne 0) {\n",
+     "  if ($false) {\n",
+     _D + "test_the_helper_failing_blocks[ps1]"),
+    ("promote-gate.ps1 exits before the dispatch read when the dirty map lost environments", PS1,
+     "if (-not $envProperty -and $envNames.Count -eq 0 -and -not $mapDirty) { exit 0 }\n",
+     "if (-not $envProperty -and $envNames.Count -eq 0) { exit 0 }\n",
+     _D + "test_a_working_map_without_environments_still_reads_the_committed_dispatches[ps1]"),
+    # L-0665: the newest row decides, both flavours.
+    ("promote-gate.sh returns on the first matching row again (fail then pass)", SH,
+     '            newest = all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     '            return all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     _R + "[fail-then-pass-sh]"),
+    ("promote-gate.sh returns on the first matching row again (pass then fail)", SH,
+     '            newest = all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     '            return all(c.lower() == "pass" for c in cells[3:6])\n    return newest',
+     _R + "[pass-then-fail-sh]"),
+    ("promote-gate.ps1 returns on the first matching row again (fail then pass)", PS1,
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq '"
+     "pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'p"
+     "ass') { 'pass' } else { 'fail' })\n",
+     _R + "[fail-then-pass-ps1]"),
+    ("promote-gate.ps1 returns on the first matching row again (pass then fail)", PS1,
+     "      $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq '"
+     "pass') { 'pass' } else { 'fail' }\n",
+     "      return $(if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'p"
+     "ass') { 'pass' } else { 'fail' })\n",
+     _R + "[pass-then-fail-ps1]"),
+    # L-0689: a fragment of a declared deploy is no deploy, both flavours, both maps.
+    ("promote-gate.sh matches a fragment of a declared deploy again", SH,
+     "        if any(isinstance(d, str) and d and fold(d) in fcmd\n",
+     "        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))\n",
+     _M + "test_a_fragment_of_a_declared_deploy_is_not_a_deploy_must_allow[git rev-parse HEAD-sh]"),
+    ("promote-gate.sh matches a fragment against the committed map again", SH,
+     "        if any(isinstance(d, str) and d and fold(d) in fcmd\n",
+     "        if any(isinstance(d, str) and d and (fold(d) in fcmd or fcmd in fold(d))\n",
+     _M + "test_a_fragment_with_the_map_dirty_matches_nothing_committed[sh]"),
+    ("promote-gate.ps1 matches a fragment of a declared deploy again", PS1,
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or\n"
+     "            $Dep.IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     _M + "test_a_fragment_of_a_declared_deploy_is_not_a_deploy_must_allow[git rev-parse HEAD-ps1]"),
+    ("promote-gate.ps1 reads a declared deploy as a wildcard pattern again", PS1,
+     "    return ($c.IndexOf($Dep, [StringComparison]::OrdinalIgnoreCase) -ge 0)\n",
+     "    return ($c -like \"*$Dep*\")\n",
+     "tests/test_promote_gate_literal_match.py::test_a_deploy_holding_brackets_matches_itself_and_blocks[ps1]"),
 )

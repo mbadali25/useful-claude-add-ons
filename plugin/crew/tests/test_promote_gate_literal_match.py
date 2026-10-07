@@ -237,29 +237,26 @@ def test_two_matching_environments_apply_the_union_of_their_requirements(
 
 
 @pytest.mark.parametrize("flavour,command", _cases(["git push", "git push prod"]))
-def test_a_short_command_inside_two_deploys_is_gated_not_locked_out(
-        flavour, command, tmp_path):
-    """F1. `git push` sits inside both deploys. Blocking it as ambiguous
-    blocked it forever; the union gates it on prod's approval instead.
-    `git push prod` sits only inside prod's."""
+def test_a_short_command_inside_two_deploys_is_no_deploy(flavour, command, tmp_path):
+    """F1, then L-0689. `git push` sits inside both deploys and `git push
+    prod` inside prod's. L-1503 gated them on the union; L-0689 makes a
+    command a deploy only when it CONTAINS a declared one, so a fragment is
+    no deploy at all: exit 0 and no in-flight marker (a fragment wrote a
+    marker for a deploy that never ran)."""
     repo = Repo(tmp_path / "r", {
         "staging": _env("git push staging main"),
         "prod": _env("git push prod main", human=True)})
     code, err = run_gate(flavour, repo, command)
-    assert code == 2, err
-    assert "requires explicit human approval" in err, err
-    repo.approve("prod")
-    code, err = run_gate(flavour, repo, command)
     assert code == 0, err
-    expect = "staging,prod" if command == "git push" else "prod"
-    assert repo.in_flight() == f"{expect} {repo.sha}"
+    assert repo.in_flight() is None
 
 
-@pytest.mark.parametrize("flavour,command", _cases(["./deploy.sh", "./deploy.sh --prod"]))
+@pytest.mark.parametrize("flavour,command", _cases(["./deploy.sh --prod"]))
 def test_a_deploy_that_prefixes_another_carries_its_requirements(
         flavour, command, tmp_path):
-    """F1. `./deploy.sh` is inside `./deploy.sh --prod`, so each command
-    matches both environments, and prod's `requires` applies to both."""
+    """F1. `./deploy.sh --prod` contains `./deploy.sh` too, so it matches both
+    environments, and prod's `requires` applies. (`./deploy.sh` alone is
+    qa's only since L-0689: see the next test.)"""
     repo = Repo(tmp_path / "r", {
         "qa": _env("./deploy.sh"),
         "prod": dict(_env("./deploy.sh --prod"), requires=["qa"])})
@@ -272,6 +269,18 @@ def test_a_deploy_that_prefixes_another_carries_its_requirements(
     code, err = run_gate(flavour, repo, command)
     assert code == 0, err
     assert repo.in_flight() == f"qa,prod {repo.sha}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_deploy_inside_another_matches_only_its_own_environment(flavour, tmp_path):
+    """L-0689: `./deploy.sh` is a fragment of prod's `./deploy.sh --prod`, so
+    it is qa's deploy alone - prod's requires no longer applies to it."""
+    repo = Repo(tmp_path / "r", {
+        "qa": _env("./deploy.sh"),
+        "prod": dict(_env("./deploy.sh --prod"), requires=["qa"])})
+    code, err = run_gate(flavour, repo, "./deploy.sh")
+    assert code == 0, err
+    assert repo.in_flight() == f"qa {repo.sha}"
 
 
 @pytest.mark.parametrize("flavour,deploys", _cases([[], [""]]))
@@ -486,7 +495,8 @@ def test_a_union_survives_python_writing_crlf(command, tmp_path):
     named no environment - every multi-environment match blocked as a
     malformed map on Windows. The .sh now strips CRs from the names."""
     repo = Repo(tmp_path / "r", {"qa": _env(command), "prod": _env(command + " --x")})
-    code, err = run_gate("sh", repo, command, path_prefix=_crlf_python(tmp_path))
+    # The command contains both deploys (L-0689: containment one way).
+    code, err = run_gate("sh", repo, command + " --x", path_prefix=_crlf_python(tmp_path))
     assert code == 0, err
     assert repo.in_flight() == f"qa,prod {repo.sha}"
 
@@ -506,12 +516,12 @@ def test_an_approved_literal_deploy_allows_and_records_its_environment(
 
 
 @pytest.mark.parametrize("flavour,command", _cases(
-    ["DEPLOY-PROD --now", "./Deploy-Prod", "deploy"]))
+    ["DEPLOY-PROD --now", "./Deploy-Prod"]))
 def test_a_single_case_insensitive_match_allows_once_approved(
         flavour, command, tmp_path):
-    """Both gates ignore case, in both directions (`deploy` is inside
-    `Deploy-Prod`): on Windows `./Deploy.ps1` and `./deploy.ps1` are one
-    file, so a case-sensitive gate fails open there."""
+    """Both gates ignore case: on Windows `./Deploy.ps1` and `./deploy.ps1`
+    are one file, so a case-sensitive gate fails open there. (`deploy`, a
+    fragment of `Deploy-Prod`, is no deploy since L-0689.)"""
     repo = Repo(tmp_path / "r", {"prod": _env("Deploy-Prod", human=True)})
     code, err = run_gate(flavour, repo, command)
     _blocked_as(code, err, "prod")
@@ -526,8 +536,7 @@ def test_a_single_case_insensitive_match_allows_once_approved(
 def test_crs_and_trailing_newlines_are_normalised_alike(flavour, command, tmp_path):
     """NIT1. `deploy-prod\\n\\r` kept a newline on the .sh (the command
     substitution strips trailing newlines before the CR is removed)."""
-    repo = Repo(tmp_path / "r", {"prod": _env("deploy-prod --force",
-                                              human=True)})
+    repo = Repo(tmp_path / "r", {"prod": _env("deploy-prod", human=True)})
     code, err = run_gate(flavour, repo, command)
     _blocked_as(code, err, "prod")
 
