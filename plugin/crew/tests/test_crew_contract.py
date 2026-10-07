@@ -820,16 +820,20 @@ def test_module_runs_as_a_script(tmp_path, wt):
     assert "no channel yet" in done.stdout
 
 
-@pytest.mark.parametrize("value", [[], "", None, {"name": "origin"}],
-                         ids=["empty-list", "empty-string", "null", "object"])
-def test_a_malformed_coord_remote_is_a_usage_error_never_origin(wt, value):
-    """L-0633 review round 3's sibling: a set coord.remote that is not a
-    non-empty string never falls back to origin."""
+@pytest.mark.parametrize("coord,needle", [
+    ({"remote": []}, "is not a remote name"), ({"remote": ""}, "is not a remote name"),
+    ({"remote": None}, "is not a remote name"), ({"remote": {"name": "origin"}}, "is not a remote name"),
+    ("malformed", "is not a JSON object"), (["origin"], "is not a JSON object")],
+    ids=["empty-list", "empty-string", "null", "object", "coord-string", "coord-list"])
+def test_a_malformed_coord_remote_is_a_usage_error_never_origin(wt, coord, needle):
+    """L-0633 review rounds 3 and 4's sibling: a set coord.remote that is not
+    a non-empty string, or a coord block that is not an object, never falls
+    back to origin."""
     path = wt / ".crew" / "config.json"
     cfg = json.loads(path.read_text(encoding="utf-8"))
-    cfg["coord"] = {"remote": value}
+    cfg["coord"] = coord
     path.write_text(json.dumps(cfg), encoding="utf-8")
 
-    with pytest.raises(crew_coord.UsageError, match="is not a remote name"):
+    with pytest.raises(crew_coord.UsageError, match=needle):
         crew_contract.coord_remote(str(wt))
     assert crew_contract.coord_remote(str(wt), "coord") == "coord"

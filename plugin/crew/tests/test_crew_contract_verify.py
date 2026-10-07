@@ -229,10 +229,11 @@ def test_a_one_field_edit_is_a_mismatch_not_unknown(capsys, tmp_path, root, chan
     ("bindings-schema", "contract bindings unknown"),
     ("binding-field-missing", "contract bindings unknown"),
     ("bindings-emptied", "holds no bindings"),
+    ("record-deeply-nested", "its record is corrupt"),
     ("remote-gone", "'origin' is not a configured remote")],
     ids=["fetch-fails", "channel-absent", "record-missing", "body-missing", "record-corrupt",
          "bindings-not-json", "bindings-schema", "binding-field-missing", "bindings-emptied",
-         "remote-gone"])
+         "record-deeply-nested", "remote-gone"])
 def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, needle):
     _ticket(root)
     _built(root, tmp_path)
@@ -254,6 +255,8 @@ def test_what_cannot_be_checked_is_unknown(capsys, tmp_path, root, hub, how, nee
     elif how == "binding-field-missing":
         _write(binding, json.dumps({"schema": 1, "bindings": [{"channel": CHANNEL, "name": "api",
                                                                "version": 1}]}))
+    elif how == "record-deeply-nested":  # review round 6: json.loads raised RecursionError
+        _peer_rewrites(root, {"contracts/api/v1.json": b"[" * 100000 + b"]" * 100000})
     elif how == "bindings-emptied":
         _write(binding, json.dumps({"schema": 1, "bindings": []}))
     else:  # the remote the binding was built on is gone (renamed)

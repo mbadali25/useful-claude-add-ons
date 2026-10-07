@@ -428,7 +428,9 @@ def _channel_files(top, channel, channels, remote=None):
         # Only an absent coord.remote means origin: a set one that is not a
         # non-empty string ([], "", an object) is unknown, never origin and
         # never a crash on the cache key (L-0633 r2, r3).
-        remote = cfg["remote"] if isinstance(cfg, dict) and "remote" in cfg else "origin"
+        # A coord block that is not an object cannot tell its remote either (r4).
+        remote = (cfg.get("remote", "origin") if isinstance(cfg, dict) else "origin" if cfg is None
+                  else {"coord": cfg})
     key = (remote if isinstance(remote, str) else repr(remote), channel)
     if key in channels:
         return channels[key]

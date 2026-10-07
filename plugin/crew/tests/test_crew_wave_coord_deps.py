@@ -315,6 +315,20 @@ def test_a_malformed_coord_remote_is_unknown_never_a_crash(root, value):
     _assert_refused(root, "unknown", "is not a remote name")
 
 
+@pytest.mark.parametrize("value", ["malformed", ["origin"], 1],
+                         ids=["string", "list", "number"])
+def test_a_coord_block_that_is_not_an_object_is_unknown(root, value):
+    """L-0633 review round 4: `"coord": "malformed"` read as an absent
+    coord.remote, so origin's done claim closed the dependency."""
+    _wave(root, ["peers:T-0001"])
+    _peer_writes(root, _claim("done"))
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    cfg["coord"] = value
+    (root / ".crew" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+    _assert_refused(root, "unknown", "is not a remote name")
+
+
 def test_coord_remote_is_read_from_config(root, hub):
     _wave(root, ["peers:T-0001"])
     git(root, "remote", "add", "coordhub", str(hub))

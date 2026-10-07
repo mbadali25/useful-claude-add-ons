@@ -426,7 +426,7 @@ run the same check alone with `crew_contract.py verify --ticket <id>` (exit 0 cu
 |---|---|---|
 | `contract <n> v<N> changed since <id> built against it (...)` | the channel no longer shows that version with the bound hash, a matching body, status `built-against` and this ticket in `built_by`: someone rewrote it | do not rebind: agree a new version (`put --name <n> --new-version --ticket <new id>`) and a new ticket on each side, then build against it |
 | `contract <n> v<N> unknown (...)` | the fetch failed, the binding's remote is no longer configured, the channel or the version's files are missing, or the record is corrupt | fix what the brackets name (remote, channel name), then plan again; nothing is assumed current |
-| `contract bindings unknown (...)` | `contracts.json` cannot be checked, does not parse or holds no binding | repair or remove it by hand, then `build-against` again; it is never read as "no bindings" |
+| `contract bindings unknown (...)` | `contracts.json` cannot be checked, does not parse or holds no binding | restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run `build-against` again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings" |
 
 A newer version on the channel is information only and never refuses. The check writes nothing.
 

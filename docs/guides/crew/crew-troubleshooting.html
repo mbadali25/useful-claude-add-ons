@@ -636,7 +636,7 @@ run the same check alone with <code>crew_contract.py verify --ticket &lt;id&gt;<
 <tr>
 <td><code>contract bindings unknown (...)</code></td>
 <td><code>contracts.json</code> cannot be checked, does not parse or holds no binding</td>
-<td>repair or remove it by hand, then <code>build-against</code> again; it is never read as "no bindings"</td>
+<td>restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run <code>build-against</code> again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings"</td>
 </tr>
 </tbody>
 </table>

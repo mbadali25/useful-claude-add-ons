@@ -176,7 +176,7 @@ def parse_record(name, version, blob):
     """(record, None) or (None, why) -- a corrupt record is never skipped."""
     try:
         record = json.loads(blob.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):  # deep nesting is corrupt, never a crash
         return None, "not JSON"
     if not isinstance(record, dict):
         return None, "not a JSON object"
@@ -269,7 +269,7 @@ def read_bindings(path):
     try:
         with open(path, "rb") as handle:
             data = json.loads(handle.read().decode("utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         return None, f"{path} is not readable JSON ({type(exc).__name__})"
     schema = data.get("schema") if isinstance(data, dict) else None
     if not isinstance(schema, int) or isinstance(schema, bool) or schema != SCHEMA \
@@ -486,8 +486,10 @@ def coord_remote(top, given=None):
         return given
     import crew_config  # pylint: disable=import-outside-toplevel
     coord = crew_config.resolve_config(top).get("coord")
-    if not isinstance(coord, dict) or "remote" not in coord:
+    if coord is None or (isinstance(coord, dict) and "remote" not in coord):
         return "origin"
+    if not isinstance(coord, dict):
+        raise crew_coord.UsageError(f"coord {crew_coord.safe(coord, 60)!r} is not a JSON object")
     if not isinstance(coord["remote"], str) or not coord["remote"]:
         raise crew_coord.UsageError(f"coord.remote {crew_coord.safe(coord['remote'], 60)!r} is not a remote name")
     return coord["remote"]
@@ -527,7 +529,7 @@ def _changed_field(blob, binding, repo, ticket):
     None when it cannot tell (then the record is only unknown)."""
     try:
         raw = json.loads(blob.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):  # deep nesting is corrupt, never a crash
         return None
     if not isinstance(raw, dict):
         return None
