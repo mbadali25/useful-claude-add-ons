@@ -1440,3 +1440,13 @@ def test_the_25_real_hour_backstop_holds_where_a_clock_change_is_two_hours(troll
 
     assert (got["kind"], "25 real" in got["warning"], kept["kind"]) == (
         "untrusted", True, "valid")
+
+
+# --- L-0651: the sabotage entries that prove the must-block branches ------------
+
+def test_every_sleep_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import SLEEP_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in SLEEP_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_autopilot_sleep.py::"), label

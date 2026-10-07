@@ -1139,3 +1139,63 @@ ASSIGN_MUTATIONS = (
 )
 
 AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
+
+# L-0651: T-0053's sleep window, its resolver and the overlay. Each removes one
+# branch that keeps what crew cannot tell from loosening a policy at night.
+SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
+_Z = "tests/test_crew_autopilot_sleep.py::"
+
+SLEEP_MUTATIONS = (
+    ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
+     "        return start <= minute < end\n",
+     "        return start <= minute <= end\n",
+     _Z + "test_in_window"),
+    ("L-0651 (b): in_window ignores the midnight crossing", SLEEP,
+     "    return minute >= start or minute < end\n",
+     "    return start <= minute < end\n",
+     _Z + "test_in_window"),
+    ("L-0651 (c): parse_schedule accepts a start equal to its end", SLEEP,
+     "    if start == end:\n",
+     "    if False:\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (d): parse_schedule matches a prefix, not the whole string", SLEEP,
+     "    found = _SCHEDULE_RE.fullmatch(value)\n",
+     "    found = _SCHEDULE_RE.match(value)\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (e): parse_schedule accepts hour 24", SLEEP,
+     "    if start_h > 23 or end_h > 23:\n",
+     "    if start_h > 24 or end_h > 24:\n",
+     _Z + "test_parse_schedule"),
+    ("L-0651 (f): a night value outside POLICIES is applied as written", SLEEP,
+     "    if value is None or (isinstance(value, str) and value in policies):\n",
+     "    if True:\n",
+     _Z + "test_resolve_reads_a_bad_override_as_strictest_and_keeps_the_other"),
+    ("L-0651 (g): a malformed schedule reads asleep", SLEEP,
+     '        return {"state": UNKNOWN, "schedule": None, "overrides": overrides,\n',
+     '        return {"state": ASLEEP, "schedule": None, "overrides": overrides,\n',
+     _Z + "test_a_malformed_schedule_is_unknown_and_warns"),
+    ("L-0651 (h): a raising resolve reads asleep", AUTOPILOT,
+     '        return {"state": crew_sleep.UNKNOWN, "schedule": None, "overrides": found,\n',
+     '        return {"state": crew_sleep.ASLEEP, "schedule": None, "overrides": found,\n',
+     _Z + "test_a_raising_resolve_is_unknown_with_day_values"),
+    ("L-0651 (i): a non-object autopilot.sleep reads asleep", SLEEP,
+     '        return {"state": UNKNOWN, "schedule": None,\n'
+     '                "overrides": read_overrides(block, policies)[0],\n',
+     '        return {"state": ASLEEP, "schedule": None,\n'
+     '                "overrides": read_overrides(block, policies)[0],\n',
+     _Z + "test_a_sleep_value_that_is_not_an_object_is_unknown"),
+    ("L-0651 (j): the night overlay applies while awake", AUTOPILOT,
+     '            take = sleep["state"] == crew_sleep.ASLEEP\n',
+     "            take = True\n",
+     _Z + "test_outside_the_window_the_day_values_apply"),
+    ("L-0651 (l): asleep, approval skips the scope.allowCliApproval check", AUTOPILOT,
+     "        allowed = crew_ticket.cli_approval_allowed(top)\n",
+     '        allowed = crew_ticket.cli_approval_allowed(top) or risk["sleep"].startswith(" (asleep")\n',
+     _Z + "test_asleep_still_needs_allow_cli_approval_exactly_true"),
+    ("L-0651 (m): an unknown key under autopilot.sleep goes unreported", SLEEP,
+     '    warnings = [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
+     '    warnings = [] and [f"autopilot.sleep.{str(key)[:60]} is not available in this crew version; it "\n',
+     _Z + "test_an_unknown_sleep_key_has_no_other_effect"),
+)
+
+AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
