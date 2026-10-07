@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.1.90: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
+### Added — crew 1.1.17: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
 
 - **Summary.** Crew's mutation suite now proves the guards the 1.2.0 features added on main
   (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane
