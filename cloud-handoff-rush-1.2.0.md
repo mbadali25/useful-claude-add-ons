@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T17:17Z
+Last updated: 2026-10-07T17:44Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T17:44Z MERGED WAVE 4 #558 into main at 4f4b89b5 (crew 1.1.12); G5 sources all closed (#441 #458 with link). MERGED #555 (G1b) into release.
 - 2026-10-07T17:17Z MERGED #552 (G5) into release at a2ed7326 (crew 1.1.12). Opened WAVE 4 #558, subscribed. README install-URL re-pin deferred to after wave 5 (G1b also changes install scripts).
 - 2026-10-07T17:17Z MERGED WAVE 3 #557 into main at 7d035d84 (crew 1.1.11; Windows slow/wallclock jobs re-run once after runner-acquisition failures). G3b sources: #447 auto-closed; #425 #414 closed with link. Next: G5 #552 -> release -> wave 4.
 - 2026-10-07T16:41Z MERGED #551 (G3b) into release at ae63d3d7, crew 1.1.11. Opened WAVE 3 #557, subscribed.
