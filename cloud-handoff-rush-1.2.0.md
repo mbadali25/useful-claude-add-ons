@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T08:28Z
+Last updated: 2026-10-07T08:37Z
 
 ## >>> RESUME HERE
 
@@ -95,6 +95,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T08:37Z G0 Windows fixes pushed, head 405f3115 (1.1.6 last): coord file://C:\ drive on nt = path (prod), lane prompt script path '/' on nt (prod), 2 tests moved origins to short tmp base (128-char key rule kept), unlistable-dir test asserts UnknownKey where case-insensitive. 549 coord+wave passed; sabotage red. Coordinator read prod diff. CI re-running. Codex re-login: code expired untouched; waiting for owner 'ready'.
 - 2026-10-07T08:28Z #546 G0 Windows 2/6 red: 4 G0 tests (test_crew_coord file:// drive-letter URL + 128-char key on Windows temp path; test_crew_wave lane prompt x2). Fixer agent started on rush/g0-coord-wave (revert 1.1.6, fix, re-apply 1.1.6 last). start-if-stopped red = RUNNER_START_TOKEN 404 on github-runner-infra (owner; also #544/#545), commented once + 1 re-run (same 404).
 - 2026-10-07T08:16Z Owner: when #545 (L-0704, tests-only) is updated, fold it into G0 (#546): merge its head, drop its 1.1.5 bump, G0 re-sets 1.1.6 last, re-review, close #545 at landing. Watcher armed on its head (was 0d95c156).
 - 2026-10-07T08:15Z New coordinator session session_01H49aKnVMcvefcadqBGmuMu resumed (container new; scratchpad reviews lost -> re-review heads). Codex re-login via device auth in progress. Opened #546 (G0 -> release, crew 1.1.6, head 4e9f4f25), subscribed. Seen: #544 L-0703 and #545 L-0704 (other session, to main) - #545 claims crew 1.1.5, which G3 already used on release.
