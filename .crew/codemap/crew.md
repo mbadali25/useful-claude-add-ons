@@ -1,9 +1,17 @@
-anchor: useful-claude-add-ons@2b337296
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
-Full re-derivation, not a re-anchor. 96 unique `path:line` citations were
-re-read against the files they name at this anchor; 35 were byte-identical to
-`ea8a014` and 61 had moved or changed subject. Every section below was
-re-derived except the two named as carried forward in "Citation freshness".
+Targeted correction pass, not a full re-derivation. A merged-branch review
+found the "`crew_py` is no longer the whole story" section below stating a
+caller count and a rejection mechanism that PR #208 (`2b337296..5d1fc5fd`)
+made false, and its `plugin/crew/hooks/scripts/_common.sh:82-98` citation
+had moved to `:82-153`. That
+section, the two new sections it now points to (`render.sh`, the PM's
+re-read-before-dispatch check), and every file their citations touch were
+re-derived directly against `5d1fc5fd`. The rest of this note carries forward
+unread from the `2b337296` full re-derivation described in "Citation
+freshness" and the provenance sections below it. See "Re-anchor provenance —
+2b337296 -> 5d1fc5fd" at the bottom of this file for the per-path diff this
+pass ran and what it found changed.
 
 
 # crew
@@ -309,31 +317,209 @@ directory and `:134` for each `PATH` entry.
 
 ### `crew_py` is no longer the whole story — `crew_py_strict` exists
 
-**Corrected at this anchor; the previous note called this "known open issue,
-still open".** It is now half-closed, and the half that closed is the one that
-matters for a hook that `exec`s the interpreter.
+**Re-derived at this anchor; the previous note (`2b337296`) said "exactly one
+caller" and described a `WindowsApps`-substring rejection. Both were true at
+`2b337296` and are false at `5d1fc5fd`** — `_common.sh`, `context-watch.sh`,
+`pm-brief.sh`, `platform-sync.sh`, `verify-gate.sh` and `role-write-guard.sh`
+all changed in that range (`git diff --name-only 2b337296..5d1fc5fd -- <those
+six paths>` lists all six).
 
-- `crew_py()` (`plugin/crew/hooks/scripts/_common.sh:52-57`) still returns the
-  first of `python3`/`python`/`py` that `command -v` **resolves**, not the
-  first that runs. That is now documented as deliberate at
+- `crew_py()` (`plugin/crew/hooks/scripts/_common.sh:52-57`) is unchanged: it
+  still returns the first of `python3`/`python`/`py` that `command -v`
+  **resolves**, not the first that runs. Documented as deliberate at
   `plugin/crew/hooks/scripts/_common.sh:42-51`: most callers check the status
   of the python they invoked and fail closed, and widening this function would
   change every hook that calls it.
-- `crew_py_strict()` (`plugin/crew/hooks/scripts/_common.sh:82-98`) is new. It
-  executes each candidate (`"$candidate" -c 'import sys; print(sys.executable)'`)
-  and rejects any whose path or resolved `sys.executable` lands under
-  `WindowsApps` — the App Execution Alias stub that opens the Microsoft Store.
-- **Exactly one caller uses the strict form today:**
-  `plugin/crew/hooks/scripts/pm-pulse.sh:30`, whose own comment at `:14-16`
-  records the reason and the date (2026-09-22). Every other `.sh` hook
-  (`context-watch`, `handoff-read`, `handoff-write`, `platform-sync`,
-  `pm-brief`, `notify`, `promote-gate`, `verify-gate`) still calls plain
-  `crew_py`. `plugin/crew/hooks/scripts/role-write-guard.sh:17-27` uses neither and says so in a comment.
-- **`TODO.md:383-413` is now stale in two ways**, out of this note's scope to
-  fix but worth naming so nobody re-derives it: it cites
+- `crew_py_strict()` (`plugin/crew/hooks/scripts/_common.sh:82-153`, up from
+  `:82-98` — **was: `:82-98`**) executes each candidate
+  (`"$candidate" -c 'import sys; print(sys.executable)'`), strips a trailing
+  CR from the result (`:86-90` — a native Windows interpreter run under Git
+  Bash can leave one, which otherwise fails the `-x` test below against an
+  actually-real path), normalises a native `C:\...`/`C:/...`
+  `sys.executable` into the POSIX form `-x` can stat — `cygpath -u` when
+  present, or by hand (lower-case the drive letter, drop the `:`, prepend a
+  leading `/`) when it is not (`:115-137`) — and only then requires
+  `[ -x "$real" ]` (`:148`).
+  **It no longer rejects anything containing `WindowsApps`** — that substring
+  check used to sit here and was removed (comment at `:92-114`): it also
+  rejected a genuine Microsoft Store Python install, whose real
+  `sys.executable` resolves under
+  `...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\...`, the same
+  root as the placeholder alias it was meant to catch. The exec-and-probe
+  above — a placeholder alias produces no usable stdout — is what does that
+  job now, without the false positive.
+- **Five callers use the strict form, not one:**
+  `plugin/crew/hooks/scripts/pm-pulse.sh:30` (comment at `:14-16` records the
+  original 2026-09-22 report), `plugin/crew/hooks/scripts/context-watch.sh:93`,
+  `plugin/crew/hooks/scripts/pm-brief.sh:21`,
+  `plugin/crew/hooks/scripts/platform-sync.sh:20`, and
+  `plugin/crew/hooks/scripts/verify-gate.sh:660` (a second call at `:1358`
+  builds the `python3` shim — see "verification-harness.md" for that). Each
+  fails closed on a missing/stub interpreter rather than falling through
+  silently — `plugin/crew/hooks/scripts/pm-pulse.sh:30` prints "...will not
+  run", `plugin/crew/hooks/scripts/pm-brief.sh:21` "...will not print" and
+  `plugin/crew/hooks/scripts/platform-sync.sh:20` "...will not be repaired"
+  (each names the one thing that specific hook does, not a shared string),
+  and all three exit 0 (nothing to enforce, so nothing to block);
+  `verify-gate.sh` exits 2; `context-watch.sh` is the one that exits
+  2 to block the *current* turn — see "context-watch fails closed once, not
+  silently" below.
+- **Still plain `crew_py`:** `plugin/crew/hooks/scripts/handoff-read.sh:24,29`,
+  `plugin/crew/hooks/scripts/handoff-write.sh:20,27`,
+  `plugin/crew/hooks/scripts/notify.sh:13`,
+  `plugin/crew/hooks/scripts/promote-gate.sh:37`, **and, within
+  `verify-gate.sh` itself, four more call sites the "five callers" line above
+  does not cover** — that line is about the map-reading `$PY` at `:660` only.
+  `plugin/crew/hooks/scripts/verify-gate.sh:18` (`PRICE_PY`, the `--price`
+  subcommand),
+  `:253` (`REPORT_PY`, the best-effort chronic-rule report — "no python...
+  means say nothing extra, never invent a status", per its own comment),
+  `:351` (`FP_PY`, the fingerprint write — "no python means no fingerprint
+  and no skip -- the safe direction"), and `:604` (`SCOPE_PY`, the scope
+  report) all resolve with plain `crew_py` and degrade to a no-op or a
+  narrower error on failure rather than exiting 2 — none of them gate
+  whether the map itself gets read and enforced, which is what makes `:660`
+  the one call site that has to be strict.
+- `plugin/crew/hooks/scripts/role-write-guard.sh` uses **neither** — it keeps
+  its own private copy, `_resolve_role_write_python`
+  (`plugin/crew/hooks/scripts/role-write-guard.sh:32-113`), explained by the
+  header comment at `:17-31`, because it is the one hook that can BLOCK a
+  tool call and its test suite patches this file textually —
+  `plugin/crew/hooks/scripts/_common.sh:76-81` documents the same fact from
+  the other side ("BYTE-FOR-BYTE the body of `_resolve_role_write_python`...
+  a hand-copy with no guard is this repository's most repeated defect").
+  **The header comment at `:17-31` is byte-identical to `2b337296`
+  (confirmed by diff); the function it introduces is not** — it grew from 26
+  lines (`:32-57` at `2b337296`) to 82 (`:32-113` here), picking up exactly
+  the same hardening `crew_py_strict` got in `_common.sh`: a trailing-CR
+  strip on the probed `sys.executable` before the `-x` test (`:43-47`), a
+  native Windows drive-letter normalisation — `cygpath -u` when present, a
+  hand-rolled fallback when not (`:72-94`) — and an explicit `[ -x "$real"
+  ]` proof requirement (`:95-105`). The blanket `WindowsApps`-substring
+  rejection that used to sit right after `command -v` and again after the
+  `sys.executable` probe is **gone**, for the same reason `_common.sh`'s copy
+  lost it: it also rejected a genuine Store Python install (comment at
+  `:49-71` explains it in place of the removed code). This is the twin
+  hardening pass to `crew_py_strict` above, kept as a hand-copy rather than a
+  shared call for the reason already stated — and confirmed still a faithful
+  copy: every change here mirrors
+  `plugin/crew/hooks/scripts/_common.sh:82-153` line for behaviour,
+  not merely in the two comments cross-citing each other.
+- **`TODO.md:383-413` is still stale in the same two ways**, re-confirmed by
+  reading it at this anchor (the section's own line range did not move even
+  though the file changed elsewhere): it cites
   `plugin/crew/hooks/scripts/_common.sh:38-43` (the function is at `:52-57`),
-  and its reproduction describes the stub being handed to `guard.sh`, a file
-  deleted in 0.19.54.
+  and its reproduction still describes the stub being handed to `guard.sh`, a
+  file deleted in 0.19.54.
+
+#### `context-watch` fails closed once, not silently
+
+**New since this anchor.** `plugin/crew/hooks/scripts/context-watch.sh:93`
+resolves `PY=$(crew_py_strict)`; the no-python branch (`:94-146`) is a PM
+ruling dated 2026-09-22 reversing an earlier fail-*open* design — a
+stderr-only warning on `exit 0` is invisible on a Stop hook (the same fact
+`plugin/crew/hooks/scripts/auto-clear.sh:26` states about its own stderr), so
+a broken interpreter used to mean no context nag ever fired, silently,
+forever. The branch now asks
+Claude for a precautionary handoff and `exit 2`s (`:145`) — but deliberately
+does **not** touch `$MARKER` (`.crew/.handoff-requested`, `:55`), the same
+file the real over-threshold nag and both `.ps1` twins on Windows read as
+"already asked this session": claiming it here, with nothing actually
+measured, is what let a zero-byte marker stand the Windows flavour down for
+the rest of the session and let `auto-clear.ps1` `/clear` on the strength of
+the false alarm's own handoff. The repeat is bounded a different way —
+`stop_hook_active` (checked first, at `:26` — **was mis-cited as `:22`,
+which is inside the comment above the check, not the check itself** — before
+the config check and before python), which Claude Code itself caps at one
+forced continuation —
+rather than a second marker, because a second marker would need
+`handoff-read.sh` taught to clear it too, or a single interpreter glitch
+would silence this branch forever. `context.enabled` is still honoured with
+no python at all, via a bash/awk brace-balanced extract
+(`:95-127` — not a blind grep, because `.crew/config.json` has other
+`"enabled"` keys).
+
+## `render.sh` — flag-parsing and partial-render hardening
+
+**New since this anchor.** `plugin/crew/skills/crew-diagrams/scripts/render.sh`
+changed (`git diff --stat 2b337296..5d1fc5fd` — one file, +101/-13, and the
+mode bit flipped to executable) and is not covered by any earlier version of
+this note.
+
+- **`render.sh --force` (no directory argument) used to silently do nothing.**
+  The old positional parse read `--force` itself as `$DIR`, `mkdir -p` a
+  directory literally named `--force`, found no `.mmd` files in it, and
+  exited 0 — reporting success while rendering nothing. Flags are now parsed
+  position-independently and any unrecognised leading-dash token is a hard
+  `exit 2`, not silently treated as the directory; `--` ends option parsing so
+  a directory whose own name starts with `-` can still be named.
+  `--png-only`/`--svg-only` together is now also a hard `exit 2`
+  (mutually exclusive).
+- **A failed render used to destroy the last good output.** `mmdc` was pointed
+  straight at the final `$dst`, so a re-render that genuinely failed (not just
+  a call that lied about succeeding) left a half-written or missing file where
+  a good one used to be. It now renders to a temp file (`$OUT/$name.tmp.$ext`)
+  and only `mv`s it onto `$dst` once `mmdc` exits 0 **and** the temp file is
+  non-empty (`[ -s "$tmp" ]`) — mirroring CLAUDE.md's own "check the artifact,
+  not the summary" lesson about this same script.
+- **An empty input directory is now a loud failure, not a quiet no-op.** `exit
+  0` on zero `.mmd` files became `exit 1` — render.sh has exactly one caller
+  shape (point it at a diagrams directory), so an empty result is far more
+  likely a wrong path or a flag eaten as the directory than a deliberate
+  no-op.
+- The final summary line now reports counts (`done: N ok, N skipped, N
+  failed`) instead of only `output: $OUT`.
+
+## The PM re-reads state before every dispatch — new since this anchor
+
+`plugin/crew/agents/pm.md:401-480` — **the full section, not `:401-440`**;
+the section itself runs to the next heading, `### When localgpu is
+installed` at `:481`, and the range this note first cited stopped partway
+through it. Titled "Re-check before every dispatch: the snapshot can go
+stale mid-pass", under `## Dispatching` at `:381`. Not mechanically enforced
+anywhere in the hook layer — this is agent-file prose, the kind this note
+otherwise excludes (see "What this file does not cover") — documented as an
+exception because it is a structural change to how a pass runs, not a role
+description: a pass used to decide every dispatch in it from the single
+`crew_state.py` read taken at the top, and the file records an observed
+failure of that design — HEAD advanced and the branch switched under a
+running PM mid-pass (another session committed to the same checkout), and
+two roles' results were reported against an anchor that was no longer
+current, caught only because a post-dispatch check happened to re-run
+`crew_state.py`.
+
+The fix: immediately before each dispatch, or each batch of parallel
+dispatches sent in one message, re-run all three of `crew_state.py`,
+`git rev-parse HEAD && git branch --show-current`, and
+`git status --porcelain` (`:429-434`) — not git alone, because
+`pm.authority` can flip, a handoff note can appear, an incident can open or
+expire, another lane can leave uncommitted edits, or `.crew/metrics.md` /
+`.crew/verify.json` / a codemap anchor can be rewritten, none of which move
+HEAD or the branch. `plugin/crew/agents/pm.md:421-424` states this was
+measured, not assumed, on this repository at `e741ea4`: a bare
+`crew_state.py` invocation took 0.097s and printed 1510 bytes — cited here
+as a fact about that one measurement, not a bound on every repo this runs
+against.
+
+**The part the truncated citation missed** (`:451-461`): the comparison is
+against the *most recent* re-check, not the original start-of-pass read,
+once a re-check has happened — "each re-check replaces the baseline it
+compares against" — and two kinds of difference are ranked apart. An
+authority change or a newly-active incident **stops the dispatch outright**,
+routed back through `## Authority`; every other difference (`triggers`
+moved, HEAD/branch changed, an incident's `minutesLeft` crossed zero, the
+`git status --porcelain` set changed) means re-deciding before dispatch, not
+dispatching stale and reconciling after. The section then continues past
+that into a routing table (`:464-479`, "Triggers are not the only source of
+work") mapping user-directed work — not trigger-driven — to a role by what
+the work *is*: implement/land -> `crew:developer` unless `dev.provider`
+names an external one, review a diff -> `/crew:review`, auth/authz/PII/infra
+-> `crew:security`, migration/schema/index -> `crew:dba`,
+architecture/data-flow docs -> `crew:docs-writer`, "where does this live" ->
+`crew:explorer`, pre-code approach choice -> `crew:planner`, "what should we
+improve" -> `crew:analyst`, no check harness or a flaky one ->
+`crew:smoke-author`, browser-coverage need -> `crew:browser-tester` — each
+row also naming who *not* to send it to (typically "yourself").
 
 ## `crew_state.py`'s two splits — `crew_freshness.py` and `crew_guards.py`
 
@@ -819,3 +1005,71 @@ field, `1.5.2` -> `1.5.3` — re-diffed specifically to confirm the `crew` block
 is untouched.
 
 Nothing else was re-read at this pass.
+
+## Re-anchor provenance — 2b337296 -> 5d1fc5fd, 2026-09-22
+
+**Targeted correction, not a full re-derivation.** Triggered by a merged-branch
+review that found the `crew_py_strict` section stating a caller count and a
+rejection mechanism PR #208 had made false. Per-path check, run against the
+40 cited paths `_cited_paths` (`plugin/crew/hooks/scripts/crew_freshness.py:263-271`)
+extracts from this file at `2b337296`:
+
+```
+git diff --name-only 2b337296..5d1fc5fd -- <40 cited paths>
+```
+
+Output: `CHANGELOG.md`, `CLAUDE.md`, `plugin/PLUGINS.md`,
+`plugin/crew/README.md`, `plugin/crew/agents/pm.md`,
+`plugin/crew/hooks/scripts/_test/run-tests.sh`,
+`plugin/crew/skills/crew-best-practices/SKILL.md`,
+`scripts/check-marketplace.py`, `scripts/install-prerequisites.sh`.
+
+`_cited_paths` does not pick up a line-range citation (`:82-98`, `:17-27`,
+`:383-413`) — its regex only matches a single `:\d+` after the path, so
+`plugin/crew/hooks/scripts/_common.sh:82-98` and
+`plugin/crew/hooks/scripts/role-write-guard.sh:17-27`, both cited in the
+section that turned out to be wrong, are invisible to the mechanical check
+and were found stale only by hand: `git diff --name-only 2b337296..5d1fc5fd --
+plugin/crew/hooks/scripts/_common.sh plugin/crew/hooks/scripts/role-write-guard.sh
+plugin/crew/hooks/scripts/context-watch.sh plugin/crew/hooks/scripts/pm-brief.sh
+plugin/crew/hooks/scripts/platform-sync.sh plugin/crew/hooks/scripts/verify-gate.sh`
+lists all six. This is the same gap `.crew/codemap/INDEX.md` warns is inherent
+in the mechanical check — it narrows the question, it does not answer it —
+so a note whose most load-bearing citations are line ranges cannot be trusted
+current on the strength of an empty machine diff alone.
+
+**What was re-read at this anchor:**
+`plugin/crew/hooks/scripts/_common.sh` in full (`crew_py`, `crew_py_strict`,
+both callers' comment blocks); `plugin/crew/hooks/scripts/context-watch.sh:1-150`
+(the fail-closed-once branch and its marker rule);
+`plugin/crew/hooks/scripts/pm-brief.sh`,
+`plugin/crew/hooks/scripts/platform-sync.sh`,
+`plugin/crew/hooks/scripts/pm-pulse.sh` (each just their `crew_py_strict`
+call site and header comment); `plugin/crew/hooks/scripts/verify-gate.sh:640-670`
+and `:1225-1400` (the strict-resolver call sites, the stub-matcher
+fail-closed check, and the `python3` shim), plus `:18`, `:252-253`,
+`:350-351` and `:604` (the four plain-`crew_py` call sites added to the
+"still plain `crew_py`" bullet above — content read and confirmed correct
+against source, not merely grep-located);
+`plugin/crew/hooks/scripts/role-write-guard.sh` in full, `:1-113`
+(**was, until a re-review of this pass, only `:1-60`** — the second half,
+`:61-113`, is what actually carries the CR strip, drive-letter
+normalisation and `-x` proof described above, and citing the function's
+full range without having read past its midpoint is exactly the "cited
+unread" mistake this note otherwise flags); `TODO.md:383-413` (confirming
+the stale-TODO note's cited range is unchanged even though the file grew
+elsewhere); `plugin/crew/agents/pm.md:381-440`;
+`plugin/crew/skills/crew-diagrams/scripts/render.sh` in full via
+`git diff 2b337296..5d1fc5fd`.
+
+**What was not re-read:** every other section of this file. The `CHANGELOG.md`,
+`plugin/PLUGINS.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/_test/run-tests.sh`,
+`plugin/crew/skills/crew-best-practices/SKILL.md`, `scripts/check-marketplace.py`
+and `scripts/install-prerequisites.sh` changes this diff reports were **not**
+inspected this pass — they surfaced only because they share the cited-path
+list with the section that was; nothing above should be read as clearing
+them. The "35/61" and "96 unique citations" figures in "Citation freshness"
+below are a claim about the `2b337296` full re-derivation and were not
+re-measured here; do not read this section's own citation count as revising
+them.
