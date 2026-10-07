@@ -362,3 +362,62 @@ def test_the_state_and_log_live_under_the_git_common_dir(tmp_path):
 
     assert os.path.isfile(os.path.join(root, ".git", "crew", "context-log.jsonl"))
     assert not os.path.exists(os.path.join(root, ".work", "crew"))
+
+
+# --- T-0070: SessionStart names inert settings ------------------------------
+
+def _start(root, source="startup"):
+    return _run(payload("SessionStart", root, source=source))
+
+
+def _inert_lines(text):
+    return [line for line in text.splitlines() if line.startswith("Inert settings (")]
+
+
+def test_session_start_names_inert_settings_in_one_line(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    lines = _inert_lines(_start(root))
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("Inert settings (crew ")
+    assert "autopilot.maxTicketsPerRun=3 (L-0541)" in lines[0]
+
+
+def test_inert_line_survives_memory_inject_off(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}}, inject=False)
+    lines = _inert_lines(_start(root))
+    assert len(lines) == 1 and "autopilot.maxTicketsPerRun=3 (L-0541)" in lines[0]
+
+
+def test_session_start_is_quiet_without_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"approval": "self", "mode": "plan"}})
+    assert _inert_lines(_start(root)) == []
+
+
+def test_session_start_escapes_control_characters_in_inert_settings(tmp_path):
+    from test_crew_config_inert import INERT_HOSTILE, assert_inert_escaped  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, config=INERT_HOSTILE)
+    assert_inert_escaped(_start(root))
+
+
+def test_inert_line_is_capped_and_inside_the_startup_budget(tmp_path):
+    many = {f"sub{i:02d}": ([f"s{i}/a.py"], [f"mark {i}"]) for i in range(40)}
+    cfg = {"autopilot": {f"frobnicate{i:02d}": i for i in range(12)}}
+    root = make_repo(tmp_path, subsystems=many, config=cfg,
+                     handoff="# Handoff\n\n## Next action\n" + "x" * 2000 + "\n")
+    text = _start(root)
+    lines = _inert_lines(text)
+    assert len(lines) == 1 and len(lines[0]) <= 300 and lines[0].endswith(" more"), lines
+    assert len(text) <= crew_context.STARTUP_CHARS
+    assert len(text.splitlines()) <= crew_context.STARTUP_LINES
+
+
+def test_a_broken_inert_check_never_silences_session_start(tmp_path, monkeypatch):
+    import crew_config  # pylint: disable=import-outside-toplevel
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("reader broke")
+    monkeypatch.setattr(crew_config, "inert_settings", boom)
+    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    text = _start(root)
+    assert text.startswith("crew context (startup)")
+    assert any(r.get("inert") == "inert-check-failed" for r in log_records(root))

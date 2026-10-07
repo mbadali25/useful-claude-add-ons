@@ -624,9 +624,11 @@ PERSONAL_KEYS = {
 # that the `int-min` rule would read as unrecognised). T-0011's `ship`,
 # `knownFailures` and `ciTimeoutMinutes` (batch 7) are repo-only by their spec:
 # whether a checkout's PRs merge unattended, and which of its checks may fail,
-# are facts about that checkout.
+# are facts about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
+# one checkout runs, and what its lanes do with a verdict, are that checkout's.
 REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
-                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes"})
+                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes",
+                                 "autopilot.maxLanes", "autopilot.reviewPolicy"})
 
 
 def personal_rank(dotted, value):

@@ -1,6 +1,6 @@
 ---
 description: Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, gitignore, handoff
-argument-hint: "[--memory]"
+argument-hint: "[--memory | --approvals]"
 allowed-tools: Bash, Read
 ---
 
@@ -25,6 +25,7 @@ summary above or below it, and do not pad it with advice.
 | Line | Source | When it says "unknown" |
 |---|---|---|
 | header | `git rev-parse`, `git status --porcelain` (no index refresh) | not a git repo |
+| `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (CONFIG.md §20) | `could not tell (...)` when the check failed |
 | `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` / `owner` | `.work/tickets/`, `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | - |
@@ -47,6 +48,15 @@ running `crew_context.py --stats` from the plugin's scripts directory. When
 that script is not installed the line reads `context hook not installed`;
 when it fails, the exit code and its first stderr line are shown. Neither
 case is reported as zero.
+
+## `--approvals`
+
+Prints only the open tickets whose spec and plan exist and validate and whose
+approval is missing, stale or unaccepted, one ready-to-paste
+`/crew:approve <id>` line each with `  why: <why>` under it, then a count of any whose spec and
+plan do not validate. Merged, current and spec-only tickets are left out;
+none pending prints `nothing needs approval`; no readable `.work/INDEX.md`, or an unreadable main-checkout one in a linked
+worktree, prints `could not tell (<reason>)`; a main checkout with no INDEX adds a `note:` line. Read-only.
 
 ## What to do with it
 

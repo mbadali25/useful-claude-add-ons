@@ -141,5 +141,15 @@
   "shellRoute": {
     "mode": "auto",
     "distro": null
+  },
+  "unattendedCloud": {
+    "aws": {
+      "readOnly": {
+        "profile": null,
+        "identity": null,
+        "region": null
+      },
+      "nonProd": {}
+    }
   }
 }

@@ -314,7 +314,7 @@ KEY_META = {
                           "`chat_id`, and the skill's example value counts as unset.",
                           FIRST, _S + "crew_notify.py", "string or null"),
     "notify.events": _row("Events that notify: `deploy`, `question`, and `blocker` "
-                          "(reserved, sends nothing yet). The pre-1.0 names `gate`, "
+                          "(T-0060's four blocker reasons). The pre-1.0 names `gate`, "
                           "`waiting`, `phase`, `review` and `done` are mapped with a "
                           "notice. A list is one leaf.", "type", since=FIRST,
                           source=_S + "crew_notify.py",
@@ -347,6 +347,22 @@ KEY_META = {
                             "tuple", crew_shell.MODES, "1.0.54"),
     "shellRoute.distro": _unv("WSL distro to route to; null takes the default distro.",
                               "1.0.54", _S + "crew_shell.py", "string or null"),
+    # T-0044: machine file only; a repo copy is ignored and reported.
+    "unattendedCloud.aws.readOnly.profile": _row(
+        "The AWS profile an unattended run exports credentials from (`aws configure "
+        "export-credentials`); it must yield temporary credentials. Machine file only.",
+        "type", since="1.1.8", source=_S + "crew_unattended.py", type_="profile name, or null"),
+    "unattendedCloud.aws.readOnly.identity": _row(
+        "The assumed-role ARN prefix STS must report for that profile, ending in `/`; "
+        "null refuses every launch. Machine file only.", "type", since="1.1.8",
+        source=_S + "crew_unattended.py", type_="ARN prefix ending in `/`, or null"),
+    "unattendedCloud.aws.readOnly.region": _row(
+        "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
+        "type", since="1.1.8", source=_S + "crew_unattended.py", type_="region, or null"),
+    "unattendedCloud.aws.nonProd": _row(
+        "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
+        "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
+        "open-table", since="1.1.8", source=_S + "crew_unattended.py"),
     # --- pm
     "pm.enabled": _unv("Run the PM brief.", FIRST, _S + "crew_state.py", "boolean"),
     "pm.mode": _unv("How the PM brief adapts its length.", FIRST, _S + "crew_state.py",
@@ -502,6 +518,17 @@ KEY_META = {
                                        "with a warning.", "branch", None, "1.0.349",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
+    "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "
+                               "resolved `pm.maxDispatches`, a larger value is capped to it and "
+                               "anything but a positive integer reads as it, each with a "
+                               "warning.", "branch", None, "1.1.6", _S + "crew_wave.py",
+                               type_="positive integer or null"),
+    "autopilot.reviewPolicy": _row("What a wave lane does with its review verdict: `stop` ends "
+                                   "at the first verdict, `clean-only` takes a CLEAN round on "
+                                   "to the done checks, `fix-and-rereview` fixes within the "
+                                   "ledger's rounds. Anything else reads as `stop`, with a "
+                                   "warning; no setting lets a lane accept a review.", "tuple",
+                                   ("stop", "clean-only", "fix-and-rereview"), "1.1.6"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -536,12 +563,6 @@ COMING = (
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",
             "Deploy workflows per environment.", "{}", "repo"),
-    _coming("autopilot.maxLanes", "T-0029", "new key",
-            "Parallel lanes one autopilot wave may run; may only lower the limit.",
-            "the resolved pm.maxDispatches", "repo"),
-    _coming("autopilot.reviewPolicy", "T-0029", "new key",
-            "What a lane does with review findings.", "stop", "repo",
-            ("stop", "clean-only", "fix-and-rereview")),
     _coming("coord.ttlMinutes", "T-0030", "new key",
             "Lifetime of a cross-session coordination claim (1-10080).", "30",
             "set when T-0030 lands"),
@@ -593,7 +614,7 @@ def layer_of(key):
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
-    if key in _MACHINE_ONLY:
+    if key in _MACHINE_ONLY or key.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):
         return "repo"

@@ -732,6 +732,11 @@ AUTOCLEAR_DEFAULTS = {
 # saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
 RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
 
+# T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
+UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
+    "profile": None, "identity": None, "region": None}, "nonProd": {}}}
+UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",), ("aws",)
+
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
 # `wtype` types into whatever currently has focus, which Wayland offers no way
@@ -1132,12 +1137,12 @@ AUTONOMOUS_STOPS = (
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
                       "maxAutoReplans": 0, "sleep": {"schedule": None, "approval": None, "questions": None},
-                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+                      "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                      "maxLanes": None, "reviewPolicy": "stop"}  # T-0029 wave: crew_wave.settings
 
-# How many tickets one session's work becomes. The default is `system`: one
-# session is one ticket, and a second ticket is opened only when the work
-# reaches into another system. Splitting per change was the pre-0.17.0
-# behaviour and is kept as `change` for anyone who wants it back.
+# How many tickets one session's work becomes. The default is `system`: one session is one ticket, and a second
+# ticket is opened only when the work reaches into another system. Splitting per change was the pre-0.17.0 behaviour
+# and is kept as `change` for anyone who wants it back.
 TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"
 

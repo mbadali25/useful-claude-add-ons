@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>144 keys</strong>: 83 settable in the machine-global file, 61 repo-only.</p>
+<p><strong>150 keys</strong>: 87 settable in the machine-global file, 63 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -975,7 +975,7 @@ the plugin.</p>
 <td><code>["blocker", "deploy", "question"]</code></td>
 <td>list of event names; an unknown name is dropped with a notice (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
 <td>0.11.0 or earlier</td>
-<td>Events that notify: <code>deploy</code>, <code>question</code>, and <code>blocker</code> (reserved, sends nothing yet). The pre-1.0 names <code>gate</code>, <code>waiting</code>, <code>phase</code>, <code>review</code> and <code>done</code> are mapped with a notice. A list is one leaf.</td>
+<td>Events that notify: <code>deploy</code>, <code>question</code>, and <code>blocker</code> (T-0060's four blocker reasons). The pre-1.0 names <code>gate</code>, <code>waiting</code>, <code>phase</code>, <code>review</code> and <code>done</code> are mapped with a notice. A list is one leaf.</td>
 </tr>
 <tr>
 <td><code>notify.realertHours</code></td>
@@ -1745,6 +1745,22 @@ the plugin.</p>
 <td>1.0.349</td>
 <td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
 </tr>
+<tr>
+<td><code>autopilot.maxLanes</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td>positive integer or null (checked in <code>plugin/crew/hooks/scripts/crew_wave.py</code>)</td>
+<td>1.1.6</td>
+<td>Lanes one <code>/crew:autopilot wave</code> runs at once; null is the resolved <code>pm.maxDispatches</code>, a larger value is capped to it and anything but a positive integer reads as it, each with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.reviewPolicy</code></td>
+<td>repo</td>
+<td><code>"stop"</code></td>
+<td><code>stop</code> | <code>clean-only</code> | <code>fix-and-rereview</code></td>
+<td>1.1.6</td>
+<td>What a wave lane does with its review verdict: <code>stop</code> ends at the first verdict, <code>clean-only</code> takes a CLEAN round on to the done checks, <code>fix-and-rereview</code> fixes within the ledger's rounds. Anything else reads as <code>stop</code>, with a warning; no setting lets a lane accept a review.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="tickets"><code>Tickets</code></h3>
@@ -1790,6 +1806,53 @@ the plugin.</p>
 <td><code>false</code> | <code>true</code> (checked in <code>plugin/crew/hooks/scripts/crew_route.py</code>)</td>
 <td>1.0.42</td>
 <td>Route plain-text prompts to <code>/crew:</code> commands; only the JSON value <code>true</code> arms it.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="unattendedcloud"><code>unattendedCloud</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.profile</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>profile name, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.8</td>
+<td>The AWS profile an unattended run exports credentials from (<code>aws configure export-credentials</code>); it must yield temporary credentials. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.identity</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>ARN prefix ending in <code>/</code>, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.8</td>
+<td>The assumed-role ARN prefix STS must report for that profile, ending in <code>/</code>; null refuses every launch. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.readOnly.region</code></td>
+<td>machine-only</td>
+<td><code>null</code></td>
+<td>region, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.8</td>
+<td>The AWS region the unattended run gets; null is <code>us-east-1</code>. Machine file only.</td>
+</tr>
+<tr>
+<td><code>unattendedCloud.aws.nonProd</code></td>
+<td>machine-only</td>
+<td><code>{}</code></td>
+<td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>1.1.8</td>
+<td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
 </tr>
 </tbody>
 </table>
@@ -1862,37 +1925,6 @@ the plugin.</p>
 <td>off</td>
 <td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
 <td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0029">T-0029</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>autopilot.maxLanes</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>the resolved pm.maxDispatches</td>
-<td></td>
-<td>Parallel lanes one autopilot wave may run; may only lower the limit.</td>
-</tr>
-<tr>
-<td><code>autopilot.reviewPolicy</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>stop</td>
-<td><code>stop</code> | <code>clean-only</code> | <code>fix-and-rereview</code></td>
-<td>What a lane does with review findings.</td>
 </tr>
 </tbody>
 </table>
