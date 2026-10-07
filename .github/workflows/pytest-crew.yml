@@ -88,3 +88,16 @@ jobs:
       # to both) edits suites that are green, in two marketplace entries, to
       # work around a runner detail.
       run: pytest skills/cisco-meraki/tests/ -v
+    - name: Run the wazuh-onprem skill tests
+      # skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py
+      # puts scripts/ on sys.path itself (no separate context.py file, so it
+      # does not hit the context.py collision the step above works around)
+      # and imports only manager_config, which is stdlib-only (argparse,
+      # difflib, os, posixpath, tempfile, uuid, subprocess, sys, time) - no
+      # extra pip install needed. Kept as its own step anyway, not folded
+      # into the combined run above: manager_config is a name unique to this
+      # skill today, but a second skill importing something also named
+      # manager_config into the same collection would hit the exact
+      # sys.modules collision documented above, and a separate step is what
+      # keeps that always false rather than merely false today.
+      run: pytest skills/wazuh-onprem/scripts/_test/ -v
