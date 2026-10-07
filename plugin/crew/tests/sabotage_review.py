@@ -15,6 +15,11 @@ REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 MERGED_MAIN = os.path.join(CREW, "hooks", "scripts", "merged_main.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
+CREW_TICKET = os.path.join(CREW, "hooks", "scripts", "crew_ticket.py")
+REVIEW_DELTA = os.path.join(CREW, "hooks", "scripts", "review_delta.py")
+CREW_AUTOPILOT = os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py")
+_D = "tests/test_review_delta.py::"
+_AP = "tests/test_crew_autopilot.py::"
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -46,9 +51,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
-        '":(exclude).crew/metrics.md"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -57,10 +62,89 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
-        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
+        'EXCLUDED = (".work/",) + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    # T-0068: crew's own bookkeeping (crew_ticket.CREW_BOOKKEEPING_PATHS)
+    # leaves the bundle, so the gate's record, a metrics row or the scope
+    # base written after acceptance never stales the receipt (TSS-510).
+    (
+        "bookkeeping enters the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        ("tests/test_review_patch.py::"
+         "test_bookkeeping_never_enters_the_bundle"),
+    ),
+    (
+        "bookkeeping written after acceptance stales the receipt",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        ("tests/test_review_ledger.py::"
+         "test_bookkeeping_written_after_acceptance_keeps_the_receipt"),
+    ),
+    (
+        "the bundle exclusion is not root-anchored",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        'crew_ticket.bookkeeping_excludes()\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + '
+        '[s.replace("top,glob)", "glob)**/") for s in crew_ticket.bookkeeping_excludes()]\n',
+        ("tests/test_review_patch.py::"
+         "test_a_crew_content_path_still_enters_the_bundle"),
+    ),
+    # Review of 514ca132, FIX 3: a PR that commits a file crew READS as a
+    # trust input must reach the reviewer; only ticket-flow bookkeeping is
+    # left out of the bundle.
+    (
+        "a committed incident file leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/incident.json",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/incident.json]"),
+    ),
+    (
+        "a committed tfplan summary leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/tfplan/**",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/tfplan/x.json]"),
+    ),
+    (
+        "a committed handoff leaves the bundle",
+        CREW_TICKET,
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n',
+        '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
+        '    ".crew/handoffs/**",\n',
+        ("tests/test_review_patch.py::"
+         "test_a_committed_crew_trust_input_is_in_the_bundle[.crew/handoffs/x.md]"),
+    ),
+    (
+        # Round-2 review of 1292b863: guard.log goes back to judged state, so
+        # a scope refusal written after the bundle stales the receipt.
+        "a guard.log row stales the bundle",
+        CREW_TICKET,
+        '    ".crew/guard.log",                    # scope_guard.py:126, crew_guards.py:346\n',
+        "",
+        ("tests/test_review_patch.py::"
+         "test_a_guard_log_row_never_enters_the_bundle"),
+    ),
+    (
+        "the manifest stops naming the bookkeeping exclusions",
+        REVIEW_PATCH,
+        'EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS\n',
+        'EXCLUDED = (".work/", "graphify-out/")\n',
+        ("tests/test_review_patch.py::"
+         "test_bookkeeping_never_enters_the_bundle"),
     ),
     (
         # The prompt stops naming the excluded paths: a reviewer can report
@@ -130,8 +214,8 @@ REVIEW_FIX_MUTATIONS = (
         # receipt binds the untouched tree hash.
         "the review round no longer checks the bundle parts",
         REVIEW_RUN,
-        "    extra_reasons = list(extra_reasons) + bundle_problems(manifest)\n",
-        "    extra_reasons = list(extra_reasons)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons) + bundle_problems(manifest)\n",
+        "    extra_reasons = list(extra_reasons) + list(tree_reasons)\n",
         ("tests/test_review_receipt.py::"
          "test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt"),
     ),
@@ -480,8 +564,8 @@ REVIEW_FIX_MUTATIONS = (
     (
         "a stale receipt hides a could-not-tell merge of main",
         REVIEW_LEDGER,
-        '                       f"{_merged_note(merged, stale=True)}")\n',
-        '                       "")\n',
+        '            return False, f"{stale}; delta gate: {why}{_merged_note(merged, stale=True)}"\n',
+        '            return False, f"{stale}; delta gate: {why}"\n',
         "tests/test_review_receipt.py::test_check_receipt_stale_message_says_could_not_tell",
     ),
     # T-0100 review round 1: every merged-main bundle and receipt check gets a
@@ -590,7 +674,89 @@ REVIEW_FIX_MUTATIONS = (
         "    short = preflight(args)\n    if short is not None:\n        return short\n",
         "    short = None\n",
         ("tests/test_review_gate.py::"
-         "test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent"),
+         "test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent"),
+    ),
+    (
+        # L-0528: the refusal's code collides with the probe's limited code
+        # again, so a caller that does not know the mode cannot tell "the
+        # gate has not passed" from "Codex hit a usage limit".
+        "review_run's unverified exit collides with the probe's limited exit again",
+        REVIEW_RUN,
+        "EXIT_UNVERIFIED = 9\n",
+        "EXIT_UNVERIFIED = 5\n",
+        "tests/test_review_run_launch.py::test_review_run_exit_codes_are_distinct",
+    ),
+    (
+        # L-0514: a reviewer that broke the contract is relaunched; the retry can paper over it.
+        'a reviewer-class INCOMPLETE is retried',
+        REVIEW_RUN,
+        '    if failure != review_verdict.TOOL:\n',
+        '    if failure not in (review_verdict.TOOL, review_verdict.REVIEWER):\n',
+        "tests/test_review_refund.py::test_no_retry_for_reviewer_class",
+    ),
+    (
+        # L-0514: a retry past REFUND_LIMIT spends a budget round nobody chose to spend.
+        'a round whose refund was refused is retried',
+        REVIEW_RUN,
+        '    if row.get("refunded") is not True:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_refund_refused",
+    ),
+    (
+        # L-0514: a usage limit is relaunched into the same limit instead of the Claude reviewer.
+        'a usage-limited round is retried',
+        REVIEW_RUN,
+        '    if limit:\n        return "a usage limit',
+        '    if False:\n        return "a usage limit',
+        "tests/test_review_refund.py::test_no_retry_on_usage_limit",
+    ),
+    (
+        # L-0514: a timeout is relaunched, doubling a --timeout wait.
+        'a timed-out round is retried',
+        REVIEW_RUN,
+        '    if timed_out:\n        return (f"round {number} timed out',
+        '    if False:\n        return (f"round {number} timed out',
+        "tests/test_review_refund.py::test_no_retry_on_timeout",
+    ),
+    (
+        # L-0514: tool failures relaunch until the refunds run out.
+        'the retry limit is not checked',
+        REVIEW_RUN,
+        '    if retries >= RETRY_LIMIT:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_retry_limit_is_one_per_invocation",
+    ),
+    (
+        # L-0514: a tree the gate no longer accepts is reviewed again.
+        'preflight is not asked again before the retry',
+        REVIEW_RUN,
+        '    if preflight(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_gate_changed",
+    ),
+    (
+        # Group review of #540: a self-check gone stale during the backoff.
+        'the standards self-check is not asked again before the retry',
+        REVIEW_RUN,
+        '    if gated and standards_gate(args) is not None:\n',
+        '    if False:\n',
+        "tests/test_review_refund.py::test_no_retry_when_the_self_check_went_stale",
+    ),
+    (
+        # L-0514 review: a source edit during the backoff is not seen.
+        "the retry does not rebuild the bundle from the tree",
+        REVIEW_RUN,
+        "    if fresh != manifest.get(\"bundle_sha256\"):\n",
+        "    if False:\n",
+        "tests/test_review_refund.py::test_no_retry_when_a_source_file_changed",
+    ),
+    (
+        # L-0514: a bundle that moved since the failed round is relaunched.
+        'the bundle is not re-hashed before the retry',
+        REVIEW_RUN,
+        '    if problems:\n        return f"the tree changed',
+        '    if False:\n        return f"the tree changed',
+        "tests/test_review_refund.py::test_no_retry_when_tree_changed",
     ),
     (
         # "Could not tell" reviews as though it were "passed".
@@ -650,8 +816,8 @@ REVIEW_FIX_MUTATIONS = (
         # clean review of the tree.
         "an owner-accepted receipt short-circuits a review",
         REVIEW_RUN,
-        '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
-        "    if ok:\n",
+        '    clean = ok and (data.get("receipt") or {}).get("kind") == "clean"\n',
+        "    clean = ok\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
     # L-0510: the auto-accept guard. Each was run by hand against the tracked
@@ -773,7 +939,7 @@ REVIEW_FIX_MUTATIONS = (
         # The owner path forges the auto receipt's string.
         "--accept stops reserving the auto: prefix",
         REVIEW_LEDGER,
-        "    if by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if _is_auto_name(by):\n",
         "    if False:\n",
         "tests/test_review_auto_accept.py::test_owner_accept_refuses_the_auto_prefix",
     ),
@@ -1096,11 +1262,12 @@ REVIEW_FIX_MUTATIONS = (
     (
         # L-0578: the row the round writes changes the bundle, so a CLEAN
         # receipt in a repo that does not gitignore .crew/ stops checking.
+        # Since T-0068 the exclusion is crew_ticket.CREW_BOOKKEEPING_PATHS's
+        # entry, so the mutation drops that entry.
         "the metrics row is reviewed as part of the bundle",
-        REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
-        '":(exclude).crew/metrics.md"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        CREW_TICKET,
+        '    ".crew/metrics.md",                   # review_metrics.py, commands/review.md step 6\n',
+        "",
         "tests/test_review_patch.py::"
         "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
     ),
@@ -1153,4 +1320,491 @@ REVIEW_FIX_MUTATIONS = (
         "                or isinstance(kept.get(\"round\"), bool):\n",
         "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
     ),
+    # --- H1 harness bundle (T-0098, T-0109, T-0101) -------------------------
+    # T-0098: --correct-acceptance. Each red on its named test through this
+    # runner's own main(), with MUTATIONS filtered to the entry.
+    (
+        # (a) An auto-accepted receipt's fixed accepter is "corrected", so
+        # receipt_stands stops standing it.
+        "a correction takes an auto-accepted receipt",
+        REVIEW_LEDGER,
+        '        if not isinstance(receipt, dict) or receipt.get("kind") != "owner-accepted":\n',
+        '        if not isinstance(receipt, dict) or receipt.get("kind") not in '
+        '("owner-accepted", AUTO_KIND):\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (b) A correction writes an `auto:` name without auto_accept's guard.
+        "a correction takes an auto: name",
+        REVIEW_LEDGER,
+        "    if _is_auto_name(new):\n",
+        "    if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (c) The history row overwrites the list instead of appending.
+        "a correction overwrites the correction history",
+        REVIEW_LEDGER,
+        '        data["acceptance_corrections"] = history + [row]\n',
+        '        data["acceptance_corrections"] = [row]\n',
+        ("tests/test_review_correct_acceptance.py::"
+         "test_second_correction_appends_and_keeps_the_first_row"),
+    ),
+    (
+        # (d) The correction refreshes accepted_at as well as the name.
+        "a correction refreshes accepted_at",
+        REVIEW_LEDGER,
+        '        receipt["accepted_by"] = new\n',
+        '        receipt["accepted_by"] = new\n        receipt["accepted_at"] = _now()\n',
+        ("tests/test_review_correct_acceptance.py::"
+         "test_correction_changes_only_the_name_and_the_history"),
+    ),
+    (
+        # (e) A malformed history is extended instead of refused.
+        "a correction extends a malformed correction history",
+        REVIEW_LEDGER,
+        "        if not _is_dict_list(history):\n"
+        "            raise LedgerError(f\"{ticket}'s `acceptance_corrections` is not a list of \"\n",
+        "        if False:\n"
+        "            raise LedgerError(f\"{ticket}'s `acceptance_corrections` is not a list of \"\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # (f) --reason may carry a line break into the ledger and the status.
+        "a correction reason may carry a line break",
+        REVIEW_LEDGER,
+        '    why = _one_line_arg(reason, "--reason")\n',
+        '    why = (reason.strip() if isinstance(reason, str) and reason.strip()\n'
+        '           else _one_line_arg(reason, "--reason"))\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    # T-0109: --reject --by <who> --supersede-accepted.
+    (
+        # (a) Plain --reject voids an accepted receipt.
+        "plain --reject supersedes an ACCEPTED ticket without the flag",
+        REVIEW_LEDGER,
+        "        if supersede_accepted:\n",
+        "        if supersede_accepted or data.get(\"state\") == ACCEPTED:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (b) An unattended `auto:` name supersedes an acceptance.
+        "--supersede-accepted takes an auto: name",
+        REVIEW_LEDGER,
+        "    if supersede_accepted and _is_auto_name(by):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (c) The flag acts on a REVIEWED ticket, recording a supersession
+        # that never happened.
+        "--supersede-accepted takes a REVIEWED ticket",
+        REVIEW_LEDGER,
+        "    if data.get(\"state\") != ACCEPTED:\n",
+        "    if data.get(\"state\") not in (ACCEPTED, REVIEWED):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (d) A receipt of a kind nobody knows is superseded as if read.
+        "--supersede-accepted takes any receipt kind",
+        REVIEW_LEDGER,
+        "    if not isinstance(receipt, dict) or receipt.get(\"kind\") not in SUPERSEDABLE:\n",
+        "    if not isinstance(receipt, dict):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_an_unknown_receipt_kind_is_named_as_unknown"),
+    ),
+    (
+        # (e) A receipt for an older round than the latest is superseded.
+        "--supersede-accepted drops the latest-round check",
+        REVIEW_LEDGER,
+        "    if (not isinstance(latest, dict) or latest.get(\"status\") != \"completed\"\n"
+        "            or latest.get(\"round\") != number):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # (f) The replaced receipt is lost instead of kept.
+        "--supersede-accepted does not keep the old receipt",
+        REVIEW_LEDGER,
+        "    data[\"superseded\"] = history + [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        "    data[\"superseded\"] = history\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_moves_an_owner_accepted_ticket_to_needs_replan"),
+    ),
+    (
+        # (g) A second supersession overwrites the first row.
+        "--supersede-accepted replaces the superseded history",
+        REVIEW_LEDGER,
+        "    data[\"superseded\"] = history + [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        "    data[\"superseded\"] = [{\"receipt\": receipt, \"by\": by, \"at\": at}]\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_survives_a_successor_and_appends"),
+    ),
+    (
+        # (h) The receipt stays in place under NEEDS_REPLAN.
+        "--supersede-accepted leaves the receipt in place",
+        REVIEW_LEDGER,
+        "    data[\"rejected\"] = {\"by\": by, \"at\": at, \"round\": number, "
+        "\"superseded\": receipt[\"kind\"]}\n    data[\"receipt\"] = None\n",
+        "    data[\"rejected\"] = {\"by\": by, \"at\": at, \"round\": number, "
+        "\"superseded\": receipt[\"kind\"]}\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_moves_an_owner_accepted_ticket_to_needs_replan"),
+    ),
+    # T-0101: the override line in the receipts block.
+    (
+        # (a) The line is no longer printed on a tree the gate does not accept.
+        "the receipts block drops the recorded-override line",
+        REVIEW_PROMPT,
+        "                out.append(OVERRIDE_LINE)\n",
+        "",
+        "tests/test_review_prompt.py::test_an_unverified_tree_names_the_recorded_override",
+    ),
+    (
+        # (b) The line is printed on every tree, accepted ones included.
+        "the receipts block prints the override line on an accepted gate",
+        REVIEW_PROMPT,
+        '    out = ["== Test receipts (verify gate) =="]\n',
+        '    out = ["== Test receipts (verify gate) ==", OVERRIDE_LINE]\n',
+        "tests/test_review_prompt.py::test_an_accepted_gate_never_carries_the_override_line",
+    ),
+    # Review of 24cb235c (#418): FIX1, FIX2, N1, N2, N3.
+    (
+        # FIX2: a receipt round of `true` passes as round 1 (True == 1).
+        "--supersede-accepted takes a bool receipt round",
+        REVIEW_LEDGER,
+        "    if not isinstance(number, int) or isinstance(number, bool):\n",
+        "    if not isinstance(number, int):\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX2: a latest row round of 1.0 or true passes as round 1.
+        "--supersede-accepted drops the latest round's type check",
+        REVIEW_LEDGER,
+        "    if not isinstance(latest_round, int) or isinstance(latest_round, bool):\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: --supersede-accepted's --by skips the one-line / UTF-8 check,
+        # so a lone surrogate is written and the success line then crashes.
+        "--reject writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--reject")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--reject needs --by <who is rejecting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX1: plain --accept writes a --by it cannot print or that spans lines.
+        "--accept writes a --by it cannot print",
+        REVIEW_LEDGER,
+        '    by = _one_line_arg(by, "--by", "--accept")\n',
+        '    if not isinstance(by, str) or not by.strip():\n'
+        '        raise LedgerError("--accept needs --by <who is accepting>")\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_plain_reject_and_accept_refuse_a_name_they_cannot_write"),
+    ),
+    (
+        # N1: a fullwidth or zero-width lookalike passes the reserved prefix.
+        "the auto: prefix test stops folding lookalikes",
+        REVIEW_LEDGER,
+        '    folded = unicodedata.normalize("NFKC", name).casefold()\n',
+        "    folded = name.lower()\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N2: only \n and \r count as line breaks again.
+        "a one-line argument may carry a Unicode line break",
+        REVIEW_LEDGER,
+        "    if any(ch in _LINE_BREAKS for ch in value):\n",
+        '    if "\\n" in value or "\\r" in value:\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # N3: argparse prefix matching lets `--super` reach the flag.
+        "review_ledger.py accepts abbreviated flags",
+        REVIEW_LEDGER,
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], "
+        "allow_abbrev=False)\n",
+        "    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n",
+        ("tests/test_review_correct_acceptance.py::"
+         "test_an_abbreviated_flag_is_a_usage_error"),
+    ),
+    (
+        # Review of 1b9ce429, FIX2: a receipt the round's verdict cannot carry
+        # is superseded as if it were readable.
+        "--supersede-accepted takes a receipt the verdict cannot carry",
+        REVIEW_LEDGER,
+        '    if receipt.get("kind") not in wanted:\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # FIX2: a receipt naming no bundle is superseded.
+        "--supersede-accepted takes a receipt with no bundle",
+        REVIEW_LEDGER,
+        '    if not isinstance(receipt.get("bundle_sha256"), str) or not _SHA256_RE.fullmatch(\n'
+        '            receipt["bundle_sha256"]):\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 4357247c, FIX1: a receipt bound to another bundle or base
+        # is superseded as if it were the round's.
+        "--supersede-accepted takes a receipt bound to another bundle",
+        REVIEW_LEDGER,
+        '    if (receipt["bundle_sha256"] != latest.get("bundle_sha256") or not isinstance(base, str)\n'
+        '            or not base or base != latest.get("base")):\n',
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 55135844, FIX2: a receipt missing what its kind records
+        # is superseded as if it were readable.
+        "--supersede-accepted takes a receipt lacking what its kind records",
+        REVIEW_LEDGER,
+        "    if unreadable:\n",
+        "    if False:\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 55135844, FIX1: a correction rewrites a receipt bound to
+        # another bundle or base.
+        "--correct-acceptance takes a receipt bound to another bundle",
+        REVIEW_LEDGER,
+        '        if (receipt.get("bundle_sha256") != latest.get("bundle_sha256")\n',
+        "        if (False\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of b077446e: an auto receipt whose findings are not the round's.
+        "--supersede-accepted takes an auto receipt with another round's findings",
+        REVIEW_LEDGER,
+        '            and receipt["findings"] == latest.get("findings")  # review of b077446e\n',
+        "            and True\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of dc538c79, FIX1: a correction takes a receipt naming no bundle.
+        "--correct-acceptance takes a receipt naming no bundle",
+        REVIEW_LEDGER,
+        "        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):\n",
+        "        if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of dc538c79, FIX2: an auto receipt with no witness count.
+        "--supersede-accepted takes an auto receipt with no witness count",
+        REVIEW_LEDGER,
+        "            and type(ignored) is int and ignored == 0"
+        "  # pylint: disable=unidiomatic-typecheck\n",
+        "            and True\n",
+        ("tests/test_review_reject_accepted.py::"
+         "test_supersede_is_refused_and_changes_nothing"),
+    ),
+    (
+        # Review of 1b9ce429, FIX1: --correct-acceptance on a ticket that is
+        # no longer ACCEPTED.
+        "--correct-acceptance ignores the state",
+        REVIEW_LEDGER,
+        "        if current != ACCEPTED:\n",
+        "        if False:\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # FIX1: --correct-acceptance on a receipt for an older round.
+        "--correct-acceptance takes a receipt for an older round",
+        REVIEW_LEDGER,
+        '                or latest.get("verdict") != "FINDINGS" or latest.get("round") != number\n',
+        '                or latest.get("verdict") != "FINDINGS"\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of 1b9ce429, FIX3: --status shows a null history as empty.
+        "--status shows a malformed history as empty",
+        REVIEW_LEDGER,
+        '            "superseded": data.get("superseded", []),\n',
+        '            "superseded": data.get("superseded") or [],\n',
+        ("tests/test_review_reject_accepted.py::"
+         "test_status_shows_a_malformed_history_as_it_is"),
+    ),
+    (
+        # Review of 7351594b: a float latest round passes as the receipt's.
+        "--correct-acceptance takes a float latest round",
+        REVIEW_LEDGER,
+        '                or type(latest.get("round")) is not int):'
+        '  # pylint: disable=unidiomatic-typecheck\n',
+        '                or False):\n',
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    (
+        # Review of 7351594b: an old accepter it cannot print is corrected.
+        "--correct-acceptance takes an old accepter it cannot print",
+        REVIEW_LEDGER,
+        '            _one_line_arg(was, "accepted_by")\n',
+        "            pass\n",
+        "tests/test_review_correct_acceptance.py::test_correction_refused",
+    ),
+    # L-0522: the delta gate. Each mutation removes ONE check on a fixture
+    # where that check is the only one that can stale the receipt, so the
+    # mutant answers an unsafe KEEP (exit 0) and the named test goes red.
+    ("delta gate: identity ignores the old blob id", REVIEW_DELTA,
+     '    return (entry["status"], src, entry["old_mode"], entry["new_mode"], entry["old_id"],\n',
+     '    return (entry["status"], src, entry["old_mode"], entry["new_mode"], None,\n',
+     _D + "test_merge_resolved_to_the_reviewed_bytes_over_mains_edit_is_stale"),
+    ("delta gate: identity ignores the new blob id", REVIEW_DELTA,
+     '            entry["new_id"])\n',
+     '            None)\n',
+     _D + "test_ticket_file_edited_after_review_committed_is_stale"),
+    ("delta gate: a dirty review is not caught", REVIEW_DELTA,
+     '    if rebuilt != receipt.get("bundle_sha256"):\n',
+     '    if False:\n',
+     _D + "test_dirty_review_whose_edit_was_discarded_is_stale"),
+    ("delta gate: step 2 rebuilds the reviewed bundle as a plain diff again (pre-T-0100)",
+     REVIEW_DELTA,
+     "        tree = review_patch._ticket_base_tree(root, base, head_tree, tmp_dir,  "
+     "# pylint: disable=protected-access\n"
+     "                                              head=head)[0]\n",
+     "        tree = _tree(root, base)\n",
+     _D + "test_receipt_on_a_merged_main_bundle_survives_a_bump_and_anchor_refresh"),
+    ("delta gate: a rewritten history is not caught", REVIEW_DELTA,
+     '    if not _is_ancestor(root, head, "HEAD"):\n',
+     '    if False:\n',
+     _D + "test_review_head_missing_or_not_an_ancestor_is_stale"),
+    ("delta gate: a path only in the current delta is skipped", REVIEW_DELTA,
+     '        if er is None or ec is None:\n',
+     '        if er is None and ec is not None:\n            continue\n        if ec is None:\n',
+     _D + "test_new_non_exempt_file_after_review_is_stale"),
+    ("delta gate: a path only in the reviewed delta is skipped", REVIEW_DELTA,
+     '        if er is None or ec is None:\n',
+     '        if ec is None:\n            continue\n        if er is None:\n',
+     _D + "test_reviewed_change_reverted_is_stale"),
+    ("delta gate: version normalised at any depth", REVIEW_DELTA,
+     '            locations = [("version",)]\n',
+     '            locations = [k for k in _json_spans(new_raw) if k[-1:] == ("version",)]\n',
+     _D + "test_nested_version_key_change_is_stale"),
+    ("delta gate: marketplace versions not bound to the bumped plugin", REVIEW_DELTA,
+     '        if entry["name"] in bumped:\n'
+     '            if entry.get("version") != bumped[entry["name"]]:\n'
+     '                raise ValueError(f"marketplace {entry[\'name\']} version is not its plugin.json\'s")\n'
+     '            locations.append(("plugins", i, "version"))\n',
+     '        locations.append(("plugins", i, "version"))\n',
+     _D + "test_marketplace_other_plugin_version_change_is_stale"),
+    ("delta gate: the code-map glob widened to a prefix", REVIEW_DELTA,
+     '    "codemap": (".crew/codemap/**/*.md",),\n',
+     '    "codemap": (".crew/codemap*/**/*.md",),\n',
+     _D + "test_look_alike_dir_with_an_anchor_only_change_is_stale"),
+    ("delta gate: the code-map glob loses its file type", REVIEW_DELTA,
+     '    "codemap": (".crew/codemap/**/*.md",),\n',
+     '    "codemap": (".crew/codemap/**",),\n',
+     _D + "test_non_md_file_under_codemap_with_anchor_only_change_is_stale"),
+    ("delta gate: the matcher folds case like fnmatch", REVIEW_DELTA,
+     "fnmatch.fnmatchcase(names[j], pat[i])",
+     "fnmatch.fnmatch(names[j], pat[i])",
+     _D + "test_matcher_is_case_sensitive"),
+    ("delta gate: a code map is normalised whole, not by its anchor", REVIEW_DELTA,
+     '        return _replace_spans(text, [found[0].span(1)]) if len(found) == 1 else None\n',
+     '        return "" if len(found) == 1 else None\n',
+     _D + "test_code_map_body_edited_after_review_is_stale"),
+    ("delta gate: a rules file skips its source-map check", REVIEW_DELTA,
+     '        if judged.get(source) is not True or _exempt_class(source or "") != "codemap":\n',
+     '        if False:\n',
+     _D + "test_rules_whose_source_map_changed_beyond_its_anchor_is_stale"),
+    ("delta gate: an exempt path keeps no status, mode or binary rule", REVIEW_DELTA,
+     '    return (entry["status"] in _EXEMPT_STATUS and entry["old_mode"] in _EXEMPT_OLD_MODES\n',
+     '    return True or (entry["status"] in _EXEMPT_STATUS and entry["old_mode"] in _EXEMPT_OLD_MODES\n',
+     _D + "test_exempt_path_deleted_is_stale"),
+    ("check E: no range is diffed", REVIEW_DELTA,
+     '        for a, b, label in ranges:\n',
+     '        for a, b, label in ():\n',
+     _D + "test_excluded_file_added_before_review_is_stale"),
+    ("check E: every graphify-out/ path is excepted", REVIEW_DELTA,
+     '        if (path not in EXCLUDED_EXCEPTIONS or entry["status"] != "M"\n',
+     '        if (not path.startswith("graphify-out/") or entry["status"] != "M"\n',
+     _D + "test_non_excepted_graph_file_present_before_review_modified_after_is_stale"),
+    ("delta gate: skip-worktree and assume-unchanged pass", REVIEW_DELTA,
+     '        if rec and (rec[0] == "S" or rec[0].islower()):\n',
+     '        if False:\n',
+     _D + "test_skip_worktree_edit_is_stale"),
+    ("delta gate: a gitlink passes", REVIEW_DELTA,
+     '            if rec.startswith(review_patch.SUBMODULE_MODE + " "):\n',
+     '            if False:\n',
+     _D + "test_reviewed_gitlink_unchanged_since_is_still_stale"),
+    ("delta gate: no train entry falls back to the default ref", REVIEW_DELTA,
+     '    if where != "ok":\n        raise Stale(',
+     '    if where != "ok":\n        return "main"\n        raise Stale(',
+     _D + "test_no_train_state_is_stale"),
+    ("delta gate: an exception reads as kept", REVIEW_DELTA,
+     '        return False, f"{COULD_NOT_TELL}: {exc}", None\n',
+     '        return True, "kept", {"head": "0" * 40, "base": "0" * 40, "ref": "?", '
+     '"identical": [], "anchor_only": [], "exempt": []}\n',
+     _D + "test_git_failing_inside_the_gate_reads_could_not_tell"),
+    ("delta gate: several merge bases accepted", REVIEW_DELTA,
+     '    if len(merge_bases) != 1:\n',
+     '    if not merge_bases:\n',
+     _D + "test_criss_cross_merge_bases_are_stale"),
+    ("preflight: a delta-kept receipt short-circuits before the gate", REVIEW_RUN,
+     '    if clean and message.startswith("receipt kept by delta gate"):\n',
+     '    if False:\n',
+     _D + "test_preflight_delta_kept_on_an_unverified_tree_does_not_short_circuit"),
+    ("check_receipt: check E skipped", REVIEW_LEDGER,
+     '    if not ok_e:\n        return False, f"receipt is stale: {why_e}"\n',
+     '',
+     _D + "test_excluded_only_change_stales_the_fast_path"),
+    ("delta gate: a diagram header normalised whole", REVIEW_DELTA,
+     '        return _replace_spans(text, [found[0].span(1)])\n',
+     '        return _replace_spans(text, [(start, end if end >= 0 else len(text))])\n',
+     _D + "test_diagram_generated_from_date_change_is_stale"),
+    ("delta gate: a diagram header form not checked", REVIEW_DELTA,
+     '        if not any(form.fullmatch(line) for form in _DIAGRAM_HEADER_FORMS):\n'
+     '            return None\n',
+     '',
+     _D + "test_diagram_invalid_header_form_is_stale"),
+    ("delta gate: the working state judged, the clean check skipped", REVIEW_DELTA,
+     '    tree, problem = _clean_head_tree(root)\n',
+     '    tree, problem = working_tree(root), None\n',
+     _D + "test_committed_edit_restored_only_in_the_working_tree_is_stale"),
+    ("delta gate: git status not checked", REVIEW_DELTA,
+     '    if first:\n',
+     '    if False:\n',
+     _D + "test_untracked_file_after_a_catch_up_is_stale"),
+    ("autopilot: a refresh beyond an anchor routes to review", CREW_AUTOPILOT,
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:\n',
+     '    if False:\n',
+     _AP + "test_autopilot_refresh_beyond_anchor_stops_for_a_human"),
+    ("autopilot: the beyond-anchor guard only with rounds left", CREW_AUTOPILOT,
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message:\n',
+     '    if not ok and review_ledger.review_delta.ANCHORED_BEYOND in message '
+     'and ledger.get("rounds_left", 0) >= 1:\n',
+     _AP + "test_autopilot_refresh_beyond_anchor_with_zero_rounds_left_names_the_refresh"),
+    ("check E: the before-review range dropped", REVIEW_DELTA,
+     '        ranges = ((_tree(root, base), head_tree, "receipt base -> reviewed head"),\n'
+     '                  (head_tree,',
+     '        ranges = ((head_tree,',
+     _D + "test_excluded_file_added_before_review_is_stale"),
+    ("check E: binary never detected", REVIEW_DELTA,
+     '        binary = (added, deleted) == ("-", "-")\n',
+     '        binary = False\n',
+     _D + "test_binary_graph_file_change_is_stale"),
+    ("delta gate: manifests compared as parsed values", REVIEW_DELTA,
+     '    return _strip_spans(raw, spans)\n',
+     '    return json.loads(_strip_spans(raw, spans))\n',
+     _D + "test_manifest_bool_to_int_is_stale"),
+    ("delta gate: a pinned base_sha ignored", REVIEW_DELTA,
+     '    R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name\n',
+     '    R = _resolve(root, ref)  # pylint: disable=invalid-name\n',
+     _D + "test_check_receipt_judges_the_passed_base_sha"),
 )
