@@ -93,13 +93,12 @@ prints `self-approved <id> under approval=<policy>, risk=<risk>`; a refusal exit
 stands only while the policy still says yes. `question_policy` is the same decision for an open
 question -- `take` the researched recommendation or `stop` -- with no `allowCliApproval` rule.
 
-`questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
-QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
-risk=`, then one `taken:` line per question autopilot answered. A `taken:`
-line is valid only for the recommended option, only naming a policy that
-takes (`self` or `risk` -- the one in force when it was taken, so a later
-policy change does not void an honest record), and only while the policy in
-force says `take`. Exit 0 valid, 1 not.
+`questions-check` validates `.work/tickets/<id>/questions.md` (the shape is QUESTIONS_SHAPE,
+printed when it fails) and prints `valid= action= policy= risk=`, then one `taken:` line per
+question autopilot answered. A `taken:` line is valid only for the recommended option, only naming
+a policy that takes (`self` or `risk` -- the one in force when it was taken, so a later policy
+change does not void an honest record), and only while the policy in force says `take`. Exit 0
+valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
@@ -166,13 +165,12 @@ plan. A NEEDS_REPLAN that autopilot's own reject of the current plan's latest ro
 round still passes the policy's round checks and is still allowed, is `replan` without a stop.
 `status` reads neither route (`policy=False`). T-0067's `fix` is crew_autopilot_fix.py's docstring.
 
-The INDEX row (T-0063) is this checkout's; with none, the main checkout's --
-the first record of `git worktree list --porcelain` -- and `index_source`
-(`--json` only) names the file that answered. Rows in both whose cells differ
-stop as `index-disagreement`; a listing that fails is could-not-tell, kept in
-the reason. The ticket folder is never read from the main checkout: one only
-there stops, naming the `cp -r` to make, since the scope guard reads Touch
-from this checkout's folder.
+The INDEX row (T-0063) is this checkout's; with none, the main checkout's -- the first record of
+`git worktree list --porcelain` -- and `index_source` (`--json` only) names the file that answered.
+Rows in both whose cells differ stop as `index-disagreement`; a listing that fails is
+could-not-tell, kept in the reason. The ticket folder is never read from the main checkout: one
+only there stops, naming the `cp -r` to make, since the scope guard reads Touch from this
+checkout's folder.
 
 ## ship (T-0011)
 
@@ -2313,6 +2311,9 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
+    replan = importlib.import_module("crew_autopilot_replan").replan_check(top, ticket)  # L-0670
+    if replan["applies"] and not replan["ok"]:
+        return 2, f"refused: {replan['reason']}; {human}"
     _PINNED.decisions = {(top, ticket): got}
     try:
         _receipt, successor = crew_ticket.approve(
@@ -2462,7 +2463,7 @@ EXTRA_ACTIONS = {"goal-propose": "crew_autopilot_goal", "goal-approve": "crew_au
                  "tracker": "crew_autopilot_docs", "sleep": "crew_autopilot_sleep",
                  "wake": "crew_autopilot_sleep", "split": "crew_autopilot_split",
                  "slice": "crew_autopilot_slices", "slice-done": "crew_autopilot_slices",
-                 "next-slice": "crew_autopilot_slices"}
+                 "next-slice": "crew_autopilot_slices", "replan-check": "crew_autopilot_replan"}
 
 
 def stops():

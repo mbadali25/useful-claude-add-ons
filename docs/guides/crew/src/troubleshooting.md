@@ -638,6 +638,19 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## Autopilot refused a successor plan after an automatic reject
+
+- **Symptom:** `/crew:autopilot` stops with `refused: successor plan lacks <n> of <m> finding
+  line(s), first: <line>` after it rejected a review round itself (`autopilot.maxAutoReplans`).
+- **Cause:** after an automatic reject, autopilot approves a successor plan only when `plan.md`
+  holds every `BLOCK|` and `FIX|` line of the rejected round verbatim, each as a whole line, as many
+  times as the round carries it (L-0670). NIT lines are not required. `could not tell: ...`
+  means the ledger, the rejected round's row or `plan.md` could not be read.
+- **Check:** `python3 plugin/crew/hooks/scripts/crew_autopilot.py replan-check --root . --ticket
+  <id>` prints `applies= ok= missing=` and the reason, and writes nothing.
+- **Fix:** quote the missing lines in the plan, or approve it yourself with `/crew:approve <id>`,
+  which this check never blocks.
+
 ## A setting seems to do nothing
 
 **Symptom:** you set a key in `.crew/config.json` or `~/.claude/crew/config.json` and crew behaves

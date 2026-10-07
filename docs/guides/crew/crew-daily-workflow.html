@@ -275,6 +275,11 @@ ticket whose finished review would need one shows as <code>review-unread</code>,
 and a blocked ticket are only counted (<code>2 held, 1 blocked</code>); a hold that is due
 is listed as <code>revisit</code> with its reason. No <code>.work/INDEX.md</code> prints <code>waiting
 unknown (...)</code>, never "nothing on you".</p>
+<h2 id="after-autopilot-rejects-a-review-round-itself">After Autopilot Rejects a Review Round Itself</h2>
+<p>With <code>autopilot.maxAutoReplans</code> set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; <code>crew_autopilot.py replan-check --ticket &lt;id&gt;</code> shows the same answer
+without approving. Your own <code>/crew:approve</code> is never held to it.</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>

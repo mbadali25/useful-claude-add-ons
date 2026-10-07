@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.1.15**: After an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line. When autopilot rejects a review round itself and plans again, it no longer approves a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
 - **crew 1.1.15**: The owner list knows hold, blocked, landing and needs-owner. `/crew:status` now counts held and blocked tickets on its `waiting` line (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
-- **crew 1.1.15**: `/crew:status --owner` and the `waiting` line. `/crew:status` now says how many open tickets are waiting on you, and `/crew:status --owner` lists them, one line each with the command to type or the question to answer.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

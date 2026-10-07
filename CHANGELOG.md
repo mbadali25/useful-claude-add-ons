@@ -9,6 +9,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.15: after an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line (L-0670)
+
+- **Summary.** When autopilot rejects a review round itself and plans again, it no longer approves
+  a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
+- **How.** New `hooks/scripts/crew_autopilot_replan.py`: `replan_check` reads the auto-rejected
+  round's `BLOCK|` and `FIX|` lines and requires each as a whole line of `plan.md`, as many times
+  as the round carries it (CRLF read as LF; NIT lines not required). `crew_autopilot.py approve`
+  refuses (exit 2, nothing written) when it fails; `crew_autopilot.py replan-check --ticket <id>`
+  gives the same answer read-only. Anything it cannot read is could-not-tell, a refusal.
+- **Unchanged.** An owner's reject, a first plan and `/crew:approve` are never checked.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0671.
+
 ### Added — crew 1.1.15: the owner list knows hold, blocked, landing and needs-owner (L-0687)
 
 - **Summary.** `/crew:status` now counts held and blocked tickets on its `waiting` line

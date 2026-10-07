@@ -429,7 +429,7 @@
                 "plugin/crew/tests/test_crew_autopilot_policy.py",
                 "plugin/crew/hooks/scripts/crew_sleep.py",
                 "plugin/crew/tests/test_crew_autopilot_sleep.py", "plugin/crew/hooks/scripts/crew_autopilot_sleep.py",
-                "plugin/crew/tests/test_crew_autopilot_replan.py"],
+                "plugin/crew/tests/test_crew_autopilot_replan.py", "plugin/crew/hooks/scripts/crew_autopilot_replan.py"],
       "seconds": 43,
       "coveredBy": "crew-suite",
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_autopilot_policy.py plugin/crew/tests/test_crew_autopilot_sleep.py plugin/crew/tests/test_scope_guard.py plugin/crew/tests/test_crew_autopilot_replan.py -q"],

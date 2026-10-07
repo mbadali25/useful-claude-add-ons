@@ -1623,6 +1623,13 @@ Obsidian vault). A CLI the commands call, not a hook.
   `held`, True or None is listed as `revisit`; `blocked` is counted, `landing`
   skipped, `needs-owner` listed with next.md's `next:`. The `waiting` line
   prints `H held, B blocked` when non-zero.
+- DERIVED (L-0670; measured on this tree): `crew_autopilot.approve` asks
+  `crew_autopilot_replan.replan_check` after `approval_policy` allows
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2314`,
+  `plugin/crew/hooks/scripts/crew_autopilot_replan.py:78`): under a NEEDS_REPLAN that
+  `AUTO_REJECT_BY` wrote, `plan.md` must hold every BLOCK and FIX line of the
+  rejected round as whole lines, counted; could-not-tell refuses. `replan-check`
+  is the read-only script action. The owner's `/crew:approve` is not checked.
   `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:105`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a

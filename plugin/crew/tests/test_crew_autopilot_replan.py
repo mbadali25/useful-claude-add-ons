@@ -498,7 +498,8 @@ def test_full_cycle_reject_plan_approve_opens_fresh_rounds(tmp_path):
     rejected = _cli(root, "auto-reject", "--ticket", T)
     replan = _next(root)
     _write(root / ".work" / "tickets" / T / "plan.md",
-           PLAN.format(files="src/app.py") + "\nSuccessor: quotes " + BLOCK_LINE + "\n")
+           PLAN.format(files="src/app.py") + "\nSuccessor, quoting round 2 (L-0670):\n"
+           + BLOCK_LINE + "\n" + FIX_LINE + "\n")
     approve = _next(root)
     approved = _cli(root, "approve", "--ticket", T)
     after = _next(root)
@@ -580,3 +581,158 @@ def test_command_names_the_auto_replan_procedure():
             "neighbouring-case check" in flat, "`maxAutoReplans` (0: off)" in flat,
             "`auto-rejected`" in flat, "every successor plan" in flat) == (
         True, True, True, True, True, True)
+
+
+# --- L-0670: a successor plan after an automatic reject quotes every BLOCK and FIX ----
+
+import crew_autopilot_replan  # noqa: E402  pylint: disable=wrong-import-position
+
+AUTO = {"by": crew_autopilot.AUTO_REJECT_BY, "at": "2026-10-07T00:00:00Z", "round": 2}
+
+
+def _auto_rejected_plan(tmp_path, quoted=(BLOCK_LINE, FIX_LINE), rejected=None, rounds=None, state="NEEDS_REPLAN",
+              plan_tail=None):
+    """A ticket auto-rejected at round 2, its successor plan.md quoting `quoted`."""
+    root = _repo(tmp_path)
+    _ledger(root, rounds=rounds, state=state, rejected=AUTO if rejected is None else rejected)
+    plan = PLAN.format(files="src/app.py").rstrip("\n") + "\n\nSuccessor plan, quoting round 2:\n" \
+        + "".join(f"{line}\n" for line in quoted) + (plan_tail or "")
+    _write(root / ".work" / "tickets" / T / "plan.md", plan)
+    return root
+
+
+def _check(root):
+    return crew_autopilot_replan.replan_check(str(root), T)
+
+
+def test_replan_check_passes_when_every_block_and_fix_is_quoted(tmp_path):
+    assert _check(_auto_rejected_plan(tmp_path)) == {"applies": True, "ok": True, "missing": 0,
+                                           "reason": "successor plan quotes all 2 BLOCK and FIX line(s)"}
+
+
+def test_replan_check_does_not_require_nit_lines(tmp_path):
+    got = _check(_auto_rejected_plan(tmp_path, quoted=(BLOCK_LINE, FIX_LINE)))
+
+    assert (got["ok"], NIT_LINE in got["reason"]) == (True, False)
+
+
+def test_replan_check_fails_on_a_missing_line(tmp_path):
+    got = _check(_auto_rejected_plan(tmp_path, quoted=(BLOCK_LINE,)))
+
+    assert (got["applies"], got["ok"], got["missing"], got["reason"]) == (
+        True, False, 1, f"successor plan lacks 1 of 2 finding line(s), first: {FIX_LINE}")
+
+
+def test_replan_check_counts_duplicates(tmp_path):
+    rows = [_row(1), _row(2, findings=[BLOCK_LINE, BLOCK_LINE, FIX_LINE],
+                      counts={"BLOCK": 2, "FIX": 1, "NIT": 0})]
+
+    once = _check(_auto_rejected_plan(tmp_path / "once", rounds=rows))
+    twice = _check(_auto_rejected_plan(tmp_path / "twice", rounds=rows, quoted=(BLOCK_LINE, BLOCK_LINE, FIX_LINE)))
+
+    assert ((once["ok"], once["missing"]), twice["ok"]) == ((False, 1), True)
+
+
+def test_replan_check_needs_whole_lines(tmp_path):
+    got = _check(_auto_rejected_plan(tmp_path, quoted=(f"- {BLOCK_LINE}", FIX_LINE)))
+
+    assert (got["ok"], BLOCK_LINE in got["reason"]) == (False, True)
+
+
+def test_replan_check_accepts_crlf_plan(tmp_path):
+    root = _auto_rejected_plan(tmp_path)
+    path = root / ".work" / "tickets" / T / "plan.md"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert _check(root)["ok"] is True
+
+
+def _corrupt_ledger(root):
+    _ledger(root, raw="{not json")
+
+
+def _no_row(root):
+    _ledger(root, state="NEEDS_REPLAN", rejected=dict(AUTO, round=9))
+
+
+def _findings(value):
+    return lambda root: _ledger(root, rounds=[_row(1), _row(2, findings=value)], state="NEEDS_REPLAN",
+                                rejected=AUTO)
+
+
+def _no_plan(root):
+    os.remove(str(root / ".work" / "tickets" / T / "plan.md"))
+
+
+def _plan_not_utf8(root):
+    (root / ".work" / "tickets" / T / "plan.md").write_bytes(b"\xff\xfe plan\n")
+
+
+@pytest.mark.parametrize("break_it", [
+    _corrupt_ledger, _no_row, _findings("BLOCK|x"), _findings([f"{BLOCK_LINE}\nFIX|y"]),
+    _findings([FIX_LINE, NIT_LINE]), _no_plan, _plan_not_utf8],
+    ids=["corrupt-ledger", "no-row", "findings-not-a-list", "multi-line", "no-block", "no-plan",
+         "not-utf8"])
+def test_replan_check_could_not_tell(tmp_path, break_it):
+    root = _auto_rejected_plan(tmp_path)
+    break_it(root)
+
+    got = _check(root)
+
+    assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
+
+
+def test_replan_check_not_applicable_after_owner_reject(tmp_path):
+    got = _check(_auto_rejected_plan(tmp_path, quoted=(), rejected={"by": "Owner", "at": "x", "round": 2}))
+
+    assert (got["applies"], got["ok"]) == (False, True)
+
+
+def test_replan_check_not_applicable_when_not_needs_replan(tmp_path):
+    got = _check(_auto_rejected_plan(tmp_path, quoted=(), state="REVIEWED"))
+
+    assert (got["applies"], got["ok"]) == (False, True)
+
+
+def _receipts(root):
+    path = crew_ticket.approval_path(str(root), T)
+    return _bytes(path) if os.path.exists(path) else None
+
+
+def test_approve_refuses_successor_that_drops_a_block(tmp_path):
+    root = _auto_rejected_plan(tmp_path, quoted=(FIX_LINE,))
+    ledger = review_ledger.ledger_path(str(root), T)
+    before = (_receipts(root), _bytes(ledger))
+
+    code, text = crew_autopilot.approve(str(root), T)
+
+    assert (code, text.startswith("refused: successor plan lacks 1 of 2"), BLOCK_LINE in text,
+            (_receipts(root), _bytes(ledger)) == before) == (2, True, True, True), text
+
+
+def test_approve_allows_successor_that_quotes_all(tmp_path):
+    root = _auto_rejected_plan(tmp_path)
+
+    code, text = crew_autopilot.approve(str(root), T)
+
+    assert (code, review_ledger.status(str(root), T)["state"]) == (0, "IN_REVIEW"), text
+
+
+def test_owner_cli_approve_is_not_checked(tmp_path):
+    root = _auto_rejected_plan(tmp_path, quoted=(FIX_LINE,))
+
+    crew_ticket.approve(str(root), T, by="Owner")
+
+    assert review_ledger.status(str(root), T)["state"] == "IN_REVIEW"
+
+
+def test_replan_check_writes_nothing(tmp_path):
+    root = _auto_rejected_plan(tmp_path, quoted=(FIX_LINE,))
+    ledger = review_ledger.ledger_path(str(root), T)
+    before = (_bytes(ledger), _bytes(root / ".work" / "tickets" / T / "plan.md"), _receipts(root))
+
+    done = _cli(root, "replan-check", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith("applies=1 ok=0 missing=1 reason=successor plan lacks"),
+            (_bytes(ledger), _bytes(root / ".work" / "tickets" / T / "plan.md"), _receipts(root)) == before
+            ) == (1, True, True), done.stdout + done.stderr

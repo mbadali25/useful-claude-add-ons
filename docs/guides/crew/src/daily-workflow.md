@@ -203,6 +203,13 @@ and a blocked ticket are only counted (`2 held, 1 blocked`); a hold that is due
 is listed as `revisit` with its reason. No `.work/INDEX.md` prints `waiting
 unknown (...)`, never "nothing on you".
 
+## After autopilot rejects a review round itself
+
+With `autopilot.maxAutoReplans` set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; `crew_autopilot.py replan-check --ticket <id>` shows the same answer
+without approving. Your own `/crew:approve` is never held to it.
+
 ## If something refuses
 
 | Refusal | Means | Do |
