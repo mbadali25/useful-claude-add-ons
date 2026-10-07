@@ -416,10 +416,13 @@ GRAPH_IGNORE_MUTATIONS = (
      "    refused = _graph_ignore_refusal(root, graph_out, command)\n",
      "    refused = None\n",
      _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    # T-0064's plan named test_autopilot_does_not_settle_a_refused_graph; that
+    # one stays green, since `_settles` also needs ORPHANED_ANCHOR in the reason
+    # of an `unknown`. The refusal's own test asserts `refreshable` False.
     ("refresh check: a refused graph stays refreshable", CHECK,
      "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=False)\n",
      "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=True)\n",
-     _T + "test_autopilot_does_not_settle_a_refused_graph"),
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
     ("refresh check: unknown denylist coverage passes", CHECK,
      "    if cover[\"status\"] != crew_graph_ignore.COVERED:\n        return _entry(\"graph\", graph_out, UNKNOWN,\n"
      "                      f\"denylist coverage unknown",
