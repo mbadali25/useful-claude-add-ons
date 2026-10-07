@@ -461,6 +461,8 @@ Only `.crew/codemap/INDEX.md` loads by default. Everything else is read by path,
 
 Re-map a single area after major surgery with `/crew:onboard --refresh <subsystem>`. Do not re-run the whole thing on a schedule — that is the cost you were avoiding.
 
+**`.gitignore` kept right for the languages in the repo (T-0039).** `/crew:init` Phase 1, `/crew:onboard` and `/crew:onboard --refresh` run `crew_gitignore.py apply --root .`; `/crew:implement` step 6 runs `check`, and `/crew:status` shows one `gitignore` line. Languages come from the files git lists (never an ignored `node_modules/`), the patterns from a table vendored from github/gitignore (CC0-1.0, `NOTICE.md`), and "already covered" is measured with `git check-ignore` against the working tree's ignore files only - a machine-global excludes file does not travel with a clone, so it never counts. Missing patterns are added without asking (owner decision) inside one `# crew:gitignore:managed` block at the top of `.gitignore`, so every human rule below it wins; crew never edits a human line, never touches the `.crew` policy block, and never drops an entry from its own block. It never untracks: a tracked file a new pattern matches is named, and a tracked secret-shaped file (`*.pem`, `.env`, ...) is a `needs-owner` line, exit 3. The `.env.*` row re-includes the usual templates (`.env.example`, `.sample`, `.template`, `.dist`, `.defaults`). Known limit: a committed test-fixture key or certificate (`*.pem`, `*.key` under `tests/`) is still reported `needs-owner`; there is no acknowledgement mechanism, so the owner decides. A directory pattern that would defeat a human `!` re-include is a `conflict`, not added. `# crew:gitignore:off` in `.gitignore` makes it report-only; inside a ticket whose Touch lacks `.gitignore` it refuses (exit 5), because an ignore line could hide the ticket's own files from the completion audit. Exits: 0 current, 1 pending, 3 owner, 4 unknown (including an unreadable file or any unexpected error - never 1), 5 refused.
+
 ---
 
 ## 7b. The API and feature reference
@@ -760,9 +762,9 @@ Then `review_run.py` itself appends the round's line to `.crew/metrics.md` - the
 |---|---|
 | `CLEAN` | exactly one `CLEAN` line, exit 0, and a READ line for every bundle part - its path exactly as listed, or its bare file name |
 | `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies - including a round recovered despite harmless stray lines (below) |
-| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract that is not recovered (a finding with an empty field, a decorated or lower-case contract line, a `|`-table row, an admission that the review fell short, and any stray line beside `CLEAN`, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings. Each INCOMPLETE is classed `tool`, `reviewer` or `tree` (`review_verdict.failure_class`); only `tool` is refunded (below) |
+| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract that is not recovered (a finding with an empty field, a decorated or lower-case contract line, a `|`-table row, a line matching the shortfall wording list `review_verdict._SHORTFALL`, and any stray line beside `CLEAN`, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings. Each INCOMPLETE is classed `tool`, `reviewer` or `tree` (`review_verdict.failure_class`); only `tool` is refunded (below) |
 
-**Harmless stray lines are recovered, never beside `CLEAN` (L-0576).** A round whose findings parse, whose every part is acknowledged, that exited 0 and has no other reason, is `FINDINGS` even when it also printed prose, a heading or a code fence - the shape that cost T-0100 round 2. The ignored lines go in `review.json`'s `ignored_text`, their count in its `ignored_lines` (an int on every round, 0 when none) and in the ledger row (null there when that value is missing or malformed - unknown is never 0), and a `review: FINDINGS kept; N line(s) outside the contract were ignored` line names the first; report them with the findings. A stray line that might be a contract line the parser failed to read, or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review", ...), is "could not tell" and keeps the round `INCOMPLETE`; that wording net cannot be complete, which is why recovery never reaches `CLEAN` and the lines are always shown. `review_verdict.py`'s docstring states the rule in full.
+**Harmless stray lines are recovered, never beside `CLEAN` (L-0576).** A round whose findings parse, whose every part is acknowledged, that exited 0 and has no other reason, is `FINDINGS` even when it also printed prose, a heading or a code fence - the shape that cost T-0100 round 2. The ignored lines go in `review.json`'s `ignored_text`, their count in its `ignored_lines` (an int on every round, 0 when none) and in the ledger row (null there when that value is missing or malformed - unknown is never 0), and a `review: FINDINGS kept; N line(s) outside the contract were ignored` line names the first; report them with the findings. A stray line that might be a contract line the parser failed to read, or that matches the shortfall wording list `review_verdict._SHORTFALL` ("incomplete", "skipped", "truncated", "could not review", ...), is "could not tell" and keeps the round `INCOMPLETE`. That wording net cannot be complete: an admission it misses ("I only inspected one of the nine files") is ignored as prose and the round is `FINDINGS`, which is why recovery never reaches `CLEAN` and the lines are always shown. `review_verdict.py`'s docstring states the rule in full.
 
 A READ line naming anything else - a path outside the bundle, or the same file name in another directory - counts for no part; the part it failed to cover is what makes the round `INCOMPLETE`. The prompt quotes that form from `review_verdict.READ_FORM`, so the two cannot disagree again (T-0079). From crew 1.0.50, `review.json`'s `parts_expected` and `parts_missing` name each part by its listed path, not its bare file name. `INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
 
@@ -797,17 +799,19 @@ Exit codes: 0 ok or holding, 1 refused or waiting (and `train not armed`), 2 usa
 
 ### Development standards and the pre-review self-check
 
-Review kept finding the same classes of defect, so since T-0085 crew applies them the first time the code is written. The `crew-standards` skill ships **GEN-01 to GEN-12**, crew-generic standards mined from crew's own QA review findings (`skills/crew-standards/references/generic.md`; each cites the findings that earned it and needs three distinct reviewed change sets). Per-language sets (T-0086) are further files in that directory, each applying when a changed file matches its `applies-to` globs, under the same three-change-set bar. The first ships: `references/python.md`, set `PYTHON`, nine standards (PYTHON-01, -03, -04, -06, -07, -08, -10, -11, -13), applied when a changed file matches `**/*.py`; the `stack-python` skill lists its eight candidates, which lack a third change set. The other stacks (SQL, PHP, PowerShell, .NET, Terraform, Node.js, Angular) follow as further files.
+Review kept finding the same classes of defect, so since T-0085 crew applies them the first time the code is written. The `crew-standards` skill ships **GEN-01 to GEN-12**, crew-generic standards mined from crew's own QA review findings (`skills/crew-standards/references/generic.md`; each cites the findings that earned it and needs three distinct reviewed change sets). Per-language sets (T-0086) are further files in that directory, each applying when a changed file matches its `applies-to` globs, under the same three-change-set bar. The first ships: `references/python.md`, set `PYTHON`, nine standards (PYTHON-01, -03, -04, -06, -07, -08, -10, -11, -13), applied when a changed file matches `**/*.py`; the `stack-python` skill lists its eight candidates, which lack a third change set. The second is `references/powershell.md`, set `PWSH`, one standard (PWSH-16: an external program is resolved to an Application proven to run), applied when a changed file matches `**/*.ps1`, `**/*.psm1` or `**/*.psd1`, so every hook-pair change in this repository now answers it; its three change sets are this repository's own reviews (crew 0.19.69, 0.19.92, 1.0.23 B2), and `stack-powershell`'s `references/candidates.md` lists the rest (L-0534). SQL (L-0532), .NET (L-0535), Terraform (L-0536), Angular 2+ (L-0538), PHP (L-0533, with a new `stack-php` skill) and Node.js (L-0537, with a new `stack-node` skill) have no gated set yet: their candidates, each with the evidence it has, are in each stack skill's `references/candidates.md`. Most rest on public change sets, which do not count toward the bar (owner, 2026-10-05), and a few on a private count below the bar or with no change set yet; SQL's and PHP's owner-private evidence was not consulted (re-check: C-0020), .NET's three rules at the bar (DOTNET-08, -13, -15) await the owner's research text, no Terraform rule reached three in the owner's repositories (its set id will be `TF`), and Angular's NG-07 (set `NG`) and Node.js's NODE-08 (set `NODE`) are at the bar in a private count but await publishable evidence text.
+
+One source per kind of rule (L-0519): `crew-standards` owns code-level rules, what a change's code must do, answered in the self-check; `crew-qa-standards` owns the repository's machinery, harness (H1-H11), review-process (R1-R12), gate and environment rules (G1-G5, E1-E7). The recurring-findings checklist above is a probe index derived from the standards: each class's `seen:` line names the standard ids it echoes, a test (`test_every_class_names_a_standard_that_exists`) holds every id to a shipped set or this repository's overlay, and where a probe and its standard disagree the standard wins and the probe is corrected. The three process rules that restate a code standard name it: H8 (GEN-01), R10 (GEN-04), R12 (GEN-12).
 
 A repository adds its own in the **overlay**, `.crew/standards.md` (set `REPO`, tracked through the ignore policy's un-ignore list): standards of its own and `## Supplements <GEN-id>` sections carrying its literal commands. The overlay adds and supplements; it never removes, reuses or weakens a plugin standard. No overlay means generic only, and the summary says so. An overlay that cannot be read, is not UTF-8 or is malformed is could-not-tell: the stamp and the review gate refuse until it is fixed.
 
 | Where | What happens |
 |---|---|
-| `/crew:plan` | Each step carries `Standards: <ids>` (or `none - <why>`), and the self-review asks whether every step names them |
+| `/crew:plan` | Each step carries `Standards: <ids>` (or `none - <why>`), and the self-review asks whether every step names them; `crew_standards.py sets --touch` lists them from the spec's Touch list before any scope base exists (L-0518) |
 | `/crew:implement`, `/crew:fix` | `crew_standards.py init` writes `selfcheck.md` with a row per effective standard; each is `addressed` with evidence or `n/a` with a reason; `crew_standards.py stamp` refuses an incomplete record and binds a complete one to the review bundle's sha256 and the standards digest. A recorded start that is gone or no longer an ancestor of HEAD stamps against the same merge-base fallback `/crew:review` bundles with, marked `(fallback)`; so does a start first recorded on a branch already past the default branch (recorded as the merge-base, a guess). A `.crew/.scope-base` that cannot be read is refused without naming `--record`, which would rewrite it with one ticket's entry. Any later edit needs a new stamp |
 | `review_run.py` | Before reserving the round, for every provider, once the budget is known not to be spent (a spent budget is refused first, exit 4): a missing, unreadable, incomplete, unstamped or stale self-check is exit 2, no round spent. It applies to a ticket with an approval receipt, or whose receipt cannot be proven absent; in an active incident it stands down and logs a `standards-selfcheck` skip. On a pass it prints `review-run: standards self-check current (std:<8 hex>)` |
 | The review prompt | Ends with the effective set's rules and self-check questions. The author's answers are withheld from the prompt, so the reviewer judges applicability itself, and the list does not bound the review. Withheld, not hidden: `selfcheck.md` stays in `.work/tickets/<id>/`, which a reviewer that can read the checkout could open; the prompt never names it |
-| After a round | `crew_standards.py proposals` writes `standards-proposals-r<N>.md` with every BLOCK/FIX line verbatim, and refuses an `out.txt` the verdict parser calls INCOMPLETE, writing nothing; you approve or reject each proposed standard or amendment. Nothing is added to a standards file automatically |
+| After a round | `crew_standards.py proposals` writes `standards-proposals-r<N>.md` with every BLOCK/FIX line verbatim. It refuses, writing nothing, a round the review ledger does not record as CLEAN or FINDINGS (L-0518), and an `out.txt` the verdict parser calls INCOMPLETE; you approve or reject each proposed standard or amendment. Nothing is added to a standards file automatically |
 | `.crew/metrics.md` | Written by `review_run.py`, one row per recorded round, in the main checkout. The reviewer cell carries `std:<first 8 of the digest>` (or `std:none`, or `std:unknown` when it could not be computed); `crew_standards.py metric` prints first-round BLOCK+FIX per ticket before (no `std:` token) and after (`std:<8 hex>`), with unknown-round rows, `std:none` rows and unreadable `std:` tokens counted on neither side, and "not enough data" below 10 tickets a side. `--record` appends a pipe-free summary line the other readers skip. `crew_standards.py metric` reads, and `--record` appends to, the main checkout's file from a linked worktree, and exits 1 without writing when git cannot tell which file that is |
 
 ### Scope and approval
@@ -824,7 +828,9 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 | `crew_ticket.py activate --ticket <id>` | Makes `<id>` this worktree's active ticket (`<git-common-dir>/crew/active-ticket`, keyed by worktree), and records the ticket's scope base at branch cut (an existing record is kept; a "could not tell" is printed and the pointer is still set). Without it, the open ticket in `.work/INDEX.md` is used when its `.work/tickets/<id>/` directory exists. |
 | `scope_guard.py` (PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | Refuses an edit when the active ticket has no current approval from your prompt, or when the target is outside Touch. Refuses a shell command that runs `crew_ticket.py approve`, names the approval hook, or writes under `<git-common-dir>/crew/`. |
 | `completion_audit.py` (Stop) | Diffs the whole tree against the ticket's scope base (`scope_base.py`: the commit the ticket started from, else the merge-base with the base branch — `tickets.baseBranch` in `.crew/config.json`, default `origin/HEAD`'s target; a configured branch that names no commit is "could not tell" and fails the audit, never a fall back to `origin/HEAD`) — committed, staged, unstaged and untracked, both ends of a rename — so shell-made writes are caught too. A refresh artifact is admitted without Touch only when the ticket's change reaches it and the edit is a re-anchor or a regeneration (`crew_refresh_check.artifact_verdicts`, crew 1.0.81; the audit applies it once L-0540 lands, and until then admits the whole artifact dirs under approval, as since 1.0.36). A path byte-identical to the merged integration commit is not counted (T-0100, the rule the review bundle shares, `merged_main.py`); a merged-in path taken out of the index (`git rm --cached`) is identical only when its bytes and the mode `git add` would record match, and that mode carries the execute bit only when `core.fileMode` is not false, as the bundle's `add -A` does; the verdict says `merged main <sha> (<ref>): <n> path(s) identical to it not counted`, or `merged main: could not tell` and counts every path — on a pass as well as a failure. crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`) is never a changed path (T-0068). `--check --ticket <id>` is the form `/crew:done` calls; `--classify` is the verify gate's classifier. |
+| `crew_gitignore.py check\|apply\|summary --root . [--json]` | T-0039. `check` (read-only): detected languages, and per vendored pattern `missing`, `covered`, `tracked` (files it cannot untrack), `conflict` (would defeat a human `!` line), `overridden`, `needs-owner` (a tracked secret-shaped file). `apply` writes only the `# crew:gitignore:managed` block at the top of the root `.gitignore`, atomically, keeping CRLF and a BOM, and prints the diff. `summary` is `/crew:status`'s line. Exit 0 current, 1 pending, 3 owner decision, 4 unknown (git failed or timed out, undecodable `.gitignore`, malformed block), 5 refused (`# crew:gitignore:off`, a non-regular `.gitignore`, or an active ticket whose Touch lacks `.gitignore`). |
 | `crew_refresh_check.py --root . --ticket <id> [--json]` | Read-only (since 1.0.36). Per code map, diagram and code graph that the ticket's changed paths reach: `fresh`, `stale` (with the refresh command — `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`, and for the graph `graphify update .` where the repo tracks `GRAPH_REPORT.md` beside `graph.json`, else `graphify . --no-viz --code-only`) or `unknown`; `not applicable` when the repo has no graph file; and `fresh-uncommitted` (crew 1.0.349) when everything is current but a refresh-artifact path is uncommitted. `--json` adds `base_source` (`record`, or the fallback used), `stop` (why no refresh can settle the answer, or null) and `uncommitted` (those paths). Since 1.0.350 it also prints a `diagram-embeds` line per README whose generated diagram section has drifted from its sources (whatever the ticket reached): `stale` with `refresh with python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_diagrams.py embed --root .`, or, for malformed markers, `stale` with `stop - needs judgement`; an unreadable source is `unknown`. Exit 0 only when everything is `fresh` — current and committed. |
+| `crew_graph_ignore.py --root . --check \| --write [--json]` | Would a graph build read a secrets-denylisted file? The denylist is the union of built-in patterns (`.env`, `.env.*` but not `.env.example`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `id_ed25519*`), the optional tracked `.claude/secrets-denylist` (gitignore syntax) and every in-repo `Read(...)` deny rule in `.claude/settings.json` and `.claude/settings.local.json`. `--check` lists every file on disk it matches that the root `.graphifyignore` does not exclude (`.gitignore` does not count: graphify reads a tracked file whatever `.gitignore` says), judged by git's own matcher in a scratch repository. Exit 0 covered, 1 uncovered (paths only, never content), 2 unknown (git missing, a settings file that will not parse, a nested `.graphifyignore`, an unexcluded nested repository, a symlink leaving the repo, a deny-all `Read` rule). The denylist match ignores case and coverage does not; a symlink is judged by its target too. `--write` appends the missing patterns, plus each path they still miss as a literal (`/.ENV`), under one marked block, atomically, keeping the file's mode and line endings. It writes a literal only for a path that is one line of plain text (no control character or line separator), and never overrides a `!` line of yours: it names that line and the path it re-includes, writes the rest, and exits 1. Read-only without `--write`. Called by `crew_refresh_check.py`, `/crew:status`'s `graph-ignore` line and crew-graph's **Build**. |
 
 **Artifacts stay current (since 1.0.36).** The order is implement, then refresh artifacts, then review, then done. `/crew:implement` step 6 runs `crew_refresh_check.py` after `/crew:docs`, runs the command each `stale` line names, commits, and re-runs until `fresh` — before `/crew:review`, so the reviewer reads the refreshed artifacts and the receipt covers them. `/crew:done`'s check 4 runs the same check and refuses on anything but `fresh`; it never runs a refresh itself, because a write after review stales check 1's receipt. Since crew 1.0.349 (T-0063) there are five values, and `fresh` means current **and committed**: an artifact whose own file — the map, the diagram source or a same-stem render, anything under the graph dir — is modified, staged, or untracked and not ignored reads `fresh-uncommitted`, and so does the whole answer when any path under the refresh-artifact dirs is (an out-of-scope map, a `.claude/rules/` file), listed on an `uncommitted:` line. It refuses like `stale`, the fix is a commit, and that commit leaves a review receipt current, because the review bundle is the working state. Precedence: `unknown`, then `stale`, then `fresh-uncommitted`, then `fresh`; a listing git cannot give is `unknown`. The graph is also `fresh` when it is behind by sha but graphify's own `<graph.out>/manifest.json` records the current MD5 of every committed code path that moved since its `built_at_commit` — graphify leaves `graph.json` untouched when the topology did not change, which used to read `stale` for ever; a missing or unparseable manifest leaves the sha answer, and uncommitted code is never confirmed. Staleness is scoped to the paths the ticket changed (scope base against the working tree plus untracked files) and the paths each artifact cites, so an anchor lag from commits outside those paths does not refuse, and an uncommitted edit in a cited path reads `stale` ("commit, then refresh"). Release bookkeeping — `CHANGELOG.md`, `TODO.md` (where check 3 files every ticket's findings), `plugin/PLUGINS.md`, `.claude-plugin/marketplace.json`, any `.claude-plugin/plugin.json`, `plugin/*/BUDGETS.md` — never stales an artifact on its own: every release moves it without invalidating a word. A code map's citations are backticked paths with an optional `:line` or `:start-end`, dot-directories included; a cited directory, or one named on a diagram's `%% Anchors:` line, reaches every path under it. An anchor that names no commit, a code map citing no path, a diff git could not run, a graph with no `built_at_commit`, graphify missing on this machine, a code-map or diagrams dir that cannot be listed, a map or diagram that cannot be read, a `.crew/crew.json` or `.crew/config.json` that exists and does not parse (never read as the defaults), and a scope base that hides the change (none at all, or a fallback equal to HEAD — on the default branch the merge-base is HEAD and hides every commit) are each `unknown`, which refuses like `stale`. Any other fallback base (the merge-base with the default branch, a `record-fallback` entry) is used only when HEAD is on a branch that is not the default one and no commit behind the base names the ticket in its subject — otherwise the ticket's commits may already sit behind it (work pushed to the default branch, or a branch fast-forwarded into it and given one more commit), and the answer is `unknown`, `fallback base <sha> may hide <ticket>'s commits`. A recorded base gets the same subject check: `scope_base.py --record` in a successor checkout whose earlier commits already reached the default branch records HEAD, and the answer is `unknown`, `recorded base <sha> may hide <ticket>'s commits`. Whenever the base hides or may hide the change, every artifact measured against it reads `unknown` too, its reason the top line's stop, in the text and in `--json`'s `artifacts[]` — a `fresh` measured against the wrong diff is never printed. When a fallback base is used, every artifact line says `[fallback base]`. A ticket whose commits reached the default branch under subjects that do not name it is not caught. Some `unknown`s a refresh settles: an anchor that names no commit (usually a squash-merged branch), a map citing no path, or a graph with no `built_at_commit` print `refresh with <command>` like a `stale` line, and `/crew:implement` runs it. The rest print `stop`, and are reported rather than refreshed around; a scope base or config that cannot be trusted puts the `stop` on the top line, and when nothing was measured the output says `not measured - <why>` rather than claiming no artifact is reached. Documents are reported `not measured` — whether a change should touch one is `/crew:docs`'s judgement — and never `fresh`. The refreshes write paths no Touch names, so an approved ticket may write them — and the audit admits them only in the shape a refresh leaves (see "What the guard judges").
 
@@ -853,7 +859,7 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 
 A `.crew/config.json` that exists but does not parse, or a value outside those four, is treated as `block` and says so. A hook payload that does not parse is refused whenever the effective mode is `block` (`auto` past its ramp included). An active-ticket pointer naming a ticket that does not exist is refused under `block`, never read as "no ticket". If python cannot run at all, the wrappers fail closed unless `.crew/config.json` is absent or *provably* sets `scope.mode` to `off`. bash has no JSON parser, so from bash a config that exists is never provable: with no usable python, a present config blocks writes and the Stop until python is available. PowerShell proves it with a strict `System.Text.Json` parse (not `ConvertFrom-Json`, which accepts trailing commas), and fails closed where that type cannot load; the Stop audit then blocks at most once in a row per session, so a broken python cannot loop the Stop.
 
-**Focus (T-0020): `/crew:autopilot focus <id>`.** Focus is explicit (owner decision, 2026-10-05): it is on only once you type `focus <id>`, which writes this worktree's entry in `<git-common-dir>/crew/autopilot-focus.json`, the focus marker. The active-ticket pointer alone is never a focus — not one `crew_ticket.py activate` set for the scope guard, not the `.work/INDEX.md` fallback — so with no marker entry the router answers exactly as it does without T-0020: plain text aimed at `assign`, `goal`, `wave` or `split` gets the answer it gets on main (today those are not available yet, so it asks or produces no line), never a focus refusal. No new hook. `focus <id>` is refused, with nothing written, when `.work/tickets/<id>/` does not exist, when the pointer is broken, when the marker cannot be read, or when focus is already on another ticket; when the pointer names another ticket or none it is re-pointed through `crew_ticket.activate`, which records the ticket's start in `.crew/.scope-base` (T-0061), and `focus` prints that, the scope-base line included (a could-not-tell or fallback too); the same ticket again is a no-op. `focus off` drops only this worktree's marker entry (the file goes when no entry is left) and leaves the active ticket as it was; both writes hold `<marker>.lock` (an exclusive create, waiting at most 5 seconds), so two worktrees focusing at once cannot drop each other's entry, and a lock that cannot be taken refuses with nothing written; `focus` shows `focus=<id>`, `focus=none` or `focus=unknown <why>` with `scope.mode`. While focused, autopilot's router refuses `run` of any other ticket (named, or taken from the handoff), `assign`, `goal` and any other subcommand, each refusal naming the focused ticket and `/crew:autopilot focus off`; if the pointer stops naming the focused ticket, everything but `focus <id>` (which re-points it) is refused. `status`, `focus off`, `sleep` and `wake` always run: they neither start nor switch work. A marker that is not a file, does not parse, cannot be read, or holds an entry that is not a ticket (an INDEX-shaped id, or one with a `.work/tickets/` folder) is *could-not-tell*, never "no focus": `focus` shows `focus=unknown`, the router refuses everything but `status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses too rather than delete a file it cannot read. Every such message ends with the removal command for the exact path — `rm -- '<path>'` (POSIX shell) or `Remove-Item -LiteralPath '<path>'` (PowerShell), printed only when the path survives pasting unchanged (no control character, run of spaces or curly quote), else the path as JSON and "remove this file by hand" — and says that removing it drops every worktree's focus, since the marker is one file for all of them. Once the focused ticket's plan is approved, every `next` runs the completion audit's own `audit(root, ticket)` read-only, and a changed path outside Touch — or an audit that could not run — stops as `drift`, listing the paths. An out-of-scope finding is filed, never fixed in the diff: `crew_autopilot.py focus --findings --ticket <id>` names `TODO.md` when the approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`, because the scope guard exempts nothing outside Touch. Autopilot never releases focus itself: `focus off` runs only when your own arguments are `focus off`. Under `scope.mode: off` nothing refuses a write as it happens, so focus is held by the router and the drift stop only, and `focus` says so. Every `focus` output ends with a reminder that Claude Code's built-in `/focus` only toggles the display (just your prompt, summary, and response) and only you can type it: it scopes nothing. Not a security boundary: a session can edit or remove the marker itself (the threat model below).
+**Focus (T-0020): `/crew:autopilot focus <id>`.** Focus is explicit (owner decision, 2026-10-05): it is on only once you type `focus <id>`, which writes this worktree's entry in `<git-common-dir>/crew/autopilot-focus.json`, the focus marker. The active-ticket pointer alone is never a focus — not one `crew_ticket.py activate` set for the scope guard, not the `.work/INDEX.md` fallback — so with no marker entry the router answers exactly as it does without T-0020: plain text aimed at `assign`, `goal`, `wave` or `split` gets the answer it gets without focus (`wave` routes since 1.1.6; the others are not available yet, so it asks or produces no line), never a focus refusal. No new hook. `focus <id>` is refused, with nothing written, when `.work/tickets/<id>/` does not exist, when the pointer is broken, when the marker cannot be read, or when focus is already on another ticket; when the pointer names another ticket or none it is re-pointed through `crew_ticket.activate`, which records the ticket's start in `.crew/.scope-base` (T-0061), and `focus` prints that, the scope-base line included (a could-not-tell or fallback too); the same ticket again is a no-op. `focus off` drops only this worktree's marker entry (the file goes when no entry is left) and leaves the active ticket as it was; both writes hold `<marker>.lock` (an exclusive create, waiting at most 5 seconds), so two worktrees focusing at once cannot drop each other's entry, and a lock that cannot be taken refuses with nothing written; `focus` shows `focus=<id>`, `focus=none` or `focus=unknown <why>` with `scope.mode`. While focused, autopilot's router refuses `run` of any other ticket (named, or taken from the handoff), `assign`, `goal` and any other subcommand, each refusal naming the focused ticket and `/crew:autopilot focus off`; if the pointer stops naming the focused ticket, everything but `focus <id>` (which re-points it) is refused. `status`, `focus off`, `sleep` and `wake` always run: they neither start nor switch work. A marker that is not a file, does not parse, cannot be read, or holds an entry that is not a ticket (an INDEX-shaped id, or one with a `.work/tickets/` folder) is *could-not-tell*, never "no focus": `focus` shows `focus=unknown`, the router refuses everything but `status`, `sleep` and `wake`, `next` stops as `drift`, and `focus off` refuses too rather than delete a file it cannot read. Every such message ends with the removal command for the exact path — `rm -- '<path>'` (POSIX shell) or `Remove-Item -LiteralPath '<path>'` (PowerShell), printed only when the path survives pasting unchanged (no control character, run of spaces or curly quote), else the path as JSON and "remove this file by hand" — and says that removing it drops every worktree's focus, since the marker is one file for all of them. Once the focused ticket's plan is approved, every `next` runs the completion audit's own `audit(root, ticket)` read-only, and a changed path outside Touch — or an audit that could not run — stops as `drift`, listing the paths. An out-of-scope finding is filed, never fixed in the diff: `crew_autopilot.py focus --findings --ticket <id>` names `TODO.md` when the approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`, because the scope guard exempts nothing outside Touch. Autopilot never releases focus itself: `focus off` runs only when your own arguments are `focus off`. Under `scope.mode: off` nothing refuses a write as it happens, so focus is held by the router and the drift stop only, and `focus` says so. Every `focus` output ends with a reminder that Claude Code's built-in `/focus` only toggles the display (just your prompt, summary, and response) and only you can type it: it scopes nothing. Not a security boundary: a session can edit or remove the marker itself (the threat model below).
 
 **Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature. The merge train's state (`<git-common-dir>/crew/train/`) is the same kind of local file: a session set on it could forge a hold or a release, so the train prevents lanes colliding by accident, and `check-land`'s `merge-tree`, receipt and gate checks — and your review of the merge — are the backstop.
 
@@ -875,8 +881,9 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | `assign` | Not yet from the command: stops with "arrives with T-0019". The route lands with L-0611; until then `crew_ticket.py assign` (since 1.0.302, T-0019) mints the ticket from the command line — below. |
 | `goal`, `--goal <slug>` | Not yet: stops with "arrives with T-0012". |
 | `focus <id>`, `focus off`, `focus` | T-0020's scope lock on one ticket: sets, releases or shows this worktree's explicit focus marker (a plain active-ticket pointer is not focus) — "Focus" under "Scope and approval". `focus off` must be exactly those two words. |
+| `wave`, `wave --set <slug>`, `wave <id> <id>...` | Runs an owner-designed, approved set of tickets as parallel isolated lanes (T-0029) — "`wave`" below. |
 
-Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus, or a ticket id". A second word that is not a ticket id (`status stauts`), or a third word, stops too: route never reads it as a ticket.
+Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus\|sleep\|wake\|wave, or a ticket id". A second word that is not a ticket id (`status stauts`), or a third word, stops too: route never reads it as a ticket.
 
 **`crew_ticket.py assign`** (T-0019; `/crew:autopilot assign <work>`, which researches the work into the staging file and runs this for you, lands with L-0611 — until then run it yourself, then `/crew:autopilot run <id>`). The staging file is `.work/autopilot/assign-<n>.md`: a `title:` and a `risk: low|med|high` line, then `## Ask` (the work verbatim), `## Options`, `## Recommendation` and `## Open questions` (or `none`) in `/crew:brainstorm`'s format. `crew_ticket.py assign --root . --direction-file <that file>` (a relative path is read against `--root`, and a leading BOM is dropped) refuses, minting nothing, when the file is not under `.work/autopilot/` (symlinks resolved), autopilot is not armed, the `title:` line or a section is missing, or a section is empty, the file is not a regular file (a FIFO is refused at once, never waited on), or the call carries `--title` or `--status` (refused, never ignored); a risk that is not `low|med|high` is written `high`, with a warning. Otherwise it mints exactly one ticket, `ready`, whose direction.md carries an `origin: /crew:autopilot assign` line, the title and risk, and the sections, and prints `ticket=<id> risk=<r>`. Title and risk are read from the file, never from an argument: the scope guard refuses a shell command naming `crew_ticket` with the word "approve", so a title like "approve flow" would fail there.
 
@@ -957,11 +964,15 @@ One vocabulary, owned by `crew_tracker.py` (`STATUS_ORDER`, `OWNER_STATUSES`, `C
 | `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed |
 | `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed; the owner closes the item by hand |
 
+Any other INDEX word maps to no lane: `move` refuses it with nothing written, and `crew_tracker.py read` reports it as `could not tell` (`INDEX status <s> is not a status crew knows (...)`), never as a disagreement. The words the owner retired on 2026-10-05 get a text-only hint naming their replacement (`RETIRED_STATUSES`: `approved` -> `spec`, `merged` -> `done`, `closed` -> `done`, `new` -> `direction`, `parked` -> `needs-owner`) — never a lane, a write or an exit code (L-0530).
+
 `approved` and `merged` are spec-header words only (they keep the approval; a header `merged` does not close a ticket for autopilot). `crew_ticket.STATUS_VALUES` is unchanged by T-0037: it is the approval-keeping subset, so a blocking hook accepts nothing new.
 
 - **Closed** means closed in every reader: the session brief and `crew_ticket.resolve_active`'s INDEX fallback skip the row (a prose `- Cancelled: T-1` line too, in any case), `/crew:approve`'s precheck refuses it as "closed in .work/INDEX.md", autopilot stops it as `closed` (waiting on nobody), and `/crew:status` lists it on no line.
 - **Cancel** a ticket with `crew_tracker.py move --ticket <id> --to cancelled`; the INDEX row alone closes it. A ticket replaced by others is `superseded`, with `split-into: <id>, <id>` (T-0052) or `superseded-by: <id>` on its own line under the spec header. Moving out of `done`, `cancelled` or `superseded` — to any word — needs `--reopen`, and without it the move is refused with nothing written.
 - **`needs-owner`** moves to and from any open word without `--reopen`. The question for the owner goes under the ticket's existing `## Open questions`. `/crew:status` prints `owner    <ids> (needs-owner)`. A non-ticket item that needs the owner is minted `ready` (`crew_ticket.py mint`), then moved to `needs-owner`.
+- **Derived, never typed: `blocked` and `needs-replan`** (L-0639). `hooks/scripts/crew_ticket_state.py` answers them for one ticket, read-only, and nothing acts on the answer yet (L-0550's autopilot stops and L-0551's owner list will). `blocked` comes from the optional `depends-on: [T-1, T-2]` line under the spec header (hashed with the spec, so changing it needs `/crew:approve` again): each dependency is `closed`, `open`, `cancelled`, `superseded` or `unknown`, read from its INDEX status cell first and, with no row, its spec header (`done` or `merged` is closed). Every state but `closed` blocks - a cancelled or superseded dependency will never close as done, so it blocks and is named. `needs-replan` comes from the review ledger's `NEEDS_REPLAN`. A typed `blocked` or `needs-replan` INDEX cell is reported as a problem, never obeyed. The could-not-tell rule holds throughout: an unreadable INDEX, a row with no status cell or no row and no spec makes a dependency `unknown` (it blocks); no spec or an unreadable `depends-on:` line makes `blocked` None, an unreadable INDEX makes the gate `unknown`, and an unreadable ledger makes `needs_replan` None with a problem - never False. **`done` counts as closed** for a dependency, before it is merged (approved 2026-09-26; accepted as risk). The gating statuses `hold`, `landing`, `needs-owner`, `cancelled` and `superseded` are read from the INDEX cell first, then the spec header; `hold` stays an open word everywhere else.
+- **`next.md`: who a ticket waits on and what happens next** (L-0640). A ticket folder may hold `.work/tickets/<id>/next.md` with up to five `key: value` lines (key case-insensitive, blank and `#` lines skipped, unknown keys ignored): `waiting-on:` (`owner`, `agent`, `external` or a ticket id), `next:` and `reason:` (one line of free text, shown clipped to 200 characters), `revisit:` (`YYYY-MM-DD` only) and `superseded-by:` (a ticket id). `crew_ticket_state.read_next` parses it and `view` carries the fields as `next`, plus `revisit_due` (True on or after the date, False before it, None with no date or a bad one). It is local state and not part of the contract: it is not hashed, `/crew:approve` does not validate it, and nothing in crew writes it automatically - you edit it by hand. A bad, empty or repeated value is a problem and that field is unset; a `next.md` that cannot be read, or that resolves outside the ticket folder, is a problem and every field is unset (cannot tell, never "nothing asked"). A `needs-owner` gate with no `next:` reports `needs-owner: cannot tell what is asked (no next: in next.md)`, and a `superseded` gate reports that it cannot tell what replaced it when neither `next.md`'s `superseded-by:` nor a `split-into:` / `superseded-by:` line under the spec header names the successor ticket ids (`TBD` names none).
 
 ### Splitting a ticket: one rulebook (`/crew:split`)
 
@@ -1000,7 +1011,7 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 
 **Autopilot rows** (since 1.0.345, T-0057). Whether each `/crew:autopilot` subcommand runs yet is read from `crew_autopilot.route` when the prompt arrives, so a row goes live the day its command lands with no edit here. Until then (today `assign`, `goal` and `run --goal`; `focus` since T-0020) the matched prompt gets a line that runs nothing: it says the command is not available yet and tells Claude to answer your prompt as written, so "handle the merge conflict" is still an ordinary instruction. A router that cannot be read asks; a subcommand the router does not know produces no line. Work starting with `it`, `this`, `everything` and the like (`handle it for me`), work naming the stem `approv` (spaced-out letters included), and a Unicode line break produce no line. Otherwise assign, goal and focus prompts may hold only ASCII letters, digits, space and `.,:;_#()-`; any other character (a quote, a lookalike letter, an accent, an invisible character, a fullwidth or lookalike `/` or `?`, or `/ ? " $ \ | & < > *`) asks you to retype instead, so the routed command is exactly what you typed (a leading `let's` is fine). A word starting with `-` (`handle --goal x`) asks, since it reads as a flag; a hyphen inside a word (`sign-off`) routes. A trailing `not`, `no`, `nope`, `wait`, `cancel`, `cancel that`, `never mind` or `forget it` asks. The two status questions are the only rows that accept a trailing `?`.
 
-**Wave, split, sleep and wake** (since 1.0.345, L-0662). `sleep` and `wake` route today, because L-0652's manual sleep mode made them `/crew:autopilot` subcommands. **Wave and split do nothing yet**: neither is a subcommand until its own ticket lands (T-0029 wave, T-0058 split), so a matching prompt produces no line at all, then the soft "not available yet" line while the name is reserved, then a route. They take the same allowlist; `sleep` and `wake` also accept the apostrophe in `I'm`, straight or the curly `’` iOS and macOS type (a curly quote anywhere else asks). A bare greeting is never a command: `good night`, `morning` and `good morning` ask whether you meant sleep or wake. `go to sleep mode later`, a question about sleep mode, quoted text, `split the file` and a bare `this is too big` never route.
+**Wave, split, sleep and wake** (since 1.0.345, L-0662). `sleep` and `wake` route today, because L-0652's manual sleep mode made them `/crew:autopilot` subcommands, and `wave` routes since 1.1.6 (T-0029). **Split does nothing yet**: it is not a subcommand until its own ticket lands (T-0058), so a matching prompt produces no line at all, then the soft "not available yet" line while the name is reserved, then a route. They take the same allowlist; `sleep` and `wake` also accept the apostrophe in `I'm`, straight or the curly `’` iOS and macOS type (a curly quote anywhere else asks). A bare greeting is never a command: `good night`, `morning` and `good morning` ask whether you meant sleep or wake. `go to sleep mode later`, a question about sleep mode, quoted text, `split the file` and a bare `this is too big` never route.
 
 `it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break (any line boundary Python's `str.splitlines` knows, U+2028 and U+0085 included) or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
 
@@ -1009,6 +1020,8 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 **Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
 
 **Settings.** `route.enabled` in `.crew/config.json` or the machine-global file; only the JSON value `true` arms it (`"true"`, `1` and `yes` read as off, with a warning). `/crew:init` writes `false` into a new repo's file, and the repo value wins, so a machine-wide `true` needs the key removed or set `true` there too. A `route` block only in `.crew/crew.json` is reported, not read. Under Codex no line is emitted, and `memory.inject: false` silences it with the rest of the hook. `python3 crew_route.py settings --root .` shows what is in force; `python3 crew_route.py decide --root . --prompt "review it"` shows what a prompt would do. CONFIG.md §21 has the key.
+
+**`wave`** (T-0029; `hooks/scripts/crew_wave.py`). Design happens in the main session with the owner — `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket — and `crew_wave.py set --slug <s> --tickets <ids> [--deps <id>=<id>,<id>|none]` records the set in `.work/autopilot/<s>.json` (a set that was started is fixed: `set` refuses to rewrite it, and a second `start` relaunches only the lanes the first one launched, so a new ticket goes in a new set). Approval is the owner's own group approval (T-0024: `/crew:approve T-a T-b`, then `/crew:approve --confirm`). `crew_wave.py plan --set <s>` is read-only: per ticket `eligible` or `refused: <reason>` — no current approval, INDEX status `direction` or closed, a dependency not closed, dependencies `unknown` (no set-file deps and no parseable `(depends on ...)` in the INDEX row: never read as none), a Touch that overlaps another lane's, or more lanes than `autopilot.maxLanes` — then the wave, the later waves and a provisional landing order by crew version. `crew_wave.py start --set <s>` writes one lane file per lane under `.work/autopilot/<s>/lanes/` and prints one launch per lane: an `Agent` with `isolation: worktree`, never any other launch — the Step 1 spike measured that only an isolated lane's hook payload carries its own worktree as `cwd`, so only there does the scope guard judge its writes by its own ticket. Each lane first runs `crew_wave.py lane-init`, which refuses to run in the main checkout, outside `<main>/.claude/worktrees/`, in a worktree another lane names, or where the ticket branch is checked out elsewhere; it checks out or creates `<id>-wave`, copies the ticket folder and `.crew/config.json` in byte-identical, and requires `crew_ticket.accepted` to say `approved` and the scope guard to be at `block` there before it activates the ticket. The lane then implements, refreshes, reviews (reserving and recording rounds through `review_run.py`; a relaunch hands a reserved, unrecorded round back instead of reserving another) and runs `completion_audit.py --check`, and ends with exactly one `crew_wave.py lane-done --state clean|findings|question|failed`. `crew_wave.py collect --set <s>` prints one batch: each lane's state (a missing or unreadable lane file is `unknown`, never `clean`; an `owner-accepted` receipt written while the lane ran marks it `failed`), every open question with its recommendation first, the exact `/crew:approve` lines, the landing order of clean lanes and the later waves. It lands nothing — merging is T-0011's. `crew_wave.py cleanup --set <s>` removes a lane's worktree (`git worktree remove`, never `--force`) and branch (`git branch -d`, never `-D`) only when its branch is on origin's default branch after a fetch and the worktree is clean with nothing untracked; everything else, and anything it cannot tell, is kept and named. **The wave refuses to run unless `scope.mode` is `block` for every lane ticket** (`scope-not-enforcing`, naming the fix; the config is read where the scope guard reads it, so a linked worktree with no `.crew/config.json` of its own is judged by the main checkout's, and its own config, when present, wins whole), and a lane never accepts or rejects a review, approves a plan or merges. The lane prompt forbids it; `crew_ticket.py approve` is already refused by the scope guard, and the guard's subagent never-list — `review_ledger.py --accept|--reject` with every abbreviation, `allow_abbrev=False` in `review_ledger.py`, and `gh pr merge --admin` from any subagent — is review-harness work that lands separately (T-0087). **Until it lands, nothing mechanical stops a lane from accepting a review or admin-merging; only the prompt does.** Settings (repo only): `autopilot.maxLanes` — lanes at once, default the resolved `pm.maxDispatches`, which it can only lower; `autopilot.reviewPolicy` — `stop` (default: the lane ends at the first verdict), `clean-only` (a CLEAN round goes on to the done checks) or `fix-and-rereview` (fix and re-review within the ledger's two rounds); anything else reads as `stop`, with a warning. The Workflow tool is not used: the spike could not measure whether crew's hooks fire inside it.
 
 ### Measuring 1.0
 
@@ -1047,7 +1060,7 @@ layers, lowest precedence first:
 | Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
 
 Repo overrides global overrides built-in defaults, merged recursively with
-`crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
+`crew_state.merge_defaults` — the same policy `crew_upgrade.upgrade_config` (run by `/crew:migrate` for a pre-0.20 config) uses to bring a
 v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
 where a dict belongs is discarded rather than corrupting the block under it.
 `crew_config.resolve_config(root)` is the one place that computes this; every
@@ -1147,8 +1160,8 @@ the layer that decided it. That column is the point. The reason this command
 exists is a machine where the global file carried `tier`, `roles`, `qa` and
 `sdp` but **no `pm` block**, so every repo on it resolved to
 `pm.authority: report-only` while the user believed the 0.20 PM was autonomous.
-Every file was valid; nothing surfaced the discrepancy. `/crew:upgrade` now
-runs `--check-global` and reports the same findings.
+Every file was valid; nothing surfaced the discrepancy. `/crew:config` runs
+`--check-global` and reports the same findings.
 
 Four rules the script enforces rather than documents:
 
@@ -1622,7 +1635,7 @@ instead of quietly waving it through. CONFIG.md §17.
 refuses `gh pr merge --admin`, which no crew guard refused before — measured
 against the previous release, both flavours exited 0 — and
 `guards.terraformApply` now covers `tofu` as well as `terraform`. Both were
-bypasses rather than features. The `/crew:upgrade` report says so out loud,
+bypasses rather than features. The migrate report's upgrade lines say so out loud,
 because a user told only "the default is `block`, so nothing changed" will meet
 a command that ran yesterday being refused today and go looking for a bug in
 their tooling.
@@ -1880,15 +1893,30 @@ A platform with neither mechanism refuses the write. On POSIX a move inside the 
 remains a residual race; on Windows the held handles close it.
 
 **Whose card.** The ticket note is written once and never rewritten, and
-records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
-common dir's real path when there is no origin or the origin is a relative path
+records `repo-id:` — the origin URL with `.git` dropped and only its scheme and
+host (with the port) case-folded, or the git common dir's real path when there is no origin or the origin is a relative path
 (`../origin/app.git` from `a/app` and `b/app` is one string naming two
-repositories). An ssh origin keeps its username and drops only a password:
+repositories). The ssh username and the path keep their case (since T-0071):
+`ssh://Alice@host/~/repo.git` and `ssh://alice@host/~/repo.git`, or
+`https://host/Team/Repo` and `https://host/team/repo`, are two owners. A note an
+older crew wrote for an origin with capitals in its user or path holds the
+all-lowercase id and is refused like any foreign note; the refusal says so and
+names the fix, `repo-id: <this repo's id>`, which you edit in by hand — crew
+never accepts the old id on its own, because it is exactly the ambiguous one.
+An ssh origin keeps its username and drops only a password:
 `alice@host:repo.git` and `bob@host:repo.git` are two users' repositories. Every
 other scheme drops the whole userinfo, because `https://<token>@host/...` puts a
 token where a username goes and the id is written into a note a human reads. A
 local origin is its real path, and a `file://` one is percent-decoded first, as
-git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`.
+git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`. A `file://`
+authority is not path text: on POSIX any authority is dropped, as git drops it,
+so `file:///srv/app.git`, `file://localhost/srv/app.git` and `/srv/app.git` are
+one owner; on Windows an empty or `localhost` authority is dropped with the `/`
+before a drive letter (`file:///C:/repos/app.git` is `C:/repos/app.git`), and any
+other authority keeps the common-dir identity (git for Windows not measured).
+A quote around the note's `repo-id:` value is stripped only as a matched pair
+(`"<id>"` or `'<id>'`); a lone quote is part of the id. An id that itself begins
+and ends with the same quote character loses that pair when read back.
 Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
 repo shares one board, so a note naming another repo refuses `create`, `move`
 and `read`. A card whose owner cannot be told — no note, a note with no
@@ -1905,7 +1933,13 @@ follows it. Each refusal begins `id taken`, and `/crew:brainstorm` and
 before anything is written under that id. A `move` whose INDEX
 half refuses — another session moved the ticket on meanwhile — leaves the
 board alone, and a card already in its lane is repaired in place (checked in
-Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
+Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one,
+and a marker glued to its text, `- [ ]T-0042`, is given its space). The board
+half places the card where INDEX has the ticket when the board is written, not
+where the call meant to put it, and reads INDEX again after the write, so two
+overlapping moves leave the board and INDEX agreeing (since T-0071; the line
+says `(INDEX moved on to <status>)`). INDEX unreadable or holding an unknown
+status at that point leaves the board alone: `could not tell where INDEX has`.
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key
@@ -2394,6 +2428,211 @@ and both thresholds' defaults.
 `PreCompact` keeps the last five raw transcripts in `.crew/transcripts/`, which
 setup gitignores — transcripts contain everything the session saw, including any
 secret that reached it.
+
+### Cross-session claims (`crew_coord.py`)
+
+Since 1.1.6. When several sessions — same or different repositories, same or
+different machines — work one backlog, each **claims** a ticket before working
+it, so two sessions never hold the same one. The record is not in `.work/`
+(ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a
+shared remote. Its tree holds `claims/<repo>__<id>.json` per claim and an
+append-only `log.jsonl`. You claim with the commands below: no crew command claims for you yet - neither a `/crew:autopilot` run nor a wave, which only run `status` first.
+
+```
+python3 hooks/scripts/crew_coord.py status  --channel <c> --remote origin
+python3 hooks/scripts/crew_coord.py claim   --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py release --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py done    --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --ticket <id>
+```
+
+`--channel` and `--remote` default to `coord.channel` and `coord.remote`
+(remote falling back to `origin`) in `.crew/config.json`.
+
+**The `<repo>` half of the key is derived, never typed:** it is the `origin`
+remote's URL as git resolves it — `git remote get-url origin`, so
+`url.<base>.insteadOf` applies and an alias names the repository it points
+at — reduced to its host and every path segment, lowercased, with `.git` and any
+user or token removed, and a port removed only when it is the scheme's default (ssh 22,
+https 443, http 80, git 9418): `ssh://host:2222/team/repo` gives `host_3a2222.team.repo`,
+so two repositories behind two ports of one host are two keys. Each of those parts is written so it can
+be read back one way only — every byte outside `a-z`, `0-9` and `-` becomes
+`_` and two hex digits, so `.` is `_2e` and `_` is `_5f` — and the parts are
+joined with a dot (`https://github.com/Owner/Repo.git`,
+`ssh://git@github.com/Owner/Repo.git` and `git@github.com:Owner/Repo.git` all
+give `github_2ecom.owner.repo`; `https://gitlab.com/group/sub/repo.git` gives
+`gitlab_2ecom.group.sub.repo`). So every worktree and clone of one repository
+names a ticket alike, and two different repositories never do — not on
+different hosts, not in different groups with the same last two names, and
+not where a dot inside a name would otherwise read as a separator
+(`team/a.b/repo` and `team/a/b.repo` are two keys). A network URL keeps that
+lowercasing and `.git` stripping because a hosting service serves those
+spellings as one repository; a local one does not. A local path, or the path
+a `file://` URL names (percent-decoded as git decodes it, with an empty or
+`localhost` host), gives `file_` and its segments **with their case and any
+`.git` kept**, because on a case-sensitive filesystem `Repo.git` and
+`repo.git` are two directories, and `repo` beside `repo.git` is two
+repositories anywhere. A local segment may be any name the filesystem allows
+(`.git`, a dot-directory, a space); only one that is not UTF-8 reads
+`unknown`. The path keyed is the repository git itself opens for
+it: a leading `~` or `~user` is expanded as git expands it, a relative path is
+read against the worktree git runs in, then git's own
+suffix order is applied (`<path>/.git`, `<path>`, `<path>.git/.git`,
+`<path>.git` — `enter_repo` in git's `setup.c`, read at v2.53.0), a gitfile is
+followed and a linked worktree's git directory is taken to its common one, and
+the result is made real (`..` and symlinks resolved) and each component is
+spelled as its directory lists it, so on a case-insensitive volume (macOS and
+Windows defaults) the case on disk is keyed, not the case typed. So
+`remote.git` from `/srv/work`, `/srv/work/remote.git/`, `/srv/work/remote`
+when only `remote.git` exists, and `file:///srv/work/remote.git` are one key;
+a non-bare `/srv/src` and its `/srv/src/.git` are one key; and a path that is
+not a repository here is keyed as written. A component whose directory cannot
+be listed, on a volume where its case does not matter, reads `unknown`,
+because its spelling on disk cannot be told. Every Azure DevOps form of one repository gives
+`dev_2eazure_2ecom.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
+`https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
+whose name is the project's, so project = repo),
+`<org>.visualstudio.com/[DefaultCollection/][<project>/]_git/<repo>` and
+`ssh.dev.azure.com:v3/<org>/<project>/<repo>` — each name percent-decoded and
+lowercased, then written like any other part, so `My%20Project` and
+`My-Project` stay two projects. The markers `_git`, `v3` and
+`DefaultCollection` are compared after that decoding too, so `%5Fgit` is
+`_git`. An origin the key cannot be told
+from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
+fits none of those forms or whose names are not UTF-8, a network URL's host or
+path segment that is not letters, digits, `.`, `_`, `-`, a local path segment
+that is not UTF-8, a key over 128 characters, a URL with no
+path, a network URL with no host once any user and port are dropped
+(`https:///owner/repo`, `https://user@/owner/repo`, `https://:443/owner/repo`,
+`ssh:///owner/repo` — never read as a local path), a `file://` URL naming
+another host or not percent-encoded UTF-8, an empty `origin` URL, or a
+`get-url` that fails. That includes an
+on-premises Azure DevOps Server URL
+(`https://server/tfs/<collection>/<project>/_git/<repo>`), whose `_git`
+segment is outside the rule. It never falls back to a directory name, which
+would give one ticket a second key. Only when git says `origin` has no URL at
+all (`git config` exit 1) does it use the main worktree's directory name, and
+it prints why; a `git config` or `git rev-parse --git-common-dir` probe that
+fails is `unknown` too, never that fallback. `--ticket <repo>:<id>` is still accepted, but
+the `<repo>` given must be that derived name (compared lowercased); any other
+is refused, because a free-text repo gives one ticket several keys and so
+several holders. **The `<id>` half is upper-cased** for the same reason:
+tracker ids — Jira keys, SDP ids, the local `T-NNNN` — name one ticket
+whatever case they are typed in, so `t-0030` and `T-0030` are one key, not
+two holders.
+
+- **Writes never force.** Every change is a new commit on the freshly fetched
+  tip, built with git plumbing (no checkout, no working tree, index, `.work/`,
+  `HEAD` or `FETCH_HEAD` touched; other files on the channel keep their mode)
+  and sent with a plain `git push`. crew_coord.py will never force: no
+  `--force`, `-f`, `--force-with-lease` or `+` refspec. The push goes to
+  `crew-coord--push`, a remote defined only in the push's environment
+  (`GIT_CONFIG_COUNT`, git 2.31+) with the real remote's url, pushurl, proxy
+  and receivepack, and never its fetch or push refspecs or `mirror`: git
+  writes no remote-tracking ref, no local ref moves, and
+  no URL — or a token inside one — appears in the process's arguments. A
+  remote with several push URLs reads `unknown`, and so does one whose push
+  configuration cannot be read: each of those keys is read with
+  `git config --get-all`, where exit 1 means the key is absent and any other
+  failure is `unknown` with nothing pushed, never a missing pushurl that would
+  send the claim to the fetch URL. It runs with `--no-verify`,
+  so the repo's pre-push hook (husky, lefthook) never runs on a claim or a
+  heartbeat. A rejected push
+  re-fetches, re-applies the change — a peer's claim that landed in between is
+  then seen and refused — and retries at most 3 times, then reports
+  `unknown - could not push`. A fetch that fails reads `unknown`, never current,
+  and a claim is refused rather than granted on it.
+- **The TTL is 30 minutes** (`coord.ttlMinutes`; anything but a number above
+  0 and at most 10080, 7 days — a string, `0`, `NaN`, `Infinity`, `1e308` — is
+  a config error: every command exits 2 naming the key before any fetch or
+  push, so nothing is written). `claim` starts a detached
+  heartbeat that pushes `heartbeat_at` every 10 minutes while the session's
+  `CLAUDE_PID` lives and exits once it is gone, is reused by another process
+  (a different start time), or the claim is no longer `working` for it. One
+  loop runs per claim and holder — the holder's session id, machine,
+  worktree, pid and start time, every field that makes a holder: a second
+  loop for the same holder finds the first's lock and exits, while a new
+  holder's loop — after a release and a claim by another session, the same
+  session and pid claiming from another worktree, or a recover — takes a lock
+  of its own and does not wait for the old holder's loop, which exits on its
+  next tick. Inside
+  Claude Code's sandbox (bubblewrap `--unshare-pid`) the loop cannot see
+  `CLAUDE_PID`, reads it gone and exits at once, so the claim reads
+  `owner unknown` after the TTL; the claim recorded no PID namespace (below),
+  so recovery never adopts it: a false alarm, never a false grant. Its log
+  and locks live in a private per-user directory in the system
+  temp directory (`crew-coord-<uid>`, mode 0700; refused if it is a symlink,
+  another user's, or open to others), the log opened 0600 without following a
+  symlink. A `working` claim whose heartbeat is older than the TTL reads
+  `owner unknown (last heartbeat <age>)`, **never free**: a new claim on it is
+  refused. Staleness alone never releases or hands over a claim.
+- **Only the holder** releases, finishes or heartbeats a claim. A holder is
+  one session id in one process on one machine and worktree: session id,
+  machine, worktree and `CLAUDE_PID` all equal, and the pid's start time equal
+  where both sides recorded one. The same session id from another process or
+  worktree — `claude --resume <id>` while the original is still open — is
+  another holder: its `claim` is refused with the holder named, and it goes
+  through `recover`'s rules, never a silent reclaim. **Only the
+  owner** breaks one: `release --break --by <name>`, run from a terminal
+  outside Claude Code (it refuses while `CLAUDECODE` or
+  `CLAUDE_CODE_SESSION_ID` is set) and logged. That signal can be stripped
+  with `env -u`, so it stops accidental breaks, not a determined agent — it is
+  a documented rule, not an enforced one.
+- **Recovery when a session's id changes.** `/clear` changes the session id,
+  so a claim the previous session made looks foreign. `status` lists such
+  claims **first**, marked `yours from a previous session`, each with its one
+  recommended action. `recover` adopts one only when all of these hold: the
+  claim's machine is this host, its worktree is this worktree, the local
+  identity file (`<git-common-dir>/crew/coord-identity.json`, written by the
+  script) names the claim's holder, and the holder's `CLAUDE_PID` is
+  **provably gone** — then at once, however fresh its heartbeat (owner
+  decision, rush g0). Where the end cannot be proven (a sandbox's namespace,
+  a probe error, macOS), a fresh heartbeat says to wait for the TTL, and past
+  it the claim is still only presented. Anything else — another machine, a
+  live pid, a pid reused with a different start time, a missing or corrupt
+  identity file, a check that cannot tell — reads `needs the owner: <reason>`
+  and is never adopted. A pid check that cannot tell reads **alive**. On
+  Linux a pid reads gone only from the **PID namespace** the claim recorded
+  (`holder.pidns`, from `/proc/self/ns/pid` at claim time), and one is
+  recorded only when `CLAUDE_PID` was visible from it: Claude Code's sandbox
+  runs each command under bubblewrap's `--unshare-pid`, where a live
+  `CLAUDE_PID` is invisible and looks gone, and bubblewrap reuses namespace
+  ids, so a later sandbox can match the id of the one that claimed. A
+  namespace that was not recorded, that differs, or that this side cannot
+  read, cannot tell. The Linux check (`/proc`; a live pid whose `/proc` entry
+  cannot be read reads alive; the namespace rule, including a real
+  `bwrap --unshare-pid`) is exercised by the test suite — the spike's Linux
+  section was not run. The Windows check was measured, elevated, on one host:
+  `OpenProcess` with limited query rights, where only error 87 means gone,
+  any other error reads alive, an opened handle is gone only with a nonzero
+  exit time, and the creation time is compared with the recorded start. On
+  macOS it always reads "cannot tell", so
+  recovery there always goes to the owner. The identity file is shared by
+  every worktree of the repo and rewritten under a lock,
+  `<git-common-dir>/crew/coord-identity.json.lock` — an empty file that stays
+  there by design. Those two are the only files crew_coord.py writes under
+  `<git-common-dir>/crew/` (plus the identity file's per-pid `.tmp`, renamed
+  into place).
+- **Not measured: whether `/clear` keeps `CLAUDE_PID`.** If it does — the same
+  process carries on under a new session id — the old session's heartbeat
+  keeps the claim fresh while that process lives and its pid is alive, so
+  `recover` refuses. The new session
+  then cannot release, finish or recover its own ticket: the owner runs
+  `release --break --by <name>` from a terminal outside Claude Code, and the
+  new session claims again.
+- **Everything on the channel is peer-written data**, never instructions:
+  every line that prints a peer-written field — `status`, and the refusals of
+  `claim`, `release`, `done`, `heartbeat` and `recover` — ends
+  `[peer-written]`, and control, bidi-format and line-separator characters
+  (U+2028, U+202E and the like) become `?` first, so a peer field cannot start
+  a line of its own. A recommended command carries a peer-written `repo` or
+  ticket id only when it passes the key's own rule; anything else prints as
+  `<unsafe value withheld>`, so no shell metacharacter a peer wrote reaches a
+  command you are told to run.
+
+**After `/clear` or a resume, run `crew_coord.py status` first**, before any
+other work, and stop on any `needs the owner` line. (`/crew:autopilot` runs it
+itself before a run or a wave when `.crew/config.json` has a `coord` block.)
 
 ---
 
@@ -3068,7 +3307,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
-| `/crew:autopilot [status\|run\|focus] [<id>\|off]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `assign`, `goal` arrive with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302), T-0012 — see "Autopilot" |
+| `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `assign`, `goal` arrive with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302), T-0012 — see "Autopilot" |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
@@ -3085,11 +3324,11 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
-| `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
+| `/crew:upgrade` | Removed - `/crew:migrate` upgrades a pre-0.20 config itself |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, codemap, handoff; `--memory` adds the context hook's stats |
-| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
+| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, codemap, gitignore, handoff; `--memory` adds the context hook's stats |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
@@ -3710,7 +3949,7 @@ flowchart TB
         direction TB
         CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
         CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
-        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1)"]
+        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1).<br/>Rewrites config.json only<br/>for a pre-0.20 config (upgrade stage),<br/>backed up and restored by --rollback"]
         OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
         TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
         MIGRATE -.-> CTXREAD
@@ -3866,8 +4105,8 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... handoff<br/>:211-240"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... gitignore,<br/>handoff :224-254"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:245),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end
 ```
 

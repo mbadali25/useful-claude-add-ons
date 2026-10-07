@@ -1,0 +1,58 @@
+--- a/heavy-run
++++ b/heavy-run
+@@ -29,7 +29,37 @@
+ resolve_prio
+ waitdir=/root/crew-tmp/heavy-prio-wait
+ marker=""
+-trap '[ -n "$marker" ] && rm -f "$marker"' EXIT
++# L-0517: one JSON line per invocation, from this EXIT trap (so a TERM or INT while
++# waiting still logs), to make slot contention measurable with jq over one file.
++# Unknowns stay null; lane is never guessed. A failed write never changes the exit code.
++waits_log=${HEAVY_RUN_WAITS_LOG:-/root/crew-tmp/heavy-run-waits.jsonl}
++printf -v req_s '%(%s)T' -1
++slot=""; acq_s=""; rel_s=""; rc=""  # rc stays empty (null) unless the command finished
++jstr() {  # JSON string: control characters dropped, then \ and " escaped
++  local v; v=$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177')
++  [ -n "${2:-}" ] && v=${v:0:$2}
++  v=${v//\\/\\\\}; v=${v//\"/\\\"}
++  printf '"%s"' "$v"
++}
++jtime() { if [ -n "$1" ]; then printf '"%s"' "$(date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ)"; else printf null; fi; }
++log_wait() {
++  local now lane top waited held
++  printf -v now '%(%s)T' -1
++  [ -n "$acq_s" ] && [ -z "$rel_s" ] && rel_s=$now
++  if [ -n "$prio_tag" ]; then lane=$prio_tag
++  elif [[ "${TMPDIR:-}" == /root/crew-tmp/?* ]]; then lane=${TMPDIR%/}; lane=${lane##*/}
++  elif top=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ]; then lane=${top##*/}
++  else lane=unknown; fi
++  if [ -n "$acq_s" ]; then waited=$((acq_s - req_s)); held=$((rel_s - acq_s))
++  else waited=$((now - req_s)); held=null; fi
++  local line
++  line="{\"lane\":$(jstr "$lane"),\"slot\":$([ -n "$slot" ] && jstr "$slot" || printf null)"
++  line+=",\"prio\":$([ -n "$prio_tag" ] && jstr "$prio_tag" || printf null),\"pid\":$$"
++  line+=",\"requested\":$(jtime "$req_s"),\"acquired\":$(jtime "$acq_s"),\"released\":$(jtime "$rel_s")"
++  line+=",\"waited_s\":$waited,\"held_s\":$held,\"rc\":${rc:-null},\"cmd\":$(jstr "$ARGS" 120)}"
++  { printf '%s\n' "$line" >> "$waits_log"; } 2>/dev/null
++}
++trap '[ -n "$marker" ] && rm -f "$marker"; log_wait' EXIT
+ mark() {
+   local want=""
+   [ -n "$prio_tag" ] && want="$waitdir/$prio_rank.$prio_tag.$$"
+@@ -68,6 +98,8 @@
+     exec {fd}>>"$s"
+     if flock -n "$fd"; then
+       [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
++      slot=${s##*/}; printf -v acq_s '%(%s)T' -1
++      export HEAVY_RUN_SLOT=$slot
+       # Memory cap (2026-09-27 19:25 CDT): the sabotage entry "a FIFO or device
+       # is opened as a plan" makes cloud_guard read /dev/zero unbounded; that
+       # python3 reached 20 GB and the global OOM took the orchestrating session
+@@ -80,6 +112,7 @@
+         "$@"; rc=$?
+       fi
+       flock -u "$fd"; exec {fd}>&-
++      printf -v rel_s '%(%s)T' -1
+       [ -n "$marker" ] && rm -f "$marker"
+       exit $rc
+     fi

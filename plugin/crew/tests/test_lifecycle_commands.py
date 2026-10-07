@@ -117,6 +117,21 @@ def test_command_names_exact_cli(name, snippets):
 AUTOPILOT_MAX_LINES = 117
 
 
+# T-0029: `wave` names crew_wave.py's commands and the one launch it allows,
+# inside the same 117 (its section 7 was paid for by rewrapping sections 0 and 6).
+WAVE_CLI = ("crew_wave.py plan --root .", "crew_wave.py start --root .",
+            "crew_wave.py lane-prompt", "crew_wave.py collect --root .", "isolation: worktree",
+            "`scope-not-enforcing`", "`sub=wave`: section 7 only",
+            # Group review r2 (rush g0): a wave starts only after T-0030's coord check.
+            "section 2's first paragraph (the `coord` check, T-0030)")
+
+
+def test_autopilot_md_names_wave_cli_strings():
+    text = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert [snippet for snippet in WAVE_CLI if snippet not in text] == []
+
+
 def test_autopilot_command_at_most_117_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 
@@ -379,6 +394,23 @@ def test_a_failed_create_stops_before_the_folder(name):
     folder = text.find("create `.work/tickets/")
 
     assert (create != -1, stop != -1, folder != -1, create < stop < folder) == (True, True, True, True)
+
+
+def test_fix_mints_through_mcp_under_jira_and_sdp():
+    """T-0071 #5: fix.md step 1 read the tracker kind nowhere, minted a local
+    T-#### under Jira and SDP, and stopped on `create`'s delegated exit 3. The
+    kind is resolved first, and the MCP create and its key come before any
+    write under `.work/tickets/`."""
+    text = " ".join(_read(os.path.join(COMMANDS, "fix.md")).split())
+    step = text[text.find("## 1. Direction"):text.find("## 2.")]
+
+    resolve = step.find(f"{_TRACKER} resolve --root .")
+    jira = step.find("**Jira and ServiceDesk Plus**")
+    first_write = step.find("`.work/tickets/")
+
+    assert (resolve != -1, jira != -1, -1 < resolve < first_write, "through MCP" in step,
+            "use its key as `<id>`" in step, "`.work/tickets/<KEY>/`" in step,
+            "not a failure to stop on" in step, "`could not tell`" in step) == (True,) * 8
 
 
 # T-0085: the build-time standards reach the commands that apply them. Exact

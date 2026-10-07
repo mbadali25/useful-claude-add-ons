@@ -785,7 +785,8 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
 - `.crew/verify.json:476-480` (rule 40) — L-0513's gate runner
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
-  no harness path for it.
+  no harness path for it. Since L-0517 its `status.json` carries `heavy_run.slot`, the slot
+  heavy-run exported as `HEAVY_RUN_SLOT` (`null` when unset or malformed; recorded, never trusted).
 - `.crew/verify.json:520-531` (the L-0575 rule, after L-0572's subset-cover rule at `:483-490`) — the recurring-findings checklist suite
   (`test_recurring_findings.py`, and since L-0601 `test_review_prompt.py`) for `recurring_findings.py`, its data, `review_prompt.py` and `sabotage_recurring.py`, priced 3s.
 - `.crew/verify.json:502-509` (rule 41) — T-0040's shell-route suites

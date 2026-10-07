@@ -89,7 +89,10 @@ fail-open handling, PowerShell/Bash drift, guard bypass, version and registratio
 path globs meet the files the diff changes, a few probes each. It is the same list
 `/crew:implement` showed the developer before the first plan step. It does not bound the review,
 and an item the diff does not touch is not a finding. When the bundle's manifest cannot say which
-files changed, every class is listed under an `UNKNOWN:` line rather than none.
+files changed, every class is listed under an `UNKNOWN:` line rather than none. Each class names
+the development standards it is a concrete instance of (its `seen:` line, for example GEN-09): the
+list is derived from the standards, a test holds every id it names to one that exists, and where a
+probe and its standard disagree the standard wins.
 
 Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
 the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base

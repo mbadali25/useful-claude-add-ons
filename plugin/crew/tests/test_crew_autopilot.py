@@ -1330,7 +1330,8 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None},
-        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60}
+        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+        "maxLanes": None, "reviewPolicy": "stop"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -2158,3 +2159,17 @@ def test_a_path_outside_the_checkout_is_named_exactly_as_given(tmp_path):
     assert (crew_autopilot._rel_inside(str(lane), outside),  # pylint: disable=protected-access
             crew_autopilot._rel_inside(str(lane), str(lane / ".work" / "INDEX.md"))) == (  # pylint: disable=protected-access
         outside, ".work/INDEX.md")
+
+
+# --- L-0639: INDEX_DONE and crew_state's closed words are one set ------------
+
+def test_index_done_matches_crew_state():
+    assert set(crew_autopilot.INDEX_DONE) == crew_state._TABLE_DONE_WORDS  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("word", ["cancelled", "superseded"])
+def test_next_cancelled_index_row_is_closed(tmp_path, word):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status=word)
+    got = _next(root)
+    assert (got["phase"], got["stop"]) == ("closed", True)

@@ -16,8 +16,10 @@
 %%    verify-gate.sh, /crew:config, /crew:model all route through this module
 %% Note CTXREAD: crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:122-133 tries
 %%    .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent
-%% Note MIGRATE: crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Never touches
-%%    config.json's runtime read path - crew_config.py keeps reading config.json regardless
+%% Note MIGRATE: crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Rewrites
+%%    config.json only for a pre-0.20 config (no schema, or 1-6: the upgrade stage, _load_legacy /
+%%    _plan_upgrade, T-0038), backed up and restored byte-identical by --rollback - crew_config.py keeps
+%%    reading config.json regardless
 %% Note OPEN: Net effect: a repo that has run --apply has BOTH files, and which one governs a given read
 %%    depends on which module asked. Not resolved by this diagram - a decision for scribe to record, not this
 %%    note's to make.
@@ -32,7 +34,7 @@ flowchart TB
         direction TB
         CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
         CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
-        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1)"]
+        MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1).<br/>Rewrites config.json only<br/>for a pre-0.20 config (upgrade stage),<br/>backed up and restored by --rollback"]
         OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
         TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
         MIGRATE -.-> CTXREAD

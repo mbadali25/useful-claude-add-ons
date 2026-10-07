@@ -200,7 +200,9 @@ LABELS = {".crew/config.json", ".crew/crew.json"}
 ALLOWED = {
     "crew_platform.py": (1, "the writer: CONFIG_PATH, which never follows the main checkout"),
     "crew_autoclear_setup.py": (2, "the writer: converts the worktree's own two files"),
-    "crew_migrate.py": (7, "the writer and its labels, plus the PM journal archive join"),
+    "crew_migrate.py": (9, "the writer and its labels, plus the PM journal archive join; T-0038 "
+                        "adds CONFIG_REL, the upgrade stage's own in-place target, and the "
+                        "re-run's read of the crew.json it wrote"),
     "webtest_rules.py": (1, "a secret-file glob, not a read of the config"),
     "crew_route.py": (1, "a message label naming the repo layer"),
     "role_write_guard.py": (1, "a message label naming the corrupt layer"),
@@ -216,6 +218,8 @@ ALLOWED = {
     # - the delete path's backup file name `.crew/<BACKUP_PREFIX><stamp>`, own path;
     # - the scratch repo's config.json written to preview the post-heal rows.
     "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
+    "crew_wave.py": (1, ("lane-init's copy of the main checkout's own .crew/config.json "
+                         "into the lane, own paths")),
     # T-0068: CREW_CONTENT_PATHS names the two config files as content that is
     # never crew bookkeeping (always reviewed and judged); a list entry, not a read.
     "crew_ticket.py": (2, "CREW_CONTENT_PATHS lists the config files, not a config read"),

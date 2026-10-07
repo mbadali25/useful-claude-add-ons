@@ -14,7 +14,8 @@ SETS. A set file is Markdown with a front matter of `key: value` lines:
 
 `set` is 2-6 capital letters and every `## <ID> <name>` heading's prefix must
 equal it. `applies-to` is a JSON list of Touch-style globs, matched with
-`crew_ticket.glob_match` against the change's files; `"**"` applies always.
+`crew_ticket.glob_match` against the change's files, case-folded on every
+host; `"**"` applies always.
 A field starts on a line that begins with its bold label (`FIELDS`) and runs to
 the next label or heading. Plugin sets live in `skills/crew-standards/
 references/*.md` (generic.md is set GEN; T-0086's per-language sets are
@@ -85,7 +86,7 @@ _STANDARD_RE = re.compile(r"^## ([A-Z]{2,6}-\d{2}) (\S.*?)\s*$")
 _SUPPLEMENTS_RE = re.compile(r"^## Supplements (\S+)\s*$")
 _FIELD_RE = re.compile(r"^\*\*(" + "|".join(re.escape(f) for f in FIELDS) + r")\.\*\*\s?(.*)$")
 _STAMP_RE = re.compile(r"^<!-- stamp: bundle=([0-9a-f]{64}) standards=([0-9a-f]{64}) "
-                       r"base=([0-9a-f]{40}) -->$")
+                       r"base=([0-9a-f]{40}|[0-9a-f]{64}) -->$")
 _ROW_RE = re.compile(r"^\|(.*)\|\s*$")
 _STD_TOKEN_RE = re.compile(r"\bstd:([^\s,;)|]*)")
 _STD_DIGEST_RE = re.compile(r"[0-9a-f]{8}")
@@ -227,9 +228,13 @@ def parse_set(path, label=None, required=PLUGIN_FIELDS):
 # ---- the effective set ----------------------------------------------------------
 
 def _applies(globs, changed_files):
+    """Case-insensitive on every host: `fnmatch` folds case on Windows only,
+    so `check.PS1` would miss PWSH on Linux and the same change would stamp a
+    different digest per host. Folding can only add a set (over-list), never
+    drop one."""
     if "**" in globs:
         return True
-    return any(crew_ticket.glob_match(path.replace("\\", "/"), glob)
+    return any(crew_ticket.glob_match(path.replace("\\", "/").lower(), glob.lower())
                for path in changed_files for glob in globs)
 
 
@@ -260,18 +265,23 @@ def _plugin_sets(refs_dir):
     return sorted(sets, key=lambda item: (item[0]["set"] != "GEN", item[0]["set"])), problems
 
 
-def effective_set(root, changed_files, refs_dir=None):
+def effective_set(root, changed_files, refs_dir=None, applies=None):
     """{"standards", "overlay": present|absent|unknown, "digest", "problems",
     "sets", "overlay_problem"}. The generic set always; each stack set whose
-    applies-to matches a changed file; the overlay when present."""
+    applies-to matches a changed file; the overlay when present. `applies`,
+    when given, replaces the changed-file match: it takes a set's applies-to
+    list and answers whether the set is in (`sets --touch`, L-0518)."""
     refs_dir = refs_dir or references_dir()
     changed_files = list(changed_files or [])
+    if applies is None:
+        def applies(globs):
+            return _applies(globs, changed_files)
     plugin, problems = _plugin_sets(refs_dir)
     plugin_ids = {s["id"] for parsed, _ in plugin for s in parsed["standards"]}
     digest = hashlib.sha256()
     standards, sets = [], []
     for parsed, raw in plugin:
-        if not _applies(parsed["applies_to"], changed_files):
+        if not applies(parsed["applies_to"]):
             continue
         sets.append(parsed["set"])
         standards += [dict(s, source=f"references/{os.path.basename(parsed['path'])}")
@@ -487,7 +497,7 @@ def _scope(root, ticket):
     if source == "record-fallback" and base:
         note = why
     elif source == "merge-base" and base and has_entry:
-        note = f"(fallback) {why}"
+        note = why if "(fallback)" in why else f"(fallback) {why}"
     elif source != scope_base.RECORDED or not base:
         if has_entry:
             return None, None, [f"the scope base for {ticket} cannot be used ({why}); an "
@@ -722,21 +732,67 @@ def checklist_block(root, manifest, refs_dir=None):
 
 # ---- findings to standards --------------------------------------------------------
 
+_PROPOSABLE = ("CLEAN", "FINDINGS")
+
+
+def _recorded_verdict(root, ticket, round_no):
+    """None when the review ledger records round `round_no` as completed with
+    a CLEAN or FINDINGS verdict; otherwise why not (L-0518 F1). The ledger is
+    where `review_run.finish` scores a round, exit code, timeout, every bundle
+    part and webtest reason included, so an out.txt that reads as FINDINGS on
+    its own is not proposed from a round finish called INCOMPLETE. No ledger,
+    an unreadable one, no row, a row with no result or two rows for the round
+    are could-not-tell, never "the out.txt decides" (GEN-01)."""
+    import review_ledger  # pylint: disable=import-outside-toplevel
+    try:
+        found = review_ledger.status(root, ticket)
+    except (review_ledger.LedgerError, OSError, ValueError) as exc:
+        return f"the review ledger could not be read ({exc})"
+    if found.get("state") == review_ledger.UNKNOWN:
+        return f"the review ledger {found.get('path')} is unreadable"
+    rounds = found.get("rounds") or []
+    if any(not isinstance(r, dict) for r in rounds):
+        return f"the review ledger {found.get('path')} holds a round that is not an object"
+    rows = [r for r in rounds
+            if r.get("round") == round_no and not isinstance(r.get("round"), bool)]
+    if len(rows) != 1:
+        return (f"the review ledger records {'no' if not rows else len(rows)} round "
+                f"{round_no}" + ("" if rows else f" for {ticket}"))
+    row = rows[0]
+    if row.get("status") != "completed" or row.get("verdict") not in _PROPOSABLE:
+        return (f"the review ledger records round {round_no} as "
+                f"{row.get('verdict') or row.get('status') or 'no result'}, not CLEAN or "
+                "FINDINGS")
+    return None
+
+
 def proposals(root, ticket, scratch, round_no):
     """(exit_code, lines). One section per BLOCK/FIX line of the round's
     out.txt, verbatim, for the owner to rule on. Writes only the proposals
     file, with an exclusive create; never a set file.
 
+    The round must first be recorded CLEAN or FINDINGS in the review ledger
+    (`_recorded_verdict`); the out.txt parse below is a second check.
+
     An out.txt the verdict parser calls INCOMPLETE -- empty, a line that might
     be a contract line it cannot read (a finding behind a bullet), a stray
-    line admitting the review fell short ("could not review ..."), even
-    beside well-formed findings, or neither CLEAN nor a finding -- is refused
-    and nothing is written: "could not tell" never becomes "no findings", and
-    the exclusive create is left free for the corrected run (GEN-01). A round
-    the parser recovered despite harmless stray lines (prose or a code fence
-    beside well-formed findings, L-0576) is FINDINGS, and its findings are
-    proposed like any other."""
+    line matching the shortfall wording list (`review_verdict._SHORTFALL`:
+    "could not review ...", "skipped", ...), even beside well-formed
+    findings, or neither CLEAN nor a finding -- is refused and nothing is
+    written: "could not tell" never becomes "no findings", and the exclusive
+    create is left free for the corrected run (GEN-01). A round the parser
+    recovered despite harmless stray lines (prose or a code fence beside
+    well-formed findings, L-0576) is FINDINGS, and its findings are proposed
+    like any other. That wording list cannot be complete, so an admission it
+    misses ("I only inspected one of the nine files") is recovered as prose
+    and the round is FINDINGS: such a line is in the parser's `ignored`, which
+    /crew:review always reports (`review.json`'s `ignored_text`), and is not
+    written here."""
     import review_verdict  # pylint: disable=import-outside-toplevel
+    recorded = _recorded_verdict(root, ticket, round_no)
+    if recorded:
+        return 1, [f"proposals: {recorded}, so which findings round {round_no} holds is not "
+                   "known; nothing written"]
     source = os.path.join(scratch, "out.txt")
     raw, why = _read_bytes(source)
     if raw is None:
@@ -872,7 +928,48 @@ def metric(root, record=False, today=None):
 
 # ---- CLI ---------------------------------------------------------------------------
 
-def _sets(root, ticket, refs_dir=None):
+def _touch_sets(root, ticket, refs_dir=None):
+    """`sets --touch` (L-0518 F4): the effective set from the spec's Touch
+    list, needing no scope base, so it answers at plan time. A stack set is in
+    when its applies-to overlaps a Touch entry, through the matcher
+    `/crew:implement` step 2 uses (it over-lists, never under-lists). A spec or
+    Touch list that cannot be read lists every set under UNKNOWN and exits 1."""
+    import recurring_findings  # pylint: disable=import-outside-toplevel
+    spec = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), "spec.md")
+    unknown = None
+    try:
+        # The FIFO-safe reader step 2's block uses (PYTHON-07), so both read a spec alike.
+        text = recurring_findings._read_regular(spec)  # pylint: disable=protected-access
+    except (OSError, UnicodeDecodeError) as exc:
+        touch, unknown = [], f"{spec} cannot be read ({exc.__class__.__name__}: {exc})"
+    else:
+        touch, why = crew_ticket.parse_touch(text)
+        if why:
+            unknown = f"the spec's Touch list: {'; '.join(why)}"
+    if unknown:
+        found = effective_set(root, [], refs_dir, applies=lambda globs: True)
+        lines = [summary_line(found),
+                 f"UNKNOWN: {unknown}; which stack sets apply is not known, so every set is "
+                 "listed"]
+    else:
+        def applies(globs):
+            # Case-folded like `_applies`; the as-written pass keeps a Touch
+            # entry naming a mixed-case directory on a case-sensitive disk.
+            return "**" in globs or any(
+                recurring_findings.matches(entry, glob, touch=True, root=root)
+                or recurring_findings.matches(entry.lower(), glob.lower(), touch=True,
+                                              root=root)
+                for entry in touch for glob in globs)
+        found = effective_set(root, [], refs_dir, applies=applies)
+        lines = [f"{summary_line(found)}; from the spec's Touch list"]
+    lines += [f"{s['id']} {s['name']} ({s['source']})" for s in found["standards"]]
+    lines += [f"PROBLEM: {p}" for p in found["problems"]]
+    return (1 if unknown or found["problems"] else 0), lines
+
+
+def _sets(root, ticket, refs_dir=None, touch=False):
+    if touch:
+        return _touch_sets(root, ticket, refs_dir)
     base, manifest, problems, note = _scope(root, ticket)
     if problems:
         return 1, problems
@@ -891,6 +988,8 @@ def main(argv):
     parser.add_argument("--scratch")
     parser.add_argument("--round", type=int)
     parser.add_argument("--record", action="store_true")
+    parser.add_argument("--touch", action="store_true",
+                        help="sets only: from the spec's Touch list, with no scope base")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     if args.command != "metric":
@@ -904,7 +1003,7 @@ def main(argv):
                                         or args.round < 1):
         parser.error("proposals needs --scratch DIR and --round N (N >= 1)")
     if args.command == "sets":
-        code, lines = _sets(root, args.ticket)
+        code, lines = _sets(root, args.ticket, touch=args.touch)
     elif args.command == "init":
         code, lines = init(root, args.ticket)
     elif args.command == "stamp":

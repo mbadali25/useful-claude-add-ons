@@ -95,7 +95,7 @@ _S = "hooks/scripts/"
 # crew version whose committed template declared the key, backfilled once from
 # git history (T-0048); a later key sets it in its land commit.
 KEY_META = {
-    "schema": _unv("Config schema version; `/crew:upgrade` migrates an older one.",
+    "schema": _unv("Config schema version; `/crew:migrate` upgrades an older one.",
                    FIRST, _S + "crew_state.py", "integer"),
     "tier": _unv("Setup tier recorded by `/crew:init`.", FIRST, _S + "crew_state.py",
                  "integer"),
@@ -498,6 +498,17 @@ KEY_META = {
                                        "with a warning.", "branch", None, "1.0.349",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
+    "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "
+                               "resolved `pm.maxDispatches`, a larger value is capped to it and "
+                               "anything but a positive integer reads as it, each with a "
+                               "warning.", "branch", None, "1.1.6", _S + "crew_wave.py",
+                               type_="positive integer or null"),
+    "autopilot.reviewPolicy": _row("What a wave lane does with its review verdict: `stop` ends "
+                                   "at the first verdict, `clean-only` takes a CLEAN round on "
+                                   "to the done checks, `fix-and-rereview` fixes within the "
+                                   "ledger's rounds. Anything else reads as `stop`, with a "
+                                   "warning; no setting lets a lane accept a review.", "tuple",
+                                   ("stop", "clean-only", "fix-and-rereview"), "1.1.6"),
     # --- tickets
     "tickets.baseBranch": _row("The branch ticket branches are cut from; null tries "
                                "origin/HEAD's target, then origin/main, then main. A "
@@ -532,12 +543,6 @@ COMING = (
             "Whether crew may dispatch a deploy workflow.", "block", "both, ratchet"),
     _coming("environments.workflows", "T-0009", "new key",
             "Deploy workflows per environment.", "{}", "repo"),
-    _coming("autopilot.maxLanes", "T-0029", "new key",
-            "Parallel lanes one autopilot wave may run; may only lower the limit.",
-            "the resolved pm.maxDispatches", "repo"),
-    _coming("autopilot.reviewPolicy", "T-0029", "new key",
-            "What a lane does with review findings.", "stop", "repo",
-            ("stop", "clean-only", "fix-and-rereview")),
     _coming("coord.ttlMinutes", "T-0030", "new key",
             "Lifetime of a cross-session coordination claim (1-10080).", "30",
             "set when T-0030 lands"),

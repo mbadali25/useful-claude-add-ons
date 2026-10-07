@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.9 — sync: main (H3 #540, H1 #542, C-0047 part 1 #549) into release/1.2.0
+
+- **Summary.** release/1.2.0 now carries everything on main: the review harness (H3), its ports
+  (H1) and the retired cloud-guard sabotage entries (C-0047 part 1), beside the release's own
+  features, so it can land on main as one wave.
+- **What changed.** Two merges of `origin/main` (7cb44221, then ad36bec5) into release/1.2.0. Both
+  sides' behaviour is kept; the only code-adjacent resolution is `test_worktree_config.py`'s
+  `ALLOWED` table, which takes both sides' entries and drops `review_gate.py` and
+  `verify_fingerprint.py` because H1 removed their config reads. The daily-workflow,
+  troubleshooting and working-with-codex guides are rebuilt from the merged sources.
+
 ### Removed — crew 1.1.8: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2
 
 - **Summary.** Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the
@@ -20,6 +31,477 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   only (owner 2026-10-07): nothing else changes, and no guard behaviour changes.
 - **Kept.** Each removed entry is in `docs/tickets/C-0047/retired-entries.md` verbatim (label,
   target, anchor, mutation, test) for H2 to re-add. The other 203 cloud-guard entries are untouched.
+
+### Added — crew 1.1.7: a `stack-node` skill and Node.js candidate standards, no gated Node set yet (L-0537)
+
+- **Summary.** crew gains a `stack-node` skill for server-side and CLI Node.js and TypeScript,
+  with pitfalls and verify rules, and lists four candidate Node standards with the evidence each
+  has. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-node/SKILL.md` covers child processes,
+  `fetch` status handling, paging that says it stopped, unhandled rejections, erased types,
+  ESM/CJS, date parsing, integers above 2^53, `process.exit()` and `npm ci`. The behaviour
+  claims were checked on Node 22.22.0. It proposes two verify.json commands, `npm test` and
+  `node_modules/.bin/tsc --noEmit`; each exits 77 with `TOOL MISSING` when its tool is absent.
+  New `stack-node/references/candidates.md` covers NODE-08 (a partial result says it is
+  partial), NODE-P1 (argv arrays, not shell strings), NODE-P2 (status before body) and NODE-P3
+  (credentials only to the configured origin). `test_stack_skills.py` lists `stack-node`, and
+  crew's skill count reads 33 everywhere it is stated. No set file, loader or gate change.
+- **Evidence.** The evidence is this repository's commits and CHANGELOG, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. NODE-08 is at
+  the bar (4) in the spec's re-count, but three of its change sets are in a private repository
+  and their text was not available, so it stays a candidate. Public change sets do not count
+  (owner decision). That is a reported deviation from the spec, which expected `node.md` with
+  NODE-08.
+
+### Added — crew 1.1.7: the PowerShell standards set, PWSH-16, and PowerShell candidates (L-0534)
+
+- **Summary.** A change that touches a `.ps1`, `.psm1` or `.psd1` file now answers one
+  PowerShell standard in its pre-review self-check: resolve an external program to an
+  Application that is proven to run, never to whatever name lookup returns first.
+- **Behaviour change.** In this repository every hook-pair change touches a `.ps1`, so it now
+  draws the `PWSH` set. A ticket in flight with a `.ps1` change gets a stale stamp after it
+  merges this, and must add the PWSH-16 row to its self-check and stamp again.
+- **What changed.** New `plugin/crew/skills/crew-standards/references/powershell.md`, set
+  `PWSH` (the loader takes 2-6 capitals), `applies-to: ["**/*.ps1", "**/*.psm1", "**/*.psd1"]`,
+  holds PWSH-16, the command-resolution half of that research rule. It is earned by three of
+  this repository's own reviews: crew 0.19.69 (a security review of the scope layer), 0.19.92
+  (the PowerShell-security-hardening review in PR #200) and 1.0.23 BLOCK B2. Its Source
+  sentences are re-matched against the raw about_Command_Precedence page. New tests in
+  `test_crew_standards.py` cover it: `test_pwsh_set_parses_with_every_field`,
+  `test_pwsh_why_finding_counts_match_their_enumerations`,
+  `test_pwsh_sources_quote_whole_spans_without_elision` and
+  `test_pwsh_set_applies_to_powershell_files_only`. Each was proven red by a hand-run
+  mutation. `stack-powershell` points at the set, and its new `references/candidates.md` lists
+  PWSH-P1 (exit status, and `$null` as failure), PWSH-P2 (literal matching), PWSH-P3 (forced
+  collections), PWSH-04 (explicit bytes at a native boundary), the documentation-only
+  StrictMode half and PWSH-20 as overlay material. `crew-standards/SKILL.md` names both stack
+  sets. No gate or `.ps1` change. One matcher change (group review): a set's `applies-to` is
+  matched case-folded on every host, in `_applies` and in plan-time `sets --touch`, because
+  `fnmatch` folds case on Windows only, so `check.PS1` missed `PWSH` on Linux and the same change
+  stamped a different digest per host. Folding can only add a set. Covered by
+  `test_pwsh_set_applies_to_a_mixed_case_extension_on_every_host` and a mixed-case Touch glob case of
+  `test_sets_touch_needs_no_scope_base`.
+- **Evidence.** The evidence is this repository's CHANGELOG and commits, plus public-source
+  research from a cloud pass on 2026-10-05, not the owner's original research. Public change
+  sets do not count (owner decision), so PWSH-P1's six public change sets leave it at 1.
+  PWSH-01..PWSH-20 were not all assessed, so the spec's `grep -c '^PWSH-' >= 20` check of the
+  change-set file does not pass. That is a reported deviation. The sabotage entries for the
+  four new tests are a tooling-only follow-up, because `sabotage_standards.py` is a harness
+  path.
+
+### Added — crew 1.1.7: a `stack-php` skill and PHP candidate standards, no gated PHP set yet (L-0533)
+
+- **Summary.** crew gains a `stack-php` skill with PHP 8 pitfalls and a `php -l` verify rule,
+  and lists four candidate PHP standards with their sources. None is enforced.
+- **What changed.** New `plugin/crew/skills/stack-php/SKILL.md` covers loose comparison,
+  `empty("0")`, array-key behaviour, bound SQL parameters, output escaping, `unserialize`,
+  per-file `strict_types`, byte strings, time zones and `composer.lock`. It has a `## Standards`
+  section and a proposed verify.json rule: `php -l` over tracked and untracked `.php`/`.phtml`
+  files. The rule exits 77 with `TOOL MISSING` when `php` is absent, and with `NO INPUT` when
+  there is no PHP file to check. New `stack-php/references/candidates.md`
+  covers PHP-01 (bound parameters and allow-listed identifiers), PHP-P1 (no `unserialize` of
+  data an attacker can influence), PHP-P2 (context escaping) and PHP-P3 (strict comparison).
+  Each gives its public change sets, its verdict and a php.net Source sentence, re-matched
+  against the raw page. `test_stack_skills.py` lists `stack-php`, and crew's skill count moves
+  from 31 to 32 everywhere it is stated (33 after L-0537). No `references/php.md`, loader or gate change, and no
+  install-script change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. Owner-private evidence was not consulted, and the re-check is tracked as C-0020. Most
+  public change sets are WordPress plugins. PHP-02..PHP-20 were not assessed, so the spec's
+  `grep -c '^PHP-' >= 20` and "at least 20 PHP-NN in stack-php" checks do not pass. That is a
+  reported deviation, with no placeholder rows added. The verify rule was run against real PHP
+  8.3.6 on the build host. It exits 0 on a clean untracked file, 1 on a parse error, and 77 with
+  no input.
+
+### Added — crew 1.1.7: Angular 2+ candidate standards, no gated set yet (L-0538)
+
+- **Summary.** `stack-angular` now lists three candidate Angular 2+ standards with the
+  evidence each has. The one that matters most is NG-07: a failed read shows "could not verify" and
+  blocks the writes it feeds. Nothing is enforced yet.
+- **What changed.** New `plugin/crew/skills/stack-angular/references/candidates.md` covers
+  NG-07 (its rule, Applies when and Self-check, taken from the spec's publishable text), NG-P1
+  (no `bypassSecurityTrust*` on content a user, contact or model can author) and NG-P2
+  (interceptors send credentials only to allow-listed origins). Each gives its change sets and
+  its standing. NG-07 and NG-P1 also carry angular.dev Source sentences, re-matched against the
+  raw pages. NG-P2 has no Source yet.
+  `stack-angular/SKILL.md` gains a `## Standards` section and two pitfall pointers, and its
+  description says AngularJS gets no standards. The AngularJS section is unchanged. No
+  `references/angular.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. NG-07 is at the bar in the coordinator's private count, but its
+  Why, Earned by and Change sets text was not supplied in a publishable form. Public change sets
+  do not count (owner decision), so the slice ships candidates only (direction Option 3). The
+  other research ids are not listed one by one, because their titles and counts are private.
+  That is a reported deviation.
+
+### Added — crew 1.1.7: Terraform candidate standards and settled questions, no gated set yet (L-0536)
+
+- **Summary.** `stack-terraform` now lists three candidate Terraform standards with the
+  evidence each has, and settles three questions: `for_each` in `import` blocks needs Terraform 1.7.0,
+  CMK for log groups stays a flagged candidate, and literal ARNs are banned in new code.
+  Nothing is enforced.
+- **What changed.** New `plugin/crew/skills/stack-terraform/references/candidates.md` covers
+  TERRAFORM-03 (no literal account IDs or ARNs), TERRAFORM-P1 (secrets never outputs; sensitive
+  inputs) and TERRAFORM-12 (CMK for CloudWatch log groups). The first two give their public
+  change sets, a verdict and HashiCorp Source sentences, re-matched against the raw pages.
+  TERRAFORM-12 has no public change set and no Source. Its 2 counted change sets are in the
+  spec's private re-count, and its "CMK always" position stays flagged. The 1.7.0 floor is
+  confirmed from the raw `v1.7` CHANGELOG. `stack-terraform/SKILL.md` gains a `## Standards`
+  section. It says no set ships, and that when one is earned its id is `TF`: the loader accepts
+  2-6 capitals, so the spec's `TERRAFORM` would be refused. No set file, test, loader or gate
+  change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The spec's private re-count put no rule above two. Public change
+  sets do not count (owner decision), and the private PR review threads were not reachable. The
+  spec's check that all of TERRAFORM-01..-19 appear in the stack skill does not pass, because
+  their rule text was not available. That is a reported deviation.
+
+### Added — crew 1.1.7: .NET candidate standards and defaults, no gated .NET set yet (L-0535)
+
+- **Summary.** `stack-dotnet` now lists two candidate .NET standards with their sources, plus
+  the test-framework and `Result` defaults. None is enforced, because no rule this build could
+  write has three reviewed change sets that count.
+- **What changed.** New `plugin/crew/skills/stack-dotnet/references/candidates.md` covers
+  DOTNET-P1 (never block on async code) and DOTNET-P2 (no per-call `HttpClient`). Each entry
+  gives its public change sets, its verdict and a Microsoft Learn Source sentence, re-matched
+  against the raw page. The file also gives the spec's per-rule counts for DOTNET-01..20 and the
+  conventions, which have no id. `stack-dotnet/SKILL.md` gains a `## Standards` section with the
+  defaults: xUnit + NSubstitute + FluentAssertions for new test projects, and the repository's
+  own `Result<TValue, TError>` with no package mandated. Its async and `HttpClient` pitfalls point
+  at the candidates. No `references/dotnet.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  bar. The spec expected DOTNET-08, -13 and -15 to ship on the owner's private re-count, but
+  their rule text is in the owner's research, which this build did not have. That is a reported
+  deviation.
+
+### Added — crew 1.1.7: SQL candidate standards, no gated SQL set yet (L-0532)
+
+- **Summary.** `stack-sql` now lists three candidate SQL standards with their sources. None is
+  enforced: this build showed no SQL rule with three reviewed change sets that count, and the
+  owner-private evidence, which may hold more, was not consulted.
+- **What changed.** New `plugin/crew/skills/stack-sql/references/candidates.md` covers SQL-P1
+  (PostgreSQL `SECURITY DEFINER` pins `search_path` and revokes `EXECUTE` from `PUBLIC`), SQL-P2
+  (PostgreSQL `CREATE INDEX CONCURRENTLY` outside the runner's transaction) and SQL-17 (SQL Server
+  session `SET` options are part of the change). Each entry gives its public change sets, its
+  verdict and a Source sentence, re-matched against the raw page. `stack-sql/SKILL.md` gains a
+  `## Standards` section that says why no set ships, and the README and PLUGINS.md say so too.
+  No `references/sql.md`, test, loader or gate change.
+- **Evidence.** The evidence is public-source research from a cloud pass on 2026-10-05, not the
+  owner's original research. The owner decided that public change sets do not count toward the
+  three-reviewed-change-sets bar. Owner-private evidence was not consulted, and the re-check is
+  tracked as C-0020. SQL-01..SQL-20 from the owner's research were not assessed, so the spec's
+  `grep -c '^SQL-' >= 20` check of the change-set file does not pass. That is a reported
+  deviation, with no placeholder rows added. The MySQL docs site failed during the pass, so no
+  MySQL/MariaDB rule was checked.
+
+### Fixed — crew 1.1.7: standards proposals trust the round's recorded verdict, SHA-256 stamps, plan-time `sets --touch` (L-0518)
+
+- **Summary.** A review round crew scored INCOMPLETE no longer gets a standards-proposals file, a
+  SHA-256 git repository can stamp its self-check and pass the review gate, and the plan's
+  standards can be listed before any scope base exists.
+- **What changed.** `crew_standards.py proposals --round N` first reads the review ledger
+  (`review_ledger.status`) and proceeds only when round N is recorded completed as CLEAN or
+  FINDINGS; INCOMPLETE, a reserved row, no row, two rows or an unreadable ledger refuse with
+  nothing written, and the `out.txt` parse stays as a second check. The stamp's `base=` parses as
+  exactly 40 or exactly 64 hex. `sets --touch` lists GEN, the overlay and every stack set whose
+  `applies-to` overlaps a spec Touch entry (the matcher `/crew:implement` step 2 uses), needing no
+  scope base; an unreadable spec or Touch list prints `UNKNOWN:`, lists every set and exits 1.
+  `(fallback)` appears once on a line. The crew-plan self-review names `sets --touch`; the
+  crew-standards skill loses its "The An" fragment; six code-map history cells close their
+  parenthesis; T-0085's entry names the crew-standards rule instead of "Rule 31". The harness half
+  (the review gate's lock-held skip decision, its uncaught incident errors, `commands/review.md`'s
+  wording and the sabotage entries) lands separately.
+
+### Changed — crew 1.1.7: one source per kind of rule for crew-standards and crew-qa-standards (L-0519)
+
+- **Summary.** crew's two standards skills now say which owns which rule: code-level rules live in
+  `crew-standards`, the repository's machinery in `crew-qa-standards`, and the recurring-findings
+  probes are derived from the standards, with a test that every standard they name exists.
+- **What changed.** `recurring-findings.md`'s introduction declares RF-01..07 a probe index derived
+  from `crew-standards` (the standard wins on a conflict), and RF-07's `seen:` line now names GEN-09
+  and this repository's REPO-03 instead of only `CLAUDE.md`. The new
+  `test_every_class_names_a_standard_that_exists` (`plugin/crew/tests/test_recurring_findings.py`)
+  reads every shipped set and the overlay through `crew_standards.parse_set` and fails when a class
+  names no standard or one that does not exist. Both SKILL.md files state the split in the same
+  words; H8, R10 and R12 each name the code-level standard they restate (GEN-01, GEN-04, GEN-12).
+  `plugin/PLUGINS.md` gains its missing `crew-qa-standards` row. No probe was reworded: each of the
+  21 was read against the Self-check of the standards it cites and agrees. The review prompt keeps
+  both checklist blocks; no harness path changed.
+
+### crew 1.1.6 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+
+- **Summary.** A set of tickets the owner designed and approved together can now run at once, each
+  in its own isolated worktree, with every lane's questions and results reported in one batch.
+- **Added.** `plugin/crew/hooks/scripts/crew_wave.py`: `set` records an owner-designed set in
+  `.work/autopilot/<slug>.json`; `plan` (read-only) says per ticket `eligible` or why it is refused
+  (no current approval, `direction` or closed, a dependency not closed or unknown, a Touch overlap,
+  more lanes than `autopilot.maxLanes`) and the landing order; `start` writes the lane files and
+  prints one `Agent` launch per lane with `isolation: worktree`, never any other; `lane-init`,
+  `lane-prompt`, `lane-done`, `collect` (a missing lane file reads `unknown`, never `clean`) and
+  `cleanup` (merged, clean worktrees only; never `--force` or `branch -D`). The wave refuses to run
+  unless `scope.mode` is `block` for every lane ticket (`scope-not-enforcing`). `/crew:autopilot`
+  routes `wave`, `wave --set <slug>` and `wave <id>...` to it (section 7). New repo-only keys
+  `autopilot.maxLanes` (default: `pm.maxDispatches`, which it can only lower) and
+  `autopilot.reviewPolicy` (`stop` | `clean-only` | `fix-and-rereview`, default `stop`).
+- **Not in this entry.** The scope guard's subagent never-list (`review_ledger.py --accept|--reject`
+  and every abbreviation, `gh pr merge --admin`), `review_ledger.py`'s `allow_abbrev=False`, their
+  suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
+  the lane prompt keeps a lane from accepting a review or admin-merging.
+
+### crew 1.1.6 — T-0030: cross-session claims on a git-backed channel
+
+- **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
+  git branch so two of them never work the same ticket.
+- **Added.** `plugin/crew/hooks/scripts/crew_coord.py`: `claim`, `heartbeat`, `release`, `done`,
+  `release --break --by <name>` (the owner only), `recover` and `status` on the branch
+  `crew-coord/<channel>` of a shared remote (`coord.channel` / `coord.remote` in `.crew/config.json`).
+  Each claim is `claims/<repo>__<id>.json` plus one line in `log.jsonl`, written with git plumbing
+  on the freshly fetched tip and pushed with a plain push, never a force push; a rejected push
+  re-fetches and retries at most three times, then reads `unknown - could not push`. A claim whose
+  heartbeat is older than 30 minutes reads `owner unknown`, never free. A detached heartbeat
+  process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
+  claim after the session id changes only on the same machine and worktree, with the local identity
+  file naming the old holder and its process provably gone; anything else is presented for the owner.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured, before a
+  run and before a wave starts.
+  The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
+- **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
+  are review harness and land separately (T-0087).
+
+### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
+
+- **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now
+  tell from it whether the ticket is blocked, and from the review ledger whether it needs a new plan.
+  An optional `next.md` in the ticket folder says who the ticket waits on and what happens next.
+- **crew `crew_ticket_state.py`** (new, read-only). `dependency_state` reads each dependency's INDEX
+  cell, then its spec header: `done`/`merged` is closed; open, `cancelled`, `superseded` and anything
+  it cannot read block. `view` adds `needs_replan` from the ledger (None, never False, when the ledger
+  cannot be read), the gating status (`hold`, `landing`, `needs-owner`, `cancelled`, `superseded`;
+  INDEX first, then header) and reports a typed `blocked`/`needs-replan` cell instead of obeying it.
+  Nothing acts on the answer yet.
+- **`/crew:spec`** shows the optional `depends-on: [T-####, ...]` line; it is hashed with the spec.
+- **`next.md` (L-0640).** `crew_ticket_state.read_next` parses `.work/tickets/<id>/next.md`:
+  `waiting-on:` (`owner`, `agent`, `external` or a ticket id), `next:`, `reason:`, `revisit:`
+  (`YYYY-MM-DD`) and `superseded-by:` (a ticket id). `view(top, ticket, today=None)` carries them as
+  `next` with `revisit_due` (None, never False, for a missing or bad date). A bad, empty or repeated
+  value, an unreadable file and a link out of the ticket folder are problems, never "nothing asked";
+  a `needs-owner` gate with no `next:` and a `superseded` gate with no successor (in `next.md` or
+  under the spec header) are reported. Nothing writes `next.md`, and it is not hashed or validated.
+
+### Changed — crew 1.1.2: `/crew:upgrade` folded into `/crew:migrate`, which upgrades a pre-0.20 config itself (T-0038)
+
+- **What migrate now does for a pre-0.20 config.** A `.crew/config.json` with no `schema` key, or
+  an integer 1-6, is brought to the current schema by `crew_upgrade.upgrade_config` (the code
+  `/crew:upgrade` ran) and migrated to `.crew/crew.json` in the same run. The preview prints both
+  stages (`upgrade  .crew/config.json` plus the `## Config` report lines); one apply backs up and
+  writes both. A block the upgrade cannot migrate is a `CONFLICT` and nothing is written. A
+  `schema` of 0 or less is refused; a non-integer or one above 7 is refused as before. A schema-7
+  config is never rewritten.
+- **`config.json` is the one file migrate overwrites, and rollback restores it.** The original is
+  copied into the backup first; the manifest marks it `existed` with its `originalSha256`. The
+  in-process undo and `--rollback` write the original bytes back - never remove it - with its own
+  permission bits, as the upgraded file has them too (a 0600 config stays 0600), and rollback
+  refuses when the file was edited since apply (the in-process undo leaves a landed file edited in
+  between as it is and names it on stderr and in the manifest note), when the backed-up original
+  does not match the manifest, or when the manifest's config entry lacks `existed`/`originalSha256`.
+- **The codemap half moved to `/crew:onboard --refresh`.** Migrate does no graph build, reconcile,
+  `UPGRADE.md` or `codemap.v1.bak`. The per-hop report text, the QA-audit re-run (old step 5c) and
+  the "did not do" list moved to `skills/crew-setup/upgrade-report.md`, which migrate reads.
+- **The stub stays for now.** `commands/upgrade.md` is a 10-line removal stub (the command count is
+  unchanged); removing it is a later ticket. Docs: README, CONFIG.md §4, PLUGINS.md, INSTALLATION.md,
+  onboard.md, migrate.md, the crew-graph, crew-providers, crew-setup and crew-qa-standards skills,
+  the quickstart guide (rebuilt), the two-files diagram and the crew codemap.
+- **Harness follow-up (tooling PR, T-0087 rule).** Left out of this change: eight new
+  `MIGRATE_FIX_MUTATIONS` entries in `sabotage_migrate.py` for the upgrade stage (each measured red
+  before it was set aside). `sabotage.py`'s "current migration loses its entry" mutation already
+  follows `upgrade-report.md` when it ships (#389).
+
+### Added — crew 1.1.2: a graph build never reads a secrets-denylisted file (T-0064)
+
+- graphify reads every file its ignore rules do not exclude, and for a file git tracks `.gitignore`
+  does not exclude it (graphify skips `.gitignore` rules for tracked paths), so a tracked
+  `config/env.php` listed only in `.gitignore` reached `graph.json`. New
+  `hooks/scripts/crew_graph_ignore.py` builds the repo's secrets denylist - built-in patterns
+  (`.env`, `.env.*` but not `.env.example`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`,
+  `id_ed25519*`), the optional tracked `.claude/secrets-denylist`, and every in-repo `Read(...)`
+  deny rule in `.claude/settings.json` and `.claude/settings.local.json` - and lists every file on
+  disk (tracked, untracked or ignored) it matches that the root `.graphifyignore` does not exclude,
+  judged by git's own matcher in a scratch repository. Each source is matched on its own, so a `!`
+  line in `.claude/secrets-denylist` narrows only that file's patterns, never a built-in one.
+  `--check` exits 0 covered, 1 uncovered
+  (paths only, never content), 2 unknown; `--write` appends the missing patterns, then each path
+  they still miss as an anchored literal (the denylist match ignores case, `.graphifyignore`'s
+  does not, so `.ENV` gets `/.ENV`), under one marked block, atomically, through a symlinked
+  `.graphifyignore`, keeping its mode and line ending (CRLF only when most lines use it). A literal
+  is written only for a path that is one line of plain text, so a file named `ID_RSA<LF>!.env`
+  cannot append `!.env`; such a path stays uncovered, named escaped. A `!` line already in
+  `.graphifyignore` is never overridden: `--write` writes the other patterns, prints ``line N
+  (`!pattern`) re-includes denylisted <path>; remove that line or accept the exposure`` and exits 1.
+  A symlink is judged by its target too, and
+  `Read(.\secrets\**)` is read as `Read(./secrets/**)`.
+- `--write` writes through a symlinked `.graphifyignore` only to an ignore file inside the
+  repository, never into `.git` and never to another tool's dot-named one (`.gitignore`,
+  `.dockerignore`); anything else is unknown, exit 2, nothing written. A
+  `.graphifyignore` line holding a backslash never counts as covering (git un-escapes it, graphify
+  does not), and a denylisted file a nested `.gitignore` `!` line re-includes is uncovered,
+  because graphify applies that negation after the root `.graphifyignore` (the root `.gitignore`
+  is read before it, so its `!` lines never re-include). A temporary directory that cannot be made
+  reads `unknown`, never a crash of `/crew:status` or the refresh check.
+- `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths and
+  `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot be told,
+  so neither it nor autopilot names a graphify command then. `/crew:status` gains a `graph-ignore`
+  line: `ok`, `UNCOVERED` with the paths, or `unknown` with the reason; graphify's post-commit hook
+  bypasses crew, so this line is its warning. Every unknown stays unknown, never covered: git
+  missing, a settings file that does not parse, an unreadable denylist or `.graphifyignore`, a
+  nested `.graphifyignore`, a nested repository or submodule `.graphifyignore` does not exclude
+  (git lists it as `sub/`, never its files), a symlink resolving outside the repo or not at all,
+  a deny-all `Read`.
+- crew-graph's **Build** runs `--check` first and stops on 1 or 2; new **Secrets denylist** and
+  **Tainted graph** (delete the output, `--write`, rebuild) sections. crew-setup gains step 3e
+  (`--write`). The onboard, upgrade and status commands, the README, `PLUGINS.md` and the
+  troubleshooting guide say the same.
+- Tests: `test_graph_ignore.py`, the real-graphify fixture `test_graph_ignore_graphify.py` (skips,
+  saying so, without graphify; ran here against graphify 0.9.74), and new cases in
+  `test_refresh_check.py` and `test_status.py`. `.crew/verify.json` gains a last rule for the
+  checker. Fifteen mutations were applied by hand and each went red on its named test; they are not
+  in `sabotage_refresh.py`, which is a harness path (`scripts/check-tooling-pr.py`), and land in a
+  harness-only follow-up. Not run on Windows.
+
+### Added — crew 1.1.2: `.gitignore` kept right for the languages in the repo (T-0039)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/crew_gitignore.py` (`check`, `apply`,
+  `summary`) detects the languages and build tools from the files git lists (python, node, dotnet,
+  terraform, rust, maven, gradle, composer, go), recommends patterns from a table vendored from
+  github/gitignore (CC0-1.0, commit `0e5d6901`, `plugin/crew/NOTICE.md`) plus OS/editor noise and
+  secret-file patterns, and measures each with git: `check-ignore` against the working tree's
+  ignore files only (a machine-global excludes file, local config and `.git/info/exclude` never
+  count as covered - they do not travel with a clone), `ls-files -ci` for tracked matches. `apply`
+  adds what is missing inside one `# crew:gitignore:managed` block at the TOP of the root
+  `.gitignore`, so every human rule below wins, atomically (temp file and `os.replace`), keeping
+  CRLF and a BOM. `/crew:init` Phase 1, `/crew:onboard` and `/crew:onboard --refresh` run `apply`;
+  `/crew:implement` step 6 runs `check`; `/crew:status` gains a `gitignore` line. A tracked name
+  or `.gitignore` line holding a character that does not print is shown in its `ascii()` form.
+- **Owner decision (2026-09-26, "appy automatically").** Every additive pattern - build output,
+  caches, OS/editor noise and secrets patterns - is applied without asking. Never automatic, because
+  not additive: untracking (`git rm --cached`) and anything about an already-committed secret.
+- **Never untracks, never edits a human line.** A tracked file a new pattern matches is named
+  (`tracked ...`); a tracked secret-shaped file is `needs-owner`, exit 3. Crew never edits a line
+  outside its block, never touches the `.crew` policy block, and never drops an entry from its own
+  block. The `.env.*` row re-includes `.env.example`, `.sample`, `.template`, `.dist` and `.defaults`;
+  a committed test-fixture `*.pem`/`*.key` is still `needs-owner` (known limit, no acknowledgement
+  mechanism). A directory pattern that would defeat a human `!` re-include is a `conflict`, not added; a
+  block pattern a rule below re-includes is `overridden`, not re-added.
+- **Exit codes.** 0 current, 1 pending, 2 usage, 3 owner decision, 4 unknown (git missing, failed or
+  timed out, an unreadable or undecodable `.gitignore`, a malformed block, or any unexpected error -
+  never "current" and never 1; output never fails on a path the console cannot encode), 5 refused (a
+  `# crew:gitignore:off` line, a non-regular `.gitignore`, or an active ticket whose Touch does not
+  cover `.gitignore`: an ignore line written inside a ticket could hide its own files from the
+  completion audit, so `.gitignore` is deliberately not a refresh artifact).
+- **Tests.** `plugin/crew/tests/test_crew_gitignore.py` (new) and four `test_status.py` cases, mapped
+  by a new `.crew/verify.json` rule; 19 hand-run sabotage mutations each turned their named test red.
+  Registering them in `sabotage.py` is a harness change and lands alone (TODO.md).
+- **Review fixes at the 1.2.0 port.** A slash-free secret row is probed one directory down too, so a
+  root-only `/.env` does not read as covered; a basename `!keep.txt` and a glob above the directory
+  (`!src/*/bin/keep.txt`) are conflicts; no cap drops a project's anchored rows; a tracked Terraform
+  state file is `needs-owner`; and `summary` says `current except N conflict(s)` rather than a bare
+  `current` while a human `!` line keeps a row out.
+
+### Changed — crew 1.1.2: the shortfall rule says its wording list cannot be complete (L-0604)
+
+- crew-qa-standards R5, `crew_standards.proposals`' docstring, the README's verdict table and
+  recovery paragraph, and the troubleshooting guide (HTML rebuilt) no longer say any admission that
+  the review fell short is INCOMPLETE. Only a stray line matching `review_verdict._SHORTFALL` is;
+  that list is wording and cannot be complete, so an admission it misses ("I only inspected one
+  of the nine files") is recovered as prose beside findings, the round is FINDINGS, and the line
+  is reported as ignored.
+- Two tests pin that: `review_verdict.parse` on the repro is FINDINGS with the line in `ignored`,
+  and `proposals` proposes its FIX without the admission. No behaviour change.
+  `commands/review.md`'s Step 2c sentence and `review_verdict.py`'s module docstring say the same
+  thing and are review-harness files, so they follow in their own tooling PR.
+
+### Fixed — crew 1.1.2: tracker identity keeps case, `file://` origins, moves converge on INDEX, quote and checkbox reads, `/crew:fix` under Jira/SDP (T-0071)
+
+- **Summary.** On a shared Obsidian board, two repositories whose origins differ only in the case
+  of the user or path are now two owners, and one repository reached through `file://`,
+  `file://localhost` or a bare path is one. Two overlapping moves leave INDEX and the board
+  agreeing, a glued checkbox (`- [ ]T-0042`) is repaired, a stray quote in a note's `repo-id:` is
+  no longer stripped, and `/crew:fix` creates its ticket through MCP under Jira or ServiceDesk Plus.
+- **BREAKING for notes written with a mixed-case origin.** `normal_url` in
+  `plugin/crew/hooks/scripts/crew_tracker.py` folds only the scheme and the host (with its port);
+  the ssh username and the path keep their case. A ticket note an older crew wrote for an origin
+  with capitals in its user or path holds the all-lowercase id, and `create`, `move` and `read`
+  now refuse that card as another repo's. The refusal keeps its sentence and adds the fix: change
+  the note's line to `repo-id: <this repo's id>`. Crew never accepts the old id on its own.
+- **What changed.** A `file://` authority is not path text (`_file_url_path(url, windows)`): POSIX
+  drops any authority, as git does (measured, git 2.53.0); Windows drops an empty or `localhost`
+  one and the `/` before a drive letter, and keeps today's common-dir identity for any other host
+  (git for Windows not measured; the Windows branch is tested through the pure helper on every OS).
+  A move's board half re-reads INDEX inside the board's atomic update and places the card in the
+  lane for the status INDEX holds then, saying `(INDEX moved on to <status>)` when that differs; a
+  row gone or unknown at that point leaves the board alone (`could not tell where INDEX has ...`,
+  exit 1). After its board write a move reads INDEX again and places the card again if INDEX moved
+  on meanwhile (`_board_following_index`, at most `WRITE_TRIES` times), so a move landing between
+  the board's last re-read and its replace is followed too. `_NOTE_REPO_ID` strips a quote only as a matched pair around the whole value. `_BOX`
+  and `_CHECKED` need a space, tab or line end after the marker. `commands/fix.md` step 1 resolves
+  the tracker kind first, as `brainstorm.md` does.
+- **Tests.** New in `test_crew_tracker.py`: case-split origins refused, scheme and host folded, the
+  old lowercased note refused with its fix (and no clause for a note differing in more than case),
+  `file://` authorities one id, drive prefixes by platform, the overlapping-move interleaving, the
+  could-not-tell board write, matched and lone quotes, glued checkboxes; in
+  `test_lifecycle_commands.py`, fix.md's Jira/SDP mint. `test_obsidian_backwards_move_leaves_the_board_alone`
+  now also asserts the board half did not run, so its sabotage mutation still goes red now that the
+  board follows INDEX. New mutations for these fixes are L-0669 (tooling PR).
+
+### Changed — crew 1.1.1: `crew_tracker` names an INDEX status crew does not know instead of reporting `expects None` (L-0530)
+
+- **Summary.** When a ticket's INDEX status is a word crew does not know, the tracker now says so, and for a
+  retired word it names the crew word to write instead; it still never guesses a lane.
+- **`read`.** An INDEX status outside the ten-word vocabulary reads `disagree: "could not tell"` with
+  `INDEX status <s> is not a status crew knows (direction, ready, needs-owner, spec, planned, in-progress,
+  review, done, cancelled, superseded)`; a missing INDEX status reads `could not tell` as well. It no longer
+  prints `INDEX status <s> expects None`. `read --json` consumers: `disagree` can now be the string
+  `"could not tell"`, not only a boolean. A known status reads exactly as before.
+- **Retired words.** `RETIRED_STATUSES` (`approved` -> `spec`, `merged` -> `done`, `closed` -> `done`,
+  `new` -> `direction`, `parked` -> `needs-owner`) appends `; the crew word is <w>` to that note, to
+  `move --to <s>`'s `maps to no lane` refusal, and to the could-not-tell refusal for a move from such a word.
+  It is a hint only: no lane, write or exit code changes, and `land-blocked` gets none.
+- **Docs and tests.** `commands/obsidian-sync.md`, the README's Ticket statuses, the memory-and-obsidian guide
+  and the code map describe it; eight new tracker and vocabulary tests. Sabotage entries for the new branch are
+  a separate tooling-only follow-up (harness path).
+
+### Changed — `check-marketplace.py --pending-bump`: a draft PR reports version drift as pending at land, repository tooling, no plugin version (L-0511, PR 1)
+
+- **Summary.** A build branch no longer has to bump a plugin version to get a green draft PR: version drift
+  there reads `pending at land`, and a ready PR or a push to main still fails on it.
+- **The flag.** `python3 scripts/check-marketplace.py --pending-bump` prints each version-drift finding as
+  `pending at land: <plugin>: ...` and exits 0 for that check alone; every other check fails as before. On
+  branch `main` the flag is ignored and a `note:` line says so; a detached HEAD (a CI merge ref) is not `main`.
+- **Where it runs.** The Marketplace workflow passes it only when `github.event.pull_request.draft` is true and
+  now also runs on `ready_for_review`, so marking a PR ready re-runs the full check on the same head (`main`
+  requires `check`, strict, no merge queue). Verify rules 0, 2 and 3 (every rule that runs
+  `check-marketplace.py`) run it at Stop, so a branch that also touches the root docs or `scripts/` gets the
+  same pending verdict. REPO-03 in `.crew/standards.md` says so. `scripts/gate-runner.py` pins both CI
+  strings and still runs the full check locally.
+- **Tests.** Five new `scripts/_test/version-drift.py` cases run the real `main()`; each was sabotaged by hand
+  and went red.
+
+### Changed — `scripts/gate-runner.py` records its heavy-run slot, repository tooling, no plugin version (L-0517)
+
+- **Summary.** The local gate runner's status file now names the heavy-run slot it ran in, and a
+  reviewed patch makes the machine-local heavy-run wrapper log every slot wait to one JSONL file.
+- **Gate runner.** `--inner` records `HEAVY_RUN_SLOT` as `slot` in `heavy-part.json`; the outer copies
+  it to `status.json`'s `heavy_run.slot` beside `waited_seconds`. It is `null` when unset, empty or
+  malformed (not a string, over 64 characters, or containing `/`), and it never changes a step's
+  state. Three new suite cases.
+- **Wrapper patch.** `docs/tickets/L-0517/heavy-run.patch` (against `heavy-run.snapshot`) appends one
+  line per invocation to `/root/crew-tmp/heavy-run-waits.jsonl` (`HEAVY_RUN_WAITS_LOG` overrides) from
+  the EXIT trap: lane, slot, priority tag, pid, requested/acquired/released UTC, waited and held
+  seconds, rc and the first 120 characters of the command, and exports `HEAVY_RUN_SLOT` while a slot
+  is held. A call stopped while waiting logs `slot`, `acquired` and `held_s` as `null`; `rc` is `null`
+  unless the command finished; `lane` is `"unknown"` when nothing names it. The owner's local session
+  applies the patch; this repository does not ship the wrapper.
 
 ### Fixed — crew 1.1.4: pre-review checks, L-0574's round-10 follow-ups (L-0605)
 
@@ -4522,8 +5004,8 @@ A tooling change: this release carries no feature work.
   rows and unreadable `std:` tokens on neither side, counted, instead of in the baseline.
   `review_run.py` answers a spent review budget (exit 4) before the self-check gate. GEN-02 and GEN-07
   each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
-  The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
-  `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
+  The stamp's docstring names its remaining write window instead of claiming GEN-03. The
+  crew-standards rule of `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
 - Bumped `1.0.69 -> 1.0.75` on the land branch (REPO-03 as amended: no bump on the build branch):
   1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
   `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`

@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>143 keys</strong>: 83 settable in the machine-global file, 60 repo-only.</p>
+<p><strong>145 keys</strong>: 83 settable in the machine-global file, 62 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -195,7 +195,7 @@ the plugin.</p>
 <td><code>7</code></td>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects integer)</td>
 <td>0.11.0 or earlier</td>
-<td>Config schema version; <code>/crew:upgrade</code> migrates an older one.</td>
+<td>Config schema version; <code>/crew:migrate</code> upgrades an older one.</td>
 </tr>
 <tr>
 <td><code>tier</code></td>
@@ -1737,6 +1737,22 @@ the plugin.</p>
 <td>1.0.349</td>
 <td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
 </tr>
+<tr>
+<td><code>autopilot.maxLanes</code></td>
+<td>repo</td>
+<td><code>null</code></td>
+<td>positive integer or null (checked in <code>plugin/crew/hooks/scripts/crew_wave.py</code>)</td>
+<td>1.1.6</td>
+<td>Lanes one <code>/crew:autopilot wave</code> runs at once; null is the resolved <code>pm.maxDispatches</code>, a larger value is capped to it and anything but a positive integer reads as it, each with a warning.</td>
+</tr>
+<tr>
+<td><code>autopilot.reviewPolicy</code></td>
+<td>repo</td>
+<td><code>"stop"</code></td>
+<td><code>stop</code> | <code>clean-only</code> | <code>fix-and-rereview</code></td>
+<td>1.1.6</td>
+<td>What a wave lane does with its review verdict: <code>stop</code> ends at the first verdict, <code>clean-only</code> takes a CLEAN round on to the done checks, <code>fix-and-rereview</code> fixes within the ledger's rounds. Anything else reads as <code>stop</code>, with a warning; no setting lets a lane accept a review.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="tickets"><code>Tickets</code></h3>
@@ -1854,37 +1870,6 @@ the plugin.</p>
 <td>off</td>
 <td><code>off</code> | <code>plan</code> | <code>backlog</code></td>
 <td>Adds <code>backlog</code>: work a goal's tickets one at a time.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="t-0029">T-0029</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>autopilot.maxLanes</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>the resolved pm.maxDispatches</td>
-<td></td>
-<td>Parallel lanes one autopilot wave may run; may only lower the limit.</td>
-</tr>
-<tr>
-<td><code>autopilot.reviewPolicy</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>stop</td>
-<td><code>stop</code> | <code>clean-only</code> | <code>fix-and-rereview</code></td>
-<td>What a lane does with review findings.</td>
 </tr>
 </tbody>
 </table>
