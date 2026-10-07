@@ -440,6 +440,8 @@ until you approve again.</p>
 not count), it moves to <code>NEEDS_REPLAN</code>. With <code>autopilot.maxAutoReplans</code> at 1 or more, autopilot
 does this itself for a final round with a BLOCK (<code>auto-reject</code>), then writes and approves the
 successor plan under <code>autopilot.approval</code>; the cap counts every successor plan on the ledger.
+With notify on, the last round carrying a BLOCK sends the <code>Review out of rounds</code> ping
+(<code>-&gt; /crew:plan &lt;id&gt;</code>) when <code>/crew:autopilot</code> stops on it.
 Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.</p>

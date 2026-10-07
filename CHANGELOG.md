@@ -9,6 +9,507 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — `crew` 1.1.10: the Stop gate health and QA audit readers move to `crew_health.py` (G2 landing)
+
+- **Summary.** No behaviour change: two readers move out of `crew_state.py` so it stays under its
+  3,400-line pylint cap now that G0, G7 and G2 meet in it.
+- **What changed.** `read_verify_health`, `read_qa_audit`, `VERIFY_MARKER_STALE_COMMITS`,
+  `QA_AUDIT_STAMP` and `QA_AUDIT_PATHS` move unchanged to the new
+  `plugin/crew/hooks/scripts/crew_health.py`; `crew_state` re-exports all five, so every
+  `crew_state.<name>` caller is unchanged, and `test_module_split.py` holds the re-exports to the
+  objects `crew_health` defines. `crew_state.py` goes from 3,405 lines to 3,309, with no pylint
+  disable. `.crew/verify.json`'s crew_state rule maps the new file.
+
+### Added — `crew` 1.1.10: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
+
+Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.
+
+- **What changed.** `crew_split.parse_slices(plan_text)` reads a plan's
+  `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`,
+  `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices
+  (`SLICES_MIN`/`SLICES_MAX`, the children's bounds), slices out of
+  sequence, a step in two slices, in none or not in the plan, a
+  non-contiguous or out-of-order slice, `Base: slice <k>` for a k not
+  earlier, and `Base: main` when the slice's `Files:` share a path (equal
+  or glob-matching) with an earlier slice's, or when a step names no
+  `Files:`, or when any pair of its and an earlier slice's `Files:` entries
+  is not provably disjoint: after crew_ticket's own segment normalisation,
+  their literal prefixes (a literal entry's is the whole entry, a directory)
+  must differ, case-folded, at an index both have (cannot tell is not
+  "shares nothing"). A Step heading after the section is still a step
+  and must be in a slice; `## Step N` is refused (`measure` counts only
+  `### Step`, case-sensitively, and so does `parse_slices`). No section is a valid plan. `/crew:autopilot` runs a sliced plan one slice at a time:
+  `next` stops a refused section at `plan` (`PR slices: ...`), names
+  `implement` with `slice n of m (<name>): steps a-b only`, and keeps the
+  state in `<git-common-dir>/crew/tickets/<id>/slices.json` (an unreadable
+  or out-of-shape file stops as `slices`). `/crew:done` on a non-final
+  slice sets the header `in-progress` (T-0037 kept it in `STATUS_VALUES`,
+  so the approval stands) and runs `crew_autopilot.py slice-done`; only the
+  last slice sets `done`, and a `done` header before then stops. `ship`
+  opens one PR per slice (`--base` per `slice_base`: the default branch, or
+  the stacked predecessor's branch; title `<id> slice n/m: <name>`), never
+  ships slice n before slice n-1 is merged (or opened, under `ship: pr`),
+  merges only through `merge_argv`, and records each PR and merge commit.
+  A merged non-final slice names `next-slice`, which creates
+  `<branch>-s<n>` off its base and opens the slice's review budget.
+- **Why.** The owner's 2026-09-26 direction (T-0052's split): a large
+  ticket that holds together stays one ticket and ships in ordered slices,
+  each with its own review budget, so a review is bounded to a few steps
+  (r = 0.73 between plan steps and findings).
+- **Not in this PR (harness follow-ups, CLAUDE.md T-0087).**
+  `review_ledger.open_slice` and `_spent` counting slice rows (the
+  per-slice budget reset), `crew_ticket.validate` appending `PR slices:`
+  problems, `review_ledger.summary` carrying `slices`, and
+  `sabotage_split.py` with the four T-0059 mutations are HARNESS paths.
+  Until they land, `next-slice` refuses with nothing written, so a sliced
+  ticket stops after its first slice ships; autopilot's own plan check
+  stands in for `validate`.
+- **Tests.** 32 `parse_slices` cases in `test_crew_split.py` and 43 in the
+  new `test_crew_autopilot_slices.py` (stubbed gh, tmp_path repos). Eight
+  mutations hand-run, each red on its named test: the `Base: main` overlap
+  check, the contiguity check, the predecessor-merged check,
+  `_current_rounds` ignoring slice rows, a late Step heading dropped,
+  glob-vs-glob overlap read as disjoint, a literal-vs-glob pair judged
+  disjoint, and a `./` prefix not normalised (on PR #366's branch; not re-run on
+  the port). `.crew/verify.json`'s `crew_split` rule gains
+  `crew_autopilot_slices.py` and `crew_ship.py` as paths and runs
+  `test_crew_autopilot_slices.py`.
+- **The port.** The slice run lives in the new `crew_autopilot_slices.py`
+  (dispatched through `EXTRA_ACTIONS`) to keep `crew_autopilot.py` under
+  pylint's module-length limit; `crew_ship.merged_phase` takes the
+  `finished` hook that names `next-slice`. `done.md` and `implement.md` stay
+  inside their 120-line budgets, edited in place.
+- **Port review fixes.** `ship` stops (nothing pushed) when the slice's
+  branch already has a PR on another base than the plan's; a PR ship opened
+  and then stopped on (a failed or timed-out check) is recorded in
+  `slices.json`; `Base: slice 0` is refused; the README's writer list names
+  sliced `ship`'s `slices.json`. Round 2: `next` checks an open slice PR's base
+  before naming `next-slice`, and `ship` re-reads it right before the merge (a
+  PR retargeted while CI ran is never merged); a malformed `slices` boundary
+  in the review ledger is `UNKNOWN`, never "every round counts"; a PR opened
+  before a stop is recorded even when the stop does not name it. Round 3:
+  `parse_slices` refuses steps listed out of order (`Steps: 1, 3, 2`) and a
+  stacked slice whose base chain leaves out an earlier slice it shares (or may
+  share) Files with. Round 4: a merged slice PR counts as shipped only when it
+  merged into a base the plan could name (the default branch, its recorded
+  base, a branch on its own `Base: slice` chain -- never an unrelated
+  slice's -- or the default branch only once that whole chain has merged, each
+  predecessor verified merged INTO its own allowed base; an unreadable or
+  malformed state anywhere on the chain, a recorded base included, is a stop), and an earlier slice's PR merged elsewhere does not count as
+  merged for the next slice's order check; two Step headings with one number
+  are refused.
+- **Group review fixes (G2 landing).** Once slice 1 is recorded on its
+  branch, `ship` refuses it from any other branch (a second branch never opens
+  another slice-1 PR or replaces the record); `slices.json` with a slice
+  recorded twice, a slice number outside the plan, or `current` past a slice
+  with no shipped record is out of shape and stops as `slices`. Round 2: a
+  slice done ahead of `current`, or an earlier slice never recorded done, is
+  out of shape too; `parse_slices` refuses a slice with two `Steps:` or two
+  `Base:` lines instead of keeping the first. Round 3: a slice shipped ahead
+  of `current`, a non-final slice shipped but never done, or the last slice
+  recorded done is out of shape.
+
+### Added — `crew` 1.1.10: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
+
+- **What changed.** `crew_autopilot.next_phase` runs T-0052's split rulebook
+  (`crew_split.measure` and `triggers`) once the spec validates and once the
+  plan validates. A trigger means look, never split: nothing fired
+  continues; a fired trigger with no current `split.md` decision is
+  `split-check` (not a stop; autopilot judges the boundaries, writes
+  `split.md` with `answered:` naming every fired trigger, and runs `split
+  --check`), and a trigger that first fires after plan re-opens a decision
+  taken after spec. `not-too-big` continues; `slices` continues after spec
+  and, after plan, only when T-0059's `crew_split.parse_slices` validates the
+  plan's `## PR slices` (until it lands: `split-check-unknown` naming T-0059);
+  `split` is `split-approval`, a stop, until the parent is `superseded`
+  (then `closed`). `crew_autopilot.py split --root . --ticket <id>` prints
+  the measures, triggers, unmeasured sources, decision and policy; `--check`
+  runs `crew_split.check` plus the `answered:` rule; `--apply` runs
+  `crew_split.apply(..., via="autopilot")`, and a refusal ends `owner: the
+  human types /crew:split <id>`. The router lists `split`, so
+  `/crew:autopilot split <id>` runs the same check on demand.
+- **The approval.** `crew_split.ticket_split_policy` is T-0012's split rule,
+  factored slug-free as `crew_autopilot_goal._split_rule` (T-0012's
+  `split_policy` and its tests unchanged), on the parent's spec risk
+  (unknown reads `high`): `self` any risk, `risk` only a known `risk: low`,
+  `human` never, always `scope.allowCliApproval: true` and armed. It refuses
+  in **Jira mode whatever `autopilot.approval` says** (autopilot never
+  creates a Jira issue; the owner runs `/crew:split <KEY>`), in SDP mode and
+  in an unknown tracker mode, and `apply --via autopilot` asks it at apply
+  time, never from a record. It skips only the human-turn confirmation:
+  every other check of T-0052's `apply` still runs, the existing-children
+  verification (`split-apply.json`, provenance lines, an open INDEX row, a
+  direction matching the current proposal) included, and `apply` now makes
+  the record folder itself, since autopilot may apply with no `check`
+  before it. `--via command` needs no policy and keeps T-0052's
+  confirmation. Any caller may pass `--via autopilot` (documented): like
+  `crew_ticket.approve`, the gate is the repository's policy, not the caller.
+  Everything the policy reads, the rule included, is inside its
+  could-not-tell boundary, so a crash refuses and `next` stops at
+  `split-approval` instead of raising. `split --check` and `split --apply`
+  apply the gate's rules at the gate's stage (`plan` only once plan.md
+  validates): both refuse while a measure is unknown, in the gate's
+  `split-check-unknown` wording, and refuse a `split.md` whose `answered:`
+  misses a trigger firing now.
+- **Unknown measures.** A measure whose source is there and cannot be read
+  stops as `split-check-unknown`. A source the repository does not have at
+  all (no `.crew/codemap/`; no review recorded in `.crew/metrics.md`) is
+  named `unmeasured: <name> (<why>)` on the split-check reason and the
+  `split` output and does not stop (`crew_split.absent_sources`): the spec's
+  "unreadable measure" read so that a repo without metrics is not stopped on
+  every ticket; **owner-approved 2026-10-04**. A source that is there but
+  cannot be measured still stops, including T-0052's zero-count `None`s: an
+  Acceptance section with no `- [ ]` bullet, a plan with no `### Step`, a
+  Touch entry no codemap subsystem covers (the stop names the fix).
+  T-0052's `measure` is unchanged. The shared test fixture
+  (`scope_fixtures.SPEC`/`PLAN`) now writes `- [ ] tests pass` and
+  `### Step 1`, the shapes `/crew:spec` and `/crew:plan` write.
+- **Why.** The owner's 2026-09-26 direction (T-0052): autopilot looks at a
+  ticket's size after spec and after plan through the same rulebook as
+  `/crew:split`, and a split it applies goes through the approval policy,
+  with Jira always the owner's yes.
+- **Tests.** `test_crew_autopilot_split.py` (40 cases: every gate outcome,
+  the subcommand, the router, the prose) and the T-0058 block in
+  `test_crew_split.py` (policy must-block and must-allow, apply via
+  autopilot in files and Obsidian mode). `test_crew_route.py`'s subcommand
+  tuple and `test_lifecycle_commands.py`'s exact-CLI list gain `split`.
+  Twenty-two T-0058 mutations and T-0052's ten were hand-run on the tree
+  merged with T-0052 at 1b0de3cb, each red on its
+  named test; `sabotage_split.py` is a HARNESS path, so registering them is
+  a separate tooling PR.
+- **Ported onto release/1.2.0 (PR #365).** The gate, `split_report` and the
+  `split` action live in the new `crew_autopilot_split.py` (dispatched through
+  `EXTRA_ACTIONS`, as T-0022's tracker is) to keep `crew_autopilot.py` under
+  pylint's module-length limit. A `split-approval` stop now pings: the
+  report's `crew_notify.py run-stop` sends T-0060's blocker `Approval waiting
+  -> /crew:split <id>`, once per `split.md`. Two of the mutations (the gate
+  after plan removed; the Jira refusal removed) were re-run on the port, each
+  red; the rest were not re-run here. `autopilot.md` is 115 of its 120 lines.
+- **Port review fixes.** Under T-0020's focus, `split <focused ticket>` runs
+  (it looks at that ticket's size; `split` of another ticket is still refused,
+  and the prompt router asks with the focus refusal once it has resolved the
+  ticket). `absent_sources` judges the metrics file `measure` reads (the main
+  checkout's, from a linked worktree), so an unreadable main-checkout
+  `metrics.md` stays `unknown`, never `unmeasured`. Round 2: `crew_split.py apply --via
+  autopilot` itself holds the gate's rules (no apply while a measure is unknown
+  or a firing trigger is unanswered), `split --check` holds a `slices` decision
+  at plan to the plan's `## PR slices` (a plan with no section is not a sliced
+  one), and a `--check` the gate refuses drops the passing record
+  `crew_split.check` wrote, so `confirm` can never trust it. Round 3: a
+  `metrics.md` holding a review row whose counts do not parse is a malformed
+  source (`unknown`), never "no review recorded" -- a row with too few cells
+  too; and beside valid rows it leaves `findings_rate` unknown, never a rate
+  that leaves a review out.
+
+### Added — `crew` 1.1.10: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
+
+- **`blocker` sends.** It moves from `RESERVED` to `EVENTS` in `plugin/crew/hooks/scripts/crew_notify.py`,
+  loud, with one subject per kind from the one `SUBJECTS` table: `Approval waiting`, `Review out of
+  rounds`, `Lane stalled`, `Lane state unknown`, `Stop gate refused`, and `Blocked` for no or an unknown
+  kind. `send` gains `kind=` and the CLI `--kind`. The legacy `phase`/`review`/`done` names still enable
+  it in `notify.events`, but a SEND under one of them is a retired caller and sends nothing (review.md's
+  `notify.sh review` line goes in a harness-only change, so no CLEAN round is paged as `Blocked`).
+- **`run-stop` decides which autopilot stop pings** (`crew_notify.py run-stop --root . --ticket <id>
+  --phase <p> --reason "<r>"`, exit 0, prints its word). `autopilot.md`'s report runs it once at every
+  stop, in place (its line count unchanged). `approve` (a stale receipt included) is `Approval waiting -> /crew:approve
+  <id>`. `in-flight` reads T-0049's `crew_inflight.holds()`: `stale` (a dead pid, or no heartbeat inside
+  its 30-minute TTL) is `Lane stalled` naming the runner, `since` and the owner's `clear` command;
+  `unknown`, an import error or a raise is `Lane state unknown -> /crew:status`, never quiet; `live`,
+  `mine`, `free` and `elsewhere` send nothing. `accept-review` and `replan` go to `rounds_check`: the
+  review budget spent and the latest round under the current plan carrying a BLOCK is `Review out of
+  rounds, <n> BLOCK open -> /crew:plan <id>`. Every other phase sends nothing. No timer: a lane that
+  dies while no autopilot run checks it is pinged at the next check.
+- **`stop` counts Stop gate refusals** (`crew_notify.py stop --root . --gate verify|audit
+  --refused|--passed`, payload on stdin, exit 0): `<git-common-dir>/crew/notify/stops.json` keys
+  `gate|session|ticket`, a pass clears it, the identity is `prompt_id` or the digest of the normalised
+  payload (both Windows flavours count one Stop once), and the second distinct refusal in a row sends
+  `Stop gate refused`.
+- **Not wired yet (harness-only follow-ups, T-0087 rule).** `verify-gate.sh`/`.ps1` and
+  `completion_audit.py` calling `stop`, and `review_ledger.record` calling `rounds_check` after a
+  manual `/crew:review`, are in `scripts/check-tooling-pr.py`'s `HARNESS`; until they land the Stop
+  gate reason never fires and the out-of-rounds reason fires only at an autopilot stop. The sabotage
+  rows for `sabotage_notify.py` are the same follow-up; the mutations were run by hand, each red.
+- **No local detail in the chat; new episodes ping.** `Lane state unknown` carries a fixed
+  category (`marker unreadable`, `lock held`, `heartbeat in the future`, `could not read state`),
+  never `holds()`'s `why`, which holds absolute paths and exception text; `/crew:status` prints the
+  detail. The dedupe key gains episode material that is never shown: the plan's sha256 for
+  approval (approve, replan, approve again pings twice), the round number for out-of-rounds, and a
+  refusal streak's first refusal for the Stop gate. `run-stop` refuses a bad `--ticket`
+  (`failed:usage`) and logs `--reason` to stderr only; `stops.json` entries are pruned after 7 days
+  like `sent.json`'s.
+- **Deliberate deviations from the spec.** (1) A send under the legacy `review` name sends
+  nothing, where the spec said `Blocked`: review.md still pings every round, CLEAN ones included,
+  until its harness-only removal. (2) Deferred to a harness-only follow-up (T-0087 rule):
+  `review_ledger.record` calling `rounds_check` (acceptance 2: met for autopilot stops only),
+  `verify-gate.sh`/`.ps1` and `completion_audit.py` calling `stop` (acceptance 5: the counter and
+  CLI ship, the gates do not call them), the `sabotage_notify.py` rows (acceptance 6: run by hand,
+  20 mutations, each red) and `docs/diagrams/process-crew-lifecycle.mmd` (its Stop hooks node
+  changes only with the gates). Each is a `TODO.md` entry.
+- **Tests.** `plugin/crew/tests/test_crew_notify_blocker.py` (new), the blocker cases in
+  `test_crew_notify.py`, the retired legacy send in `test_crew_notify_hooks.py`,
+  `test_autopilot_report_calls_run_stop`, and `EXPECTED_CLI["autopilot.md"]`. `.crew/verify.json`'s
+  notify rule runs the new file and also maps `review_ledger.py` and `crew_inflight.py`.
+- **Ported** onto release/1.2.0 (PR #363) by hand on current `crew_notify.py`; the guide sources and
+  their HTML follow (the DOCX/PDF builds were renamed away by C-0006 and are not regenerated here).
+- **Port review fixes.** A `claim` refused for a stale or unreadable marker stops as phase
+  `in-flight`, so its `Lane stalled`/`Lane state unknown` ping runs; `auto-replan-cap` (the cap
+  turning a BLOCK-carrying `accept-review` stop into its own) is checked for out-of-rounds like
+  `accept-review`; a Stop-gate refusal streak keeps its first refusal as its identity past the
+  ten-id window, so a long streak pings once.
+- **Group review fixes (G2 landing).** `/crew:autopilot` runs `run-stop`
+  without `--reason`: a stop reason can quote ticket text, and it was being
+  put inside a shell command. A `stops.json` that is there and unreadable (or
+  this key's entry out of shape) pings `<gate> gate refused (refusal history
+  unreadable)` and restarts the streak, never counted as a first refusal.
+
+### Added — `crew` 1.1.10: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
+
+- **Summary.** `crew_unattended.py launch -- claude ...` starts an unattended session holding temporary, read-only cloud credentials for one identity the machine owner named, sealed against repo settings and credential stores, or refuses to start.
+- **Ported to release/1.2.0 (feature rush, PR #369).** Merged onto current code: `explain_config` keeps T-0050's personal-key rows beside the machine-only `unattendedCloud` rows; the four `unattendedCloud` leaves get `crew_keys.KEY_META` rows (T-0048 landed since; `since` is 1.1.10, set at landing) and read `machine-only` in the generated layer column, and the generated CONFIG.md and configuration-reference tables are regenerated. The old troubleshooting DOCX/PDF renders (renamed since by C-0006) are not regenerated; the source and HTML carry the text. Not ported: the old branch's code-map and rules re-anchors.
+- **Group review fixes (G2 landing).** The probe and the session start with
+  `--strict-mcp-config` and no `--mcp-config`, so no MCP server (a process
+  outside the sandbox the probe proves, inheriting the sealed environment)
+  starts; `--mcp-config`, `--strict-mcp-config` and `--plugin-dir` on the
+  launch command are refused. On native Windows the start-up sweep of stale
+  sealed directories does nothing (`os.kill(pid, 0)` there is CTRL_C_EVENT,
+  which interrupted Windows CI); the POSIX chain's suite skips there and
+  `test_crew_unattended_windows.py` covers the platform refusal everywhere.
+- New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
+  It starts an unattended Claude session with temporary AWS credentials for ONE identity the
+  machine owner named, no inherited `AWS_*` variable, IMDS off, `CREW_UNATTENDED=1`, a region-only
+  `AWS_CONFIG_FILE`, and `--settings` that turn the sandbox on with no escape hatch and deny every
+  credential store (`~/.aws` whole, `~/.azure`, `~/.terraform.d/credentials.tfrc.json`, crew's
+  machine config) to Bash and the file tools. Before it starts anything it proves the identity
+  comes from the machine file, the credentials are temporary with 15+ minutes left, `aws sts
+  get-caller-identity` returns the named role prefix, and a real sandboxed Bash probe cannot open
+  any store. "Could not tell" is its own `unknown` state and refuses; it never falls back to
+  ambient credentials and never writes or prints a credential. This is the boundary T-0005's
+  command-line guard cannot be.
+- New machine-only config block `unattendedCloud` (`~/.claude/crew/config.json` and
+  `templates/global.template.json` only). A repo copy is dropped from `resolve_config` and reported
+  as `repoIgnored` by `explain_config`. The defaults name nothing, so every launch refuses until the
+  owner names a role. Any provider other than `aws` refuses as not implemented.
+- Nothing existing changes behaviour: `cloud_guard.py`'s decisions, autopilot, auto-resume and
+  auto-clear are untouched. On a host where Claude Code's sandbox cannot run commands (the
+  AppArmor userns `apply-seccomp` error) every launch refuses with `sandbox: unavailable`.
+- Docs: plugin README ("Unattended runs: sealed cloud credentials"), CONFIG.md, `/crew:autopilot`,
+  crew-cloud and crew-setup skills, the troubleshooting guide (rebuilt HTML/DOCX/PDF), the code map
+  and the config data-flow diagram. `.crew/verify.json` maps the launcher to its suite.
+- Review fixes (Sonnet review of `ce400de3`): the session AND the probe now start as
+  `<claude> --settings <sealed> --setting-sources user`, from `--root`, with the same executable, so
+  a cloned repo's `.claude/settings.json`/`settings.local.json` never load (their
+  `sandbox.excludedCommands`, `allowRead`, hooks and `env` cannot reach the sealed session); a new
+  `settings` check also refuses a repo file with any `sandbox` key or `Read` allow rule, and a user
+  file with `sandbox.excludedCommands`, `filesystem.disabled: true` or an `allowRead` that could
+  re-open a store. The launcher `chdir`s to `--root` before `exec`. Every store is now denied for
+  writes too (`denyWrite`, `Edit(...)`), as are the sealed directory and the user settings file.
+  The stores add `~/.config/gcloud`, `~/.kube`, `~/.config/gh` and `~/.docker/config.json`, and the
+  environment drops `AZURE_*`, `ARM_*`, `CLOUDSDK_*`, `GOOGLE_*`, `TF_TOKEN_*`, `KUBECONFIG`,
+  `GITHUB_TOKEN`/`GH_TOKEN`, `DOCKER_CONFIG`/`DOCKER_AUTH_CONFIG` and friends (so `gh`, registry
+  pushes and `kubectl` have no credentials unattended, by design). The probe opens each store root
+  plus a bounded sample, prints indices with the nonce first and an end marker last, and no longer
+  refuses a store with many entries. A stale `crew-sealed-<pid>-*` directory is removed by the next
+  launch once its process has exited. Accepted residual risks are listed in the README.
+- Round-2 review fixes: a new `version` check (after `settings`) runs `<claude> --version` on the
+  same file the probe and the launch use and refuses as `unknown` below Claude Code 2.1.246 (where
+  `--setting-sources` starts keeping an excluded source's sandbox entries out), on output that does
+  not parse, a non-zero exit or a timeout. In a linked git worktree the settings check also reads
+  the main checkout's `.claude/settings.local.json` (Claude Code reads that file there), and a
+  `.git` file whose main checkout cannot be found is `unknown`. The stale-directory sweep's owner
+  check and its refusal to follow a symlink now have tests. README residuals add that the sweep
+  cannot see processes in another PID namespace sharing `/tmp`.
+- Port review fixes (release/1.2.0): `pwd` is imported only where it exists, so native Windows
+  collects the suite and reaches its refusal; the sandbox probe is `unknown`, never `ready`, when
+  its Claude process exits nonzero or a tool result carries `is_error`, whatever markers it printed
+  (an `OPEN` store still refuses). The `settings` check refuses a user (or repo) settings file
+  whose `env` sets a variable the launch strips (`AWS_*`, `GH_TOKEN`, ...): Claude Code applies a
+  loaded file's `env` to the session, so it would replace the sealed credentials. A settings file
+  or machine config that is not UTF-8 is `unknown`, never a traceback. Round 3: only the result of a
+  Bash call whose command IS the probe script can vouch for `ready` (markers printed by any other
+  command prove nothing); git's and ssh's credential pointers (`GIT_ASKPASS`, `SSH_ASKPASS`,
+  `SSH_AUTH_SOCK`, environment-set git config) and `GITLAB_TOKEN` are stripped too; subprocess
+  output that is not UTF-8 is `unknown` (round 4: decoded strictly, so a replacement character can
+  never pass a judge). Round 4 also denies and probes `~/.ssh`, `~/.git-credentials` and
+  `~/.config/git/credentials`, strips `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_SSH`/
+  `GIT_SSH_COMMAND`, and never prints a failing `aws` command's stderr (the check names the command
+  and its exit code). Round 5: `~/.terraformrc` is denied and probed and `TERRAFORM_CONFIG`
+  stripped; the session gets `credential.helper` reset to empty through `GIT_CONFIG_COUNT`, so no
+  helper `~/.gitconfig` names (`store --file <anywhere>`, a script) answers git. Round 6:
+  `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` are stripped (they move a CLI's stored token off the denied
+  default path), and an `identity` must name one role (`.../assumed-role/<role>/`), never a bare
+  `.../assumed-role/` that would admit every role in the account. Round 7: a relative
+  `CLAUDE_CONFIG_DIR` makes the settings check `unknown` (which user settings Claude loads would
+  depend on its working directory).
+- Harness follow-ups (left out under the T-0087 tooling-PR rule): `plugin/crew/tests/sabotage_unattended.py`
+  and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
+  branch instead, and each turned its named test red.
+
+### Added — `crew` 1.1.10: autopilot's docs phase and tracker step (T-0022)
+
+- **Summary.** Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.
+- **Ported to release/1.2.0 (feature rush, PR #358).** Re-applied by hand on current code (the old branch was ~1,400 commits behind). To keep `crew_autopilot.py` under pylint's 3400-line cap, the docs phase and tracker step live in `crew_autopilot_docs.py`, L-0652's unchanged manual sleep code moves to `crew_autopilot_sleep.py`, and `crew_autopilot.py` dispatches such actions through one `EXTRA_ACTIONS` table (T-0012's goal pair too). `disk_status` reads `in-progress` only once a path outside `.work/` changed since the recorded scope base, because `crew_ticket.activate` now records the base before implement starts; git that cannot tell stops the step. `crew_docs_check.py` runs git through `crew_common.require_tool` (L-1508). Not ported: the old branch's code-map, rules and diagram re-anchors (release's are kept).
+- `crew_docs_check.py --root . --ticket <id> [--json] [--explain]`, read-only: one line per document --
+  CHANGELOG (per changed marketplace entry), each triggered README, SECURITY.md, TODO.md -- as
+  `updated`, `not needed (<reason>)`, `MISSING` or `not applicable`, plus `adr, runbooks: not
+  measured`; exit 0 only with nothing MISSING or unknown. The CHANGELOG rule is mechanical: an entry
+  whose source changed needs a line added under `## [Unreleased]` naming `` `<name>` `` and its
+  current version, and no recorded reason waives it; release bookkeeping (T-0008's
+  `RELEASE_BOOKKEEPING`, imported) and `.work/` alone owe none. README and SECURITY.md need an edit or
+  a recorded reason once triggered; each deferral must reach TODO.md's added lines. No scope base, a
+  base T-0008 would not trust, an unreadable `docs.json`, or git unable to read a document at the base
+  (never read as absent, so never `updated`) is `unknown`, which refuses. Git is read
+  through plumbing only, so the check never rewrites `.git/index`.
+- `/crew:docs <id>` records its decisions in `.work/tickets/<id>/docs.json` and runs the check;
+  `/crew:implement` step 6 orders tests, docs, the docs check, the refresh, then review; `/crew:done`
+  gains check 5, the same check, which refuses and never edits a document.
+- `crew_autopilot.next` runs a `docs` phase (`/crew:docs <id>`) before the refresh and every review
+  round while a document is `MISSING`, stops after two runs recorded since the latest review round
+  (`docs-missing`), stops at once when the check is `unknown` (`docs-unknown`: a rerun cannot settle it), and stops without writing when one is owed after an accepted
+  receipt (`docs-after-review`). `crew_autopilot.py tracker --root . --ticket <id> [--after CMD]`
+  derives the status from disk and calls T-0021's `crew_tracker.move`: continue on updated or
+  unchanged, the sync command handed back on delegated, a stop with the reason and the
+  `crew_tracker.py move` retry on could not update, and "T-0021 not landed" without the module.
+  `test_tracker_move_after_receipt_keeps_bundle_hash` shows a move leaves `review_patch`'s bundle hash
+  unchanged for the files kind, an Obsidian vault outside the worktree and an ignored one inside it.
+- Port review fixes (release/1.2.0): a CHANGELOG line naming `1.1.0.1` no longer counts as naming
+  `1.1.0`, nor does `1.1.0-rc.1`, `1.1.0+b` or `1.1.0_2`; a `docs.json` deferral needs non-empty
+  `key`, `why` and `unblock` or the check is `unknown`, and reaches TODO.md only as its own added
+  entry (a bullet or heading that opens with the key as a whole id, never `T-00990` nor a
+  mention inside another entry) with that why and unblock, its continuation ending at any
+  bullet (`-`, `*`, `+`, `1.`), heading or blank line; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
+  earlier plan do not stop a successor plan's first docs run.
+- Group review fix (G2 landing): a malformed docs attempt (a `round` or `plan` that is not an
+  integer, or an entry that is not an object) reads the record as spent, never skipped.
+- Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
+  its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
+
+### Added — `crew` 1.1.10: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
+
+- **Summary.** Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
+- **Ported to release/1.2.0 (feature rush, PR #342).** Merged onto the T-0012 and T-0049 ports. Autopilot's inert-key warnings are `crew_config.autopilot_inert_warnings` (keeps `crew_autopilot.py` under pylint's 3400-line cap); with T-0012's goal landed, `maxTicketsPerRun` and `mode: backlog` are attributed to L-0541.
+- **Port review round 1.** `--approvals` prints each `/crew:approve <id>` alone,
+  its reason on a `  why:` line under it: the old `/crew:approve T-1  (no approval)`
+  parsed as a group of three ids, so the advertised paste did not approve. A
+  linked worktree with no INDEX of its own reads the main checkout's rows (as
+  the walk already did) instead of saying `could not tell`.
+- **What changed.** `crew_config.inert_settings(root)` names every setting the
+  installed crew does not act on: a resolved key outside `default_config()`
+  (not `platform.*` or `schema`; keys under an open table such as `dev.roles`
+  count as known), a value in the small `INERT_PENDING` table, and every path
+  the global filter drops. It appears as one `Inert settings (crew <version>
+  does not act on them): key=value (why), ...` line at SessionStart (300
+  characters, `+N more`, emitted with `memory.inject` off too), an `inert` line
+  in `/crew:status`, a `warning: inert:` line per `autopilot.*` key from
+  `crew_autopilot.py settings`, and `crew_config.py --inert`. It never refuses
+  anything. `/crew:status --approvals` prints one `/crew:approve <id>` line (its
+  `  why: <why>` on the line under it) per open ticket whose spec and plan validate and whose approval is
+  missing, stale or unaccepted, and leaves merged, current and spec-only
+  tickets out (`nothing needs approval` when there are none, `could not tell
+  (<reason>)` when `.work/INDEX.md` is missing, unreadable or not UTF-8). A
+  key or value with a control character is shown escaped, never emitted.
+- **Why.** `.crew/config.json` held `autopilot.approval: self` for days before
+  the crew that read it existed, and nothing said so; 13 of 25 approvals typed
+  on 2026-09-27 changed nothing. T-0010 has since landed `approval` and
+  `questions`, T-0011 `ship`, and T-0029 (crew 1.1.6) `reviewPolicy` and `maxLanes`, whose
+  `INERT_PENDING` rows this landing deletes, so they are quiet now. Still named:
+  `maxTicketsPerRun` and `mode: backlog` (L-0541), and a `deploy` other than `none` (T-0045). A key the
+  global filter drops from `~/.claude/crew/config.json` is named `(global, not
+  read)` instead of being dropped silently; that names what this crew does,
+  not which file may set it (the owner allows a global `autopilot.deploy`).
+- **Not in this change.** The machine-global autopilot preferences (the spec's
+  Step 2 allow-list) are left to T-0050 (#361), which reworks the same global
+  layer with `PERSONAL_KEYS` and decides `autopilot.deploy` differently; only
+  the reporting half landed here. The `pending_approvals` reader lives in
+  `crew_status.py`, not `crew_ticket.py`, to keep this branch off the harness.
+- **Port review fix (release/1.2.0).** In a linked worktree `--approvals` checks
+  this checkout's INDEX and the main checkout's, as the walk reads both: an
+  unreadable or non-UTF-8 main INDEX, or a main checkout git cannot name, is
+  `could not tell`, even when the local INDEX reads cleanly; a main checkout with no
+  INDEX at all adds a `note:` line under the answer. `inert_settings` judges a
+  T-0050 personal key by the value in force (the ratchet), not repo precedence;
+  a machine-file `unattendedCloud` is known, not inert; a repo
+  `context.autoClear.onlyRepos`/`onlySessions` (read from the machine file only)
+  is named `(repo, not read)`; and a config file that is there and cannot be read
+  is `could not tell (...)`, never an empty list (sorted first, so a cut line
+  still says it); a repo `[]` scope is named too, and a key holding a `.` is one
+  key, never two levels -- in the machine file's dropped keys too, and a key
+  `mode.foo` is not read as a child of the known `mode`. `--approvals` in a
+  linked worktree is `could not tell` when the two INDEX files disagree on
+  whether a ticket is open. A block under a scalar setting
+  (`autopilot.mode: {"foo": 1}`) is named; only an open table's children are
+  known.
+- **Harness follow-ups** (land alone, T-0087): the no-op `/crew:approve`
+  ("already approved for plan <sha> - nothing changed", in `crew_ticket.approve`
+  and `approval_hook.py`), the bare `/crew:approve` listing what is pending,
+  and the sabotage registrations for this change's tests in
+  `sabotage_autopilot.py` and `sabotage_context.py`.
+
+### Added — `crew` 1.1.10: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
+
+- **Summary.** `/crew:autopilot goal "<goal>"` researches a goal once, writes a goal file with its proposed tickets, prints the `/goal` line for you to paste, and asks for the split approval under `autopilot.approval`; it mints nothing yet.
+- **Ported to release/1.2.0 (feature rush, PR #354).** Merged onto current code: `goal` joins `AVAILABLE` beside T-0020's `focus` and L-0652's `sleep`/`wake`; the command's goal section is section 7; `approval: null` reads the default `risk` for the split as it does for the plan approval since T-0050.
+- **Port review round 1.** The goal code moved to its own module,
+  `crew_autopilot_goal.py` (pylint's 3400-line cap on `crew_autopilot.py`; the
+  ship rule's prose moved from `crew_autopilot.py`'s docstring to
+  `crew_ship.py`'s for the same reason). `split_approved` judges and notes the
+  one proposal it read: the policy no longer re-reads the goal file, and the
+  note is written only while the file still holds that proposal, so an edit
+  in between is neither approved nor overwritten. The owner's receipt reports
+  the goal's own risk (it read `high` for every goal).
+- **What changed.** `/crew:autopilot goal "<goal>"` routes through T-0018's
+  router (`goal` joins `AVAILABLE`) as `route --root . --first goal`, so the
+  goal's text never reaches a shell line; `route --args` on `goal ...` stops
+  and names that form. The command researches the goal once and stages a
+  proposal under `.work/autopilot/`; `crew_autopilot.py goal-propose --root .
+  --proposal-file <f>` refuses (writing nothing) a file outside
+  `.work/autopilot/` or not regular, no goal text, an empty `done_condition`,
+  an unknown, cyclic or out-of-order `depends_on`, or a title `mint` would
+  refuse, and otherwise writes the goal file `.work/autopilot/<slug>.json`
+  (schema 1; T-0006's slug grammar, `-2`, `-3` on a collision) and prints
+  `goal_status=printed` and `goal_line: /goal <condition> - or /crew:autopilot
+  has stopped naming a command only the owner types` (one line, at most 300
+  characters; the condition is cut, never the clause). Autopilot never runs,
+  types or reports `/goal` as set. T-0013's typer is offered only when
+  `resume.auto` is armed, a sender resolves and T-0013 exposes a `/goal`
+  typing entry point; today none exists, so each missing one is named once.
+- **Split approval.** `crew_autopilot.py goal-approve --root . --goal <slug>`:
+  the owner's receipt at `<git-common-dir>/crew/goals/<slug>/approval.json`
+  whose `proposal_sha256` matches `goal_digest` (goal, proposal, each ticket's
+  title, risk and depends_on; a minted id is left out) approves at any
+  setting; otherwise `split_policy` applies T-0010's rules with the goal risk
+  (the highest ticket risk, unknown reads `high`): never without
+  `scope.allowCliApproval: true` or unarmed, `human` never, `self` any risk,
+  `risk` only every ticket a known `low`. It is re-asked on every call: the
+  `approval: {via: "autopilot:<policy>"}` note it writes in the goal file
+  grants nothing. A refusal prints `owner: the human types /crew:approve
+  goal:<slug>`, one goal and never a group. An unreadable receipt is named,
+  never read as absent.
+- **Split (owner, 2026-09-30, L-0541).** Minting on approval, `mode: backlog`,
+  dependency order, per-ticket approval, the caps and `--goal` resume are
+  L-0541's: `--goal <slug>` and a handoff's `resume: /crew:autopilot --goal`
+  now stop with "arrives with L-0541", and `goal-approve` names
+  `crew_ticket.py mint` for the human to run in list order.
+- **Harness follow-ups (tooling-PR rule, T-0087; left out of this branch).**
+  (1) `approval_hook.py`'s `goal:<slug>` token — alone on the line, parsed
+  before T-0024's group grammar, writing the receipt above — with its
+  must-block/must-allow cases in `test_approval_hook.py` and `approve.md`'s
+  documentation; until it lands, the hook refuses `/crew:approve goal:<slug>`
+  and `goal-approve` says so. (2) Registering this ticket's mutations in
+  `sabotage_autopilot.py` (`GOAL_MUTATIONS`); they were run by hand here, 30
+  mutations, each RED on its named test in `test_crew_autopilot_goals.py`.
+- **Line budget.** `autopilot.md` stays within its 117 lines (104 after this
+  change): section 7 (`goal`) is 5 lines, paid for by joining wrapped lines of
+  sections 1 to 6 in place; every sabotage anchor still matches exactly once.
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_goals.py` (160 cases, plus
+  `approval: null` reading the default); `test_crew_autopilot_focus.py` routes
+  `goal` under a plain pointer; `test_crew_autopilot_policy.py`'s writer census
+  names the goal pair;
+  router expectations in `test_crew_autopilot_status.py` and
+  `test_crew_autopilot.py` move from T-0012 to L-0541;
+  `test_lifecycle_commands.py`'s exact-CLI list gains `goal-propose`,
+  `goal-approve` and `route --root . --first goal`. `.crew/verify.json`'s
+  autopilot rule runs the new file.
+
 ### crew 1.1.9 — sync: main (H3 #540, H1 #542, C-0047 part 1 #549) into release/1.2.0
 
 - **Summary.** release/1.2.0 now carries everything on main: the review harness (H3), its ports

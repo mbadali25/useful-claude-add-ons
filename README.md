@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.9 — sync**: Main (H3 #540, H1 #542, C-0047 part 1 #549) into release/1.2.0. release/1.2.0 now carries everything on main: the review harness (H3), its ports (H1) and the retired cloud-guard sabotage entries (C-0047 part 1), beside the release's own features, so it can land on main as one wave.
-- **crew 1.1.8**: C-0047 (part 1): retire 28 cloud-guard sabotage entries that T-0009 orphans; re-added in H2. Twenty-eight cloud-guard sabotage mutations leave `sabotage_cloud.py` so the environment-scoped deploy work (T-0009) can land; each comes back, aimed at the new code, in H2.
+- **crew 1.1.10**: The Stop gate health and QA audit readers move to `crew_health.py` (G2 landing). No behaviour change: two readers move out of `crew_state.py` so it stays under its 3,400-line pylint cap now that G0, G7 and G2 meet in it.
+- **crew 1.1.10**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

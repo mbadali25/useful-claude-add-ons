@@ -234,6 +234,12 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 </tbody>
 </table>
 <ul>
+<li><strong>Blocker pings (<code>notify.events</code> has <code>blocker</code>).</strong> <code>Stop gate refused</code> means the verify gate or the
+  completion audit refused the same ticket at Stop twice in a row (<code>crew_notify.py stop</code> records it;
+  the gates call it once their harness-only change lands). <code>Lane stalled</code> means <code>/crew:autopilot</code>
+  found another runner's in-flight marker <code>stale</code> (a dead pid, or no heartbeat inside T-0049's
+  30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
+  not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
 <li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.roleWrites: off</code>,
   <code>guards.cloudGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
@@ -278,7 +284,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
   only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased.</p>
+  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  budget whose last round carries a BLOCK sends the <code>Review out of rounds</code> ping when
+  <code>/crew:autopilot</code> stops on it.</p>
 <ul>
 <li>
 <p><strong>Symptom: a round came back <code>INCOMPLETE</code>.</strong>
@@ -445,6 +453,11 @@ contract itself. This section is what goes wrong with the approval and the audit
   wrappers inherit as well: an inherited <code>"verifyGate": false</code> stands a lane's Stop gate down,
   and with no python a lane whose main checkout has a config blocks writes and the Stop (the
   PowerShell 7 wrappers still allow one that strictly says <code>scope.mode: off</code>).</li>
+<li><strong>Symptom: which tickets still need my approval?</strong>
+  <strong>Check:</strong> <code>/crew:status --approvals</code>. It prints one ready-to-paste <code>/crew:approve &lt;id&gt;</code> line, with a
+  <code>why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  current or spec-only tickets (<code>nothing needs approval</code> when there are none). Approving a ticket
+  it does not list changes nothing.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
@@ -688,6 +701,48 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   <code>AWS_ACCESS_KEY_ID</code> credentials and <code>Remove-Az*</code>'s saved PowerShell context are <strong>always</strong>
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through <code>--profile</code>/<code>--subscription</code> does.</p>
+<h3 id="unattended-launch-refuses">Unattended Launch Refuses</h3>
+<p><code>crew_unattended.py launch -- claude ...</code> starts an unattended session holding sealed, owner-named
+cloud credentials, or refuses and starts nothing (plugin README, "Unattended runs: sealed cloud
+credentials"). Run <code>python3 "&lt;crew&gt;/hooks/scripts/crew_unattended.py" check --root .</code> to see every
+check without launching. Each line is <code>ready</code>, <code>refuse</code> or <code>unknown</code> (could not tell, which also
+refuses).</p>
+<ul>
+<li><strong><code>config: no read-only identity named</code></strong> (or <code>no unattendedCloud in the machine config</code>). The
+  defaults name nothing. <strong>Fix:</strong> name the read-only role in <code>~/.claude/crew/config.json</code>, never in
+  the repo (a repo copy is ignored and reported): set <code>unattendedCloud.aws.readOnly.profile</code> and
+  <code>unattendedCloud.aws.readOnly.identity</code>, the assumed-role ARN prefix ending in <code>/</code>.</li>
+<li><strong><code>config: environment X is not nonProd</code></strong> or <strong><code>no machine entry for nonProd environment X</code>.</strong>
+  <code>--environment</code> needs both the repo's <code>environments.nonProd</code> to match the name and a machine
+  <code>unattendedCloud.aws.nonProd</code> entry for it. There is no production entry, by design.</li>
+<li><strong><code>provider not implemented</code>.</strong> Only <code>aws</code> is read; remove the other key.</li>
+<li><strong><code>export: no SessionToken ...: these are static keys</code>.</strong> The profile resolves to long-lived
+  keys. <strong>Fix:</strong> point it at an SSO or assume-role profile; crew never runs <code>aws sso login</code> for you.</li>
+<li><strong><code>export: credentials expire in under 15 minutes</code></strong> or <code>export ... exited</code>: refresh the
+  profile's session yourself (<code>aws sso login</code>), then retry.</li>
+<li><strong><code>identity: STS says ..., expected ...</code>.</strong> The exported credentials are a different role than the
+  one named; a <code>:user/</code> ARN is a long-lived IAM user and always refuses. Fix the profile, or the
+  prefix if the role was renamed.</li>
+<li><strong><code>sandbox: unavailable: apply-seccomp: write /proc/self/setgroups ...</code>.</strong> Claude Code's sandbox
+  starts but cannot run commands on this host (measured with
+  <code>kernel.apparmor_restrict_unprivileged_userns = 1</code>). Every launch refuses until the host owner
+  makes the sandbox usable or runs unattended work as a separate OS user or container.</li>
+<li><strong><code>settings: &lt;file&gt; sets sandbox</code></strong> or <strong><code>allows Read(...)</code>.</strong> The repo's <code>.claude/settings.json</code>
+  or <code>.claude/settings.local.json</code> tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. <strong>Fix:</strong> remove the key
+  from the repo's file, or run that work attended.</li>
+<li><strong><code>settings: ... sandbox.excludedCommands</code></strong>, <strong><code>allowRead entry ... could re-open a credential
+  store</code></strong> or <strong><code>sandbox.filesystem.disabled</code>.</strong> Your <code>~/.claude/settings.json</code> loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. <strong>Fix:</strong> move the entry out of
+  your user settings (or narrow the <code>allowRead</code> away from the stores), then retry.</li>
+<li><strong><code>sandbox: the session can read a store: OPEN &lt;path&gt;</code>.</strong> The sealed settings did not hold for that
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.</li>
+<li><strong><code>sandbox: store not reported</code>, <code>could not tell</code>, <code>no end marker</code>, or <code>probe made no tool
+  call</code>.</strong> The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.</li>
+<li><strong><code>refuse command: ...</code>.</strong> <code>launch</code> runs <code>claude</code> only (an executable file or a name on <code>PATH</code>),
+  and supplies <code>--settings</code> and <code>--setting-sources</code> itself.</li>
+</ul>
 <h2 id="obsidian">Obsidian</h2>
 <p>See <a href="memory-and-obsidian.md">Memory and Obsidian</a> for setup. What goes wrong day to day:</p>
 <ul>
@@ -802,6 +857,18 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
+<h2 id="a-setting-seems-to-do-nothing">A Setting Seems to Do Nothing</h2>
+<p><strong>Symptom:</strong> you set a key in <code>.crew/config.json</code> or <code>~/.claude/crew/config.json</code> and crew behaves
+as if it were absent.</p>
+<ul>
+<li><strong>Check:</strong> the <code>Inert settings (crew &lt;version&gt; does not act on them): ...</code> line at session
+  start, the <code>inert</code> line in <code>/crew:status</code>, or <code>python3 "&lt;crew&gt;/hooks/scripts/crew_config.py"
+  --root . --inert</code>. Each names <code>key=value (why)</code>: a ticket id means the installed crew does not
+  implement it yet; <code>unknown key</code> means a typo or a key from another crew version; <code>global,
+  repo-only</code> means the machine file may not set it, so it takes effect nowhere.</li>
+<li><strong>Fix:</strong> move a repo-only key into the repo's <code>.crew/config.json</code>, correct a typo, or wait for
+  (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.</li>
+</ul>
 <h2 id="graph-refresh-refused-secrets-denylisted-path">Graph Refresh Refused: Secrets-Denylisted Path</h2>
 <p>graphify reads every file its ignore rules do not exclude and records the symbols it finds in
 <code>graph.json</code>. For a file git tracks, <code>.gitignore</code> does not stop it: only <code>.graphifyignore</code> does.
@@ -865,6 +932,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>autopilot.mode</code></td>
+<td>repo only</td>
+<td><code>off</code>/<code>plan</code></td>
+<td><code>off</code> (the default): <code>/crew:autopilot</code> runs no phase; only the exact string <code>plan</code> arms it</td>
+</tr>
 <tr>
 <td><code>memory.inject</code></td>
 <td>repo only</td>

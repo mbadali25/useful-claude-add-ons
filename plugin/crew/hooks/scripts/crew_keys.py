@@ -310,7 +310,7 @@ KEY_META = {
                           "`chat_id`, and the skill's example value counts as unset.",
                           FIRST, _S + "crew_notify.py", "string or null"),
     "notify.events": _row("Events that notify: `deploy`, `question`, and `blocker` "
-                          "(reserved, sends nothing yet). The pre-1.0 names `gate`, "
+                          "(T-0060's four blocker reasons). The pre-1.0 names `gate`, "
                           "`waiting`, `phase`, `review` and `done` are mapped with a "
                           "notice. A list is one leaf.", "type", since=FIRST,
                           source=_S + "crew_notify.py",
@@ -343,6 +343,22 @@ KEY_META = {
                             "tuple", crew_shell.MODES, "1.0.54"),
     "shellRoute.distro": _unv("WSL distro to route to; null takes the default distro.",
                               "1.0.54", _S + "crew_shell.py", "string or null"),
+    # T-0044: machine file only; a repo copy is ignored and reported.
+    "unattendedCloud.aws.readOnly.profile": _row(
+        "The AWS profile an unattended run exports credentials from (`aws configure "
+        "export-credentials`); it must yield temporary credentials. Machine file only.",
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="profile name, or null"),
+    "unattendedCloud.aws.readOnly.identity": _row(
+        "The assumed-role ARN prefix STS must report for that profile, ending in `/`; "
+        "null refuses every launch. Machine file only.", "type", since="1.1.10",
+        source=_S + "crew_unattended.py", type_="ARN prefix ending in `/`, or null"),
+    "unattendedCloud.aws.readOnly.region": _row(
+        "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
+        "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
+    "unattendedCloud.aws.nonProd": _row(
+        "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
+        "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
+        "open-table", since="1.1.10", source=_S + "crew_unattended.py"),
     # --- pm
     "pm.enabled": _unv("Run the PM brief.", FIRST, _S + "crew_state.py", "boolean"),
     "pm.mode": _unv("How the PM brief adapts its length.", FIRST, _S + "crew_state.py",
@@ -594,7 +610,7 @@ def layer_of(key):
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
-    if key in _MACHINE_ONLY:
+    if key in _MACHINE_ONLY or key.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):
         return "repo"

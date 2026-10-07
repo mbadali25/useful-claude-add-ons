@@ -452,6 +452,14 @@ def _autopilot(found, top):
         ticket, source, reason, candidates = _resolve(top, found["ticket_arg"])
         if ticket is None:
             return _answer("ask", found, reason=reason, candidates=candidates)
+        # T-0058: `split` of the focused ticket runs, of another is refused --
+        # which `route` cannot tell before the ticket is resolved.
+        try:
+            refusal = crew_autopilot.focus_guard(top, found["command"].split()[-1], ticket)
+        except Exception as exc:  # pylint: disable=broad-except
+            refusal = f"whether focus allows it could not be read ({type(exc).__name__})"
+        if refusal:
+            return _answer("ask", found, reason=refusal, unavailable=True)
         return _route(found, command_for(found, ticket), ticket=ticket, source=source)
     if not found["ticket_arg"]:
         return _route(found, command_for(found, None))

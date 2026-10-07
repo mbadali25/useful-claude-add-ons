@@ -220,6 +220,24 @@ filter, the subject line, the dedupe and episode records under
 `plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
 name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
+**Blocker pings (T-0060).** DERIVED at `22fbbe9f`. `blocker` is in `EVENTS`
+(`plugin/crew/hooks/scripts/crew_notify.py:86`), with one subject per `KINDS` entry (`:90`) in
+`SUBJECTS` (`:105`), `Blocked` for no kind; `_filter` (`:709`) refuses a send under the pre-1.0
+names `phase`/`review`/`done` as a retired caller. `run_stop` (`:879`) is the one decision for
+`/crew:autopilot`'s stops (`plugin/crew/commands/autopilot.md:108` calls it at every stop): `approve`
+sends kind `approval`; `in-flight` goes to `_lane` (`:847`), which lazy-imports `crew_inflight` and
+reads `holds(root, ticket, runner="autopilot")` - `stale` is kind `lane` with the marker's `clear`
+command, `unknown` or any raise is kind `lane-unknown` with a fixed category from `_category` (`:838`), never `holds()`'s `why`, `live`/`mine`/`free`/`elsewhere` send
+nothing; `ROUNDS_PHASES` (`:800`) go to `rounds_check` (`:803`), read-only on
+`review_ledger.status`: budget spent and the latest completed round under the current plan with a
+BLOCK. `stop_outcome` (`:916`) keeps `<git-common-dir>/crew/notify/stops.json` keyed
+`gate|session|ticket`, a refusal identity from `_stop_identity` (`:906`: `prompt_id`, else the
+sha256 of `event_claim.normalise`), and sends kind `gate` on the second distinct refusal. The dedupe key gains unshown episode material: `_plan_digest` (`:868`) for approval, the round number for rounds, the streak's first refusal for the gate. JUDGEMENT:
+the review ledger's own call to `rounds_check` and the two Stop gates' calls to `stop` are
+harness-only follow-ups (`review_*.py`, `verify-gate.*` and `completion_audit.py` are in
+`scripts/check-tooling-pr.py`'s `HARNESS`), so until they land the gate reason never fires and the
+rounds reason fires only through autopilot.
+
 **Context-watch's forced-continuation marker is now session-scoped, not
 repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
 `MARKER=".crew/.handoff-requested-${SESSION_KEY}"` and
@@ -1358,6 +1376,29 @@ its landing bump, then split out to follow-up ticket W-0115 per rule 36
 (`scripts/check-tooling-pr.py`; owner 2026-09-30) - then W-0115 (`59c86b7c`) restored it, registered at
 `plugin/crew/tests/sabotage.py:85` and appended at `:3068`. The `.crew/verify.json` rule is rule 44 (`:501-508`); L-0555's rule 45, L-0572's rule 46, L-0575's rule 47 and the `pytest_rule.py` rule 48 follow it.
 
+## Inert settings and `/crew:status --approvals` (T-0070)
+
+Added on `T-0070-build` without moving this note's `anchor:`; the citations below are to that
+branch's tree, not to the anchor.
+
+- DERIVED: `crew_config.inert_settings` (`plugin/crew/hooks/scripts/crew_config.py:1945`) is the
+  one rule: a resolved leaf outside `leaf_paths(default_config())` (prefix match, so open tables
+  such as `dev.roles` are known), skipping `platform.*` and `schema`, plus value-level
+  `INERT_PENDING` rows (`:1896`), plus every path `filter_global` drops, as `global-ignored`.
+  `format_inert` (`:2018`) renders one capped line; `--inert` prints it (`:3596`).
+- DERIVED: SessionStart appends `crew_context.inert_line` (`plugin/crew/hooks/scripts/crew_context.py:530`)
+  after the incident banner (`:928`), and the `memory.inject`-off path emits it too. It never raises:
+  a failure is an `inert-check-failed` log record.
+- DERIVED: `/crew:status` prints an `inert` line (`plugin/crew/hooks/scripts/crew_status.py:215`);
+  `--approvals` (`:309`) prints `pending_approvals` (`:226`): open INDEX tickets with a validating
+  spec and plan whose `crew_ticket.accepted` status is not `approved`. It lives in `crew_status.py`,
+  not `crew_ticket.py`, because `crew_ticket.py` is a harness path (`scripts/check-tooling-pr.py`).
+- DERIVED: `crew_autopilot.settings` appends `_inert_warnings`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:790`) for `autopilot.*` keys, leaving a repo
+  `deploy` value to its own T-0045 warning.
+- JUDGEMENT: the global autopilot split (which `autopilot` keys a machine file may set) is left to
+  T-0050; until then a global `autopilot` block is named `(global, repo-only)`.
+
 ## verify-gate's temp-file rule capture
 
 `plugin/crew/hooks/scripts/verify-gate.sh` (1863 lines) captures each rule's
@@ -1685,7 +1726,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   evidence in the comment above it: `PLAN_STEPS_LOOK` (`plugin/crew/hooks/scripts/crew_split.py:106`),
   `ACCEPTANCE_LOOK` (`:110`), `SUBSYSTEMS_LOOK` (`:113`), `CHILDREN_MIN,
   CHILDREN_MAX` (`:116`); `EVIDENCE_KEYS` (`:118`), `VIAS` (`:126`, `command`
-  only; T-0058 appends `autopilot`), `SDP_STOP` (`:127`). `measure`
+  only until T-0058 appended `autopilot`), `SDP_STOP` (`:127`). `measure`
   (`:241`) returns None, never 0, for a measure it cannot read or a readable
   section that yields nothing, and `triggers` (`:268`) reports it as
   `unknown:<name>`. `check_proposal` (`:418`) over `parse_proposal` (`:352`)
@@ -1722,6 +1763,81 @@ Obsidian vault). A CLI the commands call, not a hook.
   JUDGEMENT: no `sabotage_split.py` yet - `plugin/crew/tests/sabotage*.py` is
   HARNESS, so its mutations were run by hand and a separate tooling PR
   registers them (`TODO.md`).
+
+## Autopilot's size check and `/crew:autopilot split` (T-0058)
+
+- DERIVED (T-0058, ported onto release/1.2.0 by hand; cites are line numbers
+  on rush/g2-autopilot at the commit that adds this section, behind the
+  anchor above like the rest of the file): `_phase` calls
+  `crew_autopilot_split.gate` after the spec validates
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1000`) and after the plan
+  validates (`:1010`). The code lives in
+  `plugin/crew/hooks/scripts/crew_autopilot_split.py` (pylint's module
+  length): `gate` (`:106`) reads `_size_check` (`:58`: `crew_split.measure`,
+  `triggers`, `absent_sources`) and `_decision_state` (`:76`:
+  `check_proposal` plus the `answered:` rule), and T-0059's `parse_slices`
+  through `_slice_problems` (`:93`, `SLICES_ARRIVE` `:40`). `split_report`
+  (`:146`), `_not_current` (`:185`: the gate's unknown stop and `answered:`
+  rule, which `--check` and `--apply` share, at `_gate_stage` `:175`;
+  wording `_unknown_words` `:167`) and `main` (`:211`) are the `split`
+  action, dispatched through `EXTRA_ACTIONS`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2322`); `split` joins the
+  router at `:351` and `WAITING` at `:2769`. T-0012's rule is slug-free as
+  `_split_rule` (`plugin/crew/hooks/scripts/crew_autopilot_goal.py:429`),
+  which `split_policy` (`:394`) and `crew_split.ticket_split_policy`
+  (`plugin/crew/hooks/scripts/crew_split.py:741`, its whole read inside one
+  could-not-tell boundary) both call. `VIAS` gains `autopilot`
+  (`plugin/crew/hooks/scripts/crew_split.py:141`, `JIRA_STOP` `:143`);
+  `apply` asks the policy for it (`:1014`) and skips only `confirm`, keeping
+  T-0052's existing-children verification; `check` records
+  `policy_at_check` for the report only (`:649-654`). `absent_sources`
+  (`:285`) is what the gate names `unmeasured`.
+- Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
+  block at the end of `plugin/crew/tests/test_crew_split.py`, on the
+  `crew_split` rule in `.crew/verify.json`.
+  JUDGEMENT: a source the repository lacks (no codemap, no review recorded)
+  not stopping the run is this ticket's reading of the spec's "unreadable
+  measure"; a stop on every run of a repo without metrics would be the
+  "check that always fires" the plan's risk names. Owner-approved 2026-10-04;
+  a source that is there but unmeasurable (no `- [ ]` acceptance bullet, no
+  `### Step`, a Touch entry outside every codemap subsystem) still stops.
+
+## PR slices (T-0059)
+
+- DERIVED (T-0059, ported onto release/1.2.0 by hand; cites are line numbers
+  on rush/g2-autopilot at the commit that adds this section, behind the anchor
+  above like the rest of the file). `crew_split.parse_slices`
+  (`plugin/crew/hooks/scripts/crew_split.py:1247`) reads a plan's `## PR slices` section into
+  `{n, name, steps, base, files}` per slice; `SLICES_MIN, SLICES_MAX` (`:138`) are the children's
+  bounds. `_slice_problems` (`:1188`) holds the count, numbering, partition, contiguity and order
+  rules; `_base_problems` (`:1218`) the `Base:` rule, through `_overlaps` (`:1173`, equality or
+  `crew_ticket.path_matches` either way; any other pair is "cannot tell" unless `_disjoint`
+  (`:1165`) proves it: the `_literal_prefix` (`:1152`) of each, after `crew_ticket._segments`,
+  differs case-folded at an index both have) over each step's `Files:` from `_step_blocks`
+  (`:1087`) and `crew_ticket.parse_plan`; a step with no `Files:` is "cannot tell", never
+  independent.
+- `plugin/crew/hooks/scripts/crew_autopilot_slices.py` holds the slice run (pylint's module
+  length kept it out of `crew_autopilot.py`): `context` (`:94`) and `slices_path` (`:52`,
+  `<git-common-dir>/crew/tickets/<id>/slices.json`, written by `_write_slice_state` `:83`
+  through temp + `os.replace`); `slice_base` (`:126`); `order_stop` (`:179`) and `branch_stop`
+  (`:200`); `record_shipped` (`:211`); `create_argv` (`:225`) and `ship_slice` (`:237`);
+  `slice_done` (`:265`) and `next_slice` (`:298`), which refuses with nothing written while
+  `review_ledger.open_slice` is absent. In `plugin/crew/hooks/scripts/crew_autopilot.py`,
+  `_phase` (`:962`) stops a refused section at `plan` and an unreadable state as `slices`,
+  `_done_phase` (`:1092`) stops an early `done` header, and a non-final slice in `done` goes
+  through `_ship_phase` (`:428`), whose `finished` names `next-slice` (also passed to
+  `crew_ship.merged_phase`, `plugin/crew/hooks/scripts/crew_ship.py:323`). `ship` hands a sliced
+  plan to `ship_slice` and both reach `_ship` (`plugin/crew/hooks/scripts/crew_autopilot.py:619`).
+  `_current_rounds` (`:1109`) counts from the later of the successor and slice boundaries,
+  reading the ledger's raw `slices` rows through `_ledger_status` (`:1123`) because
+  `review_ledger.summary` does not carry them.
+- JUDGEMENT: the per-slice budget reset (`review_ledger.open_slice` and `_spent` counting slice
+  rows), `crew_ticket.validate` reporting `PR slices:` problems, and `sabotage_split.py` are HARNESS
+  paths (CLAUDE.md, T-0087) and land in a separate tooling PR; until then a sliced ticket stops
+  after its first slice ships.
+- Tests: `plugin/crew/tests/test_crew_split.py` (parse_slices),
+  `plugin/crew/tests/test_crew_autopilot_slices.py`; the T-0052 `crew_split` rule in
+  `.crew/verify.json` runs both.
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 

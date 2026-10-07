@@ -25,6 +25,7 @@ import crew_common
 import crew_endpoints
 import crew_freshness
 import crew_guards
+import crew_health
 import crew_state
 
 _TESTS = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +46,7 @@ def _reexported():
     for node in ast.parse(source).body:
         if (isinstance(node, ast.ImportFrom)
                 and node.module in ("crew_common", "crew_endpoints",
-                                    "crew_guards", "crew_freshness")):
+                                    "crew_guards", "crew_freshness", "crew_health")):
             for alias in node.names:
                 names[alias.asname or alias.name] = node.module
     return names
@@ -66,7 +67,8 @@ def test_crew_state_re_exports_exactly_what_its_callers_reach_for():
     somewhere else.
     """
     owners = {"crew_common": crew_common, "crew_endpoints": crew_endpoints,
-              "crew_guards": crew_guards, "crew_freshness": crew_freshness}
+              "crew_guards": crew_guards, "crew_freshness": crew_freshness,
+              "crew_health": crew_health}
     reexported = _reexported()
     assert reexported, "crew_state imports from neither split module"
     for name, module in reexported.items():
