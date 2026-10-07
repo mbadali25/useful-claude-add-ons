@@ -65,8 +65,10 @@ def _history_problem(shipped, done, current, count):
     """Why the recorded slice history cannot be true, or "". slice-done records
     k done before k ships, next-slice moves `current` past k only once k
     shipped, and a slice is recorded once: a duplicate, an out-of-range
-    number, a slice done ahead of `current`, or an earlier slice with no done
-    or shipped record leaves the history unknown."""
+    number, a slice done or shipped ahead of `current`, the last slice done (that
+    one closes by `status: done`), a non-final slice
+    shipped but never done, or an earlier slice with no done or shipped record
+    leaves the history unknown."""
     unshipped = [k for k in range(1, current) if k not in shipped]
     undone = [k for k in range(1, current) if k not in done]
     if unshipped:
@@ -79,6 +81,12 @@ def _history_problem(shipped, done, current, count):
         return f"a slice outside 1-{count}"
     if any(k > current for k in done):
         return f"a slice recorded done past the current slice {current}"
+    if any(k > current for k in shipped):
+        return f"a slice recorded shipped past the current slice {current}"
+    if count in done:
+        return f"the last slice ({count}) recorded done: slice-done never records it"
+    if current in shipped and current < count and current not in done:
+        return f"slice {current} is recorded shipped but never recorded done"
     return ""
 
 
