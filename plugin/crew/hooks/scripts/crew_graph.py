@@ -51,13 +51,26 @@ _TIMEOUT = 3600
 MISSING = 127
 
 
+# git's variables that choose WHICH repository or work tree a command reads:
+# from the caller they would point every git question, and graphify's own, at
+# another repository than `--root` (review round 3). Config variables stay.
+GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+                "GIT_NAMESPACE", "GIT_PREFIX")
+
+
+def _without_git_env(environ):
+    return {k: v for k, v in environ.items() if k.upper() not in GIT_LOCATION}
+
+
 def _git(cwd, *args):
     """git's raw stdout, or None on any failure (git missing, a non-zero exit,
     a timeout). Never stripped: a porcelain line starts with a space."""
     try:
         done = subprocess.run(("git",) + args, cwd=cwd, capture_output=True, check=False,
                               stdin=subprocess.DEVNULL, timeout=60,
-                              env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+                              env=dict(_without_git_env(os.environ), GIT_OPTIONAL_LOCKS="0"))
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -150,8 +163,9 @@ def _summary_counts(report_path):
 
 
 def _graph_counts(graph_path):
-    """(nodes, links) from graph.json parsed whole, or (None, why). A graph
-    with no `links` list is unknown, never zero links."""
+    """(nodes, links, top-level built_at_commit or None) from graph.json
+    parsed whole, or (None, why). A graph with no `links` list is unknown,
+    never zero links."""
     try:
         with open(graph_path, encoding="utf-8") as handle:
             graph = json.load(handle)
@@ -165,7 +179,8 @@ def _graph_counts(graph_path):
     if not isinstance(links, list):
         extra = " (it has 'edges', which is not the key graphify writes)" if "edges" in graph else ""
         return None, f"graph.json has no 'links' list{extra}"
-    return (len(nodes), len(links)), None
+    built = graph.get("built_at_commit")
+    return (len(nodes), len(links), built if isinstance(built, str) else None), None
 
 
 def pair_state(top, info):
@@ -187,7 +202,7 @@ def pair_state(top, info):
         return PAIR_UNKNOWN, why
     detail = (f"report {report[0]} nodes / {report[1]} edges, "
               f"graph.json {graph[0]} nodes / {graph[1]} links")
-    return (AGREE if report == graph else DISAGREE), detail
+    return (AGREE if report == graph[:2] else DISAGREE), detail
 
 
 def status(root):
@@ -315,7 +330,9 @@ def _verify(top, command, out):
     if counts is None:
         out(f"crew-graph: unknown - pair=unknown: {why}")
         return UNKNOWN
-    if not info["builtAt"]:
+    # `builtAt` is a regex over the file's bytes; the parsed graph's own
+    # top-level field must say the same (review round 3).
+    if not info["builtAt"] or counts[2] != info["builtAt"]:
         out("crew-graph: unknown - the built graph.json carries no built_at_commit, "
             "so its provenance cannot be told")
         return UNKNOWN
@@ -348,6 +365,20 @@ def main(argv=None):
     two = sub.add_parser("refresh")
     two.add_argument("--root", default=".")
     args = parser.parse_args(argv)
+    # Every git call below -- crew_freshness's, the denylist check's, and
+    # graphify's own -- then judges `--root`, never a GIT_DIR from the caller;
+    # restored afterwards for an in-process caller.
+    # crew_graph_ignore snapshotted the environment at import, so its copy too.
+    saved = [(env, {k: env.pop(k) for k in list(env) if k.upper() in GIT_LOCATION})
+             for env in (os.environ, crew_graph_ignore._GIT_ENV)]  # pylint: disable=protected-access
+    try:
+        return _main(args)
+    finally:
+        for env, values in saved:
+            env.update(values)
+
+
+def _main(args):
     try:
         sys.stdout.reconfigure(errors="backslashreplace")
     except (AttributeError, OSError, ValueError):

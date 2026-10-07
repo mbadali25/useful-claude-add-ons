@@ -1907,15 +1907,15 @@ line a refresh runs has one definition, `graph_command`
 (`plugin/crew/hooks/scripts/crew_refresh_check.py:1391`, the sabotage-anchored `command = (...)`
 line kept byte-identical inside it); `_graph` (`:1402`) wraps `_graph_entry` and sets every graph
 artifact's `command` to `GRAPH_REFRESH` (`:1388`, `/crew:graph --refresh`) and its new `runs`
-field to that line. `crew_graph.py`: `status` (`:193`) reads freshness from
-`crew_freshness._read_graph` (`graph_state`, `:95`, plus the refresh check's T-0063 manifest rule, `_manifest_current`, `:110`), the pair from `pair_state` (`:171`) and the
-denylist from `crew_graph_ignore.coverage`; `_report_tracked` (`:74`) re-asks git whether
+field to that line. `crew_graph.py`: `status` (`:208`) reads freshness from
+`crew_freshness._read_graph` (`graph_state`, `:108`, plus the refresh check's T-0063 manifest rule, `_manifest_current`, `:123`), the pair from `pair_state` (`:186`) and the
+denylist from `crew_graph_ignore.coverage`; `_report_tracked` (`:87`) re-asks git whether
 `GRAPH_REPORT.md` is tracked, because `_read_graph` reads a failed `ls-files` as untracked and
-that would skip the pair check. `refresh` (`:259`) refuses in order (graphify missing, coverage
-uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:220`), then
-`_verify` (`:305`): no `built_at_commit` exit 2, `_graph_counts` (`:152`, `nodes` and `links`;
-no `links` list is unknown, never zero), `_summary_counts` (`:131`, the first `- N nodes · M
-edges` line under `## Summary`), and `_changed` (`:242`, `git status --porcelain -z` under the
+that would skip the pair check. `refresh` (`:274`) refuses in order (graphify missing, coverage
+uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:235`), then
+`_verify` (`:320`): no `built_at_commit` exit 2, `_graph_counts` (`:165`, `nodes` and `links`;
+no `links` list is unknown, never zero), `_summary_counts` (`:144`, the first `- N nodes · M
+edges` line under `## Summary`), and `_changed` (`:257`, `git status --porcelain -z` under the
 graph dir). It never stages or commits. Tests: `plugin/crew/tests/test_crew_graph.py`, and the
 `runs` cases in `test_refresh_check.py`; the last `.crew/verify.json` rule maps them.
 
@@ -2024,19 +2024,19 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
   launchable (`:194`); `resolve_alias` (`:257`) maps an id to the config.toml alias served by a
-  `type = "kimi"` provider; `probe` (`:608`) runs one live call in a throwaway directory with the
+  `type = "kimi"` provider; `probe` (`:612`) runs one live call in a throwaway directory with the
   read-only agent file (`write_agent_file`, `:214`; `read_only_flags`, `:236`) and a scrubbed env
-  (`kimi_env`, `:205`), and `classify` (`:580`) reads its stream through `final_message`
+  (`kimi_env`, `:205`), and `classify` (`:584`) reads its stream through `final_message`
   (`:151`), the stream-json parser, which lives here so the review harness can import it. A
   timed-out probe's process group is killed and the follow-up read is bounded (`_run`). `probe`
   refuses (`unknown`) when the temporary directory lies inside a repository
-  (`_inside_a_repository`, `:469`; L-0708: git is asked, `git rev-parse --git-dir` with every
+  (`_inside_a_repository`, `:473`; L-0708: git is asked, `git rev-parse --git-dir` with every
   `GIT_*` removed and `LC_ALL=C`, and only its exit-128 "not a git repository" allows; any other
   answer is could-not-tell; a `.git` git rejects refuses only when Kimi Code 2.1.1, which takes
   any `.git` as its project root, would read one of `KIMI_PROJECT_FILES` from there down), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
   Round 7: a non-string `default_model` is `unknown`; only the provider's own credential file
   (`credentials/<name>.json` for `key = "oauth/<name>"`) counts as a login; each output pipe is
-  drained by `_CappedReader` (`:542`) keeping at most `OUTPUT_CAP`, past which the call is
+  drained by `_CappedReader` (`:546`) keeping at most `OUTPUT_CAP`, past which the call is
   `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`

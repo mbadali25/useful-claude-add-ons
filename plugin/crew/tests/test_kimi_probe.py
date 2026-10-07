@@ -644,6 +644,10 @@ def _git_answers(monkeypatch, code=None, stderr=b"", raise_=None):
     (128, b"fatal: detected dubious ownership in repository at '/x'\n", None,
      "dubious ownership"),
     (1, b"error: something else\n", None, "exited 1"),
+    (128, b"fatal: detected dubious ownership in repository at '/tmp/not a git repository/w'\n",
+     None, "dubious ownership"),
+    (128, b"fatal: not a git repository (or any of the parent directories): .git\n"
+          b"warning: something else\n", None, "exited 128"),
     (129, b"", None, "exited 129"),
 ])
 def test_l0708_any_other_git_answer_is_could_not_tell(fake, home, monkeypatch, tmp_path,

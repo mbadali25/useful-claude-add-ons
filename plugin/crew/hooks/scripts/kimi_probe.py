@@ -423,7 +423,11 @@ def _git_says(here):
     if done.returncode == 0:
         return IN_A_REPOSITORY
     message = done.stderr.decode("utf-8", "replace").strip()
-    if done.returncode == 128 and NOT_A_REPOSITORY in message:
+    # git's own diagnostic, alone: one line that starts `fatal: not a git
+    # repository`. The phrase inside another error (a directory named so, in a
+    # "dubious ownership" path) is not that answer (L-0708 review round 2).
+    if done.returncode == 128 and "\n" not in message \
+            and message.startswith(f"fatal: {NOT_A_REPOSITORY}"):
         return ""
     first = re.sub(r"[^\x20-\x7e]", "?", (message.splitlines() or [""])[0])[:160]
     return f"git rev-parse exited {done.returncode}: {first or '(no message)'}"

@@ -386,6 +386,35 @@ def test_refresh_cli_runs_graphify_from_path_through_bash(tmp_path):
         (0, os.path.realpath(root) + " update .\n"), done.stdout + done.stderr
 
 
+def test_git_env_does_not_redirect_status_to_another_worktree(tmp_path):
+    """Review round 3: GIT_DIR / GIT_WORK_TREE from the caller are dropped."""
+    root = _repo(tmp_path / "r")
+    other = _repo(tmp_path / "o", graph=False)
+    env = dict(os.environ, GIT_DIR=os.path.join(other, ".git"), GIT_WORK_TREE=str(tmp_path))
+
+    done = subprocess.run([sys.executable, _SCRIPT, "status", "--root", root], env=env,
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          timeout=120, check=False)
+
+    assert (done.returncode, done.stdout.startswith("graph=fresh "),
+            done.stdout.rstrip("\n").endswith("pair=agree ignore=covered command=graphify update .")) \
+        == (0, True, True), done.stdout + done.stderr
+
+
+def test_refresh_built_at_commit_only_nested_exits_2(tmp_path):
+    """Review round 3: provenance is graph.json's top-level field, not a
+    match anywhere in its bytes."""
+    root = _repo(tmp_path)
+    built = head_sha(root, length=40)
+    text = json.dumps({"nodes": [{}, {}, {}, {}], "links": [{}, {}, {}],
+                       "metadata": {"built_at_commit": built}})
+    tool = _Tool(graph_text=text)
+
+    code, out = _refresh(root, tool)
+
+    assert (code, "built_at_commit" in out) == (2, True), out
+
+
 def test_a_crash_is_could_not_tell(tmp_path, monkeypatch, capsys):
     root = _repo(tmp_path)
 
