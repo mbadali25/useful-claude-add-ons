@@ -49,7 +49,7 @@ def stop_override(root, slug):
     if not os.path.lexists(path):
         return None
     try:
-        with open(path, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8-sig") as handle:
             data = json.load(handle)
     except (OSError, ValueError):
         data = None
@@ -78,7 +78,12 @@ def run_state(root, slug):
         return {"state": "unknown", "ticket": None,
                 "reason": f"could not look it up ({type(exc).__name__})"}
     try:
-        with open(path, encoding="utf-8") as handle:
+        if f"{slug}.json" not in os.listdir(os.path.dirname(path)):
+            # A case-insensitive filesystem opened `Ship-It.json` for `ship-it`:
+            # discovery refuses that name, so this reader does too (review r6).
+            return {"state": "unknown", "ticket": None,
+                    "reason": "its file name is not the lowercase slug"}
+        with open(path, encoding="utf-8-sig") as handle:  # a BOM, as read_text allows
             data = json.load(handle)
     except (OSError, ValueError):
         return {"state": "unknown", "ticket": None, "reason": "could not read it as JSON"}
@@ -92,8 +97,9 @@ def run_state(root, slug):
         return {"state": "unknown", "ticket": None,
                 "reason": "its run state is not running, stopped or done"}
     ticket = run.get("ticket")
-    if state == "running" and stop_override(root, slug) is not None:
-        return stop_override(root, slug)
+    override = stop_override(root, slug) if state == "running" else None
+    if override is not None:  # read once (review r6)
+        return override
     return {"state": state, "ticket": ticket if isinstance(ticket, str) else None,
             "reason": _clean(run.get("reason"))}
 

@@ -2218,3 +2218,51 @@ def test_an_unreadable_config_keeps_the_unreported_warning(tmp_path, clock):
     warnings = crew_autopilot.settings(str(root))["warnings"]
 
     assert [w for w in warnings if "sleep decisions are unreported" in w] != []
+
+
+def test_a_refused_sleep_deploy_all_still_caps_production(tmp_path, monkeypatch, clock):
+    """L-0654 review r4: `sleep.deploy: all` is refused, and with day `all` and every
+    production prerequisite met, production still asks while asleep."""
+    clock(NIGHT)
+    root = _deploy_repo(tmp_path, monkeypatch, "all", {"schedule": "22:00-07:00", "deploy": "all"})
+
+    assert (_asks(root, "prod")["verdict"], _asks(root, "nonProd")["verdict"]) == ("ask", "allow")
+
+
+def test_an_unknown_sleep_state_sends_and_marks_nothing(tmp_path, clock, wire, capsys):
+    """Must-block (L-0653 r3, L-0656 r2): could-not-tell is never awake."""
+    clock(NIGHT)
+    root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
+    crew_autopilot.approve(str(root), T)
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    with open(str(root / ".crew" / "config.json"), encoding="utf-8") as handle:
+        config = json.load(handle)
+    config["autopilot"]["sleep"]["schedule"] = "25:00-07:00"
+    _write(root / ".crew" / "config.json", json.dumps(config))
+    clock(DAY)
+
+    code, out = _cmd(root, capsys, "sleep-summary")
+    warnings = crew_autopilot.settings(str(root))["warnings"]
+
+    assert (code, "cannot be told" in out, wire, len(crew_sleep.unreported(_log_text(root))),
+            _held(root), any("reports them once it can" in w for w in warnings)) == (
+        0, True, [], 1, 1, True)
+
+
+def test_a_failed_cleanup_after_a_send_is_finished_never_resent(tmp_path, clock, wire, capsys,
+                                                               monkeypatch):
+    """Must-block (L-0653 r3, L-0656 r2): the delivered record stops a second send."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=dict(HOLDING))
+    crew_notify.send(str(root), "question", "Claude needs your permission")
+    clock(DAY)
+    real = crew_notify_hold.take
+    monkeypatch.setattr(crew_notify_hold, "take", lambda *a: None)
+
+    first = _cmd(root, capsys, "sleep-summary")
+    monkeypatch.setattr(crew_notify_hold, "take", real)
+    second = _cmd(root, capsys, "sleep-summary")
+
+    assert (first[0], "finished by the next run" in first[1], second,
+            len(wire), _held(root)) == (
+        0, True, (0, "no unreported sleep decisions\n"), 1, 0)

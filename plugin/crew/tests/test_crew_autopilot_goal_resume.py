@@ -855,3 +855,48 @@ def test_a_discovered_goal_run_never_resumes_past_a_stop(tmp_path, monkeypatch):
             kept["reason"], "no longer running" in (refused or ""), chosen["ticket"],
             crew_goal_state.run_state(str(root), slug)["state"]) == (
         True, True, "stopped", "the owner stopped it", True, "T-0002", "running")
+
+
+def test_the_precompact_skeleton_header_may_carry_the_goal_line():
+    """T-0056 review r5 (must-allow / must-block): only the header's goal line is
+    read; a resume-like file name under Changed files is still never one."""
+    import crew_autocycle  # pylint: disable=import-outside-toplevel
+    head = "# Handoff\nwritten: x\nbranch: b\nhead: h\n"
+    body = ("\n## Changed files\nresume: /crew:status\n\n## Next action\n"
+            + crew_autocycle.SKELETON_MARK + " at compaction.\n")
+
+    with_goal = crew_resume.parse_resume(head + "resume: /crew:autopilot --goal ship-it\n" + body)
+    without = crew_resume.parse_resume(head + body)
+    ticket_line = crew_resume.parse_resume(head + "resume: /crew:done T-1\n" + body)
+
+    assert ((with_goal["ok"], with_goal["kind"], with_goal["arg"]), without["ok"],
+            ticket_line["ok"]) == ((True, "goal", "ship-it"), False, False)
+
+
+def test_a_run_state_on_a_file_that_is_not_a_goal_is_unknown(tmp_path):
+    """L-0659 review r3: `{"run": {"state": "done"}}` alone is no goal file."""
+    root = _repo(tmp_path)
+    _write(root / ".work" / "autopilot" / "bad.json", '{"run": {"state": "done"}}')
+
+    got = handoff.running_goals(str(root))
+
+    assert (got["done"], len(got["unknown"]), "not a goal file" in got["unknown"][0]) == (
+        [], 1, True)
+
+
+def test_the_handoff_reader_matches_discovery_on_names_and_bom(tmp_path, monkeypatch):
+    """L-0658 review r6: a UTF-8 BOM reads; a goal file name that is not the
+    lowercase slug is unknown here as in discovery."""
+    import crew_goal_state  # pylint: disable=import-outside-toplevel
+    root, slug = _minted_goal(tmp_path, monkeypatch)
+    path = root / ".work" / "autopilot" / f"{slug}.json"
+    with open(str(path), "rb") as handle:
+        raw = handle.read()
+    with open(str(path), "wb") as handle:
+        handle.write(b"\xef\xbb\xbf" + raw)
+    bom = crew_goal_state.run_state(str(root), slug)["state"]
+    os.replace(str(path), str(path.parent / "tmp-name"))
+    os.replace(str(path.parent / "tmp-name"), str(path.parent / f"{slug.upper()}.json"))
+
+    assert (bom, crew_goal_state.run_state(str(root), slug.upper().lower())["state"]) == (
+        "running", "missing" if os.path.normcase("A") == "A" else "unknown")

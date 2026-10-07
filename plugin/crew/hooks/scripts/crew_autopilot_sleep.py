@@ -283,21 +283,28 @@ def sleep_note(root, ticket, kind, text):
 
 def sleep_summary(root):
     """(exit code, text) for `sleep-summary`: the unreported entries and the
-    held pings (L-0656), then -- not while asleep -- the text passed to the
-    notifier once and, only once it was delivered (or no notifier is set up),
-    one marker and the reported held pings removed, all under one lock taken
-    before anything is read. A failed send keeps both pending, so the next run
-    reports them again (review r1/r2). Nothing unreported and nothing held
-    writes and sends nothing."""
+    held pings (L-0656), then -- only in a known awake or off state, never
+    asleep or `unknown` (review r3) -- the text passed to the notifier once
+    and, once delivered (or with no notifier), one marker and the reported
+    held pings removed, all under one lock taken before anything is read. A
+    failed send keeps both pending. A delivered summary is recorded
+    (`summary-delivered.json`) before its cleanup, so a cleanup that fails is
+    finished by the next run and the summary is never sent twice."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    if ap.settings(top)["sleep"]["state"] == crew_sleep.ASLEEP:
+    state = ap.settings(top)["sleep"]["state"]
+    if state not in (crew_sleep.AWAKE, crew_sleep.OFF):
         code, out, _, _ = _summary(top)
+        why = ("still asleep" if state == crew_sleep.ASLEEP
+               else "whether autopilot is asleep cannot be told")
         return code, out + ("" if code or out == NOTHING else
-                            "\n(still asleep: reported again after the window ends)")
+                            f"\n({why}: reported again once it is awake)")
     with crew_notify_hold.summary_lock(top) as lock:
         if not lock.held:
             return 1, ("refused: another run is reporting the sleep summary (the summary lock "
                        "is held); nothing marked or sent")
+        unfinished = _finish_delivered(top)
+        if unfinished:
+            return 1, unfinished
         code, out, text, held = _summary(top)
         if code or out == NOTHING:
             return code, out
@@ -306,11 +313,49 @@ def sleep_summary(root):
         if word not in ("sent", "off", "filtered"):
             return 1, out + (f"\nnotify: {word}; nothing marked reported - the summary is "
                              "reported and sent again next run")
-        if crew_sleep.unreported(text):
-            _append(top, crew_sleep.marker_line(crew_sleep.now(), len(text.encode("utf-8"))))
-        if held and crew_notify_hold.take(top, held) is None:
-            out += "\n(the held record could not be emptied)"
-        return 0, out + ("" if word == "off" else f"\nnotify: {word}")
+        upto = len(text.encode("utf-8"))
+        if word == "sent":
+            try:
+                crew_notify_hold.write_delivered(top, upto, held)
+            except OSError as exc:
+                return 1, out + (f"\nnotify: sent, but the delivery could not be recorded "
+                                 f"({type(exc).__name__}); nothing marked, so it may be sent "
+                                 "again")
+        left = _cleanup(top, text, upto, held)
+        if left is None and word == "sent" and not crew_notify_hold.clear_delivered(top):
+            left = "the delivered record could not be removed"
+        return 0, out + ("" if word == "off" else f"\nnotify: {word}") + (
+            "" if left is None else f"\n({left}; finished by the next run, never sent again)")
+
+
+def _cleanup(top, text, upto, held):
+    """Mark the log reported up to `upto` and remove the `held` keys: None
+    when both are done, else what is left."""
+    try:
+        if crew_sleep.unreported(text) and crew_sleep.last_cutoff(text) < upto:
+            _append(top, crew_sleep.marker_line(crew_sleep.now(), upto))
+    except OSError as exc:
+        return f"the reported marker could not be written ({type(exc).__name__})"
+    if held and crew_notify_hold.take(top, held) is None:
+        return "the held record could not be emptied"
+    return None
+
+
+def _finish_delivered(top):
+    """"" once no delivered summary is left half cleaned; else why not (exit 1)."""
+    record, why = crew_notify_hold.read_delivered(top)
+    if record is None:
+        return (f"refused: {crew_notify_hold.DELIVERED_FILE} could not be read ({why}); "
+                "nothing sent, so a delivered summary is never sent twice")
+    if not record:
+        return ""
+    text, why = _read_log(top)
+    left = (f"the sleep log could not be read ({why})" if text is None
+            else _cleanup(top, text, record["upto"], record["keys"]))
+    if left is None and crew_notify_hold.clear_delivered(top):
+        return ""
+    return (f"refused: a delivered summary's cleanup is not finished ({left or 'its record '
+            'could not be removed'}); nothing sent")
 
 
 def _summary(top):
@@ -347,7 +392,12 @@ def log_warnings(top, conf):
     """`settings`' warnings about the log (L-0653) and the held pings (L-0656):
     unreported entries or held pings while not asleep, or a log or held
     record that cannot be read. Never raises."""
-    found = []
+    found, state = [], conf["sleep"]["state"]
+    # Awake (or off): run the summary. Unknown: say so, but it reports only once
+    # the state can be told (review r3). Asleep: nothing to do yet.
+    tail = ("run crew_autopilot.py sleep-summary" if state in (crew_sleep.AWAKE, crew_sleep.OFF)
+            else "whether autopilot is asleep cannot be told, so sleep-summary reports them "
+                 "once it can" if state == crew_sleep.UNKNOWN else "")
     try:
         text, why = _read_log(top)
         if text is not None and crew_sleep.malformed(text):
@@ -355,9 +405,9 @@ def log_warnings(top, conf):
         if text is None:
             found.append(f"sleep log could not be read ({why}); {log_path(top)} is not read as "
                          "empty")
-        elif crew_sleep.unreported(text) and conf["sleep"]["state"] != crew_sleep.ASLEEP:
+        elif crew_sleep.unreported(text) and tail:
             found.append(f"{len(crew_sleep.unreported(text))} sleep decisions are unreported - "
-                         "run crew_autopilot.py sleep-summary")
+                         + tail)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         found.append(f"sleep log could not be read ({ap._failure(exc)})")
     try:
@@ -365,9 +415,8 @@ def log_warnings(top, conf):
         if held is None:
             found.append(f"held pings could not be read ({why}); not read as none - run "
                          "crew_autopilot.py sleep-summary")
-        elif held and conf["sleep"]["state"] != crew_sleep.ASLEEP:
-            found.append(f"{held} pings were held while asleep - run crew_autopilot.py "
-                         "sleep-summary")
+        elif held and tail:
+            found.append(f"{held} pings were held while asleep - " + tail)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         found.append(f"held pings could not be read ({ap._failure(exc)})")
     return found

@@ -418,6 +418,17 @@ def marker_line(when, upto):
     return f"- reported {when.replace(microsecond=0).isoformat()} upto {int(upto)}\n"
 
 
+def last_cutoff(text):
+    """The byte offset the last marker covers up to (0 with no marker)."""
+    cutoff, offset = 0, 0
+    for raw in (text or "").split("\n"):
+        mark = _MARK_RE.match(raw[:-1] if raw.endswith("\r") else raw)
+        if mark:
+            cutoff = int(mark.group(2)) if mark.group(2) else offset
+        offset += len(raw.encode("utf-8")) + 1
+    return cutoff
+
+
 def unreported(text):
     """The entries the last marker does not cover, as `{"at", "ticket",
     "kind", "text", "setting"}`, in order: those starting at or after its

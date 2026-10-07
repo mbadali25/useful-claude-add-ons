@@ -855,11 +855,21 @@ def test_injection_off_still_records_the_author(tmp_path, monkeypatch):
 # --- T-0056: the PreCompact skeleton names a running goal --------------------------
 
 def _goal_file(root, slug, run):
-    data = {"schema": 1, "slug": slug, "goal": "g", "tickets": [], "runs": []}
+    """A goal file `read_goal` accepts (L-0659 review r3: discovery reads only
+    real goal files), written by `write_goal` under `slug`, plus `run`."""
+    import crew_autopilot_goal  # pylint: disable=import-outside-toplevel
+    path = root / ".work" / "autopilot" / f"{slug}.json"
+    made = crew_autopilot_goal.write_goal(str(root), slug.replace("-", " "),
+                                          {"done_condition": "done", "findings": []},
+                                          [{"title": "one", "risk": "low", "depends_on": []},
+                                           {"title": "two", "risk": "low", "depends_on": [0]}])
+    data = json.loads((root / ".work" / "autopilot" / f"{made['slug']}.json").read_text(
+        encoding="utf-8"))
+    if made["slug"] != slug:
+        (root / ".work" / "autopilot" / f"{made['slug']}.json").unlink()
+        data["slug"] = slug
     if run is not None:
         data["run"] = run
-    path = root / ".work" / "autopilot" / f"{slug}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(run if isinstance(run, str) else json.dumps(data), encoding="utf-8")
 
 

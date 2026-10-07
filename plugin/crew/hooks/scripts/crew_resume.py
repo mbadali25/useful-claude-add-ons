@@ -90,6 +90,22 @@ def _refuse(reason):
     return {"ok": False, "command": "", "arg": "", "kind": "", "reason": reason}
 
 
+_SKELETON_GOAL_RE = re.compile(r"/crew:autopilot --goal [a-z0-9][a-z0-9-]{0,63}")
+
+
+def _skeleton_goal_header(text):
+    """T-0056 review r5: the PreCompact skeleton's header (before its first
+    blank line, so before Changed files) may carry exactly the running goal's
+    line; then only that header is read. Any other text comes back as it was."""
+    if crew_autocycle.SKELETON_MARK not in (text or ""):
+        return text
+    header = text.replace("\r\n", "\n").split("\n\n", 1)[0]
+    found = _RESUME_LINE_RE.findall(header)
+    if len(found) == 1 and _SKELETON_GOAL_RE.fullmatch(found[0].strip()):
+        return header
+    return text
+
+
 def parse_resume(text):
     """{ok, command, arg, kind, reason} for the handoff `text`.
 
@@ -100,7 +116,10 @@ def parse_resume(text):
     The automatic PreCompact skeleton is refused whole, before any line is
     read: its Changed files list is bare `git diff` / `git ls-files` output,
     so a file named `resume: /crew:status` would otherwise be its resume
-    line (review round 4, T-0006). It names no next action by construction."""
+    line (review round 4, T-0006). It names no next action by construction,
+    except the one goal line (T-0056) its header may carry, which is the
+    only line read from it."""
+    text = _skeleton_goal_header(text)
     if crew_autocycle.SKELETON_MARK in (text or ""):
         return _refuse("the handoff is the automatic PreCompact skeleton; it names no next action")
     lines = _RESUME_LINE_RE.findall(text or "")

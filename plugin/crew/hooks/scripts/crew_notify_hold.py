@@ -160,6 +160,45 @@ def take(root, keys):
         return len(gone)
 
 
+DELIVERED_FILE = "summary-delivered.json"
+
+
+def read_delivered(root):
+    """`(record, why)`: `{"upto": int, "keys": [...]}` for a summary that was
+    delivered and whose marker or held-key removal has not finished, `{}`
+    when there is none, or None with why for one that cannot be read --
+    never read as none, so a delivered summary is never sent twice."""
+    path = _path(root, DELIVERED_FILE)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return ({}, "") if not os.path.lexists(path) else (None, "it is a dangling link")
+    except (OSError, ValueError) as exc:
+        return None, type(exc).__name__
+    upto, keys = (data.get("upto"), data.get("keys")) if isinstance(data, dict) else (None, None)
+    if (isinstance(upto, bool) or not isinstance(upto, int) or upto < 0
+            or not isinstance(keys, list) or not all(isinstance(k, str) for k in keys)):
+        return None, "it is not {upto: int, keys: [str]}"
+    return {"upto": upto, "keys": keys}, ""
+
+
+def write_delivered(root, upto, keys):
+    """Record a delivered summary before its cleanup (raises OSError)."""
+    _write_json(_path(root, DELIVERED_FILE), {"upto": int(upto), "keys": sorted(keys)})
+
+
+def clear_delivered(root):
+    """Remove the delivered record once its cleanup finished; False when it cannot."""
+    try:
+        os.remove(_path(root, DELIVERED_FILE))
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    return True
+
+
 def summary_lock(root):
     """The lock one morning summary is reported and sent under."""
     return _Lock(_path(root, SUMMARY_LOCK))

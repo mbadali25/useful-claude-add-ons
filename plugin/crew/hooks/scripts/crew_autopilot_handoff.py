@@ -192,6 +192,11 @@ def running_goals(root):
             out["unknown"].append(f"{rel} (its run state is {state!r}, not one of "
                                   f"{'|'.join(RUN_STATES)})")
             continue
+        try:  # L-0659 review r3: a run state on a file that is not a goal is not one
+            _goal().read_goal(top, name)
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+            out["unknown"].append(f"{rel} (not a goal file: {ap._one_line(str(exc))[:120]})")
+            continue
         override = goal_state.stop_override(top, name) if state == "running" else None
         if override and override["state"] == "unknown":
             out["unknown"].append(f".work/autopilot/{name}.stop (could not read it)")

@@ -3017,7 +3017,10 @@ the notifier once (silent, through the configured provider, only when
 `question` or `blocker` is in `notify.events`), under a lock so two runs never
 both send, and only once it was delivered (or no notifier is set up) marks the
 log reported and removes the pings it counted: a failed send exits 1 and keeps
-both for the next run. A log line that is neither an entry nor a marker makes
+both for the next run. Only a known awake (or off) state reports: asleep or
+`unknown`, it prints and keeps everything. A delivered summary is recorded in
+`<git-common-dir>/crew/notify/summary-delivered.json` before its cleanup, so a
+cleanup that fails is finished by the next run, never sent again. A log line that is neither an entry nor a marker makes
 the log could-not-tell. A
 log that cannot be written never undoes an approval (`warning: sleep log not
 written`); a log that is there and cannot be read is said so, never "nothing
