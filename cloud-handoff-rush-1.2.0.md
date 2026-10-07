@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T12:19Z
+Last updated: 2026-10-07T12:20Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T12:20Z G1b lander done: head 581efa45, merged release 2c911427 (22 conflicts, both kept), full crew 13984 passed/0 failed, Windows 16/16 green (fixed fake codex on Windows; _existing_ticket refuses 'T-1\n'). Added to train stack after G5 as crew 1.1.12. G1b + G5 both change install scripts -> re-pin README URLs after main.
 - 2026-10-07T12:19Z G2 fixed (crew_state split) head 63c0e080 on #550. Opened #551 (G3b -> release, crew 1.1.9, head e924e03b, on G2), subscribed. Builders warned about the 3400-line cap.
 - 2026-10-07T12:07Z #550 G2 CI red: pylint C0302 crew_state.py 3405/3400 (G0+G7+G2 combination). Train lander told to split a helper module (no disable), re-set 1.1.8 last, re-stack G3b/G5, C0302 check on every stacked head.
 - 2026-10-07T12:01Z Opened #550 (G2 -> release, crew 1.1.8, head 8b04d666, stacked on G7), subscribed.
