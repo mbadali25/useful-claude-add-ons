@@ -2666,8 +2666,8 @@ push, never a force push, claims and every other file carried through.
   `verify --remote` naming another remote reads that binding unknown). Exit 0 when
   every binding holds, 1 on a mismatch, 3 when it cannot tell (the fetch fails,
   the channel is absent, the version's record or body is missing, the record is
-  corrupt, the bindings file cannot be checked or does not parse — never read
-  as "no bindings"). A
+  corrupt, the bindings file cannot be checked, does not parse or holds an
+  empty list — never read as "no bindings"). A
   ticket with no `contracts.json` is not checked and fetches nothing; a newer
   version on the channel is information only. `crew_wave.py plan` and `start`
   run the same check after a ticket's dependencies and refuse it with

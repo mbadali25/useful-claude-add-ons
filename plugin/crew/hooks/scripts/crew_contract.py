@@ -255,7 +255,8 @@ def _valid_binding(binding):
 def read_bindings(path):
     """(bindings, None), or (None, why) when the file exists and is not
     `{"schema": 1, "bindings": [{remote, channel, name, version, hash}]}`.
-    No file is ([], None): a ticket that never built against a contract. Only
+    No file is ([], None): a ticket that never built against a contract; a
+    file with an empty list is (None, why), since nothing writes one. Only
     an lstat that says the file is not there means that; any other lstat error
     (a denied search, say) is (None, why), never "no bindings" -- which
     `os.path.lexists` would make of it."""
@@ -274,6 +275,10 @@ def read_bindings(path):
     if not isinstance(schema, int) or isinstance(schema, bool) or schema != SCHEMA \
             or not isinstance(data.get("bindings"), list):  # 1.0 and true are not the schema 1
         return None, f"{path} is not {{\"schema\": {SCHEMA}, \"bindings\": [...]}}"
+    if not data["bindings"]:
+        # build-against never writes an empty list, so an existing file holding
+        # one had its bindings erased: unknown, never "no bindings" (L-0634 r3).
+        return None, f"{path} holds no bindings; only a missing file means none"
     if not all(_valid_binding(binding) for binding in data["bindings"]):
         return None, f"{path} has a binding without a valid remote, channel, name, version or sha256 hash"
     return data["bindings"], None

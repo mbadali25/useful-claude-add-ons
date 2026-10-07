@@ -19,7 +19,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   hash, a body whose sha256 is that hash, status `built-against` and this repository and ticket in
   `built_by`, read from the remote the binding records (exit 0); anything else is a mismatch
   (exit 1), and what cannot be checked is unknown (exit 3), never "no bindings": a bindings file
-  that cannot be checked, a remote no longer configured, or `verify --remote` naming another remote. A ticket with no bindings fetches nothing; a newer version is
+  that cannot be checked or holds an empty list, a remote no longer configured, or `verify --remote` naming another remote. A ticket with no bindings fetches nothing; a newer version is
   information only; nothing is repaired. `crew_wave.py plan` and `start` refuse such a ticket after
   its dependencies (`contract <n> v<N> changed since <id> built against it` / `... unknown`). README
   and the troubleshooting guide describe the refusal and the way out.

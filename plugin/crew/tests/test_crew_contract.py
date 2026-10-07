@@ -606,9 +606,10 @@ def _bound(**fields):
     _bound(remote=""),
     _bound(remote="-upload-pack=x"),
     _bound(remote="co ord"),
-    _bound(remote=1)],
+    _bound(remote=1),
+    json.dumps({"schema": 1, "bindings": []})],
     ids=["schema-true", "schema-float", "empty-channel", "empty-name", "negative-version", "bool-version", "bad-hash",
-         "no-remote", "empty-remote", "dash-remote", "space-remote", "int-remote"])
+         "no-remote", "empty-remote", "dash-remote", "space-remote", "int-remote", "empty-list"])
 def test_a_malformed_binding_file_reads_as_unknown(tmp_path, text):
     """Review round 4: the binding reader checked types only."""
     path = tmp_path / "contracts.json"
