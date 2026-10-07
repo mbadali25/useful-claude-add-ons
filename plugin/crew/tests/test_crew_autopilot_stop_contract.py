@@ -648,7 +648,7 @@ CASES = [
     ("has no table row for {ticket}", b_no_row, "direction-approval", "look"),
     ("re-driven, whatever spec.md's header says", b_index_closed, "closed", "closed"),
     ("direction is approved: its .work/INDEX.md status is", b_not_approved_direction,
-     "direction-approval", "direction"),
+     "direction-approval", "look"),
     ("`: nothing left \" \"in this ticket", b_header_closed_loose, "closed", "closed"),
     ("unanswered under ## Open questions", b_open_questions, "open-questions", "answer-question"),
     ("spec.md fails crew_ticket.validate", b_spec_invalid, "spec", "fix-contract"),

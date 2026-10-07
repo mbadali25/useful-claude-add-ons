@@ -1037,7 +1037,7 @@ def _phase(root, ticket, policy=True, deep=True):
         return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
                       f"direction is approved: its .work/INDEX.md status is `{status}`, not one "
                       f"of {', '.join(DIRECTION_APPROVED)}. The human sets it to `ready` once "
-                      "direction.md is agreed")
+                      "direction.md is agreed", decision="look")  # L-0666: cannot tell
     contract = crew_ticket.read_contract(top, ticket)
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
     header = None if contract["spec.md"] is None else _header_status(
