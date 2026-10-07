@@ -532,7 +532,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   `test_lifecycle_commands.py`'s exact-CLI list gains `goal-propose`,
   `goal-approve` and `route --root . --first goal`. `.crew/verify.json`'s
   autopilot rule runs the new file.
-### crew 1.1.9 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
+### crew 1.1.6 — T-0029: `/crew:autopilot wave` runs an approved ticket set as parallel lanes
 
 - **Summary.** A set of tickets the owner designed and approved together can now run at once, each
   in its own isolated worktree, with every lane's questions and results reported in one batch.
@@ -552,7 +552,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   suite and `sabotage_wave.py` are review harness and land separately (T-0087). Until they do, only
   the lane prompt keeps a lane from accepting a review or admin-merging.
 
-### crew 1.1.9 — T-0030: cross-session claims on a git-backed channel
+### crew 1.1.6 — T-0030: cross-session claims on a git-backed channel
 
 - **Summary.** Several crew sessions, on one machine or many, can now claim tickets on a shared
   git branch so two of them never work the same ticket.
@@ -566,10 +566,12 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   process refreshes it every 10 minutes while the session's Claude process lives. `recover` adopts a
   claim after the session id changes only on the same machine and worktree, with the local identity
   file naming the old holder and its process provably gone; anything else is presented for the owner.
-  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured.
+  `/crew:autopilot` runs `crew_coord.py status` first when a `coord` block is configured, before a
+  run and before a wave starts.
   The README's "Cross-session claims" section documents channels, the TTL and the no-force rule.
 - **Not in this entry.** The sabotage mutations (`sabotage_coord.py`, registered in `sabotage.py`)
   are review harness and land separately (T-0087).
+
 ### Added — crew 1.1.5: derived `blocked` and `needs-replan`, and `next.md` (L-0639, L-0640)
 
 - **Summary.** A spec can name the tickets it waits on with a `depends-on:` line, and crew can now

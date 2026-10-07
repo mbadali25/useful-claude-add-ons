@@ -237,6 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 
 - **crew 1.1.22**: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read. `/crew:autopilot status` now reads the same whatever `autopilot.approval` and `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read instead of telling you to arm a mode that may already say `plan`.
 - **crew 1.1.22**: Autopilot's open-questions stop sees through code fences, and stops when it cannot tell. A code block under a ticket's `## Open questions` heading no longer hides the questions after it from autopilot; a fence autopilot cannot read for certain now stops the run instead of reading as "no questions".
+- **crew 1.1.6 — T-0029**: `/crew:autopilot wave` runs an approved ticket set as parallel lanes. A set of tickets the owner designed and approved together can now run at once, each in its own isolated worktree, with every lane's questions and results reported in one batch.
+- **crew 1.1.6 — T-0030**: Cross-session claims on a git-backed channel. Several crew sessions, on one machine or many, can now claim tickets on a shared git branch so two of them never work the same ticket.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
