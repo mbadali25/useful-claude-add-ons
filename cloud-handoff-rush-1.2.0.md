@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T17:17Z MERGED #552 (G5) into release at a2ed7326 (crew 1.1.12). Opened WAVE 4 #558, subscribed. README install-URL re-pin deferred to after wave 5 (G1b also changes install scripts).
 - 2026-10-07T17:17Z MERGED WAVE 3 #557 into main at 7d035d84 (crew 1.1.11; Windows slow/wallclock jobs re-run once after runner-acquisition failures). G3b sources: #447 auto-closed; #425 #414 closed with link. Next: G5 #552 -> release -> wave 4.
 - 2026-10-07T16:41Z MERGED #551 (G3b) into release at ae63d3d7, crew 1.1.11. Opened WAVE 3 #557, subscribed.
 - 2026-10-07T16:40Z MERGED WAVE 2 #556 into main at 66d90f66 (crew 1.1.10). G2 sources: #358/#369 auto-closed; #354 #342 #363 #365 #366 closed with link. C-0062 minted (review_checks timeout test flaky under load, harness); next free C-0063. Next: G3b #551 once its rerun is green.
