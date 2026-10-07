@@ -58,8 +58,8 @@ def _required(data):
     if not all(isinstance(n, int) and not isinstance(n, bool) for n in (number, latest)) \
             or number != latest:
         return None, f"the rejected round {number!r} is not the latest round's number ({latest!r})"
-    rows = [r for r in rounds if isinstance(r, dict) and type(r.get("round")) is int
-            and r.get("round") == number]
+    rows = [r for r in rounds if isinstance(r, dict) and isinstance(r.get("round"), int)
+            and not isinstance(r.get("round"), bool) and r.get("round") == number]
     if len(rows) != 1:
         return None, f"no single round row for the rejected round {number!r}"
     findings = rows[0].get("findings")
