@@ -219,9 +219,16 @@ RECALL_PROJECT_MUTATIONS = (
      '    listed = _recall_cfg(crew_cfg).get("projects")\n    if isinstance(listed, list) and listed:\n',
      '    listed = _recall_cfg(crew_cfg).get("projects")\n    if False:\n',
      _PROJECT + "test_the_config_list_wins_over_the_directory_name"),
-    ("recall: a project name with a comma or control character is sent", RECALL,
+    ("recall: a project name with a comma is sent", RECALL,
      '    return bool(name) and "," not in name and not _CONTROL_RE.search(name)\n',
-     "    return bool(name)\n",
+     "    return bool(name) and not _CONTROL_RE.search(name)\n",
+     _PROJECT + "test_unusable_project_names_are_dropped"),
+    # A listed name is checked for control characters BEFORE it is trimmed
+    # (`"acme\n"` must not be sent as `acme`); `_usable_project`'s own control
+    # check is reached only by a directory name, which no test names.
+    ("recall: a listed name with a control character is trimmed and sent", RECALL,
+     "                 if isinstance(n, str) and not _CONTROL_RE.search(n)]\n",
+     "                 if isinstance(n, str)]\n",
      _PROJECT + "test_unusable_project_names_are_dropped"),
     ("recall: an exit 2 is not retried without the project", RECALL,
      "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
