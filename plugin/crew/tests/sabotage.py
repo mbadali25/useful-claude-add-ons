@@ -1011,7 +1011,7 @@ MUTATIONS = (
         '    "theme": None,\n    "reportTheme": None,',
         '    "theme": "neutral",\n    "reportTheme": None,',
         ("tests/test_upgrade.py::"
-         "test_upgrade_config_adds_the_docs_and_bitbucket_blocks"),
+         "test_upgrade_config_does_not_alias_the_shared_docs_block"),
     ),
     (
         # The migration silently does nothing. The template change alone is
