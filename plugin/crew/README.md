@@ -4295,8 +4295,9 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets ... gitignore,<br/>handoff :224-254"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:245),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting ... gitignore,<br/>handoff :514-550"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:541),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
 ```
 
