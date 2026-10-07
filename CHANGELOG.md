@@ -68,7 +68,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this entry.** The sabotage mutations for these fixes are harness (T-0087) and land with
   L-0643.
 
-### Added — crew 1.1.2: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
+### Added — `crew` 1.1.12: plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship` (T-0059, 3 of 3)
 
 Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main.
 
@@ -146,8 +146,16 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   malformed state anywhere on the chain, a recorded base included, is a stop), and an earlier slice's PR merged elsewhere does not count as
   merged for the next slice's order check; two Step headings with one number
   are refused.
+- **Group review fixes (G2 landing).** Once slice 1 is recorded on its
+  branch, `ship` refuses it from any other branch (a second branch never opens
+  another slice-1 PR or replaces the record); `slices.json` with a slice
+  recorded twice, a slice number outside the plan, or `current` past a slice
+  with no shipped record is out of shape and stops as `slices`. Round 2: a
+  slice done ahead of `current`, or an earlier slice never recorded done, is
+  out of shape too; `parse_slices` refuses a slice with two `Steps:` or two
+  `Base:` lines instead of keeping the first.
 
-### Added — crew 1.1.2: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
+### Added — `crew` 1.1.12: autopilot's size check after spec and after plan, and `/crew:autopilot split` (T-0058, 2 of 3)
 
 - **What changed.** `crew_autopilot.next_phase` runs T-0052's split rulebook
   (`crew_split.measure` and `triggers`) once the spec validates and once the
@@ -239,7 +247,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   too; and beside valid rows it leaves `findings_rate` unknown, never a rate
   that leaves a review out.
 
-### Added — crew 1.1.2: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
+### Added — `crew` 1.1.12: blocker pings — approval waiting, review out of rounds, lane stalled, Stop gate refused (T-0060)
 
 - **`blocker` sends.** It moves from `RESERVED` to `EVENTS` in `plugin/crew/hooks/scripts/crew_notify.py`,
   loud, with one subject per kind from the one `SUBJECTS` table: `Approval waiting`, `Review out of
@@ -295,10 +303,10 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   `accept-review`; a Stop-gate refusal streak keeps its first refusal as its identity past the
   ten-id window, so a long streak pings once.
 
-### Added — crew 1.1.2: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
+### Added — `crew` 1.1.12: unattended runs start holding sealed, owner-named read-only cloud credentials, or refuse (T-0044)
 
 - **Summary.** `crew_unattended.py launch -- claude ...` starts an unattended session holding temporary, read-only cloud credentials for one identity the machine owner named, sealed against repo settings and credential stores, or refuses to start.
-- **Ported to release/1.2.0 (feature rush, PR #369).** Merged onto current code: `explain_config` keeps T-0050's personal-key rows beside the machine-only `unattendedCloud` rows; the four `unattendedCloud` leaves get `crew_keys.KEY_META` rows (T-0048 landed since; `since` is the placeholder 1.1.2, re-set at landing) and read `machine-only` in the generated layer column, and the generated CONFIG.md and configuration-reference tables are regenerated. The old troubleshooting DOCX/PDF renders (renamed since by C-0006) are not regenerated; the source and HTML carry the text. Not ported: the old branch's code-map and rules re-anchors.
+- **Ported to release/1.2.0 (feature rush, PR #369).** Merged onto current code: `explain_config` keeps T-0050's personal-key rows beside the machine-only `unattendedCloud` rows; the four `unattendedCloud` leaves get `crew_keys.KEY_META` rows (T-0048 landed since; `since` is 1.1.12, set at landing) and read `machine-only` in the generated layer column, and the generated CONFIG.md and configuration-reference tables are regenerated. The old troubleshooting DOCX/PDF renders (renamed since by C-0006) are not regenerated; the source and HTML carry the text. Not ported: the old branch's code-map and rules re-anchors.
 - New launcher `plugin/crew/hooks/scripts/crew_unattended.py` (`check` / `launch -- claude ...`).
   It starts an unattended Claude session with temporary AWS credentials for ONE identity the
   machine owner named, no inherited `AWS_*` variable, IMDS off, `CREW_UNATTENDED=1`, a region-only
@@ -369,7 +377,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   and its registration in `plugin/crew/tests/sabotage.py`. The mutations were run by hand on this
   branch instead, and each turned its named test red.
 
-### Added — crew 1.1.2: autopilot's docs phase and tracker step (T-0022)
+### Added — `crew` 1.1.12: autopilot's docs phase and tracker step (T-0022)
 
 - **Summary.** Autopilot now runs a docs phase before the refresh and review, `/crew:done` refuses a ticket whose documents (CHANGELOG, README, SECURITY.md, TODO.md) are still owed, and the tracker follows the ticket's status on disk after every phase.
 - **Ported to release/1.2.0 (feature rush, PR #358).** Re-applied by hand on current code (the old branch was ~1,400 commits behind). To keep `crew_autopilot.py` under pylint's 3400-line cap, the docs phase and tracker step live in `crew_autopilot_docs.py`, L-0652's unchanged manual sleep code moves to `crew_autopilot_sleep.py`, and `crew_autopilot.py` dispatches such actions through one `EXTRA_ACTIONS` table (T-0012's goal pair too). `disk_status` reads `in-progress` only once a path outside `.work/` changed since the recorded scope base, because `crew_ticket.activate` now records the base before implement starts; git that cannot tell stops the step. `crew_docs_check.py` runs git through `crew_common.require_tool` (L-1508). Not ported: the old branch's code-map, rules and diagram re-anchors (release's are kept).
@@ -403,10 +411,12 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   mention inside another entry) with that why and unblock, its continuation ending at any
   bullet (`-`, `*`, `+`, `1.`), heading or blank line; autopilot's docs attempts are keyed by plan and round, so attempts recorded under an
   earlier plan do not stop a successor plan's first docs run.
+- Group review fix (G2 landing): a malformed docs attempt (a `round` or `plan` that is not an
+  integer, or an entry that is not an object) reads the record as spent, never skipped.
 - Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
   its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
 
-### Added — crew 1.1.2: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
+### Added — `crew` 1.1.12: inert settings are named, and `/crew:status --approvals` lists only what needs you (T-0070)
 
 - **Summary.** Settings this crew does not act on are named instead of silently ignored, at session start, in `/crew:status` and in autopilot's settings, and `/crew:status --approvals` lists only the tickets whose approval actually needs you.
 - **Ported to release/1.2.0 (feature rush, PR #342).** Merged onto the T-0012 and T-0049 ports. Autopilot's inert-key warnings are `crew_config.autopilot_inert_warnings` (keeps `crew_autopilot.py` under pylint's 3400-line cap); with T-0012's goal landed, `maxTicketsPerRun` and `mode: backlog` are attributed to L-0541.
@@ -467,7 +477,7 @@ Ported onto release/1.2.0 (PR #366), where T-0052, T-0037 and T-0011 are on main
   and the sabotage registrations for this change's tests in
   `sabotage_autopilot.py` and `sabotage_context.py`.
 
-### Added — crew 1.1.2: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
+### Added — `crew` 1.1.12: `/crew:autopilot goal` — the goal file, the printed `/goal` line and the split approval (T-0012)
 
 - **Summary.** `/crew:autopilot goal "<goal>"` researches a goal once, writes a goal file with its proposed tickets, prints the `/goal` line for you to paste, and asks for the split approval under `autopilot.approval`; it mints nothing yet.
 - **Ported to release/1.2.0 (feature rush, PR #354).** Merged onto current code: `goal` joins `AVAILABLE` beside T-0020's `focus` and L-0652's `sleep`/`wake`; the command's goal section is section 7; `approval: null` reads the default `risk` for the split as it does for the plan approval since T-0050.

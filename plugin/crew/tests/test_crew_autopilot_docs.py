@@ -11,6 +11,8 @@ repository is under tmp_path.
 import json
 import os
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_autopilot_docs
@@ -142,6 +144,27 @@ def test_docs_attempts_of_an_earlier_plan_do_not_count(tmp_path, monkeypatch):
     assert crew_autopilot_docs.record_docs_attempt(str(root), T) == 1
     with open(record, encoding="utf-8") as handle:
         assert json.load(handle)["attempts"][-1]["plan"] == 1
+
+
+@pytest.mark.parametrize("attempts", [
+    [{"round": "0"}, {"round": "0"}],
+    [{"round": 0, "plan": "0"}],
+    [{"round": True}],
+    [{"plan": 0}],
+    ["attempt"],
+], ids=["string-round", "string-plan", "bool-round", "no-round", "not-an-object"])
+def test_docs_malformed_attempt_reads_spent(tmp_path, monkeypatch, attempts):
+    """Group review (G2) FIX: a malformed attempt is never skipped, which
+    would reset the count and allow runs past the cap; it reads as spent."""
+    root = _before_review(tmp_path, monkeypatch)
+    _docs(monkeypatch, "missing", "SECURITY.md")
+    record = os.path.join(str(root), ".work", "tickets", T, crew_autopilot_docs.DOCS_RECORD)
+    with open(record, "w", encoding="utf-8") as handle:
+        json.dump({"attempts": attempts}, handle)
+
+    assert crew_autopilot_docs._docs_attempts(  # pylint: disable=protected-access
+        str(root), T) == crew_autopilot_docs.DOCS_ATTEMPTS
+    assert (_next(root)["phase"], _next(root)["stop"]) == ("docs", True)
 
 
 def test_docs_record_unreadable_reads_spent(tmp_path, monkeypatch):

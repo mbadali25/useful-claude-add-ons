@@ -1355,11 +1355,18 @@ def parse_slices(plan_text):
     problems += [f"step {n} has more than one Step heading" for n in
                  sorted({n for n in numbers if numbers.count(n) > 1})]
     for n, name, lines in section:
-        fields = {}
+        fields, repeated = {}, set()
         for line in lines:
             field = _SLICE_FIELD_RE.match(line)
             if field:
-                fields.setdefault(field.group(1).casefold(), field.group(2))
+                key = field.group(1).casefold()
+                if key in fields:
+                    repeated.add(key)
+                fields.setdefault(key, field.group(2))
+        # Two Steps: or Base: lines are two instructions for one slice: refused,
+        # never the first one kept.
+        problems += [f"slice {n}: {key.capitalize()}: given more than once"
+                     for key in sorted(repeated)]
         steps = _step_list(fields.get("steps", ""))
         if steps is None:
             problems.append(f"slice {n}: Steps: must list step numbers (`1, 2` or `3-4`)")

@@ -650,6 +650,7 @@ as if it were absent.
   repo-only` means the machine file may not set it, so it takes effect nowhere.
 - **Fix:** move a repo-only key into the repo's `.crew/config.json`, correct a typo, or wait for
   (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.
+
 ## Graph refresh refused: secrets-denylisted path
 
 graphify reads every file its ignore rules do not exclude and records the symbols it finds in

@@ -80,6 +80,12 @@ def _set_header(root, header):
     _write(root / ".work" / "tickets" / T / "spec.md", _spec(header))
 
 
+# slices 1 and 2 recorded, as next-slice requires before slice 3 is current
+_SHIPPED_1_2 = [{"slice": 1, "pr": 1, "branch": "T-1-build", "base": "main", "merge_sha": None},
+                {"slice": 2, "pr": 2, "branch": "T-1-build-s2", "base": "main",
+                 "merge_sha": None}]
+
+
 def _state(root, **state):
     path = crew_autopilot_slices.slices_path(str(root), T)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -187,7 +193,16 @@ def test_unreadable_slice_state_stops(tmp_path):
     {"current": True, "done": [], "shipped": []},
     {"current": 2, "done": "1", "shipped": []},
     {"current": 2, "done": [], "shipped": {}},
-])
+    {"current": 2, "done": [], "shipped": []},
+    {"current": 1, "done": [], "shipped": [{"slice": 1, "branch": "a"}, {"slice": 1, "branch": "b"}]},
+    {"current": 1, "done": [1, 1], "shipped": []},
+    {"current": 1, "done": [], "shipped": [{"slice": 4, "branch": "a"}]},
+    {"current": 1, "done": [0], "shipped": []},
+    {"current": 2, "done": [], "shipped": [{"slice": 1, "branch": "a"}]},
+    {"current": 1, "done": [2], "shipped": []},
+], ids=["current-0", "current-past-count", "current-bool", "done-not-list", "shipped-not-list",
+        "current-2-slice-1-unshipped", "slice-shipped-twice", "slice-done-twice",
+        "shipped-past-count", "done-0", "current-2-slice-1-not-done", "done-past-current"])
 def test_slice_state_out_of_shape_stops(tmp_path, state):
     root = _ticket(tmp_path)
     path = crew_autopilot_slices.slices_path(str(root), T)
@@ -258,7 +273,7 @@ def test_slice_done_refuses_a_done_header(tmp_path, monkeypatch):
 def test_slice_done_refuses_the_final_slice(tmp_path, monkeypatch):
     root = _ticket(tmp_path, header="status: in-progress   risk: high")
     _receipt_ok(monkeypatch)
-    _state(root, current=3, done=[1, 2])
+    _state(root, current=3, done=[1, 2], shipped=_SHIPPED_1_2)
 
     got = crew_autopilot_slices.slice_done(str(root), T)
 
@@ -288,7 +303,7 @@ def test_slice_done_refuses_an_unsliced_ticket(tmp_path, monkeypatch):
 
 def test_final_slice_done_closes(tmp_path):
     root = _ticket(tmp_path, header="status: done   risk: high", mode="off")
-    _state(root, current=3, done=[1, 2])
+    _state(root, current=3, done=[1, 2], shipped=_SHIPPED_1_2)
 
     got = _next(root)
 
@@ -309,7 +324,7 @@ def test_done_header_before_the_last_slice_stops(tmp_path):
 
 def test_slice_command_reports_the_current_slice(tmp_path, capsys):
     root = _ticket(tmp_path)
-    _state(root, current=3, done=[1, 2])
+    _state(root, current=3, done=[1, 2], shipped=_SHIPPED_1_2)
     capsys.readouterr()
 
     code = crew_autopilot.main(["slice", "--root", str(root), "--ticket", T])
@@ -493,6 +508,20 @@ def test_slice_n_refused_before_n_minus_1(tmp_path, monkeypatch):
 
     assert (got["stop"], "slice 1" in got["reason"], pushes, fake.ran("pr", "create")) == (
         True, True, [], [])
+
+
+def test_slice_1_never_ships_again_from_another_branch(tmp_path, monkeypatch):
+    """Group review (G2) BLOCK: once slice 1 is recorded on its branch, a
+    second branch at the same commit must not open another slice-1 PR."""
+    prs = {BRANCH: _pr("OPEN", number=11)}
+    root, fake, _, pushes = _ship_env(tmp_path, monkeypatch, shipped=[_shipped(1, BRANCH)],
+                                      prs=prs, branch="other-branch", ship="pr")
+    before = _read_state(root)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], f"recorded on {BRANCH}" in got["reason"], pushes,
+            fake.ran("pr", "create"), _read_state(root)) == (True, True, [], [], before)
 
 
 def test_slice_n_refused_while_n_minus_1_open_under_merge(tmp_path, monkeypatch):

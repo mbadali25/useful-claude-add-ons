@@ -239,6 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 - **crew 1.1.22**: Autopilot's open-questions stop sees through code fences, and stops when it cannot tell. A code block under a ticket's `## Open questions` heading no longer hides the questions after it from autopilot; a fence autopilot cannot read for certain now stops the run instead of reading as "no questions".
 - **crew 1.1.6 — T-0029**: `/crew:autopilot wave` runs an approved ticket set as parallel lanes. A set of tickets the owner designed and approved together can now run at once, each in its own isolated worktree, with every lane's questions and results reported in one batch.
 - **crew 1.1.6 — T-0030**: Cross-session claims on a git-backed channel. Several crew sessions, on one machine or many, can now claim tickets on a shared git branch so two of them never work the same ticket.
+- **crew 1.1.12**: Plan `## PR slices` - a cohesive-but-large ticket ships as ordered slice PRs through T-0011's `ship`. `crew_split.parse_slices(plan_text)` reads a plan's `## PR slices` section (`### Slice N: <name>`, `Steps: 1, 2` or `3-4`, `Base: main|slice <k>`) and refuses fewer than 2 or more than 5 slices (`SLICES_MIN`/`SLICES_MAX`, the children's ...
+- **crew 1.1.12**: Autopilot's size check after spec and after plan, and `/crew:autopilot split`. `crew_autopilot.next_phase` runs T-0052's split rulebook (`crew_split.measure` and `triggers`) once the spec validates and once the plan validates.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
