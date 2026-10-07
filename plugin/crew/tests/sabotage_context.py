@@ -201,3 +201,44 @@ CONTEXT_MUTATIONS = (
          "test_emit_writes_lf_even_through_a_crlf_translating_stdout"),
     ),
 ) + REVIEW_FIX_CONTEXT_MUTATIONS
+
+# L-0676: L-0675's `--project` for the recall CLI. Each puts one bug back that
+# the project tests were written against.
+_PROJECT = "tests/test_crew_recall_project.py::"
+
+RECALL_PROJECT_MUTATIONS = (
+    ("recall: the project is never sent", RECALL,
+     '    tries = [argv + ["--project=" + ",".join(names)], argv] if names else [argv]\n',
+     "    tries = [argv]\n",
+     _PROJECT + "test_the_main_checkout_name_is_sent_as_the_project"),
+    ("recall: the project is the worktree's own directory name", RECALL,
+     "    name = _main_checkout_name(root)\n",
+     "    name = os.path.basename(os.path.abspath(root))\n",
+     _PROJECT + "test_a_linked_worktree_sends_the_main_checkout_name"),
+    ("recall: memory.recall.projects is ignored", RECALL,
+     '    listed = _recall_cfg(crew_cfg).get("projects")\n    if isinstance(listed, list) and listed:\n',
+     '    listed = _recall_cfg(crew_cfg).get("projects")\n    if False:\n',
+     _PROJECT + "test_the_config_list_wins_over_the_directory_name"),
+    ("recall: a project name with a comma or control character is sent", RECALL,
+     '    return bool(name) and "," not in name and not _CONTROL_RE.search(name)\n',
+     "    return bool(name)\n",
+     _PROJECT + "test_unusable_project_names_are_dropped"),
+    ("recall: an exit 2 is not retried without the project", RECALL,
+     "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
+     "        if True:\n",
+     _PROJECT + "test_an_older_cli_is_asked_again_without_the_project"),
+    ("recall: every non-zero exit is retried", RECALL,
+     "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
+     "        if done.returncode == 0 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
+     _PROJECT + "test_only_exit_2_is_retried"),
+    ("recall: the retry gets a fresh time budget", RECALL,
+     "        left = CLI_TIMEOUT_SECONDS if answered_by == 0 else deadline - _clock()\n",
+     "        left = CLI_TIMEOUT_SECONDS\n",
+     _PROJECT + "test_the_retry_shares_one_time_budget"),
+    ("recall: the retry's answer is reported as projectUsed true", RECALL,
+     '        result["projectUsed"] = answered_by == 0\n',
+     '        result["projectUsed"] = True\n',
+     _PROJECT + "test_an_older_cli_is_asked_again_without_the_project"),
+)
+
+CONTEXT_MUTATIONS += RECALL_PROJECT_MUTATIONS
