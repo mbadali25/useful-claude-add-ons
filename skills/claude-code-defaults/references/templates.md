@@ -101,10 +101,11 @@ Paired `~/.claude/CLAUDE.md` — keep it genuinely personal, since it loads in e
 }
 ```
 
-Two things to flag to whoever ships this:
+Three things to flag to whoever ships this:
 
 - Teammates will see a **workspace trust prompt** the first time, because the file contains hooks. That's expected; tell them in the PR description so it doesn't look like something went wrong.
 - Anyone who needs a personal exception uses `.claude/settings.local.json` rather than editing the committed file. Their allow rules merge in; the team's deny rules still hold.
+- The `PostToolUse` hook's `command` above is POSIX shell (`$CLAUDE_FILE_PATHS`, no `shell` key) — on Windows, a bare `command` with no `shell` key goes to Git Bash if Git Bash is installed and only falls back to PowerShell when it isn't. If anyone on the team is on Windows without Git Bash, or the command needs to be PowerShell syntax, add a second, `"shell": "powershell"` entry for the same event rather than editing this one. Registering both is not an OS switch — Claude Code tries both entries on every matching event, not just the one that fits the host — so on a machine with *both* Git Bash and PowerShell (a normal Windows dev box with Git for Windows) this would format the file twice unless each command guards itself with an `$OS` / `$env:OS` check; see `references/settings-keys.md` → Hooks for that guard.
 
 Add to the repo's `.gitignore`:
 

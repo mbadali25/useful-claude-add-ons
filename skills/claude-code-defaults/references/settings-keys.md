@@ -83,6 +83,45 @@ Hooks are shell commands wired to lifecycle events. They're the enforcement laye
 }
 ```
 
+That `command` is POSIX shell (`$CLAUDE_FILE_PATHS`, no `shell` key set). On Windows, a bare `command` with no `shell` key goes to Git Bash when Git Bash is installed, and only falls back to PowerShell if Git Bash isn't present — so this single entry already covers most Windows machines, just not ones with neither.
+
+For a hook that has to run under PowerShell specifically — the command is PowerShell syntax, or it must not depend on Git Bash being present — set `"shell": "powershell"` on a second entry for the same event rather than trying to write one command string that works in both shells. **That second registration is not an OS switch — Claude Code does not pick one entry over the other based on the host.** Both entries are attempted on every matching event. On a host with only one of the two shells, the other entry errors (expected, not a bug: a hook registration has no way to know in advance which shell a given machine actually has). On a host with *both* shells — an ordinary Windows dev machine with Git for Windows installed, or, less obviously, any machine with PowerShell 7 (`pwsh`) on PATH, which is cross-platform and installs on macOS and Linux too — **both entries run**, so an unguarded pair like this fires prettier twice per edit wherever both shells exist:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "command": "npx prettier --write \"$CLAUDE_FILE_PATHS\"" }
+      ]},
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "shell": "powershell", "command": "npx prettier --write $Env:CLAUDE_FILE_PATHS" }
+      ]}
+    ]
+  }
+}
+```
+
+Give each command its own flavour guard so only one actually does the work, the way this repo's own PowerShell hook twins guard themselves against firing where `pwsh` exists but the host isn't Windows — `$OS` (POSIX) / `$env:OS` (PowerShell) reads `Windows_NT` on both Windows PowerShell 5.1 and PowerShell 7, and is unset elsewhere:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "command": "[ \"$OS\" = \"Windows_NT\" ] || npx prettier --write \"$CLAUDE_FILE_PATHS\"" }
+      ]},
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "shell": "powershell", "command": "if ($env:OS -eq 'Windows_NT') { npx prettier --write $Env:CLAUDE_FILE_PATHS }" }
+      ]}
+    ]
+  }
+}
+```
+
+The POSIX line (`[ "$OS" = "Windows_NT" ] || ...`) was run directly, with `$OS` unset and then set to `Windows_NT`: it stands down (exit 0, nothing runs) only in the `Windows_NT` case. When it *does* run, the exit status is `npx`'s, not always 0 — a stub `npx` made to `exit 7` left the whole line at exit 7. The PowerShell line encodes the opposite condition directly rather than skipping past it with `||` — `if ($env:OS -eq 'Windows_NT') { ... }` runs the body only on Windows, where the POSIX line's `||` runs its body only off Windows — and it was measured on pwsh 7.6.5 (Linux): the same failing-`npx` case measured exit code 1, not 7, so unlike the POSIX side it does **not** pass a failing command's own exit code through. That's a measured difference, not a guess — don't depend on either exit code for anything beyond success/failure without checking which shell ran it.
+
+- `shell` — on a hook entry, forces that command to run under the named interpreter instead of Claude Code's default OS-shell resolution for a bare `command`. `"powershell"` is the only value this repo's own hook registrations use.
 - `PreToolUse` can allow, deny, or modify a call. **Exit code 2 blocks it** — before permission rules are evaluated, so it overrides `allow` rules and `bypassPermissions`.
 - `PostToolUse` is where formatters, linters, and test runners go.
 - `ConfigChange` fires when a settings file is detected as changed.
@@ -90,7 +129,7 @@ Hooks are shell commands wired to lifecycle events. They're the enforcement laye
 
 Other events exist (session lifecycle, notifications, compaction, stop). Get the current event list and the exact stdin/stdout contract from `https://code.claude.com/docs/en/hooks` before writing anything beyond the two above — don't guess event names.
 
-Related keys: `disableAllHooks` (kills all hooks and any custom status line), `allowedHttpHookUrls` (URL allowlist for HTTP hooks; empty array blocks all), `httpHookAllowedEnvVars`, and `allowManagedHooksOnly` (managed settings only).
+Related keys: `shell` (see above — per-hook-entry, not global), `disableAllHooks` (kills all hooks and any custom status line), `allowedHttpHookUrls` (URL allowlist for HTTP hooks; empty array blocks all), `httpHookAllowedEnvVars`, and `allowManagedHooksOnly` (managed settings only).
 
 Hooks from a project file are gated behind the workspace trust dialog, since a cloned repo could otherwise ship a command that runs on your machine. Point this out when adding hooks to a shared repo — teammates will see a prompt.
 

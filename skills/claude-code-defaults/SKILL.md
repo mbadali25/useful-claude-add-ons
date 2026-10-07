@@ -101,11 +101,116 @@ Include the schema line in any `settings.json` you create, so their editor autoc
 { "$schema": "https://json.schemastore.org/claude-code-settings.json" }
 ```
 
-Then validate — a settings file that fails to parse is rejected *as a whole* in user/project/local scope, which silently drops every setting in it:
+Then validate — a settings file that fails to parse is rejected *as a whole* in user/project/local scope, which silently drops every setting in it. Two things break a naive check: a `python3` that resolves on PATH but doesn't run (Windows' Microsoft Store stub prints "Python was not found ..." and exits 9009 without ever touching the file), and a settings file that's simply missing. Both of those look exactly like invalid JSON to a bare `&& echo "valid JSON"` check. Probe the interpreter before trusting it — across every `PATH` entry, not just the first one found under each name, since a stub `python3` earlier on `PATH` shouldn't hide a working one later on it. An empty `PATH` entry is skipped outright rather than treated as the current directory — POSIX path lookup falls back to cwd for an empty segment, but silently trusting whatever executable happens to be sitting in whatever directory this was run from is the less safe reading, so this deliberately doesn't do that. Check the file exists before parsing it, and give the three failure cases distinct messages and distinct exit codes so a script (or a person) can tell them apart. Wrapped in `( ... )` so pasting this into an interactive shell doesn't close it out from under you — `exit` inside `( )` only ends the subshell:
 
 ```bash
-python3 -m json.tool ~/.claude/settings.json > /dev/null && echo "valid JSON"
+(
+  find_working() {
+    local name="$1" dir IFS=:
+    for dir in $PATH; do
+      [ -n "$dir" ] || continue   # skip empty PATH segments on purpose, rather than
+                                  # falling back to the current directory the way POSIX
+                                  # path lookup does for an empty segment -- trusting
+                                  # whatever's in cwd is the less safe reading
+      [ -x "$dir/$name" ] || continue
+      if "$dir/$name" -c 'import sys; print(sys.executable)' > /dev/null 2>&1; then
+        printf '%s\n' "$dir/$name"
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  SETTINGS="$HOME/.claude/settings.json"
+  PY=""
+  for candidate in python3 python py; do
+    found=$(find_working "$candidate") && { PY="$found"; break; }
+  done
+
+  if [ -z "$PY" ]; then
+    echo "No working python interpreter found on PATH (tried python3, python, py across every PATH entry — one may be a Windows Store stub that doesn't run without being installed)." >&2
+    exit 3
+  fi
+
+  if [ ! -f "$SETTINGS" ]; then
+    echo "settings.json not found at $SETTINGS" >&2
+    exit 2
+  fi
+
+  if "$PY" -m json.tool "$SETTINGS" > /dev/null 2>&1; then
+    echo "valid JSON"
+  else
+    echo "invalid JSON — settings.json failed to parse" >&2
+    exit 1
+  fi
+)
 ```
+
+Tested against six fixture cases: a Windows-Store-style stub `python3` that exits 9009, no python at all, a *stub `python3` earlier on `PATH` than a working one* (confirms the working interpreter is still found), a real interpreter with a valid file, a real interpreter with an invalid file, and a missing file. All six land on the intended one of the four outcomes (no working interpreter / file not found / invalid JSON / valid JSON), each with its own message and exit code, and the `( )` wrapper was confirmed not to end the calling shell — a sentinel line printed after the subshell in every case, including the `exit 3` and `exit 2` paths. Also tested with a UTF-8 BOM prepended to an otherwise-valid file: **measured** invalid here, rc 1 (`python -m json.tool` calls it out by name, "Unexpected UTF-8 BOM"). The PowerShell validator below was separately **measured** on the same input at rc 0, "valid JSON" — the two disagree, both measured, not guessed. This doc doesn't resolve which side matches Claude Code's own parser, so treat a BOM as something to strip rather than trust either validator's answer on it.
+
+On Windows, PowerShell can validate without Python — but `ConvertFrom-Json` is lenient about things that should fail: it doesn't error on a trailing comma or `//`-style comments the way `python -m json.tool` does. Use `System.Text.Json.JsonDocument`, which rejects trailing commas, comments, and single-quoted keys by default, and check the file's existence and emptiness first — `Get-Content` on a missing path is non-terminating by default, so a bare `try`/`catch` around it never reaches the `catch` block for a missing file. `System.Text.Json` itself isn't guaranteed to be loaded — Windows PowerShell 5.1 runs on .NET Framework, which doesn't carry it — so check for the type before using it rather than letting a missing-type error read as "invalid JSON". Every `Write-Error` below is called with `-ErrorAction Continue` explicitly — under an ambient `$ErrorActionPreference = 'Stop'` (a ambient CI or profile setting this snippet doesn't control), `Write-Error` becomes a terminating error and the `return` right after it would never run, so the caller would get an exception instead of a code. This is written as a function that `return`s a code rather than a script block that calls `exit`: pasted directly into an interactive `pwsh` prompt, `& { exit 5 }` was measured to end the session outright ("still here" never printed) — a plain function using `return` doesn't have that problem, since only `exit` closes the host:
+
+```powershell
+function Test-ClaudeSettingsJson {
+  param([string]$Path = "$HOME\.claude\settings.json")
+  if (-not (Test-Path -LiteralPath $Path)) {
+    Write-Error "settings.json not found at $Path" -ErrorAction Continue
+    return 2
+  }
+  if (-not ('System.Text.Json.JsonDocument' -as [type])) {
+    Write-Error "this PowerShell cannot validate strictly (Windows PowerShell 5.1); use pwsh 7 or the python check" -ErrorAction Continue
+    return 3
+  }
+  $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    Write-Error "settings.json is empty — not valid JSON" -ErrorAction Continue
+    return 1
+  }
+  try {
+    [System.Text.Json.JsonDocument]::Parse($raw) | Out-Null
+    Write-Host "valid JSON"
+    return 0
+  } catch {
+    Write-Error "invalid JSON: $_" -ErrorAction Continue
+    return 1
+  }
+}
+$code = Test-ClaudeSettingsJson
+Write-Host "validator exit code: $code"
+```
+
+That's the form to paste at an interactive prompt — `$code` holds the result, and the host survives regardless of outcome. It is **not** the form a CI caller can read: `$code` is just a variable, so a build step that runs this and then checks the process's own exit status still sees 0 no matter what `Test-ClaudeSettingsJson` returned (measured: saved as a `.ps1` and run via `pwsh -File`, a missing-file case printed "validator exit code: 2" but the process itself exited 0). For CI or any caller that checks a process exit code rather than console output, save the same function to a file with `exit (Test-ClaudeSettingsJson)` as its last line, and run that file rather than pasting the function — invoking it as a separate process is what lets `exit` end just that process instead of an interactive host:
+
+```powershell
+# check-settings.ps1 -- save this file, then run: pwsh -NoProfile -File check-settings.ps1
+function Test-ClaudeSettingsJson {
+  param([string]$Path = "$HOME\.claude\settings.json")
+  if (-not (Test-Path -LiteralPath $Path)) {
+    Write-Error "settings.json not found at $Path" -ErrorAction Continue
+    return 2
+  }
+  if (-not ('System.Text.Json.JsonDocument' -as [type])) {
+    Write-Error "this PowerShell cannot validate strictly (Windows PowerShell 5.1); use pwsh 7 or the python check" -ErrorAction Continue
+    return 3
+  }
+  $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    Write-Error "settings.json is empty — not valid JSON" -ErrorAction Continue
+    return 1
+  }
+  try {
+    [System.Text.Json.JsonDocument]::Parse($raw) | Out-Null
+    Write-Host "valid JSON"
+    return 0
+  } catch {
+    Write-Error "invalid JSON: $_" -ErrorAction Continue
+    return 1
+  }
+}
+exit (Test-ClaudeSettingsJson)
+```
+
+Verified on pwsh 7.6.5 (Linux). Windows PowerShell 5.1 is unverified here, and it returns 3 there: `'System.Text.Json.JsonDocument' -as [type]` returns `$null` when a type isn't loaded, .NET Framework's 5.1 never carries `System.Text.Json` by default, so the guard triggers without needing a 5.1 host to confirm the specific message — on 5.1, use the bash/Python check above (from Git Bash or WSL) instead.
 
 If you created `.claude/settings.local.json` or `CLAUDE.local.md` by hand, add them to `.gitignore` yourself — Claude Code only does that automatically when it writes the file itself.
 
