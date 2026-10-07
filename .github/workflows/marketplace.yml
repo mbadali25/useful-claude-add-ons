@@ -88,6 +88,44 @@ jobs:
       # that appears in no CI step list is one nobody knows to run.
       - name: PowerShell install-script key handling
         run: bash scripts/_test/ps-install-keys.sh
+      # Regression suite for ensure_uv (.sh) and Install-Uv (.ps1): the PEP 668
+      # externally-managed-environment defect that shipped three times because
+      # two of three call sites never looked at pip's exit status. 162
+      # assertions, 4.5s measured here 2026-09-22. Every tool it shells out to
+      # (pipx, pip3, curl, apt-get, dnf, ...) is a throwaway stub under mktemp
+      # with PATH and HOME repointed at it, so this reaches neither the
+      # runner's real Python nor astral.sh. Cases 21-25 drive the .ps1 half
+      # under pwsh: GitHub's ubuntu-latest image ships pwsh at /usr/bin/pwsh
+      # (same as the "PowerShell static checks" step below, which already
+      # relies on it), so those cases are expected to run here, not skip. The
+      # suite itself now exits 77, not 0, if pwsh is ever absent and nothing
+      # else failed (this repo's SKIP convention) - but GitHub Actions has no
+      # SKIP status for a step: ANY nonzero exit, 77 included, fails the step
+      # and turns the job red. That is the INTENDED behaviour here, not a gap
+      # to paper over with continue-on-error: this runner is expected to
+      # carry pwsh, so its absence is a real problem with the runner image.
+      # If this step ever goes red, read the log first - exit 77 here means
+      # TOOL MISSING on the runner, not a failed test, so do not chase it as
+      # a code regression before checking whether pwsh is still on this
+      # image. Was green locally and executed by nothing until this line -
+      # see TODO.md "Two shell suites under scripts/_test/ are run by nothing".
+      - name: uv install regression suite
+        run: bash scripts/_test/uv-install.sh
+      # Regression suite for three defects in the SAME matched pair: MCP
+      # registration reporting success for a server whose launcher can never
+      # start, a skill's own Python dependencies never being reported, and the
+      # community-marketplace local-name trap (writing the repo name where the
+      # marketplace's registered name belongs passes silently forever). 122
+      # assertions, 2.4s measured here 2026-09-22. Same stub-everything
+      # harness as the uv suite above - installs nothing, registers no
+      # marketplace, adds no MCP server, touches no real config. Companion to
+      # the suite above; was equally green and equally unrun before this line.
+      # Case 24 drives the .ps1 half under pwsh and carries the same exit-77
+      # behaviour and the same consequence on this runner: a red step here
+      # after a runner-image change means TOOL MISSING (pwsh), not a code
+      # regression - see the uv suite's comment above for the full reasoning.
+      - name: MCP preflight/catalog regression suite
+        run: bash scripts/_test/mcp-preflight-catalog.sh
       # The crew hooks can BLOCK a turn, so their regression suite is the one check
       # here whose absence is invisible: a gate that stops gating still exits 0. It
       # builds throwaway git repos under mktemp and installs nothing.

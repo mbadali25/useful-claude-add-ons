@@ -1563,7 +1563,7 @@ fi
 # never look fully verified) and wrong at the PER-RULE granularity the sync
 # actually writes at: one failing rule among many discarded every OTHER
 # rule's passing evidence too, because the whole sync call was skipped.
-# `.crew/verify.json:193` recorded the measured cost of that: one absent
+# `.crew/verify.json:200` recorded the measured cost of that: one absent
 # `node_modules` kept three unrelated rules UNVERIFIED and the sha marker
 # frozen 14 commits behind HEAD.
 #

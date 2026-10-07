@@ -8,7 +8,7 @@ nothing FAILED". The intent (an unreliable run should not overwrite what a
 previous clean run recorded) was right at the sha-marker/fingerprint
 granularity; the exit was global while the evidence is per-rule, so ONE
 failing rule among many discarded every OTHER rule's passing evidence too.
-`.crew/verify.json:193` recorded the measured consequence in this repo: one
+`.crew/verify.json:200` recorded the measured consequence in this repo: one
 absent `node_modules` kept three unrelated rules UNVERIFIED and the sha
 marker frozen 14 commits behind HEAD. See
 `.crew/codemap/verification-harness.md`, "Two defects in the gate this map

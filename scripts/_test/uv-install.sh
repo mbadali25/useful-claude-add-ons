@@ -45,6 +45,11 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$REPO/scripts/install-prerequisites.sh"
 PASS=0
 FAIL=0
+# Set to 1 when a case is skipped for a MISSING TOOL (pwsh absent, cases 21-25
+# below) rather than for anything this suite found wrong. FAIL==0 with this set
+# used to still exit 0 - "PASSED" - even though five cases never ran at all;
+# see the exit logic at the bottom of this file.
+TOOL_SKIPPED=0
 red()   { printf '\033[31m%s\033[0m\n' "$1"; }
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 
@@ -775,8 +780,9 @@ ps_field() { sed -n "s/^$1=//p" "$TMP/out"; }
 if [ -z "$PWSH" ]; then
   printf '\033[90m%s\033[0m\n' "21-25. SKIPPED: no pwsh found at any of /snap/bin/pwsh, /usr/bin/pwsh,"
   printf '\033[90m%s\033[0m\n' "       /usr/local/bin/pwsh, /opt/microsoft/powershell/7/pwsh. That is a MISSING"
-  printf '\033[90m%s\033[0m\n' "       TOOL, not a failed check - Install-Uv is unverified in this run. Set"
-  printf '\033[90m%s\033[0m\n' "       PWSH=/absolute/path/to/pwsh to run these five cases."
+  printf '\033[90m%s\033[0m\n' "       TOOL, not a failed check - Install-Uv is BEHAVIOURALLY UNVERIFIED in"
+  printf '\033[90m%s\033[0m\n' "       this run. Set PWSH=/absolute/path/to/pwsh to run these five cases."
+  TOOL_SKIPPED=1
 else
   # A uv that a Windows-side installer would drop somewhere already on PATH.
   printf '#!/bin/sh\nexit 0\n' > "$TMP/uv-payload-bin"; chmod +x "$TMP/uv-payload-bin"
@@ -928,6 +934,17 @@ if [ -n "$canary_target" ]; then
 fi
 
 echo
-if [ "$FAIL" -eq 0 ]; then green "$PASS passed, 0 failed"; exit 0; fi
-red "$PASS passed, $FAIL FAILED"
-exit 1
+if [ "$FAIL" -ne 0 ]; then
+  red "$PASS passed, $FAIL FAILED"
+  exit 1
+fi
+if [ "$TOOL_SKIPPED" -ne 0 ]; then
+  # A missing pwsh must not read as PASS: exit 77 (this repo's SKIP
+  # convention) says "this run did not check everything it claims to",
+  # which 0 does not. See mcp-preflight-catalog.sh's identical fix and
+  # CLAUDE.md's note that render.sh does the same for a missing mmdc.
+  green "$PASS passed, 0 failed (cases 21-25 SKIPPED - pwsh absent)"
+  exit 77
+fi
+green "$PASS passed, 0 failed"
+exit 0

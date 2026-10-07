@@ -47,6 +47,11 @@ SCRIPT="$REPO/scripts/install-prerequisites.sh"
 PS1SCRIPT="$REPO/scripts/install-prerequisites.ps1"
 PASS=0
 FAIL=0
+# Set to 1 when case 24 is skipped for a MISSING TOOL (pwsh absent) rather
+# than for anything this suite found wrong. FAIL==0 with this set used to
+# still exit 0 - "PASSED" - even though the .ps1 half was left BEHAVIOURALLY
+# UNVERIFIED; see the exit logic at the bottom of this file.
+TOOL_SKIPPED=0
 red()   { printf '\033[31m%s\033[0m\n' "$1"; }
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 
@@ -721,6 +726,7 @@ if [ -z "$PWSH" ]; then
   printf '\033[90m%s\033[0m\n' "    TOOL, not a failed check - the .ps1 half is structurally checked by case"
   printf '\033[90m%s\033[0m\n' "    23 above and BEHAVIOURALLY UNVERIFIED in this run. Set"
   printf '\033[90m%s\033[0m\n' "    PWSH=/absolute/path/to/pwsh to run it."
+  TOOL_SKIPPED=1
 else
   echo "24. .ps1: Add-McpServer refuses a launcher that does not resolve"
   FX=ps-mcp; mkfixture "$FX" >/dev/null
@@ -840,6 +846,17 @@ if [ -n "$canary_target" ]; then
 fi
 
 echo
-if [ "$FAIL" -eq 0 ]; then green "$PASS passed, 0 failed"; exit 0; fi
-red "$PASS passed, $FAIL FAILED"
-exit 1
+if [ "$FAIL" -ne 0 ]; then
+  red "$PASS passed, $FAIL FAILED"
+  exit 1
+fi
+if [ "$TOOL_SKIPPED" -ne 0 ]; then
+  # A missing pwsh must not read as PASS: exit 77 (this repo's SKIP
+  # convention) says "this run did not check everything it claims to",
+  # which 0 does not. See uv-install.sh's identical fix and CLAUDE.md's
+  # note that render.sh does the same for a missing mmdc.
+  green "$PASS passed, 0 failed (case 24 SKIPPED - pwsh absent)"
+  exit 77
+fi
+green "$PASS passed, 0 failed"
+exit 0

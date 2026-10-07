@@ -163,7 +163,7 @@ The vault's canvases follow a consistent geometry — copy it rather than invent
    `pwsh` is not on Git Bash's PATH on Windows, and its "command not found" is
    indistinguishable, from the exit code alone, from a lock that refused you:
    ```bash
-   # Interpreter order is ported from .crew/verify.json:170 - under WSL the
+   # Interpreter order is ported from .crew/verify.json:178 - under WSL the
    # reachable binary is the Windows one and is named pwsh.exe, so the .exe
    # suffix must be tried as well as omitted, at both known locations.
    PWSH=""

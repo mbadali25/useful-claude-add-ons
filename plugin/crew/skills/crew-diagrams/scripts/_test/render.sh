@@ -45,9 +45,13 @@
 #
 # Needs: bash, mmdc (npm install -g @mermaid-js/mermaid-cli). Skips, not fails,
 # if mmdc is not on PATH - it is an optional tool for this skill, same as
-# render.sh's own check.
+# render.sh's own check. The skip is on exit 77, this repo's SKIP convention
+# (.crew/verify.json's ruff/pylint/mcp-servers rules; verify-gate.sh:1499
+# reads it as rc="skip77", never as a pass) rather than exit 0 - CI runners
+# do not carry mmdc, and exit 0 would have the Stop-gate record a rule that
+# never ran as a check that passed.
 #     ./plugin/crew/skills/crew-diagrams/scripts/_test/render.sh
-# Exit status is 0 when every case passes, 1 otherwise.
+# Exit status is 0 when every case passes, 1 otherwise, 77 when mmdc is absent.
 
 set -uo pipefail
 
@@ -59,7 +63,7 @@ red()   { printf '\033[31m%s\033[0m\n' "$1"; }
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 
 [ -f "$RENDER" ] || { echo "FAIL: cannot find render.sh at $RENDER"; exit 1; }
-command -v mmdc >/dev/null 2>&1 || { echo "SKIP: mmdc is not on PATH"; exit 0; }
+command -v mmdc >/dev/null 2>&1 || { echo "TOOL MISSING: mmdc is not on PATH, so this suite DID NOT RUN. This is a missing tool, not a passing check and not a failing one. Install @mermaid-js/mermaid-cli to check locally; CI runners do not carry it either." >&2; exit 77; }
 
 # A relative dir under $HERE, not an absolute /tmp (or /c/...) path: real
 # callers pass render.sh a relative dir like "docs/diagrams", so -i/-o only
