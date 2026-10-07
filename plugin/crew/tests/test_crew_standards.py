@@ -432,6 +432,16 @@ def test_pwsh_set_applies_to_powershell_files_only():
         True, True, True, False, False, False)
 
 
+def test_pwsh_set_applies_to_a_mixed_case_extension_on_every_host():
+    """Review G7 r1: fnmatch folds case on Windows only, so `check.PS1`
+    missed PWSH on Linux and stamped a different digest per host."""
+    def applies(files):
+        return "PWSH" in cs.effective_set(_REPO_ROOT, files)["sets"]
+
+    assert (applies(["scripts/check.PS1"]), applies(["Mod/Mod.PsM1"]),
+            applies(["Mod/Mod.PSD1"]), applies(["x.PS1XML"])) == (True, True, True, False)
+
+
 def test_shipped_sets_cite_no_machine_local_note():
     offenders = []
     for name in sorted(os.listdir(_REFS)):
@@ -1476,6 +1486,7 @@ def _touch_spec(root, touch_lines, ticket="T-1"):
 
 
 @pytest.mark.parametrize("touch, stacks", [(["plugin/x/*.php"], ["PHP-01"]),
+                                           (["plugin/x/*.PHP"], ["PHP-01"]),
                                            (["docs/*.md"], []),
                                            (["docs/*.md", "src/a.php"], ["PHP-01"])])
 def test_sets_touch_needs_no_scope_base(tmp_path, refs, touch, stacks):

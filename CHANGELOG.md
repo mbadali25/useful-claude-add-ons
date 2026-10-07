@@ -52,7 +52,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   PWSH-P1 (exit status, and `$null` as failure), PWSH-P2 (literal matching), PWSH-P3 (forced
   collections), PWSH-04 (explicit bytes at a native boundary), the documentation-only
   StrictMode half and PWSH-20 as overlay material. `crew-standards/SKILL.md` names both stack
-  sets. No loader, gate or `.ps1` change.
+  sets. No gate or `.ps1` change. One matcher change (group review): a set's `applies-to` is
+  matched case-folded on every host, in `_applies` and in plan-time `sets --touch`, because
+  `fnmatch` folds case on Windows only, so `check.PS1` missed `PWSH` on Linux and the same change
+  stamped a different digest per host. Folding can only add a set. Covered by
+  `test_pwsh_set_applies_to_a_mixed_case_extension_on_every_host` and a mixed-case Touch glob case of
+  `test_sets_touch_needs_no_scope_base`.
 - **Evidence.** The evidence is this repository's CHANGELOG and commits, plus public-source
   research from a cloud pass on 2026-10-05, not the owner's original research. Public change
   sets do not count (owner decision), so PWSH-P1's six public change sets leave it at 1.

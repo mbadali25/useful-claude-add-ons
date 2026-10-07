@@ -14,7 +14,8 @@ SETS. A set file is Markdown with a front matter of `key: value` lines:
 
 `set` is 2-6 capital letters and every `## <ID> <name>` heading's prefix must
 equal it. `applies-to` is a JSON list of Touch-style globs, matched with
-`crew_ticket.glob_match` against the change's files; `"**"` applies always.
+`crew_ticket.glob_match` against the change's files, case-folded on every
+host; `"**"` applies always.
 A field starts on a line that begins with its bold label (`FIELDS`) and runs to
 the next label or heading. Plugin sets live in `skills/crew-standards/
 references/*.md` (generic.md is set GEN; T-0086's per-language sets are
@@ -227,9 +228,13 @@ def parse_set(path, label=None, required=PLUGIN_FIELDS):
 # ---- the effective set ----------------------------------------------------------
 
 def _applies(globs, changed_files):
+    """Case-insensitive on every host: `fnmatch` folds case on Windows only,
+    so `check.PS1` would miss PWSH on Linux and the same change would stamp a
+    different digest per host. Folding can only add a set (over-list), never
+    drop one."""
     if "**" in globs:
         return True
-    return any(crew_ticket.glob_match(path.replace("\\", "/"), glob)
+    return any(crew_ticket.glob_match(path.replace("\\", "/").lower(), glob.lower())
                for path in changed_files for glob in globs)
 
 
@@ -948,9 +953,13 @@ def _touch_sets(root, ticket, refs_dir=None):
                  "listed"]
     else:
         def applies(globs):
-            return "**" in globs or any(recurring_findings.matches(entry, glob, touch=True,
-                                                                   root=root)
-                                        for entry in touch for glob in globs)
+            # Case-folded like `_applies`; the as-written pass keeps a Touch
+            # entry naming a mixed-case directory on a case-sensitive disk.
+            return "**" in globs or any(
+                recurring_findings.matches(entry, glob, touch=True, root=root)
+                or recurring_findings.matches(entry.lower(), glob.lower(), touch=True,
+                                              root=root)
+                for entry in touch for glob in globs)
         found = effective_set(root, [], refs_dir, applies=applies)
         lines = [f"{summary_line(found)}; from the spec's Touch list"]
     lines += [f"{s['id']} {s['name']} ({s['source']})" for s in found["standards"]]
