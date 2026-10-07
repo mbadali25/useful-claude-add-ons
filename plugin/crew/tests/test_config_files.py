@@ -15,6 +15,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config_files as files
+from test_crew_config import _repo, _repo_bytes, _set_at
 
 _BOM = b"\xef\xbb\xbf"
 
@@ -621,3 +622,42 @@ def test_os_error_text_keeps_backslashes_and_both_filenames():
     win = OSError(errno.EACCES, "Access is denied", one)
     win.winerror = 5
     assert files.os_error_text(win) == f"[WinError 5] Access is denied: {one}"
+
+
+# L-0682: `os_error_text` at each writer (moved here from test_crew_config.py,
+# which sits at pylint's 3400-line cap). A Windows path in an OSError's
+# filename is repr()'d by str(exc), doubling every backslash; the refusal must
+# name it as written. A backslash filename makes that observable on every OS.
+_WIN_DIR = r"C:\Users\o\.claude\crew"
+
+
+def _deny_makedirs_naming(monkeypatch, name):
+    def _deny(*_args, **_kwargs):
+        raise PermissionError(errno.EACCES, "Permission denied", name)
+    monkeypatch.setattr(files.os, "makedirs", _deny)
+
+
+def test_a_refused_machine_write_names_a_backslash_path_as_written(tmp_path, capsys,
+                                                                   monkeypatch):
+    root = _repo(tmp_path)
+    gpath = str(tmp_path / "nodir" / "config.json")
+    _deny_makedirs_naming(monkeypatch, _WIN_DIR)
+
+    code = _set_at(root, gpath, "machine", 'pm.authority="act"')
+
+    err = capsys.readouterr().err
+    assert (code, _WIN_DIR in err, _WIN_DIR.replace("\\", "\\\\") in err) == (2, True, False)
+
+
+def test_a_refused_repo_write_names_a_backslash_path_as_written(tmp_path, capsys,
+                                                                monkeypatch):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+    gpath = str(tmp_path / "nodir" / "config.json")
+    _deny_makedirs_naming(monkeypatch, _WIN_DIR)
+
+    code = _set_at(root, gpath, "repo", 'tracker="jira"')
+
+    err = capsys.readouterr().err
+    assert (code, _WIN_DIR in err, _WIN_DIR.replace("\\", "\\\\") in err) == (2, True, False)
+    assert _repo_bytes(root) == before
