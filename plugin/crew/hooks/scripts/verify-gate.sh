@@ -1340,8 +1340,13 @@ fi
 # reading exactly as written.
 if ! command -v python3 >/dev/null 2>&1; then
   # crew_py_strict (in _common.sh) now OWNS the native-Windows-path
-  # normalisation (cygpath -u when present, a bare backslash->forward-slash
-  # swap otherwise) AND proves the result with `-x` before ever returning
+  # normalisation - cygpath -u when present, or (its own absence) lower-
+  # casing the drive letter, dropping the `:`, and prepending a leading
+  # `/` by hand, so EITHER way the result is the SAME absolute `/c/...`
+  # shape, never a bare relative `C:/...` backslash->forward-slash swap
+  # (that shape depends on the resolver's own cwd under `-x`, which the
+  # absolute form does not - see crew_py_strict's own comment on this
+  # exact point) - AND proves the result with `-x` before ever returning
   # it - see that function's own header comment. This file used to repeat
   # that exact conversion on crew_py_strict's OUTPUT, from when the two
   # were fixed independently in different review lanes; once crew_py_strict

@@ -253,6 +253,18 @@ unset CLAUDE_PROJECT_DIR
 # must-BLOCK, and must NOT say PARSE: the matcher cannot run at all. Simulated by
 # pointing CREW_PY at an interpreter that exits non-zero without ever reading the
 # config - the same observable shape as the E2BIG exec failure this fix was for.
+#
+# The stubs must answer crew_py_strict's OWN proof (`-c 'import sys;
+# print(sys.executable)'`) with their own absolute path and exit 0 - only then
+# does crew_py_strict accept one of them as $PY, past the top-level check at
+# verify-gate.sh's `PY=$(crew_py_strict) || ...`, so it is the MATCHER
+# invocation (a different shape - `"$PY" - args << script`) that fails, which
+# is the actual code path this case exists to exercise. A stub that exits 9
+# unconditionally (the previous shape) fails crew_py_strict's proof too, so it
+# never resolves to $PY at all and the matcher is never even reached - the
+# hollow shape review round 6 caught: it was quietly testing "no python
+# resolves", not "the matcher could not run", and a case arm was added here to
+# paper over that instead of fixing the fixture.
 UNRUNNABLE=$(mktemp -d) || exit 1
 (
   cd "$UNRUNNABLE" || exit 1
@@ -263,18 +275,35 @@ UNRUNNABLE=$(mktemp -d) || exit 1
   touch main.tf
   mkdir -p fakebin
   # crew_py resolves python3/python/py off PATH, so shadow it there rather than
-  # inventing an override the gate does not have. Exits 9 without reading
-  # anything: the same observable shape as the E2BIG exec failure this fix is
-  # for, and deliberately NOT 3, which is the parse status.
-  printf '#!/bin/sh
+  # inventing an override the gate does not have. Answers crew_py_strict's
+  # proof with its OWN absolute path (so crew_py_strict accepts it as $PY),
+  # then exits 9 on anything else, including the matcher's own `- args <<
+  # script` invocation - the same observable shape as the E2BIG exec failure
+  # this fix is for, and deliberately NOT 3, which is the parse status.
+  cat > fakebin/python3 <<STUB
+#!/bin/sh
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+  printf '%s\n' "$UNRUNNABLE/fakebin/python3"
+  exit 0
+fi
 exit 9
-' > fakebin/python3
-  printf '#!/bin/sh
+STUB
+  cat > fakebin/python <<STUB
+#!/bin/sh
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+  printf '%s\n' "$UNRUNNABLE/fakebin/python"
+  exit 0
+fi
 exit 9
-' > fakebin/python
-  printf '#!/bin/sh
+STUB
+  cat > fakebin/py <<STUB
+#!/bin/sh
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+  printf '%s\n' "$UNRUNNABLE/fakebin/py"
+  exit 0
+fi
 exit 9
-' > fakebin/py
+STUB
   chmod +x fakebin/python3 fakebin/python fakebin/py
 )
 export CLAUDE_PROJECT_DIR="$UNRUNNABLE"
@@ -286,11 +315,6 @@ case "$OUT" in
   *"could not be parsed"*)
     fail "verify-gate: a matcher that could not RUN was misreported as a parse failure: $OUT" ;;
   *"could not RUN the matcher"*) pass ;;
-  # Since the matcher's interpreter goes through crew_py_strict, a python that
-  # exits before it can be proved is reported as "no PROVED working
-  # interpreter" ahead of any matcher attempt. Still exit 2, still not a parse
-  # failure - a third honest shape, not the misreport this case guards against.
-  *"PROVED working interpreter"*) pass ;;
   *) fail "verify-gate: unrecognised message for an unrunnable matcher: $OUT" ;;
 esac
 export PATH="$SAVED_PATH"
