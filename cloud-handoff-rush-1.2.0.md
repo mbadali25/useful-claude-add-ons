@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-07T14:21Z
+Last updated: 2026-10-07T14:22Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-07T14:22Z Correction: old train lander IS re-stacking (G2 merge of release in progress since 14:21). Fresh lander stopped untouched (no double-work). Old lander continues G2 1.1.10 -> G3b -> G5 -> G1b.
 - 2026-10-07T14:21Z G4 lander resumed: re-merge release 6940da35 (has retire), placeholder 1.1.14, anchor test must pass, full suite + Windows.
 - 2026-10-07T14:21Z Old train lander stopped without re-stacking; fresh train lander started (G2 1.1.10 -> G3b 1.1.11 -> G5 1.1.12 -> G1b 1.1.13 on release 6940da35).
 - 2026-10-07T14:20Z MERGED #553 (sync main->release) at 6940da35, crew 1.1.9. Opened WAVE 1 #554 (release -> main: G8, G1, G3, G0, G7 + sync), subscribed. Train lander re-stacking G2 1.1.10 / G3b 1.1.11 / G5 1.1.12 / G1b 1.1.13 on the new release.
