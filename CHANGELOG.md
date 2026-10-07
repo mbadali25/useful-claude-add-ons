@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.1.5: crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root (T-0502)
+### Changed — crew 1.1.10: crew-setup's `_verify` runners show why a check failed, and a diagram case that renders as root (T-0502)
 
 - **Summary.** A repo set up by crew now sees a failing check's own error lines in its `_verify`
   output, and gets a ready diagram check that works as root in CI containers instead of failing with
@@ -84,7 +84,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `marketplace.yml` step and gate-runner table step, and `case_no_step_launches_pwsh_directly` in
   `scripts/_test/gate-runner.py`.
 
-### Changed — gizmoduck 0.5.19: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
+### Changed — gizmoduck 0.5.10: `bootstrap.sh` without sudo, `--dry-run`, and an exit status CI can gate on (L-0685)
 
 - **Summary.** `bootstrap.sh` now works in CI jobs and containers: as root it uses no `sudo`,
   `--user` installs every tool that needs no package manager into the tool home without root,
