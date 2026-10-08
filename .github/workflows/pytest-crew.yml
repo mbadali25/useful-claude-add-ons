@@ -344,8 +344,8 @@ jobs:
       env:
         # Repo variable CREW_WINDOWS_RUNNER: a JSON array of runner labels
         # (e.g. ["self-hosted","windows","x64"]) moves every crew-windows-*
-        # job onto a self-hosted Windows pool. Unset, empty or not a JSON array
-        # of strings: windows-latest, as before. Never for a fork's PR (the
+        # job onto a self-hosted Windows pool. Unset, empty, or anything but
+        # exactly one non-empty JSON array of strings: windows-latest, as before. Never for a fork's PR (the
         # CREW_RUNNER clause): fork code must not reach a self-hosted machine.
         WINDOWS_RUNNER: ${{ vars.CREW_WINDOWS_RUNNER }}
         SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
@@ -369,7 +369,7 @@ jobs:
         # self-hosted Windows pool); the gate's check name does not change.
         runs_on='"windows-latest"'
         if [ -n "$WINDOWS_RUNNER" ] && [ "$SAME_REPO" = true ]; then
-          if labels=$(printf '%s' "$WINDOWS_RUNNER" | jq -ce 'if type == "array" and length > 0 and all(.[]; type == "string" and length > 0) then . else error("labels") end' 2>/dev/null); then
+          if labels=$(printf '%s' "$WINDOWS_RUNNER" | jq -sce 'if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) then .[0] else error("labels") end' 2>/dev/null); then
             runs_on=$labels
             echo "::notice::crew-windows-* jobs run on the self-hosted pool $labels (repo variable CREW_WINDOWS_RUNNER)."
           else

@@ -293,7 +293,8 @@ EXCLUDED_CI = (
     ("pytest-crew.yml",
      "changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml)",
      "crew-windows-decide: whether the Windows jobs run on a PR (T-0110, L-0577); checks nothing"),
-    ("pytest-crew.yml", "labels=$(printf '%s' \"$WINDOWS_RUNNER\" | jq -ce *",
+    ("pytest-crew.yml",
+     'labels=$(printf \'%s\' "$WINDOWS_RUNNER" | jq -sce \'if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) then .[0] else error("labels") end\' 2>/dev/null)',
      "crew-windows-decide: which runner pool the Windows jobs use (CREW_WINDOWS_RUNNER); "
      "checks nothing"),
     ("pytest-crew.yml", "python3 scripts/check-windows-shards.py *",
