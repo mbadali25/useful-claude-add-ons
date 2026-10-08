@@ -1912,8 +1912,8 @@ def run(args):
         # followed by a gated reservation.
         ok, retry_number, message = review_ledger.reserve(
             args.root, args.ticket, args.provider, args.model,
-            gated=not getattr(args, "budget_spent", False),
-            same_family=args.same_family_label)
+            same_family=args.same_family_label,
+            gated=not getattr(args, "budget_spent", False))
         _err(f"review-run: {message}\n")
         if not ok:
             _out("review: retry: not retried - the ledger refused the retry's reservation")
@@ -1970,8 +1970,7 @@ def _retry_reason(args, number, timed_out, limit, retries):
     Only a `tool` round the ledger refunded retries, so a retry never spends
     budget; a limit or a timeout is a tool round a relaunch does not fix."""
     if limit:
-        return ("a usage limit is not retried; the next round walks to the next "
-                "cross-family provider")
+        return "a usage limit is not retried; the next round walks to a cross-family provider"
     if timed_out:
         return (f"round {number} timed out, and a retry could double a {args.timeout}s "
                 "wait")
