@@ -164,17 +164,33 @@ def _live_pid():
     proc.wait()
 
 
-def _dead_pid():
-    proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], check=True,
-                          capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    return int(proc.stdout.strip())
+def _dead_pid(monkeypatch=None):
+    """The pid of a child that has exited, which crew_coord's own probe reads
+    `gone`. A just-exited pid can be reused at once (Windows did, under load, on
+    #554), so a child whose pid already reads alive again is skipped. With
+    `monkeypatch`, the probe is pinned to that gone reading for this exact pid,
+    so a reuse after this returns cannot flip the test; the probe itself is
+    covered by the tests that call `_dead_pid(monkeypatch)` without it."""
+    for _attempt in range(50):
+        proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], check=True,
+                              capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        pid = int(proc.stdout.strip())
+        gone = crew_coord.probe_pid(pid)
+        if gone.state == "gone":
+            break
+    else:
+        raise AssertionError("50 exited children all read alive: no dead pid to test with")
+    if monkeypatch is not None:
+        real = crew_coord.probe_pid
+        monkeypatch.setattr(crew_coord, "probe_pid", lambda p: gone if p == pid else real(p))
+    return pid
 
 
 def _session(monkeypatch, sid, pid=None):
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", sid)
     monkeypatch.setenv("CLAUDE_CODE_BRIDGE_SESSION_ID", f"bridge-{sid}")
-    monkeypatch.setenv("CLAUDE_PID", str(pid if pid is not None else _dead_pid()))
+    monkeypatch.setenv("CLAUDE_PID", str(pid if pid is not None else _dead_pid(monkeypatch)))
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", SENTINEL)
 
 
@@ -1245,7 +1261,7 @@ def _claim_as_old(capsys, monkeypatch, root, pid, machine=None, start=None, pidn
 
 
 def test_recover_adopts_same_machine_worktree_dead_pid(capsys, monkeypatch, wt, remote):
-    old_pid = _dead_pid()
+    old_pid = _dead_pid(monkeypatch)
     _claim_as_old(capsys, monkeypatch, wt, old_pid)
 
     code, out = _run(capsys, wt, "recover")
@@ -1270,7 +1286,7 @@ def _assert_presented_not_adopted(code, out, remote, reason):
 
 
 def test_recover_refuses_other_machine(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), machine="other-host")
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch), machine="other-host")
 
     code, out = _run(capsys, wt, "recover")
 
@@ -1294,7 +1310,7 @@ def test_recover_refuses_reused_pid_with_different_start(capsys, monkeypatch, wt
 
 
 def test_recover_refuses_missing_identity_file(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     os.remove(_identity_path(wt))
 
     code, out = _run(capsys, wt, "recover")
@@ -1304,7 +1320,7 @@ def test_recover_refuses_missing_identity_file(capsys, monkeypatch, wt, remote):
 
 @pytest.mark.parametrize("text", ["{broken", "[]", '{"%s": {"holder": 3, "tickets": []}}', '{"%s": {"tickets": "x"}}'])
 def test_recover_refuses_corrupt_identity_file(capsys, monkeypatch, wt, remote, text):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     body = text % os.path.realpath(wt) if "%s" in text else text
     with open(_identity_path(wt), "w", encoding="utf-8") as handle:
         handle.write(body)
@@ -1315,7 +1331,7 @@ def test_recover_refuses_corrupt_identity_file(capsys, monkeypatch, wt, remote, 
 
 
 def test_recover_refuses_identity_file_naming_another_holder(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     with open(_identity_path(wt), encoding="utf-8") as handle:
         ident = json.load(handle)
     for entry in ident[os.path.realpath(wt)]["tickets"]:
@@ -1329,7 +1345,7 @@ def test_recover_refuses_identity_file_naming_another_holder(capsys, monkeypatch
 
 
 def test_recover_refuses_other_worktree(capsys, monkeypatch, wt, wt_b, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
 
     code, out = _run(capsys, wt_b, "recover")
 
@@ -1337,7 +1353,7 @@ def test_recover_refuses_other_worktree(capsys, monkeypatch, wt, wt_b, remote):
 
 
 def test_recover_refuses_when_pid_check_cannot_tell(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     monkeypatch.setattr(crew_coord, "probe_pid", lambda _pid: crew_coord.PidProbe("unknown", None, False))
 
     code, out = _run(capsys, wt, "recover")
@@ -1346,7 +1362,7 @@ def test_recover_refuses_when_pid_check_cannot_tell(capsys, monkeypatch, wt, rem
 
 
 def test_recover_refuses_an_unmeasured_platform_gone(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     monkeypatch.setattr(crew_coord, "probe_pid", lambda _pid: crew_coord.PidProbe("gone", None, False))
 
     code, out = _run(capsys, wt, "recover")
@@ -1510,7 +1526,7 @@ def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, 
     root = _clone(tmp_path, remote, "a_")
     git(root, "remote", "rename", "origin", "upstream")
     argv_of = ["--root", str(root), "--remote", "upstream", "--channel", CHANNEL, "--ticket", "a_:T-1"]
-    _session(monkeypatch, "sess-old", pid=_dead_pid())
+    _session(monkeypatch, "sess-old", pid=_dead_pid(monkeypatch))
     with monkeypatch.context() as patch:
         patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
         assert crew_coord.main(["claim"] + argv_of + ["--no-heartbeat"]) == 0, capsys.readouterr().out
@@ -1525,7 +1541,7 @@ def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, 
 
 
 def test_recover_retry_that_finds_itself_holding_records_the_identity(capsys, monkeypatch, wt, remote):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid())
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch))
     real = crew_coord.run_git
     state = {"lied": False}
 
@@ -1574,7 +1590,7 @@ def test_identity_update_holds_the_lock_across_read_and_write(monkeypatch, wt):
 def test_status_lists_presented_claims_first_with_one_recommended_action(capsys, monkeypatch, wt, wt_b, live_pid):
     _session(monkeypatch, "sess-peer")
     _run(capsys, wt_b, "claim", ticket=f"{REPO}:T-0")
-    _session(monkeypatch, "sess-old", pid=_dead_pid())
+    _session(monkeypatch, "sess-old", pid=_dead_pid(monkeypatch))
     with monkeypatch.context() as patch:
         patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
         _run(capsys, wt, "claim", ticket=f"{REPO}:T-5")
@@ -1653,7 +1669,7 @@ def test_recover_refuses_a_gone_pid_whose_namespace_cannot_be_matched(capsys, mo
                                                                       here, recorded):
     _linux_only()
     real = os.readlink("/proc/self/ns/pid")
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), pidns=real if recorded == "real" else recorded)
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch), pidns=real if recorded == "real" else recorded)
     monkeypatch.setattr(crew_coord, "pid_namespace", lambda: real if here == "real" else here, raising=False)
 
     code, out = _run(capsys, wt, "recover")
@@ -1727,7 +1743,7 @@ def test_claim_by_the_same_session_from_another_live_process_is_refused(capsys, 
 def test_release_by_the_same_session_from_another_process_is_refused(capsys, monkeypatch, wt, remote, live_pid):
     _session(monkeypatch, "sess-x", pid=live_pid)
     _run(capsys, wt, "claim")
-    _session(monkeypatch, "sess-x", pid=_dead_pid())
+    _session(monkeypatch, "sess-x", pid=_dead_pid(monkeypatch))
 
     code, _ = _run(capsys, wt, "release")
 
@@ -1740,7 +1756,7 @@ def test_recover_by_the_same_session_from_another_process_refuses_while_the_old_
     _session(monkeypatch, "sess-old", pid=live_pid)
     _run(capsys, wt, "claim")
     _shift_clock(monkeypatch, 31)
-    _session(monkeypatch, "sess-old", pid=_dead_pid())
+    _session(monkeypatch, "sess-old", pid=_dead_pid(monkeypatch))
 
     code, out = _run(capsys, wt, "recover")
 
@@ -1763,7 +1779,7 @@ def test_fetch_ignores_a_ref_that_only_ends_with_the_channel_ref(capsys, monkeyp
 def test_recommended_command_withholds_unsafe_peer_values(capsys, monkeypatch, wt_b, repo):
     _session(monkeypatch, "sess-b")
     stamp = crew_coord.stamp()
-    holder = {"session": "sess-old", "bridge_session": None, "pid": _dead_pid(), "pid_start": None,
+    holder = {"session": "sess-old", "bridge_session": None, "pid": _dead_pid(monkeypatch), "pid_start": None,
               "machine": crew_coord.machine(), "worktree": os.path.realpath(wt_b)}
     _raw_write(wt_b, {f"claims/{repo}__T-1.json": json.dumps({
         "ticket": "T-1", "repo": repo, "state": "working", "claimed_at": stamp, "heartbeat_at": stamp,
@@ -1924,7 +1940,7 @@ def test_heartbeat_loop_exits_when_the_watched_pid_is_reused(capsys, monkeypatch
 
 @pytest.mark.parametrize("minutes", [0, 29], ids=["0m", "29m"])
 def test_recover_adopts_a_fresh_heartbeat_whose_pid_is_provably_gone(capsys, monkeypatch, wt, remote, minutes):
-    old_pid = _dead_pid()
+    old_pid = _dead_pid(monkeypatch)
     _claim_as_old(capsys, monkeypatch, wt, old_pid, fresh=True)  # this namespace recorded: provable
     _shift_clock(monkeypatch, minutes)
 
@@ -1946,7 +1962,7 @@ _UNPROVABLE = {
 def test_recover_never_adopts_a_fresh_claim_whose_end_cannot_be_proven(capsys, monkeypatch, wt, remote, case):
     if case != "other-host":
         _linux_only()
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True, **_UNPROVABLE[case])
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch), fresh=True, **_UNPROVABLE[case])
 
     code, out = _run(capsys, wt, "recover")
 
@@ -1956,7 +1972,7 @@ def test_recover_never_adopts_a_fresh_claim_whose_end_cannot_be_proven(capsys, m
 @pytest.mark.parametrize("probe", [crew_coord.PidProbe("unknown", None, False),
                                    crew_coord.PidProbe("gone", None, False)], ids=["probe-error", "unmeasured"])
 def test_recover_never_adopts_a_fresh_claim_when_the_probe_cannot_tell(capsys, monkeypatch, wt, remote, probe):
-    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True)
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(monkeypatch), fresh=True)
     monkeypatch.setattr(crew_coord, "probe_holder", lambda _holder: probe)
 
     code, out = _run(capsys, wt, "recover")
@@ -1992,7 +2008,7 @@ def test_recover_adopts_a_stale_heartbeat_whose_pid_is_gone(capsys, monkeypatch,
 
 def test_claim_records_no_pid_namespace_when_its_pid_is_invisible(capsys, monkeypatch, wt, remote):
     _linux_only()
-    _session(monkeypatch, "sess-a", pid=_dead_pid())
+    _session(monkeypatch, "sess-a", pid=_dead_pid(monkeypatch))
 
     _run(capsys, wt, "claim")
 
@@ -2001,7 +2017,7 @@ def test_claim_records_no_pid_namespace_when_its_pid_is_invisible(capsys, monkey
 
 def test_recover_refuses_a_stale_claim_whose_pid_was_invisible_at_claim_time(capsys, monkeypatch, wt, remote):
     _linux_only()
-    _session(monkeypatch, "sess-old", pid=_dead_pid())
+    _session(monkeypatch, "sess-old", pid=_dead_pid(monkeypatch))
     assert _run(capsys, wt, "claim")[0] == 0
     _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new")
@@ -2336,6 +2352,10 @@ def test_claim_is_could_not_tell_for_an_origin_with_an_empty_url(capsys, monkeyp
     out = capsys.readouterr()
 
     assert code == crew_coord.EXIT_UNKNOWN and "wt-a" not in out.out + out.err, out
+    # H2a: the empty URL is named. Without its own check the remote's name is
+    # read as a path and refused further down, which the two lines above
+    # cannot tell from this refusal.
+    assert "origin's URL is empty" in out.out + out.err, out
     assert _remote_files(remote) is None
 
 

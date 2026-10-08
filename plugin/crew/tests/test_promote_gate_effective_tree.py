@@ -585,3 +585,8 @@ def test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty(fl
     path.write_text(json.dumps(doc) + "\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
     assert code == 2, err
+
+    # The block names the unreadable committed map itself, not a later
+    # helper's failure on the same file (T-0062's dispatch read would block
+    # too, which kept a mutation of this branch green).
+    assert "committed .crew/verify.json does not parse" in err, err

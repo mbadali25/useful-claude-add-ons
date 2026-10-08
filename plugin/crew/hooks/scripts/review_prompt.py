@@ -16,7 +16,19 @@ script writes the part of it that is about the ticket rather than the diff:
     UNKNOWN, the CI receipt for HEAD -- the upgrade `review_run.py` reserves
     on -- and every rule the local record (`.crew/.verify-gate.record.json`)
     still lists as NOT VERIFIED (marked superseded when the receipt covers
-    HEAD).
+    HEAD). When the gate does not accept the tree, one fixed line
+    (`OVERRIDE_LINE`, T-0101) says that such a round exists only under
+    `--allow-unverified`, recorded as `gate.overridden` when the gate still
+    does not accept the tree as the round is recorded, so a reviewer can
+    tell a recorded override from a gap nobody noticed.
+  - the catch-up merges (L-0526): every file the merge train's `catch-up`
+    left rerere-replayed, from the ticket's merge log (`crew_train.
+    read_merge_log`), as `== Catch-up merges (rerere) ==`, each to be
+    reviewed as a change in this diff -- a recorded resolution nobody
+    re-resolved by hand this time. No log, or a log with nothing replayed,
+    writes no block; a log that cannot be read, a row whose replayed list is
+    not a list of paths, or a read that raises is `UNREADABLE: ...`, never
+    silence. Every path is escaped to one line (`review_checks.one_line`).
 
   - the development standards checklist (T-0085): the effective standards
     set's ids, rules and self-check questions from `crew_standards.
@@ -55,6 +67,7 @@ import sys
 import ci_receipt
 import crew_common
 import crew_standards
+import crew_train
 import merged_main
 import recurring_findings
 import review_checks
@@ -207,6 +220,20 @@ def _head(root):
 
 REASON_MAX = 400
 
+# T-0101: printed only in the branch where the gate does not accept the tree
+# (local UNVERIFIED or UNKNOWN, no CI receipt VERIFIED), after the unchanged
+# MISSING / NOT-been-through-the-gate and `Gate answer for HEAD` lines. A rule
+# about the tool, so it stays true whatever the operator passes later.
+# Review of 4357247c, FIX2: the prompt is built before the round and
+# review_run.gate_record reads the gate again when it writes review.json, so a
+# gate that passes meanwhile records no override: the line says "when".
+OVERRIDE_LINE = ("Order: review_run.py reserves no round on a tree in this state unless the "
+                 "operator passes --allow-unverified; review.json records gate.overridden "
+                 "when the gate still does not accept the tree as the round is recorded. "
+                 "/crew:done still needs a clean gate. The missing pass is that override: "
+                 "do not report it as a defect on its own. Report anything in the diff a "
+                 "gate run would catch.")
+
 
 def _reason(text):
     """A gate reason as ONE line: control characters escaped (a git or gh
@@ -278,6 +305,7 @@ def _receipts_block(root, manifest):
                 # answer off entirely (review r3).
                 out.append(f"Gate answer for HEAD: {local}: {_reason(local_why)}; "
                            f"CI receipt {r_state}: {_reason(r_reason)}")
+                out.append(OVERRIDE_LINE)
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":
@@ -370,10 +398,49 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
     return out
 
 
+CATCH_UP_TITLE = "== Catch-up merges (rerere) =="
+
+
+def _catch_up_block(root, ticket):
+    """Rerere-replayed files from the ticket's catch-up merges, or None when
+    there were none. Could not tell is said, never dropped."""
+    try:
+        # Review of 84c841e6: a merge log that is not a regular file (a FIFO
+        # would block the read) is could-not-tell, never read.
+        odd = review_checks.not_a_regular_file(crew_train.merge_log_path(root, ticket))
+        if odd:
+            raise OSError(odd)
+        rows, where, why = crew_train.read_merge_log(root, ticket)
+    except Exception as exc:  # noqa: BLE001 - boundary  pylint: disable=broad-exception-caught
+        rows, where, why = [], "could not tell", f"{type(exc).__name__}: {exc}"
+    unknown = (" whether rerere replayed a resolution into this diff is UNKNOWN - review "
+               "every merge resolution as a change.")
+    if where == "could not tell":
+        return [CATCH_UP_TITLE, f"UNREADABLE: {review_checks.one_line(str(why))};" + unknown]
+    out, bad = [], []
+    for number, row in enumerate(rows, 1):
+        # Review of b956da24 (L-0526 port), BLOCK: catch_up writes null when it
+        # could not tell what the merge left; that is UNREADABLE, never "none".
+        replayed = row.get("rerere_replayed") if isinstance(row, dict) else None
+        if not isinstance(replayed, list) or not all(isinstance(p, str) for p in replayed):
+            bad.append(f"UNREADABLE: merge log row {number}: rerere_replayed is not a list of "
+                       "paths;" + unknown)
+            continue
+        base = review_checks.one_line(f"{row.get('base')}@{str(row.get('base_sha'))[:12]}")
+        out += [f"  {review_checks.one_line(path)} ({base}): replayed by rerere from an "
+                "earlier resolution - review it as a change in this diff" for path in replayed]
+    if not out and not bad:
+        return None
+    head = ["A catch-up merge (crew_train.py catch-up) replayed these recorded conflict "
+            "resolutions; nobody re-resolved them by hand this time:"] if out else []
+    return [CATCH_UP_TITLE] + bad + head + out
+
+
 def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  _catch_up_block(root, ticket),
                   crew_standards.checklist_block(root, manifest),
                   recurring_findings.review_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):

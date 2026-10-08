@@ -26,12 +26,12 @@ below; a feature does not. Feed its root-cause line into step 2.
 Read the tracker kind first, as `/crew:brainstorm` step 1 does:
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`;
 on `could not tell`, show me its line and stop. **Files and Obsidian**: mint
-the ticket the way `/crew:brainstorm` step 1 does: next free `T-####`, then
+the ticket the way `/crew:brainstorm` step 1 does (next free id, this box's prefix), then
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket <id> --title "<title>"`.
 If a line says `id taken`, that id is not yours: pick the next free id, run
 `create` again, and write nothing under the taken one. On any other failure,
 stop: show me its lines and write nothing under that id. Only then create
-`.work/tickets/<id>/`. **Jira and ServiceDesk Plus**: no local `T-####`;
+`.work/tickets/<id>/`. **Jira and ServiceDesk Plus**: no locally minted id;
 create the item through MCP as `/crew:brainstorm` step 1 says, use its key as
 `<id>`, and cache it at `.work/tickets/<KEY>/`; a `delegated` line or exit 3
 from `create` is that instruction, not a failure to stop on. Then write

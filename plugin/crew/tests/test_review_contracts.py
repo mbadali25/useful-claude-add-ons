@@ -214,8 +214,8 @@ def test_autopilot_reads_a_ledger_the_real_api_wrote(tmp_path, monkeypatch, verd
     monkeypatch.setattr(crew_autopilot_docs, "_docs_state", lambda root, ticket: {
         "state": crew_autopilot_docs.DOCS_OK, "missing": [], "reason": ""})
 
-    def answer(phase, stop, reason, command=""):
-        return {"phase": phase, "stop": stop, "reason": reason, "command": command}
+    def answer(phase, stop, reason, command="", decision=None):  # L-0666: sites may name a decision
+        return {"phase": phase, "stop": stop, "reason": reason, "command": command, "decision": decision}
 
     got = crew_autopilot._review_phase(str(repo), "T1", [], answer)  # pylint: disable=protected-access
 

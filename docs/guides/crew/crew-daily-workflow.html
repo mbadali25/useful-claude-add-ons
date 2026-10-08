@@ -164,12 +164,13 @@ approve or reject each proposed standard, and nothing is added to a standards
 file on its own.</p>
 <p>With parallel lanes in one clone, arm its <strong>merge train</strong> once (<code>crew_train.py arm</code>, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
-Before the review round, <code>crew_train.py acquire --ticket T-0091</code> takes the train: a ticket whose
-Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
-order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with <code>crew_train.py catch-up --ticket
+The review round takes the train itself (L-0526; <code>crew_train.py acquire --ticket T-0091</code> does
+the same by hand): a ticket whose Touch overlaps one already holding it waits - <code>/crew:review</code>
+stops with exit 10, colliding paths named, no round spent - and gates next, in the order the lanes
+reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with <code>crew_train.py catch-up --ticket
 T-0091</code> - a <code>git merge</code> of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time. A replay is left unstaged and listed: inspect it, <code>git add</code> it, and show
-it to the reviewer. crew never turns on <code>rerere.autoupdate</code>, and the version files
+once replays next time. A replay is left unstaged and listed: inspect it and <code>git add</code> it; the
+review prompt lists it for the reviewer. crew never turns on <code>rerere.autoupdate</code>, and the version files
 (<code>plugin.json</code>, <code>marketplace.json</code>, <code>PLUGINS.md</code>, <code>CHANGELOG.md</code>) are never replayed - they come
 back conflicted, named as forgotten, for you to resolve by hand.</p>
 <p><strong>8. Done.</strong> You type <code>/crew:done T-0091</code>. Three checks, all required: the
@@ -181,7 +182,9 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
 &lt;n&gt;</code> refuses unless T-0091 holds the train, <code>git merge-tree</code> against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 <code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (the train never merges; only
-autopilot's ship step does, under <code>autopilot.ship</code>). When it
+autopilot's ship step does, under <code>autopilot.ship</code>; with <code>autopilot.deploy</code> set, its deploy
+phase then names <code>/crew:promote &lt;env&gt;</code> for the first GitHub environment, or stops at
+<code>deploy-target</code> / <code>failed-deploy</code>). When it
 refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 <code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
@@ -266,6 +269,39 @@ triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or 
 not match CI's font hinting and subpixel rendering, and fails every later run for
 reasons unrelated to the change under test. Outside that image the visual rule reports
 <strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="what-is-waiting-on-me">What Is Waiting on Me</h2>
+<p><code>/crew:status</code> prints one <code>waiting</code> line: how many open tickets are stopped on
+you. <code>/crew:status --owner</code> lists them, one line per ticket with the command
+to type or the question to answer, for example <code>T-5  approve  /crew:approve
+T-5</code>. The list comes from the same phase table <code>/crew:autopilot</code> uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as <code>review-unread</code>, and
+<code>/crew:autopilot status &lt;id&gt;</code> reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (<code>2 held, 1 blocked</code>); a hold that is due
+is listed as <code>revisit</code> with its reason. No <code>.work/INDEX.md</code> prints <code>waiting
+unknown (...)</code>, never "nothing on you".</p>
+<h2 id="after-autopilot-rejects-a-review-round-itself">After Autopilot Rejects a Review Round Itself</h2>
+<p>With <code>autopilot.maxAutoReplans</code> set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; <code>crew_autopilot.py replan-check --ticket &lt;id&gt;</code> shows the same answer
+without approving. Your own <code>/crew:approve</code> is never held to it.</p>
+<h2 id="contracts-between-two-sessions">Contracts Between Two Sessions</h2>
+<p>When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:</p>
+<ol>
+<li>One side writes the draft: <code>crew_contract.py put --name &lt;n&gt; --file &lt;path&gt;</code>.
+   While it is a draft, <code>put</code> replaces it in place.</li>
+<li>Each side, once its ticket is approved, records what it built against:
+   <code>crew_contract.py build-against --name &lt;n&gt; --version &lt;N&gt; --ticket &lt;id&gt;</code>.
+   That freezes the version and writes the binding, with the remote it was
+   built on, to <code>.work/tickets/&lt;id&gt;/contracts.json</code>.</li>
+<li>A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: <code>put --name &lt;n&gt; --file &lt;path&gt; --new-version --ticket &lt;new id&gt;</code>.</li>
+</ol>
+<p><code>crew_contract.py status</code> lists every version, who built against it and
+anything it cannot read (<code>unknown</code>, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>
@@ -315,7 +351,9 @@ of those each step changes, and you approve both. Two hooks then hold the sessio
 contract. This section explains what they do, what they print, and how to change scope while you
 work.</p>
 <h3 id="the-contract">The Contract</h3>
-<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code>:</p>
+<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code> (once done and archived with <code>crew_tracker.py archive</code>, in
+<code>.work/tickets/Complete/&lt;id&gt;/</code>; crew finds it in either place, and a ticket present in both is "could
+not tell", which refuses). An id is <code>LETTERS-digits</code> with any prefix (<code>T-</code>, <code>L-</code>, <code>W-</code>):</p>
 <ul>
 <li><code>spec.md</code> has six sections: <code>## Intent</code>, <code>## Exclusions</code>, <code>## Evidence</code>, <code>## Unknowns</code>,
   <code>## Touch</code> and <code>## Acceptance checks</code>. <code>## Touch</code> lists one repo-relative glob or path per
@@ -384,8 +422,15 @@ approval is a step you take, not a lock.</p>
 <li>Any other file needs a current approval and a path inside Touch.</li>
 <li>The code map, the diagrams dir, the graph dir and <code>.claude/rules/</code> are writable for an approved
   ticket, because <code>/crew:implement</code> step 6 refreshes them.</li>
-<li>Nothing else is exempt: <code>.crew/</code> beyond the code map, <code>TODO.md</code>, the rest of <code>.claude/</code> and
-  crew's own policy files. If the ticket changes one of them, list it in Touch.</li>
+<li><code>.crew/metrics.md</code> is writable with or without an approval: <code>/crew:review</code> appends its row by
+  hand when the script could not (<code>crew_ticket.CREW_WRITE_ALLOWED_PATHS</code>, that one file).</li>
+<li>The scope base, the verify gate's records and marker and <code>.crew/metrics.jsonl</code> are refused to
+  Write/Edit in every mode but <code>off</code>, even inside Touch: the audit and the review bundle leave
+  them out, so a write to them would be invisible.</li>
+<li>Nothing else is exempt: <code>.crew/</code> beyond the code map and the metrics row (<code>config.json</code>,
+  <code>verify.json</code>, <code>standards.md</code>, and files crew writes but also trusts, such as <code>.crew/tfplan/</code>,
+  <code>incident.json</code> and <code>.deploy-in-flight</code>), <code>TODO.md</code>, the rest of <code>.claude/</code> and crew's own
+  policy files. If the ticket changes one of them, list it in Touch.</li>
 <li>Approval receipts, the review ledger and the scope base are always refused.</li>
 </ul>
 <p>The guard checks the real file a symlink points to and the path as written, so a link cannot
@@ -402,7 +447,10 @@ change files. So when the session stops, the completion audit compares the whole
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
 both ends of a rename. After you merge main, a file byte-identical to the merged main commit is
 not counted: it is main's change, not the ticket's; the verdict names that commit. If any changed path is outside Touch, the audit blocks the stop and lists
-the paths in six lines or fewer. It never blocks the continuation it caused.</p>
+the paths in six lines or fewer. It never blocks the continuation it caused. crew's own ticket-flow
+bookkeeping (the scope base, the gate's records, the metrics files) is never a changed path,
+whatever <code>.gitignore</code> says, so a <code>.crew/</code> path the audit lists (say <code>.crew/verify.json</code> or a
+committed <code>.crew/incident.json</code>) is a real finding, not crew's noise.</p>
 <p>A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the <code>anchor:</code> or provenance sha moved forward to a commit on this branch) or a
 regeneration (<code>.claude/rules/</code> as <code>crew_instructions.py rules</code> writes them, the graph after a code

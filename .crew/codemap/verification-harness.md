@@ -39,6 +39,20 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 48 rules
 
+**DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
+(the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:290-295`):
+paths `plugin/crew/skills/crew-setup/templates/**` and
+`plugin/crew/tests/test_setup_verify_templates.py`, running that one test file (fake `mmdc`,
+throwaway repos; priced 10s, measured under 1s). It covers crew-setup's `_verify` runner templates
+(a failing check's last 5 lines as `FAIL <name> | ...`, exit 77 as SKIP, a temp-file capture
+removed on any exit) and the ready case `templates/cases/diagrams-render.sh`. No earlier rule ran
+a test of these templates: `plugin/crew/skills/**` maps only to `validate-prompts.py`. The
+paragraphs below read older trees and do not count this rule.
+
+**T-0068 (DERIVED, `json.load` and `grep -n` on `T-0068-build` after merging origin/main, 2026-10-04): 565 lines, 52 rules.** The last rule (`.crew/verify.json:554-561`) is T-0068's: `review_patch.py`, `review_ledger.py` and their two test files, running `test_review_patch.py` and `test_review_ledger.py`; before it only the catch-all named either file. Rule 4 (the gate) runs `test_verify_gate_bookkeeping.py` too, rule 12 (`crew_ticket.py`) runs and lists `test_crew_bookkeeping.py`; `default` is `:563` and `unmapped` `:564`. The headings and counts below read older trees.
+
+**The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1211`), drops `bookkeeping` from `changed` (`:1218`) and never appends an `artifact` to `unmatched` (`:1297`), so a rule naming `.crew/codemap/**` still runs. `verify-gate.ps1` pipes `$changed` to `completion_audit.py --classify` (`plugin/crew/hooks/scripts/verify-gate.ps1:1244`), accepts the answer only when every line echoes its path in order, then filters (`:1275`) and skips artifacts at `$unmapped` (`:1357`). Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell`. The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair in both flavours.
+
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
 **L-0555 PR 1 (`3a33161c`): 459 lines, 45 rules.** The last rule (`.crew/verify.json:482`) is L-0555's: `ci_receipt.py`, `test_ci_receipt.py` and `.github/workflows/verify-gate.yml`, running `test_ci_receipt.py`. The 44th is L-0557's (see its re-anchor note); the account below is the 43-rule state it extends.
@@ -292,7 +306,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
   `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
-  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 87 by `len()` at `8cabe586`: 81 after review rounds 3 and 4, six more net from T-0077),
+  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 106 by `len()` after C-0021: 81 after review rounds 3 and 4, six more net from T-0077 (87 at `8cabe586`), eleven for T-0071 (L-0669), five for T-0081 (L-0672), three for L-0530 (C-0021); re-measure with `python3 -c "import sys; sys.path.insert(0, 'plugin/crew/tests'); import sabotage_tracker as s; print(len(s.TRACKER_MUTATIONS))"`),
   imported by `plugin/crew/tests/sabotage.py:77` and appended at `:3059`.
 - **Rule 30**, new at `eba11657` (`.crew/verify.json:371-380` on T-0094's merge of `8ab733d7`, `:323-331` since T-0010's merge of `e878cc31`, `:318-326` since T-0018 landed on T-0010-solo, `:315-323` on main at `3648f59a`, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it, rule 29 until T-0010's merge): `paths`
@@ -355,8 +369,11 @@ Notable rules, re-read directly:
   `test_review_receipt.py` and `test_webtest_guard.py`, and since review round 3 (`33521aa4`)
   `scope_base.py`, `review_patch.py`, `review_verdict.py`, `crew_incident.py`,
   `crew_migrate.py`, `crew_metrics.py` and `crew_ticket.py` (the modules the stamp, the gate,
-  `proposals` and the metric read) → `python3 -m pytest` over the five test files plus
-  `test_review_run_launch.py`, `test_review_ledger.py` and `test_lifecycle_commands.py`,
+  `proposals` and the metric read), and since L-0522 `review_delta.py`, `review_ledger.py` and
+  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries at the end of
+  `REVIEW_FIX_MUTATIONS` in `plugin/crew/tests/sabotage_review.py`) → `python3 -m pytest` over the five test files plus
+  `test_review_run_launch.py`, `test_review_ledger.py`, `test_lifecycle_commands.py` and (L-0522)
+  `test_review_delta.py`,
   priced 41s (its `why` records 382 passed, 2 skipped in 41.28s on this host, 2026-09-29, at the
   round-3 fix tree; 327 passed in 40.9s at round 1). Before it `review_run.py` and
   `review_prompt.py` matched only rules 0 and 15. Its mutations live in
@@ -731,8 +748,40 @@ on `make up` and unsets it on `make down`.
 Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint with one worker per
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
-suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
+suites with xdist and `-m "not wallclock"` and the `wallclock`-marked tests in a serial step of
 their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
+The worker count is `-n 16 --dist worksteal` in the `test` job and `-n 8` in the ubuntu slow leg
+since L-0590 (on the self-hosted pool `auto` was 4, the runner's PYTEST_XDIST_AUTO_NUM_WORKERS);
+the Windows jobs keep `-n auto`. The `test` job's `max-parallel` is 3 on a pull request and 1 on
+every other event, so a main push runs one Python leg at a time on the self-hosted host; the
+required `test (3.11|3.12|3.13)` checks are that job's legs, as before.
+
+## Sabotage siblings added by the 1.2.0 harness lane (H2a)
+
+DERIVED (rush/h2a-sabotage): each list below is appended to `sabotage.py`'s `MUTATIONS`, either
+through a list `sabotage.py` already concatenates or by its own import; every anchor is held to one
+match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` on the tuple named.
+
+- `TICKET_STATE_MUTATIONS` - `plugin/crew/tests/sabotage_ticket_state.py`, imported by `sabotage.py`
+  (L-0641: L-0639/L-0640's derived ticket state).
+- `GITIGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_gitignore.py`, imported by `sabotage.py`
+  (C-0025: T-0039's nineteen hand-run mutations).
+- `COORD_MUTATIONS` and `WAVE_MUTATIONS` - `plugin/crew/tests/sabotage_coord.py` and
+  `plugin/crew/tests/sabotage_wave.py`, imported by `sabotage.py` (T-0030's and T-0029's harness
+  halves; the wave list also covers `scope_guard.py`'s subagent never-list, whose must-block and
+  must-allow cases are `plugin/crew/tests/test_scope_guard_wave.py`).
+- `SLEEP_MUTATIONS` and `REPLAN_MUTATIONS` - `plugin/crew/tests/sabotage_autopilot.py`, added to
+  `AUTOPILOT_MUTATIONS` (L-0651 and L-0655's L-0652 part: the sleep window and manual sleep;
+  L-0671: T-0074's auto-replan policy).
+- `RECALL_PROJECT_MUTATIONS` and `MEMORY_MUTATIONS` - `plugin/crew/tests/sabotage_context.py`,
+  added to `CONTEXT_MUTATIONS` (L-0676: recall `--project`; L-0679: `crew_memory.py`'s grammar,
+  vault resolution, save order, migrate and restore).
+- `GRAPH_IGNORE_MUTATIONS` - `plugin/crew/tests/sabotage_refresh.py`, added to `REFRESH_MUTATIONS`
+  (C-0025: T-0064's denylist coverage).
+- Appended to existing lists: `ROUTE_MUTATIONS` (L-0661, L-0663), `CONFIG_MENU_MUTATIONS` (L-0682,
+  C-0028's T-0103 part), `MIGRATE_FIX_MUTATIONS` (L-0683, C-0025's T-0038 part, C-0028's T-0106
+  part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021), `STANDARDS_MUTATIONS` (C-0042: the PWSH set).
+- `sabotage_platform.PLATFORM_ONLY` declares the entries whose target test runs only on POSIX.
 
 ## Entry points
 
@@ -772,8 +821,9 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3062` —
   `sabotage_tooling.py`'s registration.
 - `.crew/verify.json:468-481` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
-  its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
-  since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
+  its tests, `kimi_fixtures.py`, the fixture run and the provider docs), widened by L-0527 to
+  `review_run.py`, `commands/review.md`, `test_review_run_kimi.py` and `sabotage_kimi.py`, whose
+  `KIMI_MUTATIONS` (probe, parser, fingerprint, launch gate) `sabotage.py` registers.
 - `.crew/verify.json:476-480` (rule 40) — L-0513's gate runner
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports

@@ -8,11 +8,30 @@
 # exception is the Nuclei template download, which still aborts the script -
 # see update_nuclei_templates() below for why.
 #
-# Usage:  ./bootstrap.sh
+# Usage:  ./bootstrap.sh [--user] [--dry-run] [-h|--help]
+#
+#   (no option)  system install into /usr/local/bin and /opt: as root with no
+#                sudo, else through sudo (sudo -n when stdin is not a
+#                terminal, so a password prompt cannot hang a pipeline).
+#                Not root and no sudo: exit 2, pointing at --user.
+#   --user       no elevation anywhere: every tool that needs no package
+#                manager goes into the gizmoduck tool home (the same rule as
+#                scripts/scanners/base.py tool_home()); tools that need a
+#                package (nmap, wkhtmltopdf, a Java runtime, perl) are
+#                reported as present (nmap and wkhtmltopdf only when
+#                `--version` runs), SKIPPED, or failed, never installed.
+#   --dry-run    print one `plan:` line per tool and change nothing.
+#
+# Exit: 0 nothing failed (the last line starts GIZMODUCK_BOOTSTRAP_SKIPPED:
+# when tools were skipped); 1 a tool or the template download failed;
+# 2 usage or precondition error.
 #
 set -uo pipefail   # deliberately no -e: try_install isolates failures itself
 
 FAILED=()
+SKIPPED=()
+USER_MODE=0
+DRY_RUN=0
 
 # Install locations. The defaults are the real ones; the test suite points
 # them at a throwaway directory so it can run the real download / verify /
@@ -21,6 +40,7 @@ FAILED=()
 # `sudo mv`, so a GIZMODUCK_*_DIR inherited from a profile or a CI job must
 # not redirect a real run. They are honoured only with
 # GIZMODUCK_BOOTSTRAP_TEST=1, and otherwise ignored with a notice (C-0015).
+# --user moves all of them into the tool home (set_user_dirs).
 BIN_DIR=/usr/local/bin
 OPT_DIR=/opt
 APT_LISTS_DIR=/var/lib/apt/lists
@@ -32,6 +52,62 @@ elif [[ -n "${GIZMODUCK_BIN_DIR:-}${GIZMODUCK_OPT_DIR:-}${GIZMODUCK_APT_LISTS_DI
   echo "!! GIZMODUCK_BIN_DIR / GIZMODUCK_OPT_DIR / GIZMODUCK_APT_LISTS_DIR are test-only and" >&2
   echo "!!   ignored here (they need GIZMODUCK_BOOTSTRAP_TEST=1); installing to the defaults." >&2
 fi
+STAGE_DIR="$OPT_DIR"
+ZAP_ROOT="$OPT_DIR"
+
+# The elevation prefix for every privileged command, decided once by
+# decide_privilege when the script runs. Sourced (the test suite), it stays
+# `sudo`, which the suite stubs.
+PRIV=(sudo)
+
+as_root() {
+  if [[ ${#PRIV[@]} -gt 0 ]]; then "${PRIV[@]}" "$@"; else "$@"; fi
+}
+
+# Same rule as scripts/scanners/base.py tool_home(); a test holds them together.
+tool_home() {
+  if [[ -n "${GIZMODUCK_HOME:-}" ]]; then
+    printf '%s\n' "$GIZMODUCK_HOME"
+  elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
+    printf '%s\n' "$XDG_DATA_HOME/gizmoduck"
+  else
+    printf '%s\n' "$HOME/.local/share/gizmoduck"
+  fi
+}
+
+set_user_dirs() {
+  TOOL_HOME=$(tool_home)
+  BIN_DIR="$TOOL_HOME/bin"
+  OPT_DIR="$TOOL_HOME"
+  if [[ "${GIZMODUCK_BOOTSTRAP_TEST:-}" == 1 ]]; then  # the C-0015 test seam, as above
+    BIN_DIR="${GIZMODUCK_BIN_DIR:-$BIN_DIR}"
+    OPT_DIR="${GIZMODUCK_OPT_DIR:-$OPT_DIR}"
+  fi
+  STAGE_DIR="$TOOL_HOME/.download"
+  ZAP_ROOT="$OPT_DIR/zap"
+}
+
+# Sets PRIV, or exits 2. Calls `id -u` and `command -v sudo` rather than
+# reading $EUID, so the test suite can simulate root with a fake `id`.
+decide_privilege() {
+  if [[ $USER_MODE == 1 ]]; then
+    PRIV=(); PRIV_LABEL="user"; return 0
+  fi
+  if [[ "$(id -u 2>/dev/null)" == 0 ]]; then
+    PRIV=(); PRIV_LABEL="as root"; return 0
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    if [[ -t 0 ]]; then PRIV=(sudo); else PRIV=(sudo -n); fi
+    PRIV_LABEL="via sudo"; return 0
+  fi
+  echo "!! not root and no sudo on PATH: a system install cannot run here." >&2
+  echo "!! Re-run with --user to install into the gizmoduck tool home without root." >&2
+  exit 2
+}
+
+usage() {
+  sed -n '2,/^set -uo/p' "${BASH_SOURCE[0]}" | sed -e '/^set -uo/d' -e 's/^# \{0,1\}//'
+}
 
 # Time limits, so a stalled network fails one step instead of hanging the
 # whole bootstrap (and a cloud session's setup phase with it). API calls are
@@ -53,12 +129,15 @@ git_net() {
 
 # Runs $2.. as a function, in a subshell with its own `set -e` so a failing
 # command inside it aborts just that one install instead of the whole script.
-# The subshell's exit status is what the `if` below tests, so -e in the
+# The subshell runs as a plain statement and its status is read after: inside
+# an `if` (as it once was) bash ignores set -e in the whole subshell, so a
+# failed download followed by a successful last command read as OK. -e in the
 # *parent* shell (which we don't set) never comes into play.
 try_install() {
-  local name="$1"; shift
+  local name="$1" rc; shift
   echo ">> installing ${name}..."
-  if ( set -e; "$@" ); then
+  ( set -e; "$@" ); rc=$?
+  if [[ $rc -eq 0 ]]; then
     echo ">> ${name}: OK"
   else
     echo "!! ${name}: install failed - continuing with the rest" >&2
@@ -79,9 +158,21 @@ try_install() {
 # release with assets exists, but the download that follows fails loudly if
 # it doesn't. When both lookups fail it says so naming the tool and returns
 # 1, leaving try_install's isolation to carry on with the rest.
+# GET a GitHub API URL. With GITHUB_TOKEN set the request is authenticated
+# (a far higher rate limit, which a shared CI egress address needs). The
+# header is passed as a file descriptor, so the token is never in an argv a
+# process listing shows, and it is never printed.
+github_api() {
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    curl -fsSL "${CURL_API[@]}" -H @<(printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN") "$1"
+  else
+    curl -fsSL "${CURL_API[@]}" "$1"
+  fi
+}
+
 resolve_latest_tag() {
   local repo="$1" tool="$2" ver=""
-  ver=$(curl -fsSL "${CURL_API[@]}" "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+  ver=$(github_api "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
         | grep '"tag_name"' | head -1 | cut -d'"' -f4) || ver=""
   if [[ -n "$ver" ]]; then
     printf '%s\n' "$ver"
@@ -156,12 +247,14 @@ verify_sha256() {
 #    apt-get update/install fail with "Couldn't create temporary file
 #    /tmp/apt.conf.XXXX". Running the sandbox as root sidesteps that without
 #    touching /tmp's permissions - do not "fix" this with a chmod of /tmp.
+#  - DEBIAN_FRONTEND=noninteractive, through env so sudo's env_reset cannot drop
+#    it: no debconf prompt can stall a CI job or an image build.
 #  - DPkg::Lock::Timeout=600: wait for another apt/dpkg holding the lock (an
 #    unattended-upgrades run, or a parallel setup step) instead of failing.
 # apt_install also runs `apt-get clean`, since disk can be a fixed allowance
 # and the downloaded .debs are dead weight once installed.
 apt_get() {
-  sudo apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600 "$@"
+  as_root env DEBIAN_FRONTEND=noninteractive apt-get -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=600 "$@"
 }
 
 apt_lists_present() {
@@ -182,7 +275,54 @@ apt_install() {
   apt_get clean || echo "!! apt-get clean failed - continuing" >&2
 }
 
+# Each install runs in try_install's subshell, so an array append there is
+# lost; a skip is also written to SKIP_LOG (set when the script runs), and
+# finish reads it back.
+mark_skipped() {
+  SKIPPED+=("$1")
+  if [[ -n "${SKIP_LOG:-}" ]]; then printf '%s\n' "$1" >> "$SKIP_LOG"; fi
+}
+
+# --user and a tool only a package manager provides: report it as present
+# only when $2 is on PATH, is not empty AND `$2 --version` exits 0 within 30s
+# (the same proof already_installed asks for; a resolving name alone is not).
+# On PATH but failing: return 1, so try_install records it FAILED - --user
+# cannot reinstall it. Not on PATH: add it to SKIPPED (separate from FAILED)
+# and say which package an image needs.
+user_package_tool() {
+  local name="$1" cmd="$2" pkg="$3" path
+  if path=$(command -v "$cmd" 2>/dev/null); then
+    if [[ -s "$path" ]] && probe_bounded 30 "$path" --version >/dev/null 2>&1; then
+      echo ">> ${name}: present (${path})"
+      return 0
+    fi
+    echo "!! ${name}: ${path} is on PATH but '--version' fails - --user cannot reinstall it; fix it or add '${pkg}' to the image" >&2
+    return 1
+  fi
+  echo ">> ${name}: SKIPPED - needs a package manager (add '${pkg}' to the image)"
+  mark_skipped "$name"
+}
+
+# Runs $2.. with a hard ceiling of $1 seconds where coreutils' `timeout`
+# exists (a hung probe must not hang bootstrap), plainly otherwise.
+probe_bounded() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
+}
+
+# --user and a Java tool: no JRE install without a package manager, so a
+# missing or too-old java fails the tool, naming the package.
+user_needs_java17() {
+  java -version 2>&1 | grep -qE '"(1\.)?(1[7-9]|[2-9][0-9])' && return 0
+  echo "!! $1 needs a Java 17+ runtime and --user cannot install one: add openjdk-17-jre to the image" >&2
+  return 1
+}
+
 install_prereqs() {
+  if [[ $USER_MODE == 1 ]]; then
+    # curl, unzip, git and python3 were checked before anything ran.
+    user_package_tool "wkhtmltopdf (PDF reports)" wkhtmltopdf wkhtmltopdf
+  fi
   local missing=0 c
   for c in curl unzip git python3 pip3 wkhtmltopdf; do
     command -v "$c" >/dev/null 2>&1 || missing=1
@@ -195,6 +335,13 @@ install_prereqs() {
     apt_get update -y
     apt_install curl unzip git python3 python3-pip wkhtmltopdf
   fi
+}
+
+# --user installs into a tool home that may not exist yet; a system install
+# writes into /usr/local/bin and /opt, which do.
+mkdir_for_install() {
+  [[ $USER_MODE == 1 ]] || return 0
+  mkdir -p "$@"
 }
 
 install_nuclei() {
@@ -218,16 +365,17 @@ install_nuclei() {
   # download shouldn't sit there even briefly. Nuclei's only permanent home
   # is the single /usr/local/bin/nuclei binary, so this staging dir is
   # scratch space, not a destination - remove it once the binary is moved.
-  local stage="${OPT_DIR}/gizmoduck-nuclei-download"
-  sudo rm -rf "$stage"
-  sudo mkdir -p "$stage"
-  sudo curl -fsSL "${CURL_DL[@]}" -o "$stage/$zip" "$base/$zip"
-  sudo curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
-  verify_sha256 "$stage" "$zip" "$sums" || { sudo rm -rf "$stage"; return 1; }
-  sudo unzip -oq "$stage/$zip" -d "$stage"
-  sudo mv "$stage/nuclei" "${BIN_DIR}/nuclei"
-  sudo chmod +x "${BIN_DIR}/nuclei"
-  sudo rm -rf "$stage"
+  local stage="${STAGE_DIR}/gizmoduck-nuclei-download"
+  mkdir_for_install "${BIN_DIR}" "${STAGE_DIR}"
+  as_root rm -rf "$stage"
+  as_root mkdir -p "$stage"
+  as_root curl -fsSL "${CURL_DL[@]}" -o "$stage/$zip" "$base/$zip"
+  as_root curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
+  verify_sha256 "$stage" "$zip" "$sums" || { as_root rm -rf "$stage"; return 1; }
+  as_root unzip -oq "$stage/$zip" -d "$stage"
+  as_root mv "$stage/nuclei" "${BIN_DIR}/nuclei"
+  as_root chmod +x "${BIN_DIR}/nuclei"
+  as_root rm -rf "$stage"
 
   echo ">> installed: $("${BIN_DIR}/nuclei" -version 2>&1 | head -1)"
 }
@@ -319,11 +467,13 @@ clone_nuclei_templates() {
 }
 
 install_nmap() {
+  if [[ $USER_MODE == 1 ]]; then user_package_tool nmap nmap nmap; return; fi
   already_installed nmap nmap && return 0
   apt_install nmap
 }
 
 install_nikto() {
+  if [[ $USER_MODE == 1 ]]; then install_nikto_user; return; fi
   already_installed nikto nikto probe_nikto && return 0
   apt_install nikto
 }
@@ -339,30 +489,108 @@ probe_nikto() {
   grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
 }
 
+# probe_nikto's check for a nikto.pl run through perl.
+probe_nikto_pl() {
+  local out
+  out=$(perl "$1" -Version 2>&1) || return 1
+  grep -qiE 'nikto[^0-9]*[0-9]+\.[0-9]+' <<<"$out"
+}
+
+# --user: nikto's own repository, where scripts/scanners/nikto.py finds
+# <tool home>/nikto/program/nikto.pl. It runs under perl, a package.
+install_nikto_user() {
+  if ! command -v perl >/dev/null 2>&1; then
+    echo ">> nikto: SKIPPED - needs perl (add 'perl' and 'libxml-writer-perl' to the image)"
+    mark_skipped "nikto"
+    return 0
+  fi
+  local dir="${OPT_DIR}/nikto"
+  # Like already_installed: a clone that has nikto.pl and runs is kept, with
+  # no network call, unless GIZMODUCK_BOOTSTRAP_FORCE=1. One that fails the
+  # run check is updated in place (a git clone) or re-cloned (anything else),
+  # never deleted first: a missing perl module fails the check too, and
+  # deleting the clone would not fix that.
+  if [[ -s "$dir/program/nikto.pl" && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    if probe_nikto_pl "$dir/program/nikto.pl"; then
+      echo ">> nikto: already installed (${dir}) - skipping; GIZMODUCK_BOOTSTRAP_FORCE=1 updates it"
+      return 0
+    fi
+    echo ">> nikto: ${dir} is present but fails its check - updating it"
+  fi
+  # Each git failure returns explicitly: try_install runs this inside an
+  # `if`, where set -e does not stop a failing command.
+  if [[ -d "$dir/.git" ]]; then
+    git_net 600 -C "$dir" pull --ff-only || {
+      echo "!! nikto: git pull in ${dir} failed" >&2; return 1; }
+  elif [[ ( -e "$dir" || -L "$dir" ) && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    # Not a clone this script made: never delete it without being told to.
+    echo "!! nikto: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
+    return 1
+  else
+    rm -rf "$dir"
+    mkdir -p "$OPT_DIR" || return 1
+    git_net 600 clone --depth 1 https://github.com/sullo/nikto.git "$dir" || {
+      echo "!! nikto: git clone into ${dir} failed" >&2; return 1; }
+  fi
+  [[ -f "$dir/program/nikto.pl" ]] || return 1
+  # The same run check as a cached copy: perl without nikto's modules
+  # (XML::Writer) has a clone it cannot run, which is not an install.
+  if ! probe_nikto_pl "$dir/program/nikto.pl"; then
+    echo "!! nikto: perl cannot run ${dir}/program/nikto.pl (add 'libxml-writer-perl' to the image)" >&2
+    return 1
+  fi
+}
+
 install_testssl() {
   # testssl.sh refuses to run at all without hexdump ("Fatal error: You need
   # to install hexdump"), and Ubuntu 24.04 moved it to bsdextrautils, which a
   # minimal image lacks (measured in the Claude Code cloud image).
-  command -v hexdump >/dev/null 2>&1 || apt_install bsdextrautils
+  if ! command -v hexdump >/dev/null 2>&1; then
+    if [[ $USER_MODE == 1 ]]; then
+      # testssl.sh --version passes without hexdump and every scan then
+      # refuses, so an install here would read as working and is not one.
+      echo ">> testssl.sh: SKIPPED - needs hexdump (add 'bsdextrautils' to the image)"
+      mark_skipped "testssl.sh"
+      return 0
+    else
+      apt_install bsdextrautils
+    fi
+  fi
   already_installed testssl.sh testssl.sh && return 0
+  mkdir_for_install "${OPT_DIR}" "${BIN_DIR}"
   local dir="${OPT_DIR}/testssl.sh"
   if [[ -d "$dir/.git" ]]; then
-    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
+    as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
-    sudo rm -rf "$dir"
-    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+    keep_foreign_dir testssl.sh "$dir" && return 1
+    as_root rm -rf "$dir"
+    as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
       git clone --depth 1 https://github.com/drwetter/testssl.sh.git "$dir"
   fi
-  sudo chmod +x "$dir/testssl.sh"
-  sudo ln -sf "$dir/testssl.sh" "${BIN_DIR}/testssl.sh"
+  as_root chmod +x "$dir/testssl.sh"
+  as_root ln -sf "$dir/testssl.sh" "${BIN_DIR}/testssl.sh"
+}
+
+# --user: a directory under the tool home that is not a git clone was not made
+# by this script, so it is not replaced without GIZMODUCK_BOOTSTRAP_FORCE=1.
+# Returns 0 (and says so) when the caller must leave it alone.
+keep_foreign_dir() {
+  local name="$1" dir="$2"
+  if [[ $USER_MODE == 1 && ( -e "$dir" || -L "$dir" ) && ! -d "$dir/.git" \
+        && "${GIZMODUCK_BOOTSTRAP_FORCE:-}" != 1 ]]; then
+    echo "!! ${name}: ${dir} exists and is not a git clone - move it aside, or set GIZMODUCK_BOOTSTRAP_FORCE=1 to replace it" >&2
+    return 0
+  fi
+  return 1
 }
 
 install_trivy() {
   already_installed trivy trivy && return 0
+  mkdir_for_install "${BIN_DIR}"
   # Official install script (documented at trivy.dev) - resolves the latest
   # release and puts the binary on the given path itself.
   if curl -sfL "${CURL_API[@]}" https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-      | sudo sh -s -- -b "${BIN_DIR}"; then
+      | as_root sh -s -- -b "${BIN_DIR}"; then
     return 0
   fi
   # That script looks the release up on github.com/<repo>/releases/<tag>,
@@ -387,22 +615,39 @@ install_trivy_asset() {
   local base="https://github.com/aquasecurity/trivy/releases/download/${ver}"
 
   # Stage under /opt, not /tmp - see install_nuclei for why.
-  local stage="${OPT_DIR}/gizmoduck-trivy-download"
-  sudo rm -rf "$stage"
-  sudo mkdir -p "$stage"
-  sudo curl -fsSL "${CURL_DL[@]}" -o "$stage/$tgz" "$base/$tgz"
-  sudo curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
-  verify_sha256 "$stage" "$tgz" "$sums" || { sudo rm -rf "$stage"; return 1; }
-  sudo tar -xzf "$stage/$tgz" -C "$stage" trivy
-  sudo mv "$stage/trivy" "${BIN_DIR}/trivy"
-  sudo chmod +x "${BIN_DIR}/trivy"
-  sudo rm -rf "$stage"
+  local stage="${STAGE_DIR}/gizmoduck-trivy-download"
+  as_root rm -rf "$stage"
+  as_root mkdir -p "$stage"
+  as_root curl -fsSL "${CURL_DL[@]}" -o "$stage/$tgz" "$base/$tgz"
+  as_root curl -fsSL "${CURL_API[@]}" -o "$stage/$sums" "$base/$sums"
+  verify_sha256 "$stage" "$tgz" "$sums" || { as_root rm -rf "$stage"; return 1; }
+  as_root tar -xzf "$stage/$tgz" -C "$stage" trivy
+  as_root mv "$stage/trivy" "${BIN_DIR}/trivy"
+  as_root chmod +x "${BIN_DIR}/trivy"
+  as_root rm -rf "$stage"
   echo ">> installed: $("${BIN_DIR}/trivy" --version 2>&1 | head -1)"
 }
 
 install_checkov() {
   already_installed checkov checkov && return 0
   pip3 install --user --upgrade checkov
+  link_user_script checkov
+}
+
+# --user: pip --user puts a tool's script in Python's own user base
+# (`python3 -m site --user-base`/bin, usually ~/.local/bin), which need not be
+# on PATH and is never the tool home. Link it into the tool home's bin, where
+# gizmoduck looks first; a script pip did not leave there fails the tool.
+link_user_script() {
+  [[ $USER_MODE == 1 ]] || return 0
+  local base
+  base=$(python3 -m site --user-base) || return 1
+  if [[ ! -x "$base/bin/$1" ]]; then
+    echo "!! $1: pip reported success but $base/bin/$1 is not there" >&2
+    return 1
+  fi
+  mkdir -p "${BIN_DIR}"
+  ln -sf "$base/bin/$1" "${BIN_DIR}/$1"
 }
 
 install_semgrep() {
@@ -411,10 +656,13 @@ install_semgrep() {
   # see a check that is MISSING - an authorization gate nobody wrote has no
   # signature, no CVE and no misconfigured resource to find.
   pip3 install --user --upgrade semgrep
+  link_user_script semgrep
 }
 
 install_depcheck() {
   already_installed dependency-check dependency-check && return 0
+  if [[ $USER_MODE == 1 ]]; then user_needs_java17 dependency-check || return 1; fi
+  mkdir_for_install "${OPT_DIR}" "${STAGE_DIR}" "${BIN_DIR}"
   local ver
   ver=$(resolve_latest_tag jeremylong/DependencyCheck "dependency-check") || return 1
   local num="${ver#v}"
@@ -422,15 +670,15 @@ install_depcheck() {
 
   # Stage next to the extraction target (/opt) instead of /tmp - see
   # install_nuclei above for why.
-  sudo curl -fsSL "${CURL_DL[@]}" -o "${OPT_DIR}/$zip" \
+  as_root curl -fsSL "${CURL_DL[@]}" -o "${STAGE_DIR}/$zip" \
     "https://github.com/jeremylong/DependencyCheck/releases/download/${ver}/${zip}"
-  sudo unzip -oq "${OPT_DIR}/$zip" -d "${OPT_DIR}"
-  sudo rm -f "${OPT_DIR}/$zip"
-  sudo chmod +x "${OPT_DIR}/dependency-check/bin/dependency-check.sh"
-  sudo ln -sf "${OPT_DIR}/dependency-check/bin/dependency-check.sh" "${BIN_DIR}/dependency-check"
+  as_root unzip -oq "${STAGE_DIR}/$zip" -d "${OPT_DIR}"
+  as_root rm -f "${STAGE_DIR}/$zip"
+  as_root chmod +x "${OPT_DIR}/dependency-check/bin/dependency-check.sh"
+  as_root ln -sf "${OPT_DIR}/dependency-check/bin/dependency-check.sh" "${BIN_DIR}/dependency-check"
 
   # Dependency-Check is a Java app; make sure something can run it.
-  command -v java >/dev/null 2>&1 || apt_install default-jre
+  [[ $USER_MODE == 1 ]] || command -v java >/dev/null 2>&1 || apt_install default-jre
 }
 
 install_sqlmap() {
@@ -438,19 +686,21 @@ install_sqlmap() {
   # git clone is sqlmap's own documented install method - there is no PyPI
   # package (spec 13.9: no --report-json either, but that's a routine.py
   # adapter concern, not a bootstrap one).
+  mkdir_for_install "${OPT_DIR}" "${BIN_DIR}"
   local dir="${OPT_DIR}/sqlmap"
   if [[ -d "$dir/.git" ]]; then
-    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
+    as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 git -C "$dir" pull --ff-only
   else
-    sudo rm -rf "$dir"
-    sudo env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+    keep_foreign_dir sqlmap "$dir" && return 1
+    as_root rm -rf "$dir"
+    as_root env GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
       git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git "$dir"
   fi
-  sudo tee "${BIN_DIR}/sqlmap" >/dev/null <<EOS
+  as_root tee "${BIN_DIR}/sqlmap" >/dev/null <<EOS
 #!/usr/bin/env bash
 exec python3 "${dir}/sqlmap.py" "\$@"
 EOS
-  sudo chmod +x "${BIN_DIR}/sqlmap"
+  as_root chmod +x "${BIN_DIR}/sqlmap"
 }
 
 install_zap() {
@@ -458,7 +708,9 @@ install_zap() {
   # lets this install step "succeed" while ZAP itself refuses to start later -
   # which looks like a missing tool for reasons nobody can see from `doctor`.
   # Check for 17+ before doing anything else, matching the JRE gate ZAP needs.
-  if ! java -version 2>&1 | grep -qE '"(1\.)?(1[7-9]|[2-9][0-9])'; then
+  if [[ $USER_MODE == 1 ]]; then
+    user_needs_java17 "OWASP ZAP" || return 1
+  elif ! java -version 2>&1 | grep -qE '"(1\.)?(1[7-9]|[2-9][0-9])'; then
     apt_install openjdk-17-jre
   fi
 
@@ -477,12 +729,13 @@ install_zap() {
   # Stage next to the extraction target (/opt) instead of /tmp - a 286MB ZAP
   # zip sitting in /tmp mid-download is exactly what got flagged and
   # quarantined by Defender on Windows; /tmp is the equivalent risk here.
-  sudo curl -fsSL "${CURL_DL[@]}" -o "${OPT_DIR}/$zip" \
+  mkdir_for_install "${ZAP_ROOT}" "${STAGE_DIR}" "${BIN_DIR}"
+  as_root curl -fsSL "${CURL_DL[@]}" -o "${STAGE_DIR}/$zip" \
     "https://github.com/zaproxy/zaproxy/releases/download/${ver}/${zip}"
-  sudo unzip -oq "${OPT_DIR}/$zip" -d "${OPT_DIR}"
-  sudo rm -f "${OPT_DIR}/$zip"
-  sudo chmod +x "${OPT_DIR}/ZAP_${num}/zap.sh"
-  sudo ln -sf "${OPT_DIR}/ZAP_${num}/zap.sh" "${BIN_DIR}/zap.sh"
+  as_root unzip -oq "${STAGE_DIR}/$zip" -d "${ZAP_ROOT}"
+  as_root rm -f "${STAGE_DIR}/$zip"
+  as_root chmod +x "${ZAP_ROOT}/ZAP_${num}/zap.sh"
+  as_root ln -sf "${ZAP_ROOT}/ZAP_${num}/zap.sh" "${BIN_DIR}/zap.sh"
 }
 
 # `zap.sh -version` starts a JVM (seconds), so the skip check looks for what
@@ -493,6 +746,88 @@ probe_zap() {
   compgen -G "$(dirname "$real")/zap-*.jar" >/dev/null
 }
 
+# One `plan:` line per tool for --dry-run: where it would go and how. Reads
+# nothing but PATH and the environment; writes nothing, calls nothing.
+plan_line() { printf 'plan: %-18s -> %s (%s)\n' "$1" "$2" "$3"; }
+
+plan_package_tool() {
+  local name="$1" cmd="$2" path
+  if [[ $USER_MODE == 0 ]]; then plan_line "$name" "apt package" "$PRIV_LABEL"; return; fi
+  if path=$(command -v "$cmd" 2>/dev/null); then
+    plan_line "$name" "$path" "present"
+  else
+    plan_line "$name" "-" "SKIPPED: needs a package manager"
+  fi
+}
+
+print_plan() {
+  local self="$PRIV_LABEL" pip="user" java="$PRIV_LABEL"
+  if [[ $USER_MODE == 1 ]] && ! java -version 2>&1 | grep -qE '"(1\.)?(1[7-9]|[2-9][0-9])'; then
+    java="user - will FAIL: needs a Java 17+ runtime (openjdk-17-jre)"
+  fi
+  [[ $USER_MODE == 0 && ${#PRIV[@]} -eq 0 ]] && pip="as root"
+  if [[ $USER_MODE == 1 ]]; then
+    echo "tool home: ${TOOL_HOME}"
+    echo "privilege: none (--user)"
+  elif [[ ${#PRIV[@]} -eq 0 ]]; then
+    echo "privilege: none (running as root)"
+  else
+    echo "privilege: ${PRIV[*]}"
+  fi
+  plan_package_tool "wkhtmltopdf" wkhtmltopdf
+  plan_line "nuclei" "${BIN_DIR}/nuclei" "$self"
+  # ${HOME:-~}: --dry-run with an explicit GIZMODUCK_HOME must not need HOME (set -u).
+  plan_line "nuclei templates" "${HOME:-~}/nuclei-templates (or nuclei's configured directory)" "$pip"
+  plan_package_tool "nmap" nmap
+  if [[ $USER_MODE == 1 ]]; then
+    if command -v perl >/dev/null 2>&1; then
+      plan_line "nikto" "${OPT_DIR}/nikto/program/nikto.pl" "$self"
+    else
+      plan_line "nikto" "-" "SKIPPED: needs a package manager (perl)"
+    fi
+  else
+    plan_package_tool "nikto" nikto
+  fi
+  if [[ $USER_MODE == 1 ]] && ! command -v hexdump >/dev/null 2>&1; then
+    plan_line "testssl.sh" "-" "SKIPPED: needs a package manager (hexdump: bsdextrautils)"
+  else
+    plan_line "testssl.sh" "${OPT_DIR}/testssl.sh, linked in ${BIN_DIR}" "$self"
+  fi
+  plan_line "trivy" "${BIN_DIR}/trivy" "$self"
+  local pipdest="pip3 install --user"
+  [[ $USER_MODE == 1 ]] && pipdest="pip3 install --user, linked in ${BIN_DIR}"
+  plan_line "checkov" "$pipdest" "$pip"
+  plan_line "semgrep" "$pipdest" "$pip"
+  plan_line "dependency-check" "${OPT_DIR}/dependency-check, linked in ${BIN_DIR}" "$java"
+  plan_line "sqlmap" "${OPT_DIR}/sqlmap, wrapper in ${BIN_DIR}" "$self"
+  plan_line "OWASP ZAP" "${ZAP_ROOT}/ZAP_<version>, zap.sh linked in ${BIN_DIR}" "$java"
+}
+
+# Prints the outcome and returns the exit status: 1 when a tool failed, else
+# 0, with a last line naming every skipped tool. Sourced, the suite drives it
+# with FAILED / SKIPPED preset.
+finish() {
+  if [[ -n "${SKIP_LOG:-}" && -s "$SKIP_LOG" ]]; then
+    mapfile -t SKIPPED < "$SKIP_LOG"
+  fi
+  echo
+  if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo "!! ${#FAILED[@]} tool(s) failed to install: ${FAILED[*]}" >&2
+    echo "!! Re-run this script, or install them by hand, then check with:" >&2
+    echo "!!   /gizmoduck:doctor" >&2
+    echo "!! If a failure looks like your AV/EDR deleted or quarantined a file (nikto," >&2
+    echo "!! sqlmap, ZAP, a Nuclei template), see docs/antivirus-exclusions.md." >&2
+  elif [[ ${#SKIPPED[@]} -gt 0 ]]; then
+    echo ">> every tool this mode can install is installed; ${#SKIPPED[@]} skipped."
+  else
+    echo ">> all tools installed."
+  fi
+  if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+    echo "GIZMODUCK_BOOTSTRAP_SKIPPED: ${SKIPPED[*]}"
+  fi
+  [[ ${#FAILED[@]} -eq 0 ]]
+}
+
 # Sourced rather than executed (the test suite does this to reach
 # resolve_latest_tag): stop here, defining the functions and installing nothing.
 # `return` outside a function succeeds only in a sourced file, which is a
@@ -500,6 +835,43 @@ probe_zap() {
 # makes those equal while sourcing).
 if (return 0 2>/dev/null); then
   return 0
+fi
+
+for arg in "$@"; do
+  case "$arg" in
+    --user) USER_MODE=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "bootstrap.sh: unknown option '${arg}'" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+decide_privilege
+if [[ $USER_MODE == 1 ]]; then
+  set_user_dirs
+  missing=()
+  for c in curl unzip git python3; do
+    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "!! --user needs these on PATH first (it cannot install packages): ${missing[*]}" >&2
+    exit 2
+  fi
+fi
+
+if [[ $DRY_RUN == 1 ]]; then
+  print_plan
+  exit 0
+fi
+
+SKIP_LOG=$(mktemp) || { echo "!! cannot create a temporary file" >&2; exit 2; }
+trap 'rm -f -- "$SKIP_LOG"' EXIT
+
+if [[ $USER_MODE == 1 ]]; then
+  echo ">> --user: installing into the tool home ${TOOL_HOME}"
+  # Tools put in the tool home's bin are found by gizmoduck (scanners/base.py
+  # searches it ahead of PATH) and, for this run's checks, by this script.
+  PATH="${BIN_DIR}:${PATH}"
 fi
 
 try_install "prerequisites"      install_prereqs
@@ -542,17 +914,6 @@ NVDMSG
 try_install "sqlmap"             install_sqlmap
 try_install "OWASP ZAP"          install_zap
 
-echo
-if [[ ${#FAILED[@]} -gt 0 ]]; then
-  echo "!! ${#FAILED[@]} tool(s) failed to install: ${FAILED[*]}" >&2
-  echo "!! Re-run this script, or install them by hand, then check with:" >&2
-  echo "!!   /gizmoduck:doctor" >&2
-  echo "!! If a failure looks like your AV/EDR deleted or quarantined a file (nikto," >&2
-  echo "!! sqlmap, ZAP, a Nuclei template), see docs/antivirus-exclusions.md." >&2
-else
-  echo ">> all tools installed."
-fi
-
 cat <<'MSG'
 
 ------------------------------------------------------------
@@ -566,3 +927,9 @@ cat <<'MSG'
    python3 scripts/gizmoduck.py routine targets.yaml --scan-root .   (then /gizmoduck:doctor confirms what installed)
 ------------------------------------------------------------
 MSG
+if [[ $USER_MODE == 1 ]]; then
+  echo ">> --user: gizmoduck finds the tools in ${BIN_DIR}; add it to PATH to run them by hand."
+fi
+
+finish
+exit $?

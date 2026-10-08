@@ -20,6 +20,7 @@ WHAT IT RECOGNISES, and which existing `guards.*` key decides each:
       is configured                                 guards.terraformApply
     git push --force|-f|--force-with-lease|+ref     guards.forcePush
     gh pr merge --admin                             guards.adminMerge
+    gh workflow run, gh api .../dispatches (T-0009) guards.deployWorkflow
     aws delete-*/terminate-*/purge-*, s3 rm|rb,
       s3 sync --delete; az ... delete|purge;
       Remove-Az*                                    guards.cloudDestructive
@@ -70,6 +71,11 @@ Direct use only (Step 10): a disguise -- a rename crew does not see made, `env
 -S`, BusyBox, git `!` aliases, an interpreter, a script, an unlisted wrapper
 -- is out of scope (README, "What the guard does not catch"; T-0044).
 
+THE DISPATCH GRAMMAR (T-0009; `crew_dispatch` states it in full). With a workflow listed, a line sending
+a dispatch is judged only when every word is plain or one whole single-quoted word, joined by simple
+operators and redirects to a plain word; anything else -- a nested or fed dispatch, gh reading stdin or a
+file, a malformed block in either layer -- is could-not-tell. One road: `dispatch_answer`.
+
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
 inherit (an `env X=Y` or `X=Y` prefix, an earlier `export`, `$env:X = ...` in
@@ -90,21 +96,19 @@ per-rule policies say: nesting past MAX_DEPTH, and hook input that is not a
 readable Bash/PowerShell call. `report` mode prints no decision at all -- never
 `allow` -- plus a `systemMessage` saying what `block` would have done.
 
-WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command
-named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
-`psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
-anything an MCP server does -- and for the terraform name, one built from
-parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
-PowerShell concatenation), a wildcard keeping fewer than three of its
-letters (`t*`) on a line naming no verb, or another name for terraform made
-outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
-What `xargs`/`parallel` append is not seen either,
-so a destructive-capable tool behind one is judged as destructive, and one
-whose executable is a placeholder is refused as unreadable. For terraform it
-does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's
-workspace name, terragrunt layouts, or a TFC/HCP workspace or run driven by
-`curl` or `gh api` -- those are unknown or unseen. Native permissions and
-restricted credentials are the boundary; this is a tripwire in front of them.
+WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command named through a variable
+(`$TF apply`), a script file it runs (`bash x.sh`, `psql -f x.sql`), SQL built at runtime, a hashtable
+splatted into a cmdlet, and anything an MCP server does -- and for the terraform name, one built from parts
+crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a PowerShell concatenation), a wildcard
+keeping fewer than three of its letters (`t*`) on a line naming no verb, or another name for terraform
+made outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
+What `xargs`/`parallel` append is not seen either, so a destructive-capable tool behind one is
+judged as destructive, and one whose executable is a placeholder is refused as unreadable. For
+terraform it does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's workspace
+name, terragrunt layouts, or a TFC/HCP workspace or run driven by `curl` or `gh api` -- those are
+unknown or unseen. For a workflow dispatch (`crew_dispatch`): an unlisted spelling of
+the workflow, the workflow YAML, `gh run rerun`, `curl`. Native permissions and restricted
+credentials are the boundary; this is a tripwire in front of them.
 
 WHY THE PARSER IS HAND-ROLLED. `shlex` knows nothing of `&&`, heredocs, `$( )`
 or PowerShell, and the old command guard (removed in 0.19.52) was removed
@@ -130,6 +134,8 @@ from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
     wrapper_rest, tg_other_op, ps_head_slot, tg_exec_rest
+from crew_dispatch import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, ENV_UNLISTED, dispatch_answer, \
+    dispatch_gate, dispatch_text, fed_dispatch, judge_dispatch
 
 
 def _head_name(token):
@@ -1572,7 +1578,6 @@ def _terraform_destructive(head, args):
 # Destroy is three values too, and `unknown` is handled as `yes`: a plan crew
 # cannot read might delete anything.
 
-ENV_NONPROD, ENV_PROD, ENV_UNKNOWN = "nonProd", "prod", "unknown"
 DESTROY_YES, DESTROY_NO, DESTROY_UNKNOWN = "yes", "no", "unknown"
 
 # A saved plan bigger than this is not hashed: the hook has 15 seconds
@@ -2253,8 +2258,11 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
         words = [a for a in args if not a.startswith("-")]
         pairs = list(zip(words, words[1:]))
         if ("pr", "merge") in pairs and "--admin" in args:
-            out.append(Finding("adminMerge", text, "gh pr merge --admin",
-                               None, True, None))
+            out.append(Finding("adminMerge", text, "gh pr merge --admin", None, True, None))
+        state, why, scope = dispatch_answer(dispatch_text(argv), shell, (ctx or {}).get("dispatch") or {}, fed,
+                                            GATE_HELPERS)
+        if state != ENV_UNLISTED:
+            out.append(Finding(DEPLOY_RULE, text, scope["what"], None, True, None, dict(scope, state=state, why=why)))
         return out
     if head == "aws":
         what = _aws_destructive(args)
@@ -2371,7 +2379,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
             or not _LITERAL_EXE_RE.match(argv[0]):
         return Finding(UNREADABLE_RULE, text,
                        f"{text} (via {via}, whose executable is filled in "
-                       "from input crew cannot see)", None, True, None)
+                       "from input crew cannot see)", None, True, None, {"fed_dispatch": fed_dispatch(argv)})
 
     if head in _TF_HEADS:
         words = [w for w in args if not w.startswith("-")]
@@ -2531,15 +2539,15 @@ def cloud_pins(root):
 def environments_config(root):
     """`{"nonProd", "prodUnattended", "problem", "engaged"}` for the repo.
 
-    `nonProd` is read from the REPO LAYER ONLY, as `cloud_pins` reads
-    `cloud.*`. `problem` is non-empty when the block is there and cannot be
-    read -- which is NOT "nothing is nonProd": it makes every environment
-    unknown. `prodUnattended` comes through the ratchet, so it is true only
+    `nonProd` is read from the REPO LAYER ONLY, as `cloud_pins` reads `cloud.*`.
+    `problem` is non-empty when that block is there and cannot be read -- NOT
+    "nothing is nonProd": every environment is unknown. `dispatchProblem` adds
+    the global layer's, for dispatches only (T-0009 r3). `prodUnattended` comes through the ratchet, so it is true only
     when both config layers say `true`. `engaged` says whether the
     environment layer is configured at all: while it is not, `workspace`
     commands are not judged, exactly as before T-0005.
     """
-    out = {"nonProd": [], "problem": ""}
+    out = {"nonProd": [], "problem": "", "workflows": {}}
     path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
@@ -2559,14 +2567,13 @@ def environments_config(root):
     elif "environments" in cfg:
         problem = crew_config.environments_block_problem(cfg["environments"])
         if problem:
-            out = {"nonProd": [], "problem": problem}
+            out = {"nonProd": [], "problem": problem, "workflows": {}}
         else:
-            out["nonProd"] = [v.strip() for v in
-                              cfg["environments"].get("nonProd", [])]
-    out["prodUnattended"] = crew_config.resolve_ratcheted(
-        root, "environments.prodUnattended")["effective"] is True
-    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"]
-                          or out["problem"])
+            out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
+            out["workflows"] = dict(cfg["environments"].get("workflows", {}))
+    out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()
+    out["prodUnattended"] = crew_config.resolve_ratcheted(root, "environments.prodUnattended")["effective"] is True
+    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
     return out
 
 
@@ -2782,8 +2789,7 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
-_GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
-                 _head_name, _lex_ps)
+GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise, _head_name, _lex_ps)
 
 
 def _literal_gate(shell, text):
@@ -2795,9 +2801,9 @@ def _literal_gate(shell, text):
     binary, `Start-Process` -- is could-not-tell on a line of plain words
     too. PowerShell has the same command-word rule (`ps_trigger`)."""
     if shell == "powershell":
-        found = ps_trigger(_ps_normalise(text)[0], _GATE_HELPERS)
+        found = ps_trigger(_ps_normalise(text)[0], GATE_HELPERS)
     else:
-        found = command_trigger(text, _GATE_HELPERS)
+        found = command_trigger(text, GATE_HELPERS)
     if found is None:
         return None
     named, unseen = found
@@ -2926,7 +2932,7 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         if not argv:
             continue
         found = _classify(argv, None if fed else cmd.stdin, local_env, shell,
-                          depth, ctx, seq, bool(fed))
+                          depth, ctx, seq, fed[-1] if fed else False)
         extra = _fed_finding(argv, local_env, *fed[-1], ctx=ctx) if fed \
             else None
         _track(argv, ctx, seq, bool(fed), shell)
@@ -2937,6 +2943,12 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
             # identity row it replaces would only say the same thing twice.
             found = [f for f in found if f.rule != IDENTITY_RULE] + [extra]
         findings.extend(found)
+    if depth == 0:  # the dispatch grammar, on the raw line (T-0009)
+        cnt = dispatch_gate(text, shell, (ctx or {}).get("dispatch") or {},
+                            [f.scope for f in findings if f.rule == DEPLOY_RULE], GATE_HELPERS)
+        if cnt is not None:
+            findings = [f for f in findings if f.rule != DEPLOY_RULE and not (f.scope or {}).get("fed_dispatch")] + [
+                Finding(DEPLOY_RULE, text, cnt["what"], None, True, None, cnt)]
     return findings
 
 
@@ -3077,6 +3089,9 @@ def _judge_one(root, finding, pins, problem, envs=None):
                 "unreadable", "", True)
     if finding.rule in crew_state.GUARD_NAMES or \
             finding.rule in crew_state.PROD_GUARD_NAMES:
+        if finding.rule == DEPLOY_RULE:  # keyed on the whole command and what was judged
+            return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
+                root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
         if finding.scope is not None and envs is not None:
             return _terraform_verdict(root, finding, out, envs) + (True,)
@@ -3122,8 +3137,8 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     skip the user's own prompt, and report mode judged nothing.
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
-    envs = environments_config(root)
-    ctx = {"cd": False, "switch": False, "engaged": envs["engaged"]}
+    envs = dict(environments_config(root), command=command)
+    ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")
     envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None

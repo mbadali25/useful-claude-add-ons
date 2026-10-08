@@ -80,6 +80,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import crew_common  # noqa: E402  pylint: disable=wrong-import-position
 import crew_config  # noqa: E402  pylint: disable=wrong-import-position
 import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 import crew_ticket  # noqa: E402  pylint: disable=wrong-import-position
@@ -963,8 +964,11 @@ def _plan_digest(root, ticket, name="plan.md"):
     staled the receipt) waiting again is a new ping."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     label = name.split(".", 1)[0]
+    folder = crew_common.locate_ticket(top, ticket)[0]  # L-0509: live or archived
+    if folder is None:
+        return f"{label}:none"
     try:
-        with open(os.path.join(top, ".work", "tickets", ticket, name), "rb") as handle:
+        with open(os.path.join(folder, name), "rb") as handle:
             return f"{label}:" + hashlib.sha256(handle.read()).hexdigest()
     except OSError:
         return f"{label}:none"

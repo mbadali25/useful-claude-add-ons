@@ -171,7 +171,9 @@ hash still matches the `.mmd` (file times only when there is no `.src`).
 Notes that will otherwise cost you time:
 
 - `mmdc` drives headless Chromium via Puppeteer. In containers and CI it needs
-  `--no-sandbox`; the render script passes a puppeteer config that sets it.
+  `--no-sandbox`; the render script passes a puppeteer config that sets it. A
+  repo's `_verify/` check uses crew-setup's `templates/cases/diagrams-render.sh`,
+  which passes the same config, never a bare `mmdc` call.
 - Use `-b transparent` for embedding, `-b white` for anything that might be
   printed or pasted into Teams — transparent PNGs become unreadable on dark mode.
 - `-s 2` or `-w 2400` for slide and print resolution. The default is too small

@@ -19,7 +19,7 @@ removal stub with no behaviour.
 
 ```
 # $1 <title>          status: spec   risk: low|med|high
-depends-on: [T-####, ...]
+depends-on: [<id>, ...]
 ## Intent
 2-3 sentences: the outcome, taken from direction.md's Recommendation.
 ## Exclusions

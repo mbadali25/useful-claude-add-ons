@@ -611,8 +611,10 @@ def test_a_failed_stop_mark_is_named_in_the_stop(tmp_path, monkeypatch, fallback
     got = crew_autopilot_backlog.goal_run(str(root), slug, "s1", str(tmp_path / "t.jsonl"))
 
     assert (got["stop"], got["done"], "may still say running" in got["reason"],
-            "goal-mark" in got["reason"], crew_goal_state.run_state(str(root), slug)["state"]) == (
-        True, True, not fallback, not fallback, "done" if fallback else "running")
+            # L-0666 (G6b x release/1.2.0): the stop names what to look at, never the goal-mark helper
+            f"look at .work/autopilot/{slug}.json" in got["reason"], "goal-mark" in got["reason"],
+            crew_goal_state.run_state(str(root), slug)["state"]) == (
+        True, True, not fallback, not fallback, False, "done" if fallback else "running")
 
 
 def test_a_goal_file_that_cannot_be_looked_up_is_unknown(tmp_path, monkeypatch):

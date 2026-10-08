@@ -2564,3 +2564,13 @@ def test_a_run_that_died_mid_send_is_said_and_printed_never_resent(tmp_path, clo
     assert (code, out.startswith(crew_autopilot_sleep.MID_SEND), "sleep summary: 1" in out,
             "held pings: 1" in out, wire, _held(root), crew_sleep.unreported(_log_text(root)),
             after) == (1, True, True, True, [], 0, [], (0, "no unreported sleep decisions\n"))
+
+
+# --- L-0651: the sabotage entries that prove the must-block branches ------------
+
+def test_every_sleep_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import SLEEP_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in SLEEP_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_autopilot_sleep.py::"), label

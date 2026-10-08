@@ -495,6 +495,49 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
     assert len(lines) <= 40 and len(_inflight(lines)) == 6
 
 
+# --- the Complete/ archive (L-0509) ------------------------------------------------
+
+def _ticket_tree(tmp_path, live=(), archived=(), complete=True):
+    root = tmp_path / "r"
+    tickets = root / ".work" / "tickets"
+    tickets.mkdir(parents=True)
+    for name in live:
+        (tickets / name).mkdir()
+    if complete:
+        (tickets / "Complete").mkdir()
+    for name in archived:
+        (tickets / "Complete" / name).mkdir()
+    return root
+
+
+def test_status_counts_archived_tickets_apart(tmp_path):
+    root = _ticket_tree(tmp_path, live=("T-1", "L-0509"), archived=("T-2", "T-3", "W-0001"))
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  2 ticket dir(s), 3 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_never_counts_complete_as_a_ticket(tmp_path):
+    root = _ticket_tree(tmp_path)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
+    root = _ticket_tree(tmp_path, live=("T-1",), archived=("T-2",))
+    real = os.listdir
+
+    def listdir(path):
+        if os.path.basename(os.fspath(path)) == "Complete":
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")
+
+
 # --- T-0070: inert settings, and the approvals that actually need you -------
 
 def test_status_names_inert_settings(tmp_path):
@@ -718,7 +761,7 @@ def test_status_lists_needs_owner_line(tmp_path):
     rows = "".join(f"T-{n} | needs-owner | low | r | t\n" for n in range(1, 8)) + "T-9 | review | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-9",
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-9",
         "owner    T-1, T-2, T-3, T-4, T-5 (+2) (needs-owner)"]
 
 
@@ -726,7 +769,7 @@ def test_status_hides_closed_words(tmp_path):
     rows = "T-1 | cancelled | low | r | t\n| T-2 | Superseded | low | r | t |\nT-3 | Needs-Owner | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "owner    T-3 (needs-owner)"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "owner    T-3 (needs-owner)"]
 
 
 def test_status_unchanged_without_new_words(tmp_path):
@@ -735,7 +778,63 @@ def test_status_unchanged_without_new_words(tmp_path):
             "T-3 | done | low\nT-4 | review | low\nT-5 | spec | low\n")
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-1, T-2, T-4"]
+
+
+# --- T-0065 item 3: the agents line --------------------------------------------
+
+
+def _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}'):
+    """A fake `~/.claude` with no agents of its own, so nothing real is read."""
+    config = tmp_path / "home" / ".claude"
+    (config / "plugins").mkdir(parents=True)
+    (config / "plugins" / "installed_plugins.json").write_text(registry, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+
+def _verify_names(root, *agents):
+    rules = [{"paths": ["**/*.php"], "run": ["true"], "agents": list(agents)}]
+    (root / ".crew" / "verify.json").write_text(json.dumps({"rules": rules}), encoding="utf-8")
+
+
+def test_status_flags_uncovered_verify_agent(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "php-developer")
+
+    lines = crew_status.collect(str(root))
+
+    agents = [line for line in lines if line.startswith("agents   ")]
+    assert agents == ["agents   MISSING php-developer (verify.json rule: **/*.php)"]
+
+
+@pytest.mark.parametrize("case", ["ok", "unknown"])
+def test_status_agents_ok_and_unknown(tmp_path, monkeypatch, case):
+    _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}' if case == "ok" else "{not json")
+    root = make_repo(tmp_path)
+    _verify_names(root, "security" if case == "ok" else "voltagent:security-auditor")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    if case == "ok":
+        assert agents == ["agents   ok (1 named)"]
+    else:
+        assert len(agents) == 1 and agents[0].startswith("agents   unknown - ")
+        assert "installed_plugins.json" in agents[0]
+
+
+def test_status_shows_at_most_three_missing_agents(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "a1", "a2", "a3", "a4", "a5")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    assert len(agents) == 1
+    assert agents[0].startswith("agents   MISSING a1, a2, a3 (+2 more)")
+
+
 # --- T-0039: the gitignore line ---------------------------------------------------------
 
 def _gitignore_line(lines):
@@ -788,3 +887,162 @@ def test_status_gitignore_line_unknown_when_git_fails(tmp_path, monkeypatch):
     lines = crew_status.collect(str(make_repo(tmp_path / "second")))
     assert _gitignore_line(lines) == "gitignore unknown (crew_gitignore.py not importable)"
     assert len(lines) <= crew_status.MAX_LINES
+
+
+# --- L-0551: the waiting line and --owner ---------------------------------------
+
+def _waiting_repo(tmp_path, approvals=2):
+    """`approvals` tickets each awaiting approval (spec and plan, no receipt)."""
+    import scope_fixtures  # pylint: disable=import-outside-toplevel
+    root = scope_fixtures.make_repo(tmp_path, mode="off")
+    rows = []
+    for n in range(1, approvals + 1):
+        ticket = f"T-{n}"
+        folder = root / ".work" / "tickets" / ticket
+        folder.mkdir(parents=True)
+        (folder / "direction.md").write_text("go\n", encoding="utf-8")
+        body = scope_fixtures.SPEC.format(ticket=ticket, touch="- `src/**`")
+        first, rest = body.split("\n", 1)
+        (folder / "spec.md").write_text(f"{first} t          status: spec   risk: high\n{rest}",
+                                        encoding="utf-8")
+        (folder / "plan.md").write_text(scope_fixtures.PLAN.format(files="src/app.py"),
+                                        encoding="utf-8")
+        rows.append(f"{ticket} | ready | high | r | t")
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "INDEX.md").write_text("".join(f"{row}\n" for row in rows), encoding="utf-8")
+    return root
+
+
+def _waiting(out):
+    return [line for line in out.splitlines() if line.startswith("waiting ")]
+
+
+def test_default_report_has_a_waiting_line(tmp_path):
+    done = _run(_waiting_repo(tmp_path))
+
+    assert _waiting(done.stdout) == ["waiting  2 on you (/crew:status --owner)"], done.stdout
+
+
+def test_waiting_line_says_nothing_on_you(tmp_path):
+    assert _waiting(_run(_waiting_repo(tmp_path, approvals=0)).stdout) == ["waiting  nothing on you"]
+
+
+def test_waiting_line_names_unread_and_unknown_counts():
+    got = {"state": "ok", "why": "", "items": [("T-1", "approve", "x")], "unread": ["T-2"],
+           "unknown": [("T-3", "RuntimeError"), ("T-4", "OSError")]}
+
+    assert crew_status.waiting_line(got) == (
+        "waiting  1 on you (/crew:status --owner), 1 in review not read, 2 could not tell")
+
+
+def test_waiting_line_is_unknown_when_autopilot_cannot_be_imported(tmp_path, monkeypatch):
+    root = _waiting_repo(tmp_path)
+    real = crew_status.importlib.import_module
+
+    def broken(name, *args):
+        if name == "crew_autopilot_owner":
+            raise ImportError("broken install")
+        return real(name, *args)
+
+    monkeypatch.setattr(crew_status.importlib, "import_module", broken)
+    lines = crew_status.collect(str(root))
+
+    assert [l for l in lines if l.startswith("waiting ")] == [
+        "waiting  unknown (crew_autopilot_owner could not be imported: ImportError)"]
+
+
+def test_waiting_line_is_unknown_without_an_index(tmp_path):
+    root = _waiting_repo(tmp_path, approvals=0)
+    (root / ".work" / "INDEX.md").unlink()
+
+    assert _waiting(_run(root).stdout) == ["waiting  unknown (no .work/INDEX.md)"]
+
+
+def test_owner_view_lists_one_line_per_ticket_with_its_command(tmp_path):
+    done = _run(_waiting_repo(tmp_path), "--owner")
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "waiting  2 on you (/crew:status --owner)",
+        "T-1  approve  /crew:approve T-1", "T-2  approve  /crew:approve T-2"]), done.stdout
+
+
+def test_owner_view_is_read_only(tmp_path):
+    import review_ledger as ledger  # pylint: disable=import-outside-toplevel,reimported
+    root = _waiting_repo(tmp_path, approvals=3)
+    for ticket, rounds, receipt in (
+            ("T-2", [{"round": 1, "status": "completed", "verdict": "FINDINGS",
+                      "bundle_sha256": "a" * 64, "base": "HEAD"}], None),
+            ("T-3", [{"round": 1, "status": "completed", "verdict": "CLEAN",
+                      "bundle_sha256": "a" * 64, "base": "HEAD"}],
+             {"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+              "verdict": "CLEAN"})):
+        path = ledger.ledger_path(str(root), ticket)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"ticket": ticket, "budget": 2, "rounds": rounds,
+                                     "refused": [], "state": "REVIEWED", "receipt": receipt}))
+    (root / "src" / "app.py").write_text("x = 3\n", encoding="utf-8")  # uncommitted
+    before = _stat_tree(root)
+
+    done = _run(root, "--owner")
+
+    assert (done.returncode, _stat_tree(root) == before) == (0, True), done.stdout
+
+
+def test_owner_view_fits_forty_lines(tmp_path):
+    lines = _run(_waiting_repo(tmp_path, approvals=60), "--owner").stdout.splitlines()
+
+    assert (len(lines), lines[0], lines[-1]) == (
+        crew_status.MAX_LINES, "waiting  60 on you (/crew:status --owner)", "... 22 more")
+
+
+@pytest.mark.parametrize("other", ["--memory", "--approvals"])
+def test_owner_and_memory_together_are_refused(tmp_path, other):
+    done = _run(_waiting_repo(tmp_path), "--owner", other)
+
+    assert (done.returncode, done.stdout) == (2, "")
+
+
+def test_owner_view_never_cuts_a_command():
+    """L-0551 review r1 FIX: an 80-character ticket id keeps its whole command."""
+    long_id = "T-" + "9" * 78
+    got = {"state": "ok", "why": "", "items": [(long_id, "approve", f"/crew:approve {long_id}")],
+           "unread": [long_id], "unknown": []}
+    original = crew_status._owner_read  # pylint: disable=protected-access
+    try:
+        crew_status._owner_read = lambda root: got  # pylint: disable=protected-access
+        lines = crew_status.owner_lines(".")
+    finally:
+        crew_status._owner_read = original  # pylint: disable=protected-access
+
+    assert (lines[1].endswith(f"/crew:approve {long_id}"),
+            lines[2].endswith(f"/crew:autopilot status {long_id}")) == (True, True)
+
+
+def test_waiting_line_counts_held_and_blocked():
+    got = {"state": "ok", "why": "", "items": [("T-1", "approve", "x")], "unread": [],
+           "held": ["T-2", "T-3"], "blocked": ["T-4"], "unknown": []}
+
+    assert crew_status.waiting_line(got) == (
+        "waiting  1 on you (/crew:status --owner), 2 held, 1 blocked")
+
+
+def test_waiting_line_with_nothing_on_you_still_shows_held_and_blocked():
+    got = {"state": "ok", "why": "", "items": [], "unread": [], "held": ["T-2"],
+           "blocked": ["T-4"], "unknown": []}
+
+    assert crew_status.waiting_line(got) == "waiting  nothing on you, 1 held, 1 blocked"
+
+
+def test_owner_view_is_read_only_with_a_next_md(tmp_path):
+    root = _waiting_repo(tmp_path, approvals=2)
+    (root / ".work" / "INDEX.md").write_text("T-1 | hold | high | r | t\nT-2 | ready | high | r | t\n",
+                                            encoding="utf-8")
+    (root / ".work" / "tickets" / "T-1" / "next.md").write_text("reason: r\nrevisit: 2000-01-01\n",
+                                                              encoding="utf-8")
+    before = _stat_tree(root)
+
+    done = _run(root, "--owner")
+
+    assert (done.returncode, _stat_tree(root) == before, done.stdout.splitlines()[1].startswith(
+        "T-1  revisit  revisit 2000-01-01 (due)")) == (0, True, True), done.stdout

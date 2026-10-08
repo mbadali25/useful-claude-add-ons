@@ -58,6 +58,7 @@ import re
 import time
 
 import crew_autopilot as ap
+import crew_common
 import crew_goal_state as goal_state
 import crew_state
 import crew_ticket
@@ -185,8 +186,8 @@ def next_goal_ticket(root, slug, goal=None):
         place = f"ticket {n + 1} of {len(tickets)} of goal {slug}"
         ticket = entry.get("id")
         if not isinstance(ticket, str) or not ap._INDEX_ID.fullmatch(ticket):  # pylint: disable=protected-access
-            return stop(f"{place} is not minted: the split approval mints it "
-                        f"(crew_autopilot.py goal-approve --root . --goal {slug})")
+            return stop(f"{place} is not minted: tickets are minted once the owner approves the "
+                        f"split (/crew:approve goal:{slug}); look at why this one was not")
         why = mark_problem(top, slug, n + 1, len(tickets), ticket)
         if why:
             return stop(f"{place} names {ticket}, {why}")
@@ -352,8 +353,8 @@ def mark_problem(top, slug, n, m, ticket):
     """"" when `ticket`'s direction.md carries this goal's MARK for place n of m
     (only a ticket this goal minted or adopted does); else why it is not taken --
     a goal file naming another ticket is never trusted (L-0541 review r6)."""
-    path = os.path.join(top, ".work", "tickets", ticket, "direction.md")
-    text = read_text(path)
+    folder = crew_common.locate_ticket(top, ticket)[0]  # release/1.2.0: live, or archived
+    text = read_text(os.path.join(folder, "direction.md")) if folder else None
     if text is None:
         return (f"whose direction.md could not be read, so whether goal {slug} minted it "
                 "cannot be told - the owner checks the goal file")
@@ -368,7 +369,7 @@ def _adopt(top, slug, n, m):
     line (a mint whose id never reached the goal file), or None. Two: GoalError."""
     mark = MARK.format(slug=slug, n=n, m=m)
     found = []
-    for direction in sorted(glob.glob(os.path.join(glob.escape(top), ".work", "tickets", "*",
+    for direction in sorted(glob.glob(os.path.join(glob.escape(crew_common.tickets_root(top)), "*",
                                                    "direction.md"))):
         text = read_text(direction) or ""
         if mark in (line.strip() for line in text.splitlines()):
@@ -425,9 +426,8 @@ def mint_goal(root, slug, approved_digest=None):
         (ticket, ap._index_status(top, ticket)) for _n, ticket, _t in out["minted"])  # pylint: disable=protected-access
         if status in (None, "direction")]
     if behind:
-        return dict(out, stop=True, reason=f"{', '.join(behind)} minted but not `ready`: the "
-                    "human finishes each (crew_tracker.py move --root . --ticket <id> --to "
-                    "ready, or adds its INDEX row)")
+        return dict(out, stop=True, reason=f"{', '.join(behind)} minted but not `ready`: look at "
+                    "each - its INDEX row or tracker status never reached `ready`")
     return out
 
 
@@ -524,9 +524,8 @@ def _marked(top, slug, result, discovered=False):
             where = f"recorded in .work/autopilot/{slug}.stop instead, which every reader takes"
         except OSError as fallback:
             where = (f"nor could .work/autopilot/{slug}.stop ({type(fallback).__name__}), so the "
-                     "goal file may still say running - do not resume it before "
-                     f"crew_autopilot.py goal-mark --root . --goal {slug} --state {state} "
-                     "records it")
+                     f"goal file may still say running - look at .work/autopilot/{slug}.json "
+                     "before resuming it")
         result = dict(result, reason=f"{result['reason']}; and its {state} state could not be "
                                      f"written to the goal file ({exc}): {where}")
     return result

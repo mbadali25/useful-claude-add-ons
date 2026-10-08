@@ -81,6 +81,16 @@ before offering to run graphify without `--code-only`, tell the user which
 API key env var graphify needs and confirm it's set — don't let them discover
 the key requirement from an error after the fact.
 
+## Refresh
+
+Prefer `/crew:graph --refresh` over a raw graphify line. It runs the
+denylist check above, then the repo's sanctioned command (`graphify update .`
+where `GRAPH_REPORT.md` is tracked beside the graph, which keeps the pair
+consistent; the **Build** line where it is not), then proves the report's
+`## Summary` counts equal `graph.json`'s `nodes` and `links`. It never
+commits: whoever ran it commits the pair. `/crew:graph --status` says in one
+line whether the graph is current. **Build** above stays the first build.
+
 ## Secrets denylist
 
 graphify reads every file its ignore rules do not exclude, and puts the

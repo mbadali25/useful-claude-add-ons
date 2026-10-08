@@ -22,14 +22,37 @@ case "$ENV" in
 esac
 echo "SMOKE target: $ENV -> $BASE"
 
-PASS=0; FAIL=0
-check() { local n="$1"; shift
-  if "$@" >/dev/null 2>&1; then echo "PASS $n"; PASS=$((PASS+1))
-  else echo "FAIL $n: $*"; FAIL=$((FAIL+1)); fi; }
+# A failing check prints its last 5 output lines under its FAIL line, so the
+# cause is in the log. Exit 77 is SKIP (a missing tool or environment), not a
+# failure - the same convention crew's verify gate uses. A run with no
+# failure but an exit-77 skip exits 77 itself, so the gate records it as
+# skipped, never as verified: a check that did not run is not a pass. The output goes to a
+# temp file, not a $(...) capture, so a background process the check leaves
+# holding the pipe cannot hold the runner open. Each tail line starts
+# `FAIL <name> |`: crew's verify gate relays only lines starting `FAIL` or
+# `SMOKE:` from a failed smoke run, so an indented line would never reach it.
+# The capture file of the check in progress is removed on every exit, a
+# signal included (INT, TERM and HUP end the run through the EXIT trap).
+# Add your own teardown to cleanup(): a second `trap ... EXIT` would replace
+# this one.
+CUR_OUT=""
+cleanup() { [ -z "$CUR_OUT" ] || rm -f "$CUR_OUT"; }
+trap cleanup EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+PASS=0; FAIL=0; SKIP=0; SKIP77=0
+check() { local n="$1" out rc f; shift
+  f="$(mktemp)" || { echo "FAIL $n: cannot create a temp file"; FAIL=$((FAIL+1)); return; }
+  CUR_OUT="$f"
+  "$@" >"$f" 2>&1; rc=$?
+  out="$(tail -n 5 "$f")"; rm -f "$f"; CUR_OUT=""
+  if [ "$rc" -eq 0 ]; then echo "PASS $n"; PASS=$((PASS+1))
+  elif [ "$rc" -eq 77 ]; then echo "SKIP $n (exit 77: tool or environment absent)"; SKIP=$((SKIP+1)); SKIP77=$((SKIP77+1))
+  else echo "FAIL $n: $*"; [ -z "$out" ] || printf '%s\n' "$out" | while IFS= read -r l; do printf 'FAIL %s | %s\n' "$n" "$l"; done
+    FAIL=$((FAIL+1)); fi; }
 
 # setup (ephemeral, never prod)
 # docker compose -f docker-compose.smoke.yml up -d --wait
-# trap 'docker compose -f docker-compose.smoke.yml down -v' EXIT
+# and put `docker compose -f docker-compose.smoke.yml down -v` in cleanup() above
 
 # check "boots"           curl -fsS "$BASE/health"
 # check "rejects-anon"    test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/me")" = "401"
@@ -38,5 +61,6 @@ check() { local n="$1"; shift
 # check "write-roundtrip" ./_verify/cases/write-roundtrip.sh --env "$ENV"
 # check "migrations"      ./_verify/cases/migrate-fresh.sh
 
-echo "SMOKE: $PASS/$((PASS+FAIL)) passed against $ENV"
+echo "SMOKE: $PASS/$((PASS+FAIL)) passed, $SKIP skipped against $ENV"
 [ "$FAIL" -eq 0 ] || exit 1
+[ "$SKIP77" -eq 0 ] || exit 77

@@ -2,22 +2,25 @@
 scope mode and its ten-ticket ramp, and the successor-plan seam it drives in
 review_ledger.py.
 """
+import ast
 import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_common
 import crew_ticket
 import review_ledger as rl
 import review_patch
 import scope_report
 from review_fixtures import git
-from scope_fixtures import SCRIPTS, common_dir, make_repo, make_ticket, ready
+from scope_fixtures import SCRIPTS, archive_ticket, common_dir, make_repo, make_ticket, ready
 
 _CLI = os.path.join(SCRIPTS, "crew_ticket.py")
 
@@ -886,3 +889,225 @@ def test_autopilot_single_ticket_approval_still_records_under_an_allowing_policy
 
     assert (receipt["approved_via"], crew_ticket.accepted(str(repo), "T-1")["status"]) == (
         "autopilot", "approved")
+
+
+# --- where a ticket lives: live or Complete/ (L-0509) ------------------------------
+
+
+def _tickets(root):
+    return os.path.join(str(root), ".work", "tickets")
+
+
+def test_locate_live(tmp_path):
+    os.makedirs(os.path.join(_tickets(tmp_path), "T-1"))
+
+    assert crew_common.locate_ticket(str(tmp_path), "T-1") == (
+        os.path.join(_tickets(tmp_path), "T-1"), "live", None)
+
+
+def test_locate_complete(tmp_path):
+    os.makedirs(os.path.join(_tickets(tmp_path), "Complete", "T-1"))
+
+    assert crew_common.locate_ticket(str(tmp_path), "T-1") == (
+        os.path.join(_tickets(tmp_path), "Complete", "T-1"), "complete", None)
+
+
+def test_locate_absent_returns_the_live_path(tmp_path):
+    assert crew_common.locate_ticket(str(tmp_path), "L-0509") == (
+        os.path.join(_tickets(tmp_path), "L-0509"), "absent", None)
+
+
+def test_locate_both_is_could_not_tell(tmp_path):
+    os.makedirs(os.path.join(_tickets(tmp_path), "T-1"))
+    os.makedirs(os.path.join(_tickets(tmp_path), "Complete", "T-1"))
+
+    path, where, why = crew_common.locate_ticket(str(tmp_path), "T-1")
+
+    assert (path, where) == (None, "could not tell")
+    assert os.path.join(_tickets(tmp_path), "T-1") in why
+    assert os.path.join(_tickets(tmp_path), "Complete", "T-1") in why
+
+
+@pytest.mark.parametrize("which", ["live", "complete"])
+def test_locate_stat_permission_error_is_could_not_tell(tmp_path, monkeypatch, which):
+    os.makedirs(os.path.join(_tickets(tmp_path), "Complete", "T-1"))
+    target = os.path.join(_tickets(tmp_path), *(("T-1",) if which == "live" else ("Complete", "T-1")))
+    real = os.stat
+
+    def stat(path, *args, **kwargs):
+        if os.fspath(path) == target:
+            raise PermissionError(13, "Permission denied", target)
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_common.os, "stat", stat)
+
+    path, where, why = crew_common.locate_ticket(str(tmp_path), "T-1")
+
+    assert (path, where) == (None, "could not tell")
+    assert "Permission denied" in why
+
+
+def test_locate_not_a_directory_is_absent(tmp_path):
+    os.makedirs(_tickets(tmp_path))
+    pathlib.Path(_tickets(tmp_path), "Complete").write_text("a file, not the archive\n", encoding="utf-8")
+
+    assert crew_common.locate_ticket(str(tmp_path), "T-1") == (
+        os.path.join(_tickets(tmp_path), "T-1"), "absent", None)
+
+
+@pytest.mark.parametrize("ticket", [None, 7, "", "../x", "a/b", "Complete", "complete", "COMPLETE"])
+def test_locate_never_raises(tmp_path, ticket):
+    path, where, why = crew_common.locate_ticket(str(tmp_path), ticket)
+
+    assert (path, where, bool(why)) == (None, "could not tell", True)
+
+
+def test_locate_with_an_unusable_top_never_raises():
+    assert crew_common.locate_ticket("\0bad", "T-1")[1] == "could not tell"
+
+
+def test_ticket_folder_raises_only_through_the_callers_error(tmp_path):
+    os.makedirs(os.path.join(_tickets(tmp_path), "Complete", "T-1"))
+    assert crew_common.ticket_folder(str(tmp_path), "T-1", ValueError) == os.path.join(
+        _tickets(tmp_path), "Complete", "T-1")
+    os.makedirs(os.path.join(_tickets(tmp_path), "T-1"))
+
+    with pytest.raises(ValueError, match="could not tell where T-1 lives: both "):
+        crew_common.ticket_folder(str(tmp_path), "T-1", ValueError)
+
+
+@pytest.mark.parametrize("name", ["Complete", "complete", "COMPLETE"])
+def test_complete_is_reserved(name):
+    assert crew_common.reserved_id(name)
+    assert crew_common.PLAIN_ID.match(name) and not crew_common.TICKET_ID.match(name)
+
+
+@pytest.mark.parametrize("ticket", ["L-0509", "W-0001", "T-0001", "SDP-12"])
+def test_ids_beyond_t_are_accepted(ticket):
+    assert crew_common.TICKET_ID.match(ticket) and crew_common.PLAIN_ID.match(ticket)
+    assert crew_common.TICKET_ID_SEARCH.search(f"| {ticket} | open |").group(1) == ticket
+    assert not crew_common.reserved_id(ticket)
+
+
+def test_ticket_id_digits_are_ascii():
+    assert not crew_common.TICKET_ID.match("T-١٢")
+
+
+def test_approval_survives_archive(tmp_path):
+    """The receipt hashes spec.md/plan.md bytes, not their path, and lives under
+    the git common dir, so a moved folder keeps it (direction finding 7)."""
+    from scope_fixtures import approve_as_user  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root)
+    approve_as_user(root)
+    before = json.loads(pathlib.Path(crew_ticket.approval_path(str(root), "T-1")).read_text(encoding="utf-8"))
+    folder = archive_ticket(root)
+
+    after = json.loads(pathlib.Path(crew_ticket.approval_path(str(root), "T-1")).read_text(encoding="utf-8"))
+    spec = pathlib.Path(folder, "spec.md").read_bytes()
+
+    assert after == before
+    assert hashlib.sha256(spec).hexdigest() == after["spec_sha256"]
+
+
+# Modules that still keep their own copy of a ticket-id regex or build a ticket
+# path themselves, each with why. Every one is a harness path
+# (`scripts/check-tooling-pr.py` HARNESS), which T-0087 says changes in its own
+# PR: L-0509's harness follow-up routes them and empties these lists.
+_HARNESS_FOLLOW_UP = {
+    "crew_ticket.py": "harness: ticket_dir/check_ticket move onto crew_common in the follow-up",
+    "review_checks.py": "harness: its own plain-id regex",
+    "review_ledger.py": "harness: review.json/direction.md paths and its id regex",
+    "review_prompt.py": "harness: spec/plan/webtest blocks",
+    "review_run.py": "harness: the default work_dir",
+    "scope_guard.py": "harness: the own-files prefix (a guard blocking-decision change)",
+}
+_PATH_ALLOWED = dict(_HARNESS_FOLLOW_UP, **{
+    "crew_common.py": "the resolver itself",
+    "crew_status.py": "enumerates .work/tickets/ to count live and archived folders",
+    "crew_migrate.py": "the 0.20 layout: legacy files and the live migration target",
+    "crew_tracker.py": "_note_text writes the live folder's link once, at create",
+    "crew_wave.py": "copies an eligible (so live, never archived) ticket folder into a lane "
+                    "worktree and reads the lane's own copy there",
+})
+_SCRIPTS_DIR = os.path.dirname(crew_ticket.__file__)
+
+
+def _script_trees():
+    for name in sorted(os.listdir(_SCRIPTS_DIR)):
+        if name.endswith(".py"):
+            with open(os.path.join(_SCRIPTS_DIR, name), encoding="utf-8") as handle:
+                yield name, ast.parse(handle.read())
+
+
+def _builds_ticket_path(node):
+    if isinstance(node, ast.Call) and node.args:
+        consts = [a.value if isinstance(a, ast.Constant) else None for a in node.args]
+        if any(consts[i] == ".work" and consts[i + 1] == "tickets" for i in range(len(consts) - 1)):
+            return True
+    if isinstance(node, ast.JoinedStr):
+        for i, part in enumerate(node.values[:-1]):
+            if isinstance(part, ast.Constant) and str(part.value).endswith(".work/tickets/") \
+                    and isinstance(node.values[i + 1], ast.FormattedValue):
+                return not _is_prose(node)
+    return False
+
+
+def _is_prose(node):
+    """An f-string that only NAMES the folder in a message: it has words around it."""
+    text = "".join(p.value for p in node.values if isinstance(p, ast.Constant))
+    return " " in text.strip()
+
+
+def test_no_module_builds_ticket_paths_itself():
+    found = [f"{name}:{node.lineno}" for name, tree in _script_trees() if name not in _PATH_ALLOWED
+             for node in ast.walk(tree) if _builds_ticket_path(node)]
+
+    assert found == []
+
+
+def test_the_ticket_path_check_sees_a_join_and_an_fstring():
+    join = ast.parse('os.path.join(root, ".work", "tickets", t)').body[0].value
+    fstr = ast.parse('f".work/tickets/{t}/"').body[0].value
+    prose = ast.parse('f"no folder at .work/tickets/{t}/ here"').body[0].value
+
+    assert (_builds_ticket_path(join), _builds_ticket_path(fstr), _builds_ticket_path(prose)) == (
+        True, True, False)
+
+
+_ID_SHAPES = ("[A-Z][A-Z0-9]*-", "[A-Za-z0-9][A-Za-z0-9._-]")
+# A copy a harness sabotage row anchors on verbatim: aliasing it would lose
+# that anchor, and the sabotage file is harness too. Same shape as TICKET_ID.
+_REGEX_ANCHORED = {
+    "crew_resume.py": "sabotage_resume.py's non-ASCII-digit row anchors _TICKET_ID_RE's line",
+}
+# A regex of the plain-id SHAPE that is not a ticket id at all.
+_NOT_A_TICKET_ID = {
+    "crew_coord.py": "_PART_RE is one part of a coordination repo key, not a ticket id",
+    "crew_bridge.py": "LABEL_RE is a peer session's label for `ring --to`, not a ticket id",
+}
+
+
+def test_ticket_id_regexes_are_defined_once():
+    found = []
+    for name, tree in _script_trees():
+        if name == "crew_common.py" or name in _HARNESS_FOLLOW_UP or name in _REGEX_ANCHORED \
+                or name in _NOT_A_TICKET_ID:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and any(shape in node.value for shape in _ID_SHAPES):
+                found.append(f"{name}:{node.lineno}")
+
+    assert found == []
+
+
+def test_an_anchored_copy_is_still_the_shared_shape():
+    import crew_resume  # pylint: disable=import-outside-toplevel
+    assert crew_resume._TICKET_ID_RE.pattern.replace("$", "") == (  # pylint: disable=protected-access
+        crew_common.TICKET_ID.pattern.replace("\\Z", ""))
+
+
+def test_the_shared_shapes_are_the_ones_the_check_looks_for():
+    assert _ID_SHAPES[0] in crew_common.TICKET_ID_CORE
+    assert _ID_SHAPES[1] in crew_common.PLAIN_ID.pattern
+    assert re.compile(crew_common.TICKET_ID_CORE).fullmatch("L-0509")

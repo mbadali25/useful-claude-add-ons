@@ -63,7 +63,8 @@ COULD-NOT-TELL. On Linux the checked directory is opened, the opened directory
 is checked again, and the child starts in it through /proc/self/fd, so a later
 swap of the pathname cannot redirect it; elsewhere (no /proc/self/fd) the
 child gets the resolved path and a swap in between is not prevented. A tool
-named in `needs` is run by its absolute path.
+named in `needs` is run by its absolute path; a `module:<name>` need is a
+Python module this interpreter must import, else the step is SKIP (L-0657).
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
@@ -131,7 +132,8 @@ class Step:
 PY = "{python}"
 COMBINED_DIRS = ("plugin/crew/tests/", "plugin/gizmoduck/scripts/_test/",
                  "skills/mermaid-svg-bitbucket/tests/", "skills/notify/tests/",
-                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/")
+                 "skills/doc-builder/scripts/_test/", "skills/intune-graph/scripts/_test/",
+                 "skills/windows-ssm/tests/")
 NO_CACHE = ("-p", "no:cacheprovider")
 # What pytest resolves on its own for the whole COMBINED_DIRS list, pinned so
 # a subset run (C-0001) is the same session: gizmoduck's ini sets the rootdir,
@@ -163,17 +165,33 @@ TABLE = (
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
+    _py_suite("crew-docs-suite", "scripts/_test/crew-docs.py"),
+    _py_suite("autopilot-guide", "scripts/_test/autopilot-guide.py"),
+    # T-0055. Locally it sees commit trailers only; CI also reads the PR body.
+    # Locally its base is the nearest of origin/main and origin/release/*.
+    Step("check-crew-docs", "cheap", (PY, "scripts/check-crew-docs.py"),
+         ci=(("marketplace.yml", "python3 scripts/check-crew-docs.py"),)),
     _py_suite("ci-select", "scripts/_test/ci-select.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
          ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),)),
+    # L-0657: the committed crew guide HTML and the generated configuration
+    # reference match their sources. build.py needs markdown: SKIP without it,
+    # never PASS. config_reference.py imports only the standard library.
+    Step("crew-guides-fresh", "cheap", (PY, "docs/guides/crew/src/build.py", "--check"),
+         needs=("module:markdown",),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/build.py --check"),)),
+    Step("crew-config-reference-fresh", "cheap",
+         (PY, "docs/guides/crew/src/config_reference.py", "--check"),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),)),
     _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
     _bash_suite("menu-groups", "scripts/_test/menu-groups.sh", "marketplace.yml",
                 ci_cmd="./scripts/_test/menu-groups.sh"),
     _bash_suite("check-powershell-suite", "scripts/_test/check-powershell.sh", "marketplace.yml"),
+    _bash_suite("pwsh-isolated", "scripts/_test/pwsh-isolated.sh", "marketplace.yml"),
     _bash_suite("ps-install-keys", "scripts/_test/ps-install-keys.sh", "marketplace.yml"),
     _bash_suite("uv-install", "scripts/_test/uv-install.sh", "marketplace.yml"),
     _bash_suite("smoke", "_verify/smoke.sh", "marketplace.yml"),
@@ -181,8 +199,12 @@ TABLE = (
     Step("validate-prompts", "cheap", (PY, "hooks/scripts/_test/validate-prompts.py"),
          cwd="plugin/crew",
          ci=(("marketplace.yml", "python3 hooks/scripts/_test/validate-prompts.py"),)),
-    Step("check-powershell", "cheap", ("pwsh", "-NoProfile", "-File", "scripts/check-powershell.ps1"),
-         needs=("pwsh",), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
+    # Through the launcher (T-0506): a private startup-profile cache per pwsh run.
+    # No `pwsh` need: the launcher resolves $PWSH, pwsh, pwsh.exe and the Windows
+    # install paths itself, and exits 77 (SKIP) when none runs.
+    Step("check-powershell", "cheap",
+         ("bash", "scripts/pwsh-isolated.sh", "-NoProfile", "-File", "scripts/check-powershell.ps1"),
+         needs=("bash",), ci=(("marketplace.yml", "./scripts/check-powershell.ps1"),)),
     Step("check-instructions", "cheap", (PY, "scripts/check_instructions.py"),
          ci=(("instruction-budgets.yml", "python3 scripts/check_instructions.py"),
              ("instruction-budgets.yml", 'python3 scripts/check_instructions.py --base "$BASE"'))),
@@ -204,14 +226,14 @@ TABLE = (
          # CI runs the subset scripts/ci-select.py picks (C-0001), falling
          # back to all of COMBINED_DIRS; its suite checks that list.
          ci=(("pytest-crew.yml", "pytest ${PYTEST_COMBINED:-" + " ".join(COMBINED_DIRS) + "} "
-              + " ".join(COMBINED_CONFIG) + ' -n auto -m "not wallclock" -v'),)),
+              + " ".join(COMBINED_CONFIG) + ' -n 16 --dist worksteal -m "not wallclock" -v'),)),
     # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
     # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
     # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).
     Step("pytest-crew-slow", "heavy",
          (PY, "-m", "pytest", "plugin/crew/tests/", "-m", "slow", "-n", "4", *NO_CACHE),
          group="A", timeout=900, pytest=True,
-         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n auto -v"),)),
+         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n 8 -v"),)),
 
     _bash_suite("crew-run-tests", "plugin/crew/hooks/scripts/_test/run-tests.sh", "marketplace.yml",
                 phase="heavy", group="B", timeout=900),
@@ -733,6 +755,11 @@ def preflight(step: Step, ctx: Context, argv: list):
             full = path if os.path.isabs(path) else os.path.join(ctx.root, path)
             if not os.path.exists(full):
                 return SKIP, f"NOT VERIFIED: {path} does not exist"
+            continue
+        if need.startswith("module:"):
+            module = need[len("module:"):]
+            if not ctx.importable(module):
+                return SKIP, f"NOT VERIFIED: python module {module} is not importable"
             continue
         found = _which(need)
         if found is None:

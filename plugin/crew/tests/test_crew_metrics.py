@@ -588,3 +588,15 @@ def test_overall_verdict_fails_even_when_another_criterion_is_insufficient(repo)
     assert result["criteria"]["30pctLowerActiveTimeOrCost"] == "INSUFFICIENT DATA"
     assert result["criteria"]["zeroUnapprovedScopeChanges"] == "FAIL"
     assert result["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("name", ["Complete", "complete", "COMPLETE"])
+def test_complete_is_reserved_not_a_ticket_id(name):
+    """L-0509: the archive folder's name is never a ticket id."""
+    with pytest.raises(cm.MetricsError, match="reserved"):
+        cm.check_ticket(name)
+
+
+@pytest.mark.parametrize("ticket", ["L-0509", "W-0001", "T-0001", "SDP-12"])
+def test_ids_beyond_t_are_accepted(ticket):
+    assert cm.check_ticket(ticket) == ticket

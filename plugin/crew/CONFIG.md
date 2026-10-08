@@ -168,11 +168,11 @@ shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
 names a directory, is `.work/HANDOFF.md` there, as in `crew_state.handoff_path`; the
 `.ps1` hooks count any symlink or junction on the way as leaving, since 5.1 cannot
-resolve one). Still
-own-file only: the verify gate, the scope and completion wrappers, and
-`review_gate.py`. Until they are routed, `verify-gate.ps1` reads the
-lane's own `emergency.standDown` while the bash verify gate and
-`crew_incident.py` read the inherited one. `.crew/verify.json` is never inherited.
+resolve one). The
+verify gate (both flavours), `review_gate.py`, the gate's fingerprint and the
+scope and completion wrappers' no-python proof read the resolved file too
+(L-0681); in those wrappers `unknown` is never proof that `scope.mode` is off.
+`.crew/verify.json` is never inherited.
 
 ## 2. The invariant
 
@@ -189,10 +189,18 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **81**
-leaves. `leaf_paths(default_config())` yields **141**, so **60** are repo-only.
-For all 141, `filter_global` and `is_global_path` (which `plan_global_write`
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **88**
+leaves, 4 of them the machine-only `unattendedCloud`. `leaf_paths(default_config())`
+yields **148**, so **64** are repo-only.
+For all 148, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on rush/g4-deploy after merging release/1.2.0 (eaeb2f4d), with T-0009's
+`guards.deployWorkflow` (both layers) and repo-only `environments.workflows`;
+release's own keys since L-0675 account for the rest. Before that, measured
+on the L-0675 build branch (release/1.2.0 e84a8bfe): its repo-only
+`memory.recall.projects` moves 83 / 143 / 60 to 83 / 144 / 61; this paragraph
+said 81 / 141 / 60 until then, behind T-0051's two keys in both layers.
+Earlier: measured with `leaf_paths`
 on batch-7-build after merging T-0011: its three repo-only `autopilot.ship`,
 `autopilot.knownFailures` and `autopilot.ciTimeoutMinutes` move 81 / 138 / 57
 to 81 / 141 / 60. 81 / 138 / 57 was measured
@@ -202,7 +210,7 @@ branch after merging main ce235468 it measured 79 / 132 / 53, and 77 / 129 / 52
 before that merge. 76 / 138 / 62 was measured
 on T-0074's branch after merging main 8c0843ca; the repo-only
 `autopilot.maxAutoReplans` is the one T-0074 added. The generated tables in
-§10 and §11 state the current 81 / 141 / 60. This paragraph said 75 / 136 / 61
+§10 and §11 state the current counts. This paragraph said 75 / 136 / 61
 until then, behind main's 76 / 137 / 61 after T-0017 added
 `context.autoClear.wrapUp` to both layers. 75 / 136 / 61 was measured
 on T-0053's branch after merging main 86d96fa1; the repo-only
@@ -754,7 +762,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-87 of 153 keys are settable in the machine-global file (generated; 66 are repo-only, section 11).
+88 of 156 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -826,6 +834,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `guards.mergeGate` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
 | `guards.cloudDestructive` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
 | `guards.sqlDestructive` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
+| `guards.deployWorkflow` | both, ratchet | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | `"block"` |
 | `guards.prodDatabase` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
 | `guards.prodServer` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
 | `guards.roleWrites` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
@@ -849,6 +858,9 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `unattendedCloud.aws.readOnly.region` | machine-only | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | `null` |
 | `unattendedCloud.aws.nonProd` | machine-only | None (checked in `hooks/scripts/crew_unattended.py`) | `{}` |
 <!-- generated:config-keys-global end -->
+
+To find the repos to list in `context.autoClear.onlyRepos`, `/crew:migrate`'s
+`apply-migrate --scan-root <dir>` looks for the ones that opted in under 0.20.x (T-0106).
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
@@ -882,7 +894,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-66 of 153 keys are repo-only (generated; 87 are global-settable, section 10).
+68 of 156 keys are repo-only (generated; 88 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -909,6 +921,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.inject` | repo | not validated - read by `hooks/scripts/crew_context.py` (expects boolean) | `true` |
 | `memory.recall.vaults` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of vault names) | `[]` |
 | `memory.recall.maxChars` | repo | positive integer (coerced in `hooks/scripts/crew_recall.py`) | `800` |
+| `memory.recall.projects` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of project names) | `[]` |
 | `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
 | `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
 | `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |
@@ -939,6 +952,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `cloud.awsRegions` | repo | not validated - read by `hooks/scripts/cloud_guard.py` (expects list of names) | `[]` |
 | `cloud.azureSubscriptions` | repo | not validated - read by `hooks/scripts/cloud_guard.py` (expects list of names) | `[]` |
 | `environments.nonProd` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | `[]` |
+| `environments.workflows` | repo | not validated - read by `hooks/scripts/crew_config.py` (expects object of glob to string) | `{}` |
 | `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
 | `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
 | `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
@@ -1633,6 +1647,7 @@ earn its own section: see §18, not the tables immediately below.
 | `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
 | `guards.cloudDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.deployWorkflow` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on); `allow` covers nonProd only |
 | `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
@@ -1641,6 +1656,7 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
 | `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config`, `crew_autopilot.deploy_allowed` |
+| `environments.workflows` | object: workflow glob -> `input:<name>` or an environment name | `{}` | **repo only** | `cloud_guard.py::environments_config`, `crew_dispatch.py::dispatch_environment` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -2009,7 +2025,9 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments,
+needs that off. `.crew/verify.json` stays promote-gate's list of environments
+(and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether
+or not `environments.workflows` is set, T-0062),
 read from the session's project directory even when the deploy runs from a
 linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
@@ -2021,6 +2039,156 @@ applies promote-gate's own rule (L-1503): it refuses a map either gate
 refuses and prints, under each dispatch, `gated-as:` - every environment
 whose `deploy` matches it under either gate, whose requirements all apply. A test
 table runs both real gates beside it on the same maps and commands.
+
+### `environments.workflows` and `guards.deployWorkflow` — workflow dispatches (T-0009)
+
+Read by the cloud guard alone, while `guards.cloudGuard` is armed. A repo-only
+map from a workflow glob to where the target environment comes from:
+
+```json
+{ "environments": { "nonProd": ["dev", "qa", "staging"],
+                    "workflows": { "deploy.yml": "input:environment",
+                                   "deploy-staging.yml": "staging",
+                                   "deploy-prod.yml": "production" } } }
+```
+
+`input:<name>` reads the dispatch input `<name>` (a GitHub input name); any
+other string is that fixed environment, classified by `nonProd` like a
+terraform workspace. A key is matched with fnmatch, case-insensitively,
+against the workflow **as written** on the command line; a quoted display name
+with spaces (`gh workflow run 'Deploy Staging'`) is matched as that name.
+
+**What is judged.** `gh workflow run <wf>` and the REST dispatch `gh api` sends
+for it — method POST (`-X POST`, `--method POST`, `-XPOST`, or fields/`--input`
+with no method, which gh sends as POST) on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches`, leading `/` optional — are
+parsed by one flag parser, which reads gh's clustered short flags
+(`-iX POST`, `-iXPOST`, `-X=POST`), into one dispatch shape, and classified by
+one function, `crew_dispatch.py::dispatch_environment`. Inputs come from
+`-f`/`--raw-field` and `-F`/`--field` (`name=v` for `gh workflow run`;
+`inputs[name]=v` for the REST form, whose top-level `ref` is the branch, never
+an input). Every occurrence must agree. A `gh api` GET, or a POST to any other
+path, is not a dispatch. A standalone `-h`/`--help` before `--` (and not a
+valued option's value) prints help and sends nothing, so that line is not
+judged; `--` ends gh's options, so `-- --help` is a second workflow argument.
+
+**The dispatch grammar** (successor plan, 2026-09-27). The guard reads a line
+as a dispatch when a command word dequotes to `gh`/`gh.exe` — after
+assignments and wrappers, inside `bash -c`/`eval`/`pwsh -c` or a
+substitution — or is made at run time, and its arguments could be `workflow
+run ...` or `api <endpoint>`, a run-time word standing for any word. The
+argv's shape decides, never what else the line mentions (review round 3): a
+command word made at run time is bash's `$X` (which bash may split, so `$C`,
+`$C deploy.yml` and `$C -f environment=x` can each be a whole dispatch), an
+`xargs -I CMD CMD`/`parallel {}` placeholder, PowerShell's `& $x`, a
+`Start-Process`/`-FilePath` target that is gh or made at run time, or a name
+`Set-Alias`/`New-Alias`/an `alias:` path points at one; a PowerShell variable
+in gh's own arguments (`gh $w run x`) is a run-time word too. Such a line is judged only when **every** word on it is a
+plain literal (`[A-Za-z0-9_./:=@%+,-]`) or one whole single-quoted word with no
+`'` or control character inside, and its only operators are `;`, `&&`, `||`,
+`&`, a newline, `>`/`>>`/`&>`/`&>>` to a plain word, and the exact token
+`2>&1` (PowerShell also refuses `,` and a leading `@`). Everything else is
+**could not tell**: `|` anywhere on the line, every `<` form (`<`, `<<`,
+`<<<`, `<&`, `<>`), any other `N>&M`, `>|`, `<(...)`, `>(...)`, double quotes,
+`$'...'`, a backslash, `$`, a backquote, `*`, `?`, `[`, `]`, `{`, `}`, `~`,
+a tab or CR inside a word, a control character; a dispatch the lexer is not
+known to read (inside `bash -c`/`eval`/`pwsh -c`/`sh <<EOF`, behind `xargs`,
+`parallel` or `find -exec`, an alias or a copy of `gh` made on the line, zsh's
+`=gh`, a command word made at run time); gh reading its inputs from stdin or a
+file (`--json`, `--input <anything>` including `-`, `-F name=@file`,
+`-F name=@-`) — **crew never reads stdin**; a line whose literal reading and
+the lexer's name different dispatches; and, for every dispatch-shaped line,
+an `environments` block that does not validate (`workflows` must be an object
+of non-blank keys to `input:<name>` or non-blank names), which also forces an
+armed guard to `block` mode — in either layer: a malformed machine-global
+block (`"prodUnattended": "yes"`, `null`) engages the gate and makes every
+dispatch could-not-tell too, though it leaves the terraform layer's reading
+and the mode as they were (the ratchet already holds a non-bool down).
+**The launcher rule** (review round 4): a PowerShell launcher or alias writer
+(`Start-Process`/`saps`/`start`, `Set-Alias`/`New-Alias`, a command writing an
+`alias:`/`function:` path, `Invoke-Command`, `Start-Job`, ...) holding a
+dispatch-shaped word — gh, `workflow`, `dispatches` (a quoted `-ArgumentList`
+split on spaces and commas) or a word made at run time — is could-not-tell
+unless every parameter on it is a full, value-taking name of that command
+(`Start-Process`: `-FilePath`, `-ArgumentList`, `-WorkingDirectory`,
+`-Credential`, `-Verb`, `-WindowStyle`, `-RedirectStandardOutput`,
+`-RedirectStandardError`, `-Environment`; the aliasers: `-Name`, `-Value`,
+`-Description`, `-Option`, `-Scope`; an `alias:` path writer: `-Path`,
+`-LiteralPath`, `-Name`, `-Value`; any other launcher: none). A switch
+(`-NoNewWindow`, `-Wait:$true`), an abbreviation (`-Fi`), a parameter alias
+(`-Args`, `-PSPath`), `-RedirectStandardInput`, a common parameter or an en
+dash refuses it — the accepted cost is that `Start-Process $exe -Wait
+-ArgumentList 'notes.txt'` asks. A trusted line passes gh only its positional
+values and `-ArgumentList`. **The same-command rule**: a command crew cannot
+split (`alias`, `hash`, `source`, `ssh`, a launcher) is gated only when gh and
+`workflow`/`dispatches` are in that one command — the whole line only when a
+word in it is made at run time — so `alias g=gh; echo workflow` is not judged;
+and `alias NAME=VALUE` whose VALUE's last command runs gh (past `env`,
+`command` and the other wrappers; `alias g='echo gh'` runs echo), or `hash -p
+PATH NAME` with PATH naming gh, makes NAME a copy of gh for the commands
+after it — for the whole line when a loop, a function or a `trap` on it can
+run earlier text later; `Set-Alias` counts for the whole line. A PowerShell
+comma inside one whole single-quoted word is text; a bare one is refused. The grammar does not resolve anything: `x=staging;
+gh ... -f environment=$x` is could-not-tell although bash would pass
+`staging`. What a user may not expect, and the literal to write instead:
+`--json`/`--input -` → `-f` fields; `"Deploy Staging"` → `'Deploy Staging'`;
+unquoted `repos/{owner}/{repo}/...` or `-f inputs[environment]=x` → quote the
+word; `| tee log` → `> log`; `$ENV` → the value; `bash -c 'gh ...'` → the
+`gh` command itself; a PowerShell launcher or alias with a switch, an
+abbreviation or a parameter alias → full parameter names and no switches, or
+`gh workflow run ...` directly. Other `gh` commands (`gh pr create --title "..."`) are
+never gated, and with `workflows` at `{}` (and a valid block) the gate does
+not run at all.
+
+**Unknown**, and never allowed unattended, on a literal line: no `<name>` input
+given (the workflow's default is not read), conflicting values, a value or
+workflow the parser still will not read as a name (a single-quoted `'$ENV'`,
+`'Deploy *'`, or a name holding a character that does not show: a control, a
+line or paragraph separator, a bidi or zero-width mark, or a blank other than
+a plain space), a second workflow argument (gh takes one), and no workflow
+named (gh prompts for one).
+
+**The decision**, after `guards.deployWorkflow` has been ratcheted (so `ask`
+means `ask` in **both** layers; a repo alone gets `block`):
+
+| policy | nonProd | prod, `prodUnattended` both layers | prod | unknown env | could not tell |
+|---|---|---|---|---|---|
+| `block` | deny | deny | deny | deny | deny |
+| `ask`, no live marker | **allow**, logged | **allow**, logged + on screen | ask | ask | ask |
+| `ask`/`allow`, live marker | allow | allow | allow | allow | allow |
+| `allow` | allow, logged | allow, logged + on screen | **ask** | **ask** | **ask** |
+
+A deploy never destroys, so T-0005's destroy column does not apply — and
+`allow` **covers nonProd only**: production without `prodUnattended` in both
+layers, an unknown environment, and a line crew could not tell about still ask
+when attended and are denied unattended. The approval marker is
+`.approved-guard-deployWorkflow-<hash>`, keyed on the **whole command text,
+byte for byte** — never a subset, so a marker for `--json < prod-one.json`
+covers neither `< prod-two.json` nor the argv without its redirect — plus, for
+a classified dispatch, the workflow key and environment judged, so an edit to
+`environments.workflows` inside the 15-minute window does not carry an
+approval across. A could-not-tell refusal names that marker.
+
+**The contract for callers** (T-0045's autopilot dispatch, T-0072's promote
+path). `crew_dispatch.dispatch_answer(text, shell, envs)` is the one public
+entry point: `(state, why, scope)` with `state` in `nonProd | prod | unknown |
+unlisted`, pure given `envs` (`cloud_guard.environments_config(root)`). It runs
+the grammar before any parsing, so no caller reaches the parser around it;
+could-not-tell is `unknown` with `scope["op"] == "line-not-literal"`; a line
+with several dispatches answers for the most severe, every one listed in
+`scope["dispatches"]`. The hook's own `_classify` reaches the parser only
+through it. The hook's stdout is `deny`, `ask` or nothing — never `allow`.
+
+**Unclassified.** A workflow matching no key is not judged at all — no
+decision, no guard.log row — exactly as before T-0009; with `workflows` at `{}`
+nothing is. `environments.workflows` does not count toward the terraform
+layer's `engaged`, so listing workflows alone leaves `workspace new|select`
+unjudged. Not seen: an unlisted spelling of a deploy workflow (its display
+name or numeric id — list every spelling you use), the workflow YAML
+(`environment:` keys, `${{ inputs.* }}`), `gh run rerun`, `gh alias`, a `gh`
+copied or aliased by an earlier command, `env -S`, a script file, and `curl`.
+A deploy command also declared in `.crew/verify.json` still passes through
+`promote-gate.sh`, whose `requireHuman` is independent of `prodUnattended`.
 
 ### `unattendedCloud` — the identity an unattended run holds (machine only)
 
@@ -2729,8 +2897,11 @@ re-ran from that same old commit, forever. That was the actual 7+ minute Stop
 gate defect this section exists to explain the fix for.
 
 **The per-rule record replaces "everything or nothing."**
-`.crew/.verify-gate.record.json` (machine-local, gitignored, never tracked —
-see the `.crew/*` ignore policy in root `CLAUDE.md`) now tracks status per
+`.crew/.verify-gate.record.json` (machine-local, gitignored by the shipped
+`.crew/*` template — see the ignore policy in root `CLAUDE.md`; where a repo
+does not ignore it, it is crew bookkeeping, `crew_ticket.CREW_BOOKKEEPING_PATHS`,
+excluded by name from the review bundle, the completion audit and the gate's
+own changed list, and refused to Write/Edit by the scope guard, T-0068) now tracks status per
 rule, keyed by a content hash of that rule's `paths`/`run` so it survives
 `.crew/verify.json` being reordered:
 
@@ -2941,6 +3112,9 @@ gate reaching in afterward to kill what a rule left running.
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
+Every stop names the owner decision it asks for (`decision=`, L-0666) and
+never a refresh, a graph build or a review round autopilot runs itself; no
+setting changes that.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.
@@ -2979,7 +3153,7 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.maxTicketsPerRun` | `3` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Tickets one goal run (one session, recorded in the goal file's `runs`) may start; the next stops the run with its `resume: /crew:autopilot --goal <slug>` line. Anything but a positive integer reads as `3`, with a warning. Repo only. |
 | `autopilot.maxTokensPerSession` | `2000000` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Input + output tokens this session's transcript may hold before a goal run stops (cache tokens are not counted). A transcript that is not found, or a line that does not parse, stops as could-not-tell. Anything but a positive integer reads as `2000000`, with a warning. Repo only. |
 | `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
-| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict; `crew_autopilot.settings` (T-0067, `crew_autopilot_fix.py`): what a single-ticket run does with a FINDINGS round no receipt stands on | Wave: `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Single ticket: `stop` and `clean-only` stop at `accept-review` as before; `fix-and-rereview` makes `next` name the `fix` phase (`fix-findings <id> round <n>`) for a round with a round left and a BLOCK or FIX line, then the refresh and `/crew:review` once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes every BLOCK and FIX line and the bundle changed. A config that cannot be read reads `unknown`, which never fixes. Anything else reads as `stop`, with a warning. No setting lets autopilot accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -3193,7 +3367,12 @@ T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
 the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
-`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+`/crew:approve <id>`; `next` is what names the policy's route. A policy value
+that is not a policy (`approval: "bogus"`) is warned about by `settings`
+(`policyWarnings`), never by `status` (T-0027); `status` keeps every other
+warning, the could-not-tell one for an unreadable config included. `approve`
+under such an unreadable config refuses naming that cause, not "autopilot.mode is
+not plan". The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 
@@ -3277,12 +3456,20 @@ stderr, exit 0. Each is one line, the verdict first: a value that is not plain
 printable text (a class or environment holding whitespace included) prints as
 its repr, so no input can add a line a consumer would read as a second verdict.
 
-**Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
-`settings` warns whenever `autopilot.deploy` is not `none`. The consumer
-(T-0045) calls `deploy_allowed` immediately before each dispatch, passes the
-class from T-0005's classifier, proceeds only on the exact verdict `allow`
-(anything else — `ask`, `refuse`, no answer, a non-zero exit — stops), and
-persists every report. `allow` is necessary, not sufficient: T-0009's hook,
+**The deploy phase (L-0649).** With `autopilot.deploy` `nonprod` or `all`,
+once the ship phase reports the ticket's PR merged at this HEAD, `next`
+answers `phase=deploy command=/crew:promote <env>` for the first environment
+in `.crew/verify.json` with a `github` entry (file order, nonProd before
+prod) that has no PROMOTIONS row for the sha, after calling `deploy_allowed`
+with T-0009's class for the entry's dispatch and proceeding only on the exact
+verdict `allow` (every non-empty report is printed in the reason). It stops
+with **`deploy-target`** when the target cannot be told or is not safe to
+drive — the map unreadable, an entry `crew_ghdeploy.py check` refuses,
+`requireHuman`, no `shaInput`, a class unknown or mismatched, any verdict but
+`allow` — and with **`failed-deploy`** when the target's newest row for the
+sha is not all-pass (it never re-deploys). With every target all-pass, or no
+`github` environment (promotion is then a person's), it is `closed`. `next`
+stays read-only: no `gh`, no `crew_ghdeploy.py` subcommand. `allow` is necessary, not sufficient: T-0009's hook,
 promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
 
@@ -3295,12 +3482,10 @@ before the crew that reads it (T-0010) existed, and nothing said so.
 key of `default_config()` is inert — outside `platform.*` (machine facts
 `platform-sync` stamps) and `schema`, and a key under an open table such as
 `dev.roles` counts as known. A small `INERT_PENDING` table adds the ticket
-that brings each known-but-unbuilt key, and the values that do nothing yet:
-
-| Key or value | Brought by |
-|---|---|
-| `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
-| `deploy: "nonprod"` or `"all"` (the key is read; nothing dispatches a deploy yet) | T-0045 |
+that brings each known-but-unbuilt key, and the values that do nothing yet.
+It is empty in this crew: T-0029 (`reviewPolicy`, `maxLanes` under `autopilot`),
+L-0649 (`deploy: "nonprod"` or `"all"`) and L-0541 (`maxTicketsPerRun`, and
+`mode: "backlog"`) each removed their rows when they landed.
 
 Any other unknown key is named `(unknown key)`: a typo, or a key from another
 crew version. A path the global filter drops from the machine file (this crew

@@ -379,23 +379,140 @@ def _read_config(path):
     return b"".join(chunks), None
 
 
+GIT_TIMEOUT = 10
+NOT_A_REPOSITORY = "not a git repository"
+IN_A_REPOSITORY = "inside a repository"
+# What Kimi Code 2.1.1 reads from its project root and the directories down to
+# its working directory (L-0708, Unknown U1, read from the 2.1.1 bundle's
+# `dist/main.mjs`): AGENTS.md / agents.md / .kimi-code/AGENTS.md in each
+# (`loadAgentsMdForRoots`), and at the root .mcp.json (`resolveMcpJsonPaths`),
+# .kimi-code/{local.toml,agents,skills} and .agents/{agents,skills}. Its root is
+# the nearest directory holding ANY `.git` entry (`findGitWorkTree`,
+# `findProjectRoot`), a `.git` git itself rejects included.
+KIMI_PROJECT_FILES = ("AGENTS.md", "agents.md", ".kimi-code", ".agents", ".mcp.json")
+# The instruction files it reads in every directory below the root too.
+KIMI_PER_DIRECTORY = ("AGENTS.md", "agents.md", os.path.join(".kimi-code", "AGENTS.md"))
+
+
+def _git_path():
+    return shutil.which("git")
+
+
+def _git_env():
+    """The caller's environment with every GIT_* variable removed (GIT_DIR,
+    GIT_WORK_TREE, GIT_CEILING_DIRECTORIES, ... would change git's answer)
+    and git's messages in the C locale, so the one answer matched is stable.
+    GIT_DISCOVERY_ACROSS_FILESYSTEM=1: a TMPDIR on its own mount (a tmpfs, a
+    CI runner's work volume) otherwise stops the search at the mount point
+    with a two-line "Stopping at filesystem boundary" answer, which is
+    could-not-tell, and a repository above that mount would go unseen."""
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith("GIT_") and k.upper() != "LANGUAGE"}
+    env.update(LC_ALL="C", LANG="C", GIT_DISCOVERY_ACROSS_FILESYSTEM="1")
+    return env
+
+
+def _git_says(here):
+    """'' when git says `here` is not in a repository, IN_A_REPOSITORY when it
+    says it is, else why git's answer cannot be read (could-not-tell)."""
+    git = _git_path()
+    if not git:
+        return "git is not on PATH, so whether it is inside a repository cannot be told"
+    try:
+        done = subprocess.run([git, "rev-parse", "--git-dir"], cwd=here, env=_git_env(),
+                              stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=GIT_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired:
+        return f"git rev-parse did not answer within {GIT_TIMEOUT}s"
+    except (OSError, ValueError) as exc:
+        return f"git rev-parse could not run ({type(exc).__name__})"
+    if done.returncode == 0:
+        return IN_A_REPOSITORY
+    message = done.stderr.decode("utf-8", "replace").strip()
+    # git's own diagnostic, alone: one line that starts `fatal: not a git
+    # repository`. The phrase inside another error (a directory named so, in a
+    # "dubious ownership" path) is not that answer (L-0708 review round 2).
+    if done.returncode == 128 and "\n" not in message \
+            and message.startswith(f"fatal: {NOT_A_REPOSITORY}"):
+        return ""
+    first = re.sub(r"[^\x20-\x7e]", "?", (message.splitlines() or [""])[0])[:160]
+    return f"git rev-parse exited {done.returncode}: {first or '(no message)'}"
+
+
+def _kimi_project_files(path):
+    """'' or why Kimi Code would read project files outside the probe's
+    scratch directory: the nearest directory above `path` holding a `.git`
+    entry is Kimi's project root, and every directory from it down to `path`
+    must hold none of KIMI_PROJECT_FILES at the root, nor of KIMI_PER_DIRECTORY
+    in a directory below it (review round 4). Walked lexically (Kimi does not
+    resolve its working directory) and resolved (where the files land)."""
+    for start in dict.fromkeys((os.path.abspath(path), os.path.realpath(path))):
+        chain, here = [], start
+        while True:
+            chain.append(here)
+            marker = os.path.join(here, ".git")
+            try:
+                os.lstat(marker)
+                break
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                return f"{marker} could not be checked ({type(exc).__name__})"
+            parent = os.path.dirname(here)
+            if parent == here:
+                chain = []
+                break
+            here = parent
+        for directory in chain:
+            # chain runs from `path` up to the root, which is its last entry.
+            names = KIMI_PROJECT_FILES if directory == chain[-1] else KIMI_PER_DIRECTORY
+            for name in names:
+                found = os.path.join(directory, name)
+                try:
+                    os.lstat(found)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    return f"{found} could not be checked ({type(exc).__name__})"
+                return (f"{chain[-1]} holds a .git git rejects, which Kimi Code still takes as "
+                        f"its project root, and it would read {found}")
+    return ""
+
+
 def _inside_a_repository(path):
-    """True when `path` or any directory above it holds a `.git` (a directory or a
-    worktree's file). Resolved first, so a symlinked TMPDIR is judged where it lands.
-    A `.git` that cannot be checked counts as present: could-not-tell is refused."""
+    """'' when `path` is outside every repository and Kimi Code would read no
+    project file above it; else, truthy, IN_A_REPOSITORY or the reason it is
+    refused (L-0708). Git is asked (`git rev-parse --git-dir`, GIT_* removed,
+    LC_ALL=C, bounded, stdin closed), resolved first so a symlinked TMPDIR is
+    judged where it lands: only its exact "not a git repository" answer
+    (exit 128) allows, and every other answer -- git missing, a timeout,
+    "dubious ownership", any other exit -- is could-not-tell and refused. A
+    `.git` git rejects (the empty, read-only /tmp/.git Codex's workspace-write
+    sandbox mounts) no longer refuses on its own: only when Kimi Code, which
+    stops at any `.git`, would read a project file there."""
     here = os.path.realpath(path)
-    while True:
-        try:
-            os.lstat(os.path.join(here, ".git"))
-            return True
-        except FileNotFoundError:
-            pass
-        except OSError:
-            return True
-        parent = os.path.dirname(here)
-        if parent == here:
-            return False
-        here = parent
+    said = _git_says(here) or _kimi_project_files(path)
+    _LAST_ANSWER.path, _LAST_ANSWER.why = path, said
+    return said
+
+
+# `probe` keeps `if _inside_a_repository(base):` as it was (a sabotage anchor);
+# the refusal reads the answer that `if` acted on, not a second ask whose
+# answer may differ (L-0708 review round 1). Per thread, so a probe running
+# beside another never reports the other's answer (review round 3).
+_LAST_ANSWER = threading.local()
+
+
+def _repository_refusal(base):
+    """The refusal `probe` prints when `_inside_a_repository(base)` was truthy."""
+    why = (_LAST_ANSWER.why if getattr(_LAST_ANSWER, "path", None) == base
+           else _inside_a_repository(base))
+    if why == IN_A_REPOSITORY:
+        return f"the temporary directory {base} is inside a repository; set TMPDIR outside it"
+    if " holds a .git " in why:
+        return f"the temporary directory {base} cannot hold the probe: {why}; set TMPDIR elsewhere"
+    return (f"whether the temporary directory {base} is inside a repository could not be told: "
+            f"{why or 'the answer changed between two asks'}; set TMPDIR outside it")
 
 
 def _run(cmd, env, timeout, cwd=None):
@@ -545,8 +662,7 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     if _inside_a_repository(base):
         # Round 6 of T-0028: under a repository the CLI can discover that
         # repository's instructions, which is what the throwaway directory avoids.
-        return _result("unknown", f"the temporary directory {base} is inside a repository; "
-                                  "set TMPDIR outside it", alias=alias, exe=exe)
+        return _result("unknown", _repository_refusal(base), alias=alias, exe=exe)
     try:
         workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-", dir=base)
     except OSError as exc:  # round 5 of T-0028: no scratch directory is `unknown`

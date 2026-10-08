@@ -95,6 +95,7 @@ import sys
 import time
 
 import completion_audit
+import crew_common
 import crew_context
 import crew_ticket
 import review_ledger
@@ -116,7 +117,7 @@ METRIC_FIELDS = (
 )
 
 _GUARD_LOG = os.path.join(".crew", "guard.log")
-_TICKET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+_TICKET_RE = crew_common.PLAIN_ID
 
 
 class MetricsError(RuntimeError):
@@ -132,6 +133,8 @@ def check_ticket(ticket):
     if not isinstance(ticket, str) or not _TICKET_RE.match(ticket):
         raise MetricsError(f"ticket id {ticket!r} is not a plain id "
                            "(letters, digits, '.', '_', '-'; no path separators)")
+    if crew_common.reserved_id(ticket):
+        raise MetricsError(f"{ticket!r} is reserved for the archive folder, not a ticket id")
     return ticket
 
 

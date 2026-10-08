@@ -5,6 +5,7 @@ block of the root `.gitignore` -- never touching a line a human wrote.
 Every fixture is a real git repository: what a pattern does is measured with
 git (`check-ignore`, `ls-files -ci`), so a mocked git would test the mock.
 """
+import io
 import os
 import subprocess
 import sys
@@ -705,6 +706,25 @@ def test_undecodable_tracked_name_still_reports_owner_exit_3(tmp_path, encoding)
     assert done.returncode == 3, done.stdout + done.stderr
     # Printed escaped (group review r4): a surrogate-escaped byte is not printable.
     assert b"needs-owner 'k\\udcff.pem'" in done.stdout and b"Traceback" not in done.stderr
+
+
+def test_an_unencodable_failure_message_is_still_unknown_exit_4(monkeypatch):
+    """C-0025: `main` reconfigures stdout to replace what it cannot encode, so a
+    failure whose message holds a surrogate-escaped path is still exit 4 with
+    its `unknown` line, never a traceback. Every report line is escaped by
+    `_shown` already; the failure line is the one that is not."""
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, encoding="ascii", errors="strict")
+    monkeypatch.setattr(sys, "stdout", out)
+
+    def boom(*_a, **_k):
+        raise ValueError("k\udcff.pem")
+    monkeypatch.setattr(cg, "measure", boom)
+
+    code = cg.main(["check", "--root", "."])
+    out.flush()
+
+    assert (code, b"unknown crew_gitignore.py failed: ValueError" in raw.getvalue()) == (4, True)
 
 
 @pytest.mark.parametrize("template", [".env.example", ".env.sample", ".env.template", ".env.dist",

@@ -14,12 +14,13 @@ carries the per-step TDD discipline and the ledger this file only summarises.
 ## 0. Refuse without an approved plan
 
 ```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py status --ticket $1
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
-**This command refuses to edit anything unless that call reports the plan
-approved.** No approval, a stale one (the plan changed since) or no plan: stop,
-say which, and point at `/crew:plan $1` or `/crew:plan $1 --approve`. The receipt, not your read of the plan, is what the completion audit checks later.
+**This command refuses to edit anything unless `status` reports the plan
+approved** (`validate` checks the contract, not approval). `none` or `stale`: stop, say which, name one fix -
+no plan.md or `INVALID:` lines: run `/crew:plan $1`; else the user types `/crew:approve $1`.
 
 ## 1. Record where this ticket starts
 
@@ -85,14 +86,13 @@ New behaviour with no coverage → write the test here, in this session, and con
 ## 6. Tests, then docs, then refresh artifacts, then review — in that order
 
 Coverage above is the tests. Then `/crew:docs $1`, which records each `not needed` reason and deferral in
-`.work/tickets/$1/docs.json` ("none" is common and correct), and its read-only check:
+`.work/tickets/$1/docs.json` ("none" is common and correct; a new outbound call gets its `/crew:reference --integrations` entry), and its read-only check:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
 ```
 
-On `MISSING` run `/crew:docs $1` again; `MISSING` after the second run, or `unknown`: stop and report. Then commit,
-and check the code maps, diagrams, code graph and README diagram embeds (`crew_diagrams.py`) this ticket's changed paths reach:
+On `MISSING` run `/crew:docs $1` again; `MISSING` after the second run, or `unknown`: stop and report. Then commit, and check the code maps, diagrams, code graph, `docs/reference/integrations.md` and README diagram embeds (`crew_diagrams.py`) this ticket's changed paths reach:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1

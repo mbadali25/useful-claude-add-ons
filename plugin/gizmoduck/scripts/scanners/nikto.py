@@ -86,43 +86,69 @@ _BANNER_RE = re.compile(
 # emitted an unrelated warning nikto.pl doesn't hit under Git's perl). So
 # this adapter trusts `base.which("perl")` like any other adapter trusts
 # `base.which()` for its tool - the capability check belongs in bootstrap.
-_NIKTO_PL_CANDIDATES = tuple(
-    p for p in (
-        os.environ.get("GIZMODUCK_NIKTO_PL"),
-        (str(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "nikto" / "program" / "nikto.pl")
-         if os.environ.get("LOCALAPPDATA") else None),
-    ) if p
-)
+OVERRIDE_VAR = "GIZMODUCK_NIKTO_PL"
+
+
+def _nikto_pl_candidates():
+    """Step 4: where bootstrap.ps1 extracts nikto on Windows. Read now."""
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        return ()
+    return (str(Path(local_appdata) / "Programs" / "nikto" / "program" / "nikto.pl"),)
 
 
 def _find_nikto_pl():
-    for candidate in _NIKTO_PL_CANDIDATES:
+    for candidate in _nikto_pl_candidates():
         if candidate and Path(candidate).is_file():
             return candidate
     return None
 
 
-def _resolve_argv(target, raw_path):
-    """The nikto command line to run: a native `nikto` binary on PATH (the
-    Linux/apt-installed case), or - lacking one - whatever `perl` is on
-    PATH launching nikto.pl directly (the Windows case). Returns None if
-    neither route is usable, so run() can decline cleanly instead of
-    handing an unusable argv to base.run_tool.
+def nikto_override():
+    """GIZMODUCK_NIKTO_PL's state (base.Override), read now."""
+    return base.override(OVERRIDE_VAR, base.existing_file)
+
+
+def _with_perl(nikto_pl):
+    perl = base.which("perl")
+    return [perl, nikto_pl] if nikto_pl and perl else None
+
+
+def _resolve_prefix():
+    """The command prefix that runs nikto, or None. One order (L-0684):
+    (1) GIZMODUCK_NIKTO_PL with perl - set but not a file makes nikto
+    unavailable, never a fall-through; (2) <tool home>/nikto/program/nikto.pl
+    with perl; (3) a native `nikto` via base.which (tool home bin, then PATH,
+    the Linux/apt case); (4) the %LOCALAPPDATA% nikto.pl with perl (the
+    Windows case). is_available() and _resolve_argv() both use this, so they
+    cannot disagree.
     """
+    ovr = nikto_override()
+    if ovr.state != base.UNSET:
+        return _with_perl(ovr.found)
+    home = base.tool_home()
+    if home is not None:
+        prefix = _with_perl(base.existing_file(home / "nikto" / "program" / "nikto.pl"))
+        if prefix:
+            return prefix
     native = base.which("nikto")
     if native:
-        return [native, "-h", target, "-Format", "csv", "-output", raw_path]
-    nikto_pl = _find_nikto_pl()
-    perl = base.which("perl")
-    if nikto_pl and perl:
-        return [perl, nikto_pl, "-h", target, "-Format", "csv", "-output", raw_path]
-    return None
+        return [native]
+    return _with_perl(_find_nikto_pl())
+
+
+def _resolve_argv(target, raw_path):
+    """The nikto command line to run, or None if no route is usable, so run()
+    can decline cleanly instead of handing an unusable argv to base.run_tool.
+    """
+    prefix = _resolve_prefix()
+    if prefix is None:
+        return None
+    return [*prefix, "-h", target, "-Format", "csv", "-output", raw_path]
 
 
 def is_available():
-    if base.which("nikto") is not None:
-        return True
-    return _find_nikto_pl() is not None and base.which("perl") is not None
+    return _resolve_prefix() is not None
 
 
 def run(target, outdir, opts=None):

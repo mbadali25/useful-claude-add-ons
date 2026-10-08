@@ -48,12 +48,15 @@ def _eligible(tmp_path, fall_through):
 
 
 def test_an_eligible_provider_without_a_runner_is_skipped_out_loud(tmp_path):
+    """Every QA provider has a runner since L-0527 (kimi), so a stand-in name
+    plays the provider the report calls eligible and nothing can launch."""
     out, err = _eligible(tmp_path, [
-        {"provider": "kimi", "eligible": True}, {"provider": "codex", "eligible": False},
-        {"provider": "copilot", "eligible": True}, {"provider": "claude", "eligible": True}])
+        {"provider": "future", "eligible": True}, {"provider": "codex", "eligible": False},
+        {"provider": "kimi", "eligible": True}, {"provider": "copilot", "eligible": True},
+        {"provider": "claude", "eligible": True}])
 
-    assert out == "copilot claude"
-    assert "kimi is eligible but has no review runner - skipped" in err
+    assert out == "kimi copilot claude"
+    assert "future is eligible but has no review runner - skipped" in err
 
 
 def test_every_runnable_provider_keeps_its_order(tmp_path):
@@ -68,6 +71,6 @@ def test_every_runnable_provider_keeps_its_order(tmp_path):
 def test_the_snippet_names_exactly_the_runner_providers():
     """Drift guard: a provider added to review_run.PROVIDERS must reach the
     snippet's list, or it would be filtered out of every review."""
-    lists = set(re.findall(r"\(\"codex\", \"copilot\", \"claude\"\)", _snippet()))
+    lists = set(re.findall(r"\(\"codex\"(?:, \"\w+\")*\)", _snippet()))
     assert lists == {str(review_run.PROVIDERS).replace("'", '"')}, lists
     assert _snippet().count(str(review_run.PROVIDERS).replace("'", '"')) == 2

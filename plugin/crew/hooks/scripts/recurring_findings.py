@@ -53,6 +53,7 @@ import re
 import stat
 import sys
 
+import crew_common
 import crew_ticket
 
 MAX_LINES = 60
@@ -371,8 +372,13 @@ def implementer_block(root, ticket, paths=(), data=None):
               "each as a check to run on your change before /crew:review."]
     touch, unknown = [], None
     if ticket:
-        spec = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), "spec.md")
+        # The spec wherever the ticket lives, live or Complete/ (L-0509); a
+        # could-not-tell is UNKNOWN like an unreadable spec, never "no Touch".
+        folder, where, why = crew_common.locate_ticket(root, crew_ticket.check_ticket(ticket))
+        spec = os.path.join(folder or "", "spec.md")
         try:
+            if where == crew_common.COULD_NOT_TELL:
+                raise OSError(f"could not tell where {ticket} lives: {why}")
             text = _read_regular(spec)
         except (OSError, UnicodeDecodeError) as exc:
             unknown = f"UNKNOWN: {spec} cannot be read ({exc.__class__.__name__}: {exc})"

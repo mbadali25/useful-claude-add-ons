@@ -317,6 +317,17 @@ If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
 session. Nothing else happens in this repo until
 `bash _verify/smoke.sh` runs green from a clean checkout.
 
+If the repo has Mermaid sources (`.mmd` files, usually `docs/diagrams/`), copy
+`templates/cases/diagrams-render.sh` into `_verify/cases/` (set `DIAGRAMS_DIR`
+when they live elsewhere); with an adopted harness, put it beside that
+harness's own checks and call it from its runner - it needs only bash and
+`mmdc`. Never write a case that calls `mmdc` bare: headless Chromium refuses
+to start as root, which is how CI containers run, and fails with "Running as
+root without --no-sandbox is not supported". The ready case passes the
+`--no-sandbox` config every time, prints mmdc's own last lines when a render
+fails, and exits 77 (SKIP) where mmdc is not installed. A repo with no
+diagrams does not get it.
+
 `_verify/README.md` is part of the deliverable, not an afterthought. Its layout
 table lists what each script covers and its status table records when each check
 was last sabotage-tested. Update both as checks are added; a check with no row is
@@ -444,7 +455,7 @@ header row. Then run `/crew:promote development --dry-run` and read the sequence
 back to me before anything real is deployed.
 
 **Two of these are enforced by a hook, not by good intentions.** `promote-gate.sh`
-runs on `PreToolUse` and refuses a command matching a declared `deploy` entry
+runs on `PreToolUse` and refuses a command that contains a declared `deploy` entry
 unless, for the sha at HEAD:
 
 - every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`

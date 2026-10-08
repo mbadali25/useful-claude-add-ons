@@ -861,13 +861,16 @@ def test_deploy_value_reads(tmp_path, monkeypatch, value):
 
 
 def test_deploy_armed_warns_inert(tmp_path, monkeypatch):
+    """L-0649: the deploy phase consumes `autopilot.deploy`, so `settings`
+    no longer warns that nothing dispatches a deploy; it says what an armed
+    value does (the name is kept: sabotage_autopilot.py's entry names it)."""
     root = _armed(tmp_path, monkeypatch)
 
     got = crew_autopilot.settings(root)
 
-    assert [w for w in got["warnings"] if "T-0045" in w] == [
-        "autopilot.deploy is 'all', but nothing in this crew version dispatches a deploy: "
-        "T-0045 consumes it; deploy-allowed answers the policy only"]
+    assert [w for w in got["warnings"] if "deploy" in w and "/crew:promote" in w] == [
+        "autopilot.deploy is 'all': after a merge, next names /crew:promote (L-0649)"]
+    assert not [w for w in got["warnings"] if "nothing in this crew version" in w]
 
 
 def test_settings_line_names_deploy(tmp_path, monkeypatch, capsys):

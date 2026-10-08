@@ -1747,3 +1747,38 @@ def test_goal_handoff_keeps_every_other_resume_condition(fx, condition):
     words = {"no-author": "no record", "consumed": "already", "no-progress": "no progress",
              "unarmed": "", "auto-compact": "not a manual"}[condition]
     assert (got["action"] in ("wait", "off"), words in got["reason"]) == (True, True), got
+
+
+# --- a ticket archived in Complete/ (L-0509) ---------------------------------------
+
+def test_resume_accepts_an_archived_ticket_folder(fx):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    archive_ticket(fx.root, "T-0001")
+
+    got = fx.decide()
+
+    assert (got["action"], got["prompt"]) == ("run", "/crew:done T-0001")
+
+
+def test_fingerprint_covers_an_archived_ticket(fx):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    live = crew_resume.progress_fingerprint(str(fx.root), "T-0001")
+    folder = archive_ticket(fx.root, "T-0001")
+
+    archived = crew_resume.progress_fingerprint(str(fx.root), "T-0001")
+    with open(os.path.join(folder, "plan.md"), "w", encoding="utf-8") as handle:
+        handle.write("progress\n")
+
+    assert (live is not None, archived == live,
+            crew_resume.progress_fingerprint(str(fx.root), "T-0001") not in (None, archived)) == (
+        True, True, True)
+
+
+def test_resume_could_not_tell_where_the_ticket_lives_waits(fx):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    both_places(fx.root, "T-0001")
+
+    got = fx.decide()
+
+    assert (got["action"], "could not tell where T-0001 lives" in got["reason"],
+            crew_resume.progress_fingerprint(str(fx.root), "T-0001")) == ("wait", True, None)

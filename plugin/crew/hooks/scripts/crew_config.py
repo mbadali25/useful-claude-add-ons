@@ -302,7 +302,7 @@ def default_config():
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
         "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800}},
+                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:
@@ -374,7 +374,9 @@ def default_config():
         # `production`'s reason -- which workspaces are non-production is a
         # fact about this checkout -- and `prodUnattended` is in both layers
         # because it ratchets: production runs unattended only when the repo
-        # AND the machine owner both said `true`.
+        # AND the machine owner both said `true`. T-0009's `workflows` map is
+        # REPO ONLY too: which workflow file deploys where is a fact about
+        # this checkout.
         "environments": copy.deepcopy(crew_state.ENVIRONMENTS_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
@@ -1281,6 +1283,12 @@ def environments_block_problem(block):
     A malformed block is never "nothing is nonProd" -- `cloud_guard` reads
     it as "no environment can be classified", which nothing allows
     unattended.
+
+    T-0009's `workflows`, when present, must be an object mapping a non-blank
+    workflow glob to either `input:<name>` (a GitHub input name: a letter or
+    `_`, then letters, digits, `_` or `-`) or a non-blank fixed environment
+    name. A malformed map is never "no workflow listed": `cloud_guard` reads
+    every dispatch as an unknown environment while it stands.
     """
     if not isinstance(block, dict):
         return "`environments` is not an object"
@@ -1291,7 +1299,40 @@ def environments_block_problem(block):
     if "prodUnattended" in block \
             and not isinstance(block["prodUnattended"], bool):
         return "`environments.prodUnattended` is not true or false"
+    workflows = block.get("workflows", {})
+    if not isinstance(workflows, dict):
+        return "`environments.workflows` is not an object"
+    for key, source in workflows.items():
+        if not key.strip():
+            return "`environments.workflows` has a blank workflow key"
+        if not isinstance(source, str) or not source.strip():
+            return (f"`environments.workflows[{key!r}]` is not `input:<name>` "
+                    "or an environment name")
+        if source.startswith("input:") \
+                and not _WORKFLOW_INPUT_RE.match(source[len("input:"):]):
+            return (f"`environments.workflows[{key!r}]` names no input "
+                    "(`input:<name>`)")
     return ""
+
+
+def global_environments_problem(path=None):
+    """Why the machine-global layer's `environments` block cannot be read, or
+    `""` when it is absent or reads. `cloud_guard.environments_config` joins
+    it to the repo layer's problem (T-0009 review round 3): the global layer
+    answers `environments.prodUnattended`, and a malformed one is "could not
+    tell" -- never the block's absence, which is what `read_global_config`'s
+    collapse would make it. An unreadable file is `resolve_mode`'s already."""
+    path = GLOBAL_CONFIG_PATH if path is None else path
+    if layer_state(path, environments=True) != "corrupt":
+        return ""
+    parsed = read_global_config(path)
+    detail = environments_block_problem(parsed["environments"]) \
+        if "environments" in parsed else "the file cannot be read"
+    return f"the machine-global config: {detail}"
+
+
+# A GitHub `workflow_dispatch` input name, as `input:<name>` spells it.
+_WORKFLOW_INPUT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def environments_findings(root):
@@ -2212,12 +2253,10 @@ def inspect_global(root, path=None):
 # its key enters `default_config()`; a value-level entry must be deleted by the
 # ticket that makes the value work. The landing ticket deletes its rows.
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
-# defaults, so their rows went with it.
+# defaults, so their rows went with it. L-0649 (G4) made `autopilot.deploy`
+# `nonprod` and `all` work (the deploy phase), so their value rows went too.
+# L-0541 (G6b) landed `autopilot.maxTicketsPerRun` and `mode: backlog`; their rows went too.
 INERT_PENDING = {
-    ("autopilot.deploy", "nonprod"): ("would let autopilot deploy; nothing in this crew "
-                                      "dispatches a deploy yet", "T-0045"),
-    ("autopilot.deploy", "all"): ("would let autopilot deploy; nothing in this crew "
-                                  "dispatches a deploy yet", "T-0045"),
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
@@ -2415,15 +2454,27 @@ def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {e
     crew does not act on (T-0070), for `crew_autopilot.settings`. Warns only,
     never refuses: an inert key must not block the run it was meant to speed
     up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
-    which already names T-0045. `failure` renders an exception (autopilot's
+    which names L-0649's deploy phase. `failure` renders an exception (autopilot's
     `_failure`); anything that raises is one could-not-tell warning."""
+    return autopilot_inert_split(top, failure)[0]
+
+
+def autopilot_inert_split(top, failure=lambda exc: f"{type(exc).__name__}: {exc}",
+                          policy_keys=()):
+    """`(warnings, policy)`: `autopilot_inert_warnings`' list, and the entries
+    of it under one of `policy_keys` (`autopilot.<key>` or below it), which
+    `crew_autopilot.status` leaves out (T-0027). A could-not-tell warning is
+    never a policy entry."""
+    under = tuple(f"autopilot.{key}" for key in policy_keys)
     try:
-        return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
-                for e in inert_settings(top)
-                if e["key"].startswith("autopilot.")
-                and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
+        rendered = [(e, f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}")
+                    for e in inert_settings(top) if e["key"].startswith("autopilot.")
+                    and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
     except Exception as exc:  # pylint: disable=broad-except
-        return [f"inert: could not tell which settings are inert ({failure(exc)})"]
+        return [f"inert: could not tell which settings are inert ({failure(exc)})"], []
+    return [text for _e, text in rendered], [
+        text for e, text in rendered
+        if any(e["key"] == key or e["key"].startswith(key + ".") for key in under)]
 
 
 def inert_items(entries, room):
@@ -2958,6 +3009,8 @@ _GUARD_ACTIONS = {
     "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
                       "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
     "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
+    "deployWorkflow": "a `gh workflow run` or `gh api .../dispatches` of a "
+                      "workflow listed in `environments.workflows`",
 }
 
 
@@ -3120,6 +3173,17 @@ _RATCHETED.update({
     )
     for _name in crew_state.GUARD_NAMES
 })
+# `deployWorkflow`'s `allow` is narrower than every other policy guard's
+# (T-0009 amendment): it covers nonProd only, so the generic "run WITHOUT
+# asking" would describe a grant the guard never makes.
+_RATCHETED["guards.deployWorkflow"][2]["allow"] = (
+    f"crew will run {_GUARD_ACTIONS['deployWorkflow']} WITHOUT asking when "
+    "its environment is nonProd, and write a row to "
+    f"`{crew_state.GUARD_LOG_PATH}`. It still asks -- and refuses when nobody "
+    "is attending -- for production unless environments.prodUnattended is "
+    "true in both config layers, and for an environment crew cannot "
+    "identify, whatever this key says."
+)
 # The two production guards, whose vocabulary is `none`/`read`/`full` rather
 # than `block`/`ask`/`allow`. They ratchet by the same table and warn on the
 # same line; only the words differ, and they differ because reusing the other
@@ -3755,7 +3819,8 @@ def is_repo_path(dotted):
 
 def repo_widens(dotted, before, after, global_value):
     """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change, plus
-    `widensTo` (the value in force after) for a personal key.
+    `widensTo` (the value in force after) for a personal key, and `inForce`
+    (the inherited machine value) for a repo `null` on a `_RATCHETED` key.
 
     A ratcheted key compares what is IN FORCE before and after, by rank: a
     repo `block` -> `allow` under a machine `allow` widens, and the same edit
@@ -3789,7 +3854,13 @@ def repo_widens(dotted, before, after, global_value):
     if dotted in _RATCHETED:
         rank = _RATCHETED[dotted][0]
         was = before if before is not None else global_value
-        out["widens"] = rank(after) > rank(was)
+        # T-0103: a repo `null` inherits the machine value (`null_means`), so
+        # what takes effect is that value. `inForce` carries it for the `!`
+        # line's note; the printed token stays the written `null`.
+        in_force = after if after is not None else global_value
+        out["widens"] = rank(in_force) > rank(was)
+        if after is None:
+            out["inForce"] = in_force
         return out
     out["widens"] = _consent_widening(dotted, after) and before != after
     return out
@@ -3919,10 +3990,16 @@ def print_changes(changes):
         print(f"  {change['path']}: {json.dumps(change['before'])} -> {after}"
               + (f"  (null {change['null']})" if change.get("null") else ""))
         if change["widens"] and (change.get("unset") or "widensTo" in change):
-            granted = change.get("widensTo")
+            # A repo removal on a `_RATCHETED` key carries `inForce` (T-0103).
+            granted = change.get("widensTo", change.get("inForce"))
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(granted).strip(chr(34))}`: "
                   + widening_note(change["path"], granted))
+        elif change["widens"] and "inForce" in change:
+            # T-0103: a repo `null` is described by the value it inherits;
+            # the token stays the written `null`.
+            print(f"  ! {change['path']} widens to `null`: "
+                  + widening_note(change["path"], change["inForce"]))
         elif change["widens"]:
             print(f"  ! {change['path']} widens to "
                   f"`{json.dumps(change['after']).strip(chr(34))}`: "
