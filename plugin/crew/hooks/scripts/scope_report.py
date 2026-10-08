@@ -54,7 +54,13 @@ def unresolved_index_ticket(top):
     pre-1.0, an id `crew_ticket` refuses, or no `.work/tickets/<id>/`
     directory. Each is could-not-tell (review round 3): "(no open ticket)"
     is a true statement only when INDEX names none, and an INDEX that cannot
-    be read is not that statement either."""
+    be read is not that statement either. `crew_state.read_work` reads a
+    file it cannot open as an empty one, so the read is checked here first
+    (review round 4): an INDEX.md that exists but does not read is
+    could-not-tell, never "no open ticket"."""
+    index = os.path.join(top, ".work", "INDEX.md")
+    if os.path.lexists(index) and crew_state.read_text(index) is None:
+        return ".work/INDEX.md exists but could not be read"
     try:
         ticket = crew_state.read_work(top).get("ticket")
     except (OSError, ValueError) as exc:
@@ -156,8 +162,16 @@ def outside(top, changed, touch, approval):
     return [p for p in judged if not crew_ticket.in_touch(p, touch)]
 
 
+def _line(text):
+    """The ONE sink: every line this report prints goes through it.
+    `completion_audit.shown` escapes every non-printable character, so a
+    file name (or a reason quoting one) carrying a newline cannot add a line
+    that reads as a second verdict (review round 4)."""
+    sys.stderr.write(completion_audit.shown(text) + "\n")
+
+
 def _could_not_tell(why):
-    sys.stderr.write(f"outside-scope: (could not tell - {why})\n")
+    _line(f"outside-scope: (could not tell - {why})")
     return 0
 
 
@@ -181,7 +195,7 @@ def report(root, changed):
         unresolved = unresolved_index_ticket(top)
         if unresolved:
             return _could_not_tell(unresolved)
-        sys.stderr.write("outside-scope: (no open ticket)\n")
+        _line("outside-scope: (no open ticket)")
         return 0
 
     globs, approval, why = approved_touch(top, ticket)
@@ -203,9 +217,9 @@ def report(root, changed):
     base_note = None
     try:
         base, source, reason = scope_base.resolve(top, ticket)
-        ticket_wide, dropped = ticket_changes(top, base) if base else (None, set())
+        ticket_wide, dropped, merged = ticket_changes(top, base) if base else (None, set(), None)
     except Exception as exc:  # pylint: disable=broad-except
-        base, source, ticket_wide, dropped = None, None, None, set()
+        base, source, ticket_wide, dropped, merged = None, None, None, set(), None
         reason = f"could not resolve: {exc}"
     # The marker goes ON the outside-scope line, not only on the scope-base
     # line under it. A reader (or a grep) takes the first line; a bare
@@ -225,38 +239,52 @@ def report(root, changed):
         base_note = f"scope-base: {base[:12]} ({reason})"
         changed = [p for p in changed if p not in dropped]
         changed = sorted(set(changed) | set(ticket_wide))
+        # Review round 4: when which commits are merged main's cannot be told,
+        # nothing was dropped and the audit says so on its own verdict. The
+        # line carries the same unknown, never a bare clean `outside-scope:`.
+        suffix += merged_suffix(merged)
 
     extra = outside(top, changed, globs, approval)
     if extra:
-        sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}{suffix}\n")
-        sys.stderr.write(
-            f"  {ticket} declares: {chr(32).join(globs)}\n"
-            "  Report-only here; /crew:done check 3 refuses them. Revert them "
-            "(a follow-up goes to TODO.md), or amend ## Touch and re-approve.\n")
+        _line(f"outside-scope: {chr(32).join(sorted(extra))}{suffix}")
+        _line(f"  {ticket} declares: {chr(32).join(globs)}")
+        _line("  Report-only here; /crew:done check 3 refuses them. Revert them "
+              "(a follow-up goes to TODO.md), or amend ## Touch and re-approve.")
     else:
-        sys.stderr.write(f"outside-scope:{suffix}\n")
+        _line(f"outside-scope:{suffix}")
     # After the list, not before: the first line of this report is the list,
     # and its readers -- human and test alike -- take it from there.
-    sys.stderr.write(base_note + "\n")
+    _line(base_note)
     return 0
 
 
+def merged_suffix(merged):
+    """The outside-scope line's marker when merged main is could-not-tell
+    (`merged_main.resolve` gave no commit), else empty: the audit's own
+    `merged main: could not tell` line, in the report's words."""
+    if not merged or merged.get("commit") is not None:
+        return ""
+    return (f" (merged main: {merged_main.UNKNOWN} - {merged_main.bare_reason(merged)}; "
+            "every changed path counted)")
+
+
 def ticket_changes(top, base):
-    """`(kept, dropped)`. `kept` is the completion audit's own changed list
+    """`(kept, dropped, merged)`. `kept` is the completion audit's own changed list
     since `base` (review round 1): both ends of a rename, and paths
     byte-identical to merged main left out, exactly as `/crew:done` check 3
     counts them. `dropped` is the set that rule left out -- the audit's own
     second listing -- for the gate's list to lose too (review round 3).
-    `(None, set())` when git could not answer, so the line says the list is
-    this turn's only."""
+    `merged` is `merged_main.resolve`'s answer, for the could-not-tell marker
+    (review round 4). `(None, set(), merged)` when git could not answer, so
+    the line says the list is this turn's only."""
     merged = merged_main.resolve(top, base)
     try:
         kept = completion_audit.changed_paths(top, base, merged)
         if not merged.get("applies"):
-            return kept, set()
-        return kept, set(completion_audit.changed_paths(top, base)) - set(kept)
+            return kept, set(), merged
+        return kept, set(completion_audit.changed_paths(top, base)) - set(kept), merged
     except RuntimeError:
-        return None, set()
+        return None, set(), merged
 
 
 if __name__ == "__main__":

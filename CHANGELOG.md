@@ -33,11 +33,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `crew_ticket.in_touch`, the changed list from `completion_audit.changed_paths` (both rename
   ends; merged-main-identical paths not counted) and refresh artifacts through the completion
   audit's own admission, so it names what `/crew:done` check 3 refuses. The gate's own list loses
-  the merged-main-identical paths too before it joins the ticket-wide one. It read the pre-1.0 `- touch:` line in
+  the merged-main-identical paths too before it joins the ticket-wide one; when merged main is
+  could-not-tell (a detached HEAD, no integration ref) the line says so, as the audit does; and
+  every path is printed escaped, so a file name cannot add a line. It read the pre-1.0 `- touch:` line in
   `.work/tickets/<id>.md` / `.work/cache/<id>.md` before.
 - **Could not tell.** No spec.md, no `## Touch`, an unapproved or stale Touch, a broken
   active-ticket pointer, a pre-1.0 ticket, an `INDEX.md` open ticket with no
-  `.work/tickets/<id>/` folder and a non-repository each print
+  `.work/tickets/<id>/` folder, an `INDEX.md` that exists but cannot be read, and a non-repository
+  each print
   `outside-scope: (could not tell - <why>)`; a pre-1.0 ticket is never judged in scope.
 - **Unchanged.** The line stays report-only (the gates' exit status is untouched). `/crew:done`
   check 3 already refused a `sed -i` write outside Touch on a 1.0 ticket; L-0711 adds the test
