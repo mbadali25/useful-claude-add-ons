@@ -421,8 +421,14 @@ def test_require_review_not_a_bool_is_refused(flavour, value, tmp_path):
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_helper_that_cannot_run_blocks(flavour, tmp_path):
-    scripts = tmp_path / "scripts"
-    shutil.copytree(_SCRIPTS, scripts, ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    # The copy keeps the plugin layout: the gate's dispatch reader imports
+    # crew_config, which loads crew_upgrade from ../../skills/crew-graph/scripts.
+    plugin = tmp_path / "plugin"
+    scripts = plugin / "hooks" / "scripts"
+    skip = shutil.ignore_patterns("_test", "__pycache__")
+    shutil.copytree(_SCRIPTS, scripts, ignore=skip)
+    graph = pathlib.Path("skills") / "crew-graph" / "scripts"
+    shutil.copytree(_SCRIPTS.parents[1] / graph, plugin / graph, ignore=skip)
     (scripts / "_promote_review.py").unlink()
     repo = Repo(tmp_path, SHA_MAP)
     code, err, _ = run_gate(flavour, repo, "deploy-dev", scripts=scripts)
@@ -477,8 +483,10 @@ def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
 @pytest.mark.slow
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
-    """Default budget: a python that costs 2.5s per start (crew_py's probe and
-    every interpreter the gate runs, about 12s before the search starts) plus
+    """Default budget: a python that costs 1.8s per start (crew_py's probe and
+    every interpreter the gate runs - seven since crew 1.2.0 added the dispatch
+    and github readers, about 11.5s before the search starts; 2.5s per start
+    spent the whole deadline before the search) plus
     a receipt check that never ends. The gate's own 16s deadline must still
     land it inside the 20s hook; a search that took a fixed 12s from its own
     start would not."""
@@ -488,7 +496,7 @@ def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flav
     real = os.path.realpath(sys.executable)
     for name in ("python3", "python"):
         slow = shim_dir / name
-        slow.write_text(f'#!/bin/sh\nsleep 2.5\nexec "{real}" "$@"\n', encoding="utf-8")
+        slow.write_text(f'#!/bin/sh\nsleep 1.8\nexec "{real}" "$@"\n', encoding="utf-8")
         slow.chmod(0o755)
     code, err, took = run_gate(flavour, repo, "deploy-dev",
                                path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
