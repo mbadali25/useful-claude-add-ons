@@ -2538,3 +2538,27 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `e4f17af4` -> `7572b998` on 2026-10-05 (L-0673: the CI receipt's per-command list reads "could not tell", on `L-0673-build` after merging origin/main `47f71e93`).** Per-path: `git diff --name-only e4f17af4..7572b998 -- .crew/verify.json plugin/crew/hooks/scripts/ci_receipt.py plugin/crew/tests/test_ci_receipt.py plugin/crew/commands/verify.md` returns all four. DERIVED: `plugin/crew/hooks/scripts/ci_receipt.py:123` `_TELL_RE` matches T-0082's `verify-gate: COULD NOT TELL (<reason>): <cmd>` (printed at `plugin/crew/hooks/scripts/verify-gate.sh:2215`, and by the signal trap at `:800`), `:124` `_TOTAL_RE` the gate's total line; `parse_log` (`:190`) sets UNKNOWN from it, taking the command from the preceding `VERIFY FAILED` line when the line ends in it, and appends any command still pending at the end of the log as UNKNOWN with `seconds` None; `log_complete` (`:220`) is true only when the total line comes after the last per-rule line (review FIX 1: a failing rule's echoed output can carry a total line), is recorded at `:314`, and `_summary` (`:356`) says the list is partial when it is false and the gate rc is not 0. Tests: `plugin/crew/tests/test_ci_receipt.py:101`, `:118`, `:147`, `:165`. JUDGEMENT: the list stays informative only - no consumer reads `commands[].state` for a decision, and the receipt schema is unchanged. `.crew/verify.json`'s ci_receipt rule changes only its `why` (rule count unchanged). `plugin/crew/commands/verify.md` is 223 lines (allowance 226): its new section is offset by rewrapping only the sections after line 115, so lines 1-114 - including `:72` (`--all`) and `:114` (`-Price`), which `plugin/crew/hooks/scripts/verify-gate.ps1:19-20` cites - are unchanged. Suites run for it: `plugin/crew/tests/test_ci_receipt.py` (106 passed).
 
 **Re-anchored `7572b998` -> `9cdc9eb3` on 2026-10-05 (L-0673 review fixes, after merging origin/main `95bc71bb`).** Per-path: `git diff --name-only 7572b998..9cdc9eb3 -- plugin/crew/hooks/scripts/ci_receipt.py plugin/crew/tests/test_ci_receipt.py plugin/crew/commands/verify.md` returns all three; the L-0673 note above was re-derived at `9cdc9eb3` by `grep -n` (`log_complete`'s rule, `:314`, `:356`, the four test lines).
+
+## Undeclared reach on Stop (L-0733)
+
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:829` - `UNDECLARED_REACH_KINDS`, the three
+  kinds a rule with no `reach` is deferred as on Stop (`reach_undeclared`, `reach_wrapper`,
+  `reach_syntax`).
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:861` - `reach_notice`: the full notice (count,
+  `/crew:verify --stamp-reach`, each rule's reason) only when the sha256 of `.crew/verify.json`
+  differs from `.crew/.verify-gate.reach-notice`, which it then records; `:914`
+  `_undeclared_summary` is the one line `_sync` (`:1230`) and `cmd_report` (`:1258`) print for
+  those entries instead of one each.
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1381-1392` and
+  `plugin/crew/hooks/scripts/verify-gate.ps1:1557-1573` - in Stop mode only, the matcher hands
+  undeclared-reach exclusions to `reach_notice` (ps1 through `verify_record.py reach-notice`);
+  `--ci` keeps a line per rule.
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1211` - an orphaned undeclared-reach entry is
+  kept and marked but not counted toward the refusal; `:945` `cmd_forget_orphans` is the named
+  exit for the orphans that still hold the marker.
+- DERIVED `plugin/crew/hooks/scripts/verify_fingerprint.py:183` - the notice file is gate-owned.
+- JUDGEMENT the deferral is untouched: which rules run on Stop is still `scan_reach` alone.
+
+**Added on 2026-10-08 (L-0733), anchor NOT moved.** This section's citations were read at
+`254a75493`, the L-0733 code commit; the note's `anchor:` stays `9cdc9eb3` because the earlier
+sections were not re-verified against the commits since it.
