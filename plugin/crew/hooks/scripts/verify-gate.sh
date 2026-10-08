@@ -235,7 +235,16 @@ fi
 record_verified() {
   VERIFIED=$(git rev-parse HEAD 2>/dev/null) || return 0
   [ -n "$VERIFIED" ] || return 0
-  mkdir -p .crew 2>/dev/null && printf '%s\n' "$VERIFIED" > .crew/.verify-verified-at
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$VERIFIED" > .crew/.verify-verified-at && rm -f "$BASE_AT"
+}
+
+# The DIFF baseline a quiet turn leaves (L-0710, see BASE_AT below): HEAD,
+# when the changed set was empty. Never a verified claim - only the base
+# resolution reads it.
+record_base() {
+  BASE_SHA=$(git rev-parse HEAD 2>/dev/null) || return 0
+  [ -n "$BASE_SHA" ] || return 0
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$BASE_SHA" > "$BASE_AT"
 }
 
 # The fingerprint twin, written ONLY where everything ran and everything
@@ -311,11 +320,31 @@ record_verified_fingerprint() {
 # behaviour, and a gate that silently verifies less when its input is absent is
 # this repo's recurring bug: an unknown collapsing into the permissive value.
 # This baseline fails the other way.
+#
+# L-0710: a turn where ZERO rules ran no longer writes the verified marker -
+# nothing was checked, so recording HEAD as verified was a claim with no
+# evidence behind it. But that quiet-turn write was ALSO the diff baseline
+# on a default branch with no marker (case 3 above): without it merge-base
+# stays HEAD for ever and a commit made there is never in scope. So a quiet
+# turn now records that baseline in its own file, BASE_AT, which nothing
+# reads as "verified" - only this resolution, between the marker and the
+# merge-base. It is written only when the changed set is empty (the tree IS
+# the baseline) and the baseline did not already come from the marker, and
+# record_verified removes it once a real pass supersedes it.
+BASE_AT=".crew/.verify-gate.base-at"
 BASE=""
+BASE_FROM_MARKER=0
 if [ -f .crew/.verify-verified-at ]; then
   read -r CAND < .crew/.verify-verified-at
   # Trust it only if it still names a commit. A marker surviving a squash merge
   # would otherwise diff against nothing and report the whole branch as clean.
+  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
+    BASE="$CAND"
+    BASE_FROM_MARKER=1
+  fi
+fi
+if [ -z "$BASE" ] && [ -f "$BASE_AT" ]; then
+  read -r CAND < "$BASE_AT"
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
     BASE="$CAND"
   fi
@@ -405,7 +434,9 @@ if [ -z "$CHANGED" ]; then
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
     "$REPORT_PY" "$REPORT_DIR/verify_record.py" report >&2 2>/dev/null || true
   fi
-  record_verified
+  # L-0710: nothing ran, so nothing is recorded as verified (see BASE_AT).
+  echo "verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written." >&2
+  [ "$BASE_FROM_MARKER" -eq 1 ] || record_base
   exit 0
 fi
 
@@ -1518,8 +1549,10 @@ if budget is not None:
         notices.append("deferred to /crew:verify: " + _identity_text(c) + " (" + str(int(cost[c])) + "s)")
     for _ri in chronic_rules:
         notices.append("verify-gate: rules[%d] is permanently over budget (%ss > %ss stop budget) - "
-                        "deferred every Stop; the baseline still advances past it, but this rule stays "
-                        "UNVERIFIED until /crew:verify --all runs it." % (_ri, int(rule_secs[_ri]), int(budget)))
+                        "deferred to CI every Stop: NOT VERIFIED on this tree until the verify-gate CI check "
+                        "(verify-gate.sh --all on the runner) passes it, and /crew:done refuses until that "
+                        "receipt is VERIFIED. /crew:verify --all checks it here; the baseline still advances "
+                        "past it." % (_ri, int(rule_secs[_ri]), int(budget)))
     if deferred:
         notices.append(
             "verify-gate: stop budget " + str(int(budget)) + "s; ran " + str(int(spent))
@@ -1576,7 +1609,8 @@ for _ri in rule_order:
         _kind, _reason = stop_excluded[_ri]
     elif _ri in chronic_rules:
         _kind = "chronic"
-        _reason = ("permanently over budget (%ss > %ss) - run /crew:verify --all"
+        _reason = ("permanently over budget (%ss > %ss) - deferred to CI (the verify-gate check); "
+                   "/crew:done needs its VERIFIED receipt, or run /crew:verify --all"
                    % (int(rule_secs.get(_ri, 0)), int(budget) if budget is not None else 0))
     else:
         _kind, _reason = "normal", ""
@@ -2449,7 +2483,22 @@ fi
 # verified, or was verified but the record of it was lost - and the second
 # case is exactly as dangerous as the first, since a lost chronic/skipped
 # entry is a lost warning that never comes back on its own.
-if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ]; then
+#
+# A FOURTH (L-0710): at least one rule command was selected. A turn whose
+# matcher selected none - every match chronic (deferred to CI, its record
+# entry kept), reach-excluded, or unmapped and ignored - checked nothing,
+# and says so instead of recording the tree as verified. It still moves the
+# DIFF baseline (BASE_AT) when the first three conditions hold and the base
+# did not come from the marker: that is what the marker used to do here, and
+# without it a repo with untracked furniture on its default branch would
+# never get a baseline, so a commit there would never be in scope. Nothing
+# Stop could run is left behind it; what CI owes is in the record.
+if ! printf '%s\n' "$CMDS" | grep -q .; then
+  echo "verify-gate: 0 rules ran on $(printf '%s\n' "$CHANGED" | grep -c .) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written." >&2
+  if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ] && [ "$BASE_FROM_MARKER" -eq 0 ]; then
+    record_base
+  fi
+elif fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ]; then
   record_verified
   record_verified_fingerprint
 elif [ "$SYNC_STATUS" -ne 0 ]; then

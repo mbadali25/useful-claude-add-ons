@@ -784,7 +784,8 @@ def cmd_cover_plan():
 
 
 REASON_TEXT = {
-    "chronic": "permanently over budget - run /crew:verify --all",
+    "chronic": ("permanently over budget - deferred to CI (the verify-gate check); "
+                "/crew:done needs its VERIFIED receipt, or run /crew:verify --all"),
     "skipped": "SKIP (rc 77, environment absent) - not verified",
     "reach_declared": ("declared reach is not local - not run on Stop, "
                         "run /crew:verify --all"),

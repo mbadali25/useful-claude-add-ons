@@ -182,6 +182,10 @@ _GATE_OWNED_FILES = frozenset({
     # is written after the run, and hashing it would make every run look
     # like a change to the tree the next one compares against.
     ".crew/.verify-gate.passes.json",
+    # The diff baseline a quiet turn records (L-0710, verify-gate.sh
+    # BASE_AT), same reason: the gate writes it, so hashing it would make
+    # the gate's own bookkeeping read as a change to the tree.
+    ".crew/.verify-gate.base-at",
 })
 _GATE_OWNED_DIRS = (".crew/.verify-gate.lock/",)
 

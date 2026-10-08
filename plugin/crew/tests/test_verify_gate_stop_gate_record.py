@@ -266,10 +266,13 @@ def _record(root):
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_case_permanently_over_budget_does_not_block_the_marker(flavour, tmp_path):
     """(a) A rule priced 999s against the 60s default must not stop the sha
-    marker / fingerprint from advancing -- see verify_record.py."""
+    marker / fingerprint from advancing -- see verify_record.py. A cheap rule
+    rides along (L-0710): a turn where ONLY the chronic rule matched ran
+    nothing, and a turn that ran nothing records nothing as verified."""
     vmap = {
         "version": 1,
-        "rules": [{"paths": ["a.py"], "seconds": 999, "run": ["echo x"]}],
+        "rules": [{"paths": ["a.py"], "seconds": 5, "run": ["echo cheap"]},
+                  {"paths": ["a.py"], "seconds": 999, "run": ["echo x"]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
@@ -2556,10 +2559,12 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     is a content hash of the rule, so editing the rule's paths makes a NEW
     key and the old entry looks stale. It must not be pruned as if verified:
     it stays, marked orphaned and reported, and holds the marker until a
-    --all run clears it."""
+    --all run clears it. The cheap rule (L-0710) makes the `mid` turn check
+    something, so it writes the marker this case holds still."""
     vmap = {
         "version": 1,
-        "rules": [{"paths": ["a.txt"], "seconds": 999, "run": ["echo huge"]}],
+        "rules": [{"paths": ["a.txt"], "seconds": 5, "run": ["echo cheap"]},
+                  {"paths": ["a.txt"], "seconds": 999, "run": ["echo huge"]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
@@ -2580,7 +2585,7 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     marker = root / ".crew" / ".verify-verified-at"
     before = marker.read_text(encoding="utf-8").strip()
     # commit ONLY an expansion of the rule's paths list
-    vmap["rules"][0]["paths"] = ["a.txt", "b.txt"]
+    vmap["rules"][1]["paths"] = ["a.txt", "b.txt"]
     (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
                    capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)

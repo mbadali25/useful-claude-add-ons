@@ -126,8 +126,22 @@ def _commit_all(root):
 
 
 @needs_bash
-@pytest.mark.parametrize("shape", [None, _modify, _stage_new, _delete, _commit_all],
-                         ids=["untracked", "modified", "staged-new", "deleted", "clean-tree"])
+def test_a_gate_exit_0_on_a_clean_tree_where_zero_rules_ran_is_unverified(tmp_path):
+    """L-0710: a clean tree on the default branch has nothing in scope, so
+    the gate exits 0 having run no rule - and records nothing, so nothing
+    here may read it as a pass. This was the `clean-tree` shape below until
+    the gate stopped writing the marker on zero rules."""
+    root = _repo(tmp_path)
+    _commit_all(root)
+    result = _gate(root)
+    assert result.returncode == 0, result.stderr
+    assert "0 rules ran" in result.stderr, result.stderr
+    assert _state(root) == review_gate.UNVERIFIED
+
+
+@needs_bash
+@pytest.mark.parametrize("shape", [None, _modify, _stage_new, _delete],
+                         ids=["untracked", "modified", "staged-new", "deleted"])
 def test_after_the_real_gate_passes_the_tree_is_verified(tmp_path, shape):
     root = _repo(tmp_path)
     if shape:

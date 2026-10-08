@@ -413,6 +413,22 @@ contract itself. This section is what goes wrong with the approval and the audit
   `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
 
+## Verify gate says 0 rules ran, or deferred to CI
+
+`verify-gate.sh` / `.ps1` (L-0710). The Stop gate runs only the rules mapped to what changed since
+its marker, cheapest first, inside `verify.stopBudgetSeconds` (default 60). Two lines are expected,
+not errors, and neither blocks the turn:
+
+- **`verify-gate: 0 rules ran ...`**: nothing changed, or nothing that changed has a rule Stop can
+  run. Nothing was checked, so `.crew/.verify-verified-at` is not written or advanced. Only the
+  diff baseline `.crew/.verify-gate.base-at` moves, so a later commit is still in scope.
+- **`rules[N] is permanently over budget ... deferred to CI`** and **`NOT VERIFIED ON THIS TREE -
+  ... deferred to CI`**: that rule costs more than the whole budget, so Stop never runs it. The
+  `verify-gate` workflow does, and `/crew:done` refuses until its receipt for HEAD is VERIFIED.
+  Push the branch, or run `/crew:verify --all` to check it here.
+
+A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
+
 ## Verify gate says COULD NOT TELL
 
 `verify-gate.sh` / `.ps1` (T-0082). A rule counts as passed only when its wrapper ended with status 0

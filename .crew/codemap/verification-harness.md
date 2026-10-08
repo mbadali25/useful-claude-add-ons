@@ -159,7 +159,9 @@ Notable rules, re-read directly:
   "--all-only": there is no separate schema field for it** — a rule priced
   above `verify.stopBudgetSeconds` (default 60) is classified CHRONIC by
   `verify-gate.sh`'s own budget accounting and deferred every Stop turn until
-  `/crew:verify --all` runs it. 377s is ~6x that budget on its own.
+  `/crew:verify --all` runs it. 377s is ~6x that budget on its own. Since
+  L-0710 its NOT VERIFIED line names CI (`deferred to CI`): the
+  `verify-gate` workflow runs it, and `/crew:done` reads that receipt.
 - **Rule 6**, new at `fc54def6` (`.crew/verify.json:146-157`, T-0005): `paths` `cloud_guard.py`,
   `crew_guards.py` (since T-0005 Step 8), both `cloud-guard` flavours, `crew_tfplan.py`,
   `test_cloud_guard*.py` and `test_crew_tfplan.py` → `python3 -m pytest` over
@@ -878,8 +880,14 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `plugin/crew/.budget-allowance.json` — read by `scripts/check_instructions.py`
   only; the sanctioned exception list to `COMMAND_MAX_LINES`.
 - `.crew/.verify-verified-at` — written by `verify-gate.sh`'s `record_verified`
-  (`:119-123`) on every all-pass turn; absent in a fresh checkout, as expected
-  of a machine-local marker.
+  (`:235-239`) on every all-pass turn in which at least one rule command was
+  selected; absent in a fresh checkout, as expected of a machine-local marker.
+  DERIVED (L-0710): a turn where zero rules ran prints `verify-gate: 0 rules
+  ran` and writes neither it nor the fingerprint.
+- `.crew/.verify-gate.base-at` — the diff baseline a quiet turn records
+  (`verify-gate.sh`'s `record_base`, `:244-248`; `Write-CrewBase` in the
+  `.ps1`), read only by the BASE resolution between the marker and the
+  merge-base, removed by `record_verified`. Never read as verified.
 
 ## Calls out to
 

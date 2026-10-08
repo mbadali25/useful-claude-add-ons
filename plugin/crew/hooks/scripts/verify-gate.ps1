@@ -667,6 +667,18 @@ function Write-CrewVerified {
   if ($verified) {
     if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
     Set-Content -Path .crew/.verify-verified-at -Value $verified.Trim() -Encoding ascii
+    Remove-Item -LiteralPath $baseAt -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# The DIFF baseline a quiet turn leaves (L-0710) - the twin of record_base in
+# verify-gate.sh: HEAD, when the changed set was empty. Never a verified
+# claim; only the base resolution below reads it.
+function Write-CrewBase {
+  $sha = ($null | git rev-parse HEAD 2>$null)
+  if ($sha) {
+    if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
+    Set-Content -Path $baseAt -Value $sha.Trim() -Encoding ascii
   }
 }
 
@@ -675,9 +687,21 @@ function Write-CrewVerified {
 # turn this gate would otherwise have blocked, so the baseline is now the last
 # commit the gate actually verified, falling back to the merge-base with the
 # default branch, falling back to HEAD. Unknown resolves to checking MORE.
+# L-0710: between the marker and the merge-base sits the diff baseline a
+# quiet turn records ($baseAt) - the twin of BASE_AT in verify-gate.sh.
+$baseAt = ".crew/.verify-gate.base-at"
 $base = ""
+$baseFromMarker = $false
 if (Test-Path .crew/.verify-verified-at) {
   $cand = (Get-Content .crew/.verify-verified-at -TotalCount 1 -ErrorAction SilentlyContinue)
+  if ($cand) { $cand = $cand.Trim() }
+  if ($cand) {
+    $null | git cat-file -e "$cand^{commit}" 2>$null
+    if ($LASTEXITCODE -eq 0) { $base = $cand; $baseFromMarker = $true }
+  }
+}
+if (-not $base -and (Test-Path $baseAt)) {
+  $cand = (Get-Content $baseAt -TotalCount 1 -ErrorAction SilentlyContinue)
   if ($cand) { $cand = $cand.Trim() }
   if ($cand) {
     $null | git cat-file -e "$cand^{commit}" 2>$null
@@ -751,7 +775,9 @@ if (-not $changed) {
       & $reportPy $reportScript report 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
     }
   } catch { }
-  Write-CrewVerified
+  # L-0710: nothing ran, so nothing is recorded as verified (see $baseAt).
+  [Console]::Error.WriteLine("verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written.")
+  if (-not $baseFromMarker) { Write-CrewBase }
   exit 0
 }
 
@@ -1701,7 +1727,7 @@ if ($null -ne $budget) {
     [void]$notices.Add('deferred to /crew:verify: ' + (Get-CrewIdentityText $c) + ' (' + [string][int]$cost[$c] + 's)')
   }
   foreach ($ri in $chronicRules) {
-    [void]$notices.Add("verify-gate: rules[$ri] is permanently over budget ($([int]$ruleSecs[$ri])s > $([int]$budget)s stop budget) - deferred every Stop; the baseline still advances past it, but this rule stays UNVERIFIED until /crew:verify --all runs it.")
+    [void]$notices.Add("verify-gate: rules[$ri] is permanently over budget ($([int]$ruleSecs[$ri])s > $([int]$budget)s stop budget) - deferred to CI every Stop: NOT VERIFIED on this tree until the verify-gate CI check (verify-gate.sh --all on the runner) passes it, and /crew:done refuses until that receipt is VERIFIED. /crew:verify --all checks it here; the baseline still advances past it.")
   }
   # deferredCount is now the ACUTE-only rule count (budget contention this
   # turn), not the deferred command count - the twin of the sh matcher's
@@ -1815,7 +1841,7 @@ foreach ($ri in $ruleOrder) {
   } elseif ($chronicRules.Contains($ri)) {
     $kind = "chronic"
     $b = if ($null -ne $budget) { [int]$budget } else { 0 }
-    $reason = "permanently over budget ($([int]$ruleSecs[$ri])s > ${b}s) - run /crew:verify --all"
+    $reason = "permanently over budget ($([int]$ruleSecs[$ri])s > ${b}s) - deferred to CI (the verify-gate check); /crew:done needs its VERIFIED receipt, or run /crew:verify --all"
   }
   # rule_cmds[$ri] stays empty for a reach-excluded rule (it never runs), so
   # fall back to the rule's own `run` list. Either way, strip a possible
@@ -2645,7 +2671,12 @@ if ($Ci) {
 
 $fullyVerified = ($deferredCount -eq 0) -and (-not $treeMoved) -and (-not $anySkipped) -and ($syncStatus -eq 0)
 
-if ($fullyVerified) {
+# L-0710: a turn whose matcher selected no command checked nothing - the
+# twin of the FOURTH condition in verify-gate.sh, diff baseline included.
+if ($cmds.Count -eq 0) {
+  [Console]::Error.WriteLine("verify-gate: 0 rules ran on $(@($changed).Count) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written.")
+  if ($fullyVerified -and -not $baseFromMarker) { Write-CrewBase }
+} elseif ($fullyVerified) {
   if ($fingerprint) {
     try {
       if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }

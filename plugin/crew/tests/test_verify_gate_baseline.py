@@ -40,6 +40,16 @@ _VERIFY = """{
              "run": ["python -c \\"raise SystemExit(1)\\""]}]
 }"""
 
+# The same map plus a rule that RUNS and PASSES for prose. L-0710: a turn in
+# which zero rules ran no longer writes the verified marker, so the cases
+# below that are about the marker advancing need something to actually run.
+_VERIFY_MD_PASSES = """{
+  "unmapped": "ignore",
+  "rules": [{"paths": ["**/*.py"], "reach": "local",
+             "run": ["python -c \\"raise SystemExit(1)\\""]},
+            {"paths": ["**/*.md"], "reach": "local", "run": ["exit 0"]}]
+}"""
+
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
@@ -47,14 +57,14 @@ def _git(root, *args):
                    timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
-def _repo(tmp_path):
+def _repo(tmp_path, verify=_VERIFY):
     root = tmp_path / "r"
     root.mkdir()
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "t")
     (root / ".crew").mkdir()
-    (root / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text(verify, encoding="utf-8")
     (root / ".crew" / "config.json").write_text('{"schema": 1}', encoding="utf-8")
     (root / "seed.txt").write_text("seed\n", encoding="utf-8")
     _git(root, "add", "-A")
@@ -80,6 +90,11 @@ def _run(root):
 
 def _marker(root):
     p = root / ".crew" / ".verify-verified-at"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else None
+
+
+def _base_at(root):
+    p = root / ".crew" / ".verify-gate.base-at"
     return p.read_text(encoding="utf-8").strip() if p.exists() else None
 
 
@@ -141,8 +156,11 @@ def test_a_clean_tree_with_nothing_new_since_the_last_pass_exits_zero(tmp_path):
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "docs only")
     assert _run(root) == 0
-    # Marker now names HEAD, so a second run has nothing in scope at all.
-    assert _marker(root) == _head(root)
+    # On main with no marker the diff is empty and ZERO rules ran, so the
+    # verified marker is NOT written (L-0710); the diff baseline is, at HEAD,
+    # so a second run has nothing in scope at all.
+    assert _marker(root) is None
+    assert _base_at(root) == _head(root)
     assert _run(root) == 0
 
 
@@ -158,14 +176,15 @@ def test_work_verified_in_an_earlier_turn_is_not_re_verified(tmp_path):
     A commit that passed the gate must not keep blocking every later turn -- if
     it did, the only way to finish would be to switch the gate off.
     """
-    root = _repo(tmp_path)
+    root = _branch(_repo(tmp_path, _VERIFY_MD_PASSES))
     (root / "ok.md").write_text("fine\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "clean turn")
     assert _run(root) == 0
     first = _marker(root)
+    assert first == _head(root)
 
-    # A later commit that also matches no rule: still clean, marker advances.
+    # A later commit whose rule also passes: still clean, marker advances.
     (root / "more.md").write_text("also fine\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "second clean turn")
@@ -191,7 +210,7 @@ def test_a_failing_turn_does_not_record_a_baseline(tmp_path):
 def test_the_marker_is_not_tracked_by_git(tmp_path):
     """"What has been verified here" is a fact about one checkout. Committing it
     would hand one machine's verification record to everyone who clones."""
-    root = _repo(tmp_path)
+    root = _branch(_repo(tmp_path, _VERIFY_MD_PASSES))
     (root / "ok.md").write_text("fine\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "clean")
@@ -212,8 +231,10 @@ def test_on_the_default_branch_with_no_marker_a_commit_still_ends_the_turn(tmp_p
     default branch there is no branch point -- merge-base(HEAD, main) IS HEAD --
     so with no marker yet the old scope applies and a commit is invisible.
 
-    It lasts one turn: the marker is written on every clean exit, so the first
-    quiet turn establishes a baseline. Closing the window entirely needs a
+    It lasts one turn: the first quiet turn establishes a baseline. Since
+    L-0710 that baseline is `.crew/.verify-gate.base-at`, not the verified
+    marker - zero rules ran, so nothing is recorded as verified - but it
+    closes the window the same way. Closing the window entirely needs a
     turn-start signal this hook does not receive, and the alternative -- a
     marker written by another hook, where absent means permissive -- fails in
     the direction this repo keeps paying for.
@@ -229,7 +250,8 @@ def test_on_the_default_branch_with_no_marker_a_commit_still_ends_the_turn(tmp_p
 
     # And the window really is one turn wide: that clean exit recorded a
     # baseline, so the NEXT commit is in scope.
-    assert _marker(root) == _head(root)
+    assert _marker(root) is None
+    assert _base_at(root) == _head(root)
     (root / "mod2.py").write_text("y = 2\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "the next one is caught")

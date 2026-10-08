@@ -90,6 +90,14 @@ _CHRONICALLY_OVER_BUDGET = {
     "default": [], "unmapped": "ignore",
 }
 
+_CHRONIC_BESIDE_GREEN = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-ok"],
+               "why": "cheap and green, so the turn checks something"}]
+    + _CHRONICALLY_OVER_BUDGET["rules"],
+    "default": [], "unmapped": "ignore",
+}
+
 _GREEN = {
     "version": 1,
     "rules": [{"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-ok"],
@@ -150,7 +158,10 @@ def test_a_deferred_rule_does_not_advance_the_verified_baseline(flavour, tmp_pat
     settle = _run(flavour, root)
     assert settle.returncode == 0, settle.stderr
     before = _baseline(root)
-    assert before, "the quiet first turn should establish a baseline"
+    # L-0710: the quiet first turn ran no rule, so it records no verified
+    # baseline - only the diff baseline (.verify-gate.base-at) that keeps the
+    # commit below in scope. Any marker written from here on is an advance.
+    assert before is None, "zero rules ran, so nothing is verified yet. " + settle.stderr
 
     _commit_mapped_file(root)
     deferred = _run(flavour, root)
@@ -198,11 +209,13 @@ def test_a_chronic_rule_advances_the_baseline_but_all_still_finds_it(flavour, tm
     baseline advancing must not put the file that triggered it out of
     --all's reach either, or "deferred" quietly becomes "never checked
     again", just moved one step over."""
-    root = _repo(tmp_path, _CHRONICALLY_OVER_BUDGET)
+    # L-0710: a turn in which ONLY the chronic rule matched ran nothing and
+    # records nothing as verified, so a cheap green rule rides along: the
+    # question here is whether the chronic one holds the baseline back.
+    root = _repo(tmp_path, _CHRONIC_BESIDE_GREEN)
     settle = _run(flavour, root)
     assert settle.returncode == 0, settle.stderr
     before = _baseline(root)
-    assert before
 
     _commit_mapped_file(root)
     deferred = _run(flavour, root)
