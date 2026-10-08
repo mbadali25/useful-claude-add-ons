@@ -28,9 +28,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
 
 It passes on exit 0 `CI_RECEIPT VERIFIED` (the `verify-gate` workflow ran the whole map, unbudgeted, on
 exactly this committed tree), on exit 4 `NO_GATE` (no verify map, or the gate stood down), or when the
-`verify` line reads every rule `pass` and `.crew/.verify-verified-at` names HEAD (a clean local
-`/crew:verify --all`). Anything else refuses done (`chronic`, `unverified`, `skipped`, `fail`, no record,
-a marker behind HEAD): quote the `CI_RECEIPT` line, then push and let the workflow run, or run
+`verify` line holds nothing outstanding (`no rules recorded`: a clean pass empties the record) and
+`.crew/.verify-verified-at` names HEAD. Anything else refuses done (a `chronic`, `unverified`, `skipped` or
+`fail` count, `no gate record yet`, a marker behind HEAD): quote the `CI_RECEIPT` line, then push and let the workflow run, or run
 `/crew:verify --all` here, and rerun this command.
 
 ## Check 3 — the completion audit

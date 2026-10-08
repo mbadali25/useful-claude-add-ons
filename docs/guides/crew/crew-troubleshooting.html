@@ -357,8 +357,8 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
 </code></pre>
 <p><strong>Fix:</strong> commit and push the branch so the <code>verify-gate</code> workflow runs the whole map, then rerun
-  <code>/crew:done</code> once <code>CI_RECEIPT VERIFIED</code> names HEAD; or run <code>/crew:verify --all</code> here, which leaves
-  every rule <code>pass</code> with <code>.crew/.verify-verified-at</code> at HEAD. <code>UNKNOWN</code> (exit 3) is <code>gh</code>, the
+  <code>/crew:done</code> once <code>CI_RECEIPT VERIFIED</code> names HEAD; or run <code>/crew:verify --all</code> here, which empties
+  the record (<code>verify   no rules recorded</code>) and writes <code>.crew/.verify-verified-at</code> = HEAD. <code>UNKNOWN</code> (exit 3) is <code>gh</code>, the
   network or the artifact, never a pass; a branch that changes the gate or the workflow itself
   never gets a VERIFIED receipt, so it needs the local run.</p>
 <ul>

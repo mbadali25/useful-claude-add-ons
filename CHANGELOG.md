@@ -19,9 +19,10 @@ Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness h
   the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
   run no rule at all.
 - **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
-  `NO_GATE`, or on a record where every rule reads `pass` with `.crew/.verify-verified-at` at HEAD
-  (a clean local `/crew:verify --all`). A `chronic` rule (deferred to CI), `skipped`, `unverified`,
-  `fail`, no record, or a marker behind HEAD refuses the close. A record of old passes no longer
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) and `.crew/.verify-verified-at` at HEAD (a clean local `/crew:verify --all`). A
+  `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or a marker
+  behind HEAD refuses the close. A record of old passes no longer
   closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
   read as an alternative to the receipt, is gone.
 - **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;

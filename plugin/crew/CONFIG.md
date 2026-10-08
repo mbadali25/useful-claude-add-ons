@@ -3020,9 +3020,10 @@ to CI), a `skipped` one, and a Stop turn where `0 rules ran` all leave HEAD
 without a clean pass, and none of them fails the turn. `/crew:done` check 2
 settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
 (the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
-on exactly that committed tree) or exit 4 `NO_GATE`, or on a record where
-every rule reads `pass` with `.crew/.verify-verified-at` at HEAD (a clean
-local `/crew:verify --all`); anything else refuses the close. No config key
+on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
+nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
+pass empties it) and `.crew/.verify-verified-at` at HEAD (a clean local
+`/crew:verify --all`); anything else refuses the close. No config key
 changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
