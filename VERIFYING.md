@@ -101,6 +101,7 @@ matches `.github/workflows/`.
 | `crew` default set | `python3 -m pytest plugin/crew/tests/ -q` |
 | `crew` per-shell matrix | `python3 -m pytest plugin/crew/tests -m slow` |
 | `crew` wall-clock tests, serially (no `-n`) | `python3 -m pytest plugin/crew/tests -m wallclock` |
+| `crew` quarantined timing flakes (deselected everywhere else; each names its owner and fixing ticket) | `python3 -m pytest plugin/crew/tests -m quarantine` |
 | Mutation (sabotage) suite | `python3 plugin/crew/tests/sabotage.py` |
 | Marketplace checker suites | `python3 scripts/_test/<name>.py` |
 

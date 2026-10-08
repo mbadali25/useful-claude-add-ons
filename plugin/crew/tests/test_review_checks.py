@@ -2241,6 +2241,10 @@ def _kill_quietly(pid):
         pass
 
 
+# 4 of the 7 red pytest-crew runs on main from 2026-10-06 to 2026-10-08
+# (37477273668, 37642924232, 37721327069, 37725772665) failed here alone.
+@pytest.mark.quarantine(owner="mbadali25", ticket="L-0737",
+                        reason="timing flake: the detached leftover is not always gone within 5s")
 @_LINUX_WAITID
 def test_a_clean_linter_s_detached_leftover_is_ended(tmp_path, fake, monkeypatch):
     """L-0605 / ADR 0005: a background process a linter leaves after a CLEAN

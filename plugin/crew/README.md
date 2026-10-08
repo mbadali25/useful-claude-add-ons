@@ -4056,6 +4056,20 @@ every `tests`/`_test` suite in the repo, Python and shell, for a pwsh spawn that
 would skip it. There is no retry. Windows pwsh keeps the profile under
 `LOCALAPPDATA`, so the variable changes nothing there.
 
+Every test also runs under a home of its own (L-0709): `tests/conftest.py`
+points HOME, USERPROFILE and the XDG config, data and state directories at a
+throwaway directory per test, so a crew script a test spawns reads an empty
+`~/.claude/crew/config.json`, not yours. Before this, a machine layer holding
+`autopilot.*` keys failed `test_status_mode_line_reads_off_by_default` and the
+`crew-context.sh` inject-off cases on the owner's machine while CI, which has
+no user layer, stayed green. An audit hook fails any test that opens a file
+under the real home or spawns a process with the real HOME, naming the path;
+`tests/test_hermetic_home.py` holds it, with a regression run against a planted
+home that carries those keys. A test that is a known timing flake is not
+skipped: it carries `@pytest.mark.quarantine(owner=..., ticket=...)`, which
+deselects it until `-m quarantine` names it, and a quarantine without both, or
+a skip whose reason says flaky, fails collection.
+
 That last gap is real and no test closes it. Every command and every agent is an
 instruction to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that

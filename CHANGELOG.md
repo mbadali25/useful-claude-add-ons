@@ -9,6 +9,34 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-08
+
+Crew 1.2.2: L-0709 (hermetic tests; folds in L-0729). Test-only; no hook or script changes.
+
+### Changed — crew 1.2.2: every crew test runs under a home of its own (L-0709)
+
+- **Summary.** The crew test suite no longer reads your real `~/.claude/crew/config.json`: every
+  test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
+  failing on settings you chose.
+- **Isolation.** `plugin/crew/tests/conftest.py`'s autouse `_isolated_home` points HOME,
+  USERPROFILE and `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_STATE_HOME` at a per-test directory
+  beside `tmp_path`, and a session-wide one covers collection. `GLOBAL_CONFIG_PATH` was patched
+  in-process only, so a spawned script still read the real file: with `autopilot.*` keys in the
+  machine layer, `test_status_mode_line_reads_off_by_default` (L-0704) and both
+  `test_bash_flavour_emits_and_logs_nothing_when_inject_is_false` cases (L-0729) failed locally and
+  passed in CI. The Python user base and pwsh's CurrentUser module directory are carried over, as
+  installed code rather than configuration.
+- **Audit.** `crew_fixtures.home_audit` fails a test that opens a file under the real home, or
+  spawns a process handed the real HOME, naming each path; the checkout, the interpreter and the
+  temp directory are allowed. `test_hermetic_home.py` holds it, with a regression run against a
+  planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
+  the sabotage-suite entries are L-0738, a tooling PR).
+- **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
+  until `-m quarantine` names it; a quarantine missing either, or a skip whose reason says
+  flaky/timing/intermittent, fails collection. Quarantined (L-0737 fixes them):
+  `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
+  2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
+
 ## [1.2.1] - 2026-10-08
 
 Crew 1.2.1: L-0703 (promote-gate exact-sha rows and review evidence) and L-0704 (hermetic

@@ -1126,6 +1126,171 @@ def set_pwsh_cache_session(path):
     _PWSH_CACHE_ROOT = path
 
 
+# --- per-test home isolation (L-0709) -----------------------------------------
+#
+# conftest points HOME (and USERPROFILE, XDG_CONFIG/DATA/STATE_HOME) at a
+# directory of each test's own, so a spawned crew script that recomputes
+# `~/.claude/crew/config.json` reads an empty home, not the operator's. Patching
+# `crew_config.GLOBAL_CONFIG_PATH` reaches this process only: crew-context.sh
+# printed the operator's inert `autopilot.*` keys into a test that expects
+# silence (L-0729), and `crew_autopilot.py status` read `mode: plan` (L-0704).
+#
+# `home_audit` is the runtime check behind it. While a test runs it refuses,
+# and records, an in-process open under a real home and a spawn whose HOME or
+# USERPROFILE is a real home; conftest's teardown fails the test with every
+# recorded path. Not the whole home is refused: a CI checkout, the
+# interpreter, its user site and the temp directory can live under it, so
+# those prefixes (`home_allowed_prefixes`) are allowed.
+
+# Carries the real homes, os.pathsep-joined, from the first pytest process to
+# every process it starts: an xdist worker inherits the controller's ALREADY
+# isolated HOME, so it cannot read the real one back from HOME itself.
+REAL_HOME_VAR = "CREW_TEST_REAL_HOME"
+HOME_VARS = ("HOME", "USERPROFILE")
+XDG_HOME_DIRS = (("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"),
+                 ("XDG_STATE_HOME", ".local/state"))
+
+_HOME_GUARD = None        # normalised real homes while a test runs, else None
+_HOME_ALLOWED = ()        # normalised prefixes under a real home that may be opened
+_HOME_AUDIT_INSTALLED = False
+HOME_VIOLATIONS = []
+
+
+def _home_norm(path):
+    return os.path.normcase(os.path.abspath(os.fsdecode(path)))
+
+
+def _home_spellings(path):
+    """`path` as written and as resolved: a symlink outside the home that
+    points into it must not get past a check on the spelling alone."""
+    norm = _home_norm(path)
+    real = os.path.normcase(os.path.realpath(norm))
+    return (norm,) if real == norm else (norm, real)
+
+
+def _under(path, roots):
+    for root in roots:
+        if path == root or path.startswith(root.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def real_homes(environ=None):
+    """The operator's real home directories: `REAL_HOME_VAR` when a parent
+    pytest already recorded them, else HOME, USERPROFILE and the password
+    database's entry -- a child given no HOME at all falls back to that one."""
+    environ = os.environ if environ is None else environ
+    recorded = environ.get(REAL_HOME_VAR)
+    if recorded:
+        return tuple(p for p in recorded.split(os.pathsep) if p)
+    found = [environ.get(name) for name in HOME_VARS]
+    try:
+        import pwd  # pylint: disable=import-outside-toplevel
+        found.append(pwd.getpwuid(os.getuid()).pw_dir)
+    except (ImportError, KeyError, AttributeError):
+        pass
+    homes = []
+    for path in found:
+        if path and os.path.isabs(path) and path not in homes:
+            homes.append(path)
+    return tuple(homes)
+
+
+def home_allowed_prefixes(repo_root, homes=()):
+    """What a test may open even under a real home: the checkout, the
+    interpreter and its import path (user site included), and the system temp
+    directory pytest's basetemp sits in (USERPROFILE\\AppData\\Local\\Temp on
+    Windows). A prefix that is a real home, or holds one (`PYTHONPATH=$HOME`),
+    is dropped: allowing it would allow the whole home."""
+    import site  # pylint: disable=import-outside-toplevel
+    paths = [repo_root, sys.prefix, sys.base_prefix, sys.exec_prefix, tempfile.gettempdir()]
+    paths.extend(p for p in sys.path if p)
+    try:
+        paths.append(site.getusersitepackages())
+    except AttributeError:
+        pass
+    home_roots = [s for h in homes for s in _home_spellings(h)]
+    seen = []
+    for path in paths:
+        for variant in _home_spellings(path):
+            if variant not in seen and not any(_under(h, (variant,)) for h in home_roots):
+                seen.append(variant)
+    return tuple(seen)
+
+
+def home_open_violation(path, homes, allowed):
+    """None, or a reason when opening `path` reads or writes under a real home
+    outside `allowed`. `path` may be relative (to the cwd), bytes, PathLike or
+    an int file descriptor (never a violation). Pure."""
+    if isinstance(path, int) or path is None:
+        return None
+    for spelling in _home_spellings(path):
+        if _under(spelling, homes) and not _under(spelling, allowed):
+            return f"opened {os.fsdecode(path)} under the real home"
+    return None
+
+
+def home_spawn_violation(env, homes, allowed=()):
+    """None, or a reason when a spawn with environment `env` (None means
+    os.environ, as for subprocess) gets a real home, or a directory inside one
+    outside `allowed`, as its HOME or USERPROFILE. Pure."""
+    for name in HOME_VARS:
+        value = _env_get(env, name)
+        if not value:
+            continue
+        for spelling in _home_spellings(value):
+            if _under(spelling, homes) and not _under(spelling, allowed):
+                return f"spawned with {name}={value}, the real home or inside it"
+    return None
+
+
+def home_audit(event, payload):
+    """`sys.addaudithook` callback: refuse and record an open or a spawn that
+    reaches a real home while a test runs. Raising aborts the call; the record
+    survives code that swallows the exception."""
+    if _HOME_GUARD is None:
+        return
+    reason = None
+    if event == "open":
+        reason = home_open_violation(payload[0], _HOME_GUARD, _HOME_ALLOWED)
+    elif event == "subprocess.Popen":
+        reason = home_spawn_violation(payload[3], _HOME_GUARD, _HOME_ALLOWED)
+    if reason:
+        HOME_VIOLATIONS.append(reason)
+        raise RuntimeError("test reached the operator's real home (L-0709): " + reason)
+
+
+def install_home_audit():
+    """Install the audit hook once per process; hooks cannot be removed."""
+    global _HOME_AUDIT_INSTALLED  # pylint: disable=global-statement
+    if not _HOME_AUDIT_INSTALLED:
+        sys.addaudithook(home_audit)
+        _HOME_AUDIT_INSTALLED = True
+
+
+def set_home_guard(homes, allowed=()):
+    """Turn the audit on (`homes` a tuple of real homes) or off (None)."""
+    global _HOME_GUARD, _HOME_ALLOWED  # pylint: disable=global-statement
+    _HOME_GUARD = None if homes is None else tuple(
+        s for h in homes for s in _home_spellings(h))
+    _HOME_ALLOWED = tuple(allowed)
+
+
+def guarded_homes():
+    """The real homes the audit is guarding right now (empty when it is off)."""
+    return _HOME_GUARD or ()
+
+
+def home_env(home):
+    """The variables that make `home` this process's home: HOME and USERPROFILE
+    (`expanduser` reads the first on POSIX, the second on Windows) and the XDG
+    base directories that would otherwise still name the real one."""
+    env = {name: str(home) for name in HOME_VARS}
+    for name, rel in XDG_HOME_DIRS:
+        env[name] = os.path.join(str(home), *rel.split("/"))
+    return env
+
+
 # The full per-shell matrix. `conftest.py` registers the marker and deselects
 # it from a default run; `pytest -m slow` or `--run-slow` runs it. Only the
 # bash and pwsh drivers of a decision case carry it: the python driver runs
