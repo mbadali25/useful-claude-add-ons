@@ -1549,9 +1549,39 @@ if ($All -or $Ci) {
 }
 
 $notices = [System.Collections.ArrayList]@()
+# L-0733 - the twin of the undeclared-reach notice in verify-gate.sh: on
+# Stop a rule deferred only for declaring no `reach` goes to
+# verify_record.py reach-notice (the full notice once per map content,
+# nothing after; the record's one summary line carries later Stops). -Ci
+# keeps a line per rule.
+$undeclaredKinds = @("reach_undeclared", "reach_wrapper", "reach_syntax")
+$undeclaredNow = [System.Collections.ArrayList]@()
 foreach ($ri in $ruleOrder) {
   if ($stopExcluded.ContainsKey($ri)) {
+    if ($stopMode -and ($undeclaredKinds -contains $stopExcluded[$ri].kind)) {
+      [void]$undeclaredNow.Add(@([int]$ri, [string]$stopExcluded[$ri].reason))
+      continue
+    }
     [void]$notices.Add("verify-gate: rules[$ri] " + $stopExcluded[$ri].reason)
+  }
+}
+if ($undeclaredNow.Count -gt 0) {
+  $reachLines = $null
+  if ($matchPy -and (Test-Path -LiteralPath $verifyRecordScript)) {
+    try {
+      $reachPayload = ConvertTo-Json -Compress -Depth 5 -InputObject @($undeclaredNow)
+      $reachLines = @($reachPayload | & $matchPy $verifyRecordScript reach-notice 2>$null)
+      if ($LASTEXITCODE -ne 0) { $reachLines = $null }
+    } catch { $reachLines = $null }
+  }
+  if ($null -ne $reachLines) {
+    foreach ($line in $reachLines) {
+      $text = ([string]$line).TrimEnd("`r")
+      if ($text) { [void]$notices.Add($text) }
+    }
+  } else {
+    $names = ($undeclaredNow | ForEach-Object { "rules[$($_[0])]" }) -join ", "
+    [void]$notices.Add("verify-gate: $($undeclaredNow.Count) rule(s) declare no ``reach`` and were NOT run on Stop ($names) - declare reach with /crew:verify --stamp-reach")
   }
 }
 foreach ($fn in $fallbackNotices) {

@@ -862,6 +862,24 @@ still resumes from the last written handoff rather than from nothing.
 - **Fix:** quote the missing lines in the plan, or approve it yourself with `/crew:approve <id>`,
   which this check never blocks.
 
+## Verify gate says rules declare no `reach`
+
+- **Symptom:** on Stop, `verify-gate: N rule(s) matched this turn declare no `reach`, so Stop did NOT
+  run them` once, then on every later Stop one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]` (L-0733; before it, a line per rule per turn).
+- **Cause:** `.crew/verify.json` predates `reach`. A rule with none that wraps a script, uses shell
+  syntax or names a remote verb is never run unattended on Stop - it may reach a live host. The
+  notice is shown once per map content; `.crew/.verify-gate.reach-notice` remembers which.
+- **Fix:** `/crew:verify --stamp-reach` shows what each rule would get; `--apply` writes the `local`
+  and `network` proposals, and `--set N=local|network|host` decides a wrapper or shell rule. Review
+  the diff and commit it on its own. `/crew:verify --all` runs every rule meanwhile.
+- **Symptom:** `N unverified obligation(s) belong to a rule that was edited or removed; NOT advancing
+  the marker`. **Cause:** a rule changed after its entry was recorded. An undeclared-reach entry no
+  longer holds the marker (it is counted in the summary line); any other kind does. **Fix:**
+  `/crew:verify --all`, or, when that would reach `network`/`host` targets, run the
+  `verify_record.py forget-orphans` command the line names, from the repo root: it drops the orphans
+  by name and runs nothing.
+
 ## An agent named in verify.json is not installed
 
 `.crew/verify.json` travels with the repo; the agents its rules name do not. A rule asking for an

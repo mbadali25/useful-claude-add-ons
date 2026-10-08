@@ -2993,6 +2993,29 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   checkout that ran it. The caches are machine-local and gitignored, so
   another checkout or worktree that pulls the stamped map prices those
   rules afresh: run `/crew:verify --all` once there.
+- **What Stop says about undeclared rules (L-0733).** A map written before
+  `reach` existed used to print a `rules[N] wrapper or inline shell ...` line
+  per matched rule and a `NOT VERIFIED ON THIS TREE - rules[N]` line per
+  record entry on every Stop. Now the first Stop that defers an undeclared
+  rule prints ONE notice: how many rules matched and how many in the map have
+  no `reach`, `/crew:verify --stamp-reach` (dry run, then `--apply`, and
+  `--set N=local|network|host` for a wrapper or shell rule), then each
+  deferred rule's reason once. It is shown once per `.crew/verify.json`
+  content (`.crew/.verify-gate.reach-notice` holds the map's sha256,
+  machine-local bookkeeping); after that every Stop, quiet turns included,
+  says it in one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]`. The deferral is unchanged, `--ci`
+  keeps a line per rule, and `/crew:status` still counts the entries by kind.
+- **An orphan** is a record entry whose rule was edited or removed since it
+  was recorded (its `rule_key` changed). It stays in the record, marked
+  `orphaned`, because an edit does not verify anything. An undeclared-reach
+  orphan does not hold the verified marker (L-0733): its live form never
+  did, and `--stamp-reach` in another checkout would otherwise freeze that
+  checkout's marker for good; it is counted in the one-line summary. Any
+  other orphan holds the marker until `/crew:verify --all` runs, or until
+  `python3 hooks/scripts/verify_record.py forget-orphans`, run from the repo
+  root, drops it by name and runs nothing — for a map whose `--all` would
+  reach `network`/`host` targets. The Stop line names that command.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a

@@ -1373,10 +1373,29 @@ acute_rules = []
 
 # Reach exclusions are decided at match time and do not depend on the
 # budget arithmetic below - report them unconditionally.
+# L-0733: on Stop, a rule deferred only because it declares no `reach` is
+# not named on every turn. verify_record.reach_notice prints the full notice
+# (the count, /crew:verify --stamp-reach, each rule's reason) once per map
+# content, and the record's one summary line carries every Stop after that.
+# --ci keeps a line per rule: a CI log is read once, not every turn.
+_UNDECLARED_KINDS = ("reach_undeclared", "reach_wrapper", "reach_syntax")
+_undeclared_now = []
 for _ri in rule_order:
     if _ri in stop_excluded:
         _kind, _reason = stop_excluded[_ri]
+        if STOP_MODE and _kind in _UNDECLARED_KINDS:
+            _undeclared_now.append((_ri, _reason))
+            continue
         notices.append("verify-gate: rules[%d] %s" % (_ri, _reason))
+if _undeclared_now:
+    try:
+        notices.extend(_vr.reach_notice(os.getcwd(), _undeclared_now))
+    except Exception:  # pylint: disable=broad-except
+        # No scanner module, or it failed: one line naming the fix, never
+        # silence (the deferral above still stands either way).
+        notices.append("verify-gate: %d rule(s) declare no `reach` and were NOT run on Stop (%s) - "
+                       "declare reach with /crew:verify --stamp-reach"
+                       % (len(_undeclared_now), ", ".join("rules[%d]" % r for r, _ in _undeclared_now)))
 for _fn in fallback_notices:
     notices.append("verify-gate: %s" % _fn)
 # --ci: one line that counts what the per-rule notices above name, so a PR
