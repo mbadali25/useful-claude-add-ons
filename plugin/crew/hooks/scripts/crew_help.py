@@ -157,7 +157,7 @@ HELP = {
 GROUPS = (
     ("core", ("brainstorm", "spec", "plan", "approve", "implement", "review", "done", "fix",
               "autopilot", "status", "help")),
-    ("through-help", ("docs", "diagram", "onboard", "reference", "verify", "runbook", "handoff",
+    ("through-help", ("docs", "diagram", "graph", "onboard", "reference", "verify", "runbook", "handoff",
                       "init", "config", "config-setup", "model", "migrate", "debug", "survey")),
     ("merge-candidates", ("jira-sync", "sdp-sync", "obsidian-sync")),
     ("specialist", ("change", "emergency", "gate", "promote", "split", "webtest")),

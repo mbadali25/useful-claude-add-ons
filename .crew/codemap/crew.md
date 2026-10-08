@@ -1234,7 +1234,7 @@ port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `
 result ending in `next_step` (`:225`), the remote shell-quoted whole. Apart from L-0636's
 `ring --to` it writes nothing, and it builds only on `crew_coord`'s public names (`Channel`,
 `safe`, `peer`, `run_git`, the exit codes); `CHANNEL_RE` (`:103`) restates `crew_coord._CHANNEL_RE`,
-pinned equal by `test_channel_rule_is_crew_coords`. `commands/autopilot.md:117` is section 9, the
+pinned equal by `test_channel_rule_is_crew_coords`. `commands/autopilot.md:116` is section 9, the
 untrusted-data rules. JUDGEMENT: `kind` and `ref` change no behaviour on purpose; the receiver
 always re-reads the record, so a lying hint costs a fetch, not an action.
 
