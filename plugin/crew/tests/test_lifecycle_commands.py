@@ -97,6 +97,7 @@ EXPECTED_CLI = {
                      "crew_autopilot.py status --root .",
                      "crew_autopilot.py goal-propose --root .",
                      "crew_autopilot.py goal-approve --root .",
+                     "crew_autopilot.py goal-run --root . --goal <slug> --session",
                      "route --root . --first goal",
                      "crew_inflight.py claim --root .",
                      "crew_inflight.py release --root .",
@@ -499,6 +500,44 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
+
+
+def test_autopilot_low_context_handoff_uses_handoff_resume():
+    """T-0056: the low-context stop writes the line `handoff-resume` prints, so a
+    running goal's `--goal` line wins; the ticket form is no longer the only form."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+    section = flat[flat.index("## 5. Context runs low"):flat.index("## 6.")]
+
+    assert ("crew_autopilot.py handoff-resume --root . --ticket <ticket>" in section,
+            "written as printed" in section,
+            "with `resume: /crew:autopilot <ticket>` as its resume line" in section,
+            "goal-mark --root . --goal <slug> --state stopped" in section,
+            "not for this context handoff, which leaves the goal `running`" in section,
+            "A goal run first re-runs section 2's `goal-run` before every `next`, which marks the "
+            "goal `running` and re-checks the token cap before any phase, approval or answer" in flat,
+            "in a goal run it is no stop: release the claim and go back to section 2's `goal-run`"
+            in flat) == (
+        True, True, False, True, True, True, True)
+
+
+def test_handoff_command_asks_handoff_resume():
+    flat = " ".join(_read(os.path.join(COMMANDS, "handoff.md")).split())
+    skill = " ".join(_read(os.path.join(os.path.dirname(COMMANDS), "skills", "crew-context",
+                                        "SKILL.md")).split())
+
+    assert ("crew_autopilot.py handoff-resume --root ." in flat,
+            "a goal line it prints wins over the next command" in flat,
+            "crew_autopilot.py handoff-resume --root ." in skill,
+            "wins over the next command" in skill) == (True, True, True, True)
+
+
+def test_autopilot_logs_taken_answers_while_asleep_and_reports_them():
+    """L-0653: the command notes each answer it takes while asleep, and runs the
+    morning summary when settings says decisions are unreported."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "autopilot.md")).split())
+
+    assert ("crew_autopilot.py sleep-note --root . --ticket <ticket> --kind answered" in flat,
+            "crew_autopilot.py sleep-summary --root ." in flat) == (True, True)
 
 
 # --- ticket ids beyond T- (L-0509) --------------------------------------------------

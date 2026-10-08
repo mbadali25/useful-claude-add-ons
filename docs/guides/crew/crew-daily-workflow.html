@@ -400,7 +400,11 @@ and <code>/crew:autopilot wake</code> ends it now (L-0652); they write only
 <code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code>. Until L-1504 a manual sleep only
 tightens: outside the window it applies a night value only where it is stricter than the day
 value. <code>sleep</code> needs <code>scope.allowCliApproval: true</code> and an override stricter than its day value, or the
-window open. Autopilot's one other ledger writer is <code>crew_autopilot.py auto-reject</code> (T-0074), only with
+window open. Every approval and answer autopilot makes while asleep goes into the local log
+<code>.work/autopilot/sleep-log.md</code> (L-0653; never committed, never read to decide anything), and the
+morning summary prints them once, grouped by ticket: <code>/crew:autopilot wake</code> prints it, and once
+the window has ended <code>settings</code> warns until <code>crew_autopilot.py sleep-summary</code> has reported them.
+Autopilot's one other ledger writer is <code>crew_autopilot.py auto-reject</code> (T-0074), only with
 <code>autopilot.maxAutoReplans</code> set: it moves the ledger REVIEWED -&gt; NEEDS_REPLAN after a final round
 with a BLOCK. The
 approval is a step you take, not a lock.</p>

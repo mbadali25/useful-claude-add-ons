@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.20**: After an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line. When autopilot rejects a review round itself and plans again, it no longer approves a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
-- **crew 1.1.20**: The owner list knows hold, blocked, landing and needs-owner. `/crew:status` now counts held and blocked tickets on its `waiting` line (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
+- **crew 1.1.21**: Held pings while asleep, and the morning summary sent once. With `autopilot.sleep.notifyHold: true`, the pings that only ask for your attention wait while autopilot sleeps, and the morning summary tells you how many there were and is sent to you once; a failure still pings at once.
+- **crew 1.1.21**: Sleep log and morning summary. Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

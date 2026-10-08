@@ -410,18 +410,26 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # top of those 141, both layers, measured by running this test on
     # T-0051-build after merging main abddc302.
     assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    # 145 with T-0009's ratcheted `guards.deployWorkflow` and the repo-only
+    # 145 with L-0541's repo-only goal caps, `autopilot.maxTicketsPerRun` and
+    # `autopilot.maxTokensPerSession`, on top of those 143, measured by running
+    # this test on rush/g6b-goals-sleep.
+    assert {"autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"} <= declared
+    # 146 with L-0654's `autopilot.sleep.deploy`, measured the same way.
+    assert "autopilot.sleep.deploy" in declared
+    # 147 with L-0656's `autopilot.sleep.notifyHold`, measured the same way.
+    assert "autopilot.sleep.notifyHold" in declared
+    # T-0009's ratcheted `guards.deployWorkflow` and the repo-only
     # `environments.workflows` map (an empty dict, so one leaf, like
-    # `dev.roles`) on top of those 143, ported onto release/1.2.0.
+    # `dev.roles`) on top of those, ported onto release/1.2.0.
     assert "guards.deployWorkflow" in declared
     assert "environments.workflows" in declared
-    # 147 with T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
-    # (/crew:autopilot wave) on top of those 145, merging release/1.2.0 into G4.
+    # T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
+    # (/crew:autopilot wave), merging release/1.2.0 into G4.
     assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
-    # 146 with L-0675's repo-only `memory.recall.projects` on top of those 145
-    # (G3b stacked on G2, crew 1.1.11); 148 with G4's two T-0009 keys above.
+    # `memory.recall.projects` (L-0675, G3b) on top: 152, counted by running this test
+    # on rush/g6b-goals-sleep after merging release/1.2.0 (crew 1.1.20).
     assert "memory.recall.projects" in declared
-    assert len(declared) == 148
+    assert len(declared) == 152
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

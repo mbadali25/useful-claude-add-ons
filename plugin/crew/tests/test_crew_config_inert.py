@@ -24,12 +24,10 @@ from test_crew_config import _TEMPLATE_PATH, _global
 # path the global filter drops. `autopilot.approval: self` (the incident) landed in
 # T-0010, so it is must-stay-quiet now, and so is `autopilot.ship` since T-0011 landed;
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy`, so they are
-# must-stay-quiet too, as is `autopilot.deploy: nonprod|all` since L-0649 (G4);
-# `autopilot.maxTicketsPerRun` (L-0541) carries must-warn.
+# must-stay-quiet too, as is `autopilot.deploy: nonprod|all` since L-0649 (G4), and so are
+# L-0541's `maxTicketsPerRun` and `mode: backlog` (rush G6b).
 
-_INERT_CASES = [
-    ("autopilot.maxTicketsPerRun", 50, "L-0541"),
-    ("autopilot.mode", "backlog", "L-0541")]
+_INERT_CASES = []  # every value-level row has landed (L-0649, L-0541)
 
 
 def _nested(dotted, value):
@@ -122,12 +120,12 @@ def test_an_implemented_value_is_quiet(tmp_path, dotted, value):
 
 
 def test_a_key_entering_the_defaults_goes_quiet(tmp_path, monkeypatch):
-    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}},
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}},
                                    git=False)
     assert [e["key"] for e in crew_config.inert_settings(str(root))] == [
-        "autopilot.maxTicketsPerRun"]
+        "autopilot.laterKnob"]
     monkeypatch.setattr(crew_state, "AUTOPILOT_DEFAULTS",
-                        dict(crew_state.AUTOPILOT_DEFAULTS, maxTicketsPerRun=1))
+                        dict(crew_state.AUTOPILOT_DEFAULTS, laterKnob=1))
     assert crew_config.inert_settings(str(root)) == []
 
 
@@ -233,12 +231,13 @@ def test_the_inert_cli_prints_the_line_or_none(tmp_path, capsys):
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     assert crew_config.main(["--root", str(root), "--inert"]) == 0
     assert capsys.readouterr().out.strip() == "inert settings: none"
-    (root / ".crew" / "config.json").write_text(json.dumps({"autopilot": {"maxTicketsPerRun": 3}}),
+    # L-0541 (G6b) landed the last INERT_PENDING row, so an unknown key stands in.
+    (root / ".crew" / "config.json").write_text(json.dumps({"autopilot": {"notAKey": 3}}),
                                                  encoding="utf-8")
     assert crew_config.main(["--root", str(root), "--inert"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("Inert settings (crew ")
-    assert "autopilot.maxTicketsPerRun=3 (L-0541)" in out
+    assert "autopilot.notAKey=3 (unknown key)" in out
 
 
 # A key and a value come from a file the user (or a cloned repo) wrote, and the line reaches a
@@ -261,16 +260,21 @@ def test_the_inert_cli_escapes_control_characters(tmp_path, capsys):
 
 def test_a_personal_key_is_judged_by_the_value_in_force(tmp_path, monkeypatch):
     """T-0070 port review FIX: a personal key resolves by T-0050's ratchet, not
-    repo precedence, so a global `autopilot.mode: backlog` that holds a repo
-    `plan` down is the value in force and is named, from the global layer."""
-    _global(tmp_path, monkeypatch, contents={"autopilot": {"mode": "backlog"}})
-    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"mode": "plan"}}, git=False)
-    assert crew_config.resolve_config(str(root))["autopilot"]["mode"] == "backlog"
+    repo precedence, so a global `autopilot.deploy: nonprod` that holds a repo
+    `all` down is the value in force and is named, from the global layer.
+    (L-0541 made `mode: backlog`, this test's first example, a live value, and L-0649
+    `deploy: nonprod`, its second; the merge of both leaves INERT_PENDING empty, so
+    the row is put there for this test.)"""
+    monkeypatch.setitem(crew_config.INERT_PENDING, ("autopilot.deploy", "nonprod"),
+                        ("would deploy", "T-0045"))
+    _global(tmp_path, monkeypatch, contents={"autopilot": {"deploy": "nonprod"}})
+    root = crew_fixtures.make_repo(tmp_path, config={"autopilot": {"deploy": "all"}}, git=False)
+    assert crew_config.resolve_config(str(root))["autopilot"]["deploy"] == "nonprod"
 
-    hits = [e for e in crew_config.inert_settings(str(root)) if e["key"] == "autopilot.mode"]
+    hits = [e for e in crew_config.inert_settings(str(root)) if e["key"] == "autopilot.deploy"]
 
     assert [(e["value"], e["ticket"], e["layer"]) for e in hits] == [
-        ("backlog", "L-0541", "global")], hits
+        ("nonprod", "T-0045", "global")], hits
 
 
 def test_a_machine_only_block_in_the_machine_file_is_not_inert(tmp_path, monkeypatch):

@@ -2255,11 +2255,8 @@ def inspect_global(root, path=None):
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
 # defaults, so their rows went with it. L-0649 (G4) made `autopilot.deploy`
 # `nonprod` and `all` work (the deploy phase), so their value rows went too.
+# L-0541 (G6b) landed `autopilot.maxTicketsPerRun` and `mode: backlog`; their rows went too.
 INERT_PENDING = {
-    "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
-                                   "L-0541"),
-    ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
-                                    "only `plan` arms it today", "L-0541"),
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"

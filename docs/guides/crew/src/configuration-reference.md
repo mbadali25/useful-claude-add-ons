@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**152 keys**: 88 settable in the machine-global file, 64 repo-only.
+**156 keys**: 88 settable in the machine-global file, 68 repo-only.
 
 Columns:
 
@@ -378,18 +378,22 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | 1.0.41 | Only the exact string `plan` arms `/crew:autopilot`; anything else reads as off, with a warning. |
+| `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` \| `backlog` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | 1.0.41 | Only the exact strings `plan` (one ticket per run) and `backlog` (L-0541: a goal's tickets in dependency order, inside the caps) arm `/crew:autopilot`; anything else reads as off, with a warning. |
 | `autopilot.maxPhases` | both, stricter wins | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: the smaller wins | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
 | `autopilot.deploy` | both, stricter wins | `"none"` | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
 | `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
 | `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
 | `autopilot.maxAutoReplans` | repo | `0` | non-negative integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.339 | Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning. |
-| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
-| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
-| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 | `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.349 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
 | `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
+| `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
+| `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
+| `autopilot.sleep.deploy` | repo | `null` | `null` \| `nonprod` \| `none` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.1.21 | `autopilot.deploy` inside the sleep window (L-0654): null keeps the day value, `nonprod` or `none` replaces it; anything else, `all` included, is refused with a warning. Asleep, an effective `all` reads as `nonprod`: production never runs unattended asleep. |
+| `autopilot.sleep.notifyHold` | repo | `null` | `null` \| `true` (checked in `plugin/crew/hooks/scripts/crew_notify_hold.py`) | 1.1.21 | Inside the sleep window (L-0656): `true` holds the pings that only ask for attention (questions, Approval waiting, Review out of rounds) and counts them; the morning summary carries the count. A failure (a deploy result, a refused Stop gate, a stalled lane) is never held. Only while armed and asleep by the schedule (a manual sleep outside it holds nothing); anything but null or true holds nothing, with a warning. |
+| `autopilot.maxTicketsPerRun` | repo | `3` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.21 | Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning. |
+| `autopilot.maxTokensPerSession` | repo | `2000000` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.21 | Input plus output tokens one goal session may spend before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning. |
 | `autopilot.maxLanes` | repo | `null` | positive integer or null (checked in `plugin/crew/hooks/scripts/crew_wave.py`) | 1.1.6 | Lanes one `/crew:autopilot wave` runs at once; null is the resolved `pm.maxDispatches`, a larger value is capped to it and anything but a positive integer reads as it, each with a warning. |
 | `autopilot.reviewPolicy` | repo | `"stop"` | `stop` \| `clean-only` \| `fix-and-rereview` | 1.1.6 | What autopilot does with a review verdict. A wave lane: `stop` ends at the first verdict, `clean-only` takes a CLEAN round on to the done checks, `fix-and-rereview` fixes within the ledger's rounds. A single-ticket run (T-0067): only `fix-and-rereview` acts, fixing a non-final FINDINGS round's BLOCK and FIX lines itself (the `fix` phase) and re-reviewing. Anything else reads as `stop`, with a warning; no setting accepts a review. |
 
@@ -417,14 +421,6 @@ Columns:
 ## Coming (not in code yet)
 
 Keys from approved tickets that have not landed. Each moves into the table above when its ticket lands, because it is then in the code; a test fails until it does (`test_no_coming_key_is_in_code`).
-
-### T-0012
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `autopilot.maxTicketsPerRun` | new key | repo | 3 |  | Tickets one goal run may work before it stops. |
-| `autopilot.maxTokensPerSession` | new key | repo | 2000000 |  | Token cap for one goal session. |
-| `autopilot.mode` | changes values | repo | off | `off` \| `plan` \| `backlog` | Adds `backlog`: work a goal's tickets one at a time. |
 
 ### T-0030
 

@@ -16,6 +16,9 @@ Build it from the repository, not from recollection:
    the newest by mtime)
 5. Write `resume:` in the header block: the one allowlisted command that is
    the next action (`resume: /crew:done T-0001`), otherwise `resume: none`.
+   When the plugin ships autopilot, first run `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py handoff-resume --root .`
+   (with `--ticket <id>` for the ticket in flight): a goal line it prints wins over the next command,
+   and its `resume: none` with `kind=unknown` (it could not tell which goal runs) is written as is.
    The allowlist, including the autopilot forms for a plugin that ships an
    autopilot command, is in the `crew-context` skill. Also write `branch:`
    and `head:` as their own lines. Write the note with the Write tool, not
@@ -38,8 +41,8 @@ With `--wrap-up` (the one wrap-up procedure: context-watch's armed warning and
 1. Run `git status --porcelain --untracked-files=no` first.
 2. Clean: take `branch:` and `head:` from `git rev-parse` now, after the commit,
    and write `resume:` per step 5 (`/crew:autopilot <ticket>` when autopilot drives).
-3. Dirty: write `resume: none`, and list the modified files under **Verify first**
-   with why the step could not be finished. Do not commit them.
+3. Dirty: write `resume: none` (a goal line step 5's `handoff-resume` prints still wins: T-0056), list
+   the modified files under **Verify first** with why the step could not be finished. Do not commit them.
 4. Keep the note under 40 lines, then end the turn. Do not tell the user to
    `/clear`: auto-clear does it when its four conditions hold, or says why not.
 
