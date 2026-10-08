@@ -7,7 +7,135 @@ from this file and updates **Status** as work lands.
 Status values: `needs ticket`, `ready`, `in progress`, `in review (PR #n)`, `blocked: <why>`,
 `done (PR #n)`, `owner action`.
 
-Last updated: 2026-10-03. Tracks L-0618's follow-ups, this session's PRs (#337, #372, #374, #375) and the handed-over PRs #350-#373. Other open PRs (#376, #377, #378, #379, #380 and #274-#349 outside that range) belong to other sessions and appear here only where they block or are blocked by a tracked PR.
+Last updated: 2026-10-05 (feature rush 1.2.0 section). Previously 2026-10-03. Tracks L-0618's follow-ups, this session's PRs (#337, #372, #374, #375) and the handed-over PRs #350-#373. Other open PRs (#376, #377, #378, #379, #380 and #274-#349 outside that range) belong to other sessions and appear here only where they block or are blocked by a tracked PR.
+
+## Feature rush 1.2.0 (PRs #324-#508, cloud session `crew-rush-2`, started 2026-10-05)
+
+Owner instruction 2026-10-05. Every PR in #324-#508 is grouped by dependency and files touched, built
+or ported into a group branch `rush/<group>` that targets `release/1.2.0` (cut from main `e84a8bfe`).
+`release/1.2.0` lands on main as one PR after the other session's 1.1.0 (#512). The two harness
+lanes land alone (owner rule T-0087); the last one sets crew **1.2.0**. Each group PR
+merges only on a Codex review (`gpt-6-sol`, high reasoning) with 0 BLOCK and 0 FIX, plus green CI.
+New tickets minted by this rush start at **C-0020**; the owner's local session creates them from the
+"New tickets" table below and writes the real ID back.
+
+### Groups (10, owner 2026-10-05)
+
+| # | Group | Branch | PRs | Placeholder crew | Status |
+|---|---|---|---|---|---|
+| 0 | G0 coord + wave (prerequisites, lands first) | `rush/g0-coord-wave` | T-0030 (#517, `T-0030-coord`, "1 of 3"), T-0029 (#516, `T-0029-wave`), feature halves; harness halves go to H1/H2 | 1.1.6 | landing (re-merged release; group review in progress) |
+| 1 | G1 ports: tracker, gitignore, graph, migrate | `rush/g1-ports` | #478, #464, #376, #346, #367, #370 | 1.1.2 | **merged into release/1.2.0** (#541, 3dbc033b) |
+| 2 | G1b ports: reference, hygiene, help, archive, CI | `rush/g1b-ports` | #345, #349, #359, #341, #324 | next free | built, waiting to land |
+| 3 | G2 autopilot ports | `rush/g2-autopilot` | #354, #395, #342, #358, #369, #363, #365, #366 | next free | built, waiting to land |
+| 4 | G3 contracts / ticket state | `rush/g3-contracts` | #408, #412, #410, #409, #411 | 1.1.5 | **merged into release/1.2.0** (#543, 2c911427) |
+| 5 | G3b bridge / recall / config / graph | `rush/g3b-bridge` | #434, #437, #442, #425, #414, #447, #455 | 1.1.8 (provisional) | landing |
+| 6 | G4 deploy / promote-gate | `rush/g4-deploy` | #336 (feature half), #467, #428, #432, #436, #439, #445, #471, #473, #488, #452 | 1.1.7 (provisional) | landing (built: 11/11, all CLEAN) |
+| 7 | G5 platform / CI / docs | `rush/g5-platform` | #441, #458, #468, #476, #474, #480, #454, #465, #477 | next free | built, waiting to land |
+| 4b | G3c contracts on coord/wave | `rush/g3c-contracts` | #408 T-0031, #410 L-0633, #412 L-0634 (base: G0 + release) | next free | building |
+| 4c | G3d bridge and graph | `rush/g3d-bridge` | #434 T-0032, #437 L-0636, #442 L-0637, #455 L-0667, then #547 L-0708 (kimi_probe asks git; owner 2026-10-07; build from `docs/tickets/L-0708/` on `L-0708-kimi-empty-dotgit`; its sabotage_kimi.py must-allow entry -> H2) (base: G0 + release) | next free | building |
+| 7b | G7 development standards sets | `rush/g7-standards` | L-0519, then L-0532, L-0533, L-0534, L-0535, L-0536, L-0537, L-0538 | next free | built, waiting to land |
+| 8 | G6a autopilot core | `rush/g6a-autopilot` | #485, #486, #397, #426, #449, #443, #446, #453, #483 (base: G2 + G0 + release) | next free | building |
+| 8b | G6b goals and sleep | `rush/g6b-goals-sleep` | L-0541 (#515), #459, #463, #469, then sleep #435, #431, #444 (base: G2 + release) | next free | building |
+| 7c | G8 late tooling and tracker | `rush/g8-late` | L-0517, L-0511 PR 1, L-0530 (L-0511 PR 2 deferred) | 1.1.1 | **merged into release/1.2.0** (#539, c510b764) |
+| 9 | H1 harness ports (to main, alone) | `rush/h1-harness` | #418, #461, #422, #333, #340, #331, #343, #402, #406, #490 | 1.1.4 | **merged into main** (#542, 7cb44221); #402 L-0540 still waits on the seed |
+| 9b | H3 review-harness tickets (to main, alone) — built, head ddb96134, crew 1.1.12; T-0033 on hold (owner question) | `rush/h3-review` | L-0528, L-0514, T-0033, L-0518 (tooling half), L-0522 PR 2 of 3 (#538, never reviewed), L-0527 | 1.1.3 | **merged into main** (#540, 97dda0bd) |
+| 10 | H2 harness sabotage entries (to main, alone, last) | `rush/h2-sabotage` | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, harness half of #336 | **1.2.0** | after release lands |
+| - | Last | | #479 (T-0507 code-map refresh) | | regenerated at the end |
+
+Groups 0-8 target `release/1.2.0`; the H lanes target `main`, each alone.
+
+**Landing order (revised 2026-10-05):** H1 -> H3 -> main first (review-harness only, no feature depends on them landing later), then `release/1.2.0` merges main and lands, then H2 (sabotage entries for the release features) lands last and sets 1.2.0. Reason: L-0511 PR 2 (G8) needs L-0522 PR 2 (harness, H3) on main, and T-0029 may need its `scope_guard.py` half on main before the wave runs.
+
+Versions: no bump when a source PR folds into its group; each merge into `release/1.2.0` takes the
+next free 1.1.x in landing order; `release/1.2.0` -> main takes the next 1.1.x; H2, the last merge,
+sets 1.2.0. The drift check dates a version from its first commit, so every re-merge re-bumps.
+
+### Added by the owner mid-rush (2026-10-05, PRs being opened)
+
+Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has no PR. Placed by what each ticket says it touches; re-placed when its PR shows the real file list. Owner 2026-10-05: add groups as needed, so the late arrivals get their own groups (G7, G8, H3) instead of joining groups already mid-build.
+
+| Ticket | Title (short) | Lane | Why |
+|---|---|---|---|
+| L-0527 (#531) | Kimi review launch in the review harness (tooling half of T-0028) | H3 | review harness |
+| L-0528 (#526) | `review_run.py` EXIT_UNVERIFIED and EXIT_PROBE_LIMITED both 5 | H3 | `review_*.py` is HARNESS |
+| L-0518 (#533) | T-0085 round-4 findings in crew-standards / review_run self-check gate | G7 feature half, H3 tooling half | split per its handoff |
+| L-0514 (#529) | INCOMPLETE review rounds retry automatically after a tool-failure refund | H3 | review loop |
+| T-0033 (#527) | version-only re-bump does not stale a review receipt | none | owner 2026-10-05: close as superseded by L-0522 PR 2 when #540 lands |
+| L-0525 (#522) | sabotage suite: 13 vacuous entries, 1 unproven, cloud-guard r1 OOM | H2 | sabotage suite |
+| L-0519 (#525) | reconcile crew-standards with crew-qa-standards | G7 | lands first in G7: the language sets below build on one reconciled source |
+| L-0522 (#538) | delta gate, PR 2 of 3 (`L-0522-tooling`) | H3 | harness (`review_delta.py`, ledger, run, sabotage); ~2,100 lines never reviewed; PRs 1 and 3 of 3 not seen |
+| L-0532 (#535) | SQL standards set (MySQL/MariaDB, MSSQL, PostgreSQL), T-0086 slice | G7 | `crew-standards/references/` + index |
+| L-0533 (#536) | PHP standards set, T-0086 slice | G7 | same files |
+| L-0534 (#537) | PowerShell standards set, T-0086 slice | G7 | same files |
+| L-0535 (#519) | .NET standards set, T-0086 slice | G7 | same files |
+| L-0536 (#523) | Terraform standards set, T-0086 slice | G7 | same files |
+| L-0537 (#530) | Node.js standards set, T-0086 slice | G7 | same files |
+| L-0538 (#534) | Angular 2+ standards set (AngularJS 1.x out of scope, owner 2026-09-28), T-0086 slice | G7 | same files |
+| L-0530 (#521) | crew_tracker maps merged/approved/new/land-blocked to lanes | G8 | `crew_tracker.py`, with #464 T-0071 |
+| L-0517 (#518) | heavy-run logs each lane's slot wait | G8 | gate-runner / heavy-run tooling |
+| L-0511 (#528) | version bump and artifact refresh happen once at land | G8 | PR 1 in G8; PR 2 waits for L-0522 PR 2 (H3) to reach main, then joins the release branch |
+| L-0515 | dependency-aware lane scheduling (folded into L-0520) | none | no PR: folded into L-0520, which is on main; owner to confirm nothing is left |
+
+### Blocked inside the rush
+
+| PRs | Blocked by | Note |
+|---|---|---|
+| L-0541 (#515) | published 2026-10-05 as `L-0541-build` | owner 2026-10-05: ready to build. Owner's local session: publish `docs/tickets/L-0541/` to branch `L-0541-build` (as the other handoffs). If it is not there when G6 reaches it, the builder drafts a spec from T-0012's split and T-0056's dependency rows, has Codex review the spec, then builds |
+| #408 T-0031, #410 L-0633, #412 L-0634, #434 T-0032, #437 L-0636, #442 L-0637; H2: #415 L-0635, #448 L-0638 | **T-0030** (`crew_coord.py`) | Pushed 2026-10-05 as `T-0030-coord`; ported in G0. The blocked PRs un-skip once G0 lands in `release/1.2.0` |
+| #410 L-0633, #412 L-0634, #442 L-0637, #443 T-0067 (G6); H2: #415, #448 | **T-0029** (`crew_wave.py`, the autopilot wave) | Pushed 2026-10-05 as `T-0029-wave`; ported in G0, after T-0030. Same un-skip rule |
+| #445 L-0648 | L-0564 (ordering only) | promote-gate review follow-ups in the same files; not a hard blocker, whichever lands second merges main |
+| #490 L-0690 | L-0609 (constraint only) | wallclock flake in `test_ps1_python_probe.py`: new tests must not assert an upper time bound. Not a hard blocker |
+| #391 | n/a | the landing session's notes branch; not touched by this rush |
+
+### New tickets (C-0020 onward)
+
+| ID | Title | From | Blocked by | Status |
+|---|---|---|---|---|
+| C-0020 | Re-check the SQL (L-0532) and PHP (L-0533) standards sets against the owner's private repos; admit or drop rules the public-evidence pass could not settle | owner decision 2026-10-05: ship thin from public evidence | L-0532, L-0533 landed | needs ticket |
+| C-0021 | Sabotage entries for L-0530: the `read` could-not-tell branch, and a hint applied as a write (`sabotage_tracker.py`, harness) | G8 report | L-0530 on main | H2 lane |
+| C-0022 | `plugin/crew/docs/external-tool-formats.md:65` cites `review_run.py:1106` for the verdict parser; it is at `:1112` (wrong on main already; the named-citation test skips bare `:N` cites) | H3 report | none | needs ticket |
+| C-0023 | `crew_autopilot._header_status` / `_successor` share L-0639/L-0640's fixed weaknesses: a `status:` in the title read as the field; `split-into: TBD` counted as a successor | G3 report | none (L-0550 may supersede) | needs ticket |
+| C-0024 | `review_ledger.summary` reports `EMPTY` for a `state: null` ledger that records rounds; other readers may treat it as clean (harness: tooling-only PR) | G3 report | none | needs ticket |
+| C-0025 | Sabotage entries for G1's ports: T-0039 (`sabotage_gitignore.py`, 19 hand-run mutations), T-0064 (`sabotage_refresh.py`, 15+), T-0038 (8 `MIGRATE_FIX_MUTATIONS`), T-0071 tracker mutations (L-0669) — harness | G1 report | G1 on main | H2 lane |
+| C-0026 | Remove the `/crew:upgrade` stub (T-0038's spec defers it) | G1 report | T-0038 on main | needs ticket |
+| C-0027 | `apply_delete`: a failed open of the moved backup reads as "changed since the preview" (`crew_config_files.read_restorable` maps an `os.open` error to `Unreadable('notregular')`); exits 2, nothing lost | G3b report | none | needs ticket |
+| C-0028 | Sabotage entries for T-0103's identity checks and T-0106's scan refusals (harness) | G3b report | G3b on main | H2 lane (or L-0682) |
+| C-0029 | wave: a fix-and-rereview lane changes crew content after its version-bump commit, so the version-drift gate fails | G0 report | none | needs ticket |
+| C-0030 | coord: holder identity on platforms without a process start time (measure on macOS and Windows) | G0 report | none | needs ticket |
+| C-0031 | crew-setup `run-all.sh` always prints "(read-only)": `${READONLY:+ (read-only)}` fires when READONLY=0 (template bug) | G5 report | none | needs ticket |
+| C-0032 | gizmoduck system-mode audit after L-0685 made `try_install` really apply `set -e`: steps may now stop on benign unguarded failures | G5 report | none | needs ticket |
+| C-0033 | `crew_ticket.py status` reports `accepted()`, so `/crew:implement` step 0 refuses a receipt the guard would refuse (T-0025 round-1 BLOCK; harness; TODO.md item d) | G1b report | none | H lane |
+| C-0034 | Split `crew_autopilot.py` (3,457 lines, above pylint's 3,400; silenced with a disable) | G1b report | none | needs ticket |
+| C-0035 | review_ledger per-slice budget: `open_slice`, `_spent` and summary counting slices. **Without it a T-0059 sliced ticket stops after slice 1** (`next-slice` refuses, writes nothing) | G2 report | harness-alone (T-0087) | H lane, priority |
+| C-0036 | `crew_ticket.validate` reports `PR slices:` problems (autopilot checks them today, validate does not) | G2 report | harness-alone | H lane |
+| C-0037 | Unattended launcher: a git ssh key named by `core.sshCommand -i <path>` outside `~/.ssh` is not denied (README lists it as an accepted risk) | G2 report | none | needs ticket |
+| C-0038 | Vacuous sabotage entry "an edit to scope_guard.py runs no pytest rule" (`sabotage_refresh.py`): GREEN on main a555ff37 too, because several rules map scope_guard.py | H1 report | none | H lane |
+| C-0039 | `crew_train.py` reads state.json / merge log non-blocking, regular files only (today only the harness callers refuse a FIFO) | H1 report | feature PR | needs ticket |
+| C-0040 | Rejoin the PowerShell probe carriers and bash twins after L-0690, so the other nine `.ps1` hooks and `_common.sh` report timeouts too | H1 report | L-0690 on main | needs ticket |
+| C-0041 | Bring `Resolve-CrewBash` in `verify-gate.ps1` into line with PWSH-16 (a bounded proof run; Application-only `Get-Command git`) | G7 report (Codex flag) | none (harness file: H lane) | needs ticket |
+| C-0042 | PWSH sabotage entries: the four `STANDARDS_MUTATIONS` for `sabotage_standards.py` (in `.work/tickets/L-0534/notes.md`) | G7 report | L-0534 on main; L-0539 | H lane |
+| C-0043 | Owner supplies publishable Earned-by text for NG-07, NODE-08, DOTNET-08/-13/-15 (they reach the bar privately) so they can be promoted from candidates | G7 report | owner research files | owner action |
+| C-0044 | `docs/tickets/L-0534/direction.md:21` says every `.ps1` is ASCII-only, but two `exo_preflight.ps1` files start with a BOM (owner's doc, left unedited) | G7 report | none | owner action |
+| C-0045 | T-0009 PowerShell reader does not follow text piped into a shell: `echo gh workflow run ... \| bash` reads "none" under the ps1 reader but could-not-tell under bash, so the cloud guard and promote-gate.ps1 miss that dispatch | G4 report | none | needs ticket |
+| C-0046 | L-0650 wiring: hook `ghdeploy_mutations.py` (~180 entries) and `promote_tree_mutations.py` into `sabotage.py` | G4 report | none (harness: H lane) | needs ticket |
+| C-0047 | Harness half of T-0009: land `sabotage_cloud.py` (patch `$S/harness-T-0009.patch`, +741/-106) with its anchors moved to `crew_dispatch.py` | G4 report | T-0009 feature half (G4) on main | H2 |
+| C-0048 | Retire `sabotage_autopilot.py`'s "the inert warning is gone" entry and let `settings` drop its armed-deploy warning | G4 report | L-0649 (G4) on main | H lane |
+| C-0049 | crew_coord `coord.get("remote") or "origin"` (crew_coord.py:~1701) falls back to origin for a malformed coord block - the bug G3c fixed in crew_wave/crew_contract; make it unknown | G3c report | none | needs ticket |
+| C-0050 | `test_heartbeat_process_pushes_while_pid_alive` (G0) failed once on Windows shard 3/6 under load, passed on rerun; root-cause the timing (no upper bound may be loosened) | G3c report | none | needs ticket |
+| C-0051 | H2 sabotage entries from G3d: six `sabotage_kimi.py` mutations for L-0708 (any .git refuses; refusal deleted; other git exit allowed; Kimi project files ignored; git missing allowed; env not scrubbed - all hand-run red), L-0637 r4-r6 cases for L-0638's set, optional crew_graph.py mutations for sabotage_refresh.py | G3d report | G3d on main | H2 lane |
+| C-0052 | Owner-accepted deviation: contract bindings carry 5 fields {remote, channel, name, version, hash} (T-0031/L-0634 specs say 4) - update the two specs | G3c report, owner 2026-10-07 | none | docs |
+| C-0053 | L-0656 review half: `autopilot.sleep.reviewPolicy` (unblocked now that T-0029 landed autopilot.reviewPolicy); key still reads "not available" | G6b report (L-0656 built notify half only, 6 rounds used) | none | needs ticket |
+| C-0054 | `goal-mark --reason-file` leaves `.work/autopilot/<slug>.reason` behind; add cleanup | G6b report | none | needs ticket |
+| C-0055 | H2 sabotage entries for G6b: L-0541 picker/caps/ticket marks; T-0056/L-0658/L-0659 goal handoffs; L-0654/L-0653 (L-0655 set); L-0656 hold list + send-once | G6b report | G6b on main | H2 lane |
+| C-0056 | L-0551 `waiting` line in /crew:status costs ~28 ms per open ticket (0.96 s / 30 tickets; >~70 passes the 2 s spec limit). Owner 2026-10-07: keep default-on; make it faster (cache or bound) | G6a report | none | needs ticket |
+| C-0057 | `crew_ticket_state.py` docstring still says "nothing acts on the answer yet" (L-0550 now acts on it) | G6a report | none | needs ticket |
+| C-0058 | `/crew:autopilot status` says "nobody - the ticket is closed" for the unarmed final-ship stop, whose decision is now `look` (a person ships it) | G6a report | none | needs ticket |
+| C-0059 | crew_autopilot CLI never reconfigures stdout: on a Windows cp1252 console an owed line with non-cp1252 chars raises UnicodeEncodeError, exit 1 (fails closed, line lost). Use `sys.stdout.reconfigure(errors="backslashreplace")` as crew_autocycle.py:1432 does | G6a review | none | needs ticket |
+| C-0061 | `_common.sh` python-probe deadline counts whole seconds (bash `SECONDS`), so it can overshoot by ~1 s; and bash.exe startup/spawn on Windows sits outside the in-function deadline (one 11.3 s wallclock outlier on G3b, job 112873147791) | G3b investigation | none | needs ticket |
+| C-0062 | `test_review_checks.py::test_the_timeout_holds_when_a_child_keeps_the_output_open[orphan-exit]` exceeds its 2 s bound under CI load (2.106 s on 3.11 in G6a's run; 2.12 s on 3.13, job 112887098729). Harness test (review_checks): root-cause, never loosen the bound | G6a + G3b CI | harness (lands alone) | H2 lane |
+| C-0063 | `test_sabotage_bound.py::test_the_harness_dying_stops_a_running_child` races: waits for the pidfile to EXIST, child killed between open() and write() leaves '' (ValueError at :186; wave 5 #559 test 3.12). Fix: wait for non-empty content or write tmp+rename. Not a HARNESS path | wave 5 CI | none | rides in h5 (C-0060) |
+| C-0064 | Sabotage entry "the scope base record loses its protection" (`sabotage_scope.py`) stays GREEN on main 4f4b89b5 too: vacuous; re-anchor or retire with a reason (harness) | H2a report | none | H lane (after 1.2.0) |
+| _filled as group reports arrive_ | | | | |
 
 ## Summary
 

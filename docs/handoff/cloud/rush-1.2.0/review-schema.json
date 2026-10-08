@@ -1,0 +1,4 @@
+{"type":"object","additionalProperties":false,"required":["verdict","findings","summary"],
+ "properties":{"verdict":{"type":"string","enum":["CLEAN","FIX","BLOCK"]},"summary":{"type":"string"},
+ "findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["severity","file","line","title","detail"],
+  "properties":{"severity":{"type":"string","enum":["BLOCK","FIX","NIT"]},"file":{"type":"string"},"line":{"type":"integer"},"title":{"type":"string"},"detail":{"type":"string"}}}}}}
