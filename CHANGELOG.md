@@ -26,8 +26,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `fallbackVia`, `incomplete`, `sameFamily`.
 - **`/crew:status`.** One `review   same-family: N of M completed rounds (P%)` line over every
   ledger, and `same-family round` on a ticket's line. A round with no provider is could-not-tell,
-  never counted independent. 70 of 220 measured rounds (32%) were Claude-family; the target is
-  under 5%.
+  never counted independent. The target is under 5%.
 - **Docs.** README, CONFIG.md, `/crew:model`, `/crew:status`, crew-providers, the Codex guide and
   the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
   `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
