@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.7**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **crew 1.2.6**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
 - **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

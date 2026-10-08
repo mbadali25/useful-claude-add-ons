@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-## [1.2.7] - 2026-10-08
+## [1.2.6] - 2026-10-08
 
-### Fixed — crew 1.2.7: one true quickstart (L-0713)
+### Fixed — crew 1.2.6: one true quickstart (L-0713)
 
 - **Summary.** A new repository set up with `/crew:init` no longer gets told to run
   `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the
