@@ -32,8 +32,9 @@ Crew 1.2.2: L-0709 (hermetic tests; folds in L-0729). Test-only; no hook or scri
   planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
   the sabotage-suite entries are L-0738, a tooling PR).
 - **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
-  until `-m quarantine` names it; a quarantine missing either, or a skip whose reason says
-  flaky/timing/intermittent, fails collection. Quarantined (L-0737 fixes them):
+  until `-m quarantine` names it; a quarantine missing either, or a skip marker whose reason
+  says flaky/timing/intermittent, fails collection, and a `pytest.skip()` saying so at run time
+  fails the test. Quarantined (L-0737 fixes them):
   `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
   2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
 

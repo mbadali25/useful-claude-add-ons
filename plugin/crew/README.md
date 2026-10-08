@@ -4068,7 +4068,8 @@ under the real home or spawns a process with the real HOME, naming the path;
 home that carries those keys. A test that is a known timing flake is not
 skipped: it carries `@pytest.mark.quarantine(owner=..., ticket=...)`, which
 deselects it until `-m quarantine` names it, and a quarantine without both, or
-a skip whose reason says flaky, fails collection.
+a skip whose reason says flaky, fails (at collection for a marker, at run time
+for `pytest.skip()`).
 
 That last gap is real and no test closes it. Every command and every agent is an
 instruction to a model; only a live session running a real ticket exercises

@@ -1154,6 +1154,7 @@ _HOME_GUARD = None        # normalised real homes while a test runs, else None
 _HOME_ALLOWED = ()        # normalised prefixes under a real home that may be opened
 _HOME_AUDIT_INSTALLED = False
 HOME_VIOLATIONS = []
+_SPAWN_ENV_EVENTS = ("os.posix_spawn", "os.spawn", "os.exec")
 
 
 def _home_norm(path):
@@ -1255,6 +1256,10 @@ def home_audit(event, payload):
         reason = home_open_violation(payload[0], _HOME_GUARD, _HOME_ALLOWED)
     elif event == "subprocess.Popen":
         reason = home_spawn_violation(payload[3], _HOME_GUARD, _HOME_ALLOWED)
+    elif event in _SPAWN_ENV_EVENTS:
+        # os.posix_spawn(path, argv, env), os.spawn*(mode, path, args, env),
+        # os.exec*(path, args, env): the environment is the last argument.
+        reason = home_spawn_violation(payload[-1], _HOME_GUARD, _HOME_ALLOWED)
     if reason:
         HOME_VIOLATIONS.append(reason)
         raise RuntimeError("test reached the operator's real home (L-0709): " + reason)

@@ -161,6 +161,21 @@ def pytest_runtest_setup(item):  # pylint: disable=unused-argument
 
 
 @pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """A skip at run time (`pytest.skip("flaky ...")`) is held to the same
+    rule as a skip marker: an unreliable test is quarantined, not skipped."""
+    report = yield
+    if report.skipped and not hasattr(report, "wasxfail"):
+        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
+        if _FLAKE_REASON_RE.search(reason or ""):
+            report.outcome = "failed"
+            report.longrepr = (f"crew quarantine rule (L-0709): skipped at run time with {reason!r}; "
+                               "an unreliable test is quarantined with "
+                               "@pytest.mark.quarantine(owner=..., ticket=...)")
+    return report
+
+
+@pytest.hookimpl(wrapper=True)
 def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
     """Turn it off after the last teardown, and fail the test with every path
     it recorded -- including those the code under test swallowed."""
@@ -264,7 +279,24 @@ def _isolate_home():
     for name, value in carry.items():
         _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
         os.environ[name] = value
+    # Unset for the session too, not only per test: a module or session
+    # fixture spawning before the per-test fixture runs must not inherit an
+    # ambient CLAUDE_CONFIG_DIR naming the operator's real `.claude`.
+    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR"):
+        _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
+        os.environ.pop(name, None)
     crew_fixtures.install_home_audit()
+
+
+def _drop_real_home_record(config):
+    """The real homes are already in `_REAL_HOMES`. Keep the record in the
+    environment only in an xdist controller, whose environment its workers
+    inherit and which runs no fixture itself; anywhere that runs tests, drop
+    it, so no fixture's child is handed the real home's path."""
+    controller = (not hasattr(config, "workerinput")
+                  and bool(getattr(config.option, "numprocesses", None)))
+    if not controller:
+        os.environ.pop(crew_fixtures.REAL_HOME_VAR, None)
 
 
 def _restore_home():
@@ -308,6 +340,7 @@ def pytest_unconfigure(config):  # pylint: disable=unused-argument
 def pytest_configure(config):
     _isolate_pwsh_cache()
     _isolate_home()
+    _drop_real_home_record(config)
     config.addinivalue_line(
         "markers",
         "slow: the full bash/pwsh driver matrix for a hook; deselected by "

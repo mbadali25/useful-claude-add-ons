@@ -232,6 +232,28 @@ def test_the_real_home_record_is_not_handed_to_a_test():
     assert crew_fixtures.REAL_HOME_VAR not in os.environ
 
 
+@pytest.mark.skipif(not hasattr(os, "posix_spawn"), reason="no os.posix_spawn here - NOT run")
+def test_a_posix_spawn_handed_the_real_home_is_refused():
+    real = crew_fixtures.guarded_homes()[0]
+    before = len(crew_fixtures.HOME_VIOLATIONS)
+
+    with pytest.raises(RuntimeError, match="real home"):
+        os.posix_spawn(sys.executable, [sys.executable, "-c", "pass"], dict(os.environ, HOME=real))
+    found = crew_fixtures.HOME_VIOLATIONS[before:]
+    del crew_fixtures.HOME_VIOLATIONS[before:]
+
+    assert len(found) == 1, found
+
+
+def test_claude_dirs_are_unset_for_the_session_too():
+    code = "import os; print(os.environ.get('CLAUDE_CONFIG_DIR'), os.environ.get('CLAUDE_PROJECT_DIR'))"
+
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,
+                          stdin=subprocess.DEVNULL, timeout=60)
+
+    assert done.stdout.split() == ["None", "None"]
+
+
 # --- the audit: end to end ----------------------------------------------------
 
 _AUDIT_PROBE = '''
@@ -348,6 +370,15 @@ def test_an_ownerless_quarantine_fails_collection(tmp_path, marker, complaint):
 
     assert (done.returncode, "crew quarantine rule" in done.stderr, complaint in done.stderr) == \
         (4, True, True), done.stdout + done.stderr
+
+
+def test_a_run_time_flaky_skip_fails_the_test(tmp_path):
+    probe = _probe(tmp_path, "test_rt.py",
+                   'import pytest\n\n\ndef test_x():\n    pytest.skip("flaky under load")\n')
+
+    done = _pytest(tmp_path, ["-p", "conftest", str(probe)], _conftest_env(tmp_path / "h"))
+
+    assert (done.returncode, "crew quarantine rule" in done.stdout) == (1, True), done.stdout
 
 
 def test_a_skip_for_another_reason_is_not_a_quarantine(tmp_path):
