@@ -180,22 +180,75 @@ def _review_lines(root):
         return ["review   no ledgers"]
     names.sort(key=lambda n: os.path.getmtime(os.path.join(folder, n)), reverse=True)
     lines = []
-    for name in names[:3]:
+    # L-0712: every ledger is read for the same-family share, not only the
+    # three newest shown, so the share is repo-wide.
+    tally = {"same": 0, "cross": 0, "unknown": 0, "unreadable": 0}
+    for index, name in enumerate(names):
         path = os.path.join(folder, name)
         # The ledger's own summary, so status counts rounds exactly as the
         # budget does: refunded tool-failure rounds are not "used" (T-0087).
         summary = review_ledger.summary(*review_ledger.load(path), name[:-5], path)
         if summary["state"] == review_ledger.UNKNOWN:
-            lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
+            tally["unreadable"] += 1
+            if index < 3:
+                lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
+            continue
+        marks = [same_family_round(row) for row in summary["rounds"]
+                 if isinstance(row, dict) and row.get("status") == "completed"]
+        tally["same"] += marks.count(True)
+        tally["cross"] += marks.count(False)
+        tally["unknown"] += marks.count(None)
+        if index >= 3:
             continue
         used = f"{summary['rounds_spent']}/{summary['budget']} rounds used"
         line = f"review   {name[:-5]}: {summary['state']}, {used}"
         if summary["rounds_refunded"]:
             line += f", {summary['rounds_refunded']} refunded"
+        if True in marks:
+            line += ", same-family round"
         lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")
+    lines.append(_same_family_line(tally))
     return lines
+
+
+def same_family_round(row):
+    """L-0712: True when a completed ledger row was reviewed by the author's
+    own family, False when by another, None when the row cannot say.
+
+    The row's own `same_family` label wins when it is a bool. Otherwise the
+    ledger's author is `review_ledger.AUTHOR_FAMILY` (crew's developer runs
+    in-session), so a `claude` provider or model family is same-family. A row
+    with no provider is could-not-tell, never cross-family: counting it as
+    independent would understate the share this line exists to show.
+    """
+    label = row.get("same_family")
+    if isinstance(label, bool):
+        return label
+    provider, fam = row.get("provider"), row.get("model_family")
+    if not isinstance(provider, str) or not provider:
+        return None
+    author = review_ledger.AUTHOR_FAMILY
+    if provider == author or (isinstance(fam, str) and fam.strip().lower() == author):
+        return True
+    return False
+
+
+def _same_family_line(tally):
+    known = tally["same"] + tally["cross"]
+    line = "review   same-family: "
+    if known:
+        line += (f"{tally['same']} of {known} completed rounds "
+                 f"({round(100 * tally['same'] / known)}%)")
+    else:
+        line += "no completed rounds"
+    unknown = [f"{tally['unknown']} round(s)" if tally["unknown"] else "",
+               f"{tally['unreadable']} ledger(s) unreadable" if tally["unreadable"] else ""]
+    unknown = [u for u in unknown if u]
+    if unknown:
+        line += f"; could not tell: {', '.join(unknown)}"
+    return line
 
 
 def _inflight_lines(root):

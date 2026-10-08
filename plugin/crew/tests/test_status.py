@@ -408,6 +408,65 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
         0, True), done.stdout + done.stderr
 
 
+# --- L-0712: the same-family share ------------------------------------------------
+
+
+def _round(root, ticket, provider, family):
+    _, number, _ = review_ledger.reserve(str(root), ticket, provider)
+    review = dict(_review("FINDINGS"), provider=provider, model_family=family)
+    review_ledger.record(str(root), ticket, number, review)
+
+
+def test_status_prints_the_repo_wide_same_family_share(tmp_path):
+    """Every ledger counts, not only the three shown: T1 is the oldest and
+    falls off the per-ticket lines, and its Claude round still counts."""
+    root = make_repo(tmp_path)
+    _round(root, "T1", "claude", "claude")
+    for ticket in ("T2", "T3", "T4"):
+        _round(root, ticket, "codex", "gpt")
+
+    done = _run(root)
+
+    assert "review   same-family: 1 of 4 completed rounds (25%)" in done.stdout, done.stdout
+
+
+def test_status_marks_a_ticket_with_a_same_family_round(tmp_path):
+    root = make_repo(tmp_path)
+    _round(root, "T1", "claude", "claude")
+
+    done = _run(root)
+
+    assert "review   T1: REVIEWED, 1/2 rounds used, same-family round" in done.stdout, done.stdout
+
+
+def test_status_reads_a_claude_model_family_as_same_family_whatever_the_provider(tmp_path):
+    """A Copilot round pinned to a claude-* model is the author's family too."""
+    root = make_repo(tmp_path)
+    _round(root, "T1", "copilot", "claude")
+
+    done = _run(root)
+
+    assert "review   same-family: 1 of 1 completed rounds (100%)" in done.stdout, done.stdout
+
+
+def test_status_never_counts_a_round_with_no_provider_as_independent(tmp_path):
+    root = make_repo(tmp_path)
+    _ledger_text(root, '{"state": "REVIEWED", "rounds": [{"round": 1, "status": "completed"}]}')
+
+    done = _run(root)
+
+    assert ("review   same-family: no completed rounds; could not tell: 1 round(s)"
+            in done.stdout), done.stdout
+
+
+@pytest.mark.parametrize("label, expected", [(True, True), (False, False)])
+def test_a_rows_own_same_family_label_wins(label, expected):
+    row = {"provider": "codex" if label else "claude", "model_family": "gpt",
+           "same_family": label}
+
+    assert crew_status.same_family_round(row) is expected
+
+
 # --- T-0049: in-flight markers ------------------------------------------------------
 
 def _inflight_marker(root, ticket, **over):

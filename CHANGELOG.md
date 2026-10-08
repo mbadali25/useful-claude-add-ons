@@ -9,6 +9,30 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-10-08
+
+### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
+
+- **Summary.** When a pinned reviewer model is gone, crew now falls back to a reviewer from another
+  model family instead of always handing the review to Claude, and `/crew:status` shows how many
+  review rounds were same-family.
+- **Resolution (`crew_state.resolve_role`).** The hard-coded `provider = "claude"` is gone. The
+  `fallback` model runs on the provider that serves its family (`provider_for_model`: a
+  `gpt-6.1-sol` fallback dispatches to Codex, the 2026-10-08 fleet-swap case). A fallback in the
+  author's family is skipped for the next provider in `qa.order` (`dev.order`, else the shipped
+  order, for the dev kind) that is not the author's family and answers, on its own model and effort.
+  None left is `incomplete` (the round is recorded INCOMPLETE and refunded, by the harness half);
+  `same_family_ok` is the operator's explicit choice, labelled `sameFamily`. New result keys:
+  `fallbackVia`, `incomplete`, `sameFamily`.
+- **`/crew:status`.** One `review   same-family: N of M completed rounds (P%)` line over every
+  ledger, and `same-family round` on a ticket's line. A round with no provider is could-not-tell,
+  never counted independent. 70 of 220 measured rounds (32%) were Claude-family; the target is
+  under 5%.
+- **Docs.** README, CONFIG.md, `/crew:model`, `/crew:status`, crew-providers, the Codex guide and
+  the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
+  `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
+  harness half (crew 1.2.6), per the tooling-PR rule.
+
 ## [1.2.0] - 2026-10-08
 
 Crew 1.2.0: the feature rush's groups (crew 1.1.1 to 1.1.21, below) and their sabotage coverage.
