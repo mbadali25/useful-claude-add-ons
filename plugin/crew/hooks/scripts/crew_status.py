@@ -2,6 +2,7 @@
 
     python3 crew_status.py [--root .] [--memory]
     python3 crew_status.py [--root .] --approvals
+    python3 crew_status.py [--root .] --owner
 
 Replaces what `/crew:pm`, `/crew:roster` and `/crew:scale` reported, and does
 none of what they did: no dispatch, no config edit, no file written anywhere.
@@ -13,6 +14,11 @@ settings file will not parse.
 
 `--approvals` prints only the tickets whose approval is missing, stale or
 unaccepted, as ready-to-paste `/crew:approve <id>` lines (T-0070).
+
+`--owner` (L-0551) lists every open ticket stopped on a person, one line each with the
+command to type, from `crew_autopilot_owner.owner_items` -- autopilot's own phase read with
+no policy and no bundle rebuild; the default report carries its count as the `waiting`
+line. A module that cannot be imported, or no INDEX.md, is `unknown`, never "nothing".
 
 `--memory` adds the context hook's own numbers by running `crew_context.py
 --stats --root <root>` from this directory when that script exists, and says
@@ -481,6 +487,66 @@ def approvals_lines(root):
     return (lines or ["nothing needs approval"]) + ([note] if note else [])
 
 
+OWNER_LINE_MAX = 160
+
+
+def _owner():
+    """`(owner_items, None)`, or `(None, why)` when the module cannot be imported."""
+    try:
+        return importlib.import_module("crew_autopilot_owner").owner_items, None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, f"crew_autopilot_owner could not be imported: {type(exc).__name__}"
+
+
+def _owner_read(root):
+    """owner_items' answer, or an `unknown` one naming why it could not run."""
+    owner_items, why = _owner()
+    if owner_items is None:
+        return {"state": "unknown", "why": why, "items": [], "unread": [], "held": [], "blocked": [],
+                "unknown": []}
+    try:
+        return owner_items(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"state": "unknown", "why": f"owner_items raised {type(exc).__name__}",
+                "items": [], "unread": [], "held": [], "blocked": [], "unknown": []}
+
+
+def waiting_line(got):
+    """`waiting  N on you (/crew:status --owner)[, H held][, B blocked][, C in review
+    not read][, U could not tell]` (each count only when non-zero); `nothing on you`
+    when N is 0 and nothing is unread or unknown."""
+    if got["state"] != "ok":
+        return f"waiting  unknown ({got['why']})"
+    counts = [(len(got.get("held", [])), "held"), (len(got.get("blocked", [])), "blocked"),
+              (len(got["unread"]), "in review not read"), (len(got["unknown"]), "could not tell")]
+    extra = "".join(f", {n} {words}" for n, words in counts if n)
+    if not got["items"] and not got["unread"] and not got["unknown"]:
+        return f"waiting  nothing on you{extra}"
+    return f"waiting  {len(got['items'])} on you (/crew:status --owner){extra}"
+
+
+def _one(*fields, clip=True):
+    """The fields joined by two spaces, each folded to one line; clipped to
+    OWNER_LINE_MAX unless `clip` is False (a command to paste is never cut)."""
+    text = "  ".join(" ".join(str(field).split()) for field in fields)
+    return text if not clip or len(text) <= OWNER_LINE_MAX else text[:OWNER_LINE_MAX - 3] + "..."
+
+
+def owner_lines(root):
+    """`--owner`: the count line, one line per item, the unread, the could-not-tell;
+    clipped to MAX_LINES, the last line `... N more`."""
+    got = _owner_read(os.path.abspath(root))
+    lines = [waiting_line(got)]
+    lines += [_one(ticket, phase, action, clip=action.startswith("answer: "))
+              for ticket, phase, action in got["items"]]
+    lines += [_one(ticket, "review-unread", f"/crew:autopilot status {ticket}", clip=False)
+              for ticket in got["unread"]]
+    lines += [_one(ticket, "unknown", f"could not tell ({why})") for ticket, why in got["unknown"]]
+    if len(lines) > MAX_LINES:
+        lines = lines[:MAX_LINES - 1] + [f"... {len(lines) - MAX_LINES + 1} more"]
+    return lines
+
+
 def collect(root, memory=False):
     root = os.path.abspath(root)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD") or "?"
@@ -495,6 +561,7 @@ def collect(root, memory=False):
     if inert:
         lines.append(inert)
     lines += _ticket_lines(root)
+    lines.append(waiting_line(_owner_read(root)))  # L-0551
     lines += _review_lines(root)
     lines += _inflight_lines(root)
     lines.append(_verify_line(root))
@@ -528,7 +595,15 @@ def main(argv=None):
     parser.add_argument("--memory", action="store_true", help="add crew_context.py --stats")
     parser.add_argument("--approvals", action="store_true",
                         help="only the tickets whose approval is missing, stale or unaccepted")
+    parser.add_argument("--owner", action="store_true",
+                        help="only what waits on the owner, with the command to type")
     args = parser.parse_args(argv)
+    if args.owner and (args.memory or args.approvals):
+        sys.stderr.write("crew_status.py: --owner stands alone (not with --memory or --approvals)\n")
+        return 2
+    if args.owner:
+        print("\n".join(owner_lines(args.root)))
+        return 0
     if args.approvals:
         print("\n".join(approvals_lines(os.path.abspath(args.root))))
         return 0

@@ -1775,7 +1775,7 @@ the plugin.</p>
 <td><code>"stop"</code></td>
 <td><code>stop</code> | <code>clean-only</code> | <code>fix-and-rereview</code></td>
 <td>1.1.6</td>
-<td>What a wave lane does with its review verdict: <code>stop</code> ends at the first verdict, <code>clean-only</code> takes a CLEAN round on to the done checks, <code>fix-and-rereview</code> fixes within the ledger's rounds. Anything else reads as <code>stop</code>, with a warning; no setting lets a lane accept a review.</td>
+<td>What autopilot does with a review verdict. A wave lane: <code>stop</code> ends at the first verdict, <code>clean-only</code> takes a CLEAN round on to the done checks, <code>fix-and-rereview</code> fixes within the ledger's rounds. A single-ticket run (T-0067): only <code>fix-and-rereview</code> acts, fixing a non-final FINDINGS round's BLOCK and FIX lines itself (the <code>fix</code> phase) and re-reviewing. Anything else reads as <code>stop</code>, with a warning; no setting accepts a review.</td>
 </tr>
 </tbody>
 </table>

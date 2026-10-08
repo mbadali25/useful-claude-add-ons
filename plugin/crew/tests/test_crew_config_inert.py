@@ -113,7 +113,9 @@ def test_platform_facts_are_quiet(tmp_path):
     # L-0649 (G4): the deploy phase acts on both arming values.
     ("autopilot.deploy", "nonprod"), ("autopilot.deploy", "all"),
     # T-0010 is on main: the incident's own key now does something.
-    ("autopilot.approval", "self"), ("autopilot.questions", "self"), ("autopilot.maxPhases", 100)])
+    ("autopilot.approval", "self"), ("autopilot.questions", "self"), ("autopilot.maxPhases", 100),
+    # T-0029's wave keys landed with crew_wave.py.
+    ("autopilot.maxLanes", 3), ("autopilot.reviewPolicy", "fix-and-rereview")])
 def test_an_implemented_value_is_quiet(tmp_path, dotted, value):
     root = crew_fixtures.make_repo(tmp_path, config=_nested(dotted, value), git=False)
     assert crew_config.inert_settings(str(root)) == []

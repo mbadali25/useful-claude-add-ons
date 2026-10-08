@@ -9,6 +9,174 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.20: after an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line (L-0670)
+
+- **Summary.** When autopilot rejects a review round itself and plans again, it no longer approves
+  a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
+- **How.** New `hooks/scripts/crew_autopilot_replan.py`: `replan_check` reads the auto-rejected
+  round's `BLOCK|` and `FIX|` lines and requires each as a whole line of `plan.md`, as many times
+  as the round carries it (CRLF read as LF; NIT lines not required). `crew_autopilot.py approve`
+  refuses (exit 2, nothing written) when it fails; `crew_autopilot.py replan-check --ticket <id>`
+  gives the same answer read-only. Anything it cannot read is could-not-tell, a refusal,
+  including a `rejected` record that does not say who rejected.
+- **Unchanged.** An owner's reject, a first plan and `/crew:approve` are never checked.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0671.
+
+### Added — crew 1.1.20: the owner list knows hold, blocked, landing and needs-owner (L-0687)
+
+- **Summary.** `/crew:status` now counts held and blocked tickets on its `waiting` line
+  (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as
+  `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
+- **Rules.** A hold whose `revisit:` date is still ahead is counted, not listed; one that is due,
+  or has no usable date, is listed (cannot tell is never "not yet"). A blocked ticket is counted,
+  not listed; `landing` is the land step's and is left out. The phase still comes from autopilot's
+  `_phase`, so the list and `/crew:autopilot` agree.
+
+### Added — crew 1.1.20: `/crew:status --owner` and the `waiting` line (L-0551)
+
+- **Summary.** `/crew:status` now says how many open tickets are waiting on you, and
+  `/crew:status --owner` lists them, one line each with the command to type or the question to
+  answer.
+- **How.** New `hooks/scripts/crew_autopilot_owner.py`: `owner_items` asks autopilot's own phase
+  table (`_phase(policy=False, deep=False)`) about every open ticket and every ticket folder with no
+  INDEX row, so the list agrees with `/crew:autopilot`. `deep=False` stops at `review-unread` where
+  `next` would rebuild a review bundle or ask gh; the list never does either and writes nothing.
+- **Could not tell.** No `.work/INDEX.md`, or a module that cannot be imported, prints `waiting
+  unknown (<why>)`; a ticket whose phase read raises is counted as could-not-tell, never dropped.
+  So is a linked worktree whose main checkout cannot be named or whose main `.work/INDEX.md`
+  cannot be read: its open rows would otherwise vanish into "nothing on you".
+- **Archive.** The archive folder `.work/tickets/Complete/` (L-0509) is never listed as a ticket
+  with no INDEX row; the folder is named through `crew_common.tickets_root`.
+- **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
+  the line and 0.13s without, on a 4-CPU container shared with other builders.
+
+### Changed — crew 1.1.20: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
+
+- **Summary.** When `/crew:autopilot` stops, it now says which decision is yours (accept the
+  review, approve the plan, answer a question, look at something it could not tell, ...) and no
+  longer tells you to run a refresh, a graph build, the next review round or a crew helper.
+- **decision.** Every stop `next` returns carries `decision`, one of a closed list
+  (`crew_autopilot_stops.OWNER_DECISIONS`; `crew_autopilot.py stops --json` lists it as
+  `decisions`), and the CLI prints `decision=<id>` before `reason=` on a stop. A stop's command is
+  empty or that decision's own. A stale or unknown in-flight marker's stop is `clear-inflight`, carrying the owner's `clear`
+  command. A stop that cannot tell (no INDEX row, disagreeing rows, a
+  `needs-owner` with nothing asked) is `look`, never a decision it cannot vouch for.
+- **Reworded.** The FINDINGS stop asks only for the owner's accept or reject and names
+  `autopilot.reviewPolicy` (it no longer names the refresh check and the next round, T-0043's
+  wording); the ticket-mismatch stop names only `crew_ticket.py activate`; an unsettled-artifact
+  stop lists only what a refresh cannot settle; the `docs` and size-check stops carry no command;
+  the max-phases stop's command is `/crew:autopilot <id>`. Owner decision 2026-10-07: the
+  FINDINGS stop then ends "fixed them instead? run the refresh check, then /crew:review"
+  (`FIXED_INSTEAD`, the one mechanical line a stop may carry, on `accept-review` only). A `closed`
+  stop whose successor cannot be told (next.md names `superseded-by:` twice) is `look`.
+- **Merged with L-0522 (release/1.2.0).** An artifact stale after an accepted review whose refresh
+  would settle it now stops as `stale-after-review` with no command, naming the delta gate (an
+  anchor-only refresh committed on a clean tree keeps the receipt), instead of a `refresh` stop
+  carrying the refresh command. Nothing is written either way.
+- **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
+  site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
+
+### Added — crew 1.1.20: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
+
+- **Summary.** A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy:
+  fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK
+  and FIX test-first, records the fixes, refreshes and runs the next round itself. The default
+  (`stop`) leaves today's behaviour unchanged.
+- **The `fix` phase** (new `hooks/scripts/crew_autopilot_fix.py`). For a FINDINGS round no receipt
+  stands on, with a round left and at least one BLOCK or FIX line, `next` names `phase=fix stop=0
+  command=fix-findings <id> round <n>`. Once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes
+  every BLOCK and FIX line verbatim (as many times as the round carries it) and the rebuilt bundle
+  differs from the round's, `next` goes on to the refresh and `/crew:review`.
+- **Fail closed.** The policy `unknown` (an unreadable config), a `rounds_left` that is not an
+  integer, the final round, a row without findings, or whose base or bundle hash is missing or malformed, finding lines that disagree with the row's counts,
+  a verdict recovered from stray lines (`ignored_lines`), a bundle that cannot be rebuilt or rebuilds empty, and a fixes.md that is not UTF-8 each keep the `accept-review` stop, naming the cause. An
+  unrefunded INCOMPLETE round, NEEDS_REPLAN and a reserved round stop as before. `fix` named again
+  right after it ran is `no-progress`. A finding the phase cannot fix inside Touch, or disputes, is
+  the new `fix-refused` procedure stop. Nothing accepts a review.
+- **Settings.** `crew_autopilot.py settings` returns `reviewPolicy` (T-0029's key, now read by
+  single-ticket runs too) and prints `reviewPolicy=<value>` on its own line.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0668.
+
+### Added — crew 1.1.20: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
+
+- **Summary.** `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the
+  owner, replaced by another, or waiting on a dependency: it stops and says why, and
+  `/crew:autopilot status` says who each of those stops waits on.
+- **Stops.** `next` reads `crew_ticket_state.view` once (new `hooks/scripts/crew_autopilot_gates.py`):
+  an INDEX cell `hold`, `landing` or `needs-owner`, else that word in the spec header, stops as
+  itself. `hold` quotes `next.md`'s `reason:` and `revisit:` ("(passed)" once due; a date never lifts
+  a hold); `landing` stops even with a current receipt; `needs-owner` quotes `next:` and the open
+  questions, or says it cannot tell what is asked. A header `cancelled`/`superseded` is `closed`, and
+  a superseded ticket names its successor or says "successor not named". An approved ticket whose
+  `depends-on:` names a ticket that is not closed, or whose line cannot be read, stops as `blocked`
+  before implement, review and done. A `ship` or `next-slice` that would act stops on any of these,
+  and `ship` reads them again on every CI poll and right before `gh pr merge`, with the main
+  checkout's INDEX row as well as this one, so a hold set while CI runs stops the merge. Two disagreeing INDEX rows stop as `direction-approval`.
+- **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
+  and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
+- **Help.** `/crew:help` gives `hold`, `landing`, `blocked` and T-0067's `fix` two related commands
+  each (`crew_help.RELATED`, keyed by `crew_autopilot.WAITING`; merged with T-0025).
+- **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
+
+### Fixed — crew 1.1.20: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
+
+- **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
+  `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read
+  instead of telling you to arm a mode that may already say `plan`.
+- **status.** `settings` returns the approval/questions value warnings (`"bogus", not one of
+  human|self|risk`) in a new `policyWarnings` key as well as in `warnings`; `status` leaves those
+  out and keeps every other warning, including the single could-not-tell one for an unreadable
+  `.crew/config.json` or a non-object `autopilot` block. An object-valued policy key
+  (`approval: {"x": "self"}`) also leaves its `inert:` entries out of `status`
+  (`crew_config.autopilot_inert_split`). `settings`, `approval_policy` and `question_policy`
+  still carry the value warning.
+- **approve.** Unarmed because the config could not be read (not JSON, not an object, or an
+  `autopilot` value that is not an object), `approve` refuses with that cause; a plain unarmed
+  config keeps today's "autopilot.mode is not plan" refusal.
+- **Not in this entry.** Two sabotage mutations for these (T-0087 harness): a later tooling PR.
+  T-0010 round 6's other findings are L-0542 and L-0543.
+
+### Fixed — crew 1.1.20: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
+
+- **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the
+  questions after it from autopilot; a fence autopilot cannot read for certain now stops the run
+  instead of reading as "no questions".
+- **What changed.** `crew_autopilot._open_items` is now the union of main's parser (kept byte for
+  byte as `_legacy_open_items`, the floor), a strict fence view, and a could-not-tell item. The
+  view (new `hooks/scripts/crew_autopilot_fences.py`) tracks only a fence opened at column 0 and
+  closed at column 0 by the same marker, at least as long, with nothing after it; its lines are
+  neither headings nor items, so a `# how to check` line inside it no longer ends the section. A
+  tracked fence that opens the section before any item is itself an item. Any other fence shape
+  (indented, a backtick in a backtick info string, a shorter run inside a fence) or a fence left
+  open adds one `could not tell` item naming the line, when the file names an Open-questions
+  section anywhere. No CommonMark emulation: put fences at column 0 and close each one.
+- **Measured.** 18 new parser tests (a generated corpus of 17,282 texts against a verbatim copy of
+  main's parser at 155fe6d8: nothing below main, every unclean text with a section stops) and 3 new
+  `next` tests. Over the 29 ticket files this clone holds, 10 stop under main and the same 10 under
+  the new parser; none newly stops.
+- **Not in this entry.** The sabotage mutations for the parser are harness (T-0087): L-0643.
+
+### Fixed — crew 1.1.20: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
+
+- **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
+  round, and a review you accepted that a later edit staled goes back through refresh and review
+  instead of being reported as unfinished.
+- **FIX 1.** The un-accepted FINDINGS stop's reason ends: or fixes, then reruns
+  `crew_refresh_check.py --root . --ticket <id>` until it says fresh (committing what each
+  `refresh with` writes and each `uncommitted:` path; unknown is a stop), then `/crew:review <id>`. The
+  L-0510 auto-accept clause in front of it is unchanged; it is still a stop, with no new stop id.
+  `commands/autopilot.md` and the README no longer claim `next` refreshes before every later round:
+  it does so only for a round it reaches itself.
+- **FIX 2.** A FINDINGS round whose receipt stands (owner- or auto-accepted) and was then staled by
+  an edit goes through `_toward_review` (refresh, then `/crew:review`), the same as a stale CLEAN
+  receipt, instead of "the reviewer did not finish reading". Only a receipt `check_receipt`
+  confirms stale takes that route: a missing or uncheckable one stops (`accept-review`), and a
+  round that is INCOMPLETE or has no verdict still stops; the INCOMPLETE line, a sabotage anchor, is byte-identical.
+- **Also.** `_settles`' refreshable guard gets a failing control test, and `INSTALLATION.md`'s crew
+  command count (36) carries a `plugin-commands:crew` claim marker, so `check_self_claims` checks it.
+- **Not in this entry.** The sabotage mutations for these fixes are harness (T-0087) and land with
+  L-0643.
+
 ### Fixed — crew 1.1.19: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
 
 - **Summary.** Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi
