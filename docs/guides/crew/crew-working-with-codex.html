@@ -224,9 +224,12 @@ before it reserves a round, with the round's own model and effort:</p>
 <code>5</code> (limited), <code>6</code> (failed) or <code>7</code> (unknown: no answer within 120 s). Nothing is reserved either way.
 <code>limited</code> means the call failed and its error matched one of Codex's own limit messages (usage limit,
 out of credits, spend cap, rate limit, quota, a plan without Codex, or a retry limit on HTTP 429),
-listed with their <code>error.rs</code> lines in <code>hooks/scripts/review_limit.py</code>. On <code>limited</code> the round runs on
-the Claude reviewer - even when <code>qa.provider</code> pins <code>codex</code> - announced as <code>same-family (codex limit)</code>
-with the error quoted, because it is not an independent review.</p>
+listed with their <code>error.rs</code> lines in <code>hooks/scripts/review_limit.py</code>. On <code>limited</code> Codex is skipped -
+even when <code>qa.provider</code> pins <code>codex</code> - with the error quoted, and the round goes to the next
+cross-family provider. When none is left, no reviewer runs: the outcome is recorded INCOMPLETE and
+refunded (<code>review_ledger.py --no-reviewer --reason &lt;why&gt;</code>), spending no round. A Claude read after a
+limit runs only when you ask for it (<code>--same-family "codex limit"</code>, crew 1.2.6), announced as
+<code>same-family (codex limit)</code> and labelled in the ledger, because it is not an independent review.</p>
 <p>A limit hit in the middle of a round leaves that round INCOMPLETE and prints
 <code>review: codex usage limit in round N: ...</code>. It is recorded in
 <code>&lt;git-common-dir&gt;/crew/review-limit/&lt;ticket&gt;.json</code>, so the next <code>/crew:review</code> answers <code>limited</code> from

@@ -149,9 +149,12 @@ It prints `PROBE=<outcome>` and `PROBE_DETAIL=<the answer or the quoted error>` 
 `5` (limited), `6` (failed) or `7` (unknown: no answer within 120 s). Nothing is reserved either way.
 `limited` means the call failed and its error matched one of Codex's own limit messages (usage limit,
 out of credits, spend cap, rate limit, quota, a plan without Codex, or a retry limit on HTTP 429),
-listed with their `error.rs` lines in `hooks/scripts/review_limit.py`. On `limited` the round runs on
-the Claude reviewer - even when `qa.provider` pins `codex` - announced as `same-family (codex limit)`
-with the error quoted, because it is not an independent review.
+listed with their `error.rs` lines in `hooks/scripts/review_limit.py`. On `limited` Codex is skipped -
+even when `qa.provider` pins `codex` - with the error quoted, and the round goes to the next
+cross-family provider. When none is left, no reviewer runs: the outcome is recorded INCOMPLETE and
+refunded (`review_ledger.py --no-reviewer --reason <why>`), spending no round. A Claude read after a
+limit runs only when you ask for it (`--same-family "codex limit"`, crew 1.2.6), announced as
+`same-family (codex limit)` and labelled in the ledger, because it is not an independent review.
 
 A limit hit in the middle of a round leaves that round INCOMPLETE and prints
 `review: codex usage limit in round N: ...`. It is recorded in

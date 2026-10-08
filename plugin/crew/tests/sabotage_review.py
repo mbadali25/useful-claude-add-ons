@@ -18,8 +18,13 @@ REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 CREW_TICKET = os.path.join(CREW, "hooks", "scripts", "crew_ticket.py")
 REVIEW_DELTA = os.path.join(CREW, "hooks", "scripts", "review_delta.py")
 CREW_AUTOPILOT = os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py")
+CREW_STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
+CREW_STATUS = os.path.join(CREW, "hooks", "scripts", "crew_status.py")
 _D = "tests/test_review_delta.py::"
 _AP = "tests/test_crew_autopilot.py::"
+_PT = "tests/test_provider_table.py::"
+_SF = "tests/test_review_run_same_family.py::"
+_RL = "tests/test_review_ledger.py::"
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -1807,4 +1812,48 @@ REVIEW_FIX_MUTATIONS = (
      '    R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name\n',
      '    R = _resolve(root, ref)  # pylint: disable=invalid-name\n',
      _D + "test_check_receipt_judges_the_passed_base_sha"),
+    # L-0712: no silent same-family review. The first four are the feature
+    # half's hand mutations (PR #578), registered here; the rest are the
+    # harness half's. Each was run alone against the tracked file and went red.
+    ("L-0712: a gone pin's fallback dispatches to claude again", CREW_STATE,
+     '        out.update({"provider": provider, "model": model, "family": fam,\n',
+     '        out.update({"provider": "claude", "model": model, "family": fam,\n',
+     _PT + "test_a_gone_pin_never_names_claude_on_claude_work"),
+    ("L-0712: the fallback walk keeps an author-family candidate", CREW_STATE,
+     '        if fam in authors:\n            if via == "fallback":\n',
+     '        if False:\n            if via == "fallback":\n',
+     _PT + "test_a_gone_pin_on_claude_work_falls_back_to_kimi_never_claude"),
+    ("L-0712: an empty walk runs the same-family fallback unasked", CREW_STATE,
+     '    if same_family_ok and owner is not None:\n',
+     '    if owner is not None:\n',
+     _PT + "test_no_cross_family_provider_answering_is_incomplete_not_claude"),
+    ("L-0712: the status share ignores a claude model family", CREW_STATUS,
+     '    if provider == author or (isinstance(fam, str) and fam.strip().lower() == author):\n',
+     '    if provider == author:\n',
+     "tests/test_status.py::"
+     "test_status_reads_a_claude_model_family_as_same_family_whatever_the_provider"),
+    ("L-0712: review_run's family guard removed", REVIEW_RUN,
+     '    if refusal:\n        _err(refusal)\n        return EXIT_USAGE\n',
+     '    if False:\n        _err(refusal)\n        return EXIT_USAGE\n',
+     _SF + "test_an_author_family_reviewer_is_refused_with_no_round_spent"),
+    ("L-0712: an empty --authors reads as no author family", REVIEW_RUN,
+     '    if authors and fam is not None and fam not in authors:\n',
+     '    if fam is not None and fam not in authors:\n',
+     _SF + "test_an_empty_authors_is_could_not_tell_and_refused"),
+    ("L-0712: a no-reviewer outcome is written as a round", REVIEW_LEDGER,
+     '        unreviewed = data.setdefault("unreviewed", [])\n',
+     '        unreviewed = data.setdefault("rounds", [])\n',
+     _RL + "test_no_reviewer_on_a_fresh_ticket_leaves_both_rounds"),
+    ("L-0712: a same-family reservation is not labelled", REVIEW_LEDGER,
+     '        if same_family is not None:\n            row.update(',
+     '        if False:\n            row.update(',
+     _SF + "test_an_explicit_same_family_choice_runs_and_is_labelled"),
+    ("L-0712: a same-family CLEAN receipt drops the label", REVIEW_LEDGER,
+     '            if row.get("same_family") is True:\n',
+     '            if False:\n',
+     _RL + "test_a_clean_same_family_round_receipt_says_same_family"),
+    ("L-0712: a same-family label does not bar auto-accept", REVIEW_LEDGER,
+     '    if row.get("same_family", False) is not False:\n',
+     '    if False:\n',
+     _RL + "test_a_same_family_labelled_row_is_never_auto_accepted"),
 )

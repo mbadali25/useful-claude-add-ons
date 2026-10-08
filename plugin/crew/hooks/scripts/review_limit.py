@@ -3,8 +3,9 @@
 Owner, 2026-09-28: "if we hit a codex limit please use claude ads the
 reviewer". `/crew:review` makes one minimal real Codex call before it reserves
 a round (`review_run.py --probe`); when that call, or a round's own call,
-fails on a limit, the round runs on the Claude reviewer, announced as
-same-family and not independent.
+fails on a limit, the round walks to the next cross-family provider, else no
+reviewer is recorded (INCOMPLETE, refunded); since L-0712 a Claude read runs
+only on the operator's explicit `--same-family`, labelled and not independent.
 
 THE PATTERNS are Codex's own messages, read from `openai/codex` at
 `44fe510ce3ee61c8ef623adcbf89b901c73ddd61`, `codex-rs/protocol/src/error.rs`,

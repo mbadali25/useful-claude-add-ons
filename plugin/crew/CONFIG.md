@@ -896,7 +896,11 @@ on that provider's own model and effort. When none does, the result is
 a same-family read. Only an explicit operator choice (`same_family_ok`) runs the
 fallback same-family, and the result says `sameFamily`. A fallback model whose
 family no provider serves (`gemini-*`) walks the order directly. `/crew:status`
-prints the repo-wide share of same-family rounds.
+prints the repo-wide share of same-family rounds. `/crew:review` carries this
+out (crew 1.2.6): an INCOMPLETE with no reviewer is
+`review_ledger.py --no-reviewer --reason <why>` (an `unreviewed` entry, no
+round or budget spent), and `review_run.py --authors "$AUTHORS"` refuses an
+author-family reviewer unless `--same-family "<reason>"` labels the round.
 
 ---
 

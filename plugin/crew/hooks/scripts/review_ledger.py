@@ -142,6 +142,16 @@ plan. It appends a `successors` row and opens a fresh budget of `BUDGET`
 rounds counted from there; the rounds already spent stay in the ledger, the
 old receipt is cleared, and nothing else resets the count.
 
+NO REVIEWER (L-0712). When no reviewer outside the author's family can run,
+`--no-reviewer --reason <text>` (`no_reviewer`) appends `{at, verdict:
+INCOMPLETE, refunded: true, reason}` to the ticket's `unreviewed` list. It
+never touches `rounds`, `state`, the receipt or the budget: a row in `rounds`
+would become the latest round (blocking `--accept` of an earlier FINDINGS) and
+draw on `REFUND_LIMIT`, which bounds LAUNCHED rounds. A same-family read runs
+only by the operator's explicit choice: `reserve(..., same_family=<reason>)`
+labels the row `same_family: true` with that reason, and a CLEAN round's
+receipt copies the label. A labelled row is never auto-accepted.
+
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 """
 import argparse
@@ -349,9 +359,12 @@ GATE_CHANGED = ("the ledger changed since the gate decision: the pre-review and 
                 "were skipped for a spent budget, and a round is now free; run again, nothing spent")
 
 
-def reserve(root, ticket, provider, model=None, gated=True):
+def reserve(root, ticket, provider, model=None, gated=True, same_family=None):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     """Reserve the next round BEFORE launching a reviewer. Returns
     (True, round_number, message) or (False, None, message).
+
+    `same_family` (L-0712) is the operator's one-line reason for a read by
+    the author's own family; the row is labelled with it. None: unlabelled.
 
     `gated` is False when the caller skipped its gates because its unlocked
     read said the budget was spent (review_run.run). Under the lock, a state
@@ -378,12 +391,41 @@ def reserve(root, ticket, provider, model=None, gated=True):
         if not gated:
             return None, (False, None, GATE_CHANGED)
         number = len(rounds) + 1
-        rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
-                       "provider": provider, "model": model or None, "pid": os.getpid()})
+        row = {"round": number, "status": "reserved", "reserved_at": _now(),
+               "provider": provider, "model": model or None, "pid": os.getpid()}
+        if same_family is not None:
+            row.update({"same_family": True, "same_family_reason": same_family})
+        rounds.append(row)
         data["state"] = IN_REVIEW
         return data, (True, number,
                       f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
                       f"used, {_refunded(data)} refunded)")
+
+    if same_family is not None:
+        same_family = _one_line_arg(same_family, "--same-family", "a same-family read")
+    return _mutate(root, ticket, change)
+
+
+def no_reviewer(root, ticket, reason):
+    """L-0712: no reviewer outside the author's family could run. Append an
+    INCOMPLETE, refunded entry to `unreviewed` and change nothing else: no
+    round, no budget, no state, no receipt. Returns the entry. An unreadable
+    ledger, or an `unreviewed` that is not a list of objects, refuses."""
+    reason = _one_line_arg(reason, "--reason", "--no-reviewer")
+
+    def change(data, state):
+        if state == "corrupt":
+            raise LedgerError(f"ledger {ledger_path(root, ticket)} is unreadable; refusing "
+                              "to record a no-reviewer outcome on top of it")
+        if state == "absent":
+            data = _fresh(ticket)
+        unreviewed = data.setdefault("unreviewed", [])
+        if not _is_dict_list(unreviewed):
+            raise LedgerError(f"{ticket}'s unreviewed list is not a list of objects; "
+                              "could not tell what it holds, so nothing is appended")
+        entry = {"at": _now(), "verdict": "INCOMPLETE", "refunded": True, "reason": reason}
+        unreviewed.append(entry)
+        return data, dict(entry, count=len(unreviewed))
 
     return _mutate(root, ticket, change)
 
@@ -457,6 +499,9 @@ def record(root, ticket, number, review):
                 "base": review["base"], "verdict": "CLEAN", "accepted_by": None,
                 "accepted_at": row["completed_at"],
             }
+            if row.get("same_family") is True:
+                # L-0712: a same-family CLEAN stands, and says what it was.
+                data["receipt"]["same_family"] = True
             data["state"] = ACCEPTED
         else:
             data["state"] = REVIEWED
@@ -552,6 +597,10 @@ def _family_problem(row):
     author's, read from the provider and family recorded on the row; else why
     not. A missing or unknown value is could-not-tell, never a pass."""
     provider, family = row.get("provider"), row.get("model_family")
+    if row.get("same_family", False) is not False:
+        return (f"round {row.get('round')} is labelled same-family "
+                f"({row.get('same_family_reason')!r}) by the operator's choice; a "
+                "same-family round needs the owner's --accept")
     if not isinstance(provider, str) or not provider:
         return (f"round {row.get('round')} records no provider ({provider!r}): could not "
                 "tell the reviewer's family")
@@ -1230,6 +1279,7 @@ def summary(data, state, ticket, path):
             "rounds_spent": _charged(data), "rounds_refunded": _refunded(data),
             "refund_limit": REFUND_LIMIT,
             "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
+            "unreviewed": data.get("unreviewed", []),
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt"),
             "rejected": data.get("rejected"),
@@ -1278,6 +1328,9 @@ def main(argv):
     action.add_argument("--check-follow-up", action="store_true",
                         help="an auto-accepted receipt's follow-up quotes every line")
     action.add_argument("--successor-plan", metavar="PLAN_SHA256")
+    action.add_argument("--no-reviewer", action="store_true",
+                        help="no reviewer outside the author's family could run: record an "
+                             "INCOMPLETE, refunded outcome (needs --reason; spends nothing)")
     action.add_argument("--correct-acceptance", action="store_true",
                         help="rewrite an owner-accepted receipt's accepted_by and record the "
                              "old name (needs --by and --reason)")
@@ -1286,15 +1339,16 @@ def main(argv):
     parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject; the "
                                      "right accepter, with --correct-acceptance")
     parser.add_argument("--follow-up", help="with --auto-accept: the follow-up ticket id")
-    parser.add_argument("--reason", help="with --correct-acceptance: why, one line")
+    parser.add_argument("--reason", help="with --correct-acceptance or --no-reviewer: why, "
+                                         "one line")
     parser.add_argument("--supersede-accepted", action="store_true",
                         help="with --reject: take an ACCEPTED ticket, keeping its receipt "
                              "under superseded")
     args = parser.parse_args(argv)
     if args.auto_accept and args.by is not None:
         parser.error("--auto-accept takes no --by: its accepted_by is fixed")
-    if args.reason is not None and not args.correct_acceptance:
-        parser.error("--reason is used only with --correct-acceptance")
+    if args.reason is not None and not (args.correct_acceptance or args.no_reviewer):
+        parser.error("--reason is used only with --correct-acceptance or --no-reviewer")
     if args.correct_acceptance and args.follow_up is not None:
         parser.error("--correct-acceptance takes no --follow-up")
     if args.supersede_accepted and not args.reject:
@@ -1323,6 +1377,11 @@ def main(argv):
                     f"(bundle {str(old.get('bundle_sha256'))[:12]})" if old else "")
             print(f"review-ledger: {args.ticket} is {NEEDS_REPLAN}, rejected by "
                   f"{rejected['by']} at {rejected['at']}{gone}")
+            return 0
+        if args.no_reviewer:
+            entry = no_reviewer(root, args.ticket, args.reason)
+            print(f"review-ledger: {args.ticket}: no reviewer - INCOMPLETE, refunded, no "
+                  f"round or budget spent ({entry['count']} unreviewed outcome(s) recorded)")
             return 0
         if args.correct_acceptance:
             row = correct_acceptance(root, args.ticket, args.by, args.reason)

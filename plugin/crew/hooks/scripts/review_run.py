@@ -133,10 +133,21 @@ codex-events.jsonl and review.json are kept as `<name>.round<N>`, and a fresh
 round is reserved. Only a refunded round retries, so a retry never spends
 budget. Not retried, each with a `review: retry: not retried - <why>` line and
 a `review: options:` line: a reviewer or tree INCOMPLETE, a refund the ledger
-refused, a usage limit (T-0088's Claude reviewer takes the next round), a
+refused, a usage limit (the next round walks to the next cross-family provider), a
 timeout (a retry could double a --timeout wait), a gate, receipt or bundle that
 changed, and the second tool failure. The exit code is the last round's. The
 claude provider records a round in two calls, so it never retries here.
+
+THE FAMILY GUARD (L-0712) comes first, before any probe or question below.
+`--authors "<families>"` (`/crew:review` passes `$AUTHORS`) names the author
+families. A reviewer whose family (`crew_state.family(provider, model)`) is
+one of them, or cannot be told, or an empty `--authors` (no author family
+known), is refused with exit 2 and nothing reserved -- unless the operator
+passes `--same-family "<reason>"`, which runs it with the ledger row labelled
+`same_family` (and review.json and a CLEAN receipt with it). A
+`--same-family` on a reviewer outside the author families is not a
+same-family read: it is ignored, and said. Without `--authors` the guard is
+not applied (callers that predate L-0712).
 
 BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
 asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
@@ -1285,6 +1296,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
     ledger = review_ledger.status(args.root, args.ticket)
     row = next((r for r in ledger.get("rounds") or [] if r.get("round") == number), {})
     review["refunded"] = row.get("refunded") is True
+    # L-0712: the label is the reservation's, read back from the ledger row.
+    review["same_family"] = row.get("same_family") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
     review["prereview"] = review_checks.recorded(args.scratch, manifest.get("bundle_sha256"),
@@ -1311,6 +1324,9 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
           f"ledger={_one(state)} gate={_one(review['gate']['state'])} "
           f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
     _out(metrics_line)
+    if review["same_family"]:
+        _out(f"review: round {number} is SAME-FAMILY by the operator's choice "
+             f"({_one(row.get('same_family_reason'))}); not an independent review")
     for reason in result["reasons"]:
         _out(f"review: INCOMPLETE because {reason}")
     # Kept as print() (a pinned line): the verdict is a constant, the
@@ -1748,8 +1764,41 @@ def _keep_reserved_std(args, number):
                          "metrics row will say std:unknown\n")
 
 
+def family_guard(args):
+    """L-0712: (refusal, label). `refusal` is the stderr line when this
+    reviewer may not run, else None; `label` is the `same_family` reason to
+    reserve with, or None. See THE FAMILY GUARD in the module docstring."""
+    reason = getattr(args, "same_family", None)
+    if reason is not None:
+        # Checked before anything runs: an empty or multi-line reason is a
+        # usage error, never a label the ledger refuses after the gates.
+        reason = review_ledger._one_line_arg(reason, "--same-family", "a same-family read")  # pylint: disable=protected-access
+    if getattr(args, "authors", None) is None:
+        return None, reason
+    authors = {a.strip().lower() for a in args.authors.replace(",", " ").split() if a.strip()}
+    fam = crew_state.family(args.provider, args.model or None)
+    if authors and fam is not None and fam not in authors:
+        if reason is not None:
+            _err(f"review-run: --same-family ignored: {args.provider} ({fam} family) is not "
+                 f"the author's ({', '.join(sorted(authors))})\n")
+        return None, None
+    if reason is not None:
+        return None, reason
+    why = (f"{args.provider} speaks as the `{fam}` family that wrote this diff"
+           if fam is not None and fam in authors else
+           f"could not tell whether {args.provider} ({fam or 'unknown'} family) is the "
+           f"author's ({', '.join(sorted(authors)) or 'no author family known'})")
+    return (f"review-run: same-family: {why}; not an independent review. Walk to the next "
+            "cross-family provider, or record no reviewer (review_ledger.py --no-reviewer); "
+            "--same-family \"<reason>\" runs it labelled. Nothing launched, no round spent\n"), None
+
+
 def run(args):
     exe = prompt = before = None
+    refusal, args.same_family_label = family_guard(args)
+    if refusal:
+        _err(refusal)
+        return EXIT_USAGE
     if args.provider in LAUNCHED:
         if args.provider == "copilot" and not args.model:
             _err("review-run: copilot needs --model (qa.copilot.model); an "
@@ -1823,7 +1872,8 @@ def run(args):
     # The skip is carried into the locked read (L-0518 F2): a ledger that is
     # no longer spent there refuses rather than reserving an ungated round.
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
-                                                args.model, gated=gated)
+                                                args.model, gated=gated,
+                                                same_family=args.same_family_label)
     _err(f"review-run: {message}\n")
     if not ok:
         return EXIT_USAGE if message == review_ledger.GATE_CHANGED else EXIT_REFUSED
@@ -1853,7 +1903,8 @@ def run(args):
         # followed by a gated reservation.
         ok, retry_number, message = review_ledger.reserve(
             args.root, args.ticket, args.provider, args.model,
-            gated=not getattr(args, "budget_spent", False))
+            gated=not getattr(args, "budget_spent", False),
+            same_family=args.same_family_label)
         _err(f"review-run: {message}\n")
         if not ok:
             _out("review: retry: not retried - the ledger refused the retry's reservation")
@@ -1895,7 +1946,8 @@ def _launch_round(args, exe, prompt, number):
         # is not a directory) must not take it, or exit 3, down with it.
         try:
             review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
-            then = "the next round runs the Claude reviewer (same-family, not independent)"
+            then = ("the next round walks to the next cross-family provider, else "
+                    "records no reviewer (INCOMPLETE, refunded)")
         except OSError as exc:
             then = (f"could not record it ({exc}), so the next probe calls Codex live "
                     "instead of answering limited from the record")
@@ -1909,7 +1961,8 @@ def _retry_reason(args, number, timed_out, limit, retries):
     Only a `tool` round the ledger refunded retries, so a retry never spends
     budget; a limit or a timeout is a tool round a relaunch does not fix."""
     if limit:
-        return "a usage limit is not retried; the next round runs the Claude reviewer"
+        return ("a usage limit is not retried; the next round walks to the next "
+                "cross-family provider")
     if timed_out:
         return (f"round {number} timed out, and a retry could double a {args.timeout}s "
                 "wait")
@@ -2047,6 +2100,12 @@ def main(argv):
     parser.add_argument("--note", default="",
                         help="claude only: why this provider ran, for the metrics row "
                              "('codex-probe=<probe exit>'; 5 means a Codex limit)")
+    parser.add_argument("--authors", default=None,
+                        help="the author families ($AUTHORS); a reviewer of one of them, or "
+                             "of an unknown family, is refused unless --same-family (L-0712)")
+    parser.add_argument("--same-family", default=None, metavar="REASON",
+                        help="the operator's explicit choice of a same-family read, one line; "
+                             "the round is labelled same_family")
     parser.add_argument("--allow-unverified", action="store_true",
                         help="review a tree the verify gate has not passed; recorded in "
                              "review.json as gate.overridden")
