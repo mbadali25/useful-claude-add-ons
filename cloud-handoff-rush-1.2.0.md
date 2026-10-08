@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T06:21Z
+Last updated: 2026-10-08T06:41Z
 
 ## >>> RESUME HERE
 
@@ -105,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T06:41Z MERGED #579 to main at 554ed783: crew 1.2.1 (L-0703 + L-0704). #544 and #545 auto-marked merged. Release synced to main.
 - 2026-10-08T06:21Z Opened #579 (crew 1.2.1: L-0703 + L-0704) into main, head e2044193. CHANGELOG test-count claims corrected in a fresh version commit.
 - 2026-10-08T06:19Z Codex on the 1.2.1 lane 3537f2e3: CLEAN. Sent go for the 1.2.1 version commit.
 - 2026-10-08T06:17Z 1.2.1 lane pushed at 3537f2e3, no version commit. Merge found a gap: the no-python NP_SHAPE allowed a malformed github entry that python and ps1 refuse; fixed in 09c12b9b with must-block/allow cases and a sabotage entry. 82/82 promote-tree RED, 684 promote tests pass. Codex review of the lane merge logic running.
