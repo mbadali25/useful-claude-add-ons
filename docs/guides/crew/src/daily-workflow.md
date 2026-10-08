@@ -195,6 +195,25 @@ not match CI's font hinting and subpixel rendering, and fails every later run fo
 reasons unrelated to the change under test. Outside that image the visual rule reports
 **UNVERIFIED**, not a pass; see [Troubleshooting](troubleshooting.md).
 
+## Contracts between two sessions
+
+When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:
+
+1. One side writes the draft: `crew_contract.py put --name <n> --file <path>`.
+   While it is a draft, `put` replaces it in place.
+2. Each side, once its ticket is approved, records what it built against:
+   `crew_contract.py build-against --name <n> --version <N> --ticket <id>`.
+   That freezes the version and writes the binding, with the remote it was
+   built on, to `.work/tickets/<id>/contracts.json`.
+3. A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: `put --name <n> --file <path> --new-version --ticket <new id>`.
+
+`crew_contract.py status` lists every version, who built against it and
+anything it cannot read (`unknown`, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".
+
 ## If something refuses
 
 | Refusal | Means | Do |

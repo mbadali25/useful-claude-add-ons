@@ -64,6 +64,8 @@ import sys
 import crew_autopilot
 import crew_common
 import crew_config
+import crew_contract
+import crew_coord
 import crew_state
 import crew_ticket
 import review_ledger
@@ -209,7 +211,7 @@ def write_set(root, slug, tickets, deps=None):
         _plain_id(ticket)
         row = {"id": ticket}
         if ticket in deps:
-            row["deps"] = [_plain_id(d) for d in deps[ticket]]
+            row["deps"] = [_dep_id(d) for d in deps[ticket]]
         rows.append(row)
     if not rows:
         raise WaveError("a set names at least one ticket")
@@ -233,6 +235,48 @@ def _plain_id(value):
     return value
 
 
+# A cross-session dependency (L-0633): `<channel>:<id>` or `<channel>:<repo>:<id>`, a
+# ticket another session claims on `crew-coord/<channel>`. The channel follows
+# crew_coord's channel rule, the repo half the derived repo key's rule, and the id the
+# claim key's, upper-cased as crew_coord.parse_ticket does.
+_CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+_REPO_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
+
+
+def cross_dep(value):
+    """(channel, repo or None, id) for a cross-session dependency, None for a
+    plain id (no ':'). TicketError for anything else: an empty part, a fourth
+    part, a channel or repo outside its rule, an id the claim key refuses,
+    whitespace anywhere."""
+    if not isinstance(value, str) or ":" not in value:
+        return None
+    parts = value.split(":")
+    if len(parts) not in (2, 3) or any(not part or part != part.strip() or any(c.isspace() for c in part)
+                                       for part in parts):
+        raise crew_ticket.TicketError(f"dependency {crew_coord.safe(value)!r} is not <channel>:<id> or "
+                                      "<channel>:<repo>:<id>")
+    channel, repo, ticket = parts[0], (parts[1] if len(parts) == 3 else None), parts[-1]
+    if not _CHANNEL_RE.fullmatch(channel):
+        raise crew_ticket.TicketError(f"dependency {crew_coord.safe(value)!r}: the channel must match "
+                                      "[a-z0-9][a-z0-9-]{0,63}")
+    if repo is not None and (not _REPO_RE.fullmatch(repo) or "__" in repo or ".." in repo):
+        raise crew_ticket.TicketError(f"dependency {crew_coord.safe(value)!r}: the repo is not a derived "
+                                      "repo key")
+    try:
+        _, ticket, _ = crew_coord.parse_ticket(ticket, "")
+    except crew_coord.UsageError as exc:
+        raise crew_ticket.TicketError(f"dependency {crew_coord.safe(value)!r}: {exc}") from exc
+    return channel, repo, ticket
+
+
+def _dep_id(value):
+    """A set-file dependency: a plain ticket id, or a valid cross-session one."""
+    if isinstance(value, str) and ":" in value:
+        cross_dep(value)
+        return value
+    return _plain_id(value)
+
+
 def _valid_set(data, slug):
     if not isinstance(data, dict) or data.get("schema") != SCHEMA or data.get("set") != slug:
         return False
@@ -251,7 +295,7 @@ def _valid_set(data, slug):
             if not isinstance(deps, list):
                 return False
             for dep in deps:
-                _plain_id(dep)
+                _dep_id(dep)
         except crew_ticket.TicketError:
             return False
     return True
@@ -270,6 +314,8 @@ def read_set(root, slug):
 
 _DEPENDS_RE = re.compile(r"\bdepends on\b([^);]*)", re.IGNORECASE)
 _ID_RE = re.compile(crew_common.TICKET_ID_CORE)  # L-0509: the one ticket-id shape
+# A token with a ':' in it, as a whole: cross_dep then judges its parts.
+_CROSS_TOKEN_RE = re.compile(r"(?<![^\s,])[^\s,]*:[^\s,]*")
 _DEP_FILLER_RE = re.compile(r"^(?:[\s,]|\band\b)*$", re.IGNORECASE)
 CREW_GLOB = "plugin/crew/**"
 PLUGIN_JSON = "plugin/crew/.claude-plugin/plugin.json"
@@ -331,23 +377,122 @@ def _deps(line, given):
     found = _DEPENDS_RE.search(line or "")
     if not found:
         return None
-    ids = _ID_RE.findall(found.group(1))
-    if not ids or not _DEP_FILLER_RE.match(_ID_RE.sub("", found.group(1))):
+    text = found.group(1)
+    cross = _CROSS_TOKEN_RE.findall(text)
+    try:
+        for token in cross:
+            cross_dep(token)
+    except crew_ticket.TicketError:
         return None
-    return ids
+    local = _CROSS_TOKEN_RE.sub(lambda m: " " * len(m.group(0)), text)  # positions kept
+    ids = _ID_RE.findall(local)
+    if not (ids or cross) or not _DEP_FILLER_RE.match(_ID_RE.sub("", local)):
+        return None
+    # In the row's own order.
+    order = {m.start(): m.group(0) for m in _CROSS_TOKEN_RE.finditer(text)}
+    order.update({m.start(): m.group(0) for m in _ID_RE.finditer(local)})
+    return [order[at] for at in sorted(order)]
 
 
-def _dep_refusal(top, deps):
+def _dep_refusal(top, deps, channels=None):
+    """The first reason a dependency keeps the ticket out, or None. Local
+    dependencies first, so a ticket refused on one never fetches a channel;
+    `channels` caches each channel's read for one plan."""
     if deps is None:
         return ("dependencies unknown: no set-file deps and no parseable `(depends on ...)` "
                 "in its INDEX.md row")
     for dep in deps:
+        if ":" in dep:
+            continue
         line, state = _index_line(top, dep)
         if state != "ok":
             return f"dependency {dep} has no INDEX.md row ({state})"
         if crew_state._table_status(line, dep) is not True:  # pylint: disable=protected-access
             return f"dependency {dep} is not closed"
+    for dep in deps:
+        if ":" in dep:
+            refusal = _cross_refusal(top, dep, {} if channels is None else channels)
+            if refusal:
+                return refusal
     return None
+
+
+def _channel_files(top, channel, channels, remote=None):
+    """(files, None) for the fetched `crew-coord/<channel>`, or (None, why).
+    Read once per plan and remote. The remote is `remote` when given (a
+    contract binding's own, L-0634), else crew_coord's `coord.remote` (default
+    origin). Fetching writes objects and nothing else: no ref, no FETCH_HEAD."""
+    configured = remote is None
+    if configured:
+        cfg = crew_config.resolve_config(top).get("coord")
+        # Only an absent coord.remote means origin: a set one that is not a
+        # non-empty string ([], "", an object) is unknown, never origin and
+        # never a crash on the cache key (L-0633 r2, r3).
+        # A coord block that is not an object cannot tell its remote either (r4).
+        remote = (cfg.get("remote", "origin") if isinstance(cfg, dict) else "origin" if cfg is None
+                  else {"coord": cfg})
+    valid = isinstance(remote, str) and bool(remote)
+    # An invalid value gets a key no remote name can share, so it never reads a
+    # valid remote's cached channel (repr(0) is "0", a legal name; r5).
+    key = (remote, channel) if valid else ("invalid", repr(remote), channel)
+    if key in channels:
+        return channels[key]
+    listed = crew_coord.run_git(top, ["remote"])
+    if not valid:
+        got = (None, f"coord.remote {crew_coord.safe(remote, 60)!r} is not a remote name")
+    elif listed.code != 0 or remote not in listed.out.decode("utf-8", "replace").split():
+        got = (None, f"{crew_coord.safe(remote)!r}{' (coord.remote)' if configured else ''} "
+                     "is not a configured remote")
+    else:
+        chan = crew_coord.Channel(top, remote, channel)
+        tip, state, why = chan.fetch()
+        if state == "failed":
+            got = (None, f"could not fetch crew-coord/{channel} from {remote}: {why}")
+        elif state == "absent":
+            got = (None, f"crew-coord/{channel} does not exist on {remote}")
+        else:
+            files = chan.read(tip)
+            got = (files, None) if files is not None else (None, f"could not read crew-coord/{channel}")
+    channels[key] = got
+    return got
+
+
+def _cross_refusal(top, dep, channels):
+    """Closed only when the channel was fetched and exactly one claim for the
+    ticket reads `done`. A peer's claim is data: it decides only whether this
+    side may start. `released` and `working`, stale or not, are not closed."""
+    channel, repo, ticket = cross_dep(dep)
+    unknown = f"dependency {dep} unknown"
+    files, why = _channel_files(top, channel, channels)
+    if files is None:
+        return f"{unknown}: {why}"
+    keys = []
+    for path in files:
+        if path.startswith(crew_coord.CLAIMS) and path.endswith(".json"):
+            key = path[len(crew_coord.CLAIMS):-len(".json")]
+            owner, sep, held = key.partition("__")
+            if sep and held == ticket and (repo is None or owner == repo.lower()):
+                keys.append(key)
+    if not keys:
+        return f"{unknown}: no claim for {ticket} on crew-coord/{channel}"
+    if len(keys) > 1:
+        return (f"{unknown}: {len(keys)} repositories on crew-coord/{channel} hold {ticket}; name one "
+                f"as {channel}:<repo>:{ticket}")
+    claim, bad = crew_coord.parse_claim(keys[0], files[crew_coord.claim_path(keys[0])])
+    if claim is None:
+        return crew_coord.peer(f"{unknown}: its claim {crew_coord.safe(keys[0])} is corrupt ({bad})")
+    if claim["state"] == "done":
+        return None
+    if claim["state"] == "working":
+        try:
+            stale = crew_coord.is_stale(claim, crew_coord.ttl_minutes(top))
+        except crew_coord.UsageError as exc:
+            return f"{unknown}: {exc}"
+        held = "owner unknown, " if stale else ""
+        return crew_coord.peer(f"dependency {dep} is not closed: the peer claim reads working "
+                               f"({held}held by {crew_coord.describe(claim)})")
+    return crew_coord.peer(f"dependency {dep} is not closed: the peer claim reads {claim['state']} "
+                           f"(by {crew_coord.describe(claim)}); only done closes it")
 
 
 def _literal_prefix(entry):
@@ -421,7 +566,7 @@ def _entries(root, slug, tickets):
     return [(ticket, None) for ticket in tickets or []]
 
 
-def _judge(top, ticket, given):
+def _judge(top, ticket, given, channels=None):
     """One plan row: `{"ticket", "eligible", "reason", "deps", "touch"}`."""
     row = {"ticket": ticket, "eligible": False, "reason": "", "deps": None, "touch": []}
     try:
@@ -434,10 +579,24 @@ def _judge(top, ticket, given):
     if refusal:
         return dict(row, reason=refusal)
     deps = _deps(line, given)
-    refusal = _dep_refusal(top, deps)
+    channels = {} if channels is None else channels
+    refusal = _dep_refusal(top, deps, channels) or _contract_refusal(top, ticket, channels)
     if refusal:
         return dict(row, deps=deps, reason=refusal)
     return dict(row, eligible=True, deps=deps, touch=list(approval["touch"]))
+
+
+def _contract_refusal(top, ticket, channels):
+    """L-0634: the ticket's contract bindings (`.work/tickets/<id>/contracts.json`)
+    must all still hold on their channels; a ticket with none fetches nothing.
+    Checked after the dependencies, so the cheaper refusals come first, and
+    through this plan's channel cache."""
+    try:
+        result = crew_contract.check_bindings(
+            top, ticket, read=lambda remote, channel: _channel_files(top, channel, channels, remote))
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"its contract bindings could not be checked ({type(exc).__name__})"
+    return result["reason"] or None
 
 
 def plan(root, slug=None, tickets=None):
@@ -448,7 +607,8 @@ def plan(root, slug=None, tickets=None):
     conf = settings(top)
     entries = _entries(top, slug, tickets)
     ok, why = scope_enforcing(top, [t for t, _ in entries])
-    rows = [_judge(top, ticket, given) for ticket, given in entries]
+    channels = {}
+    rows = [_judge(top, ticket, given, channels) for ticket, given in entries]
     wave, later = [], []
     for row in rows:
         if not row["eligible"]:
@@ -1196,7 +1356,7 @@ def _parse_deps(values):
         key = _plain_id(ticket.strip())
         if key in deps:  # a later flag must not quietly replace an earlier one (group review r10)
             raise WaveError(f"--deps names {key} twice; give its dependencies once")
-        deps[key] = [] if rest.strip() == "none" else parts
+        deps[key] = [] if rest.strip() == "none" else [_dep_id(d) for d in parts]
     return deps
 
 

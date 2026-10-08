@@ -9,6 +9,54 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### crew 1.1.18 — L-0634: the wave refuses a ticket whose contract moved since it was built against
+
+- **Summary.** A ticket built against a contract version is no longer started by the autopilot wave
+  once that version on the shared channel has changed, and `crew_contract.py verify` checks the same
+  thing on its own.
+- **Added.** `crew_contract.py verify --ticket <id>` and `check_bindings`: every binding in
+  `.work/tickets/<id>/contracts.json` must still find its version on the channel with the bound
+  hash, a body whose sha256 is that hash, status `built-against` and this repository and ticket in
+  `built_by`, read from the remote the binding records (exit 0); anything else is a mismatch
+  (exit 1), and what cannot be checked is unknown (exit 3), never "no bindings": a bindings file
+  that cannot be checked or holds an empty list, a remote no longer configured, or `verify --remote` naming another remote. A ticket with no bindings fetches nothing; a newer version is
+  information only; nothing is repaired. `crew_wave.py plan` and `start` refuse such a ticket after
+  its dependencies (`contract <n> v<N> changed since <id> built against it` / `... unknown`). README
+  and the troubleshooting guide describe the refusal and the way out.
+- **Not in this entry.** Sabotage for this guard is L-0635, a harness PR (T-0087).
+
+### crew 1.1.18 — L-0633: a wave ticket can depend on a ticket another session works
+
+- **Summary.** An autopilot wave can now wait on a ticket another session is working, written
+  `<channel>:<id>`, and starts it only once that session's claim reads `done`.
+- **Added.** `crew_wave.py` accepts `<channel>:<id>` and `<channel>:<repo>:<id>` in a set file's
+  `deps`, in `--deps` and in an INDEX row's `(depends on ...)`. `plan` fetches `crew-coord/<channel>`
+  from `coord.remote` (default `origin`), once per channel and writing nothing but objects, and
+  counts the dependency closed only when exactly one claim for the id reads `done`. `working` (stale
+  or not) and `released` are `not closed`; no claim, an ambiguous short form, a corrupt claim, an
+  absent channel, a failed fetch or an unconfigured remote are `unknown`; each refuses the ticket.
+  Local dependencies are judged first, so a ticket with none cross fetches nothing. The README and
+  the troubleshooting guide list each refusal.
+- **Not in this entry.** Sabotage for this check is L-0635, a harness PR (T-0087).
+
+### crew 1.1.18 — T-0031: versioned contracts between sessions, frozen once built against
+
+- **Summary.** Two sessions building against each other can now put the interface between them on
+  the shared coordination channel as a numbered, hashed version that nobody can edit once a side
+  has built against it.
+- **Added.** `plugin/crew/hooks/scripts/crew_contract.py`: `put` writes `contracts/<name>/v<N>.json`
+  and `.body` on `crew-coord/<channel>` (v1 as a draft; a draft is replaced in place);
+  `put --new-version --ticket <id>` supersedes a frozen version with a draft v(N+1);
+  `build-against --name <n> --version <N> --ticket <id>` needs the ticket approved
+  (`crew_ticket.accepted`), checks the body's sha256 against the record, sets `built-against`,
+  appends this repository and ticket to `built_by` once, and writes the local binding
+  `.work/tickets/<id>/contracts.json` (remote, channel, name, version, hash); `status` lists every version, labelled `[peer-written]`, and
+  reads anything it cannot parse as `unknown` (exit 3). Writes go through T-0030's `Channel`: a
+  plain push on the fetched tip, never a force push, claims carried through. The README's
+  "Versioned contracts" section and the daily-workflow guide describe it.
+- **Not in this entry.** The sabotage mutations for this module are L-0635, a harness PR (T-0087).
+  The wave's refusal of a binding whose hash moved is L-0634.
+
 ### Added — crew 1.1.17: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
 
 - **Summary.** Crew's mutation suite now proves the guards the 1.2.0 features added on main

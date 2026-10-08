@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.17**: Sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane). Crew's mutation suite now proves the guards the 1.2.0 features added on main (292 new entries, 2093 to 2385, each red on its named test), and a `/crew:autopilot wave` lane can no longer accept or reject a review or admin-merge: the scope guard refuses it.
-- **crew 1.1.16**: Autopilot's deploy phase promotes to the first nonProd GitHub environment after the merge. With `autopilot.deploy` `nonprod` or `all`, once the ship phase reports the ticket's PR merged at this HEAD, `crew_autopilot.py next` answers `phase=deploy command=/crew:promote <env>` for the first `.crew/verify.json` environment with a `github` entry (file order, nonProd before prod) that has no PROMOTIONS row for the sha, when `deploy_allowed` answers exactly `allow` for T-0009's class of the entry's dispatch; every non-empty report is printed.
+- **crew 1.1.18 — L-0634**: The wave refuses a ticket whose contract moved since it was built against. A ticket built against a contract version is no longer started by the autopilot wave once that version on the shared channel has changed, and `crew_contract.py verify` checks the same thing on its own.
+- **crew 1.1.18 — L-0633**: A wave ticket can depend on a ticket another session works. An autopilot wave can now wait on a ticket another session is working, written `<channel>:<id>`, and starts it only once that session's claim reads `done`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -1077,6 +1077,8 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 
 **`wave`** (T-0029; `hooks/scripts/crew_wave.py`). Design happens in the main session with the owner — `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket — and `crew_wave.py set --slug <s> --tickets <ids> [--deps <id>=<id>,<id>|none]` records the set in `.work/autopilot/<s>.json` (a set that was started is fixed: `set` refuses to rewrite it, and a second `start` relaunches only the lanes the first one launched, so a new ticket goes in a new set). Approval is the owner's own group approval (T-0024: `/crew:approve T-a T-b`, then `/crew:approve --confirm`). `crew_wave.py plan --set <s>` is read-only: per ticket `eligible` or `refused: <reason>` — no current approval, INDEX status `direction` or closed, a dependency not closed, dependencies `unknown` (no set-file deps and no parseable `(depends on ...)` in the INDEX row: never read as none), a Touch that overlaps another lane's, or more lanes than `autopilot.maxLanes` — then the wave, the later waves and a provisional landing order by crew version. `crew_wave.py start --set <s>` writes one lane file per lane under `.work/autopilot/<s>/lanes/` and prints one launch per lane: an `Agent` with `isolation: worktree`, never any other launch — the Step 1 spike measured that only an isolated lane's hook payload carries its own worktree as `cwd`, so only there does the scope guard judge its writes by its own ticket. Each lane first runs `crew_wave.py lane-init`, which refuses to run in the main checkout, outside `<main>/.claude/worktrees/`, in a worktree another lane names, or where the ticket branch is checked out elsewhere; it checks out or creates `<id>-wave`, copies the ticket folder and `.crew/config.json` in byte-identical, and requires `crew_ticket.accepted` to say `approved` and the scope guard to be at `block` there before it activates the ticket. The lane then implements, refreshes, reviews (reserving and recording rounds through `review_run.py`; a relaunch hands a reserved, unrecorded round back instead of reserving another) and runs `completion_audit.py --check`, and ends with exactly one `crew_wave.py lane-done --state clean|findings|question|failed`. `crew_wave.py collect --set <s>` prints one batch: each lane's state (a missing or unreadable lane file is `unknown`, never `clean`; an `owner-accepted` receipt written while the lane ran marks it `failed`), every open question with its recommendation first, the exact `/crew:approve` lines, the landing order of clean lanes and the later waves. It lands nothing — merging is T-0011's. `crew_wave.py cleanup --set <s>` removes a lane's worktree (`git worktree remove`, never `--force`) and branch (`git branch -d`, never `-D`) only when its branch is on origin's default branch after a fetch and the worktree is clean with nothing untracked; everything else, and anything it cannot tell, is kept and named. **The wave refuses to run unless `scope.mode` is `block` for every lane ticket** (`scope-not-enforcing`, naming the fix; the config is read where the scope guard reads it, so a linked worktree with no `.crew/config.json` of its own is judged by the main checkout's, and its own config, when present, wins whole), and a lane never accepts or rejects a review, approves a plan or merges. The lane prompt forbids it; `crew_ticket.py approve` is already refused by the scope guard, and the guard's subagent never-list refuses the rest from any subagent (a payload carrying a non-empty `agent_type`, as a lane's does): `review_ledger.py --accept|--reject` with every abbreviation argparse once expanded (`review_ledger.py` itself sets `allow_abbrev=False`), and `gh pr merge --admin` — "a lane may not accept, reject or admin-merge". The main session, which sends no `agent_type`, is unchanged. Settings (repo only): `autopilot.maxLanes` — lanes at once, default the resolved `pm.maxDispatches`, which it can only lower; `autopilot.reviewPolicy` — `stop` (default: the lane ends at the first verdict), `clean-only` (a CLEAN round goes on to the done checks) or `fix-and-rereview` (fix and re-review within the ledger's two rounds); anything else reads as `stop`, with a warning. The Workflow tool is not used: the spike could not measure whether crew's hooks fire inside it.
 
+**Cross-session dependencies** (L-0633). A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or `<channel>:<repo>:<id>` in the set file's `deps` (and `--deps`) or the INDEX row's `(depends on ...)`. The channel follows the channel-name rule, the repo is a derived repo key, the id is upper-cased as `crew_coord.py` does; anything else is a malformed set file or `dependencies unknown`. `plan` fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) once per channel, writing objects and nothing else (no ref, no `FETCH_HEAD`), and counts the dependency closed only when exactly one claim for that id reads `done`. A `working` claim (stale or not, its age shown) and a `released` one are `not closed`; no claim, two repositories holding the id under the short form, a corrupt claim, an absent channel, a failed fetch or an unconfigured remote are `unknown`. Each refuses the ticket, and `start` launches no lane for it. Local dependencies are judged first, so a ticket refused on one fetches nothing. A peer's `done` is peer-written data that decides only whether this side may start, never an approval, and every line about it ends `[peer-written]`.
+
 ### Measuring 1.0
 
 `.crew/metrics.jsonl` (append-only; `.crew/metrics.md` from 0.20 becomes this via `/crew:migrate`, with every historical value it cannot recover marked `UNKNOWN`, never `0`) is where crew 1.0's own validation claim gets checked: at least 30% lower median active time or cost against the 0.20 baseline, 100% review-budget enforcement, zero unapproved scope changes, and no rise in escaped defects, over 10–20 matched tickets (docs/review/04-redesign.md, "Validation").
@@ -2957,6 +2959,72 @@ two holders.
 **After `/clear` or a resume, run `crew_coord.py status` first**, before any
 other work, and stop on any `needs the owner` line. (`/crew:autopilot` runs it
 itself before a run or a wave when `.crew/config.json` has a `coord` block.)
+
+### Versioned contracts (`crew_contract.py`)
+
+Since 1.2.0. Two sessions building against each other put the interface between
+them on the same channel as the claims, as a numbered version with a content
+hash, and each side records that its ticket built against that version.
+
+```
+python3 hooks/scripts/crew_contract.py put           --name <n> --file <path>
+python3 hooks/scripts/crew_contract.py put           --name <n> --file <path> --new-version --ticket <id>
+python3 hooks/scripts/crew_contract.py build-against --name <n> --version <N> --ticket <id>
+python3 hooks/scripts/crew_contract.py status        [--name <n>]
+python3 hooks/scripts/crew_contract.py verify        --ticket <id>
+```
+
+`--channel` (not on `verify`, which reads each binding's channel from the
+binding), `--remote` and `--root` default as `crew_coord.py`'s do. A
+version is two files on `crew-coord/<channel>`: `contracts/<n>/v<N>.json`
+(`name`, `version`, `hash` = `sha256:` of the body, `status` `draft` or
+`built-against`, and `built_by`, one `{repo, ticket, hash, at}` per side) and
+`contracts/<n>/v<N>.body`, the interface itself as opaque bytes, 1 MiB at
+most. `<n>` follows the channel-name rule (`[a-z0-9][a-z0-9-]{0,63}`). Every
+write goes through the claims' path: one commit on the fetched tip, a plain
+push, never a force push, claims and every other file carried through.
+
+- **The freeze rule.** `put` writes v1 as a draft and replaces a draft in
+  place. From the first `build-against` the version is `built-against` and
+  frozen: `put` on it is refused, naming who built against it. The only way
+  forward is `put --new-version --ticket <id>`, a draft v(N+1) tied to this
+  side's new ticket for the change; it is refused while the latest version is
+  still a draft. Nothing deletes a version or returns it to `draft`.
+- **Owner approval comes through the ticket.** `build-against` is refused
+  unless `crew_ticket.accepted` reads the ticket `approved`, so only a ticket
+  the owner approved binds to a version. It also checks that the body's sha256
+  is the record's hash.
+- **Two copies of the binding.** `build-against` appends this repository and
+  ticket to `built_by` on the channel (running it again adds nothing), and
+  writes `.work/tickets/<id>/contracts.json` (`{"schema": 1, "bindings":
+  [{remote, channel, name, version, hash}]}`, `remote` being the git remote it
+  was built on) locally, the only local file it writes.
+- **What a peer can rewrite.** Anything on the channel: a peer pushing without
+  this tool can edit a frozen record or body. This tool cannot prevent that;
+  the local binding is the evidence `verify` compares the channel against.
+- **`verify` and the wave refusal** (L-0634). `verify --ticket <id>` checks every
+  binding in the ticket's `contracts.json`: the channel must still show that
+  version with the bound hash, a body whose sha256 is that hash, status
+  `built-against`, and this repository and ticket in `built_by`, read from the
+  remote the binding records (never whatever `coord.remote` says now; a
+  `verify --remote` naming another remote reads that binding unknown). Exit 0 when
+  every binding holds, 1 on a mismatch, 3 when it cannot tell (the fetch fails,
+  the channel is absent, the version's record or body is missing, the record is
+  corrupt, the bindings file cannot be checked, does not parse or holds an
+  empty list — never read as "no bindings"). A
+  ticket with no `contracts.json` is not checked and fetches nothing; a newer
+  version on the channel is information only. `crew_wave.py plan` and `start`
+  run the same check after a ticket's dependencies and refuse it with
+  `contract <n> v<N> changed since <id> built against it` or
+  `contract <n> v<N> unknown (<why>)`; no lane starts for it. Nothing is
+  repaired: the owner's way out is a new contract version and a new ticket on
+  each side.
+- **Unknown is never current.** A record that cannot be fetched or parsed, a
+  version missing one of its two files, versions not numbered 1 to N, or a
+  body whose sha256 is not its hash reads `unknown` (exit 3), and `status`
+  prints it rather than skipping it. Every line with a peer-written field ends
+  `[peer-written]`. Exit codes: 0 ok, 1 refused, 2 usage (checked before any
+  git call), 3 unknown.
 
 ---
 

@@ -2564,6 +2564,45 @@ not moved because the rest of this map was not re-checked against main's later c
   audit. Known limit: a committed test-fixture key is still `needs-owner`. The sabotage mutations are
   hand-run (listed in the verify rule's `why`); registering them is a harness PR (TODO.md).
 
+## Versioned contracts on the coordination channel (T-0031)
+
+Derived on `rush/g3c-contracts` (T-0031, over T-0030's `crew_coord.py` as ported by rush g0), not at
+this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_contract.py` has three commands, `put`, `build-against`
+  and `status` (`main`, `_parser`). Every write is a `change(files)` handed to
+  `crew_coord.Channel.write`, so the fetch, the commit on the fetched tip, the plain push and the
+  retry are crew_coord's; the module adds no git plumbing. The channel and remote are resolved by
+  its own `setup`, a copy of `crew_coord._setup` over public names only (`crew_coord.py` is not
+  edited).
+- DERIVED: a version is `contracts/<name>/v<N>.json` plus `.body` (`record_path`, `body_path`);
+  `versions` reads a malformed tree as `Unknown`, `parse_record` a corrupt record as `(None, why)`.
+  `cmd_put` refuses a `built-against` latest and allows `--new-version` only over one;
+  `cmd_build_against` needs `crew_ticket.accepted` to read `approved`, and writes the binding
+  `.work/tickets/<id>/contracts.json` (`read_bindings`, `write_bindings`) after the push.
+- DERIVED (L-0634): `check_bindings` compares each binding with its fetched channel (`_judge_binding`:
+  the record's hash, the body's sha256, status `built-against`, this repo and ticket in `built_by`)
+  and returns ok / mismatch / unknown; each binding is read from the `remote` it records
+  (`channel_reader` keyed by remote and channel). `verify --ticket` prints it, and `crew_wave._judge`
+  calls it through `_contract_refusal` after the dependencies, sharing the plan's channel cache
+  (`_channel_files` with the binding's remote).
+- JUDGEMENT: the local binding, not the channel, is the evidence: a peer can rewrite the channel.
+  `check_bindings` compares the two and never repairs either. Tests: `plugin/crew/tests/test_crew_contract.py`,
+  under the last rule of `.crew/verify.json`. Sabotage is L-0635, a harness PR.
+
+## Cross-session dependencies in the wave (L-0633)
+
+Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `cross_dep` parses `<channel>:<id>` and
+  `<channel>:<repo>:<id>`; `_dep_id` lets `write_set`, `_valid_set` and `_parse_deps` accept one;
+  `_deps` takes whole `:`-tokens out of an INDEX row's `(depends on ...)` before the plain-id read.
+  `_dep_refusal` judges local dependencies first, then `_cross_refusal`, which reads the channel
+  through `_channel_files` (crew_coord's `Channel.fetch`/`read`, `coord.remote` default `origin`,
+  cached per `plan`) and closes a dependency only on exactly one `done` claim.
+- JUDGEMENT: a peer's `done` decides only whether this side may start. Tests:
+  `plugin/crew/tests/test_crew_wave_coord_deps.py`, under the wave rule of `.crew/verify.json`.
+
 ## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
 
 - DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every

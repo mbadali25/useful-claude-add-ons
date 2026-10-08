@@ -501,6 +501,41 @@ log said was `FAIL <name>`.
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (`manifest.json`, `cache/`) never counts.
 
+## Wave refuses a cross-session dependency
+
+A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or
+`<channel>:<repo>:<id>` in the set file's `deps` or the INDEX row's `(depends on ...)`. The wave
+fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) and counts the dependency
+closed only when exactly one claim for that id reads `done`. Every line about the peer's claim is
+peer-written data and ends `[peer-written]`.
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `dependency <channel>:<id> is not closed: the peer claim reads working (...)` | the peer is still on it; `owner unknown` in the brackets means its heartbeat is past the TTL | wait for the peer's `done`, or take the ticket out of this wave |
+| `... reads released (...); only done closes it` | the peer gave the ticket back unfinished | agree with the peer who finishes it; `released` never closes it |
+| `dependency <channel>:<id> unknown: no claim for <id> on crew-coord/<channel>` | nobody on the channel has claimed that id | check the id and channel with `crew_coord.py status --channel <channel>` |
+| `... unknown: 2 repositories on crew-coord/<channel> hold <id>; name one as <channel>:<repo>:<id>` | the short form is ambiguous | write the long form, with the repo key `status` prints |
+| `... unknown: its claim ... is corrupt (...)` | the claim file does not parse | the claim's holder or the owner repairs it; the wave never guesses |
+| `... unknown: crew-coord/<channel> does not exist on <remote>` or `could not fetch ...` | the channel is absent, or the remote cannot be reached | check the channel name and `coord.remote`, then plan again |
+| `... unknown: '<remote>' (coord.remote) is not a configured remote` | `coord.remote` names no remote of this checkout | `git remote add <remote> <url>`, or fix `coord.remote` |
+| `dependencies unknown: ...` | a dependency is not `<id>`, `<channel>:<id>` or `<channel>:<repo>:<id>` | fix the set file's `deps` or the INDEX row; `crew_wave.py set` refuses a malformed one |
+
+## Wave refuses a ticket's contract
+
+A ticket that built against a contract version (`crew_contract.py build-against`) keeps a binding
+in `.work/tickets/<id>/contracts.json`, naming the git remote it was built on. The wave checks each
+binding, on that remote, after the ticket's dependencies;
+run the same check alone with `crew_contract.py verify --ticket <id>` (exit 0 current, 1 changed,
+3 cannot tell).
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `contract <n> v<N> changed since <id> built against it (...)` | the channel no longer shows that version with the bound hash, a matching body, status `built-against` and this ticket in `built_by`: someone rewrote it | do not rebind: agree a new version (`put --name <n> --new-version --ticket <new id>`) and a new ticket on each side, then build against it |
+| `contract <n> v<N> unknown (...)` | the fetch failed, the binding's remote is no longer configured, the channel or the version's files are missing, or the record is corrupt | fix what the brackets name (remote, channel name), then plan again; nothing is assumed current |
+| `contract bindings unknown (...)` | `contracts.json` cannot be checked, does not parse or holds no binding | restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run `build-against` again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings" |
+
+A newer version on the channel is information only and never refuses. The check writes nothing.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
