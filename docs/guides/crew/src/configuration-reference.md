@@ -118,7 +118,7 @@ Columns:
 |---|---|---|---|---|---|
 | `qa.provider` | both | `"auto"` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | 0.11.0 or earlier | Who reviews: `auto` walks `qa.order`; a named provider is used as-is. |
 | `qa.order` | both | `["codex", "kimi", "copilot", "claude"]` | list of: `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | The reviewers `auto` tries, in order. A list is one leaf, replaced wholesale. |
-| `qa.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/commands/review.md` (expects model id) | 0.16.6 | Claude model used when no other reviewer is available. |
+| `qa.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/commands/review.md` (expects model id) | 0.16.6 | Model a gone pin falls back to, on its family's provider (L-0712). |
 | `qa.codex.model` | both | `null` | not validated - read by `plugin/crew/commands/review.md` (expects string or null) | 0.14.6 | Codex model for review; null passes no flag. |
 | `qa.codex.reasoningEffort` | both | `null` | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `plugin/crew/commands/review.md`; not validated) | 0.14.6 | Codex reasoning effort for review; null passes no flag. |
 | `qa.copilot.model` | both | `null` | not validated - read by `plugin/crew/commands/review.md` (expects string or null) | 0.14.6 | Copilot model for review; null uses the CLI default. |
@@ -130,7 +130,7 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `dev.provider` | both | `"claude"` | `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | Who implements. |
-| `dev.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects model id) | 0.16.6 | Claude model used when the dev provider is unavailable. |
+| `dev.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects model id) | 0.16.6 | Model a gone dev pin falls back to, on its family's provider. |
 | `dev.codex.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 0.14.6 | Codex model for implementation. |
 | `dev.codex.reasoningEffort` | both | `null` | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `plugin/crew/commands/review.md`; not validated) | 0.14.6 | Codex reasoning effort for implementation. |
 | `dev.copilot.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 0.14.6 | Copilot model for implementation. |

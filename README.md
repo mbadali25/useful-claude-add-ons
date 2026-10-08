@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
 - **crew 1.2.1**: Promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING. A deploy now needs an accepted review of the exact tree being deployed, and an upstream promotion row counts only when it records the full 40-character sha; an environment that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
-- **crew 1.2.1**: Autopilot tests spawn crew scripts under an isolated HOME. The autopilot tests no longer read the machine's real `~/.claude/crew/config.json`: every crew script they spawn runs under an isolated HOME.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
