@@ -14,9 +14,11 @@ The active ticket is `crew_ticket.resolve_active`; its Touch is
 `crew_ticket.accepted` (spec.md `## Touch`, from the same bytes the approval
 hash was checked against); a path is in scope by `crew_ticket.in_touch`; and a
 refresh artifact is admitted by the audit's own rule
-(`completion_audit._outside_refresh_artifacts`). Those are the calls the scope
-guard and the completion audit make, so this line and `/crew:done` cannot
-disagree about a path. Until L-0711 this file read the pre-1.0 `- touch:` line
+(`completion_audit._outside_refresh_artifacts`); bookkeeping is what the audit
+leaves out, nothing wider; and a path byte-identical to merged main is not
+counted, from the gate's list as from the ticket-wide one. Those are the calls
+the scope guard and the completion audit make, so on the same tree this line
+names the paths `/crew:done` check 3 refuses. Until L-0711 this file read the pre-1.0 `- touch:` line
 in `.work/tickets/<id>.md` or `.work/cache/<id>.md`, so every 1.0 ticket read
 as "ticket file is missing" and a `sed -i` outside Touch was never named here.
 A 0.20-layout ticket is now could-not-tell, never judged and never in scope.
@@ -45,20 +47,33 @@ import scope_base
 _LEGACY_DIRS = ("tickets", "cache")
 
 
-def legacy_ticket(top):
-    """`(ticket, rel)` when `.work/INDEX.md`'s open ticket exists only in the
-    pre-1.0 layout, else None."""
+def unresolved_index_ticket(top):
+    """Why `.work/INDEX.md`'s open ticket cannot be judged, or None when INDEX
+    names no open ticket. Called only when `crew_ticket.resolve_active` found
+    none, so a ticket INDEX names here is one crew 1.0 could not resolve:
+    pre-1.0, an id `crew_ticket` refuses, or no `.work/tickets/<id>/`
+    directory. Each is could-not-tell (review round 3): "(no open ticket)"
+    is a true statement only when INDEX names none, and an INDEX that cannot
+    be read is not that statement either."""
     try:
         ticket = crew_state.read_work(top).get("ticket")
-        if not ticket or os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
-            return None
-    except Exception:  # noqa: BLE001  # pylint: disable=broad-except  # any INDEX failure: not a legacy ticket
+    except (OSError, ValueError) as exc:
+        return f".work/INDEX.md could not be read ({type(exc).__name__}: {exc})"
+    if not ticket:
         return None
-    for folder in _LEGACY_DIRS:
-        rel = f".work/{folder}/{ticket}.md"
+    try:
+        folder = crew_ticket.ticket_dir(top, ticket)
+    except crew_ticket.TicketError as exc:
+        return f".work/INDEX.md's open ticket {ticket!r} is not a ticket id crew accepts ({exc})"
+    for legacy in _LEGACY_DIRS:
+        rel = f".work/{legacy}/{ticket}.md"
         if os.path.isfile(os.path.join(top, rel)):
-            return ticket, rel
-    return None
+            return (f"{ticket} is in the pre-1.0 layout ({rel}); crew 1.0 reads "
+                    f".work/tickets/{ticket}/spec.md ## Touch - run /crew:migrate")
+    if not os.path.isdir(folder):
+        return (f".work/INDEX.md names {ticket} as open, but .work/tickets/{ticket}/ "
+                "does not exist")
+    return f".work/INDEX.md names {ticket} as open, but crew_ticket did not resolve it"
 
 
 def approved_touch(top, ticket):
@@ -79,23 +94,18 @@ def approved_touch(top, ticket):
     return approval["touch"], approval, None
 
 
-# Crew's own bookkeeping. Updating the ticket, the handoff or the codemap IS
-# the process working, not scope creep, and reporting it on every turn is how a
-# report becomes noise people stop reading. Excluded before the comparison so
-# the line stays about the CHANGE.
-# Split by KIND, because the two need different tests. The directories are a
-# prefix match; the file is an EXACT match. They were one tuple behind a single
-# str.startswith, which silently excluded anything merely beginning with the
-# name: measured, both `TODO.mdx` and `TODO.md.py` were dropped from the report
-# as bookkeeping. A real source file vanishing from a scope report is the one
-# failure this file must not have -- the reassuring output and the
-# uninformative output looking identical again.
-_BOOKKEEPING_DIRS = (".work/", ".crew/")
-_BOOKKEEPING_FILES = ("TODO.md",)
-
-
 def bookkeeping(path):
-    return path.startswith(_BOOKKEEPING_DIRS) or path in _BOOKKEEPING_FILES
+    """What `/crew:done` check 3 leaves out, and nothing wider: `.work/` (the
+    audit's `:(exclude).work` pathspec) and `crew_ticket.CREW_BOOKKEEPING_PATHS`.
+
+    Owner ruling, 2026-10-08 (L-0711 review round 3): acceptance check 5 --
+    the report and the audit agree on the same tree -- wins over the spec's
+    exclusion that froze this file's own wider list (all of `.crew/` and
+    `TODO.md`). That list printed a clean `outside-scope:` for a `TODO.md` or
+    `.crew/verify.json` write outside Touch that the audit refuses. Exact
+    matches only, as before: `TODO.mdx` was never bookkeeping.
+    """
+    return path == ".work" or path.startswith(".work/") or crew_ticket.is_crew_bookkeeping(path)
 
 
 def gate_matches(path, pat):
@@ -168,11 +178,9 @@ def report(root, changed):
     if broken:
         return _could_not_tell(source)
     if not ticket:
-        legacy = legacy_ticket(top)
-        if legacy:
-            return _could_not_tell(
-                f"{legacy[0]} is in the pre-1.0 layout ({legacy[1]}); crew 1.0 reads "
-                f".work/tickets/{legacy[0]}/spec.md ## Touch - run /crew:migrate")
+        unresolved = unresolved_index_ticket(top)
+        if unresolved:
+            return _could_not_tell(unresolved)
         sys.stderr.write("outside-scope: (no open ticket)\n")
         return 0
 
@@ -188,12 +196,16 @@ def report(root, changed):
     # move. Union the two rather than replace: this report may name MORE
     # than the gate saw, never less, and when the base cannot be resolved the
     # gate's list still stands and the line below says the union did not.
+    # Review round 3: the merged-main filter reaches the gate's list too. That
+    # list is diffed from the last verified commit, so after a merge of main
+    # it carries main's own changes; a path the audit drops as byte-identical
+    # to merged main is dropped from it before the union.
     base_note = None
     try:
         base, source, reason = scope_base.resolve(top, ticket)
-        ticket_wide = ticket_changes(top, base) if base else None
+        ticket_wide, dropped = ticket_changes(top, base) if base else (None, set())
     except Exception as exc:  # pylint: disable=broad-except
-        base, source, ticket_wide = None, None, None
+        base, source, ticket_wide, dropped = None, None, None, set()
         reason = f"could not resolve: {exc}"
     # The marker goes ON the outside-scope line, not only on the scope-base
     # line under it. A reader (or a grep) takes the first line; a bare
@@ -211,6 +223,7 @@ def report(root, changed):
         note = reason.removeprefix("(fallback) ")
         suffix = "" if source == scope_base.RECORDED else f" (fallback: {note})"
         base_note = f"scope-base: {base[:12]} ({reason})"
+        changed = [p for p in changed if p not in dropped]
         changed = sorted(set(changed) | set(ticket_wide))
 
     extra = outside(top, changed, globs, approval)
@@ -229,14 +242,21 @@ def report(root, changed):
 
 
 def ticket_changes(top, base):
-    """The completion audit's own changed list since `base` (review round 1):
-    both ends of a rename, and paths byte-identical to merged main left out,
-    exactly as `/crew:done` check 3 counts them. None when git could not
-    answer, so the line says the list is this turn's only."""
+    """`(kept, dropped)`. `kept` is the completion audit's own changed list
+    since `base` (review round 1): both ends of a rename, and paths
+    byte-identical to merged main left out, exactly as `/crew:done` check 3
+    counts them. `dropped` is the set that rule left out -- the audit's own
+    second listing -- for the gate's list to lose too (review round 3).
+    `(None, set())` when git could not answer, so the line says the list is
+    this turn's only."""
+    merged = merged_main.resolve(top, base)
     try:
-        return completion_audit.changed_paths(top, base, merged_main.resolve(top, base))
+        kept = completion_audit.changed_paths(top, base, merged)
+        if not merged.get("applies"):
+            return kept, set()
+        return kept, set(completion_audit.changed_paths(top, base)) - set(kept)
     except RuntimeError:
-        return None
+        return None, set()
 
 
 if __name__ == "__main__":

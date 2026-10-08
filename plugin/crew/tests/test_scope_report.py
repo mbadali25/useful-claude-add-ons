@@ -67,7 +67,7 @@ def _sed_i(root, rel):
     if sed is None:
         pytest.skip("sed not installed - the shell-route case was NOT run")
     subprocess.run([sed, "-i", "s/x = 1/x = 2/", rel], cwd=str(root), check=True,
-                   capture_output=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, stdin=subprocess.DEVNULL, timeout=120)
 
 
 # --------------------------------------------------------- must-block / allow
@@ -181,6 +181,19 @@ def test_a_pre_1_0_ticket_is_could_not_tell_never_in_scope(repo, folder):
     assert ".work/tickets/T-9/spec.md" in first
 
 
+def test_an_index_ticket_with_no_ticket_folder_is_could_not_tell(repo):
+    """Review round 3. INDEX.md names an open ticket that has neither a 1.0
+    directory nor a pre-1.0 file: "(no open ticket)" would be false. The
+    line says which ticket and what is missing."""
+    (repo / ".work").mkdir()
+    (repo / ".work" / "INDEX.md").write_text("| T-7 | in progress |\n", encoding="utf-8")
+
+    first = _first(_run(repo, ["other/keep.py"]))
+
+    assert first == ("outside-scope: (could not tell - .work/INDEX.md names T-7 as open, "
+                     "but .work/tickets/T-7/ does not exist)")
+
+
 def test_no_open_ticket_says_so(repo):
     assert _first(_run(repo, ["src/app.py"])) == "outside-scope: (no open ticket)"
 
@@ -201,11 +214,15 @@ def test_outside_a_repository_is_could_not_tell(tmp_path):
     ("other/keep.py",),
     ("src/app.py", "other/keep.py", "secret/x.py"),
     ("docs/diagrams/flow.mmd",),
+    ("TODO.md",),
+    ("TODO.md", "src/app.py"),
 ])
 def test_the_report_and_the_completion_audit_agree(repo, writes):
     """Acceptance 5: on the same tree, the paths the report names are the
     paths `/crew:done` check 3 refuses -- a refresh artifact admitted by
-    both, through the audit's own admission rule."""
+    both, through the audit's own admission rule. `TODO.md` is counted by
+    both (owner ruling, review round 3: acceptance 5 wins over the frozen
+    bookkeeping exclusion)."""
     ready(repo)
     for rel in writes:
         path = repo / rel
@@ -218,6 +235,23 @@ def test_the_report_and_the_completion_audit_agree(repo, writes):
     named = set(first.removeprefix("outside-scope:").split())
     refused = set() if ok else set(lines[1].split())
     assert named == refused
+
+
+def test_a_tracked_crew_file_outside_touch_is_named_as_the_audit_refuses(repo):
+    """Review round 3. A tracked `.crew/` file (this repository tracks
+    `.crew/verify.json`) written outside Touch: the audit refuses it, so the
+    report names it, not a clean line."""
+    (repo / ".crew" / "verify.json").write_text("{}\n", encoding="utf-8")
+    git(repo, "add", "-f", ".crew/verify.json")
+    git(repo, "commit", "-qm", "track verify.json")
+    ready(repo)
+    (repo / ".crew" / "verify.json").write_text('{"rules": []}\n', encoding="utf-8")
+
+    first = _first(_run(repo, [".crew/verify.json"]))
+    ok, lines = completion_audit.audit(str(repo), "T-1")
+
+    assert (first, ok, lines[1].split()) == (
+        "outside-scope: .crew/verify.json", False, [".crew/verify.json"])
 
 
 def test_a_rename_into_touch_names_the_old_path(repo):
@@ -245,6 +279,24 @@ def test_a_path_identical_to_merged_main_is_not_named(repo):
     git(repo, "merge", "-q", "--no-edit", "main")
 
     first = _first(_run(repo))
+    ok, _ = completion_audit.audit(str(repo), "T-1")
+
+    assert (first, ok) == ("outside-scope:", True)
+
+
+def test_the_gates_list_loses_paths_identical_to_merged_main(repo):
+    """Review round 3. The gate's list is diffed from its last verified
+    commit, so after a merge of main it carries main's own change. The
+    merged-main filter reaches it too: the report and the audit agree."""
+    git(repo, "checkout", "-q", "-b", "work")
+    ready(repo)
+    git(repo, "checkout", "-q", "main")
+    (repo / "other" / "keep.py").write_text("x = 9\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "main moves on")
+    git(repo, "checkout", "-q", "work")
+    git(repo, "merge", "-q", "--no-edit", "main")
+
+    first = _first(_run(repo, ["other/keep.py"]))
     ok, _ = completion_audit.audit(str(repo), "T-1")
 
     assert (first, ok) == ("outside-scope:", True)
@@ -286,7 +338,8 @@ _SCENARIOS = ("outside", "inside", "no-spec", "pre-1.0")
 def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
     """Acceptance 7: the Stop gates hand their changed list to this one
     script, so bash and PowerShell print the line the script prints, for
-    acceptance checks 1-4. Neither blocks on it: report-only."""
+    acceptance checks 1-4. Neither blocks on it: report-only, so the gate
+    exits 0 on these trees (nothing else in them can block)."""
     _scenario(repo, scenario)
     expected = _first(_run(repo))
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
@@ -305,15 +358,25 @@ def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
     done = crew_fixtures.run_gate(cmd, input="{}", cwd=str(repo), env=env,
                                   capture_output=True, text=True, check=False)
 
-    assert expected in done.stderr.splitlines(), done.stderr
+    assert (expected in done.stderr.splitlines(), done.returncode) == (True, 0), done.stderr
 
 
 # -------------------------------------------------------------- bookkeeping
 
-def test_bookkeeping_excludes_the_exact_file_only():
-    assert scope_report.bookkeeping("TODO.md")
-    assert scope_report.bookkeeping(".work/INDEX.md")
-    assert scope_report.bookkeeping(".crew/verify.json")
+@pytest.mark.parametrize("path,expected", [
+    (".work/INDEX.md", True),
+    (".crew/.scope-base", True),
+    (".crew/metrics.jsonl", True),
+    ("TODO.md", False),
+    (".crew/verify.json", False),
+    (".crew/codemap/crew.md", False),
+])
+def test_bookkeeping_is_what_the_audit_leaves_out(path, expected):
+    """Review round 3 (owner ruling): `.work/` and
+    `crew_ticket.CREW_BOOKKEEPING_PATHS`, the audit's exclusions, and nothing
+    wider. `.crew/codemap/` is not bookkeeping: it is a refresh artifact,
+    admitted by the audit's own rule or refused with it."""
+    assert scope_report.bookkeeping(path) is expected
 
 
 @pytest.mark.parametrize("path", ["TODO.mdx", "TODO.md.py", "TODO.market.md"])
@@ -329,7 +392,7 @@ def test_a_file_merely_starting_with_todo_md_is_not_bookkeeping(path):
 def test_a_todo_lookalike_reaches_the_report(repo):
     ready(repo)
 
-    assert _first(_run(repo, ["TODO.md", "TODO.mdx"])) == "outside-scope: TODO.mdx"
+    assert _first(_run(repo, ["TODO.md", "TODO.mdx"])) == "outside-scope: TODO.md TODO.mdx"
 
 
 # ----------------------------------------------------------------- parity

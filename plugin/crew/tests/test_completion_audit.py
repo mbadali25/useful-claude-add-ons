@@ -316,7 +316,7 @@ def _sed_i(root, rel):
     if sed is None:
         pytest.skip("sed not installed - the shell-route case was NOT run")
     subprocess.run([sed, "-i", "s/x = 1/x = 2/", rel], cwd=str(root), check=True,
-                   capture_output=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, stdin=subprocess.DEVNULL, timeout=120)
 
 
 def test_check_refuses_a_sed_i_write_outside_touch(repo):
