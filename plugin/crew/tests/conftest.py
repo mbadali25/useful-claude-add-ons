@@ -61,14 +61,17 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     A monkeypatched attribute is per-name, not per-value: rebinding one module
     attribute does nothing to another module's binding of the same object.
     """
+    # The private patch (see `_crew_isolation_patch`), under the name the
+    # sabotage suite's anchors on this fixture read.
+    monkeypatch = _crew_isolation_patch
     unused = str(tmp_path / "unused-global-config.json")
-    _crew_isolation_patch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
-    _crew_isolation_patch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
     # T-0050: every crew config write takes a backup first. An ENVIRONMENT
     # variable rather than a patched attribute, so a test's subprocess (a
     # hook, the CLI) inherits it too and never writes under the real
     # `~/.claude/crew/backups`.
-    _crew_isolation_patch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
+    monkeypatch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
 
     # Same rule, second environment channel. `pm_brief.main` resolves its root
     # as `payload["cwd"] or $CLAUDE_PROJECT_DIR or os.getcwd()`, so a test that
@@ -85,14 +88,14 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # Cleared for every test by default. A test that wants the variable sets it
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
-    _crew_isolation_patch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     # Same rule for T-0016's session records: auto-clear reads
     # `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and every case points HOME at
     # a fixture -- so an ambient CLAUDE_CONFIG_DIR would be the one way left to
     # read the developer's real records. crew_fixtures.bind_session sets it
     # back, to the fixture, wherever a case wants a record.
-    _crew_isolation_patch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    _crew_isolation_patch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing
@@ -111,7 +114,7 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # of its own (URL rewrites, credential.interactive), and overwriting slots
     # 0-1 while setting the count to 2 silently dropped all three.
     for name, value in fixture_git_env(os.environ).items():
-        _crew_isolation_patch.setenv(name, value)
+        monkeypatch.setenv(name, value)
 
     # Fourth channel (L-0557): pwsh's multicore-JIT startup profile,
     # `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`. Every
@@ -132,8 +135,8 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # numbers each one, so no two tests share it, and pytest removes it with
     # the basetemp.
     xdg_cache = tmp_path_factory.mktemp("xdg-cache")
-    _crew_isolation_patch.setenv("XDG_CACHE_HOME", str(xdg_cache))
-    _crew_isolation_patch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg_cache))
+    monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
 
 
 @pytest.fixture(autouse=True)
