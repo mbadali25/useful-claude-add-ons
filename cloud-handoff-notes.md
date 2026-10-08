@@ -2,14 +2,13 @@
 
 ## >>> RESUME HERE ("read Cloudhead") <<<
 
-### >>> CURRENT (2026-10-08T02:45Z): crew 1.2.0 feature rush is live - start there <<<
-Session `session_01H49aKnVMcvefcadqBGmuMu`. Everything below this block is the previous rush (closed at crew 1.1.0) and is history.
+### >>> CURRENT (2026-10-08T04:40Z): crew 1.2.0 SHIPPED - the 1.2.0 rush is complete <<<
+Session `session_01H49aKnVMcvefcadqBGmuMu`. Everything below this block is older history.
 
-1. `git fetch origin claude/eloquent-wozniak-iqb4hf` and read **`cloud-handoff-rush-1.2.0.md`** (sections RESUME HERE, Standing rules, State) and `pending-tickets.md` "Feature rush 1.2.0" on that branch (PR #514).
-2. State: **10 of 12 waves on main** (`main` = `7a62e848`, crew 1.1.19). Remaining in order: G6a (#570, crew 1.1.20) -> G6b (`rush/g6b-goals-sleep`, 1.1.21) -> H2b (`rush/h2b-sabotage`, sets **1.2.0**, harness-only, lands alone).
-3. Side PRs: #571 (README install-URL re-pin, merge when green); #568 (Windows self-hosted runner switch, **hold**: winrepo2 trial failed).
-4. Tools are copied in `docs/handoff/cloud/rush-1.2.0/` on that branch; the scratchpad does not survive.
-5. Verify every head on GitHub before acting, then give the owner a short table.
+- `main` = crew **1.2.0** (#575 H2b, `3f2c4244`); `release/1.2.0` == main. All 12 waves + H2a/H2b landed; source PRs closed (landed via port where GitHub did not mark them).
+- The rush's full record is now ON MAIN: `cloud-handoff-rush-1.2.0.md`, `pending-tickets.md` ("Feature rush 1.2.0"), tools in `docs/handoff/cloud/rush-1.2.0/` (#514 merged).
+- Open for the next session: follow-ups C-0049..C-0064 (+C-0033/35/36/38/41/48/62; next free C-0065; one more to mint for 10 ungticketed STILL-GREEN sabotage entries); #402 L-0540 (owner's seed); #479 code-map refresh (run `/crew:onboard --refresh` / `graphify update .`); #544/#545 (other session, stale 1.1.5).
+- Runners: Linux self-hosted live (`CREW_RUNNER=self-hosted`, set by hand). Windows stays GitHub-hosted; `ci/windows-self-hosted` branch (closed #568) holds the switch for when winrepo2 is fixed. Owner: `RUNNER_START_TOKEN` 404.
 
 
 Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
