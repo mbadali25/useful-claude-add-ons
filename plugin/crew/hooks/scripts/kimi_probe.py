@@ -401,10 +401,14 @@ def _git_path():
 def _git_env():
     """The caller's environment with every GIT_* variable removed (GIT_DIR,
     GIT_WORK_TREE, GIT_CEILING_DIRECTORIES, ... would change git's answer)
-    and git's messages in the C locale, so the one answer matched is stable."""
+    and git's messages in the C locale, so the one answer matched is stable.
+    GIT_DISCOVERY_ACROSS_FILESYSTEM=1: a TMPDIR on its own mount (a tmpfs, a
+    CI runner's work volume) otherwise stops the search at the mount point
+    with a two-line "Stopping at filesystem boundary" answer, which is
+    could-not-tell, and a repository above that mount would go unseen."""
     env = {k: v for k, v in os.environ.items()
            if not k.upper().startswith("GIT_") and k.upper() != "LANGUAGE"}
-    env.update(LC_ALL="C", LANG="C")
+    env.update(LC_ALL="C", LANG="C", GIT_DISCOVERY_ACROSS_FILESYSTEM="1")
     return env
 
 

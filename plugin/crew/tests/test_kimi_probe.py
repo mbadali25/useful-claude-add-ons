@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -654,8 +655,11 @@ def _git_answers(monkeypatch, code=None, stderr=b"", raise_=None):
         if list(argv[1:]) != ["rev-parse", "--git-dir"]:
             check = kwargs.pop("check", False)
             return real(argv, *args, check=check, **kwargs)
-        assert kwargs["env"]["LC_ALL"] == "C" and kwargs["stdin"] is subprocess.DEVNULL \
-            and kwargs["timeout"] and not any(k.startswith("GIT_") for k in kwargs["env"])
+        env = kwargs["env"]
+        assert env["LC_ALL"] == "C" and kwargs["stdin"] is subprocess.DEVNULL \
+            and kwargs["timeout"] and env.get("GIT_DISCOVERY_ACROSS_FILESYSTEM") == "1" \
+            and not any(k.startswith("GIT_") for k in env
+                        if k != "GIT_DISCOVERY_ACROSS_FILESYSTEM")
         if raise_ is not None:
             raise raise_
         return subprocess.CompletedProcess(argv, code, b"", stderr)
@@ -684,6 +688,23 @@ def test_l0708_any_other_git_answer_is_could_not_tell(fake, home, monkeypatch, t
 
     assert (result["state"], calls, made) == ("unknown", [], [])
     assert "could not be told" in result["reason"] and named in result["reason"], result
+
+
+def _own_mount_dir():
+    """A writable directory on a different mount from its parent, or None."""
+    for top in ("/dev/shm", f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else ""):
+        if top and os.path.isdir(top) and os.access(top, os.W_OK) \
+                and os.stat(top).st_dev != os.stat(os.path.dirname(top)).st_dev:
+            return top
+    return None
+
+
+@pytest.mark.skipif(_own_mount_dir() is None, reason="no writable directory on its own mount")
+def test_l0708_a_tmpdir_on_its_own_mount_is_outside_every_repository():
+    """A self-hosted runner's TMPDIR sat on its own mount: git stopped at the
+    mount point with a two-line answer and every probe read could-not-tell."""
+    with tempfile.TemporaryDirectory(dir=_own_mount_dir()) as here:
+        assert kimi_probe._git_says(here) == ""  # pylint: disable=protected-access
 
 
 def test_l0708_the_refusal_names_the_answer_the_check_acted_on(fake, home, monkeypatch,
