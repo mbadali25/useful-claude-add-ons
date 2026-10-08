@@ -48,6 +48,7 @@ _UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
               '            top, ["ls-files", "-z", "--others", "--exclude-standard"]) if p}\n')
 _DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
+REFRESH_TEST = os.path.join(CREW, "tests", "test_refresh_check.py")
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 TICKET = os.path.join(_S, "crew_ticket.py")
 GATE_SH = os.path.join(_S, "verify-gate.sh")
@@ -340,6 +341,11 @@ REFRESH_MUTATIONS = (
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
+    # H2b (Codex FIX on C-0038): the predicate's own guard, in the test file.
+    ("any rule that runs pytest covers a guard module again", REFRESH_TEST,
+     "            and any(_imports(test, stem) for test in _rule_suites(rule)))\n",
+     '            and any("pytest" in c for c in rule["run"]))\n',
+     _T + "test_the_tool_resolution_catch_all_does_not_cover_the_guard_modules"),
 )
 
 # The .ps1 twins need pwsh to run their test; without it the [ps1] cases skip

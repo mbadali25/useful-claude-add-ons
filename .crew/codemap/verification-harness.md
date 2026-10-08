@@ -802,7 +802,8 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
   `RESUME_MUTATIONS`; T-0029's "unknown dependencies read as none" back in `WAVE_MUTATIONS`.
 - `sabotage_refresh.py`'s "an edit to scope_guard.py runs no pytest rule" (C-0038): its span now
   also drops the wave rule's listing, and `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule`
-  no longer counts a pattern that matches every module (L-1508's `plugin/**/*.py` rule).
+  counts a rule only when it maps the module and its pytest run names a suite that imports it
+  (`_runs_module_suite`), so L-1508's `plugin/**/*.py` rule no longer stands in for one.
 
 ## Entry points
 
