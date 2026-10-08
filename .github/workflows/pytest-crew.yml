@@ -341,6 +341,14 @@ jobs:
         fetch-depth: 2
     - name: Decide whether the Windows jobs run
       id: decide
+      env:
+        # Repo variable CREW_WINDOWS_RUNNER: a JSON array of runner labels
+        # (e.g. ["self-hosted","windows","x64"]) moves every crew-windows-*
+        # job onto a self-hosted Windows pool. Unset, empty or not a JSON array
+        # of strings: windows-latest, as before. Never for a fork's PR (the
+        # CREW_RUNNER clause): fork code must not reach a self-hosted machine.
+        WINDOWS_RUNNER: ${{ vars.CREW_WINDOWS_RUNNER }}
+        SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       # A diff that cannot be computed RUNS them: an unknown answer must not
       # read as "nothing under plugin/crew changed".
       run: |
@@ -359,7 +367,16 @@ jobs:
         # Where every crew-windows-* job runs, as JSON for fromJSON(): a label
         # string or a label array. The ONE place to retarget them (e.g. at a
         # self-hosted Windows pool); the gate's check name does not change.
-        echo 'runs_on="windows-latest"' >> "$GITHUB_OUTPUT"
+        runs_on='"windows-latest"'
+        if [ -n "$WINDOWS_RUNNER" ] && [ "$SAME_REPO" = true ]; then
+          if labels=$(printf '%s' "$WINDOWS_RUNNER" | jq -ce 'if type == "array" and length > 0 and all(.[]; type == "string" and length > 0) then . else error("labels") end' 2>/dev/null); then
+            runs_on=$labels
+            echo "::notice::crew-windows-* jobs run on the self-hosted pool $labels (repo variable CREW_WINDOWS_RUNNER)."
+          else
+            echo "::warning::CREW_WINDOWS_RUNNER is not a JSON array of runner labels, so the Windows jobs run on windows-latest."
+          fi
+        fi
+        echo "runs_on=$runs_on" >> "$GITHUB_OUTPUT"
 
   crew-windows-default:
     name: crew-windows-default (${{ matrix.group }}/6)

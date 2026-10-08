@@ -293,6 +293,9 @@ EXCLUDED_CI = (
     ("pytest-crew.yml",
      "changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml)",
      "crew-windows-decide: whether the Windows jobs run on a PR (T-0110, L-0577); checks nothing"),
+    ("pytest-crew.yml", "labels=$(printf '%s' \"$WINDOWS_RUNNER\" | jq -ce *",
+     "crew-windows-decide: which runner pool the Windows jobs use (CREW_WINDOWS_RUNNER); "
+     "checks nothing"),
     ("pytest-crew.yml", "python3 scripts/check-windows-shards.py *",
      "the Windows fan-in (L-0577): reads CI job results and artifacts, which a lane does not "
      "have; its suite scripts/_test/windows-shards.py is the windows-shards step"),
