@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T04:06Z
+Last updated: 2026-10-08T04:11Z
 
 ## >>> RESUME HERE
 
@@ -110,6 +110,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T04:11Z H2b Codex FIX done in ffa949ce: a rule covers a guard module only if its pytest run names a test file importing it; must-allow and must-block cases plus a new sabotage entry, all RED. Step 7 checks clean (tooling-pr OK, 9 harness paths). Sent go for the 1.2.0 version commit and PR.
 - 2026-10-08T04:06Z Codex on H2b 3bc9ef5d: 0 BLOCK, 1 FIX. The stricter refresh-allowance test rejects a valid broad mapping (zz_no_such_module proxy). Sent to the H2b builder: judge by whether the rule runs the relevant suite, plus must-allow/must-block cases. 1.2.0 commit held.
 - 2026-10-08T04:05Z WAVE 12 MERGED #574 to main at bed49e43 (crew 1.1.21). All 12 feature waves are on main. Released H2b to steps 7-9.
 - 2026-10-08T04:02Z H2b steps 1-6 done at 3bc9ef5d: 510/510 entries RED on the merged tree. L-0651 (k) test added. C-0038 scope_guard entry fixed by a stricter refresh-allowance test. Codex review of the apply commit started. Waiting for wave 12 #574 before merging main and writing 1.2.0.
