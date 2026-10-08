@@ -490,10 +490,13 @@ _CREW_TEST_TMP+=("$PD")
 {"version":1,"rules":[],"always":[],"default":[],"unmapped":"warn",
  "environments":{
    "qa":{"deploy":["./scripts/deploy.sh qa"],"smoke":["true"],
-         "rollback":"none","rollbackReason":"qa is rebuilt on every push","promotesTo":"production"},
-   "staging":{"deploy":["./scripts/deploy.sh staging"],"smoke":["true"]},
+         "rollback":"none","rollbackReason":"qa is rebuilt on every push","promotesTo":"production",
+         "requireReview":false,"reviewReason":"fixture: test_promote_gate_review.py owns review"},
+   "staging":{"deploy":["./scripts/deploy.sh staging"],"smoke":["true"],
+              "requireReview":false,"reviewReason":"fixture"},
    "production":{"requires":["qa"],"deploy":["./scripts/deploy.sh prod"],
-                 "rollback":"docs/runbooks/rollback.md","requireHuman":true}}}
+                 "rollback":"docs/runbooks/rollback.md","requireHuman":true,
+                 "requireReview":false,"reviewReason":"fixture"}}}
 EOF
   echo '{}' > .crew/config.json
   printf '#!/bin/sh\necho deployed\n' > scripts/deploy.sh
@@ -512,8 +515,8 @@ pexpect() {
   local got; got=$(pgate "$2")
   if [ "$got" = "$1" ]; then pass; else fail "promote-gate want=$1 got=$got  $3"; fi
 }
-qa_row() {  # write an all-pass qa row for $1
-  printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$1" > "$ROW"
+qa_row() {  # write an all-pass qa row for $1, written out as the FULL sha (L-0703)
+  printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$(git -C "$PD" rev-parse "$1")" > "$ROW"
 }
 
 # Same jq note as above: promote-gate.sh has the identical jq/python-fallback
@@ -576,7 +579,7 @@ qa_row "$SHA"
 
 # break: qa row exists but a gate in it failed
 rm -f "$PD/.crew/.deploy-in-flight"
-printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | FAIL | pass | tester |\n' "$SHA" > "$ROW"
+printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | FAIL | pass | tester |\n' "$(git -C "$PD" rev-parse "$SHA")" > "$ROW"
 pexpect 2 './scripts/deploy.sh prod' 'qa row records a FAILED gate - must block'
 qa_row "$SHA"
 

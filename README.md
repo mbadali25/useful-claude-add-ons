@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
-- **crew 1.2.0**: Sabotage coverage for the 1.2.0 groups (H2b harness lane). Crew's mutation suite now proves the guards every 1.2.0 group added: 511 entries, each red on its named test, cover the cloud guard's workflow-dispatch reader, GitHub deploys, cross-session contracts and messaging, autopilot's stops, fix phase, goals and sleep.
+- **crew 1.2.1**: Promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING. A deploy now needs an accepted review of the exact tree being deployed, and an upstream promotion row counts only when it records the full 40-character sha; an environment that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
