@@ -3228,8 +3228,9 @@ not check (L-0710): a rule deferred to CI (`chronic`), a `skipped` or
 `unverified` rule, a turn where `0 rules ran`, or no record at all. Check 2
 passes on `CI_RECEIPT VERIFIED` (exit 0), on `NO_GATE` (exit 4), or on a record
 with nothing outstanding (`verify   no rules recorded`: a clean pass empties it)
-and `.crew/.verify-verified-at` at HEAD (a clean local `/crew:verify --all`);
-anything else refuses the close. The workflow is
+together with `GATE VERIFIED` from `review_gate.gate_state` (marker at HEAD and
+the working tree's fingerprint unchanged since that pass; the marker alone
+survives an uncommitted edit). Anything else refuses the close. The workflow is
 not a required check on `main`; making it one is a branch-protection setting.
 
 The receipt's per-command list is informative only. A command reads PASS, FAIL,

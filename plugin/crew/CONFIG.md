@@ -3022,8 +3022,10 @@ settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
 (the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
 on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
 nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
-pass empties it) and `.crew/.verify-verified-at` at HEAD (a clean local
-`/crew:verify --all`); anything else refuses the close. No config key
+pass empties it) together with `review_gate.gate_state` answering `VERIFIED`
+(the marker names HEAD and the working tree still has the fingerprint that
+pass wrote; a marker at HEAD alone survives an uncommitted edit). Anything
+else refuses the close. No config key
 changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an

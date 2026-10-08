@@ -17,21 +17,21 @@ still `NEEDS_REPLAN` (budget spent, no successor plan approved) all refuse — s
 
 ## Check 2 — the verify gate, settled for HEAD
 
-The Stop hook refuses a red turn but never a deferral: a rule priced over `verify.stopBudgetSeconds`
-is deferred to CI (`chronic`), and a turn where `0 rules ran` records nothing (L-0710). So this check
-needs evidence that HEAD itself passed every rule:
+Stop never refuses a deferral: a rule over `verify.stopBudgetSeconds` is deferred to CI (`chronic`), and a turn
+where `0 rules ran` records nothing (L-0710). So this check needs evidence that HEAD itself passed every rule:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import review_gate; print("GATE %s %s" % review_gate.gate_state("."))' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
 ```
 
 It passes on exit 0 `CI_RECEIPT VERIFIED` (the `verify-gate` workflow ran the whole map, unbudgeted, on
 exactly this committed tree), on exit 4 `NO_GATE` (no verify map, or the gate stood down), or when the
-`verify` line holds nothing outstanding (`no rules recorded`: a clean pass empties the record) and
-`.crew/.verify-verified-at` names HEAD. Anything else refuses done (a `chronic`, `unverified`, `skipped` or
-`fail` count, `no gate record yet`, a marker behind HEAD): quote the `CI_RECEIPT` line, then push and let the workflow run, or run
-`/crew:verify --all` here, and rerun this command.
+`verify` line reads `no rules recorded` (a clean pass empties the record) AND the `GATE` line reads
+`VERIFIED` (the marker names HEAD and the tree still has that pass's fingerprint: a marker at HEAD alone also
+survives an uncommitted edit). Anything else (a `chronic`, `unverified`, `skipped` or `fail` count, `no gate record
+yet`, `GATE UNVERIFIED`/`UNKNOWN`) refuses: quote both lines, push for the workflow or run `/crew:verify --all`, rerun.
 
 ## Check 3 — the completion audit
 

@@ -199,7 +199,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   **Fix:** commit and push the branch so the `verify-gate` workflow runs the whole map, then rerun
   `/crew:done` once `CI_RECEIPT VERIFIED` names HEAD; or run `/crew:verify --all` here, which empties
-  the record (`verify   no rules recorded`) and writes `.crew/.verify-verified-at` = HEAD. `UNKNOWN` (exit 3) is `gh`, the
+  the record (`verify   no rules recorded`) and leaves the gate's `GATE VERIFIED` answer for this
+  tree. An uncommitted edit after that pass turns it back to `GATE UNVERIFIED`: commit, then re-run. `UNKNOWN` (exit 3) is `gh`, the
   network or the artifact, never a pass; a branch that changes the gate or the workflow itself
   never gets a VERIFIED receipt, so it needs the local run.
 
