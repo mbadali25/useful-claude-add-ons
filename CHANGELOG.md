@@ -18,15 +18,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   from `crew_ticket.accepted` (`.work/tickets/<id>/spec.md ## Touch`), membership from
   `crew_ticket.in_touch`, the changed list from `completion_audit.changed_paths` (both rename
   ends; merged-main-identical paths not counted) and refresh artifacts through the completion
-  audit's own admission, so it names what `/crew:done` check 3 refuses. It read the pre-1.0 `- touch:` line in
+  audit's own admission, so it names what `/crew:done` check 3 refuses. The gate's own list loses
+  the merged-main-identical paths too before it joins the ticket-wide one. It read the pre-1.0 `- touch:` line in
   `.work/tickets/<id>.md` / `.work/cache/<id>.md` before.
 - **Could not tell.** No spec.md, no `## Touch`, an unapproved or stale Touch, a broken
-  active-ticket pointer, a pre-1.0 ticket and a non-repository each print
+  active-ticket pointer, a pre-1.0 ticket, an `INDEX.md` open ticket with no
+  `.work/tickets/<id>/` folder and a non-repository each print
   `outside-scope: (could not tell - <why>)`; a pre-1.0 ticket is never judged in scope.
 - **Unchanged.** The line stays report-only (the gates' exit status is untouched). `/crew:done`
   check 3 already refused a `sed -i` write outside Touch on a 1.0 ticket; L-0711 adds the test
-  that proves it (`test_check_refuses_a_sed_i_write_outside_touch`). The bookkeeping exclusions
-  (`.work/`, `.crew/`, `TODO.md`) are unchanged.
+  that proves it (`test_check_refuses_a_sed_i_write_outside_touch`).
+- **Changed: bookkeeping.** The line leaves out only what the audit leaves out (`.work/` and
+  `crew_ticket.CREW_BOOKKEEPING_PATHS`), so a `TODO.md` or tracked `.crew/` write outside Touch
+  is named, as `/crew:done` check 3 refuses it. It used to drop all of `.crew/` and `TODO.md`
+  (owner ruling 2026-10-08: report/audit agreement wins over the spec's frozen exclusion).
 - **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
   (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
 
