@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T05:44Z
+Last updated: 2026-10-08T06:17Z
 
 ## >>> RESUME HERE
 
@@ -105,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T06:17Z 1.2.1 lane pushed at 3537f2e3, no version commit. Merge found a gap: the no-python NP_SHAPE allowed a malformed github entry that python and ps1 refuse; fixed in 09c12b9b with must-block/allow cases and a sabotage entry. 82/82 promote-tree RED, 684 promote tests pass. Codex review of the lane merge logic running.
 - 2026-10-08T05:44Z L-0703 done: head 0fa6614e, Codex CLEAN round 4 (6 findings fixed across 3 rounds, sh+ps1). Promote-tree sabotage 60/60 RED. Owner WIP kept. Lane builder merging it; Codex review of the lane's combined promote-gate rule before 1.2.1.
 - 2026-10-08T05:19Z 1.2.1 lane at 1c0b53d8 (unpushed): L-0703 and L-0704 merged onto main. Promote-gate rule combined: main's newest-row rule + L-0703 full-sha (the newest FULL-sha row decides). Fixtures of 25 main promote tests updated, 1 slow test re-timed, 1 sabotage entry re-aimed. 67/67 promote-tree RED. 1 pre-existing STILL GREEN on main ('unparseable map as not a deployment'), harness, out of scope. Waiting on the L-0703 fixer.
 - 2026-10-08T04:49Z L-0704 done: head 1164e01e, Codex r2 CLEAN. New test test_status_mode_line_ignores_a_parent_home_set_to_plan fails when isolation is removed and passes restored.
