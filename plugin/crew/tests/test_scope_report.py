@@ -329,6 +329,10 @@ def test_merged_main_could_not_tell_reaches_the_scope_line(repo):
             any("could not tell" in line for line in lines)) == (True, True, True, True), first
 
 
+@pytest.mark.skipif(os.name == "nt", reason=(
+    "Windows file names cannot hold a line break (any byte below 0x20) or the"
+    " `:` of `outside-scope:`, so no Windows-legal name can forge the line;"
+    " the escaping is exercised on Linux and macOS."))
 def test_a_file_name_cannot_forge_a_scope_line(repo):
     """Review round 4. A name carrying a newline is printed escaped, so the
     report has exactly one `outside-scope:` line, whatever the tree holds."""
