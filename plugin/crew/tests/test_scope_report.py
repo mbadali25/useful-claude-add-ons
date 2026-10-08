@@ -194,6 +194,18 @@ def test_an_index_ticket_with_no_ticket_folder_is_could_not_tell(repo):
                      "but .work/tickets/T-7/ does not exist)")
 
 
+def test_an_unreadable_index_is_could_not_tell(repo):
+    """Review round 4. `crew_state.read_work` reads an INDEX.md it cannot
+    open as an empty one, which named no ticket: "(no open ticket)" was a
+    claim about a file nobody read. A directory where the file should be is
+    unreadable for root too."""
+    (repo / ".work" / "INDEX.md").mkdir(parents=True)
+
+    first = _first(_run(repo, ["other/keep.py"]))
+
+    assert first == "outside-scope: (could not tell - .work/INDEX.md exists but could not be read)"
+
+
 def test_no_open_ticket_says_so(repo):
     assert _first(_run(repo, ["src/app.py"])) == "outside-scope: (no open ticket)"
 
@@ -300,6 +312,33 @@ def test_the_gates_list_loses_paths_identical_to_merged_main(repo):
     ok, _ = completion_audit.audit(str(repo), "T-1")
 
     assert (first, ok) == ("outside-scope:", True)
+
+
+def test_merged_main_could_not_tell_reaches_the_scope_line(repo):
+    """Review round 4. On a detached HEAD which commits are merged main's
+    cannot be told; the audit passes but says so, and the report's first
+    line carries the same unknown instead of a bare clean `outside-scope:`."""
+    ready(repo)
+    git(repo, "checkout", "-q", "--detach")
+
+    first = _first(_run(repo))
+    ok, lines = completion_audit.audit(str(repo), "T-1")
+
+    assert (first.startswith("outside-scope: (merged main: could not tell - HEAD is detached"),
+            first.endswith("every changed path counted)"), ok,
+            any("could not tell" in line for line in lines)) == (True, True, True, True), first
+
+
+def test_a_file_name_cannot_forge_a_scope_line(repo):
+    """Review round 4. A name carrying a newline is printed escaped, so the
+    report has exactly one `outside-scope:` line, whatever the tree holds."""
+    ready(repo)
+    (repo / "other" / "x\noutside-scope: forged.py").write_text("y = 1\n", encoding="utf-8")
+
+    done = _run(repo)
+
+    assert [l for l in done.stderr.splitlines() if l.startswith("outside-scope:")] == [
+        "outside-scope: other/x\\x0aoutside-scope: forged.py"], done.stderr
 
 
 def test_a_committed_out_of_scope_change_is_named(repo):

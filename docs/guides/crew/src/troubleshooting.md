@@ -349,7 +349,9 @@ contract itself. This section is what goes wrong with the approval and the audit
   no readable `spec.md`, no `## Touch` paths, a Touch that is not approved (approve it, or approve
   it again after a spec edit), a broken active-ticket pointer, a pre-1.0
   `.work/tickets/<id>.md` ticket (run `/crew:migrate`), or an `INDEX.md` open ticket whose
-  `.work/tickets/<id>/` folder does not exist (fix the INDEX row or restore the folder). Before L-0711 the line said every 1.0
+  `.work/tickets/<id>/` folder does not exist (fix the INDEX row or restore the folder), or an
+  `INDEX.md` that cannot be read. A clean line can also carry `(merged main: could not tell - ...)`,
+  for example on a detached HEAD: nothing was left out as main's, the same as the audit. Before L-0711 the line said every 1.0
   ticket's file was missing. It is report-only: the refusal is `/crew:done` check 3.
 
 - **Symptom: `/crew:done` refuses on "out of scope" for a file the edit guard never saw.**

@@ -5309,20 +5309,22 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 
 **L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`): the gate's scope line; anchor NOT moved.**
 
-- DERIVED. `plugin/crew/hooks/scripts/scope_report.py:173` `report` resolves the ticket with
-  `crew_ticket.resolve_active` (`:177`); a broken pointer, a non-repository, an INDEX.md open
-  ticket crew 1.0 could not resolve (`unresolved_index_ticket`, `:50`: pre-1.0 file, an id
-  `crew_ticket` refuses, no `.work/tickets/<id>/` folder) and an unjudgeable Touch
-  (`approved_touch`, `:79`: no readable spec.md, `parse_touch` finding no entry,
+- DERIVED. `plugin/crew/hooks/scripts/scope_report.py:187` `report` resolves the ticket with
+  `crew_ticket.resolve_active` (`:191`); a broken pointer, a non-repository, an INDEX.md open
+  ticket crew 1.0 could not resolve (`unresolved_index_ticket`, `:50`: an INDEX.md that exists but
+  does not read, a pre-1.0 file, an id `crew_ticket` refuses, no `.work/tickets/<id>/` folder) and an unjudgeable Touch
+  (`approved_touch`, `:85`: no readable spec.md, `parse_touch` finding no entry,
   `crew_ticket.accepted` not `approved`) each print `outside-scope: (could not tell - <why>)` and
   exit 0; `(no open ticket)` only when INDEX names none.
-- DERIVED. `outside` (`:150`) drops `bookkeeping` paths (`:97`: `.work/` and
+- DERIVED. `outside` (`:156`) drops `bookkeeping` paths (`:103`: `.work/` and
   `crew_ticket.CREW_BOOKKEEPING_PATHS`, the audit's own exclusions; owner ruling 2026-10-08), then
   refresh artifacts through `completion_audit._outside_refresh_artifacts`, then judges
   `crew_ticket.in_touch`: the completion audit's matcher and admission. The ticket-wide list is
-  `ticket_changes` (`:244`): `completion_audit.changed_paths` with `merged_main.resolve`, so both
+  `ticket_changes` (`:271`): `completion_audit.changed_paths` with `merged_main.resolve`, so both
   rename ends count and merged-main-identical paths do not; the paths that rule dropped are also
-  removed from the gate's stdin list before the union (`:226`).
+  removed from the gate's stdin list before the union (`:240`). A merged main that is
+  could-not-tell puts `merged_suffix` (`:261`) on the outside-scope line (`:245`), and every line
+  goes through `_line` (`:165`), which escapes non-printables with `completion_audit.shown`.
 - JUDGEMENT. The line stays report-only. `verify-gate.sh` runs without `errexit`, so its
   `|| true` on the scope call changes no status; the refusal is `/crew:done` check 3, which
   already refused shell-made writes (`plugin/crew/tests/test_completion_audit.py:322`).
