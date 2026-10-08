@@ -419,16 +419,22 @@ def test_require_review_not_a_bool_is_refused(flavour, value, tmp_path):
     assert "not true or false" in err
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
-def test_a_helper_that_cannot_run_blocks(flavour, tmp_path):
-    # The copy keeps the plugin layout: the gate's dispatch reader imports
-    # crew_config, which loads crew_upgrade from ../../skills/crew-graph/scripts.
+def _copy_scripts(tmp_path):
+    """A copy of the gate's scripts in the plugin's own layout: the dispatch
+    reader (crew 1.2.0) imports crew_config, which loads crew_upgrade from
+    ../../skills/crew-graph/scripts, so hooks/scripts alone cannot run."""
     plugin = tmp_path / "plugin"
     scripts = plugin / "hooks" / "scripts"
     skip = shutil.ignore_patterns("_test", "__pycache__")
     shutil.copytree(_SCRIPTS, scripts, ignore=skip)
     graph = pathlib.Path("skills") / "crew-graph" / "scripts"
     shutil.copytree(_SCRIPTS.parents[1] / graph, plugin / graph, ignore=skip)
+    return scripts
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_helper_that_cannot_run_blocks(flavour, tmp_path):
+    scripts = _copy_scripts(tmp_path)
     (scripts / "_promote_review.py").unlink()
     repo = Repo(tmp_path, SHA_MAP)
     code, err, _ = run_gate(flavour, repo, "deploy-dev", scripts=scripts)
@@ -1046,8 +1052,7 @@ def test_the_union_refuses_for_the_environment_that_did_not_opt_out(flavour, tmp
 
 
 def _scripts_with_broken_helper(tmp_path, how):
-    scripts = tmp_path / "scripts"
-    shutil.copytree(_SCRIPTS, scripts, ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    scripts = _copy_scripts(tmp_path)
     helper = scripts / "_promote_review.py"
     if how == "missing":
         helper.unlink()
