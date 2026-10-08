@@ -652,7 +652,8 @@ def _git_answers(monkeypatch, code=None, stderr=b"", raise_=None):
 
     def fake_run(argv, *args, **kwargs):
         if list(argv[1:]) != ["rev-parse", "--git-dir"]:
-            return real(argv, *args, **kwargs)
+            check = kwargs.pop("check", False)
+            return real(argv, *args, check=check, **kwargs)
         assert kwargs["env"]["LC_ALL"] == "C" and kwargs["stdin"] is subprocess.DEVNULL \
             and kwargs["timeout"] and not any(k.startswith("GIT_") for k in kwargs["env"])
         if raise_ is not None:

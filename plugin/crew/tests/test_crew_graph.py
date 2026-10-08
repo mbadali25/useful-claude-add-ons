@@ -78,8 +78,9 @@ class _Tool:
     def __init__(self, nodes=4, links=3, report=(4, 3), built=True, code=0, output="",
                  graph_text=None, summary=True, key="links"):
         self.calls = []
-        self.spec = dict(nodes=nodes, links=links, report=report, built=built, code=code,
-                         output=output, graph_text=graph_text, summary=summary, key=key)
+        self.spec = {"nodes": nodes, "links": links, "report": report, "built": built,
+                     "code": code, "output": output, "graph_text": graph_text,
+                     "summary": summary, "key": key}
 
     def __call__(self, command, top):
         self.calls.append(command)
