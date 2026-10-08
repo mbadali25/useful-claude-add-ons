@@ -23,12 +23,16 @@ import context  # noqa: F401  pylint: disable=unused-import
 import test_promote_gate_effective_tree as tree
 from test_promote_gate_effective_tree import _git
 
+# L-0703: review evidence is opted out here; test_promote_gate_review.py owns
+# the review rule.
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+
 DEV = "gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)"
 PROD = "gh workflow run deploy.yml -f environment=production -f ref=$(git rev-parse HEAD)"
 MAP = {"environments": {
-    "development": {"deploy": DEV, "rollback": "none", "rollbackReason": "fixture"},
+    "development": {"deploy": DEV, "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
     "production": {"deploy": PROD, "requires": ["development"],
-                   "rollback": "none", "rollbackReason": "fixture"},
+                   "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
 }}
 
 
@@ -39,6 +43,7 @@ def _write(repo, doc, commit=True):
         _git(repo.main, "add", "-A")
         _git(repo.main, "commit", "-q", "-m", "match map")
         repo.main_sha = _git(repo.main, "rev-parse", "--short", "HEAD")
+        repo.main_full = _git(repo.main, "rev-parse", "HEAD")
 
 
 @pytest.fixture(name="repo")
@@ -117,9 +122,9 @@ def test_a_literal_case_insensitive_match(flavour, deploy, command, tmp_path):
     command matches its own declared text and the unmet `requires` blocks."""
     repo = tree.Repo(tmp_path)
     _write(repo, {"environments": {
-        "development": {"deploy": "deploy-dev", "rollback": "none", "rollbackReason": "f"},
+        "development": {"deploy": "deploy-dev", "rollback": "none", "rollbackReason": "f", **_NO_REVIEW},
         "production": {"deploy": deploy, "requires": ["development"],
-                       "rollback": "none", "rollbackReason": "f"}}})
+                       "rollback": "none", "rollbackReason": "f", **_NO_REVIEW}}})
     code, err = tree.run_gate(flavour, repo, command)
     assert code == 2, err
     assert "PROMOTION BLOCKED (production" in err, err

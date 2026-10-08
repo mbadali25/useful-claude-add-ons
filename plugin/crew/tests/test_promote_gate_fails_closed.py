@@ -54,7 +54,9 @@ def _fixture(tmp_path, verified_line):
         f"# Rollback\n{verified_line}\n", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(json.dumps({
         "environments": {
-            "prod": {"deploy": "deploy-prod", "rollback": "runbook.md"}}},
+            # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
+            "prod": {"deploy": "deploy-prod", "rollback": "runbook.md",
+                     "requireReview": False, "reviewReason": "fixture"}}},
     ), encoding="utf-8")
     subprocess.run(["git", "add", "-A", "-f"], cwd=root, check=False)
     subprocess.run(["git", "commit", "-q", "-m", "fixture"],

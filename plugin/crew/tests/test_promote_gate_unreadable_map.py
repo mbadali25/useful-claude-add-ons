@@ -50,7 +50,9 @@ _DEPLOY = "deploy-prod"
 # about the map being unreadable and nothing else.
 _GOOD = {"environments": {"prod": {
     "deploy": [_DEPLOY], "rollback": "none",
-    "rollbackReason": "the fixture deploys nothing"}}}
+    "rollbackReason": "the fixture deploys nothing",
+    # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
+    "requireReview": False, "reviewReason": "the fixture deploys nothing"}}}
 
 # Every shape that must BLOCK in both flavours. Keyed by what is wrong with it,
 # because the label is what a failure report will show.
@@ -248,7 +250,8 @@ def test_sh_a_string_deploy_matches_the_whole_string_not_its_letters(tmp_path):
     it, the PowerShell flavour included.
     """
     body = json.dumps({"environments": {"prod": {
-        "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x"}}})
+        "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x",
+        "requireReview": False, "reviewReason": "x"}}})
     root = _fixture(tmp_path, body)
 
     assert _sh(root, "echo done").returncode == 0
@@ -286,7 +289,8 @@ def test_ps1_an_unrelated_command_passes_straight_through(tmp_path):
 @needs_pwsh
 def test_ps1_a_string_deploy_is_one_command(tmp_path):
     body = json.dumps({"environments": {"prod": {
-        "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x"}}})
+        "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x",
+        "requireReview": False, "reviewReason": "x"}}})
     root = _fixture(tmp_path, body)
 
     assert _ps1(root, "echo done").returncode == 0

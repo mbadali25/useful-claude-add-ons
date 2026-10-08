@@ -2025,7 +2025,12 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments
+needs that off. Nor does it stand down promote-gate's review evidence
+(L-0703): every gated environment needs an accepted review receipt whose
+reviewed head has the deployed commit's tree, unless that environment in
+`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` - a map
+key, not a config key, and committed like the rest of the map. Unattended
+production therefore deploys only reviewed trees. `.crew/verify.json` stays promote-gate's list of environments
 (and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether
 or not `environments.workflows` is set, T-0062),
 read from the session's project directory even when the deploy runs from a
