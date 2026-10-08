@@ -16,8 +16,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   file is missing.
 - **Reader.** `scope_report.py` takes the active ticket from `crew_ticket.resolve_active`, Touch
   from `crew_ticket.accepted` (`.work/tickets/<id>/spec.md ## Touch`), membership from
-  `crew_ticket.in_touch` and refresh artifacts through the completion audit's own admission, so
-  it names exactly what `/crew:done` check 3 refuses. It read the pre-1.0 `- touch:` line in
+  `crew_ticket.in_touch`, the changed list from `completion_audit.changed_paths` (both rename
+  ends; merged-main-identical paths not counted) and refresh artifacts through the completion
+  audit's own admission, so it names what `/crew:done` check 3 refuses. It read the pre-1.0 `- touch:` line in
   `.work/tickets/<id>.md` / `.work/cache/<id>.md` before.
 - **Could not tell.** No spec.md, no `## Touch`, an unapproved or stale Touch, a broken
   active-ticket pointer, a pre-1.0 ticket and a non-repository each print

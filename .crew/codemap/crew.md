@@ -5309,14 +5309,16 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 
 **L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`): the gate's scope line; anchor NOT moved.**
 
-- DERIVED. `plugin/crew/hooks/scripts/scope_report.py:162` `report` resolves the ticket with
-  `crew_ticket.resolve_active` (`:166`); a broken pointer, a non-repository, a pre-1.0 ticket
-  (`legacy_ticket`, `:47`) and an unjudgeable Touch (`approved_touch`, `:63`: no readable
+- DERIVED. `plugin/crew/hooks/scripts/scope_report.py:163` `report` resolves the ticket with
+  `crew_ticket.resolve_active` (`:167`); a broken pointer, a non-repository, a pre-1.0 ticket
+  (`legacy_ticket`, `:48`) and an unjudgeable Touch (`approved_touch`, `:64`: no readable
   spec.md, `parse_touch` finding no entry, `crew_ticket.accepted` not `approved`) each print
   `outside-scope: (could not tell - <why>)` and exit 0.
-- DERIVED. `outside` (`:139`) drops `bookkeeping` paths (`.work/`, `.crew/`, `TODO.md`), then
-  refresh artifacts through `completion_audit._outside_refresh_artifacts` (`:143`), then judges
-  `crew_ticket.in_touch` (`:145`): the completion audit's matcher and admission.
+- DERIVED. `outside` (`:140`) drops `bookkeeping` paths (`.work/`, `.crew/`, `TODO.md`), then
+  refresh artifacts through `completion_audit._outside_refresh_artifacts` (`:144`), then judges
+  `crew_ticket.in_touch` (`:146`): the completion audit's matcher and admission. The
+  ticket-wide list is `ticket_changes` (`:231`): `completion_audit.changed_paths` with
+  `merged_main.resolve`, so both rename ends count and merged-main-identical paths do not.
 - JUDGEMENT. The line stays report-only. `verify-gate.sh` runs without `errexit`, so its
   `|| true` on the scope call changes no status; the refusal is `/crew:done` check 3, which
   already refused shell-made writes (`plugin/crew/tests/test_completion_audit.py:322`).

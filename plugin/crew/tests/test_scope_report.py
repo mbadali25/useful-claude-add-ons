@@ -220,6 +220,36 @@ def test_the_report_and_the_completion_audit_agree(repo, writes):
     assert named == refused
 
 
+def test_a_rename_into_touch_names_the_old_path(repo):
+    """Review round 1: a rename moves a file OUT of its old path as much as
+    into the new one, and the audit refuses the old end; so does the report."""
+    ready(repo)
+    git(repo, "mv", "other/keep.py", "src/keep.py")
+
+    first = _first(_run(repo))
+    ok, _ = completion_audit.audit(str(repo), "T-1")
+
+    assert (first, ok) == ("outside-scope: other/keep.py", False)
+
+
+def test_a_path_identical_to_merged_main_is_not_named(repo):
+    """Review round 1: after merging main, main's own change outside Touch is
+    main's, not the ticket's; the audit does not count it and neither may the
+    report."""
+    git(repo, "checkout", "-q", "-b", "work")
+    ready(repo)
+    git(repo, "checkout", "-q", "main")
+    (repo / "other" / "keep.py").write_text("x = 9\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "main moves on")
+    git(repo, "checkout", "-q", "work")
+    git(repo, "merge", "-q", "--no-edit", "main")
+
+    first = _first(_run(repo))
+    ok, _ = completion_audit.audit(str(repo), "T-1")
+
+    assert (first, ok) == ("outside-scope:", True)
+
+
 def test_a_committed_out_of_scope_change_is_named(repo):
     ready(repo)
     _sed_i(repo, "other/keep.py")
@@ -233,13 +263,32 @@ def test_a_committed_out_of_scope_change_is_named(repo):
 _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 
-@pytest.mark.parametrize("flavour", ["sh", pytest.param("ps1", marks=crew_fixtures.SLOW)])
-def test_both_gates_print_the_same_scope_line(repo, flavour):
-    """Acceptance 7: the Stop gates hand their changed list to this one
-    script, so bash and PowerShell print the same line for a `sed -i`
-    outside Touch. Neither blocks on it: report-only."""
+def _scenario(repo, name):
+    """The acceptance 1-4 trees the gate parity case runs."""
+    if name == "pre-1.0":
+        (repo / ".work" / "tickets").mkdir(parents=True)
+        (repo / ".work" / "INDEX.md").write_text("| T-9 | in progress |\n", encoding="utf-8")
+        (repo / ".work" / "tickets" / "T-9.md").write_text("## Scope\n- touch: src/\n",
+                                                           encoding="utf-8")
+        _sed_i(repo, "src/app.py")
+        return
     ready(repo)
-    _sed_i(repo, "other/keep.py")
+    if name == "no-spec":
+        (repo / ".work" / "tickets" / "T-1" / "spec.md").unlink()
+    _sed_i(repo, "src/app.py" if name == "inside" else "other/keep.py")
+
+
+_SCENARIOS = ("outside", "inside", "no-spec", "pre-1.0")
+
+
+@pytest.mark.parametrize("scenario", _SCENARIOS)
+@pytest.mark.parametrize("flavour", ["sh", pytest.param("ps1", marks=crew_fixtures.SLOW)])
+def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
+    """Acceptance 7: the Stop gates hand their changed list to this one
+    script, so bash and PowerShell print the line the script prints, for
+    acceptance checks 1-4. Neither blocks on it: report-only."""
+    _scenario(repo, scenario)
+    expected = _first(_run(repo))
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
     if flavour == "sh":
         bash = crew_fixtures.resolve_bash()
@@ -256,7 +305,7 @@ def test_both_gates_print_the_same_scope_line(repo, flavour):
     done = crew_fixtures.run_gate(cmd, input="{}", cwd=str(repo), env=env,
                                   capture_output=True, text=True, check=False)
 
-    assert "outside-scope: other/keep.py" in done.stderr.splitlines(), done.stderr
+    assert expected in done.stderr.splitlines(), done.stderr
 
 
 # -------------------------------------------------------------- bookkeeping

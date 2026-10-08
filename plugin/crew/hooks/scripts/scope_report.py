@@ -37,6 +37,7 @@ import sys
 import completion_audit
 import crew_state
 import crew_ticket
+import merged_main
 import scope_base
 
 # Where a pre-1.0 ticket lived: files mode, then the tracker cache. Read only
@@ -190,7 +191,7 @@ def report(root, changed):
     base_note = None
     try:
         base, source, reason = scope_base.resolve(top, ticket)
-        ticket_wide = scope_base.changed(top, base) if base else None
+        ticket_wide = ticket_changes(top, base) if base else None
     except Exception as exc:  # pylint: disable=broad-except
         base, source, ticket_wide = None, None, None
         reason = f"could not resolve: {exc}"
@@ -217,14 +218,25 @@ def report(root, changed):
         sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}{suffix}\n")
         sys.stderr.write(
             f"  {ticket} declares: {chr(32).join(globs)}\n"
-            "  Report-only here; /crew:done check 3 refuses them. Revert them, "
-            "file them to TODO.md, or amend ## Touch and re-approve.\n")
+            "  Report-only here; /crew:done check 3 refuses them. Revert them "
+            "(a follow-up goes to TODO.md), or amend ## Touch and re-approve.\n")
     else:
         sys.stderr.write(f"outside-scope:{suffix}\n")
     # After the list, not before: the first line of this report is the list,
     # and its readers -- human and test alike -- take it from there.
     sys.stderr.write(base_note + "\n")
     return 0
+
+
+def ticket_changes(top, base):
+    """The completion audit's own changed list since `base` (review round 1):
+    both ends of a rename, and paths byte-identical to merged main left out,
+    exactly as `/crew:done` check 3 counts them. None when git could not
+    answer, so the line says the list is this turn's only."""
+    try:
+        return completion_audit.changed_paths(top, base, merged_main.resolve(top, base))
+    except RuntimeError:
+        return None
 
 
 if __name__ == "__main__":
