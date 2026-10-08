@@ -9,6 +9,31 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-10-08
+
+Crew 1.2.9: L-0733 (the Stop gate's undeclared-reach wall). Version is a placeholder; the lead
+reassigns it at merge.
+
+### Fixed — crew 1.2.9: the Stop gate says once how to declare `reach`, then one line per Stop (L-0733)
+
+- **Summary.** A repo whose verify map predates `reach` now gets one notice naming
+  `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop, and an edited
+  rule no longer freezes the verified marker for good.
+- **Once per map, then one line.** The first Stop that defers a rule with no `reach` prints one
+  notice: how many rules matched, how many in `.crew/verify.json` have no `reach`, and
+  `/crew:verify --stamp-reach` (dry run, `--apply`, `--set N=local|network|host`), then each
+  rule's reason. It is shown once per map content (`.crew/.verify-gate.reach-notice`); every
+  later Stop, quiet turns included, prints `NOT VERIFIED ON THIS TREE - N rule(s) with no `reach`
+  not run on Stop: rules[...]`. `--ci` keeps its per-rule lines.
+- **The deferral is unchanged.** An undeclared wrapper, shell-syntax or remote-verb rule still does
+  not run on Stop (it may reach a live host); `/crew:verify --all` runs it.
+- **Orphans.** An undeclared-reach entry whose rule was edited stays in the record, marked and
+  counted, but no longer holds `.crew/.verify-verified-at`. Any other orphan still does, and its
+  line now names `verify_record.py forget-orphans`, which drops orphans by name and runs nothing,
+  for a map whose `--all` would reach `network`/`host` targets.
+- Reported from TheSelectSource on crew 1.2.1: 29 of 30 rules undeclared, the marker stuck since a
+  map edit. Harness-only PR (T-0087); `commands/verify.md` is unchanged and still accurate.
+
 ## [1.2.5] - 2026-10-08
 
 ### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
