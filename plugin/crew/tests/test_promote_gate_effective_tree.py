@@ -375,7 +375,10 @@ def test_uncommitted_edits_to_the_deploy_map_block(flavour, repo):
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
     assert code == 2, err
-    assert "uncommitted" in err and "verify.json" in err, err
+    # The dirty-map block's own sentence, not the word "uncommitted": this
+    # test's tmp path carries it, and since L-0703 the review helper refuses an
+    # uncommitted map too, so a bare substring held with the block removed.
+    assert "verify.json in the project dir" in err and "has uncommitted changes" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
