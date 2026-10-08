@@ -153,13 +153,16 @@ def _is_0_20_setup(root, legacy):
     have (`qa-reviewer` included: migrate renames it), a `.work/tickets/<ID>.md`
     ticket file (an id-shaped name, as `crew_migrate._ticket_candidates` reads
     it, so a README there is not one), or a PM journal. A config `/crew:init`
-    wrote has none of these: False. None is could-not-tell - a `roles` that is
-    not a list, or a `.crew/` or `.work/tickets/` that cannot be listed - and
+    wrote has none of these: False. None is could-not-tell - a `schema` that is
+    not an integer (migrate refuses it too), a `roles` that is not a list, or a `.crew/` or `.work/tickets/` that cannot be listed - and
     status says so rather than answering either way. `.crew/metrics.md` and
     `.work/cache/<ID>.md` are not markers: crew 1.x writes both itself."""
-    schema = legacy.get("schema")
-    if isinstance(schema, bool) or not isinstance(schema, int) \
-            or schema < crew_state.SCHEMA_CURRENT:
+    if "schema" not in legacy:
+        return True, ""  # pre-0.20: migrate upgrades it in the same run
+    schema = legacy["schema"]
+    if isinstance(schema, bool) or not isinstance(schema, int):
+        return None, "`schema` is not an integer"
+    if schema < crew_state.SCHEMA_CURRENT:
         return True, ""
     roles = legacy.get("roles", [])
     if not isinstance(roles, list):

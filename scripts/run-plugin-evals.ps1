@@ -26,9 +26,20 @@ $MaxCostUsd = if ($env:EVAL_MAX_COST_USD) { $env:EVAL_MAX_COST_USD } else { "15"
 $OutDir = if ($env:EVAL_OUTPUT_DIR) { $env:EVAL_OUTPUT_DIR } else { Join-Path $RepoRoot ".work\plugin-evals" }
 
 $EvalsDir = Join-Path $PluginDir "evals"
+# A plugin directory that is not there is a wrong EVAL_PLUGIN_DIR, not an
+# empty suite. An absent evals/ is (git keeps no empty folder once the last
+# case is deleted); one that is there but cannot be listed is could-not-tell.
+if (-not (Test-Path -LiteralPath $PluginDir -PathType Container)) {
+    Write-Error "plugin directory $PluginDir does not exist" -ErrorAction Continue
+    exit 2
+}
+if ((Test-Path -LiteralPath $EvalsDir) -and -not (Test-Path -LiteralPath $EvalsDir -PathType Container)) {
+    Write-Error "$EvalsDir exists but is not a directory - could not tell which cases it holds" -ErrorAction Continue
+    exit 2
+}
 $Cases = @()
 if (Test-Path -LiteralPath $EvalsDir -PathType Container) {
-    $Cases = @(Get-ChildItem -LiteralPath $EvalsDir -Directory |
+    $Cases = @(Get-ChildItem -LiteralPath $EvalsDir -Directory -ErrorAction Stop |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "case.yaml") -PathType Leaf } |
         Sort-Object -Property Name -CaseSensitive |
         ForEach-Object { $_.Name })

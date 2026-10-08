@@ -29,6 +29,14 @@ THRESHOLD="${EVAL_THRESHOLD:-1.0}"
 MAX_COST_USD="${EVAL_MAX_COST_USD:-15}"
 OUT_DIR="${EVAL_OUTPUT_DIR:-$REPO_ROOT/.work/plugin-evals}"
 
+# A plugin directory that is not there is a wrong EVAL_PLUGIN_DIR, not an
+# empty suite. An absent evals/ is (git keeps no empty folder once the last
+# case is deleted); one that is there but cannot be read is could-not-tell.
+[ -d "$PLUGIN_DIR" ] || { echo "plugin directory $PLUGIN_DIR does not exist" >&2; exit 2; }
+if [ -e "$PLUGIN_DIR/evals" ] && { [ ! -d "$PLUGIN_DIR/evals" ] || [ ! -r "$PLUGIN_DIR/evals" ] || [ ! -x "$PLUGIN_DIR/evals" ]; }; then
+  echo "$PLUGIN_DIR/evals exists but cannot be listed - could not tell which cases it holds" >&2
+  exit 2
+fi
 CASES=()
 for case_yaml in "$PLUGIN_DIR"/evals/*/case.yaml; do
   [ -f "$case_yaml" ] || continue

@@ -1098,13 +1098,18 @@ def test_a_current_config_beside_crew_1_files_asks_for_no_migrate(tmp_path, extr
     assert lines[1] == "config   .crew/config.json schema 7"
 
 
-def test_roles_not_a_list_is_could_not_tell(tmp_path):
-    root = make_repo(tmp_path, config={"schema": 7, "roles": "explorer"})
+@pytest.mark.parametrize("config,why", [
+    ({"schema": 7, "roles": "explorer"}, "`roles` is not a list"),
+    ({"schema": "7", "roles": ["explorer"]}, "`schema` is not an integer"),
+    ({"schema": True, "roles": ["explorer"]}, "`schema` is not an integer"),
+])
+def test_an_unreadable_field_is_could_not_tell(tmp_path, config, why):
+    root = make_repo(tmp_path, config=config)
 
     lines = crew_status.collect(str(root))
 
-    assert lines[1] == ("config   .crew/config.json schema 7 - could not tell whether "
-                        "/crew:migrate is needed (`roles` is not a list)")
+    assert lines[1] == (f"config   .crew/config.json schema {config['schema']} - could not tell "
+                        f"whether /crew:migrate is needed ({why})")
 
 
 @pytest.mark.parametrize("folder", [".crew", os.path.join(".work", "tickets")])

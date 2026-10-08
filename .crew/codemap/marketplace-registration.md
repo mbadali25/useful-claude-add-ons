@@ -79,7 +79,7 @@ gate's own claim that it passed.
 
 **DERIVED (L-0713, without moving the anchor).** Three more kinds route to
 `check_consistency_claim` in `scripts/check-marketplace.py`: `crew-config-file:<name>`
-(the marked statement's first `.crew/*.json` name must be `<name>`, and `<name>` must be
+(every `.crew/*.json` name on the marked statement must be `<name>`, and `<name>` must be
 `crew_common.repo_config_file`'s default, read by `ast`), `plugin-command-table:<plugin>`
 (the table's `/<plugin>:<cmd>` set equals the tracked `commands/**.md`) and
 `eval-roster:<plugin>` (the table's cases equal the tracked `evals/*/case.yaml`

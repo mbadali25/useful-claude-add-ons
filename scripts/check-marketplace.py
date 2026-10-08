@@ -901,8 +901,8 @@ def check_self_claims(entries, fail):
 # is never read. Each one compares a statement with the thing it describes:
 #
 # - `crew-config-file:<name>` - the bound line is the first at or after the
-#   marker naming `.crew/config.json` or `.crew/crew.json`, and the FIRST such
-#   name on it must be `.crew/<name>`; `<name>` must be the file crew's repo
+#   marker naming `.crew/config.json` or `.crew/crew.json`, and EVERY such
+#   name on it must be `.crew/<name>` (say the other file on another line); `<name>` must be the file crew's repo
 #   config readers open, read from the code (the default of
 #   `crew_common.repo_config_file`'s `name` parameter, by `ast`, never imported).
 # - `plugin-command-table:<plugin>` - the Markdown table starting within the
@@ -989,11 +989,12 @@ def check_consistency_claim(path, index, lines, kind, entries, fail):
                  f"crew_common.repo_config_file opens .crew/{truth}")
             return
         for line in lines[index:index + BIND_WINDOW]:
-            named = CONFIG_FILE_RE.search(CLAIM_RE.sub("", line))
+            named = set(CONFIG_FILE_RE.findall(CLAIM_RE.sub("", line)))
             if named:
-                if named.group(1) != arg:
-                    fail(f"{where}: the marked line names .crew/{named.group(1)} as the "
-                         f"config, but the active repo config is .crew/{arg}")
+                for other in sorted(named - {arg}):
+                    fail(f"{where}: the marked line names .crew/{other} beside the "
+                         f"config, but the active repo config is .crew/{arg} - a marked "
+                         "line names only that file")
                 return
         fail(f"{where}: claim 'crew-config-file:{arg}' binds to nothing within "
              f"{BIND_WINDOW} lines - restore the statement or delete the marker")

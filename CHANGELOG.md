@@ -19,9 +19,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
   /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
   that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
-  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `roles`
-  that is not a list, or a `.crew/` or `.work/tickets/` it cannot list, prints `could not tell
-  whether /crew:migrate is needed (<why>)` instead of either answer.
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `schema`
+  that is not an integer, a `roles` that is not a list, or a `.crew/` or `.work/tickets/` it
+  cannot list, prints `could not tell whether /crew:migrate is needed (<why>)` instead of either
+  answer.
   `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
   the status comes back clean.
 - **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin
@@ -32,12 +33,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
   `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
   discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
-  are none; the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` they cannot list, exits 2);
+  the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
   runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
   `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
 - **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
-  `crew-config-file:<name>` (a marked statement must name the file `crew_common.repo_config_file`
-  opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
+  `crew-config-file:<name>` (a marked statement must name only the file
+  `crew_common.repo_config_file` opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
   shipped) and `eval-roster:<plugin>` (a marked eval roster must match `evals/` and name agents
   that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
   `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.

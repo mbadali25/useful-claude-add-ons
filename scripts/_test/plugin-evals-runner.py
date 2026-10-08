@@ -110,6 +110,18 @@ def case_empty(runner, tmp):
     return code == 0 and "no eval cases" in out and not calls, (code, out, calls)
 
 
+def case_missing_plugin_dir(runner, tmp):
+    code, out, calls = run(runner, tmp, os.path.join(tmp, "no-such-plugin"))
+    return code == 2 and "does not exist" in out and not calls, (code, out[-300:], calls)
+
+
+def case_no_evals_folder(runner, tmp):
+    plugin = os.path.join(tmp, "plugin")
+    os.makedirs(plugin)
+    code, out, calls = run(runner, tmp, plugin)
+    return code == 0 and "no eval cases" in out and not calls, (code, out[-300:], calls)
+
+
 def case_scored_scaffold(runner, tmp):
     plugin = make_plugin(tmp, {"b-plain": "name: b-plain\n",
                                "a-scaffold": "name: a\ncontext:\n  scaffold_script: fixture.sh\n"})
@@ -133,7 +145,9 @@ def case_no_scored_result(runner, tmp):
 
 CASES = (
     ("must-allow: empty evals/ says no eval cases, exit 0, claude never called", case_empty),
+    ("must-allow: a plugin with no evals/ folder says no eval cases", case_no_evals_folder),
     ("must-allow: each discovered case runs once, scaffold only where named", case_scored_scaffold),
+    ("must-block: an EVAL_PLUGIN_DIR that does not exist exits 2", case_missing_plugin_dir),
     ("must-block: a non-zero claude exit fails the run", case_nonzero_exit),
     ("must-block: exit 0 with no scored result fails the run", case_no_scored_result),
 )

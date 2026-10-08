@@ -1250,6 +1250,10 @@ CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
     ("a config-file statement with crew.json named first",
      {**COMMON, "Q.md": "Not `.crew/crew.json` but `.crew/config.json`.<!-- claim: crew-config-file:config.json -->\n"},
      1, "names .crew/crew.json", None),
+    ("config.json first, but the marked line also names crew.json as what is read",
+     {**COMMON, "Q.md": ("`.crew/config.json` exists; settings are read from `.crew/crew.json`."
+                         "<!-- claim: crew-config-file:config.json -->\n")},
+     1, "names .crew/crew.json beside", None),
     ("a config-file marker whose statement was edited away",
      {**COMMON, "Q.md": "<!-- claim: crew-config-file:config.json -->\n" + "filler\n" * 20},
      1, "binds to nothing", None),
@@ -1279,9 +1283,9 @@ CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
      1, "no entry", None),
     # --- must allow ------------------------------------------------------
     ("a correct config-file statement", {**COMMON, "Q.md": CONFIG_OK}, 0, "", None),
-    ("config.json first, crew.json after", {**COMMON, "Q.md": (
-        "Active: `.crew/config.json`; migrate adds `.crew/crew.json`."
-        "<!-- claim: crew-config-file:config.json -->\n")}, 0, "", None),
+    ("the other file named on the next line, not the marked one", {**COMMON, "Q.md": (
+        "Active: `.crew/config.json`.<!-- claim: crew-config-file:config.json -->\n"
+        "Migrate adds `.crew/crew.json` as a record.\n")}, 0, "", None),
     ("a correct command table", {"R.md": TABLE_OK}, 0, "", ["a", "b"]),
     ("a correct eval roster", {**EVALS, "R.md": ROSTER_OK}, 0, "", None),
     ("'no eval cases' with an empty evals/",
