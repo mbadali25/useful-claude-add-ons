@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.3**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
+- **crew 1.2.10**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
 - **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
