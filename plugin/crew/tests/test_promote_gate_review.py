@@ -1,0 +1,738 @@
+"""promote-gate's sha rule and review evidence (L-0703).
+
+Two guards, both flavours:
+
+1. EXACT SHA. A `requires` row in `.work/PROMOTIONS.md` counts only when its
+   sha cell is the deploying commit's full 40-character sha (case ignored).
+   Before this ticket `cells[2].startswith(sha[:7])` admitted a PASS row for a
+   DIFFERENT commit sharing the first 7 characters, and a short row of any
+   length was cut to 7. No back-compat for short rows (spec, "Back-compat
+   decision"): accepting one that resolves to the deploying sha re-opens the
+   hole whenever the row's own commit is no longer in the object store.
+
+2. REVIEW EVIDENCE. Every gated environment needs an accepted review receipt
+   whose reviewed head has the deploying commit's tree and which
+   `review_ledger.check_receipt`, run in the deploying tree, says stands -
+   `requireHuman` or not - unless it sets `requireReview: false` with a
+   `reviewReason` string. Decided by `_promote_review.py`, which both
+   flavours call; a helper that cannot run, runs out of the gate's deadline
+   or cannot decide blocks.
+
+A guard that can BLOCK carries must-block AND must-allow cases (repo
+CLAUDE.md). The ledgers are written through `review_ledger`'s own reserve /
+record / accept / reject with bundle hashes from `review_patch.compute`, so a
+must-allow case is a receipt crew itself would mint. Every repository is
+built under tmp_path; `CLAUDE_PROJECT_DIR` names it, never this repo.
+
+The pwsh flavour runs wherever PowerShell 7 resolves, with `OS=Windows_NT` in
+the child only (see test_promote_gate_effective_tree.py). Native Windows is
+not exercised here.
+"""
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import time
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
+import review_ledger  # pylint: disable=wrong-import-order
+import review_patch  # pylint: disable=wrong-import-order
+
+_SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
+_SH = _SCRIPTS / "promote-gate.sh"
+_PS1 = _SCRIPTS / "promote-gate.ps1"
+_BASH = crew_fixtures.resolve_bash()
+_PWSH = crew_fixtures.resolve_pwsh()
+_GIT = shutil.which("git")
+
+_NEEDS_PWSH = pytest.mark.skipif(_PWSH is None, reason="no PowerShell 7 on this machine")
+FLAVOURS = [
+    pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")),
+    pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.slow]),
+]
+FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=_NEEDS_PWSH)]
+_POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="PATH shims are POSIX scripts")
+
+_ROLLBACK = {"rollback": "none", "rollbackReason": "fixture"}
+_OPT_OUT = {"requireReview": False, "reviewReason": "fixture: the sha rule alone"}
+
+# The review tests: development and prod need review (the default).
+REVIEW_MAP = {"environments": {
+    "development": {"deploy": "deploy-dev", **_ROLLBACK},
+    "prod": {"deploy": "deploy-prod", "requireHuman": True, **_ROLLBACK},
+}}
+# The sha tests: review opted out, so only the `requires` row decides.
+SHA_MAP = {"environments": {
+    "development": {"deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT},
+    "qa": {"deploy": "deploy-qa", "requires": ["development"], **_ROLLBACK, **_OPT_OUT},
+}}
+
+
+def _git(cwd, *args):
+    return subprocess.run((_GIT,) + args, cwd=cwd, check=True, capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL).stdout.strip()
+
+
+class Repo:
+    """One checkout on `main`: a base commit B, then the ticket's commit H."""
+
+    def __init__(self, tmp_path, verify, extra=None, base_extra=None):
+        self.root = tmp_path / "main"
+        self.root.mkdir(parents=True)
+        _git(self.root, "init", "-q", "-b", "main")
+        _git(self.root, "config", "user.email", "t@example.invalid")
+        _git(self.root, "config", "user.name", "T")
+        _git(self.root, "config", "commit.gpgsign", "false")
+        (self.root / ".gitignore").write_text(".crew/*\n!.crew/verify.json\n.work/\n",
+                                               encoding="utf-8")
+        (self.root / ".crew").mkdir()
+        (self.root / ".work").mkdir()
+        self.write_map(verify)
+        (self.root / "app.txt").write_text("v1\n", encoding="utf-8")
+        for rel, body in (base_extra or {}).items():
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "base")
+        self.base = _git(self.root, "rev-parse", "HEAD")
+        (self.root / "app.txt").write_text("v2\n", encoding="utf-8")
+        for rel, body in (extra or {}).items():
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "ticket")
+
+    def write_map(self, verify):
+        (self.root / ".crew" / "verify.json").write_text(json.dumps(verify, indent=2) + "\n",
+                                                         encoding="utf-8")
+
+    def commit_map(self, verify):
+        self.write_map(verify)
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "map")
+
+    @property
+    def head(self):
+        return _git(self.root, "rev-parse", "HEAD")
+
+    @property
+    def short(self):
+        return _git(self.root, "rev-parse", "--short", "HEAD")
+
+    def commit(self, rel="app.txt", body=None, empty=False):
+        if empty:
+            _git(self.root, "commit", "-q", "--allow-empty", "-m", "empty")
+            return
+        (self.root / rel).write_text(body or f"{time.time()}\n", encoding="utf-8")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "more")
+
+    def promotions(self, *rows):
+        body = ["| when | env | sha | smoke | regression | verify | by |",
+                "|---|---|---|---|---|---|---|"]
+        body += [f"| 2026-10-06 | {env} | {sha} | {res} | {res} | {res} | t |"
+                 for env, sha, res in rows]
+        (self.root / ".work" / "PROMOTIONS.md").write_text("\n".join(body) + "\n",
+                                                           encoding="utf-8")
+
+    def in_flight(self):
+        path = self.root / ".crew" / ".deploy-in-flight"
+        return path.read_text(encoding="utf-8").strip() if path.exists() else None
+
+    # --- ledgers, written through review_ledger itself -------------------
+
+    def _round(self, ticket, verdict, counts, findings=None):
+        root = str(self.root)
+        manifest = review_patch.compute(root, self.base)[0]
+        ok, number, msg = review_ledger.reserve(root, ticket, "codex", "m")
+        assert ok, msg
+        review = {"verdict": verdict, "bundle_sha256": manifest["bundle_sha256"],
+                  "base": self.base, "head": manifest["head"], "provider": "codex",
+                  "model": "m", "model_family": "gpt", "counts": counts}
+        if findings is not None:
+            review["findings"] = findings
+        review_ledger.record(root, ticket, number, review)
+        return manifest
+
+    def clean_receipt(self, ticket="T-0001"):
+        return self._round(ticket, "CLEAN", {"BLOCK": 0, "FIX": 0, "NIT": 0})
+
+    def findings_round(self, ticket="T-0001"):
+        return self._round(ticket, "FINDINGS", {"BLOCK": 0, "FIX": 1, "NIT": 0},
+                           ["FIX|app.txt|fixture"])
+
+    def ledger(self, ticket="T-0001"):
+        return pathlib.Path(review_ledger.ledger_path(str(self.root), ticket))
+
+
+def run_gate(flavour, repo, command, env=None, scripts=None, path=None, timeout=60):
+    payload = {"tool_name": "Bash" if flavour == "sh" else "PowerShell",
+               "tool_input": {"command": command}, "cwd": str(repo.root)}
+    child = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo.root))
+    child.pop(_BUDGET, None)
+    child.update(env or {})
+    if path is not None:
+        child["PATH"] = path
+    where = pathlib.Path(scripts) if scripts else _SCRIPTS
+    if flavour == "sh":
+        argv = [_BASH, (where / "promote-gate.sh").as_posix()]
+    else:
+        child["OS"] = "Windows_NT"
+        argv = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(where / "promote-gate.ps1")]
+    start = time.monotonic()
+    proc = subprocess.run(argv, input=json.dumps(payload), capture_output=True, text=True,
+                          check=False, env=child, cwd=str(repo.root), timeout=timeout)
+    return proc.returncode, proc.stderr, time.monotonic() - start
+
+
+_BUDGET = "CREW_PROMOTE_REVIEW_BUDGET"
+
+
+def _fake_other_sha(full):
+    """A different 40-hex sha sharing `full`'s first 7 characters."""
+    tail = "".join("0123456789abcdef"[(int(c, 16) + 1) % 16] for c in full[7:])
+    return full[:7] + tail
+
+
+# =============================================================================
+# 1. exact sha
+# =============================================================================
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_pass_row_for_a_same_prefix_different_sha_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    other = _fake_other_sha(repo.head)
+    assert other != repo.head and other[:7] == repo.head[:7]
+    repo.promotions(("development", other, "pass"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 2, err
+    assert "no all-pass row" in err and repo.head in err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("length", [1, 6, 7, 12, 39])
+def test_a_short_row_for_the_deploying_sha_is_refused(flavour, length, tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.promotions(("development", repo.head[:length], "pass"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 2, err
+    assert f"records the short sha {repo.head[:length]}" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_row_for_another_sha_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.promotions(("development", repo.base, "pass"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 2, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+@pytest.mark.parametrize("upper", [False, True])
+def test_a_full_sha_row_admits(flavour, upper, tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.promotions(("development", repo.head.upper() if upper else repo.head, "pass"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 0, err
+    assert repo.in_flight() == f"qa {repo.short}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_prefix_pass_row_does_not_rescue_a_failing_full_row(flavour, tmp_path):
+    """Holds under first-row and newest-row selection (L-0665)."""
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.promotions(("development", repo.head[:7], "pass"), ("development", repo.head, "fail"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 2, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_prefix_fail_row_does_not_shadow_a_passing_full_row(flavour, tmp_path):
+    """Holds under first-row and newest-row selection (L-0665)."""
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.promotions(("development", repo.head[:7], "fail"), ("development", repo.head, "pass"))
+    code, err, _ = run_gate(flavour, repo, "deploy-qa")
+    assert code == 0, err
+
+
+# =============================================================================
+# 2. review evidence: must-block
+# =============================================================================
+
+def _blocked_for_review(code, err):
+    assert code == 2, err
+    assert "requires an accepted review" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_no_ledger_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert "no review ledger" in err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_reviewed_not_accepted_ledger_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.findings_round()
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_needs_replan_ledger_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.findings_round()
+    review_ledger.reject(str(repo.root), "T-0001", "owner")
+    assert review_ledger.status(str(repo.root), "T-0001")["state"] == review_ledger.NEEDS_REPLAN
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_receipt_for_another_tree_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    repo.commit(body="unreviewed\n")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert "tree identical" in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_change_the_bundle_cannot_see_is_still_a_different_tree(flavour, tmp_path):
+    """The tree-identity rule's own case. graphify-out/graph.json is left out
+    of the review bundle and is check E's one allowed modification, so
+    `check_receipt` alone still says the receipt stands after it changes -
+    but the bytes deployed are not the bytes reviewed."""
+    repo = Repo(tmp_path, REVIEW_MAP, base_extra={"graphify-out/graph.json": "{}\n"})
+    repo.clean_receipt()
+    repo.commit("graphify-out/graph.json", '{"changed": "after review"}\n')
+    assert review_ledger.check_receipt(str(repo.root), "T-0001")[0], \
+        "the receipt check alone must keep this receipt, or the case proves nothing"
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert "tree identical" in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_receipt_superseded_by_a_new_round_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    ok, _, msg = review_ledger.reserve(str(repo.root), "T-0001", "codex", "m")
+    assert ok, msg
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_receipt_whose_bundle_no_longer_matches_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    data = json.loads(repo.ledger().read_text(encoding="utf-8"))
+    data["receipt"]["bundle_sha256"] = "0" * 64
+    data["rounds"][-1]["bundle_sha256"] = "0" * 64
+    repo.ledger().write_text(json.dumps(data), encoding="utf-8")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert "do not stand" in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_dirty_tree_review_is_refused(flavour, tmp_path):
+    """The round read an uncommitted edit; the commit deployed does not hold it."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    (repo.root / "app.txt").write_text("v2 plus an edit nobody committed\n", encoding="utf-8")
+    repo.clean_receipt()
+    _git(repo.root, "checkout", "--", "app.txt")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_excluded_path_change_is_refused(flavour, tmp_path):
+    """Check E: graphify-out/ is left out of the bundle, so a file added
+    there in the reviewed range was never shown."""
+    repo = Repo(tmp_path, REVIEW_MAP, extra={"graphify-out/unseen.txt": "never reviewed\n"})
+    repo.clean_receipt()
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_auto_accepted_receipt_without_its_review_json_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.findings_round()
+    data = json.loads(repo.ledger().read_text(encoding="utf-8"))
+    row = data["rounds"][-1]
+    data["receipt"] = {"kind": review_ledger.AUTO_KIND, "round": row["round"],
+                       "bundle_sha256": row["bundle_sha256"], "base": row["base"],
+                       "verdict": "FINDINGS", "accepted_by": review_ledger.AUTO_BY,
+                       "accepted_at": "2026-10-06T00:00:00+00:00",
+                       "findings": row["findings"], "provider": "codex",
+                       "model_family": "gpt", "follow_up": "T-0002",
+                       "review_json_sha256": "a" * 64, "ignored_lines": 0}
+    data["state"] = review_ledger.ACCEPTED
+    repo.ledger().write_text(json.dumps(data), encoding="utf-8")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_require_human_true_still_needs_the_receipt(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    (repo.root / ".crew" / f".approved-prod-{repo.short}").write_text("", encoding="utf-8")
+    code, err, _ = run_gate(flavour, repo, "deploy-prod")
+    _blocked_for_review(code, err)
+    assert "requires explicit human approval" not in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("reason", [None, "", "   ", 5, ["x"]])
+def test_require_review_false_without_a_reason_string_is_refused(flavour, reason, tmp_path):
+    env = {"deploy": "deploy-dev", "requireReview": False, **_ROLLBACK}
+    if reason is not None:
+        env["reviewReason"] = reason
+    repo = Repo(tmp_path, {"environments": {"development": env}})
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 2, err
+    assert "no reviewReason string" in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("value", ["false", 0, None, {"a": 1}])
+def test_require_review_not_a_bool_is_refused(flavour, value, tmp_path):
+    env = {"deploy": "deploy-dev", "requireReview": value, "reviewReason": "x", **_ROLLBACK}
+    repo = Repo(tmp_path, {"environments": {"development": env}})
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 2, err
+    assert "not true or false" in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_helper_that_cannot_run_blocks(flavour, tmp_path):
+    scripts = tmp_path / "scripts"
+    shutil.copytree(_SCRIPTS, scripts, ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    (scripts / "_promote_review.py").unlink()
+    repo = Repo(tmp_path, SHA_MAP)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev", scripts=scripts)
+    assert code == 2, err
+    assert "could not be evaluated" in err
+    assert repo.in_flight() is None
+
+
+def _git_shim(tmp_path, hang_on="diff"):
+    """A `git` first on PATH that hangs on `hang_on` and records its pid."""
+    shim_dir = tmp_path / "shim"
+    shim_dir.mkdir()
+    pids = tmp_path / "hung.pids"
+    shim = shim_dir / "git"
+    shim.write_text(
+        "#!/bin/sh\n"
+        f'for a in "$@"; do [ "$a" = "{hang_on}" ] && {{ echo $$ >> "{pids}"; '
+        "exec sleep 120; }; done\n"
+        f'exec "{_GIT}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return shim_dir, pids
+
+
+def _all_dead(pids_file, within=5.0):
+    if not pids_file.exists():
+        return True
+    pids = [int(p) for p in pids_file.read_text(encoding="utf-8").split()]
+    end = time.monotonic() + within
+    while time.monotonic() < end:
+        if not any(crew_fixtures.pid_alive(p) for p in pids):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    shim_dir, pids = _git_shim(tmp_path)
+    code, err, took = run_gate(flavour, repo, "deploy-dev", env={_BUDGET: "2"},
+                               path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    _blocked_for_review(code, err)
+    assert "did not finish" in err, err
+    assert took < 15, took
+    assert pids.exists(), "the shim never hung: the case proves nothing"
+    assert _all_dead(pids), "a hung git outlived the gate"
+
+
+@_POSIX_ONLY
+@pytest.mark.slow
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
+    """Default budget: a python that costs 2.5s per start (crew_py's probe and
+    every interpreter the gate runs, about 12s before the search starts) plus
+    a receipt check that never ends. The gate's own 16s deadline must still
+    land it inside the 20s hook; a search that took a fixed 12s from its own
+    start would not."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    shim_dir, pids = _git_shim(tmp_path)
+    real = os.path.realpath(sys.executable)
+    for name in ("python3", "python"):
+        slow = shim_dir / name
+        slow.write_text(f'#!/bin/sh\nsleep 2.5\nexec "{real}" "$@"\n', encoding="utf-8")
+        slow.chmod(0o755)
+    code, err, took = run_gate(flavour, repo, "deploy-dev",
+                               path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    assert code == 2, err
+    assert took < 20, took
+    assert pids.exists(), "the hung git was never reached: the case proves nothing"
+    assert _all_dead(pids)
+
+
+@_POSIX_ONLY
+@pytest.mark.slow
+def test_a_slow_first_git_probe_counts_against_the_deadline(tmp_path):
+    """L-0703 review r1: the deadline is taken before the payload read and the
+    map probe, so 8s lost there plus a hung receipt check still end inside
+    the 20s hook timeout."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    shim_dir, pids = _git_shim(tmp_path)
+    once = tmp_path / "slow-once"
+    shim = shim_dir / "git"
+    shim.write_text(
+        "#!/bin/sh\n"
+        f'case "$*" in *HEAD:./.crew/verify.json*) [ -e "{once}" ] || {{ : > "{once}"; sleep 8; }} ;; esac\n'
+        + shim.read_text(encoding="utf-8").split("\n", 1)[1], encoding="utf-8")
+    code, err, took = run_gate("sh", repo, "deploy-dev",
+                               path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    assert code == 2, err
+    assert once.exists(), "the slow probe never ran: the case proves nothing"
+    assert took < 20, took
+    assert _all_dead(pids)
+
+
+def _path_without_python(tmp_path, with_jq=True):
+    """A PATH of symlinks to the tools the gate uses, with no python."""
+    bin_dir = tmp_path / "nopy-bin"
+    bin_dir.mkdir()
+    tools = ["bash", "sh", "cat", "dirname", "git", "grep", "sed", "tr", "mkdir", "rm", "head",
+             "tail", "cut", "date", "env", "uname", "basename", "sort", "od", "wc", "printf",
+             "readlink", "realpath", "timeout", "sleep"]
+    if with_jq:
+        tools.append("jq")
+    for tool in tools:
+        found = shutil.which(tool)
+        if found:
+            (bin_dir / tool).symlink_to(found)
+    return str(bin_dir)
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("with_jq", [True, False])
+def test_sh_without_python_blocks_a_declared_deploy(with_jq, tmp_path):
+    if with_jq and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    code, err, _ = run_gate("sh", repo, "deploy-dev --now",
+                            path=_path_without_python(tmp_path, with_jq))
+    assert code == 2, err
+    assert "no usable python" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_passes_an_unrelated_command(tmp_path):
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    code, err, _ = run_gate("sh", repo, "ls -la", path=_path_without_python(tmp_path))
+    assert code == 0, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_refuses_a_map_with_a_repeated_key(tmp_path):
+    """jq keeps only the last of two equal keys, so the first deploy would
+    never be scanned; python refuses such a map, and so does the fallback."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    (repo.root / ".crew" / "verify.json").write_text(
+        '{"environments": {"development": {"deploy": "ship-it", "deploy": "other", '
+        '"rollback": "none", "rollbackReason": "x"}}}\n', encoding="utf-8")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-q", "-m", "twin keys")
+    code, err, _ = run_gate("sh", repo, "ship-it", path=_path_without_python(tmp_path))
+    assert code == 2, err
+    assert "repeats a key" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_sees_a_match_after_a_newline_only_value(tmp_path):
+    """A value of only newlines matched first and was stripped to nothing by
+    $(...), which read as "no match" (L-0703 review r1)."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, {"environments": {"development": {
+        "note": "\n", "deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}})
+    code, err, _ = run_gate("sh", repo, "x\ndeploy-dev", path=_path_without_python(tmp_path))
+    assert code == 2, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_blocks_when_jq_stalls(tmp_path):
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    bin_dir = pathlib.Path(_path_without_python(tmp_path))
+    (bin_dir / "jq").unlink()
+    (bin_dir / "jq").write_text("#!/bin/sh\nexec sleep 60\n", encoding="utf-8")
+    (bin_dir / "jq").chmod(0o755)
+    code, err, took = run_gate("sh", repo, "deploy-dev", path=str(bin_dir))
+    assert code == 2, err
+    assert took < 20, took
+
+
+def test_the_helper_refuses_a_map_that_is_not_the_committed_one(tmp_path):
+    """The gate refuses an uncommitted map, then the helper reads the map
+    again: an opt-out written in between must not waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    loose = {"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}}
+    repo.write_map(loose)
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           repo.head, str(int(time.time()) + 15), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60)
+    assert proc.returncode != 0, proc.stdout
+    assert "not the map committed at HEAD" in proc.stderr
+
+
+@_POSIX_ONLY
+def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
+    """One jq process per map: a fork per string took 20.8s on this repo's
+    own 847-string map, past the hook timeout."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    big = {"environments": {f"env{i}": {"deploy": f"deploy-number-{i}", "rollback": "none",
+                                        "rollbackReason": f"reason {i}", "smoke": [f"s{i}"] * 5}
+                            for i in range(400)}}
+    repo = Repo(tmp_path, big)
+    code, err, took = run_gate("sh", repo, "npm test", path=_path_without_python(tmp_path))
+    assert code == 0, err
+    assert took < 5, took
+
+
+@_POSIX_ONLY
+@_NEEDS_PWSH
+def test_ps1_without_python_blocks_a_declared_deploy(tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    code, err, _ = run_gate("ps1", repo, "deploy-dev", path=_path_without_python(tmp_path))
+    assert code == 2, err
+    assert "python" in err, err
+
+
+# =============================================================================
+# 2. review evidence: must-allow
+# =============================================================================
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_clean_receipt_for_the_deploying_head_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.short}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_owner_accepted_receipt_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.findings_round()
+    review_ledger.accept(str(repo.root), "T-0001", "owner")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.short}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_receipt_for_a_same_tree_commit_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    repo.commit(empty=True)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_one_standing_receipt_among_unrelated_ledgers_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.findings_round("T-0009")
+    repo.clean_receipt("T-0001")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_require_review_false_with_reason_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.short}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_crlf_checkout_of_the_committed_map_is_the_committed_map(flavour, tmp_path):
+    """Windows CI: under core.autocrlf the working map is CRLF and its blob LF;
+    the helper's hold-to-HEAD check must hash it as git stores the path."""
+    repo = Repo(tmp_path, SHA_MAP)
+    _git(repo.root, "config", "core.autocrlf", "true")
+    path = repo.root / ".crew" / "verify.json"
+    path.unlink()
+    _git(repo.root, "checkout", "--", ".crew/verify.json")
+    assert b"\r\n" in path.read_bytes(), "the checkout did not write CRLF: the case proves nothing"
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_require_human_true_with_marker_and_receipt_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    (repo.root / ".crew" / f".approved-prod-{repo.short}").write_text("", encoding="utf-8")
+    code, err, _ = run_gate(flavour, repo, "deploy-prod")
+    assert code == 0, err
+
+
+# =============================================================================
+# union rule and emergency lane
+# =============================================================================
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_the_union_refuses_for_the_environment_that_did_not_opt_out(flavour, tmp_path):
+    repo = Repo(tmp_path, {"environments": {
+        "a": {"deploy": "deploy-x", **_ROLLBACK, **_OPT_OUT},
+        "b": {"deploy": "deploy-x", **_ROLLBACK},
+    }})
+    code, err, _ = run_gate(flavour, repo, "deploy-x")
+    assert code == 2, err
+    assert "[b] 'b' requires an accepted review" in err, err
+    assert "'a' requires an accepted review" not in err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_open_incident_records_the_missing_review_as_a_skip(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    (repo.root / ".crew" / "incident.json").write_text(
+        json.dumps({"expiresAtEpoch": int(time.time()) + 3600}), encoding="utf-8")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+    log = (repo.root / ".crew" / "incident-skips.log").read_text(encoding="utf-8")
+    assert "requires an accepted review" in log
