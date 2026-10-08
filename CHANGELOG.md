@@ -40,7 +40,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `links`, exit 2). It never installs, stages or commits.
 - **Changed.** The refresh check's graph artifact names `/crew:graph --refresh` as its `command`
   and carries the graphify line in a new `runs` field; `/crew:autopilot`'s refresh list, the
-  crew-graph skill (a Refresh section), the README and the guide say so. crew now has 37 commands.
+  crew-graph skill (a Refresh section), the README and the guide say so. crew now has 38 commands, counting T-0025's `/crew:help`.
 
 ### Added — crew 1.1.21: the main session is the hub, lanes never ring a peer (L-0637)
 
