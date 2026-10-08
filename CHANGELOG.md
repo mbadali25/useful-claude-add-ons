@@ -9,6 +9,31 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-08
+
+Crew 1.2.2: L-0710's harness half (review plan item 1.2, Phase 1).
+
+### Changed — crew 1.2.2: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
+
+- **Summary.** A Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+  records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
+  deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
+- **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
+  write `.crew/.verify-verified-at` = HEAD - a verified claim about a tree nothing checked. Both
+  flavours now print `verify-gate: 0 rules ran ...` and write neither the marker nor the
+  fingerprint. `review_gate` therefore answers UNVERIFIED for a checkout that ran nothing.
+- **Diff baseline.** That quiet-turn write was also the diff baseline on a default branch with no
+  marker; without it merge-base stays HEAD and a commit made there is never in scope. A quiet turn
+  now records `.crew/.verify-gate.base-at` (HEAD) instead, read only by the base resolution
+  (marker, then base-at, then merge-base, then HEAD), removed when a real pass writes the marker,
+  and never read as verified.
+- **Chronic rules go to CI.** A rule priced over `verify.stopBudgetSeconds` on its own is still
+  deferred every Stop and never blocks the turn; its notice and record reason now say `deferred to
+  CI (the verify-gate check)` and that `/crew:done` needs its VERIFIED receipt. A rule that runs in
+  budget and fails still exits 2, whatever was deferred beside it.
+- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 11
+  sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
+
 ## [1.2.1] - 2026-10-08
 
 Crew 1.2.1: L-0703 (promote-gate exact-sha rows and review evidence) and L-0704 (hermetic

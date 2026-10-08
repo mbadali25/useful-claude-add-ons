@@ -210,7 +210,7 @@ overlapping lane to merge the base now.</p>
 <tr>
 <td>End of turn</td>
 <td>verify gate (<code>Stop</code>)</td>
-<td>refuses to end the turn on a red check</td>
+<td>runs the rules for what changed that fit <code>verify.stopBudgetSeconds</code>; refuses to end the turn on a red check, never on a deferral (a rule too big for the budget goes to CI)</td>
 </tr>
 <tr>
 <td>End of turn</td>
