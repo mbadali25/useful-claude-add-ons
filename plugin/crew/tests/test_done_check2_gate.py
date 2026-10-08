@@ -24,8 +24,16 @@ PLUGIN = os.path.dirname(HERE)
 DONE = os.path.join(PLUGIN, "commands", "done.md")
 
 
+def _env(home):
+    """No GIT_* from the caller (a hook's GIT_DIR would point the fixture's git
+    at the real repository), and a throwaway HOME so no user config is read."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(HOME=str(home), GIT_CONFIG_NOSYSTEM="1")
+    return env
+
+
 def _check2():
-    with open(DONE, encoding="utf-8") as fh:
+    with open(DONE, encoding="utf-8", errors="strict") as fh:
         text = fh.read()
     start = text.index("## Check 2")
     return text[start:text.index("## Check 3", start)]
@@ -38,8 +46,9 @@ def _gate_command():
 
 
 def _git(root, *args):
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True,
-                   stdin=subprocess.DEVNULL)
+    return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True,
+                          encoding="utf-8", errors="strict", stdin=subprocess.DEVNULL,
+                          timeout=60, env=_env(root.parent)).stdout
 
 
 @pytest.fixture(name="verified_repo")
@@ -51,16 +60,16 @@ def _verified_repo(tmp_path):
     _git(root, "init", "-q")
     _git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "add", "-A")
     _git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "base")
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True,
-                          capture_output=True).stdout.strip()
+    head = _git(root, "rev-parse", "HEAD").strip()
     (root / ".crew" / ".verify-verified-at").write_text(head + "\n", encoding="utf-8")
     (root / ".crew" / ".verify-gate.record.json").write_text('{"rules": {}}\n', encoding="utf-8")
     return root, head
 
 
 def _gate_line(root):
-    out = subprocess.run(["bash", "-c", _gate_command()], cwd=root, text=True,
-                         capture_output=True, stdin=subprocess.DEVNULL, timeout=60, check=False)
+    out = subprocess.run(["bash", "-c", _gate_command()], cwd=root, encoding="utf-8",
+                         errors="strict", capture_output=True, stdin=subprocess.DEVNULL,
+                         timeout=60, check=False, env=_env(root.parent))
     lines = [line for line in out.stdout.splitlines() if line.startswith("GATE ")]
     assert lines, f"no GATE line: rc={out.returncode} stdout={out.stdout!r} stderr={out.stderr!r}"
     return lines[-1]
