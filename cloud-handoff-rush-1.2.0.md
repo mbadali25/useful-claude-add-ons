@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T04:13Z
+Last updated: 2026-10-08T04:33Z
 
 ## >>> RESUME HERE
 
@@ -50,27 +50,22 @@ Last updated: 2026-10-08T04:13Z
   7. Keep `gpt-6-sol`; switch reviews to `gpt-6.1-sol` only if capacity errors persist.
 - The other landing session (ended at crew 1.1.0, #512) stays out of #324-#538 (owner asked it, 2026-10-05).
 
-## State  [refreshed 2026-10-08T02:45Z, session_01H49aKnVMcvefcadqBGmuMu]
+## State  [FINAL 2026-10-08T04:35Z, session_01H49aKnVMcvefcadqBGmuMu] - RUSH COMPLETE
 
-**10 of 12 waves are on main.** Each wave = one group PR into `release/1.2.0`, then `release/1.2.0` -> `main`.
+**crew 1.2.0 is on main** (`3f2c4244`, #575 H2b). All 12 feature waves plus H2a/H2b landed; `release/1.2.0` fast-forwarded to main.
 
-| Ref | SHA | crew |
+| Lane | PR | crew |
 |---|---|---|
-| `main` | `7a62e848` (wave 10, #569) | 1.1.19 |
-| `release/1.2.0` | `196e31fa` (G3d, #567) | 1.1.19 |
-| next free version | | **1.1.20** (G6a), then 1.1.21 (G6b), then **1.2.0** (H2b) |
+| G3c contracts | #565 -> wave 9 #566 | 1.1.18 |
+| H2a harness | #564 | 1.1.17 |
+| G3d bridge | #567 -> wave 10 #569 | 1.1.19 |
+| G6a autopilot | #570 -> wave 11 #572 | 1.1.20 |
+| G6b goals+sleep | #573 -> wave 12 #574 | 1.1.21 |
+| H2b harness | #575 | **1.2.0** |
 
-### Remaining, in order
-
-| # | Lane | Branch / PR | State | Next |
-|---|---|---|---|---|
-| 11 | G6a autopilot | `rush/g6a-autopilot` -> #570 (head `12d99dfe`, crew 1.1.20) | CI running | merge into release, then wave 11 PR release -> main |
-| 12 | G6b goals+sleep | `rush/g6b-goals-sleep` (head `ebee2f34`, unmerged with release) | built, Codex-reviewed per ticket | builder: revert placeholder version, merge release, fast checks, crew 1.1.21 last, PR into release |
-| last | H2b harness | `rush/h2b-sabotage` (head `6601d151`, no version commit, no PR) | built; Codex CLEAN (0/0/0) | after G6b on main: merge main, `git apply docs/tickets/H2b/deferred.patch` (115 entries), add the L-0651 (k) must-block test, re-check every anchor, delete the patch file, crew **1.2.0** last, PR to main alone |
-
-H2b detail: 393 entries on main all RED; 115 deferred all RED on a scratch merge (anchors may move when
-G6b really lands: re-run them). Unresolved: L-0651 (k) needs a new must-block test (G6b made
-`autopilot.sleep.deploy` real; `reviewPolicy` has no assertion). Coordinator recommendation, not yet built.
+H2b: 511/511 sabotage entries RED; L-0651 (k) must-block test added; C-0038 scope_guard entry now RED
+(refresh-allowance test counts a rule only if its pytest run names a suite that imports the module;
+Codex FIX on the first version fixed).
 
 ### Side PRs (not part of the release)
 
@@ -110,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T04:33Z RUSH COMPLETE: MERGED #575 (H2b) to main at 3f2c4244, crew 1.2.0. Release fast-forwarded. Closed H2b sources #472 #415 #430 #448 #457 #460 #487 and partials #423 #438 #484.
 - 2026-10-08T04:13Z H2b opened #575 into main, head a2a417d5, crew 1.2.0. Local checks clean. Waiting on CI.
 - 2026-10-08T04:11Z H2b Codex FIX done in ffa949ce: a rule covers a guard module only if its pytest run names a test file importing it; must-allow and must-block cases plus a new sabotage entry, all RED. Step 7 checks clean (tooling-pr OK, 9 harness paths). Sent go for the 1.2.0 version commit and PR.
 - 2026-10-08T04:06Z Codex on H2b 3bc9ef5d: 0 BLOCK, 1 FIX. The stricter refresh-allowance test rejects a valid broad mapping (zz_no_such_module proxy). Sent to the H2b builder: judge by whether the rule runs the relevant suite, plus must-allow/must-block cases. 1.2.0 commit held.
