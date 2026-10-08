@@ -743,7 +743,19 @@ if ($baseAtItem) {
 }
 if (-not $base -and $baseAtPresent -and -not $All -and -not $Ci) {
   $cand = $null
-  try { $cand = (Get-Content -LiteralPath $baseAt -TotalCount 1 -ErrorAction Stop) } catch { $cand = $null }
+  # Read only a regular file (a link to one counts), as the bash twin's
+  # `[ -f ]`: Get-Content on a FIFO waits for a writer forever and hangs Stop
+  # (review round 3). .NET reports a FIFO as an ordinary FileInfo, so off
+  # Windows the file type is asked of test(1); anything else is refused below.
+  $baseAtRegular = $true
+  if ($baseAtItem -is [System.IO.DirectoryInfo]) { $baseAtRegular = $false }
+  elseif ((Get-Variable -Name IsWindows -ValueOnly -ErrorAction SilentlyContinue) -eq $false) {
+    $null | & test -f $baseAt 2>$null
+    $baseAtRegular = ($LASTEXITCODE -eq 0)
+  }
+  if ($baseAtRegular) {
+    try { $cand = (Get-Content -LiteralPath $baseAt -TotalCount 1 -ErrorAction Stop) } catch { $cand = $null }
+  }
   if ($cand) { $cand = ([string]$cand).Trim() }
   if ($cand) {
     $null | git cat-file -e "$cand^{commit}" 2>$null

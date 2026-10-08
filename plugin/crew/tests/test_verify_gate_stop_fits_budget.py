@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+import types
 
 import pytest
 
@@ -354,6 +355,29 @@ def test_a_baseline_that_names_no_commit_refuses_the_turn(flavour, content, tmp_
     assert "cannot be read or names no commit" in result.stderr, result.stderr
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO (POSIX)")
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging(flavour, tmp_path):
+    """MUST-BLOCK (review round 3). Reading a FIFO waits for a writer forever,
+    so a baseline that is not a regular file is refused like an unreadable
+    one - promptly, never a hung Stop."""
+    root = _repo(tmp_path, [_FAILING], with_a=False)
+    os.mkfifo(str(root / _BASE_AT))
+    cmd = ([_BASH, _SH] if flavour == "sh"
+           else [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+
+    try:
+        result = crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
+                                        capture_output=True, text=True, check=False,
+                                        timeout=60)
+    except subprocess.TimeoutExpired:
+        pytest.fail("the gate hung reading a FIFO baseline")
+
+    assert (result.returncode, "cannot be read or names no commit" in result.stderr) == (
+        2, True), result.stderr
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_an_unmapped_failure_with_no_command_still_says_0_rules_ran(flavour, tmp_path):
     """`unmapped: fail` exits 2 before the marker decision; the turn still
@@ -384,16 +408,30 @@ def test_an_old_chronic_record_is_reported_as_deferred_to_ci(tmp_path):
         result.stdout + result.stderr)
 
 
-def _lines(result):
+def _lines(result, flavour):
     """Every stderr line (review round 2: not just the budget phrases), with
     measured durations normalised and the one line only the .ps1 prints -
-    `bash: <path>`, which interpreter ran the rule - left out."""
+    `bash: <path>`, which interpreter ran the rule - left out. Only from the
+    .ps1, and only when it names a file that exists (review round 3): any
+    other `bash: ...` line, an error included, is compared."""
     out = []
     for line in result.stderr.splitlines():
-        if line.startswith("bash: "):
+        if flavour == "ps1" and line.startswith("bash: ") and os.path.isfile(line[6:]):
             continue
         out.append(re.sub(r"(verify-gate: )\d+(\.\d+)?s ", r"\1Ns ", line))
     return out
+
+
+def test_parity_keeps_a_bash_line_that_is_not_the_interpreter():
+    """MUST-BLOCK (review round 3). A `bash: ` line one flavour prints that is
+    not the .ps1's interpreter line - an error - makes the outputs differ."""
+    quiet = types.SimpleNamespace(stderr="VERIFY FAILED: x\n")
+    noisy = types.SimpleNamespace(stderr="VERIFY FAILED: x\nbash: unexpected failure\n")
+    interpreter = types.SimpleNamespace(stderr=f"VERIFY FAILED: x\nbash: {sys.executable}\n")
+
+    assert (_lines(quiet, "sh") != _lines(noisy, "ps1"),
+            _lines(noisy, "sh") != _lines(quiet, "ps1"),
+            _lines(quiet, "sh") == _lines(interpreter, "ps1")) == (True, True, True)
 
 
 @pytest.mark.skipif(_BASH is None or _PWSH is None, reason="parity needs both flavours")
@@ -413,6 +451,7 @@ def test_both_flavours_agree_on_exit_and_lines(case, tmp_path):
     sh_result = _run("sh", build(tmp_path / "sh"))
     ps_result = _run("ps1", build(tmp_path / "ps"))
 
-    assert (sh_result.returncode, _lines(sh_result)) == (ps_result.returncode, _lines(ps_result)), (
-        "sh : " + repr((sh_result.returncode, _lines(sh_result))) + "\n"
-        + "ps1: " + repr((ps_result.returncode, _lines(ps_result))))
+    assert (sh_result.returncode, _lines(sh_result, "sh")) == (
+        ps_result.returncode, _lines(ps_result, "ps1")), (
+        "sh : " + repr((sh_result.returncode, _lines(sh_result, "sh"))) + "\n"
+        + "ps1: " + repr((ps_result.returncode, _lines(ps_result, "ps1"))))

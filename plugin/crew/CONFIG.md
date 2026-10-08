@@ -2928,8 +2928,8 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   marker and nothing committed differs from the current base: on a default
   branch with no marker that is what keeps the next commit in scope. It is
   read as is when it is an ancestor of HEAD and through its merge-base with
-  HEAD otherwise; one that cannot be read or names no commit refuses the
-  turn (exit 2), as does a write that fails. Nothing reads `base-at` as
+  HEAD otherwise; one that cannot be read, is not a regular file or names no
+  commit refuses the turn (exit 2), as does a write that fails. Nothing reads `base-at` as
   verified.
 - A rule that would fit `verify.stopBudgetSeconds` alone but lost to this
   turn's contention (another rule's cost crowded it out) is "acute", not

@@ -111,4 +111,13 @@ STOP_BUDGET_MUTATIONS = (
      'then remove that file.")\n    exit 2\n',
      'then remove that file.")\n',
      _T + "test_a_baseline_that_names_no_commit_refuses_the_turn[ps1-not-a-sha\\n]"),
+    # Review round 3 (Codex): a baseline that is a FIFO hung Stop in `head`.
+    ("a FIFO baseline is read and Stop hangs waiting for a writer", SH,
+     '  if [ -f "$BASE_AT" ]; then\n    CAND=$(head',
+     '  if [ -e "$BASE_AT" ]; then\n    CAND=$(head',
+     _T + "test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging[sh]"),
+    ("the PowerShell gate reads a FIFO baseline and hangs", PS1,
+     "    $baseAtRegular = ($LASTEXITCODE -eq 0)\n",
+     "    $baseAtRegular = $true\n",
+     _T + "test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging[ps1]"),
 )

@@ -378,7 +378,13 @@ fi
 # diff from a base, so they never read it.
 if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
    && [ "${1:-}" != "--all" ] && [ "$CI_MODE" -eq 0 ]; then
-  CAND=$(head -n 1 "$BASE_AT" 2>/dev/null | tr -d '[:space:]') || CAND=""
+  # Read only a regular file (a link to one counts): `head` on a FIFO waits
+  # for a writer forever and hangs Stop (review round 3); a FIFO, socket,
+  # device or directory is refused below like an unreadable file.
+  CAND=""
+  if [ -f "$BASE_AT" ]; then
+    CAND=$(head -n 1 "$BASE_AT" 2>/dev/null | tr -d '[:space:]') || CAND=""
+  fi
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
     if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
       BASE="$CAND"
