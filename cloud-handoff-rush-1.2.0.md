@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T04:42Z
+Last updated: 2026-10-08T04:49Z
 
 ## >>> RESUME HERE
 
@@ -105,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T04:49Z L-0704 done: head 1164e01e, Codex r2 CLEAN. New test test_status_mode_line_ignores_a_parent_home_set_to_plan fails when isolation is removed and passes restored.
 - 2026-10-08T04:42Z 1.2.1 Codex r1: L-0703 BLOCK x2 (no-python fallback allows a malformed map; review-helper failure bypasses the incident lane, sh+ps1). L-0704 FIX x1 (needs a conflicting-parent-HOME regression test). The backup WIP is the owner's own L-0703 review-r2 work (FIFO map, bounded read); the L-0703 fixer builds on it. Fixers started for both; the lane is rebuilt from the fixed heads.
 - 2026-10-08T04:39Z Owner: land L-0703 (#544) and L-0704 (#545) together as crew 1.2.1. Codex reviews of both started (base 7cb44221, graphify excluded). Builder assembling rush/1.2.1 from main 3f2c4244. Backup WIP branch for L-0703 excluded.
 - 2026-10-08T04:33Z RUSH COMPLETE: MERGED #575 (H2b) to main at 3f2c4244, crew 1.2.0. Release fast-forwarded. Closed H2b sources #472 #415 #430 #448 #457 #460 #487 and partials #423 #438 #484.
