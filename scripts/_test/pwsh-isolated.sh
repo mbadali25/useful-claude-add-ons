@@ -162,13 +162,22 @@ else
   skip "a_timeout_ends_the_child - no timeout(1) here"
 fi
 
-# an_interrupt_ends_the_child: INT to the launcher (started with INT at its
-# default, as a terminal's Ctrl-C would find it) ends the sleeping stub.
-if [ ${#PY[@]} != 0 ]; then
+# an_interrupt_ends_the_child: INT to the launcher, started with INT at its
+# default as a terminal's Ctrl-C would find it, ends the sleeping stub.
+# L-0730: the driver sets that default itself. Popen's restore_signals does
+# not cover INT, and verify-gate.sh starts every rule as an async list, which
+# a shell without job control starts with INT and QUIT ignored; a
+# non-interactive sh cannot trap a signal ignored on entry, so without the
+# reset the launcher never sees the INT (12 self-hosted verify-gate runs,
+# "launcher=hung child_alive=yes"). A caught handler becomes SIG_DFL across
+# exec, which preexec_fn would also do but Windows python refuses.
+interrupt_case() {  # $1 = case name; extra args run the driver under them
+  local name=$1; shift
   rm -f "$REC"
-  rc=$(STUB_MODE=sleep STUB_REC="$REC" PWSH="$STUB" "${PY[@]}" - "$LAUNCHER" "$REC" <<'PY'
+  rc=$(STUB_MODE=sleep STUB_REC="$REC" PWSH="$STUB" "$@" "${PY[@]}" - "$LAUNCHER" "$REC" <<'PY'
 import os, signal, subprocess, sys, time
 launcher, rec = sys.argv[1], sys.argv[2]
+signal.signal(signal.SIGINT, signal.default_int_handler)
 proc = subprocess.Popen(["sh", launcher, "-NoProfile"], stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL, restore_signals=True)
 for _ in range(100):
@@ -187,13 +196,21 @@ PY
   pid=$(field pid); d=$(dirname "$(field cache)")
   alive=no; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=yes
   if [ "$rc" != hung ] && [ $alive = no ] && [ ! -e "$d" ]; then
-    ok an_interrupt_ends_the_child
+    ok "$name"
   else
-    bad an_interrupt_ends_the_child "launcher=$rc child_alive=$alive"
+    bad "$name" "launcher=$rc child_alive=$alive"
     [ $alive = yes ] && kill "$pid" 2>/dev/null
   fi
+}
+# Runs the driver with INT ignored, the state verify-gate.sh hands a rule,
+# whichever state this suite itself was started in.
+int_ignored() { ( trap '' INT; "$@" ); }
+if [ ${#PY[@]} != 0 ]; then
+  interrupt_case an_interrupt_ends_the_child
+  interrupt_case an_interrupt_ends_the_child_when_int_was_ignored int_ignored
 else
   skip "an_interrupt_ends_the_child - no python here"
+  skip "an_interrupt_ends_the_child_when_int_was_ignored - no python here"
 fi
 
 # stdin_is_not_consumed
