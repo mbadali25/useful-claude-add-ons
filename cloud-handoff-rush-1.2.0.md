@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T02:14Z
+Last updated: 2026-10-08T02:22Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-08T02:22Z Owner set CREW_WINDOWS_RUNNER=winrepo2. #568 now accepts one bare label; pushed so its CI runs as the trial.
 - 2026-10-08T02:14Z Wave 10 #569: crew-windows-wallclock overran (10.1s vs 10s) on hosted Windows. The same tree passed on #567. C-0061. Commented; will re-run once when the run completes.
 - 2026-10-08T02:10Z MERGED #567 (G3d) into release at 196e31fa, crew 1.1.19. Opened WAVE 10 #569. TODO after merge: re-pin the README install URLs. G6a builder started.
 - 2026-10-08T02:07Z Owner asked to try Windows CI on winrepo2 self-hosted runners (4). Opened #568 to main (CI-only, not harness): CREW_WINDOWS_RUNNER JSON-label switch with a fork guard. Codex: 1 BLOCK and 1 FIX, both fixed. Head 7c70fc32. Waiting for the owner to set the variable with the runners' labels.
