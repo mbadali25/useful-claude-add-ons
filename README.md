@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.6**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
-- **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
+- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

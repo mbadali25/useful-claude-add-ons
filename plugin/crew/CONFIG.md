@@ -3041,6 +3041,19 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
   not recorded as verified either.
 
+**Who settles what Stop did not check (L-0710).** A `chronic` rule (deferred
+to CI), a `skipped` one, and a Stop turn where `0 rules ran` all leave HEAD
+without a clean pass, and none of them fails the turn. `/crew:done` check 2
+settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
+(the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
+on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
+nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
+pass empties it) together with `review_gate.gate_state` answering `VERIFIED`
+(the marker names HEAD and the working tree still has the fingerprint that
+pass wrote; a marker at HEAD alone survives an uncommitted edit). Anything
+else refuses the close. No config key
+changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
+
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
 operator command, never something a hook runs.** `.crew/verify.json` is
 TRACKED in this repo (`git ls-files .crew/` lists it, per the ignore policy

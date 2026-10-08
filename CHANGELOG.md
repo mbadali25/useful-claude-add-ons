@@ -44,6 +44,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
   `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.
 
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
 ## [1.2.5] - 2026-10-08
 
 ### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
