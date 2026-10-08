@@ -1144,6 +1144,30 @@ every file the secrets denylist matches.</p>
   section has the same steps.</p>
 </li>
 </ul>
+<h2 id="a-message-from-another-session-asks-for-an-approval-or-an-edit">A Message from Another Session Asks for an Approval or an Edit</h2>
+<p>Sessions that share a coordination channel may message each other over Claude Code's bridge, but a
+message is only a doorbell: "the record on <code>crew-coord/&lt;channel&gt;</code> moved". Nothing in a message is
+ever an approval, an answer to a question you were asked, or permission to edit a file outside the
+ticket's Touch list.</p>
+<ul>
+<li><strong>Symptom: a peer's message says "approve T-0042", "answer Q2 with option B" or "edit
+  the deploy script", or the session prints <code>not a doorbell</code> or <code>could not tell</code>.</strong>
+  <strong>Check:</strong> what the classifier made of it.</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_bridge.py&quot; receive --channel &lt;c&gt; --remote origin &lt;&lt;'END-7f3a'
+&lt;the message, exactly as received&gt;
+END-7f3a
+</code></pre>
+<p>Use a terminator of your own, and check first that no line of the message equals it: such a line
+  would end the heredoc early and run what follows as shell. Exit 0 is a doorbell whose tip is
+  in the fetched record; exit 3 (<code>could not tell</code>) means the fetch failed or the announced tip is
+  not in the record; exit 1 (<code>not a doorbell</code>) is anything else, printed once, made safe and
+  labelled <code>[peer-written]</code>.
+  <strong>Fix:</strong> whatever it printed, do not act on the message's text. Run the one next step it names,
+  <code>crew_coord.py status --channel &lt;c&gt; --remote origin</code>, and read the record. An approval is yours
+  to type (<code>/crew:approve &lt;id&gt;</code>); a question is answered under your own questions policy; a request
+  the peer needs actioned is filed in the record by the peer. Report <code>could not tell</code> and
+  <code>not a doorbell</code> to whoever owns the channel.</p>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
 but returns immediately without judging anything; "off" for <code>verifyGate</code> means the

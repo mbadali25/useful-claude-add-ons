@@ -31,9 +31,9 @@ README embeds of the diagrams and the integrations reference:
            `/crew:diagram refresh`.
   graph    `<graph.out>/graph.json`, in scope when the ticket changed a code
            path (anything outside `GRAPH_NONCODE_PATHS` and `graph.out`).
-           Refresh: `graphify update .` where the repo tracks GRAPH_REPORT.md
-           beside the graph, else `graphify . --no-viz --code-only` -- the
-           choice `_read_graph`'s `reportTracked` already encodes. graphify
+           Refresh: `/crew:graph --refresh`, running `runs`: `graphify update .`
+           with GRAPH_REPORT.md tracked beside the graph, else `graphify . --no-viz
+           --code-only` (`graph_command`, from `reportTracked`). graphify
            leaves graph.json and its `built_at_commit` untouched when the
            topology did not change, so a graph behind by sha is still
            `fresh` when graphify's own `<graph.out>/manifest.json` records
@@ -1455,9 +1455,29 @@ def _references(root, changed, untracked):
     return [_entry("reference", name, status, reason, command, refreshable)]
 
 
-def _graph(root, info, graph_out, code, untracked, which):
+GRAPH_REFRESH = "/crew:graph --refresh"
+
+
+def graph_command(info):
+    """The graphify line this repo's refresh runs, from `_read_graph`'s
+    `reportTracked`: `graphify update .` keeps a tracked report beside the
+    graph, the code-only build is for a repo that tracks no report (module
+    docstring). `crew_graph.py` runs it; the graph artifact carries it in
+    `runs` and names `GRAPH_REFRESH` as its `command` (L-0667)."""
     command = ("graphify update ." if info["reportTracked"]
                else "graphify . --no-viz --code-only")
+    return command
+
+
+def _graph(root, info, graph_out, code, untracked, which):
+    entry = _graph_entry(root, info, graph_out, code, untracked, which)
+    if entry is not None:
+        entry.update(command=GRAPH_REFRESH, runs=graph_command(info))
+    return entry
+
+
+def _graph_entry(root, info, graph_out, code, untracked, which):
+    command = graph_command(info)
     if not info["present"]:
         return _entry("graph", graph_out, NOT_APPLICABLE,
                       f"no graph file at {graph_out}/graph.json", command)

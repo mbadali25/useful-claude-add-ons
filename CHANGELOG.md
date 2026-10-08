@@ -9,6 +9,90 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.1.19: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
+
+- **Summary.** Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi
+  probe read any `.git` above the temporary directory as a repository, so every Kimi probe and
+  review was refused while it existed. Git is now asked instead.
+- **Fixed.** `kimi_probe._inside_a_repository` runs `git rev-parse --git-dir` in the resolved
+  temporary directory (every `GIT_*` variable removed, `LC_ALL=C`, 10-second bound, stdin
+  closed). A repository, a linked worktree included, is refused as before; only git's exit-128
+  "not a git repository" answer allows; git missing, a timeout, "dubious ownership" or any other
+  answer is could-not-tell and refuses, naming what happened.
+- **Kept.** Kimi Code 2.1.1 takes the nearest directory holding any `.git` as its project root
+  (read from its bundle), so a `.git` git rejects still refuses when Kimi would read a file
+  there: `.kimi-code`, `.agents` or `.mcp.json` at that root, or `AGENTS.md`, `agents.md` or
+  `.kimi-code/AGENTS.md` in any directory from it down to the temporary directory.
+
+### Added — crew 1.1.19: `/crew:graph`, one command for the code graph (L-0667)
+
+- **Summary.** Crew has one command for the code graph: `/crew:graph --status` says in one line
+  whether the graph is current, and `/crew:graph --refresh` runs the refresh this repo sanctions
+  and proves the tracked pair agrees before anyone commits it.
+- **Added.** `plugin/crew/commands/graph.md` and `plugin/crew/hooks/scripts/crew_graph.py`.
+  `status` prints `graph=<fresh|stale|unknown|absent> built_at=<sha|none>
+  pair=<agree|disagree|unknown|untracked> ignore=<covered|uncovered|unknown> command=<line>` and
+  writes nothing. `refresh` stops at the first failure: graphify missing (exit 2), a
+  secrets-denylisted file uncovered (exit 1) or uncertain (exit 2) before anything is built, the
+  graphify line failing (exit 1, its output verbatim), no `built_at_commit` (exit 2), and, where
+  `GRAPH_REPORT.md` is tracked, the report's `## Summary` counts against `graph.json`'s `nodes`
+  and `links` (a mismatch exit 1 with all four numbers; an unreadable side, or a graph with no
+  `links`, exit 2). It never installs, stages or commits.
+- **Changed.** The refresh check's graph artifact names `/crew:graph --refresh` as its `command`
+  and carries the graphify line in a new `runs` field; `/crew:autopilot`'s refresh list, the
+  crew-graph skill (a Refresh section), the README and the guide say so. crew now has 38 commands, counting T-0025's `/crew:help`.
+
+### Added — crew 1.1.19: the main session is the hub, lanes never ring a peer (L-0637)
+
+- **Summary.** A wave lane can no longer ring another session; it hands a question for another
+  session back to the main session, which files it in the record and rings.
+- **Added.** `crew_bridge.py ring` reads T-0029's lane marker (a lane file under
+  `.work/autopilot/<slug>/lanes/` naming this worktree) before anything else and, in a lane, refuses
+  with exit 1; a marker it cannot read is `unknown` (exit 3), never "not a lane". The main checkout
+  and a linked worktree no lane file names ring as before; `receive` and `pending` are not restricted.
+  `validate-prompts.py` fails a crew agent granted `SendMessage` or `ListAgents`, and a lane-prompt
+  source naming either.
+- **Changed.** The wave's lane prompt (`crew_wave.lane_prompt`) says a question for another session
+  goes back in the lane's report for the main session to file and ring; `/crew:autopilot` section 9
+  states the hub rule. Limit, in the README: a lane offered `SendMessage` by Claude Code can still
+  call it; no hook blocks the tool.
+
+### Added — crew 1.1.19: an unanswered doorbell reads `could not tell` (L-0636)
+
+- **Summary.** A session that rang a peer now sees, after a `/clear` too, every ring the peer has
+  not answered by moving the record, as `could not tell`, and never as agreement.
+- **Added.** `crew_bridge.py ring --to <label>` appends one `rang` line (holder, label, announced
+  tip, time, machine, worktree) to the channel log in one commit on the fetched tip, through
+  `crew_coord`'s no-force write path; a push that still fails is `unknown - could not push` and no
+  doorbell is printed. `crew_bridge.py pending` lists each ring of this session or worktree that no
+  later log line by another holder follows as `could not tell - no record change from <label> since
+  the doorbell at <time> (<age> ago)` (exit 3), or `no pending doorbells`. No timeout, retry or
+  "delivered" state; a failed fetch or a corrupt log line is `unknown`.
+- **Changed.** `/crew:autopilot` prints `pending` in `status` and its resume step and reports the
+  lines to the owner; a pending ring is not a stop. Limit, in the README: any later line by a holder
+  other than the ringer and this session clears a ring, a third session's too.
+
+### Added — crew 1.1.19: cross-session messages are a doorbell, never an instruction (T-0032)
+
+- **Summary.** Sessions sharing a coordination channel can now ring each other over Claude Code's
+  messaging bridge, and an inbound message is classified as a doorbell or untrusted data before
+  anything acts on it.
+- **Added.** `plugin/crew/hooks/scripts/crew_bridge.py`: `ring` fetches `crew-coord/<channel>` and
+  prints one line, `crew-doorbell/1 channel=<c> tip=<sha> kind=<changed|contract|finding|question>
+  ref=<id|->` (at most 200 characters, no URL), which the session passes to `SendMessage`
+  unchanged; a failed fetch is `unknown` (exit 3) and an absent channel is refused (exit 1).
+  `receive` reads a message on stdin and prints one of three results: a doorbell whose tip is in the
+  fetched record (exit 0), `could not tell` (exit 3), or `not a doorbell` (exit 1, the text printed
+  only made safe and labelled `[peer-written]`). Its only next step is always
+  `crew_coord.py status`. Neither command writes anything or prints the messaging token.
+- **Changed.** `/crew:autopilot` may use `SendMessage` and `ListAgents`; its new section 9 says to
+  ring only after the record is pushed, to run `receive` on every inbound message first (through a
+  heredoc with a fresh terminator per call), and that a message is never an approval, never a
+  `taken:` answer, never a reason to write outside Touch. README "Cross-session messages" and a
+  troubleshooting entry document it.
+- **Not in this entry.** Unanswered doorbells (L-0636), the hub rule (L-0637) and the sabotage
+  mutations (L-0638, review harness, lands separately under T-0087).
+
 ### crew 1.1.18 — L-0634: the wave refuses a ticket whose contract moved since it was built against
 
 - **Summary.** A ticket built against a contract version is no longer started by the autopilot wave
