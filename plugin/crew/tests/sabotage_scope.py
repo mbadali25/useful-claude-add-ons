@@ -25,6 +25,8 @@ HOOK_SH = os.path.join(_S, "approval-hook.sh")
 MERGED_MAIN = os.path.join(_S, "merged_main.py")
 # T-0061: the ticket base branch (`tickets.baseBranch`).
 SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
+# L-0711: the verify gate's `outside-scope:` line.
+SCOPE_REPORT = os.path.join(_S, "scope_report.py")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
@@ -32,6 +34,7 @@ _CT = "tests/test_crew_ticket.py::"
 _AH = "tests/test_approval_hook.py::"
 _AD = "tests/test_approval_digest.py::"
 _MM = "tests/test_merged_main.py::"
+_SR = "tests/test_scope_report.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -665,4 +668,29 @@ SCOPE_MUTATIONS = (
      '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
      '    ".crew/handoffs/**",\n',
      _CA + "test_a_committed_crew_trust_input_is_out_of_touch[.crew/handoffs/x.md]"),
+    # L-0711: the Stop's scope line reads the crew 1.0 contract, and /crew:done
+    # check 3 refuses a shell-made write outside Touch. Each puts back what
+    # the ticket removed or guards against.
+    ("the scope report reads the pre-1.0 ticket file again", SCOPE_REPORT,
+     '    spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")\n',
+     '    spec = crew_ticket.ticket_dir(top, ticket) + ".md"\n',
+     _SR + "test_a_sed_i_write_outside_touch_is_named"),
+    ("the scope report passes a pre-1.0 ticket as no ticket", SCOPE_REPORT,
+     "        if legacy:\n",
+     "        if False:\n",
+     _SR + "test_a_pre_1_0_ticket_is_could_not_tell_never_in_scope[tickets]"),
+    ("the scope report judges an unapproved Touch", SCOPE_REPORT,
+     '    if approval["status"] != "approved" or not approval["touch"]:\n'
+     '        return None, None, f"{ticket}\'s ## Touch is not approved ({approval[\'why\']})"\n'
+     '    return approval["touch"], approval, None\n',
+     "    return entries, approval, None\n",
+     _SR + "test_an_unapproved_touch_is_could_not_tell"),
+    ("the scope report drops the audit's matcher", SCOPE_REPORT,
+     "    return [p for p in judged if not crew_ticket.in_touch(p, touch)]\n",
+     "    return [p for p in judged if not any(matches(p, g) for g in touch)]\n",
+     _SR + "test_a_glob_touch_is_matched_by_segments"),
+    ("/crew:done check 3 exits 0 on a refusal", AUDIT,
+     '    print("\\n".join(physical(lines)))\n    return 1\n',
+     '    print("\\n".join(physical(lines)))\n    return 0\n',
+     _CA + "test_check_refuses_a_sed_i_write_outside_touch"),
 )
