@@ -516,7 +516,7 @@ KEY_META = {
                                    "anything else, `all` included, is refused with a warning. "
                                    "Asleep, an effective `all` reads as `nonprod`: production "
                                    "never runs unattended asleep.", "branch",
-                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.16",
+                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.21",
                                    _S + "crew_sleep.py"),
     "autopilot.sleep.notifyHold": _row("Inside the sleep window (L-0656): `true` holds the pings "
                                        "that only ask for attention (questions, Approval waiting, "
@@ -526,7 +526,7 @@ KEY_META = {
                                        "while armed and asleep by the schedule (a manual sleep "
                                        "outside it holds nothing); anything but null or true "
                                        "holds nothing, with a warning.", "branch", (None, True),
-                                       "1.1.16", _S + "crew_notify_hold.py"),
+                                       "1.1.21", _S + "crew_notify_hold.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",
@@ -545,13 +545,13 @@ KEY_META = {
     "autopilot.maxTicketsPerRun": _row("Tickets one goal run (one session) may start; the "
                                        "next one stops the run. Anything but a positive "
                                        "integer reads as 3, with a warning.", "branch", None,
-                                       "1.1.16", _S + "crew_autopilot_backlog.py",
+                                       "1.1.21", _S + "crew_autopilot_backlog.py",
                                        type_="positive integer"),
     "autopilot.maxTokensPerSession": _row("Input plus output tokens one goal session may "
                                           "spend before the run stops; a transcript that "
                                           "cannot be read stops too. Anything but a "
                                           "positive integer reads as 2000000, with a "
-                                          "warning.", "branch", None, "1.1.16",
+                                          "warning.", "branch", None, "1.1.21",
                                           _S + "crew_autopilot_backlog.py",
                                           type_="positive integer"),
     "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "

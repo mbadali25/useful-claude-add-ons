@@ -1766,7 +1766,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>null</code></td>
 <td><code>null</code> | <code>nonprod</code> | <code>none</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
-<td>1.1.16</td>
+<td>1.1.21</td>
 <td><code>autopilot.deploy</code> inside the sleep window (L-0654): null keeps the day value, <code>nonprod</code> or <code>none</code> replaces it; anything else, <code>all</code> included, is refused with a warning. Asleep, an effective <code>all</code> reads as <code>nonprod</code>: production never runs unattended asleep.</td>
 </tr>
 <tr>
@@ -1774,7 +1774,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>null</code></td>
 <td><code>null</code> | <code>true</code> (checked in <code>plugin/crew/hooks/scripts/crew_notify_hold.py</code>)</td>
-<td>1.1.16</td>
+<td>1.1.21</td>
 <td>Inside the sleep window (L-0656): <code>true</code> holds the pings that only ask for attention (questions, Approval waiting, Review out of rounds) and counts them; the morning summary carries the count. A failure (a deploy result, a refused Stop gate, a stalled lane) is never held. Only while armed and asleep by the schedule (a manual sleep outside it holds nothing); anything but null or true holds nothing, with a warning.</td>
 </tr>
 <tr>
@@ -1782,7 +1782,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>3</code></td>
 <td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot_backlog.py</code>)</td>
-<td>1.1.16</td>
+<td>1.1.21</td>
 <td>Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning.</td>
 </tr>
 <tr>
@@ -1790,7 +1790,7 @@ the plugin.</p>
 <td>repo</td>
 <td><code>2000000</code></td>
 <td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot_backlog.py</code>)</td>
-<td>1.1.16</td>
+<td>1.1.21</td>
 <td>Input plus output tokens one goal session may spend before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning.</td>
 </tr>
 <tr>
