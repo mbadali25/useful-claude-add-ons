@@ -85,6 +85,7 @@ COMPONENTS = (
     ("notify", "skills/notify/", "skills/notify/tests/"),
     ("doc_builder", "skills/doc-builder/", "skills/doc-builder/scripts/_test/"),
     ("intune_graph", "skills/intune-graph/", "skills/intune-graph/scripts/_test/"),
+    ("windows_ssm", "skills/windows-ssm/", "skills/windows-ssm/tests/"),
     ("cisco_meraki", "skills/cisco-meraki/", None),
     ("wazuh_onprem", "skills/wazuh-onprem/", None),
     ("bitbucket", "skills/bitbucket/", None),

@@ -403,7 +403,7 @@ def test_command_runs_pending_in_status_and_resume():
         assert "crew_bridge.py pending" in flat
     flat = " ".join(status.split())
     assert "reported to the owner" in flat and "never agreement" in flat
-    section = re.search(r"^## 8\. [^\n]*\n(.*?)(?=^## |\Z)", text, re.M | re.S).group(1)
+    section = re.search(r"^## 9\. [^\n]*\n(.*?)(?=^## |\Z)", text, re.M | re.S).group(1)
     assert "--to <label>" in section
 
 

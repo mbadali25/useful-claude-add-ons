@@ -375,4 +375,4 @@ def test_done_md_reports_trailers_without_refusing():
 
     assert "crew_trailers.py --check" in text
     assert "this report never refuses done" in text and "never rewrites" in text
-    assert "All four checks" in text
+    assert "All five checks" in text

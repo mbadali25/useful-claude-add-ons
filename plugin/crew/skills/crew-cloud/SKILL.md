@@ -59,6 +59,36 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 under `allow`, and `environments.*` lets non-production applies run unattended
 under `ask` (README "Cloud guard", CONFIG.md §16).
 
+`guards.deployWorkflow` (T-0009) judges `gh workflow run <wf>` and its REST
+twin, `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when
+`<wf>` matches a key of the repo-only `environments.workflows` map
+(`{"deploy.yml": "input:environment", "deploy-prod.yml": "production"}`). A
+workflow matching no key is not judged. Under `ask` in both layers a nonProd
+environment runs unattended; production does only with
+`environments.prodUnattended` true in both layers. `allow` covers nonProd only:
+production without `prodUnattended`, and an environment crew cannot identify
+(no input, conflicting values, two workflow arguments, no workflow named),
+still ask and are refused unattended. Not seen: an unlisted spelling of the
+workflow (display name, numeric id), the workflow YAML, `gh run rerun`,
+`gh alias`, `curl`.
+
+DISPATCH GRAMMAR. A dispatch line is judged only when every word is a plain
+literal or one whole single-quoted word, joined only by `;` `&&` `||` `&`,
+newlines, `>`/`>>`/`&>`/`&>>` to a plain word and `2>&1`; anything else — a
+pipe, any `<`, `$`, double quotes, a glob, a nested or `xargs`-fed dispatch, a
+copy or alias of `gh`, a command word made at run time whose arguments could
+follow part of a dispatch (`$X $Y run x`, `$C`, `xargs -I CMD CMD workflow
+run x`, `Start-Process $x`, an alias to a run-time value), gh reading stdin or
+a file (`--json`, `--input`, `-F k=@f`), a PowerShell launcher or alias
+holding gh, `workflow` or a run-time word with any parameter that is not a
+full, value-taking name (a switch, `-Fi`, `-Args`), and a malformed
+`environments` block in either layer — is could-not-tell; gh and `workflow`
+count only in one command, so `alias g=gh; echo workflow` is not judged. A
+could-not-tell line is asked when attended, refused unattended, and approved
+one exact command at a time by the marker the refusal names. Write
+`-f` fields and single quotes instead (README "The dispatch grammar"); a
+literal `--help` is not judged.
+
 Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
 -WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —
 PostgreSQL for `psql` (a backslash is a plain character except in `E'…'`),
@@ -153,8 +183,11 @@ applets, git `!` aliases, an interpreter (`python -c`, `node -e`), a script
 file, an unlisted wrapper (`strace`, `systemd-run`) or a container's
 entrypoint. No command-line guard can, because unattended work must run
 interpreters and scripts. The real boundary is the credentials an unattended
-run holds: scope them (T-0044). The full list is in the plugin README, "What
-the guard does not catch".
+run holds: start unattended cloud work with `crew_unattended.py launch --
+claude ...`, which hands the session short-lived credentials for an
+owner-named read-only identity and seals the machine's credential stores, or
+refuses. The full list is in the plugin README, "What the guard does not
+catch", and the launcher in "Unattended runs: sealed cloud credentials".
 
 ---
 

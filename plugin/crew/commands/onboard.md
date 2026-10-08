@@ -193,7 +193,7 @@ repo also has:
    this live"; the reference answers "what can this system do, and how do I call
    it". Those are different questions and the second does not fall out of the
    first. Endpoints, scheduled jobs, queue consumers, CLI commands, feature
-   flags, integrations — each anchored to a file and line.
+   flags, integrations (`--integrations`) — each anchored to a file and line.
 3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
@@ -229,15 +229,15 @@ restate the number here; this line said `2` long after the code had left it.
 `--force` is not free on a repo that was never behind schema. Say these
 consequences before running it, not after:
 
-- `.crew/codemap/UPGRADE.md` is overwritten unconditionally, including its
+- `.crew/codemap/UPGRADE.md` gets a new report on top, with its
   `schema <from> -> <current>` header — which reads as a migration on a repo
   that was already current, since `--force` runs the whole thing anyway.
   (This line used to quote the header as the literal `from schema: 1 -> 2`.
   It is interpolated from `notes["schemaFrom"]` and `crew_state.SCHEMA_CURRENT`,
-  so the numbers move; do not restate them.) If an earlier upgrade run left contradictions there that
-  nobody has verified yet, this run erases that list. Read the existing
-  `UPGRADE.md` before running `--refresh` if one is present, and fold its
-  unresolved contradictions into what you report afterward.
+  so the numbers move; do not restate them.) Earlier runs stay below a marker line, newest first, and are
+  never rewritten, so an unverified contradictions list survives; only the newest run's annotated lines
+  are carried into the new report. Read the top run of the existing `UPGRADE.md` before `--refresh`, and
+  fold its unresolved contradictions into what you report afterward.
 - `.crew/codemap.v1.bak/` is (re)confirmed if absent — on a repo that was
   never at v1, this creates a "v1 backup" that actually holds current-schema
   notes. Harmless, but say it happened; a stray backup with a misleading name

@@ -356,6 +356,12 @@ fi
 send_script=$(mktemp) || { note "refusing - could not create the sender script"; exit 0; }
 {
   echo '#!/usr/bin/env bash'
+  # T-0065: the sender unlinks itself FIRST. bash keeps an open script
+  # readable after unlink on POSIX, so a sender killed during its sleep
+  # (even by SIGKILL) leaves nothing in $TMPDIR. The last-line rm below
+  # stays as the fallback where an open file cannot be unlinked (Git Bash
+  # on Windows); a second rm -f of a gone file is harmless.
+  printf 'rm -f -- %q\n' "$send_script"
   echo "sleep $DELAY"
   printf '[ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ] && { rm -f -- %q; exit 0; }\n' "$send_script"
   case "$RESOLVED" in

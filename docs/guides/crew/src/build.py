@@ -81,6 +81,7 @@ GUIDES = {
     "troubleshooting": ["troubleshooting.md", "auto-cycle.md"],
     "guide": ["guide.md"],
     "configuration-reference": ["configuration-reference.md"],
+    "autopilot": ["autopilot.md"],
 }
 
 # Built files carry no version: `crew-<name>.{html,docx,pdf}` (C-0006), so a

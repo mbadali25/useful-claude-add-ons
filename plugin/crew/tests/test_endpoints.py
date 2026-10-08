@@ -1048,6 +1048,24 @@ def test_record_scan_artifact_stores_posix_separators(tmp_path):
     assert stored["artifactPath"] == "docs/security-scans/" + record["id"] + ".md"
 
 
+def test_record_scan_artifact_stores_posix_separators_whatever_the_os_returns(
+        tmp_path, monkeypatch):
+    """The test above cannot fail on POSIX: there `scan_artifact_path` joins
+    with `/` already, so removing the normalisation changes nothing it can
+    see (L-0608 measured it STILL GREEN under sabotage). Feed the freeze the
+    native Windows form directly, so the normalisation is exercised on every
+    OS."""
+    root = crew_fixtures.make_repo(tmp_path)
+    record = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    native = "docs\\security-scans\\" + record["id"] + ".md"
+    monkeypatch.setattr(crew_endpoints, "scan_artifact_path",
+                        lambda _root, _record: native)
+    crew_endpoints.record_scan_artifact(str(root), record["id"])
+    stored = crew_endpoints.load_endpoints(str(root))[0]
+    assert stored["artifactPath"] == "docs/security-scans/" + record["id"] + ".md"
+
+
 def test_scan_artifact_path_normalises_backslashes_in_a_frozen_path(tmp_path):
     """Same fix as above, checked portably: on Windows a raw backslash
     string already resolves as a path (backslash IS the native separator

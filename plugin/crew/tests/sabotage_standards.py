@@ -53,10 +53,12 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
+REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
 PYTHON_SET = os.path.join(CREW, "skills", "crew-standards", "references", "python.md")
+PWSH_SET = os.path.join(CREW, "skills", "crew-standards", "references", "powershell.md")
 
 STANDARDS_MUTATIONS = (
     (
@@ -112,7 +114,7 @@ STANDARDS_MUTATIONS = (
         STANDARDS,
         "        return None, [f\"{label}: not UTF-8 ({exc.reason} at byte {exc.start})\"], raw\n",
         "        return None, [\"absent\"], raw\n",
-        "tests/test_crew_standards.py::test_bad_overlay_refuses",
+        "tests/test_crew_standards.py::test_bad_overlay_refuses[not-utf8]",
     ),
     (
         "a stamp for another bundle passes",
@@ -142,7 +144,7 @@ STANDARDS_MUTATIONS = (
         STANDARDS,
         "                if target not in plugin_ids:\n",
         "                if False:\n",
-        "tests/test_crew_standards.py::test_bad_overlay_refuses",
+        "tests/test_crew_standards.py::test_bad_overlay_refuses[supplements-unknown-id]",
     ),
     (
         "a plugin set may claim the overlay's set name",
@@ -159,7 +161,7 @@ STANDARDS_MUTATIONS = (
         "    except OSError as exc:\n"
         "        return False, (f\"could not tell whether {ticket} has an approval receipt \"\n",
         ("tests/test_crew_standards.py::"
-         "test_gate_applies_when_the_receipt_cannot_be_looked_up"),
+         "test_gate_applies_when_the_receipt_cannot_be_looked_up[ticket-dir-is-a-file]"),
     ),
     (
         "a file parent Windows reports as not-found reads as absent",
@@ -398,11 +400,42 @@ STANDARDS_MUTATIONS = (
     (
         "the self-check gate answers before a spent budget",
         REVIEW_RUN,
-        "    if not (ledger.get(\"state\") == review_ledger.NEEDS_REPLAN\n"
-        "            or ledger.get(\"rounds_left\") == 0):\n",
-        "    if True:\n",
+        "    gated = not (_budget_spent(args) if spent is None else spent)\n",
+        "    gated = True\n",
         ("tests/test_review_run_standards.py::"
          "test_run_reports_a_spent_budget_before_the_selfcheck"),
+    ),
+    (
+        # L-0518 F2: the unlocked "budget spent" read is trusted under the
+        # lock again, so a ledger that moved reserves a round no gate asked.
+        "reserve ignores that the caller skipped the gates",
+        REVIEW_LEDGER,
+        "        if not gated:\n            return None, (False, None, GATE_CHANGED)\n",
+        "        if False:\n            return None, (False, None, GATE_CHANGED)\n",
+        ("tests/test_review_run_standards.py::"
+         "test_run_does_not_reserve_an_ungated_round_after_the_ledger_moved"),
+    ),
+    (
+        # L-0518 N4: an incident read that raises escapes, exit 1 = FINDINGS.
+        "a gate's failed incident read escapes again",
+        REVIEW_RUN,
+        "        return crew_incident.read_state(args.root, crew_state.load_config(args.root))\n"
+        "    except (OSError, ValueError) as exc:\n",
+        "        return crew_incident.read_state(args.root, crew_state.load_config(args.root))\n"
+        "    except ZeroDivisionError as exc:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_a_self_check_gate_whose_incident_read_fails_exits_2_not_1"),
+    ),
+    (
+        # L-0518 N4: a skip log that cannot be written escapes, exit 1.
+        "a gate's failed incident skip log escapes again",
+        REVIEW_RUN,
+        "        crew_incident.log_skip(args.root, check, detail)\n"
+        "    except (OSError, ValueError) as exc:\n",
+        "        crew_incident.log_skip(args.root, check, detail)\n"
+        "    except ZeroDivisionError as exc:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_a_self_check_gate_whose_skip_log_fails_exits_2_not_1"),
     ),
     (
         "GEN-07 cites two of its three change sets",
@@ -486,5 +519,39 @@ STANDARDS_MUTATIONS = (
         "command line option\n  [...] which",
         ("tests/test_crew_standards.py::"
          "test_python_sources_quote_whole_spans_without_elision"),
+    ),
+    # C-0042: L-0534's PowerShell set (PWSH), the four its spec proved by hand
+    # (.work/tickets/L-0534/notes.md was machine-local; the list is the spec's).
+    (
+        "the PWSH set stops applying to .ps1 and .psd1 files",
+        PWSH_SET,
+        'applies-to: ["**/*.ps1", "**/*.psm1", "**/*.psd1"]\n',
+        'applies-to: ["**/*.psm1"]\n',
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_set_applies_to_powershell_files_only"),
+    ),
+    (
+        "PWSH-16 names two change sets",
+        PWSH_SET,
+        "**Change sets.** 3: crew-0.19.69, crew-0.19.92, crew-1.0.23\n",
+        "**Change sets.** 2: crew-0.19.69, crew-0.19.92\n",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_names_and_cites_three_change_sets[powershell.md]"),
+    ),
+    (
+        "a PWSH candidate id ships in place of the admitted PWSH-16",
+        PWSH_SET,
+        "## PWSH-16 ",
+        "## PWSH-17 ",
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_set_parses_with_every_field"),
+    ),
+    (
+        "PWSH-16's Why claims one finding too many",
+        PWSH_SET,
+        "or hung. 3 findings across 3 change sets: a python",
+        "or hung. 4 findings across 3 change sets: a python",
+        ("tests/test_crew_standards.py::"
+         "test_pwsh_why_finding_counts_match_their_enumerations"),
     ),
 )

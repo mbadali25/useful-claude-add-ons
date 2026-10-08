@@ -19,8 +19,8 @@ same artifact.
 ## `--dry-run`
 
 Print the exact sequence you would run, in order, with the commands resolved
-from config. Run nothing. This is the safe way to check a new `environments`
-block before trusting it.
+from config (a `github` environment: `crew_ghdeploy.py check`'s output). Run
+nothing. This is the safe way to check a new `environments` block first.
 
 ## The sequence
 
@@ -28,8 +28,8 @@ Run these in order. **Stop at the first failure** and report which gate failed
 with the error text verbatim.
 
 **Gate 1 - pre-deploy.**
-- Every environment in `requires` has a `pass` row in `.work/PROMOTIONS.md` for
-  the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*.
+- Every environment in `requires` has, as its NEWEST `.work/PROMOTIONS.md` row for
+  the sha you are about to deploy, an all-pass row. A later failure revokes it.
 - The tree the deploy runs from is clean, is at the sha you are about to
   deploy, and that sha is pushed. That is the tree `promote-gate` judges: the
   Bash call's working directory, moved by a leading `cd <dir> &&` and named by
@@ -66,10 +66,10 @@ with the error text verbatim.
   being discarded and get that agreed. Do not call a difference roll-forward
   because the source is the branch you were told to deploy.
 
-**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop.
+**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop. A
+`github` environment runs the five steps in the skill's `github-deploy.md`.
 
 Then assert on what actually happened, not on the wrapper:
-
 - **Check the job, not the run.** A pipeline whose deploy step is conditional
   (path filters, `if:` guards, a changed-files check) reports a green *run*
   while having deployed nothing. Read the status of the deploy job itself and
@@ -308,12 +308,12 @@ Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUG
 Be precise about this, because the difference decides how much the sequence above
 can be trusted.
 
-**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command matching
-a declared `deploy` entry and refuses it unless, for the sha at HEAD **of the tree
-the deploy runs from**: every `requires` environment has an all-pass row in
-`.work/PROMOTIONS.md`; the `rollback` runbook exists with `last verified` inside
-90 days; `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`;
-and that tree is clean. These cannot be skipped by deciding to skip them.
+**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command that contains the declared `deploy`
+text (a fragment of it is no deploy) - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
+(`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
+could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as that full sha) - and refuses it unless, for the sha at
+HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
+the `rollback` runbook is verified inside 90 days; `requireHuman` has `.crew/.approved-<env>-<sha>`; that tree is clean. These cannot be skipped by deciding to skip them.
 
 The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
 named by git's global `-C <dir>` inside `$(...)` (a `git -C` whose output feeds

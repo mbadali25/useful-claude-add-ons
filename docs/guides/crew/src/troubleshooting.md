@@ -72,7 +72,8 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `UserPromptSubmit` | `approval-hook.sh` | records or refuses a `/crew:approve <id>` receipt | always records; enforcement depends on `scope.mode` | n/a |
 | `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
 | `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands and wrong-identity commands | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh`, environment layer (T-0005) | a terraform apply judged by its target environment, and a destroy never applied unattended | `environments.nonProd` (repo only; globs naming non-production workspaces), `environments.prodUnattended` (both layers; true only when **both** say `true`) | `[]`, `false` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
 | `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
 | `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
@@ -80,6 +81,12 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
+- **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the
+  completion audit refused the same ticket at Stop twice in a row (`crew_notify.py stop` records it;
+  the gates call it once their harness-only change lands). `Lane stalled` means `/crew:autopilot`
+  found another runner's in-flight marker `stale` (a dead pid, or no heartbeat inside T-0049's
+  30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
+  not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
   `guards.cloudGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
@@ -116,9 +123,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   A round's outcome is `CLEAN`, `FINDINGS` or `INCOMPLETE`. A completed round 2 — either `FINDINGS`
   or `INCOMPLETE` — leaves the ticket state `REVIEWED`, so its `FINDINGS` can still be accepted. A
   **third** reservation attempt is refused outright and the state becomes `NEEDS_REPLAN`; that
-  refusal, and an explicit `--reject`, are the only two ways into `NEEDS_REPLAN` (autopilot's
-  `crew_autopilot.py auto-reject`, under `autopilot.maxAutoReplans`, is a `--reject` by the name
-  `autopilot (policy: autopilot.maxAutoReplans)`).
+  refusal, an explicit `--reject`, and `--reject --supersede-accepted` on an `ACCEPTED` ticket are
+  the only ways into `NEEDS_REPLAN` (autopilot's `crew_autopilot.py auto-reject`, under
+  `autopilot.maxAutoReplans`, is a `--reject` by the name `autopilot (policy: autopilot.maxAutoReplans)`).
   **Fix:** a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: `review: auto-accept: eligible`, then
   `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
@@ -128,7 +135,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased.
+  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  budget whose last round carries a BLOCK sends the `Review out of rounds` ping when
+  `/crew:autopilot` stops on it.
 
 - **Symptom: a round came back `INCOMPLETE`.**
   **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An
@@ -144,7 +153,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
-  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  `review: round N was a tool failure (...); refunded`. `review_run.py` retries it once by itself
+  (L-0514), except a usage limit or a timeout; `review: retry: not retried - <why>` says when it
+  did not. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
   too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
   Codex is out of quota, use the next eligible provider. A third tool failure under
@@ -166,8 +177,22 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   fails unless the hash still matches, the receipt is for the **latest** recorded round, and the
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
+  One exception, the delta gate: after a catch-up merge, a version bump or an anchor-only refresh,
+  committed on a clean checkout, the receipt is kept (`receipt kept by delta gate: ...`) when the
+  ticket's own delta is byte-identical to the reviewed one. Its stale line names what differed
+  (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
+  integration ref` - the merge train is not armed in this clone, so the gate keeps nothing yet); a
+  code map, rules file or diagram may move only its anchor sha after review.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
-  was accidental, revert the edit and re-check.
+  was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
+  (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
+  leaves `crew_ticket.CREW_BOOKKEEPING_PATHS` out, whatever `.gitignore` says.
+
+- **Symptom: a receipt accepted under an older crew reads stale after the upgrade.** The upgrade
+  to the release that brought T-0068 drops crew's bookkeeping from the bundle, so a receipt whose
+  bundle held a non-ignored bookkeeping file (a repository that does not ignore `.crew/*`) no
+  longer matches the rebuilt hash.
+  **Fix:** one re-review of that ticket. Later bookkeeping writes cannot stale the new receipt.
 
 - **Symptom: Codex hit a usage limit.** The probe printed `PROBE=limited` (exit 5) with the
   error on `PROBE_DETAIL=...`, or a round printed `review: codex usage limit in round N: ...`.
@@ -184,10 +209,33 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
-  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
+  Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`. An `ACCEPTED` ticket whose
+  head proved unshippable takes the explicit flag, the owner's call:
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who> \
+    --supersede-accepted
+  ```
+  It moves the ticket to `NEEDS_REPLAN`, keeps the old receipt in the `superseded` list with who
+  and when, and clears it; only an approved successor plan continues. It refuses, changing nothing,
+  on any other state, a name starting `auto:`, or a receipt or round it cannot read. `--by` is a
+  recorded name, not a check of who is calling.
 
-- **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
-  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+- **Symptom: the receipt names the wrong accepter** (a peer ran `--accept --by` under its own name
+  for a decision the owner made).
+  ```bash
+  python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --correct-acceptance \
+    --by <who> --reason "<why, one line>"
+  ```
+  Rewrites `accepted_by` on an `owner-accepted` receipt and appends `{round, was, now, reason, at}`
+  to `acceptance_corrections` (shown by `--status`). Nothing else changes, so `--check-receipt`
+  answers the same. Refuses a `clean` or `auto-accepted` receipt, a name starting `auto:`, the
+  name already recorded, and an empty or multi-line `--by` or `--reason`. A wrong correction is
+  fixed by another one; rows are never removed.
+
+- **Symptom: `crew_train.py acquire` exits 1, or `/crew:review` stops with exit 10 and
+  `review-run: train: waiting behind <ticket>`.** The clone's merge train is armed (L-0520; the
+  gate round takes it since L-0526, and no round was spent) and an overlapping ticket holds it,
+  or queued first on the same base.
   **Check:**
   ```bash
   python3 "<crew>/hooks/scripts/crew_train.py" --root . status
@@ -195,11 +243,13 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   Each waiting entry lists the ticket it is behind and every colliding pair (`<mine> x <theirs>`);
   `touch: undeclared: <why>` means that ticket's spec has no usable `## Touch`, which overlaps
   everything.
-  **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
+  **Fix:** wait for the holder to land and release, then review again; fix an
   undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
   run `crew_train.py catch-up --ticket <id>` (resolve any conflict), bump the version one past
-  the base's, refresh the artifacts, commit, gate the merged head, review it again if
-  `review_ledger.py --check-receipt` reads stale, then acquire again. `could not tell` (exit 3)
+  the base's, refresh the artifacts, commit, gate the merged head, and review it again if
+  `review_ledger.py --check-receipt` reads stale: the delta gate keeps the receipt only when none
+  of the ticket's own code moved and the clone's merge train is armed (it keeps nothing until
+  `crew_train.py arm`). Then acquire again. `could not tell` (exit 3)
   means the train state could not be read — the message names the file; nothing is guessed.
 
 - **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it
@@ -229,6 +279,18 @@ the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. T
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
+- **Symptom: a done ticket "has no .work/tickets/ folder".**
+  **Check:** `.work/tickets/Complete/<id>/`. `crew_tracker.py archive --ticket <id>` moves a done
+  or merged ticket's folder there (and, under Obsidian, its note to `<boardDir>/Complete/`), and
+  `/crew:status` counts those apart (`<m> archived in Complete/`).
+  **Fix:** none needed: every crew reader finds it there. To reopen it, move the folder and the
+  note back by hand; `move --reopen` refuses an archived ticket.
+
+- **Symptom: `could not tell where <id> lives`.**
+  **Check:** both `.work/tickets/<id>/` and `.work/tickets/Complete/<id>/` exist (a half-finished
+  archive, or a copy made by hand), or one of them cannot be read.
+  **Fix:** compare the two, keep the right one, remove the stray copy. Crew never picks one.
+
 - **Symptom: a lane worktree does not see my settings** (a CLI approval refused, `scope.mode`
   read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
   checkout with no crew config.
@@ -244,9 +306,16 @@ contract itself. This section is what goes wrong with the approval and the audit
   `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
-  checkout's settings, and a relative handoff path still names a file in the lane. The verify
-  gate, the scope and completion wrappers and `review_gate.py` do not inherit yet, so `verify-gate.ps1` still reads the lane's own
-  `emergency.standDown` while the bash gate reads the inherited one.
+  checkout's settings, and a relative handoff path still names a file in the lane. Since
+  L-0681 the verify gate (both flavours), `review_gate.py` and the scope and completion
+  wrappers inherit as well: an inherited `"verifyGate": false` stands a lane's Stop gate down,
+  and with no python a lane whose main checkout has a config blocks writes and the Stop (the
+  PowerShell 7 wrappers still allow one that strictly says `scope.mode: off`).
+- **Symptom: which tickets still need my approval?**
+  **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>` line, with a
+  `  why: <why>` line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
+  current or spec-only tickets (`nothing needs approval` when there are none). Approving a ticket
+  it does not list changes nothing.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
@@ -310,6 +379,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   A value that names no commit here, or a config that does not parse, reads as **could not tell**:
   `--record` exits 1, `--base` exits 3 with nothing on stdout, and the audit fails. It never falls
   back to `origin/HEAD` silently. Fix the value; do not unset it to make the error go away.
+- **Symptom: the completion audit or the verify gate lists `.crew/.scope-base`,
+  `.crew/metrics.md` or `.crew/.verify-gate.record.json`.** Only a crew from before T-0068 does
+  that, in a repository whose `.gitignore` does not ignore `.crew/*`.
+  **Fix:** update crew. These are crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`),
+  never a changed path for the audit, the gate or the review bundle; do not add them to Touch.
+  A `.crew/` path the audit still lists (`.crew/verify.json`, `.crew/config.json`, a committed
+  `.crew/incident.json` or `.crew/tfplan/` file, a session marker) is a real change: only the
+  ticket-flow bookkeeping and the hook logs (`.crew/guard.log`, `.crew/.autoclear.log`) are left
+  out, never a file crew reads as a trust input.
 
 - **`scope.mode` values, and what "auto" means:** `off` (hooks do nothing, the default), `report`
   (allows everything, logs the row to `.crew/guard.log`), `block` (refuses out-of-scope writes and
@@ -325,6 +403,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   prove `off` (a corrupt file, `report`, `auto`, `block`, or no `scope` key at all) fails **closed**
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
+- **"the python probe timed out" (the PowerShell scope guard, completion audit, approval hook and
+  verify gate, crew 1.1.4, L-0690).** The probe gives each candidate 3 s and the whole walk 8 s; when
+  it runs out of time, or kills a candidate at its bound, it says "the python probe timed out" (could
+  not tell) instead of "no usable python", with the same exit code. Whenever the probe finds nothing,
+  `python probe:` lines follow on stderr: a summary (`found`, `not-found`, `rejected` or
+  `timed-out`, the elapsed milliseconds and both bounds), then each candidate tried with its path,
+  its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
+  `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
+  re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
 
 ## Verify gate says COULD NOT TELL
 
@@ -363,6 +450,25 @@ whose `verify-gate: <N>s total across` line does not come after its last per-rul
 `log_complete: false`; when the gate also exited non-zero, the job summary says the list is
 partial. The list is informative only: what the receipt accepts did not change.
 
+## A diagram check fails in CI with no reason, or "Running as root without --no-sandbox"
+
+Headless Chromium, which `mmdc` drives, refuses to start as root unless puppeteer passes
+`--no-sandbox`, and CI containers run as root. A hand-written `_verify` case that calls `mmdc` bare
+fails there, and an older `_verify/run-all.sh` or `_verify/smoke.sh` threw the check's output away, so all the
+log said was `FAIL <name>`.
+
+- **Use the ready case.** Copy `plugin/crew/skills/crew-setup/templates/cases/diagrams-render.sh` into
+  `_verify/cases/` (crew-setup does this itself in a repo that has `.mmd` files). It passes the same
+  `--no-sandbox` puppeteer config as `plugin/crew/skills/crew-diagrams/scripts/render.sh` every time, renders to a temp directory,
+  prints mmdc's own last lines under a failed source's `FAIL` line, and exits 77 (SKIP) where `mmdc`
+  is not installed. `DIAGRAMS_DIR` points it at a directory other than `docs/diagrams`.
+- **See why a check failed.** The current template runners print the last 5 lines of a failing
+  check's output under its `FAIL` line and report exit 77 as `SKIP`, not a failure; a run with no
+  failure but such a skip exits 77 itself, so crew's verify gate records it skipped, not verified. A repo set up
+  earlier keeps its old runners: replace the counter line, the `check()` / `run()` function with the
+  `CUR_OUT` / `cleanup` / `trap` lines above it, and the final count and exit lines from the templates. Copying
+  `check()` alone breaks the old `_verify/smoke.sh` on the first exit 77 (`SKIP` is unset under `set -u`).
+
 ## Autopilot in a worktree, and the refresh check
 
 - **Symptom: autopilot stops with `cannot tell whether <id>'s direction is approved` in a
@@ -395,6 +501,41 @@ partial. The list is informative only: what the receipt accepts did not change.
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (`manifest.json`, `cache/`) never counts.
 
+## Wave refuses a cross-session dependency
+
+A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or
+`<channel>:<repo>:<id>` in the set file's `deps` or the INDEX row's `(depends on ...)`. The wave
+fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) and counts the dependency
+closed only when exactly one claim for that id reads `done`. Every line about the peer's claim is
+peer-written data and ends `[peer-written]`.
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `dependency <channel>:<id> is not closed: the peer claim reads working (...)` | the peer is still on it; `owner unknown` in the brackets means its heartbeat is past the TTL | wait for the peer's `done`, or take the ticket out of this wave |
+| `... reads released (...); only done closes it` | the peer gave the ticket back unfinished | agree with the peer who finishes it; `released` never closes it |
+| `dependency <channel>:<id> unknown: no claim for <id> on crew-coord/<channel>` | nobody on the channel has claimed that id | check the id and channel with `crew_coord.py status --channel <channel>` |
+| `... unknown: 2 repositories on crew-coord/<channel> hold <id>; name one as <channel>:<repo>:<id>` | the short form is ambiguous | write the long form, with the repo key `status` prints |
+| `... unknown: its claim ... is corrupt (...)` | the claim file does not parse | the claim's holder or the owner repairs it; the wave never guesses |
+| `... unknown: crew-coord/<channel> does not exist on <remote>` or `could not fetch ...` | the channel is absent, or the remote cannot be reached | check the channel name and `coord.remote`, then plan again |
+| `... unknown: '<remote>' (coord.remote) is not a configured remote` | `coord.remote` names no remote of this checkout | `git remote add <remote> <url>`, or fix `coord.remote` |
+| `dependencies unknown: ...` | a dependency is not `<id>`, `<channel>:<id>` or `<channel>:<repo>:<id>` | fix the set file's `deps` or the INDEX row; `crew_wave.py set` refuses a malformed one |
+
+## Wave refuses a ticket's contract
+
+A ticket that built against a contract version (`crew_contract.py build-against`) keeps a binding
+in `.work/tickets/<id>/contracts.json`, naming the git remote it was built on. The wave checks each
+binding, on that remote, after the ticket's dependencies;
+run the same check alone with `crew_contract.py verify --ticket <id>` (exit 0 current, 1 changed,
+3 cannot tell).
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `contract <n> v<N> changed since <id> built against it (...)` | the channel no longer shows that version with the bound hash, a matching body, status `built-against` and this ticket in `built_by`: someone rewrote it | do not rebind: agree a new version (`put --name <n> --new-version --ticket <new id>`) and a new ticket on each side, then build against it |
+| `contract <n> v<N> unknown (...)` | the fetch failed, the binding's remote is no longer configured, the channel or the version's files are missing, or the record is corrupt | fix what the brackets name (remote, channel name), then plan again; nothing is assumed current |
+| `contract bindings unknown (...)` | `contracts.json` cannot be checked, does not parse or holds no binding | restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run `build-against` again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings" |
+
+A newer version on the channel is information only and never refuses. The check writes nothing.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
@@ -406,9 +547,29 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - **"the tree this deploy runs from ('...') is dirty"** names the tree it judged. If that is the
   main checkout while you meant a worktree, run the command there: `cd <worktree> && <deploy>`, or
   enter the worktree first. A dirty main checkout no longer blocks a clean worktree.
+- **"has rows for sha X ..., but the newest row is not all-pass"** (L-0665): the newest
+  `.work/PROMOTIONS.md` row for that environment and sha is a failure, a `not-run` row from
+  `crew_ghdeploy.py record`, or anything but three `pass` cells; an older pass no longer counts. Re-run
+  `/crew:promote <upstream>` for that sha and let it append its row.
+- **"DEPLOY NOT RECORDED" for a sha no deploy ran at**: before L-0689 a command that was a FRAGMENT
+  of a declared deploy (`git rev-parse HEAD`, `development`) matched it, and the gate wrote
+  `.crew/.deploy-in-flight` for a deploy that never ran. A command now matches only when it
+  contains the declared text. A stale marker left by an older crew names that sha; check that no
+  deploy ran, then delete `.crew/.deploy-in-flight` by hand. If a real deploy is now unmatched,
+  its runs are shorter than the declared text: declare the shortest text every real run contains.
 - **"no all-pass row for sha X"** where X is the worktree's sha: the upstream environment passed a
   different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
   not carry over.
+- **"PROMOTION BLOCKED (workflow dispatch): python could not be found ..."** (L-0664, PowerShell
+  tool): the map declares a dispatch deploy, the command names `gh` with `workflow` or `dispatches`,
+  and no python resolved to read it. Install Python 3 or put it on PATH; this is not a pass.
+- **"PROMOTION BLOCKED (workflow dispatch): the gate could not tell ..."** (T-0062 on the Bash tool,
+  L-0664 on the PowerShell tool):
+  the command is a `gh workflow run` or `gh api .../dispatches` and the map declares a dispatch
+  deploy, but crew cannot read the line with certainty (a variable, a substitution, double quotes,
+  a pipe, `--json`, `--input`, `-F k=@file`, a workflow id or display name), or a declared workflow
+  fits no single environment. Spell it as the declared deploy is - plain literal words, the
+  workflow's file name, the declared inputs with their declared values.
 - **"the command names commit '...', but the tree it runs from ... is at ..."**: a literal
   `ref=<sha>` that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.
 - **"changes directory after it starts"** (a later `cd`, `bash -c 'cd ...'`, `env -C`, `make -C`),
@@ -424,6 +585,27 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - Never route around a block by running the deploy yourself with `!`. `/crew:promote` fixes the
   precondition the message names and asks you only for a `requireHuman` yes or a genuinely
   interactive step.
+
+## The run could not be identified
+
+`crew_ghdeploy.py identify` (a `github` environment under `/crew:promote`, L-0645) ends with
+`result=could-not-tell reason=<code>` and exit 3. It names a run only when exactly one new run fits;
+it never picks among candidates.
+
+- **`two-candidates`**: two new `workflow_dispatch` runs of that workflow, on that ref, by the same
+  actor, appeared in the window - usually two dispatches at once. Set `correlationInput` on the entry
+  and put that input in the workflow's `run-name`, so each run's title carries its id.
+- **`none-in-timeout`**: no new run within `identifySeconds` (default 120). Check the dispatch
+  really ran (its own Bash call, not blocked), then raise `identifySeconds` (10 to 900) if runs are
+  slow to appear.
+- **`correlation-not-found`**: new runs appeared but none had the correlation id in its title. The
+  workflow's `run-name` must include the `correlationInput` input; there is no fallback to time.
+- **`stale-prepare`**: `prepare` ran more than 600 seconds ago. Run `prepare` again, then dispatch.
+- **`state-file-missing` / `state-file-unreadable`**: run `prepare` first; never edit
+  `.crew/.ghdeploy/<env>-<N>.json` by hand.
+
+Do not pick the run from the Actions tab and carry on: run `crew_ghdeploy.py record`, which writes
+`could-not-tell` and a `not-run` row, and decide from there.
 
 ## Cloud guard false positives
 
@@ -446,7 +628,23 @@ it *would* refuse before enforcing with `"block"`.
   the command they simulate, because nothing in `_terraform_destructive`/`_aws_destructive`/the
   `Remove-Az*` matcher inspects those flags. This is a known gap, not a config bug — there is no key
   that special-cases them. If you need to run one of these unattended, use `report` mode while
-  testing, or approve the one-shot marker the deny message names.
+  testing, or approve the one-shot marker the deny message names. A literal `gh workflow run ...
+  --help` (or `-h`) is the exception: gh prints help and dispatches nothing, so the line is not
+  judged at all; terraform's `--help` still is.
+
+- **A workflow dispatch is refused as "could not tell" although it looks fine.** With
+  `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
+  when every word on it is a plain literal (letters, digits, `_./:=@%+,-`) or one whole
+  single-quoted word, joined only by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain
+  word and `2>&1`. A pipe, any `<`, double quotes, `$`, a glob, `bash -c '...'`, `xargs`, a
+  command word built at run time (`$X $Y run ...`, `Start-Process $x`, an alias to a variable), gh
+  reading stdin or a file (`--json`, `--input`, `-F k=@f`), and a malformed `environments` block
+  in either config layer make the line could-not-tell: it asks when you are there and is denied
+  unattended at every setting. **Fix:** write the literal form —
+  `-f environment=staging` instead of a `--json` body, `'Deploy Staging'` instead of
+  `"Deploy Staging"`, `> log` instead of `| tee log`, the value instead of `$ENV` — or approve the
+  one command with the marker the refusal names (it covers those exact bytes only). Other `gh`
+  commands (`gh pr create --title "..."`) are never gated.
 
 - **An "unpinned" repo makes an ordinary destructive command ask or deny, even when it is obviously
   fine.** With no `cloud.*` pins, a read-only command (`aws s3 ls`, `az group list`) runs unchecked
@@ -467,6 +665,49 @@ it *would* refuse before enforcing with `"block"`.
   `AWS_ACCESS_KEY_ID` credentials and `Remove-Az*`'s saved PowerShell context are **always**
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through `--profile`/`--subscription` does.
+
+### Unattended launch refuses
+
+`crew_unattended.py launch -- claude ...` starts an unattended session holding sealed, owner-named
+cloud credentials, or refuses and starts nothing (plugin README, "Unattended runs: sealed cloud
+credentials"). Run `python3 "<crew>/hooks/scripts/crew_unattended.py" check --root .` to see every
+check without launching. Each line is `ready`, `refuse` or `unknown` (could not tell, which also
+refuses).
+
+- **`config: no read-only identity named`** (or `no unattendedCloud in the machine config`). The
+  defaults name nothing. **Fix:** name the read-only role in `~/.claude/crew/config.json`, never in
+  the repo (a repo copy is ignored and reported): set `unattendedCloud.aws.readOnly.profile` and
+  `unattendedCloud.aws.readOnly.identity`, the assumed-role ARN prefix ending in `/`.
+- **`config: environment X is not nonProd`** or **`no machine entry for nonProd environment X`.**
+  `--environment` needs both the repo's `environments.nonProd` to match the name and a machine
+  `unattendedCloud.aws.nonProd` entry for it. There is no production entry, by design.
+- **`provider not implemented`.** Only `aws` is read; remove the other key.
+- **`export: no SessionToken ...: these are static keys`.** The profile resolves to long-lived
+  keys. **Fix:** point it at an SSO or assume-role profile; crew never runs `aws sso login` for you.
+- **`export: credentials expire in under 15 minutes`** or `export ... exited`: refresh the
+  profile's session yourself (`aws sso login`), then retry.
+- **`identity: STS says ..., expected ...`.** The exported credentials are a different role than the
+  one named; a `:user/` ARN is a long-lived IAM user and always refuses. Fix the profile, or the
+  prefix if the role was renamed.
+- **`sandbox: unavailable: apply-seccomp: write /proc/self/setgroups ...`.** Claude Code's sandbox
+  starts but cannot run commands on this host (measured with
+  `kernel.apparmor_restrict_unprivileged_userns = 1`). Every launch refuses until the host owner
+  makes the sandbox usable or runs unattended work as a separate OS user or container.
+- **`settings: <file> sets sandbox`** or **`allows Read(...)`.** The repo's `.claude/settings.json`
+  or `.claude/settings.local.json` tries to shape the sandbox or widen reads. The sealed session
+  never loads those files, but the launcher refuses rather than trust that. **Fix:** remove the key
+  from the repo's file, or run that work attended.
+- **`settings: ... sandbox.excludedCommands`**, **`allowRead entry ... could re-open a credential
+  store`** or **`sandbox.filesystem.disabled`.** Your `~/.claude/settings.json` loads in the sealed
+  session and would let a command run unsandboxed or re-open a store. **Fix:** move the entry out of
+  your user settings (or narrow the `allowRead` away from the stores), then retry.
+- **`sandbox: the session can read a store: OPEN <path>`.** The sealed settings did not hold for that
+  path (a managed or user setting may be widening it). Nothing launches; find the setting.
+- **`sandbox: store not reported`, `could not tell`, `no end marker`, or `probe made no tool
+  call`.** The probe did not measure every store, or its output was cut short; retry, and treat a
+  repeat as a host problem, not a pass.
+- **`refuse command: ...`.** `launch` runs `claude` only (an executable file or a name on `PATH`),
+  and supplies `--settings` and `--setting-sources` itself.
 
 ## Obsidian
 
@@ -582,6 +823,63 @@ setting that changes when Claude Code's auto-compact fires.
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
 
+## An agent named in verify.json is not installed
+
+`.crew/verify.json` travels with the repo; the agents its rules name do not. A rule asking for an
+agent this machine lacks reviews less, and nothing in the output says so.
+
+- **Symptom:** `/crew:status` prints `agents   MISSING <name> (verify.json rule: <paths>)`, or
+  `/crew:review` reports a requested agent as a gap.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/verify_agents.py" --root . --check
+  ```
+  Exit 1 lists each missing name with its rule's paths. Exit 2 (`unknown`) means a plugin registry,
+  a settings file or `verify.json` itself would not parse, so it could not tell; it never reads that
+  as installed. Managed-policy agents and `--agents` agents are not checked.
+  **Fix:** install the plugin or agent, enable the plugin (`enabledPlugins`; a narrower settings
+  scope's `false` wins), or change the rule to an agent this machine has.
+
+## The temp directory fills with crew files
+
+Earlier crew releases' test suites and auto-clear sender could leave files in the
+system temp directory: `crew-completion-audit.*` markers, `tmp.*` auto-clear sender scripts
+(`tmux send-keys ...` / `xdotool ...` followed by `rm -f -- <itself>`) and `tmp.*` fixture
+directories from crew's shell regression suite. Enough of them exhaust the inodes, and the
+guard and the Stop verify-gate then fail closed. Now every crew test runs with its own
+`TMPDIR`, the sender deletes itself before it sleeps, and the shell suite removes every fixture it
+makes.
+
+- **Symptom:** `df -i /tmp` near 100%, or hooks failing on `mktemp`.
+  **Check** (read-only):
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  ls -d crew-completion-audit.* 2>/dev/null | wc -l
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | wc -l
+  ```
+  **Fix (an owner action; crew itself never runs it):** with no crew session or test run active,
+  remove what the check counted:
+  ```bash
+  cd "${TMPDIR:-/tmp}"
+  find . -maxdepth 1 -name 'crew-completion-audit.*' -mmin +60 -delete
+  grep -l -e '^tmux send-keys -t' -e '^xdotool ' tmp.* 2>/dev/null | xargs -r rm -f --
+  ```
+  Old shell-suite fixture directories are ordinary `tmp.*` directories (a `.crew/` and a
+  `.git/` inside); read each before removing it.
+
+## A setting seems to do nothing
+
+**Symptom:** you set a key in `.crew/config.json` or `~/.claude/crew/config.json` and crew behaves
+as if it were absent.
+
+- **Check:** the `Inert settings (crew <version> does not act on them): ...` line at session
+  start, the `inert` line in `/crew:status`, or `python3 "<crew>/hooks/scripts/crew_config.py"
+  --root . --inert`. Each names `key=value (why)`: a ticket id means the installed crew does not
+  implement it yet; `unknown key` means a typo or a key from another crew version; `global,
+  repo-only` means the machine file may not set it, so it takes effect nowhere.
+- **Fix:** move a repo-only key into the repo's `.crew/config.json`, correct a typo, or wait for
+  (or install) the crew version that brings the ticket. Nothing is refused while a key is inert.
+
 ## Graph refresh refused: secrets-denylisted path
 
 graphify reads every file its ignore rules do not exclude and records the symbols it finds in
@@ -664,10 +962,14 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
+| `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
 | `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
+| `guards.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
+| `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
+| `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
 | `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
 | `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
@@ -677,6 +979,12 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `notify.provider` | both layers (a repo null inherits the global one) | `telegram`/`teams`/`none` | a repo `none` opts out even when the global file names a provider: no `question` ping, no `deploy` result (`crew_notify.py config --root .` says so) |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
 | `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |
+
+**A destroy is never applied unattended**, at any setting: `destroy`, `apply -destroy`, `-replace`,
+`workspace delete`, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
+asks when you are there and is denied unattended — `terraformApply: allow` and
+`environments.prodUnattended` included. The full decision table is in `plugin/crew/CONFIG.md`
+(`environments.*`).
 
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
 where both speak. A **ratcheted** key (marked above) can only be *narrowed* by the repo relative to

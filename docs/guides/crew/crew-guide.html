@@ -251,12 +251,14 @@ reviewed change does not.</p>
 <code>plugin/crew/hooks/scripts/crew_refresh_check.py</code>.</p>
 <p>A refresh artifact is a file that describes the code and must follow it:
 the code maps under <code>.crew/codemap/</code>, the diagrams, the code graph in
-<code>graphify-out/</code>, and the generated <code>.claude/rules/</code>. The order is fixed:
-implement, then refresh, then review, then done.</p>
+<code>graphify-out/</code>, the generated <code>.claude/rules/</code>, and the integrations
+reference (docs/reference/integrations.md) that <code>/crew:reference
+--integrations</code> writes. The order is fixed: implement, then refresh, then
+review, then done.</p>
 <p><code>crew_refresh_check.py --root . --ticket &lt;id&gt;</code> reports each artifact the
 ticket's changes reach as <code>fresh</code>, <code>stale</code> (with the command that refreshes
-it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code> or
-<code>/crew:graph --refresh</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
+it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code>,
+<code>/crew:reference --integrations</code> or <code>/crew:graph --refresh</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
 commits before review, so the reviewer reads the refreshed files. <code>/crew:done</code>
 runs the same check and refuses anything but <code>fresh</code>. It never refreshes
 anything itself: a write after review would stale the receipt.</p>

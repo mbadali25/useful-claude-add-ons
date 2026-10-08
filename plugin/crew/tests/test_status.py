@@ -495,6 +495,238 @@ def test_status_inflight_is_read_only_and_fits(tmp_path):
     assert len(lines) <= 40 and len(_inflight(lines)) == 6
 
 
+# --- the Complete/ archive (L-0509) ------------------------------------------------
+
+def _ticket_tree(tmp_path, live=(), archived=(), complete=True):
+    root = tmp_path / "r"
+    tickets = root / ".work" / "tickets"
+    tickets.mkdir(parents=True)
+    for name in live:
+        (tickets / name).mkdir()
+    if complete:
+        (tickets / "Complete").mkdir()
+    for name in archived:
+        (tickets / "Complete" / name).mkdir()
+    return root
+
+
+def test_status_counts_archived_tickets_apart(tmp_path):
+    root = _ticket_tree(tmp_path, live=("T-1", "L-0509"), archived=("T-2", "T-3", "W-0001"))
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  2 ticket dir(s), 3 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_never_counts_complete_as_a_ticket(tmp_path):
+    root = _ticket_tree(tmp_path)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)")
+
+
+def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
+    root = _ticket_tree(tmp_path, live=("T-1",), archived=("T-2",))
+    real = os.listdir
+
+    def listdir(path):
+        if os.path.basename(os.fspath(path)) == "Complete":
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    assert crew_status._ticket_lines(str(root))[0] == (  # pylint: disable=protected-access
+        "tickets  1 ticket dir(s), archived: could not tell (Permission denied), 0 legacy file(s)")
+
+
+# --- T-0070: inert settings, and the approvals that actually need you -------
+
+def test_status_names_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
+    assert lines == ["inert    autopilot.maxTicketsPerRun=3 (L-0541)"]
+
+
+def test_status_is_quiet_without_inert_settings(tmp_path):
+    root = make_repo(tmp_path, config={"autopilot": {"mode": "plan", "approval": "self"}})
+    assert [l for l in crew_status.collect(str(root)) if l.startswith("inert")] == []
+
+
+def test_status_escapes_control_characters_in_inert_settings(tmp_path):
+    from test_crew_config_inert import INERT_HOSTILE, assert_inert_escaped  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, config=INERT_HOSTILE)
+    assert_inert_escaped("\n".join(crew_status.collect(str(root))))
+
+
+def _approvals_repo(tmp_path):
+    # pylint: disable=import-outside-toplevel
+    import crew_ticket
+    from scope_fixtures import make_repo as scope_repo, make_ticket
+    root = scope_repo(tmp_path)        # scope.allowCliApproval is unset: false
+    for ticket in ("T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7"):
+        make_ticket(root, ticket, activate=False)
+    t4 = root / ".work" / "tickets" / "T-4" / "spec.md"
+    t4.write_text(t4.read_text(encoding="utf-8").replace(
+        "# T-4\n", "# T-4 widget    status: planned   risk: low\n"), encoding="utf-8")
+    for ticket in ("T-2", "T-4"):
+        crew_ticket.approve(str(root), ticket, by="owner", via=crew_ticket.USER_PROMPT)
+    crew_ticket.approve(str(root), "T-3", by="owner", via=crew_ticket.CLI)
+    plan = root / ".work" / "tickets" / "T-2" / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nmore\n", encoding="utf-8")
+    # T-0026: the header's status value alone never makes a receipt stale.
+    t4.write_text(t4.read_text(encoding="utf-8").replace("status: planned", "status: review"),
+                  encoding="utf-8")
+    (root / ".work" / "tickets" / "T-6" / "plan.md").unlink()
+    spec7 = root / ".work" / "tickets" / "T-7" / "spec.md"
+    spec7.write_text(spec7.read_text(encoding="utf-8").replace("## Intent\n", "## Other\n"),
+                     encoding="utf-8")
+    rows = ["| Ticket | Status | Title |", "| --- | --- | --- |"]
+    rows += [f"| T-{n} | {'merged' if n == 5 else 'open'} | t{n} |" for n in range(1, 8)]
+    (root / ".work" / "INDEX.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return root
+
+
+def test_status_approvals_lists_only_what_needs_you(tmp_path):
+    root = _approvals_repo(tmp_path)
+    done = _run(root, "--approvals")
+    assert done.returncode == 0, done.stderr
+    lines = done.stdout.splitlines()
+    # Each paste line is the command alone (T-0070 port review BLOCK: a reason
+    # on the same line parsed as a group of three ids); its reason follows.
+    assert lines[0:6:2] == ["/crew:approve T-1", "/crew:approve T-2", "/crew:approve T-3"], lines
+    assert lines[1] == "  why: no approval"
+    assert lines[3].startswith("  why: stale: ")
+    assert lines[5].startswith("  why: unaccepted: ")
+    assert lines[6:] == [
+        "1 ticket with a spec and plan that do not validate is not listed: T-7"]
+    for absent in ("T-4", "T-5", "T-6"):
+        assert absent not in done.stdout
+
+
+def test_status_approvals_paste_line_approves_one_ticket(tmp_path):
+    """The printed line, pasted whole, is the approval hook's single form."""
+    import approval_hook  # pylint: disable=import-outside-toplevel
+    root = _approvals_repo(tmp_path)
+    lines = _run(root, "--approvals").stdout.splitlines()
+
+    got = [approval_hook.parse(line) for line in lines if line.startswith("/crew:approve")]
+    assert [(r.kind, r.ids) for r in got] == [
+        (approval_hook.SINGLE, (t,)) for t in ("T-1", "T-2", "T-3")]
+
+
+def test_status_approvals_reads_the_main_index_from_a_linked_worktree(tmp_path):
+    """T-0070 port review FIX: a linked worktree with no INDEX of its own reads
+    the main checkout's rows, never `could not tell (no .work/INDEX.md)`."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    shutil.rmtree(wt / ".work", ignore_errors=True)
+    shutil.copytree(root / ".work" / "tickets" / "T-1", wt / ".work" / "tickets" / "T-1")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert lines[:2] == ["/crew:approve T-1", "  why: no approval"], lines
+
+
+def test_status_approvals_cannot_tell_when_the_main_index_is_unreadable(tmp_path):
+    """T-0070 port review r2 BLOCK: a linked worktree WITH a local INDEX still
+    reads the main checkout's rows, so an unreadable main INDEX is could not
+    tell, never `nothing needs approval`."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                           encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_bytes(b"| T-1 | open | \xff\xfe |\n")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert len(lines) == 1 and lines[0].startswith("could not tell ("), lines
+    assert "is not UTF-8" in lines[0], lines
+
+
+def test_status_approvals_names_a_main_checkout_with_no_index(tmp_path):
+    """T-0070 port review r3: a linked worktree whose main checkout has no
+    INDEX says so under its answer, so `nothing needs approval` never reads as
+    a verdict on rows the main checkout does not have."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                           encoding="utf-8")
+    (root / ".work" / "INDEX.md").unlink()
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert lines[0] == "nothing needs approval", lines
+    assert lines[1].startswith("note: the main checkout (") and "no .work/INDEX.md" in lines[1]
+
+
+def test_status_approvals_cannot_tell_when_the_two_indexes_disagree(tmp_path):
+    """T-0070 port review r7 BLOCK: a ticket closed here and open in the main
+    checkout (or the reverse) is left out of the walk; could not tell."""
+    root = _approvals_repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "-q", "-b", "wt", str(wt)],
+                   check=True, capture_output=True)
+    (wt / ".work").mkdir(exist_ok=True)
+    (wt / ".work" / "INDEX.md").write_text("| T-1 | done | x |\n", encoding="utf-8")
+
+    lines = _run(wt, "--approvals").stdout.splitlines()
+
+    assert len(lines) == 1 and lines[0].startswith("could not tell (") and "T-1" in lines[0], lines
+
+
+def test_status_approvals_says_nothing_needs_approval(tmp_path):
+    root = make_repo(tmp_path, config={})
+    (root / ".work" / "INDEX.md").write_text("| Ticket | Status | Title |\n| --- | --- | --- |\n",
+                                             encoding="utf-8")
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, "nothing needs approval")
+
+
+def _corrupt_index(index):
+    index.write_bytes(b"| T-1 | open | t\xff\xfe1 |\n")
+
+
+def _index_is_a_directory(index):
+    index.mkdir()
+
+
+# An INDEX crew cannot read is "could not tell", never "nothing needs approval":
+# T-1..T-3 below each still have a spec and a plan that need approving.
+@pytest.mark.parametrize("damage,reason", [
+    (os.unlink, "no .work/INDEX.md"),
+    (_corrupt_index, ".work/INDEX.md is not UTF-8"),
+    # open() on a directory raises IsADirectoryError on POSIX and
+    # PermissionError on Windows (EACCES from CreateFile): both are an
+    # unreadable INDEX, and the reason names what was raised.
+    (_index_is_a_directory, ".work/INDEX.md could not be read: "
+     + ("PermissionError" if os.name == "nt" else "IsADirectoryError")),
+])
+def test_status_approvals_says_unknown_when_the_index_cannot_be_read(tmp_path, damage, reason):
+    root = _approvals_repo(tmp_path)
+    index = root / ".work" / "INDEX.md"
+    index.unlink()
+    if damage is not os.unlink:
+        damage(index)
+    done = _run(root, "--approvals")
+    assert (done.returncode, done.stdout.strip()) == (0, f"could not tell ({reason})"), \
+        done.stdout + done.stderr
+
+
+def test_status_approvals_is_read_only(tmp_path):
+    root = _approvals_repo(tmp_path)
+    before = _stat_tree(root)
+    done = _run(root, "--approvals")
+    assert (done.returncode, _stat_tree(root)) == (0, before)
+
+
 def test_status_tree_runs_the_git_which_resolves(tmp_path, monkeypatch):
     # L-1508: the tree line judges the git PATH resolves the way bash, pwsh
     # and shutil.which do (PATHEXT: git.cmd). The failing git is NOT on PATH:
@@ -529,7 +761,7 @@ def test_status_lists_needs_owner_line(tmp_path):
     rows = "".join(f"T-{n} | needs-owner | low | r | t\n" for n in range(1, 8)) + "T-9 | review | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-9",
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-9",
         "owner    T-1, T-2, T-3, T-4, T-5 (+2) (needs-owner)"]
 
 
@@ -537,7 +769,7 @@ def test_status_hides_closed_words(tmp_path):
     rows = "T-1 | cancelled | low | r | t\n| T-2 | Superseded | low | r | t |\nT-3 | Needs-Owner | low | r | t\n"
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "owner    T-3 (needs-owner)"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "owner    T-3 (needs-owner)"]
 
 
 def test_status_unchanged_without_new_words(tmp_path):
@@ -546,7 +778,63 @@ def test_status_unchanged_without_new_words(tmp_path):
             "T-3 | done | low\nT-4 | review | low\nT-5 | spec | low\n")
 
     assert _tickets_with(tmp_path, rows) == [
-        "tickets  0 ticket dir(s), 0 legacy file(s)", "open     T-1, T-2, T-4"]
+        "tickets  0 ticket dir(s), 0 archived in Complete/, 0 legacy file(s)", "open     T-1, T-2, T-4"]
+
+
+# --- T-0065 item 3: the agents line --------------------------------------------
+
+
+def _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}'):
+    """A fake `~/.claude` with no agents of its own, so nothing real is read."""
+    config = tmp_path / "home" / ".claude"
+    (config / "plugins").mkdir(parents=True)
+    (config / "plugins" / "installed_plugins.json").write_text(registry, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+
+def _verify_names(root, *agents):
+    rules = [{"paths": ["**/*.php"], "run": ["true"], "agents": list(agents)}]
+    (root / ".crew" / "verify.json").write_text(json.dumps({"rules": rules}), encoding="utf-8")
+
+
+def test_status_flags_uncovered_verify_agent(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "php-developer")
+
+    lines = crew_status.collect(str(root))
+
+    agents = [line for line in lines if line.startswith("agents   ")]
+    assert agents == ["agents   MISSING php-developer (verify.json rule: **/*.php)"]
+
+
+@pytest.mark.parametrize("case", ["ok", "unknown"])
+def test_status_agents_ok_and_unknown(tmp_path, monkeypatch, case):
+    _agents_home(tmp_path, monkeypatch, registry='{"version": 2, "plugins": {}}' if case == "ok" else "{not json")
+    root = make_repo(tmp_path)
+    _verify_names(root, "security" if case == "ok" else "voltagent:security-auditor")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    if case == "ok":
+        assert agents == ["agents   ok (1 named)"]
+    else:
+        assert len(agents) == 1 and agents[0].startswith("agents   unknown - ")
+        assert "installed_plugins.json" in agents[0]
+
+
+def test_status_shows_at_most_three_missing_agents(tmp_path, monkeypatch):
+    _agents_home(tmp_path, monkeypatch)
+    root = make_repo(tmp_path)
+    _verify_names(root, "a1", "a2", "a3", "a4", "a5")
+
+    agents = [line for line in crew_status.collect(str(root)) if line.startswith("agents   ")]
+
+    assert len(agents) == 1
+    assert agents[0].startswith("agents   MISSING a1, a2, a3 (+2 more)")
+
+
 # --- T-0039: the gitignore line ---------------------------------------------------------
 
 def _gitignore_line(lines):

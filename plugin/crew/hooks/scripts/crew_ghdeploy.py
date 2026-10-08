@@ -1,6 +1,10 @@
 """GitHub Actions deploys for `/crew:promote`, as data in `.crew/verify.json`.
 
-    python3 crew_ghdeploy.py check --root DIR --env NAME
+    python3 crew_ghdeploy.py check   --root DIR --env NAME
+    python3 crew_ghdeploy.py prepare --root DIR --env NAME [--index N]
+    python3 crew_ghdeploy.py identify --root DIR --env NAME [--index N]
+    python3 crew_ghdeploy.py watch    --root DIR --env NAME [--index N] [--slice-seconds S]
+    python3 crew_ghdeploy.py record   --root DIR --env NAME [--index N]
 
 T-0045 slice 1. An environment in `.crew/verify.json` may carry a `github`
 entry -- one object or a list of them -- that describes a
@@ -45,8 +49,8 @@ applies it (`load_map`, `gate_problem`, `gate_matches`):
     object is REFUSED by the gates, so `check` refuses it too
     (`gate-refuses-map`); `"deploy": []` and `[""]` declare nothing;
   - the command loses every CR and its trailing newlines, and a blank one
-    deploys nothing; a declared command matches when either one contains the
-    other, literally, ignoring case (`*`, `?`, `[` are text: `[!-[]` is four
+    deploys nothing; a declared command matches when the command contains
+    it (L-0689: not the reverse), literally, ignoring case (`*`, `?`, `[` are text: `[!-[]` is four
     characters, never a wildcard set);
   - EVERY matching environment applies, in file order, joined `staging,prod`:
     the union of their `requires`, `rollback` and `requireHuman`.
@@ -83,12 +87,16 @@ Exit codes, with the last stdout line always `result=...`:
 """
 import argparse
 import calendar
+import datetime
+import fnmatch
 import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import sys
+import time
 import unicodedata
 
 import crew_common
@@ -242,14 +250,15 @@ def prefix(entry):
     return " ".join(parts)
 
 
-def dispatch(entry, env, sha):
-    """The one literal dispatch for `sha`: prefix, sha input, correlation id."""
+def dispatch(entry, env, sha, corr=None):
+    """The one literal dispatch for `sha`: prefix, sha input, correlation id
+    (`corr`, or a fresh one when the entry names a `correlationInput`)."""
     line = prefix(entry)
     if entry.get("shaInput"):
         line += f" -f {entry['shaInput']}={sha}"
     if entry.get("correlationInput"):
-        line += (f" -f {entry['correlationInput']}="
-                 f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}")
+        corr = corr or f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}"
+        line += f" -f {entry['correlationInput']}={corr}"
     return line
 
 
@@ -400,8 +409,7 @@ def gate_problem(envs):
 
 
 def _matches(command, dep):
-    return any(fold(dep) in fold(command) or fold(command) in fold(dep)
-               for fold in (_fold, _dotnet_fold))
+    return any(fold(dep) in fold(command) for fold in (_fold, _dotnet_fold))
 
 
 def gate_matches(command, envs):
@@ -539,13 +547,13 @@ def _head(root):
     return sha
 
 
-def check(root, env):
-    """Lines to print for `check`; raises Refused or CouldNotTell."""
-    envs = _environment(root, env)
+def validated(envs, env):
+    """The environment's entries, each validated, with `deploy` exactly
+    their prefixes; None when it has no `github` key. Raises Refused."""
     cfg = envs[env]
     found = entries(cfg)
     if found is None:
-        return [f"environment {env!r} has no github entry", "result=ok github=none"]
+        return None
     for index, entry in enumerate(found):
         problem = entry_problem(entry, env)
         if problem:
@@ -556,6 +564,15 @@ def check(root, env):
         raise Refused("deploy-prefix-mismatch",
                       f"{env!r}: `deploy` must list exactly these prefixes, and nothing "
                       f"else: {sorted(wanted)}")
+    return found
+
+
+def check(root, env):
+    """Lines to print for `check`; raises Refused or CouldNotTell."""
+    envs = _environment(root, env)
+    found = validated(envs, env)
+    if found is None:
+        return [f"environment {env!r} has no github entry", "result=ok github=none"]
     sha = _head(root)
     lines = []
     for entry in found:
@@ -565,20 +582,608 @@ def check(root, env):
     return lines + [f"result=ok entries={len(found)} sha={sha}"]
 
 
+# --- prepare (L-0644) ------------------------------------------------------
+#
+# `prepare` decides whether one dispatch may be attempted and records what
+# `identify` needs to find its run: who dispatches, which runs of that
+# workflow on that ref already exist, and that the sha is on the remote. It
+# refuses (exit 2, nothing written) on the first problem, in this order:
+# the entry's config (`check`'s validator, then `deploy-prefix-mismatch`),
+# `unmapped-workflow`, `unknown-environment`, `class-mismatch`,
+# `actor-unreadable`, `sha-not-on-remote`, `branch-tip-not-head` (no
+# `shaInput` only) and `snapshot-unreadable`. The class comes from T-0009's
+# classifier (`crew_dispatch.dispatch_scopes`, `dispatch_environment`),
+# called read-only; `prepare` decides no authority and never reads
+# unattended state. It never dispatches: its only `gh` calls are `api user`,
+# two GETs and `run list`. The session runs the printed command as its own
+# Bash call, so the cloud guard and promote-gate judge it.
+
+STATE_DIR = os.path.join(".crew", ".ghdeploy")
+SNAPSHOT_LIMIT = 50
+
+
+def _run_gh(args, root, timeout=600):
+    """`(exit status, stdout)` of `gh <args>` in `root`; the one seam every
+    `gh` call goes through, stubbed by the tests. A gh that cannot start is
+    exit 127; one still running after `timeout` seconds is killed, exit 124."""
+    try:
+        proc = subprocess.run([crew_common.require_tool("gh")] + list(args), cwd=root,
+                              capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, ""
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 127, str(exc)
+    return proc.returncode, proc.stdout
+
+
+def _clock():
+    return time.time()
+
+
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def _gh_json(args, root, **kw):
+    """`gh <args>`'s stdout as JSON, or None when it failed or is not JSON."""
+    code, out = _run_gh(args, root, **kw)
+    if code != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def state_path(root, env, index):
+    """`.crew/.ghdeploy/<env>-<index>.json`. An environment name that is not
+    one plain file-name word (a `/`, a `\\`, a leading `.`) is refused, so the
+    path never leaves the state directory."""
+    if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]*", env) is None:
+        raise Refused("env-name-path", f"environment name {env!r} cannot name a state file: "
+                                       "it must be [A-Za-z0-9._-], not starting with `.`")
+    return os.path.join(root, STATE_DIR, f"{env}-{index}.json")
+
+
+def write_state(path, state):
+    """The state file, written whole: a temp file then `os.replace`, so a
+    failure leaves the old file (or none) and never a partial one."""
+    text = json.dumps(state, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _entry(root, env, index):
+    """`check`'s validated entry `index` of `env`; raises."""
+    found = validated(_environment(root, env), env)
+    if found is None:
+        raise Refused("github-none", f"environment {env!r} has no github entry")
+    if not 0 <= index < len(found):
+        raise Refused("index-range", f"{env!r} has {len(found)} github entries; "
+                                     f"--index {index} is not one of them")
+    return found[index]
+
+
+def classify(root, env, command):
+    """T-0009's class for the dispatch `command`, compared with the class of
+    the environment's own name. Raises Refused; a classifier that raises is
+    a refusal too, never a pass."""
+    try:
+        import cloud_guard  # pylint: disable=import-outside-toplevel
+        import crew_dispatch  # pylint: disable=import-outside-toplevel
+        config = cloud_guard.environments_config(root)
+        scopes = crew_dispatch.dispatch_scopes(command.split()[1:])
+        klass = crew_dispatch.dispatch_environment(scopes[0], config) \
+            if len(scopes) == 1 else (crew_dispatch.ENV_UNKNOWN, None,
+                                      "the dispatch did not read as one", None)
+        named = crew_dispatch._dispatch_class(  # pylint: disable=protected-access
+            env, config.get("nonProd", []))
+    except Exception as exc:  # pylint: disable=broad-except
+        raise Refused("classifier-failed", f"the dispatch classifier failed: "
+                                           f"{type(exc).__name__}: {exc}") from exc
+    if klass is None:
+        raise Refused("unmapped-workflow",
+                      "environments.workflows in .crew/config.json lists no key "
+                      "matching this workflow; an unlisted workflow is never nonProd")
+    # Either config layer's malformed block: the dispatch guard reads both.
+    problem = crew_dispatch._envs_problem(config)  # pylint: disable=protected-access
+    if problem or klass[0] == crew_dispatch.ENV_UNKNOWN:
+        raise Refused("unknown-environment", "the classifier cannot name the "
+                      f"environment: {problem or klass[2]}")
+    if klass[0] != named:
+        raise Refused("class-mismatch",
+                      f"the dispatch classifies as {klass[0]} ({klass[1]!r}) but the "
+                      f"environment {env!r} is {named}")
+    return klass[0]
+
+
+def branch(ref):
+    """The branch NAME of an entry's ref: `refs/heads/main` is `main`. The
+    branches API and `gh run list -b` take a name, and a run's `headBranch`
+    is one; the dispatch itself keeps the ref as written."""
+    return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+
+
+def _actor(root):
+    user = _gh_json(["api", "user"], root)
+    login = user.get("login") if isinstance(user, dict) else None
+    if not isinstance(login, str) or not login or not _fits(login):
+        raise Refused("actor-unreadable", "`gh api user` gave no login")
+    return login
+
+
+def prepare(root, env, index):
+    """Lines to print for `prepare`; writes the state file last."""
+    entry = _entry(root, env, index)
+    path = state_path(root, env, index)
+    sha = _head(root)  # the dispatch deploys HEAD
+    corr = (f"crew-{env}-{sha[:7]}-{secrets.token_hex(4)}"
+            if entry.get("correlationInput") else None)
+    command = dispatch(entry, env, sha, corr)
+    klass = classify(root, env, command)
+    actor = _actor(root)
+    remote = _gh_json(["api", f"repos/{{owner}}/{{repo}}/commits/{sha}"], root)
+    if not isinstance(remote, dict) or remote.get("sha") != sha:
+        raise Refused("sha-not-on-remote", f"{sha} is not on the remote; push it first")
+    if not entry.get("shaInput"):
+        tip = _gh_json(["api", f"repos/{{owner}}/{{repo}}/branches/{branch(entry['ref'])}"],
+                       root)
+        tip = tip.get("commit") if isinstance(tip, dict) else None
+        tip = tip.get("sha") if isinstance(tip, dict) else None
+        if tip != sha:
+            raise Refused("branch-tip-not-head",
+                          f"with no `shaInput` the workflow deploys {entry['ref']!r}'s tip "
+                          f"({tip or 'unreadable'}), which is not HEAD {sha}")
+    runs = _gh_json(["run", "list", "-w", entry["workflow"], "-b", branch(entry["ref"]),
+                     "-e", "workflow_dispatch", "-u", actor, "-L", str(SNAPSHOT_LIMIT),
+                     "--json", "databaseId"], root)
+    if not isinstance(runs, list) or not all(
+            isinstance(r, dict) and isinstance(r.get("databaseId"), int) for r in runs):
+        raise Refused("snapshot-unreadable", "`gh run list` gave no list of runs")
+    t0 = int(_clock())
+    watch = entry.get("watchMinutes", RANGES["watchMinutes"][2])
+    state = {"env": env, "index": index, "workflow": entry["workflow"],
+             "ref": entry["ref"], "sha": sha, "actor": actor, "t0": t0,
+             "snapshot": sorted(r["databaseId"] for r in runs),
+             "correlationId": corr, "command": command, "class": klass,
+             "shaInput": entry.get("shaInput"), "deployJob": entry.get("deployJob"),
+             "identifySeconds": entry.get("identifySeconds",
+                                          RANGES["identifySeconds"][2]),
+             "watchMinutes": watch, "deadline": t0 + watch * 60}
+    write_state(path, state)
+    return [f"state: {os.path.join(STATE_DIR, f'{env}-{index}.json')}",
+            f"snapshot: {len(runs)} existing run(s)", command,
+            f"result=ok class={klass} sha={sha}"]
+
+
+# --- identify (L-0645) -----------------------------------------------------
+#
+# `identify` names the one run the session's dispatch created, or says it
+# cannot tell. A candidate is a run of `gh run list` (same workflow, ref,
+# event and actor filters as `prepare`'s snapshot) whose id is not in the
+# snapshot, whose event is `workflow_dispatch`, whose branch is the ref and
+# whose `createdAt` is no earlier than `t0` minus 30 seconds; with a
+# correlation id, its display title must also hold the id, with no fallback
+# to the time rule. Exactly one candidate is the run. It NEVER PICKS: two or
+# more, none by `identifySeconds`, an unparseable `createdAt`, or a state
+# file that is missing, unreadable or older than 600 seconds is could-not-tell
+# (exit 3) and writes no run id. Its only `gh` call is `run list`.
+
+POLL_SECONDS = 5
+SKEW_SECONDS = 30
+STALE_SECONDS = 600
+RUN_FIELDS = "databaseId,createdAt,headBranch,event,displayTitle,url"
+
+
+def read_state(root, env, index):
+    """The state file `prepare` wrote; raises CouldNotTell."""
+    path = state_path(root, env, index)
+    missing = not os.path.lexists(path)
+    if missing:
+        raise CouldNotTell("state-file-missing", f"{path} does not exist; run prepare first")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            state = json.loads(fh.read())
+    except (OSError, ValueError) as exc:
+        raise CouldNotTell("state-file-unreadable", f"{path}: {exc}") from exc
+    low, high = RANGES["identifySeconds"][:2]
+    good = (isinstance(state, dict)
+            and all(isinstance(state.get(k), str) and state[k]
+                    for k in ("workflow", "ref", "actor"))
+            and isinstance(state.get("t0"), int) and not isinstance(state["t0"], bool)
+            and isinstance(state.get("snapshot"), list)
+            and all(isinstance(r, int) for r in state["snapshot"])
+            and isinstance(state.get("correlationId"), (str, type(None)))
+            and isinstance(state.get("identifySeconds"), int)
+            and low <= state["identifySeconds"] <= high)
+    if not good:
+        raise CouldNotTell("state-file-unreadable", f"{path} is not a state file prepare wrote")
+    return state
+
+
+def _created(text):
+    """`createdAt` as epoch seconds, or None when it is not an ISO 8601
+    date-time with a zone."""
+    if not isinstance(text, str):
+        return None
+    try:
+        when = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when.timestamp() if when.tzinfo is not None else None
+
+
+def pick_run(runs, state):
+    """The candidates in one `gh run list` answer, never a choice among
+    them. Raises CouldNotTell for an answer that is not a list of runs or a
+    new run whose `createdAt` cannot be read. Returns (candidates, near):
+    `near` counts new runs in the window that lack the correlation id."""
+    if not (isinstance(runs, list) and all(
+            isinstance(r, dict) and isinstance(r.get("databaseId"), int) for r in runs)):
+        raise CouldNotTell("run-list-unreadable", "`gh run list` gave no list of runs")
+    seen = set(state["snapshot"])
+    corr = state.get("correlationId")
+    candidates, near = [], 0
+    for run in runs:
+        if run["databaseId"] in seen or run.get("event") != "workflow_dispatch" \
+                or run.get("headBranch") != branch(state["ref"]):
+            continue
+        created = _created(run.get("createdAt"))
+        if created is None:
+            raise CouldNotTell("created-unparseable",
+                               f"a new run's createdAt {run.get('createdAt')!r} cannot be read")
+        if created < state["t0"] - SKEW_SECONDS:
+            continue
+        if corr and corr not in str(run.get("displayTitle", "")):
+            near += 1
+            continue
+        candidates.append(run)
+    return candidates, near
+
+
+def identify(root, env, index):
+    """Lines to print for `identify`; writes the run id into the state file."""
+    path = state_path(root, env, index)
+    state = read_state(root, env, index)
+    start = _clock()
+    if start - state["t0"] > STALE_SECONDS:
+        raise CouldNotTell("stale-prepare", f"prepare ran {int(start - state['t0'])}s ago, "
+                                            f"over {STALE_SECONDS}s; prepare again")
+    deadline = start + state["identifySeconds"]
+    polls = state["identifySeconds"] // POLL_SECONDS + 1
+    answered = near = 0
+    for poll in range(polls):
+        left = deadline - _clock()
+        if left <= 0:
+            break  # never a poll that starts after identifySeconds
+        runs = _gh_json(["run", "list", "-w", state["workflow"], "-b", branch(state["ref"]),
+                         "-e", "workflow_dispatch", "-u", state["actor"],
+                         "-L", str(SNAPSHOT_LIMIT), "--json", RUN_FIELDS], root,
+                        timeout=left)
+        answered += runs is not None
+        if _clock() > deadline:
+            break  # an answer that came after identifySeconds is not used
+        if runs is not None:
+            candidates, near = pick_run(runs, state)
+            if len(candidates) > 1:
+                raise CouldNotTell("two-candidates", f"{len(candidates)} new runs match; "
+                                                     "crew never picks one")
+            if candidates:
+                run = candidates[0]
+                if not isinstance(run.get("url"), str) or not run["url"]:
+                    raise CouldNotTell("run-url-unreadable", "the one new run has no URL")
+                state.update(runId=run["databaseId"], runUrl=run.get("url"))
+                write_state(path, state)
+                return [f"run: {run['databaseId']} {run['url']}",
+                        f"result=ok run={run['databaseId']}"]
+        if poll + 1 == polls or _clock() >= deadline:
+            break
+        _sleep(POLL_SECONDS)
+    if not answered:
+        raise CouldNotTell("run-list-fails", "`gh run list` failed on every poll")
+    if near:
+        raise CouldNotTell("correlation-not-found", f"{near} new run(s) in the window, none "
+                                                    f"titled with {state['correlationId']}")
+    raise CouldNotTell("none-in-timeout", f"no new run within {state['identifySeconds']}s")
+
+
+# --- watch (L-0646) --------------------------------------------------------
+#
+# `watch` follows the identified run in slices that fit the Bash tool's
+# 600-second limit, then reads the run itself. Each call runs `gh run watch
+# <id> --exit-status --interval 15` for at most one slice or until the
+# deadline (`t0` + `watchMinutes`); when the watch cannot run, it polls `gh
+# run view` every 15 seconds for the rest of the slice instead. A slice that
+# ends with the run unfinished before the deadline is exit 75: call again.
+# THE WATCH EXIT CODE NEVER DECIDES: it is recorded, and the verdict comes
+# from `gh run view --json status,conclusion,headSha,jobs,url` -
+#   pass (0)    completed, conclusion `success`, every job matching
+#               `deployJob` succeeded (at least one matches) and, with no
+#               `shaInput`, the run's head sha is the state's sha;
+#   fail (1)    any other conclusion (`cancelled` too), a deploy job that
+#               did not succeed or is absent, or a head sha mismatch;
+#   unknown (3) the view is unreadable, the run is still running at the
+#               deadline (it is left running and named), or no run id.
+# It never cancels, re-runs or approves: its only `gh` calls are `run watch`
+# and `run view`. The verdict and its reason go into the state file.
+
+SLICE_SECONDS = 540
+SLICE_MAX = 570
+VIEW_INTERVAL = 15
+VIEW_FIELDS = "status,conclusion,headSha,jobs,url"
+# The statuses of a run that has not finished (GitHub's check-run statuses).
+RUNNING = ("queued", "in_progress", "waiting", "requested", "pending")
+# Every `run view` of one call fits in this after the slice, so a call never
+# outlives the Bash tool's 600-second limit: 570 + 25 < 600.
+VIEW_BUDGET = 25
+EXIT = {"pass": 0, "fail": 1, "unknown": 3}
+
+
+def judge(view, state):
+    """`(verdict, reason)` from one `gh run view` answer (None: unreadable)."""
+    if not isinstance(view, dict):
+        return "unknown", "view-unreadable"
+    status = view.get("status")
+    if status in RUNNING:
+        return "unknown", "still-running"
+    if status != "completed":
+        return "unknown", "status-unreadable"
+    conclusion = view.get("conclusion")
+    if not isinstance(conclusion, str) or not conclusion:
+        return "unknown", "conclusion-unreadable"
+    if conclusion != "success":
+        return "fail", f"conclusion-{conclusion}"
+    if not state.get("shaInput"):
+        head = view.get("headSha")
+        if not isinstance(head, str) or not head:
+            return "unknown", "headsha-unreadable"
+        if head != state["sha"]:
+            return "fail", "headsha-mismatch"
+    glob = state.get("deployJob")
+    if not glob:
+        return "pass", "success-deploy-job-not-checked"
+    jobs = view.get("jobs")
+    if not isinstance(jobs, list) or not all(
+            isinstance(j, dict) and isinstance(j.get("name"), str) for j in jobs):
+        return "unknown", "jobs-unreadable"
+    matched = [j for j in jobs if fnmatch.fnmatchcase(j["name"], glob)]
+    if not matched:
+        return "fail", "deploy-job-absent"
+    for job in matched:
+        if job.get("conclusion") != "success":
+            return "fail", f"deploy-job-{job.get('conclusion') or 'unfinished'}"
+    return "pass", "success-deploy-job-succeeded"
+
+
+def _view(root, run_id, limit):
+    """`gh run view`, bounded so it ends by `limit` (a `_clock()` time)."""
+    left = limit - _clock()
+    if left <= 0:
+        return None
+    return _gh_json(["run", "view", str(run_id), "--json", VIEW_FIELDS], root, timeout=left)
+
+
+def watch(root, env, index, slice_seconds=SLICE_SECONDS):
+    """`(exit code, lines)` for `watch`; writes the verdict into the state file."""
+    path = state_path(root, env, index)
+    state = read_state(root, env, index)
+    run_id = state.get("runId")
+    if not isinstance(run_id, int) or isinstance(run_id, bool):
+        raise CouldNotTell("no-run-id-in-state", "the state file names no run; "
+                                                 "identify could not tell, so nothing is watched")
+    deadline = state.get("deadline")
+    if not isinstance(deadline, int) or isinstance(deadline, bool):
+        raise CouldNotTell("state-file-unreadable", f"{path} holds no deadline")
+    # prepare writes both keys, null when unset: a state file without them is
+    # not one this watch can judge, never "no deploy job configured".
+    job, sha_input = state.get("deployJob", ""), state.get("shaInput", "")
+    if not ((job is None or (isinstance(job, str) and job and _one_line(job)))
+            and (sha_input is None or (isinstance(sha_input, str)
+                                       and NAME.fullmatch(sha_input)))):
+        raise CouldNotTell("state-file-unreadable", f"{path} does not say, as prepare writes "
+                                                    "it, whether a deploy job or a sha input "
+                                                    "was configured")
+    start = _clock()
+    end = min(start + slice_seconds, deadline)
+    limit = start + slice_seconds + VIEW_BUDGET
+    watched = None
+    if end > start:
+        watched, _out = _run_gh(["run", "watch", str(run_id), "--exit-status",
+                                 "--interval", str(VIEW_INTERVAL)], root,
+                                timeout=end - start)
+    view = _view(root, run_id, limit)
+    # A watch that could not run: poll the view for the rest of the slice.
+    while judge(view, state)[1] == "still-running" and _clock() + VIEW_INTERVAL <= end \
+            and watched not in (None, 124):
+        _sleep(VIEW_INTERVAL)
+        view = _view(root, run_id, limit)
+    verdict, reason = judge(view, state)
+    if reason == "still-running" and _clock() < deadline:
+        return 75, [f"run {run_id} is still running; the slice ended before the deadline",
+                    f"result=again run={run_id} watch-exit={watched}"]
+    url = view.get("url") if isinstance(view, dict) else None
+    state.update(verdict=verdict, verdictReason=reason, watchExit=watched,
+                 runUrl=url if isinstance(url, str) and url else state.get("runUrl"))
+    write_state(path, state)
+    lines = [f"run {run_id}: {state.get('runUrl') or '-'}"]
+    if reason == "still-running":
+        lines.append(f"run {run_id} is still running at the deadline; it is left running")
+    return EXIT[verdict], lines + [f"result={verdict} run={run_id} reason={reason}"]
+
+
+# --- record (L-0647) -------------------------------------------------------
+#
+# `record` writes one dispatch's outcome into `.work/PROMOTIONS.md`, the whole
+# file rebuilt in memory and written through a temp file and `os.replace`. It
+# always appends one detail line, which holds NO PIPE CHARACTER, so the gates
+# (`passed()` in promote-gate, the Stop check in verify-gate) never read it as
+# a row:
+#   - deploy <env> <sha40> github <workflow>@<ref> run <id|none>
+#     <pass|FAIL|unknown|could-not-tell> <url|-> at <UTC> - <reason>
+# On anything but pass it also appends the previous all-pass sha for the
+# environment, the last 40 lines of `gh run view <id> --log-failed` (ANSI
+# stripped, every pipe shown as a slash, each line clipped to 300 characters,
+# indented) and the row `| <UTC> | <env> | <sha40> | not-run | not-run |
+# not-run | <actor> |`, which records the deploy and is never a pass. On pass
+# the table row is promote's, after gates 3 to 5. No rollback, no re-dispatch,
+# no cancel: a person chooses. A state file with a run id and no verdict is
+# could-not-tell (exit 3) and writes nothing.
+
+PROMOTIONS = os.path.join(".work", "PROMOTIONS.md")
+HEADER = ("| when (UTC) | env | sha | smoke | regression | verify | by |\n"
+          "|---|---|---|---|---|---|---|\n")
+EXCERPT_LINES = 40
+EXCERPT_WIDTH = 300
+OUTCOME = {"pass": "pass", "fail": "FAIL", "unknown": "unknown"}
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_]")
+
+
+def _clean(text):
+    """One line with no pipe and no control character."""
+    text = _ANSI.sub("", str(text)).replace("|", "/")
+    return "".join(c if ord(c) >= 32 and c not in "\x7f\u2028\u2029" else " " for c in text)
+
+
+def excerpt(root, run_id):
+    """The last 40 lines of the run's failed-step log, cleaned, indented."""
+    code, out = _run_gh(["run", "view", str(run_id), "--log-failed"], root)
+    if code != 0:
+        return ["    (the failed-step log could not be read)"]
+    lines = out.replace("\r", "").splitlines()[-EXCERPT_LINES:]
+    return ["    " + _clean(line)[:EXCERPT_WIDTH] for line in lines]
+
+
+def previous_good(text, env):
+    """The sha of the LAST all-pass row for `env` in PROMOTIONS.md text,
+    read as promote-gate's `passed()` reads a row; None when there is none."""
+    good = None
+    for line in text.splitlines():
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 6 and cells[1] == env \
+                and all(c.lower() == "pass" for c in cells[3:6]):
+            good = cells[2]
+    return good
+
+
+def _promotions_target(path):
+    """The file `record` reads and replaces: `path`, or what a symlink there
+    points at, so the replace keeps the link (group review r2). A dangling
+    link, or one that cannot be resolved, is unreadable, never absent:
+    reading it as absent replaced the link with a fresh log."""
+    try:
+        link = stat.S_ISLNK(os.lstat(path).st_mode)
+    except FileNotFoundError:
+        return path
+    except OSError as exc:
+        raise CouldNotTell("promotions-unreadable", f"{path}: {exc}") from exc
+    if not link:
+        return path
+    target = os.path.realpath(path)
+    if not os.path.isfile(target):
+        raise CouldNotTell("promotions-unreadable", f"{path} is a symlink to {target}, which "
+                                                    "is not a file: the log cannot be read")
+    return target
+
+
+def record(root, env, index):
+    """Lines to print for `record`; rewrites PROMOTIONS.md whole."""
+    state = read_state(root, env, index)
+    run_id = state.get("runId")
+    has_run = isinstance(run_id, int) and not isinstance(run_id, bool)
+    if has_run and state.get("verdict") not in OUTCOME:
+        raise CouldNotTell("record-without-verdict", "the state file names a run but holds "
+                                                     "no verdict; run watch first")
+    outcome = OUTCOME[state["verdict"]] if has_run else "could-not-tell"
+    reason = state.get("verdictReason") if has_run else "identify could not name the run"
+    url = state.get("runUrl") if has_run and state.get("runUrl") else "-"
+    when = time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(_clock()))
+    path = _promotions_target(os.path.join(root, PROMOTIONS))
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            old = fh.read()
+    except FileNotFoundError:
+        old = HEADER
+    except OSError as exc:
+        raise CouldNotTell("promotions-unreadable", f"{path}: {exc}") from exc
+    add = [_clean(f"- deploy {env} {state.get('sha')} github {state['workflow']}@"
+                  f"{state['ref']} run {run_id if has_run else 'none'} {outcome} {url} "
+                  f"at {when} - {reason}")]
+    if outcome != "pass":
+        add.append(_clean(f"  previous all-pass sha for {env}: "
+                          f"{previous_good(old, env) or 'none'}"))
+        if has_run:
+            add += ["  failed-step log, last 40 lines:"] + excerpt(root, run_id)
+        add.append(f"| {when} | {_clean(env)} | {_clean(state.get('sha'))} | not-run | "
+                   f"not-run | not-run | {_clean(state['actor'])} |")
+    text = old + ("" if not old or old.endswith("\n") else "\n") + "\n".join(add) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, path)  # the whole file, never a partial one
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return add[:1] + [f"result=recorded outcome={outcome}"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="crew_ghdeploy.py")
     sub = parser.add_subparsers(dest="command", required=True)
     cmd = sub.add_parser("check", help="validate the github entry and print the dispatch")
     cmd.add_argument("--root", default=".")
     cmd.add_argument("--env", required=True)
+    cmd = sub.add_parser("prepare", help="refuse, or snapshot before the dispatch (L-0644)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
+    cmd = sub.add_parser("identify", help="name the one run the dispatch created (L-0645)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
+    cmd = sub.add_parser("watch", help="pass, fail or unknown from the run (L-0646)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
+    cmd.add_argument("--slice-seconds", type=int, default=SLICE_SECONDS)
+    cmd = sub.add_parser("record", help="write the outcome into .work/PROMOTIONS.md (L-0647)")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("--env", required=True)
+    cmd.add_argument("--index", type=int, default=0)
     args = parser.parse_args(argv)
     # A name or key in a message may hold any character, and a Windows
     # console or pipe is cp1252: an unencodable one must not turn a verdict
     # into a traceback with no result line (#407 CI, U+0131 / U+1F88).
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
+    root = os.path.abspath(args.root)
     try:
-        lines = check(os.path.abspath(args.root), args.env)
+        if args.command == "prepare":
+            lines = prepare(root, args.env, args.index)
+        elif args.command == "identify":
+            lines = identify(root, args.env, args.index)
+        elif args.command == "record":
+            lines = record(root, args.env, args.index)
+        elif args.command == "watch":
+            if not 1 <= args.slice_seconds <= SLICE_MAX:
+                raise Refused("slice-seconds-range", f"--slice-seconds must be 1 to {SLICE_MAX}, "
+                                                     "inside the Bash tool's 600-second limit")
+            code, lines = watch(root, args.env, args.index, args.slice_seconds)
+            print("\n".join(lines))
+            return code
+        else:
+            lines = check(root, args.env)
     except Refused as exc:
         print(exc)
         print(f"result=refused reason={exc.reason}")

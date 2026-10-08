@@ -1159,6 +1159,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'wazuh-onprem';            Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
     [pscustomobject]@{ Key = 'web-research';            Selected = $true; Name = 'web-research            - Live-web research via Perplexity MCP: search, ask, research' }
     [pscustomobject]@{ Key = 'web-testing-playwright';  Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
+    [pscustomobject]@{ Key = 'windows-ssm';             Selected = $true; Name = 'windows-ssm             - Linux tools on Windows, and SSM output/payload limits' }
     [pscustomobject]@{ Key = 'work-log-reporter';       Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )
 
@@ -1172,7 +1173,7 @@ foreach ($sk in $script:SkillCatalog) {
 # whether or not Claude agrees with it, so it is opted into explicitly. 'Spec' is
 # 'plugin@marketplace|marketplace-source|marketplace-name'.
 $script:PluginCatalog = @(
-    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 4 agents, 37 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'localgpu'; Selected = $true; Name = 'localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks'; Spec = 'localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }

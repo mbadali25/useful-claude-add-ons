@@ -21,6 +21,7 @@ import crew_standards as cs
 import crew_ticket
 import review_checks as rc
 import review_ledger as rl
+import review_run
 import scope_base
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 from test_review_checks import _FAKE
@@ -142,7 +143,7 @@ def test_new_finding_refuses_before_reserve(tmp_path, fake, provider):
 
     assert (result.returncode, "NEW x1 m.py: BLE001 new" in result.stderr,
             _ledger_snapshot(repo) == before, _record(scratch)["result"]) == (
-        5, True, True, rc.FAIL), result.stderr
+        review_run.EXIT_UNVERIFIED, True, True, rc.FAIL), result.stderr
 
 
 @pytest.mark.parametrize("linters", ["new-alone", "new-and-could-not"])
@@ -154,7 +155,8 @@ def test_new_finding_is_not_overridable(tmp_path, fake, linters):
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            "does not override a new finding" in result.stderr) == (5, True, True), result.stderr
+            "does not override a new finding" in result.stderr) == (
+        review_run.EXIT_UNVERIFIED, True, True), result.stderr
 
 
 def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
@@ -167,7 +169,7 @@ def test_could_not_check_refuses_unless_allow_unverified(tmp_path):
 
     assert (refused.returncode, refused_ledger_same, "COULD NOT CHECK" in refused.stderr,
             allowed.returncode, "ROUND=1" in allowed.stdout, _record(scratch)["overridden"]) == (
-        5, True, True, 0, True, True), refused.stderr + allowed.stderr
+        review_run.EXIT_UNVERIFIED, True, True, 0, True, True), refused.stderr + allowed.stderr
 
 
 def test_incident_stands_checks_down(tmp_path, fake):
@@ -191,7 +193,7 @@ def test_only_an_active_incident_stands_down(tmp_path, fake, case):
 
     result = _run(repo, scratch, tmp_path, "claude")
 
-    assert result.returncode == 5, result.stderr
+    assert result.returncode == review_run.EXIT_UNVERIFIED, result.stderr
 
 
 def test_order_gate_before_checks(tmp_path, fake):
@@ -200,7 +202,7 @@ def test_order_gate_before_checks(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "gate UNVERIFIED" in result.stderr,
-            "pre-review checks" in result.stderr) == (5, True, False), result.stderr
+            "pre-review checks" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_order_checks_before_selfcheck(tmp_path, fake):
@@ -210,7 +212,7 @@ def test_order_checks_before_selfcheck(tmp_path, fake):
     result = _run(repo, scratch, tmp_path, "codex")
 
     assert (result.returncode, "pre-review checks: ruff FAIL" in result.stderr,
-            "self-check" in result.stderr) == (5, True, False), result.stderr
+            "self-check" in result.stderr) == (review_run.EXIT_UNVERIFIED, True, False), result.stderr
 
 
 def test_spent_budget_skips_checks(tmp_path, fake):
@@ -291,7 +293,7 @@ def test_allow_unverified_never_passes_a_new_finding_beside_a_parse_failure(tmp_
     result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
-            _record(scratch)["result"]) == (5, True, rc.FAIL), result.stderr
+            _record(scratch)["result"]) == (review_run.EXIT_UNVERIFIED, True, rc.FAIL), result.stderr
 
 
 def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, monkeypatch):
@@ -299,7 +301,6 @@ def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, mon
     manifest as the linted entries. A manifest replaced while the linters run
     cannot have the results recorded against it."""
     import argparse  # pylint: disable=import-outside-toplevel
-    import review_run  # pylint: disable=import-outside-toplevel
     repo, scratch = _setup(tmp_path, [_ruff(fake)], py_text="x\n")
     manifest = scratch / "manifest.json"
     checked = json.loads(manifest.read_text(encoding="utf-8"))["bundle_sha256"]
@@ -343,7 +344,7 @@ def test_two_runs_sharing_a_scratch_do_not_swap_records(tmp_path):
 
     assert ("ROUND=1" in allowed.stdout, refused.returncode, done.returncode,
             review["prereview"]["overridden"], review["prereview"]["round"]) == (
-        True, 5, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
+        True, review_run.EXIT_UNVERIFIED, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
@@ -351,7 +352,6 @@ def test_a_symlinked_parts_directory_is_never_read_as_the_bundle(tmp_path, fake)
     """Neighbour of review round 7 BLOCK :172 in review_run: the parts live in
     `<out>.parts/`, and that directory swapped for a link to an identical copy
     is a bundle problem, not a bundle."""
-    import review_run  # pylint: disable=import-outside-toplevel
     _, scratch = _setup(tmp_path, [_ruff(fake)])
     manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
     parts = os.path.dirname(manifest["parts"][0]["path"])
@@ -382,7 +382,6 @@ def test_a_manifest_behind_a_symlinked_scratch_subdirectory_is_could_not_check(t
 def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
     """So a symlinked directory between scratch and the manifest or output is
     seen; a path the operator put elsewhere is checked from its own folder."""
-    import review_run  # pylint: disable=import-outside-toplevel
     scratch = tmp_path / "s"
 
     assert (review_run._trusted(str(scratch / "sub" / "m.json"), str(scratch)),  # pylint: disable=protected-access
@@ -391,7 +390,6 @@ def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
 
 
 def _review_run_module():
-    import review_run  # pylint: disable=import-outside-toplevel
     return review_run
 
 
@@ -497,3 +495,131 @@ def test_a_self_check_note_with_a_newline_prints_on_one_line(monkeypatch, capsys
 
     err = capsys.readouterr().err
     assert [l for l in err.splitlines() if "pre-review checks" in l and l.startswith("review-run: pre")] == [], err
+
+
+def _reserve_then_finish(tmp_path, out_path, before_finish=None):
+    """Reserve claude round 1, optionally disturb the scratch, then make the
+    second call with `--output out_path`. Returns (completed, review.json or None)."""
+    repo, scratch = _setup(tmp_path, [_missing()])
+    reserved = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
+    assert "ROUND=1" in reserved.stdout, reserved.stderr
+    if before_finish:
+        before_finish(scratch)
+    done = subprocess.run([sys.executable, _RUN, "--root", str(repo), "--ticket", TICKET,
+                           "--scratch", str(scratch), "--provider", "claude", "--round", "1",
+                           "--output", str(out_path(scratch)), "--exit-code", "0",
+                           "--work-dir", str(tmp_path / "work")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=120)
+    path = tmp_path / "work" / "review.json"
+    return done, (json.loads(path.read_text(encoding="utf-8")) if path.exists() else None)
+
+
+def _clean_output(scratch, where):
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
+    where.write_text("\n".join("READ|" + p["path"] for p in manifest["parts"]) + "\nCLEAN\n",
+                     encoding="utf-8")
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory"])
+def test_claude_output_that_is_not_a_regular_file_is_incomplete(tmp_path, kind):
+    """L-0605, review round 10 FIX review_run.py:955: an --output that
+    read_regular refuses, after the round was reserved, is an INCOMPLETE
+    round with the reason, never an escaped NotRegularFile."""
+    if kind == "symlink" and os.name == "nt":
+        pytest.skip("symlinks need privileges on Windows")
+    if kind == "fifo" and not hasattr(os, "mkfifo"):
+        pytest.skip("no os.mkfifo here")
+    odd = tmp_path / "odd-out"
+
+    def make(scratch):
+        if kind == "symlink":
+            real = tmp_path / "real-out.txt"
+            _clean_output(scratch, real)
+            os.symlink(real, odd)
+        elif kind == "fifo":
+            os.mkfifo(odd)
+        else:
+            odd.mkdir()
+
+    done, review = _reserve_then_finish(tmp_path, lambda s: odd, make)
+
+    assert (done.returncode, "Traceback" in done.stderr, (review or {}).get("verdict")) == (
+        3, False, "INCOMPLETE"), done.stderr
+    assert any("could not be read" in r and "not a regular file" in r
+               for r in review["reasons"]), review["reasons"]
+
+
+_MALFORMED = {"list": [], "parts-null": {"parts": [None]}, "parts-str": {"parts": "x"},
+              "empty-path": {"parts": [{"path": ""}]}, "sha-int": "SHA5",
+              # Review of f4fc3bf8: a JSON-escaped NUL is a non-empty path.
+              "nul-path": {"parts": [{"path": "a\u0000b", "name": "x"}]}}
+
+
+@pytest.mark.parametrize("case", ["symlink"] + sorted(_MALFORMED))
+def test_an_unreadable_manifest_at_finish_is_incomplete(tmp_path, case):
+    """L-0605 (F3b, the neighbouring read): the manifest swapped after the
+    reservation, unreadable or malformed, is INCOMPLETE with a manifest
+    reason; review.json is still written and prereview is not-recorded."""
+    if case == "symlink" and os.name == "nt":
+        pytest.skip("symlinks need privileges on Windows")
+
+    def swap(scratch):
+        manifest = scratch / "manifest.json"
+        _clean_output(scratch, tmp_path / "out.txt")
+        if case == "symlink":
+            copy = scratch / "manifest-copy.json"
+            copy.write_bytes(manifest.read_bytes())
+            manifest.unlink()
+            os.symlink(copy, manifest)
+        elif case == "sha-int":
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["bundle_sha256"] = 5
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+        else:
+            manifest.write_text(json.dumps(_MALFORMED[case]), encoding="utf-8")
+
+    done, review = _reserve_then_finish(tmp_path, lambda s: tmp_path / "out.txt", swap)
+
+    expected = "could not be read" if case == "symlink" else "is malformed"
+    assert (done.returncode, "Traceback" in done.stderr, (review or {}).get("verdict"),
+            (review or {}).get("prereview", {}).get("result")) == (
+        3, False, "INCOMPLETE", "not-recorded"), done.stderr
+    assert any("the manifest" in r and expected in r for r in review["reasons"]), review["reasons"]
+
+
+def test_a_part_path_the_os_refuses_is_a_bundle_problem():
+    """Review of f4fc3bf8: a path the OS refuses (an embedded NUL raises
+    ValueError) is a problem with that part, never an escape from finish."""
+    problems = review_run.bundle_problems({"parts": [{"path": "a\0b", "name": "x"}]})
+
+    assert len(problems) == 1 and "could not be read" in problems[0], problems
+
+
+@pytest.mark.parametrize("broken", ["read_state", "log_skip"])
+def test_a_pre_review_gate_that_cannot_read_or_log_the_incident_exits_2(
+        tmp_path, monkeypatch, capsys, broken):
+    """L-0518 N4: the incident read or the skip log raising is "not run" (2,
+    nothing reserved), never an escaped exception (exit 1 reads as FINDINGS)."""
+    import argparse  # pylint: disable=import-outside-toplevel
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    failing = [{"name": "ruff", "status": rc.FAIL, "files": 1, "detail": "",
+                "new": [{"path": "m.py", "rule": "BLE001", "message": "new", "count": 1}]}]
+    monkeypatch.setattr(review_run.review_checks, "run_checks_bound",
+                        lambda *_a: (failing, True, "b" * 64))
+    monkeypatch.setattr(crew_incident, "read_state", (
+        lambda *_a, **_k: {"active": True, "present": True, "id": "INC-1"}))
+
+    def boom(*_a, **_k):
+        raise PermissionError(13, "Permission denied", ".crew")
+
+    monkeypatch.setattr(crew_incident, broken, boom)
+    args = argparse.Namespace(root=str(tmp_path), manifest=str(scratch / "manifest.json"),
+                              scratch=str(scratch), allow_unverified=False, ticket=TICKET)
+
+    code = review_run.prereview_gate(args)
+
+    err = capsys.readouterr().err
+    assert (code, "review-run: pre-review gate could not run: PermissionError" in err,
+            "stand down" in err) == (review_run.EXIT_USAGE, True, False), err

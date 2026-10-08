@@ -4,6 +4,72 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Split `plugin/crew/hooks/scripts/crew_autopilot.py` (over `.pylintrc`'s 3400 lines).** L-0509's
+  merge of main 3d4b4b5d took it to 3435 lines; it carries a module-level
+  `# pylint: disable=too-many-lines`, as `crew_config.py` does, rather than a split chosen to clear
+  a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
+  ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
+
+- **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
+  every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
+  read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`
+  `ticket_dir`/`resolve_active`/`read_contract`/`validate` onto the resolver (a pointer to an
+  archived ticket reads as broken today; `crew_autopilot._broken_pointer` names it); (b)
+  `check_ticket` (`crew_ticket.py:175`, `_TICKET_RE`, `$` not `\Z`) and so `activate`
+  (`:926`) accept `Complete` and an id with a trailing newline - alias `crew_common.PLAIN_ID`
+  and refuse `crew_common.reserved_id`; (c) `_mint_taken` (`:1061`) scans live folders and INDEX
+  but not `.work/tickets/Complete/`, and `mint` mints `T-` only; (d) `scope_guard.py`'s
+  own-files prefix follows the resolver (must-allow a write in the archived active ticket;
+  must-block another archived ticket and the live path of an archived one; could-not-tell
+  refuses), module/sh/ps1 x block/report; (e) `approval_hook._is_folder`, `review_prompt`'s
+  spec/plan/webtest blocks, `review_run`'s default work_dir, `review_ledger`'s paths and id
+  regex, `review_checks`' id regex; (f) the L-0509 sabotage rows in `sabotage_scope.py` and
+  `sabotage_tracker.py` (the 20 run by hand in PR #341); (g) empty the harness allowlists in
+  `plugin/crew/tests/test_crew_ticket.py` (`_HARNESS_FOLLOW_UP`, `_REGEX_ANCHORED`).
+
+- **L-0685 follow-ups (gizmoduck bootstrap).** (1) No tool version is pinned: every run takes the
+  newest release. (2) Downloads outside Nuclei and trivy (dependency-check, ZAP) are not checked
+  against a published checksum. (3) Not verified: whether `pip3 install --user` (checkov, semgrep) is
+  refused on Ubuntu 24.04's externally managed Python; if it is, `--user` may want a virtual
+  environment under the tool home (owner question 5 of L-0685). (4) No real end-to-end run of
+  `./bootstrap.sh` as root or `--user` in a throwaway Ubuntu 24.04 container was made when it
+  landed.
+- **L-0684 follow-up (gizmoduck guides).** The built guides under `docs/guides/gizmoduck/` have no
+  source in the repo, so they were not rebuilt for gizmoduck 0.5.10's tool lookup order and do not
+  mention `GIZMODUCK_HOME` or that a broken override disables its tool. The plugin README's "Where
+  gizmoduck looks for tools" is current; rebuild the guides from a source once one exists.
+- **T-0060 harness-only follow-ups (crew blocker pings, T-0087 rule).** Each is a path in
+  `scripts/check-tooling-pr.py`'s `HARNESS`, so it lands alone:
+  (a) `plugin/crew/hooks/scripts/verify-gate.sh` / `verify-gate.ps1`: pipe the Stop payload to
+  `crew_notify.py stop --root . --gate verify --refused` (`timeout 12`, errors swallowed) just
+  before the verification-failed `exit 2`, and `--passed` before the final `exit 0`; the gate's exit
+  status unchanged, with a test that a failing notify still exits 2.
+  (b) `plugin/crew/hooks/scripts/completion_audit.py` `stop_hook`: `crew_notify.stop_outcome(root,
+  "audit", refused, raw)` before its block-mode `return 2` and on the ok return, in `try/except`.
+  (c) `plugin/crew/hooks/scripts/review_ledger.py` `record`: after `_mutate` returns, a lazy
+  `crew_notify.rounds_check(root, ticket)` in `try/except`, so a manual `/crew:review` that spends
+  the last round with a BLOCK pings (today only an autopilot stop does).
+  (d) `plugin/crew/commands/review.md`: drop the `notify.sh review` line (a retired caller since
+  T-0060; `test_review_md_legacy_ping_stays_retired` then goes).
+  (e) `plugin/crew/tests/sabotage_notify.py`: the T-0060 rows, one per guard in
+  `plugin/crew/tests/test_crew_notify_blocker.py` (run by hand in PR #363, each red).
+  (f) `docs/diagrams/process-crew-lifecycle.mmd`: the Stop hooks node gains the `stop` call once (a)
+  and (b) land.
+
+- **T-0022 follow-ups (autopilot docs phase and tracker step).** (1) Harness-only PR (T-0087's
+  rule: `plugin/crew/tests/sabotage*.py` is `HARNESS` in `scripts/check-tooling-pr.py`, so it
+  cannot ride with the feature): add `plugin/crew/tests/sabotage_docs.py` with `DOCS_MUTATIONS`
+  (a docs.json reason waives CHANGELOG -> `test_changelog_reason_does_not_waive`; `unknown`
+  read as ok or rerun -> `test_next_docs_unknown_stops_at_once`; docs ordered after review ->
+  `test_next_docs_before_refresh`; tracker `could not update` read as `unchanged` ->
+  `test_tracker_step_could_not_update_stops`, plus the rest run by hand in T-0022's PR body),
+  register it in `plugin/crew/tests/sabotage.py` (the docs code now lives in `crew_autopilot_docs.py`, so its anchors name that file), add
+  `test_every_docs_sabotage_anchor_is_present_exactly_once`, and add `sabotage_docs.py` to the
+  T-0022 rule's paths in `.crew/verify.json`. Unblock: T-0022 merged. (2) ADRs and runbooks are
+  reported `not measured` by `crew_docs_check.py`; measuring them needs a trigger rule (which
+  change owes an ADR) the spec left as `/crew:docs` judgement. Unblock: an owner decision on that
+  rule.
+
 - **T-0017 follow-ups (auto wrap-up before auto-clear).** (a) A live end-to-end run of the armed
   chain - a real session crossing the threshold, committing, writing `/crew:handoff --wrap-up` and
   being cleared, and a `claude -p` child doing the same under T-0016's headless notice; none was run
@@ -52,15 +118,115 @@ be wrong can be closed on evidence.
   test. `plugin/crew/tests/sabotage*.py` is HARNESS (`scripts/check-tooling-pr.py`), so PR #364
   ran its 27 mutations by hand (each red on its named `test_crew_split.py` test, listed in the PR
   body) and could not commit them.
-- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Harness, tooling-alone PR: register the 19
-  hand-run mutations listed in `.crew/verify.json`'s T-0039 rule as `GITIGNORE_MUTATIONS` in a new
-  `plugin/crew/tests/sabotage_gitignore.py`, imported and concatenated in
-  `plugin/crew/tests/sabotage.py`. Both paths are `HARNESS` in `scripts/check-tooling-pr.py`, so they
-  could not ride with the feature (CLAUDE.md, T-0087). (b) Apply it to this repo's own `.gitignore`:
+  T-0058 (PR #365) appends its own, run by hand on PR #365's branch (each red on its named test;
+  the port onto release/1.2.0 moved the gate to `crew_autopilot_split.py` and `_split_rule` to
+  `crew_autopilot_goal.py`, so the anchors are those files): the jira
+  refusal removed from `ticket_split_policy` (`test_policy_refuses_jira_even_under_self`); the
+  policy re-ask replaced by `policy_at_check` (`test_policy_reasked_at_apply`); the risk rule
+  accepting an unknown risk (`test_policy_refuses_risk_not_low`); the policy's except branch
+  returning allow (`test_policy_crash_refuses_and_apply_writes_nothing`); `_split_rule` outside
+  the could-not-tell boundary (`test_policy_rule_crash_refuses_never_raises[_split_rule]`);
+  `--via autopilot` needing `confirm` (`test_apply_via_autopilot_needs_no_human_turn`) and
+  `--via command` asking the policy (`test_apply_via_command_needs_no_policy`); autopilot
+  skipping the existing-children verification
+  (`test_apply_via_autopilot_refuses_minted_entry_without_provenance`,
+  `test_apply_via_autopilot_refuses_a_stale_child_from_an_edited_proposal`); a closed child
+  row read as open (`test_apply_via_autopilot_remints_a_closed_child`); `apply` not making the
+  record folder (`test_apply_self_files_mode_mints_children`); and in the gate (`crew_autopilot_split.py`,
+  `test_crew_autopilot_split.py`): an unreadable measure, or a plain-bullet acceptance list,
+  read as not fired; an unreadable metrics file counted absent; `answered:` unchecked in the
+  gate or in `split --apply`; an unknown measure ignored by `split --check`/`--apply`
+  (`test_split_check_and_apply_refuse_while_a_measure_is_unknown`); `--check` taking its stage
+  from plan.md's existence instead of the gate's
+  (`test_split_check_uses_the_gate_stage_when_the_plan_fails_validate`); no gate after spec or after plan; a split decision continuing;
+  slices without `parse_slices` continuing; `split-check` becoming a stop; a refused `--apply`
+  not naming `/crew:split`.
+- **T-0059 follow-up (harness PR, T-0087): the PR slices half.** (a) Append T-0059's eight mutations
+  to `SPLIT_MUTATIONS`, each red on its named test (run by hand on PR #366's branch; the port onto
+  release/1.2.0 moved the slice run to `plugin/crew/hooks/scripts/crew_autopilot_slices.py`): the
+  `Base: main` overlap check removed (`test_base_main_with_shared_files_refused`), the contiguity
+  check removed (`test_non_contiguous_slice_refused`), the predecessor-merged check loosened
+  (`test_slice_n_refused_while_n_minus_1_open_under_merge`), `_current_rounds` ignoring slice rows
+  (`test_spent_counts_from_latest_slice_or_successor`), a Step heading after `## PR slices` dropped
+  from the partition (`test_step_heading_after_the_slices_section_is_uncovered`), and glob-vs-glob
+  overlap read as disjoint (`test_base_main_with_two_overlapping_globs_cannot_tell`), a
+  literal-vs-glob pair judged disjoint and a `./` prefix not normalised (both
+  `test_base_main_pair_not_provably_disjoint_refused`). (b)
+  `review_ledger.open_slice` and `_spent` counting the latest slice row (the per-slice budget;
+  `next-slice` refuses until it lands), `review_ledger.summary` carrying `slices`, and
+  `crew_ticket.validate` appending `parse_slices`' problems as `PR slices:`.
+- **T-0036 follow-ups (`/crew:reference --integrations`).** (a) Judge `docs/reference/api.md` and
+  `features.md` in the refresh check (`plugin/crew/hooks/scripts/crew_refresh_check.py::_references`
+  judges `integrations.md` only, so done is not refused in consumer repos whose existing docs are
+  stale). (b) An outbound-call candidate detector over a ticket's diff; today `/crew:docs` judges it
+  at `/crew:implement` step 6 and `--audit` is the backstop. (c) T-0035's embeds adopting the
+  inline flow diagrams once L-0549 (`--flows`, the flow-doc lint) lands. (d) Harness follow-ups
+  (tooling-PR rule, T-0087): `plugin/crew/tests/sabotage_reference.py` with `REFERENCE_MUTATIONS`
+  and the four new `sabotage_refresh.py` entries (reference kind not called, a no-header doc read
+  as fresh, `docs/reference` dropped from `REFRESH_ARTIFACT_PATHS`, `api.md` judged) - each was
+  sabotaged by hand and went red - and a `reference` kind in `artifact_verdicts`, without which a
+  refreshed `integrations.md` needs Touch once L-0540 wires the verdicts into the audit.
+
+- **crew command surface - owner decision (T-0025, advisory; not started, ask first).**
+  `plugin/crew/commands/` holds 37 files. `/crew:help commands` groups them
+  (`plugin/crew/hooks/scripts/crew_help.py::GROUPS`) but nothing is hidden, merged, renamed or
+  removed: CLAUDE.md "Stop and ask" covers deleting or renaming a registered entry. Proposed:
+  (1) **core, shown first everywhere** - brainstorm, spec, plan, approve, implement, review, done,
+  fix, autopilot, status, help; (2) **reached through `/crew:help` or `/crew:autopilot`, off the
+  README's primary table** - docs, diagram, onboard, reference, verify, runbook, handoff, init,
+  config, config-setup, model, migrate, debug, survey; (3) **merge candidates** -
+  jira-sync + sdp-sync + obsidian-sync -> one `/crew:sync` dispatching on the tracker mode
+  (migrate + upgrade was done by T-0038); (4) **keep, specialist** - change, emergency, gate,
+  promote, split, webtest; (5) **remove at the next major** - the removal stubs
+  `plugin/crew/commands/ticket.md`, `work.md` and `upgrade.md`.
+  Unverified: whether Claude Code has a frontmatter field that hides a plugin command from the
+  `/` menu. `config-setup` (added after T-0025's spec was written) is placed in group 2 as setup.
+- **T-0025 harness-only follow-up (review/gate harness, lands alone).** Three parts of T-0025's
+  spec touch `HARNESS` paths (`scripts/check-tooling-pr.py`), so they were left out of #359:
+  (a) `plugin/crew/hooks/scripts/scope_guard.py` - for approval status `none`, deny with "no
+  approved plan for <id>: the user types `/crew:approve <id>`" (or "run `/crew:plan <id>`" when
+  `.work/tickets/<id>/plan.md` is missing) instead of "To widen scope", which stays for an
+  out-of-Touch path only; keep the `if approval["status"] != "approved":` anchor; tests
+  `test_no_approval_deny_names_approve` / `test_no_plan_deny_names_plan` (module and both
+  flavours) in `plugin/crew/tests/test_scope_guard.py`; (b) `plugin/crew/commands/review.md`'s
+  no-ticket stop names `/crew:review <ticket-id>` and `/crew:help`
+  (`test_review_no_ticket_stop_names_a_command`); (c) `plugin/crew/tests/sabotage_help.py`
+  registered in `plugin/crew/tests/sabotage.py` with HELP_MUTATIONS: a 9th `where` line, picking
+  the first of several open tickets, a local `re.compile` table in `crew_help.py`, implement.md
+  back to `/crew:plan $1 --approve`, and the scope-guard `none` text back to "To widen scope";
+  (d) `plugin/crew/hooks/scripts/crew_ticket.py status` reports `accepted()`'s status (a `cli`
+  receipt without `scope.allowCliApproval`, or an autopilot one its policy no longer allows, is
+  `unaccepted` with its why), so `/crew:implement` step 0 refuses what the scope guard and the
+  completion audit refuse even with `scope.mode` off or report (port review of T-0025, BLOCK);
+  test it in `test_crew_ticket.py` and keep `test_lifecycle_commands.py`'s exact CLI pin.
+- **T-0039 follow-ups (`crew_gitignore.py`).** (a) Done by the harness lane (C-0025): the 19
+  hand-run mutations are `GITIGNORE_MUTATIONS` in `plugin/crew/tests/sabotage_gitignore.py`,
+  registered in `plugin/crew/tests/sabotage.py`. (b) Apply it to this repo's own `.gitignore`:
   `python3 plugin/crew/hooks/scripts/crew_gitignore.py check --root .` on 2026-10-04 reported
   `4 missing (os/editor, secrets)` - `[Dd]esktop.ini`, `*.p12`, `id_rsa`, `id_ed25519` - with no
   tracked secret (spec Exclusions: not changed by T-0039). (c) A Windows run on win-repo-2 (the
   script is plain python; CRLF and BOM are tested on Linux only).
+- **L-0526 follow-ups (the gate round takes the train).** (a) `crew_train.py`'s module docstring
+  still says neither caller imports it "in this release"
+  (`plugin/crew/hooks/scripts/crew_train.py:9-12`); since L-0526 both do. A feature path, so not
+  edited in L-0526's tooling PR. (b) Sabotage rows S16-S19 (L-0520's PYTHON-set fixes) and
+  S20-S33 (L-0558's round-2 fixes, CHANGELOG 1.0.102) were drafted machine-local and never reached
+  the repo; `plugin/crew/tests/sabotage_train.py` holds S1-S15, R1-R6 and P1-P6 only.
+- **T-0068 follow-ups (crew's own bookkeeping).** (a) A `verify.knownFailures` allowance for TSS
+  F496 (`bash _verify/smoke.sh` fails `local:srl-merged-away-backfill` as root, on main too): a
+  repo-only list of check ids, each with a ticket reference and an expiry, reported as
+  `known-fail` never `pass`, never covering a check that passes on main and fails on the branch,
+  and listed by `/crew:done`. Excluded from T-0068's spec (open question 1, a new config key with
+  its own must-block cases); the owner's answer to that question is not recorded here. (b) The
+  command prose outside the review/gate harness, left out because T-0068 is a harness change
+  that lands alone (`scripts/check-tooling-pr.py`): `plugin/crew/commands/done.md` checks 1-3
+  (bookkeeping written after acceptance does not stale the receipt; the audit never lists it, so
+  a listed `.crew/` path is a real finding), `plugin/crew/commands/verify.md:95-102` (bookkeeping
+  is never unmapped, refresh artifacts are mapped; `:102` still says the gate record is "never
+  tracked") and `plugin/crew/commands/implement.md` step 6 (bookkeeping beside the
+  refresh-artifact allowance). (c) `/crew:init` and `/crew:migrate` adding the untracked
+  bookkeeping to `.gitignore` (direction, excluded by the spec as unnecessary for correctness).
+
 - **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
   gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
   rule for delta rounds (owner question: does one spend the two-round budget), and
@@ -72,14 +238,16 @@ be wrong can be closed on evidence.
   section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
 - **T-0028 follow-ups (Kimi Code provider).**
   (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
-  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  and kimi has since L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
   the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
-  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
-  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
-  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
-  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch landed as
+  L-0527 (tooling only). Its follow-ups, each its own ticket: a working-tree fingerprint for
+  codex and copilot; the codex stream error put into review.json reasons unredacted; a write
+  inside `.git` beyond HEAD and the index is not seen; and the docs outside the harness lane
+  (crew-providers `SKILL.md`, `alternative-providers.md`, the `kimi_probe.py` and
+  `crew_config.review_launchable` docstrings), which still say the launch lands later. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
-  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  `plugin/crew/agents/reviewer.md:27`'s order names kimi since the #540 group review (done).
   (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
   `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
   `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
@@ -3562,7 +3730,7 @@ still does not exist anywhere in this repo.
   without guessing which file it continues, and CLAUDE.md forbids the bare form
   for exactly that reason - which is a prose change to a section this ticket's
   defects do not touch, and it carries its own version bump.
-- The sabotage suite reports 11 STILL GREEN mutations on Linux, all
+- **CLOSED 2026-10-03 by L-0608** (verdicts read the junit report; the Windows-only entries are declared in `plugin/crew/tests/sabotage_platform.py` and counted; the frozen-artifact entry is re-aimed at a test that feeds a backslash path). The sabotage suite reports 11 STILL GREEN mutations on Linux, all
   pre-existing and none in `test_docs_routing.py`. Measured at this tree with
   `plugin/crew/tests/sabotage.py` run in five index slices. Ten of them report
   `1 skipped` under the mutation, so the named test never executed: nine name
@@ -4946,7 +5114,9 @@ From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None b
 - `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
 - `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
 
-## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25)
+## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25) - CLOSED 2026-10-03 by L-0608
+
+`sabotage.py` now reads each run's junit report (`plugin/crew/tests/sabotage_platform.py`); the Get-CrewChildTabRecheck entry is declared Windows-only and counted on other hosts.
 
 `plugin/crew/tests/sabotage.py:2928` folds `AUTOCYCLE_MUTATIONS` into its own `MUTATIONS` tuple and
 re-runs every entry through its own independent `run_test`/`main` (`plugin/crew/tests/sabotage.py:2945-3253`),
@@ -5130,7 +5300,7 @@ Ruled by the crew during the 1.0 ship pass, 2026-09-25. Each is a harness defect
 none blocks 1.0. No lane was spent on any of them. Recorded here so the deferral is distinguishable from
 nobody having noticed.
 
-1. `sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b` - the mutations do not bite,
+1. ~~`sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b`~~ CLOSED 2026-10-03 by L-0608: not pwsh - they are Windows-only by design (or vacuous: items 2, 3), now declared or re-aimed. - the mutations do not bite,
    so that slice of the sabotage harness is currently vacuous.
 2. `test_ps1_python_probe.py:~93` - the `.cmd` stubs pass a POSIX `/c/...` path to `CreateProcess`, which
    cannot open it. The stub branch is therefore not exercising what it claims to.
@@ -5167,7 +5337,7 @@ Filed by T-0014. Each item below has no ticket of its own (T-0002..T-0013 carry 
 - **Hooks and CLI approval read `.crew/config.json`; `/crew:migrate` writes `.crew/crew.json`** - `plugin/crew/hooks/scripts/crew_state.py:263` (`load_config`), `plugin/crew/hooks/scripts/crew_ticket.py:518` (`scope.allowCliApproval`, read at `:520`) and `:684` (`scope.mode`) read only `config.json`, while `plugin/crew/hooks/scripts/crew_migrate.py:473` writes the migrated settings to `crew.json` and keeps `config.json` (table at `:11`). The split is partial, not total: `plugin/crew/hooks/scripts/crew_context.py:121` (`load_crew_config`) reads `crew.json` before `config.json`, so `memory.inject` (`inject_enabled`, `:142`) is live from `crew.json`, and `plugin/crew/hooks/scripts/crew_autoclear_setup.py:579` rewrites `context.autoClear` in both files. A setting read through `load_config` or `crew_ticket` and changed only in `crew.json` has no effect. Pick one file as the source every hook reads, or have migrate say which settings are live where.
 - **HTTP deploys and workspace changes pass `cloud_guard.py` unclassified (deferred from T-0005/T-0009)** - under `gh`, `plugin/crew/hooks/scripts/cloud_guard.py:1131` recognises only `gh pr merge --admin`, and the file contains no `curl` handling (`grep -c curl` is 0 at `f2bb919b`). Reproduced at `f2bb919b`: `cloud_guard.scan("bash", ...)` returns no finding for `gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches`, `gh run rerun 12345`, `gh workflow run deploy.yml`, `gh api -X DELETE repos/o/r`, or a `curl -X DELETE`/`-X POST` to `app.terraform.io/api/v2/...` (TFC/HCP workspace delete and run create). Needs a URL-and-method parser whose `unknown` environment is never allowed unattended, plus a must-block/must-allow suite, sabotage-tested, per CLAUDE.md's rule for a blocking hook.
 - **Constraint: the review bundle excludes only `.work/` and, since crew 1.0.54 (T-0092), generated `graphify-out/`** - `plugin/crew/hooks/scripts/review_patch.py:104` (`EXCLUDED = (".work/", "graphify-out/")`), so any other tracked artifact written after review (a codemap refresh, a diagram render, a TODO entry - no longer a graphify rebuild) changes the bundle and stales the receipt. Resolved by ordering in T-0004 and T-0008; recorded as a constraint on anything that writes tracked files after `/crew:review`, not as a defect to fix.
-- **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
+- **CLOSED 2026-10-03 by L-0608 for the 13 STILL GREEN** (ten Windows-only by design and now declared; the bash deadline entry gained a bash-only twin; the frozen-artifact and schema-5 entries were vacuous and are re-aimed); the docs.theme exit-4 entry below stays open. **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
   `promote-gate.ps1 reads an unreadable map as one that gates nothing` (`:482`);
   `the frozen artifact path is stored with native separators` (`:1868`);
   `the schema 5 migration lands install.policy above the floor` (`:2085`);
@@ -5249,3 +5419,13 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 - **SendWait's paste handling was not measured.** The T-0013 spike found tmux text over ~60 characters arriving in one read with its Enter is taken as a paste (the Enter becomes a newline); the tmux sender separates them by 0.5 s. The `.ps1` child sends `SendWait(text)` then `SendWait("{ENTER}")` back to back, unchanged from the `/clear` path, and `/crew:autopilot --goal <slug>` can exceed 60 characters. Measure on Windows, and if it bites, put a pause between the two in the child (a `/clear`-path change too).
 - **Sabotage entries for T-0013 land separately.** `plugin/crew/tests/sabotage*.py` is harness (T-0087), so the eleven mutations (each red on its named `test_resume_typing*.py` test, run by hand on the T-0013 branch) go in their own tooling PR, with the anchor-presence test.
 - **The claiming flavour can report the wrong flavour's outcome on Windows.** Both flavours run their own sender; the one that wins the context claim names ITS sender's result. When the other flavour typed, the claimer's second `decide` reads "already resumed" and its own sender refused, so the context says `Auto-resume did not start: this handoff was already resumed` while the command is being typed. The refusing direction, but misleading.
+
+## Three sabotage entries read STILL GREEN on main (filed 2026-10-03 by L-0608)
+
+Found by L-0608's full Linux run (the first to reach its summary since the azureProfile OOM), and by
+L-0605's gate at main: `the marker's shape check is dropped` and `a round of true passes for round 1`
+(both RED in L-0520's runs, STILL GREEN since), and `install-scripts' paths are left to citation
+counts` (`plugin/crew/tests/sabotage_prereview.py`; RED again after main's f808e5f0), and since #329 `auto-accept defaults a missing ignored_lines to 0` (`tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]`). Their targets ran and passed under the mutation:
+real vacuity, not a platform skip. Each needs its target test re-checked against the code it guards.
+Also still open: `docs.theme default goes back to the string neutral` exits 4 (its target does not
+collect).
