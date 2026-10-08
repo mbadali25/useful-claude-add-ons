@@ -51,7 +51,7 @@ def legacy_ticket(top):
         ticket = crew_state.read_work(top).get("ticket")
         if not ticket or os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return None
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except  # any INDEX failure: not a legacy ticket
         return None
     for folder in _LEGACY_DIRS:
         rel = f".work/{folder}/{ticket}.md"
@@ -155,7 +155,7 @@ def main():
     changed = [l.strip() for l in sys.stdin.read().splitlines() if l.strip()]
     try:
         return report(root, changed)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except  # report-only: never exit non-zero
         return _could_not_tell(f"{type(exc).__name__}: {exc}")
 
 
