@@ -1434,6 +1434,20 @@ def test_owner_items_lists_a_folder_with_no_index_row(tmp_path):
     assert ("T-2", "direction-approval") in [(t, p) for t, p, _a in got["items"]]
 
 
+def test_owner_items_never_list_the_archive_folder(tmp_path):
+    """L-0509 meets L-0551: `.work/tickets/Complete/` holds archived tickets and is
+    no ticket itself, so the owner list never names it."""
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="T-3", status="done")
+    _index(root, "T-3 | done | low | r | closed")
+    archive_ticket(root, "T-3")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert ([t for t, _p, _a in got["items"]], got["unknown"], got["state"]) == ([], [], "ok"), got
+
+
 def test_phase_deep_default_is_unchanged(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED",

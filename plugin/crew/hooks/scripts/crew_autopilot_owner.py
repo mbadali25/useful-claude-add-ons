@@ -45,6 +45,7 @@ import os
 import crew_autopilot
 import crew_autopilot_gates
 import crew_autopilot_stops
+import crew_common
 import crew_ticket
 import crew_ticket_state
 
@@ -126,12 +127,14 @@ def _tickets(top):
     # (case-insensitive), and its own ticket where it did not (case-sensitive): L-0551 r4.
     seen = {ticket.casefold() for ticket in found}
     named = {ticket for ticket, _line in crew_autopilot._index_rows(top)}  # pylint: disable=protected-access
-    folder = os.path.join(top, ".work", "tickets")
+    folder = crew_common.tickets_root(top)
     try:
         names = sorted(os.listdir(folder)) if os.path.lexists(folder) else []
     except OSError as exc:
         return found, f"could not list .work/tickets/ ({exc.strerror or exc})"
     for name in names:
+        if crew_common.reserved_id(name):  # `Complete/` is the archive (L-0509), never a ticket
+            continue
         try:
             crew_ticket.check_ticket(name)
         except crew_ticket.TicketError:

@@ -45,6 +45,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   unknown (<why>)`; a ticket whose phase read raises is counted as could-not-tell, never dropped.
   So is a linked worktree whose main checkout cannot be named or whose main `.work/INDEX.md`
   cannot be read: its open rows would otherwise vanish into "nothing on you".
+- **Archive.** The archive folder `.work/tickets/Complete/` (L-0509) is never listed as a ticket
+  with no INDEX row; the folder is named through `crew_common.tickets_root`.
 - **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
   the line and 0.13s without, on a 4-CPU container shared with other builders.
 
@@ -112,6 +114,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   checkout's INDEX row as well as this one, so a hold set while CI runs stops the merge. Two disagreeing INDEX rows stop as `direction-approval`.
 - **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
   and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
+- **Help.** `/crew:help` gives `hold`, `landing`, `blocked` and T-0067's `fix` two related commands
+  each (`crew_help.RELATED`, keyed by `crew_autopilot.WAITING`; merged with T-0025).
 - **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
 
 ### Fixed — crew 1.1.22: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
