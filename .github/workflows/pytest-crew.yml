@@ -342,8 +342,8 @@ jobs:
     - name: Decide whether the Windows jobs run
       id: decide
       env:
-        # Repo variable CREW_WINDOWS_RUNNER: a JSON array of runner labels
-        # (e.g. ["self-hosted","windows","x64"]) moves every crew-windows-*
+        # Repo variable CREW_WINDOWS_RUNNER: one runner label (e.g. winrepo2) or
+        # a JSON array of them (e.g. ["self-hosted","Windows","X64"]) moves every crew-windows-*
         # job onto a self-hosted Windows pool. Unset, empty, or anything but
         # exactly one non-empty JSON array of strings: windows-latest, as before. Never for a fork's PR (the
         # CREW_RUNNER clause): fork code must not reach a self-hosted machine.
@@ -372,8 +372,11 @@ jobs:
           if labels=$(printf '%s' "$WINDOWS_RUNNER" | jq -sce 'if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) then .[0] else error("labels") end' 2>/dev/null); then
             runs_on=$labels
             echo "::notice::crew-windows-* jobs run on the self-hosted pool $labels (repo variable CREW_WINDOWS_RUNNER)."
+          elif [[ "$WINDOWS_RUNNER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            runs_on="[\"$WINDOWS_RUNNER\"]"
+            echo "::notice::crew-windows-* jobs run on runners labelled $WINDOWS_RUNNER (repo variable CREW_WINDOWS_RUNNER)."
           else
-            echo "::warning::CREW_WINDOWS_RUNNER is not a JSON array of runner labels, so the Windows jobs run on windows-latest."
+            echo "::warning::CREW_WINDOWS_RUNNER is neither one runner label nor a JSON array of labels, so the Windows jobs run on windows-latest."
           fi
         fi
         echo "runs_on=$runs_on" >> "$GITHUB_OUTPUT"
