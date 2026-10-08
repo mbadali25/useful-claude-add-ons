@@ -323,7 +323,7 @@ def test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent(t
 
 def test_the_claude_reservation_is_refused_the_same_way(tmp_path):
     repo = _repo(tmp_path)
-    result, _ = _review(repo, tmp_path, "--reserve-only", provider="claude")
+    result, _ = _review(repo, tmp_path, "--reserve-only", "--authors", "gpt", provider="claude")
     assert result.returncode == review_run.EXIT_UNVERIFIED
     assert "ROUND=" not in result.stdout
     assert _rounds(repo) == []
@@ -387,7 +387,7 @@ def test_the_claude_path_reports_already_clean_instead_of_a_round(tmp_path):
     repo = _repo(tmp_path, verify_map=False)
     assert _review(repo, tmp_path)[0].returncode == 0
 
-    again, _ = _review(repo, tmp_path, "--reserve-only", provider="claude")
+    again, _ = _review(repo, tmp_path, "--reserve-only", "--authors", "gpt", provider="claude")
 
     assert again.returncode == 0
     assert "ALREADY_CLEAN=1" in again.stdout and "ROUND=" not in again.stdout

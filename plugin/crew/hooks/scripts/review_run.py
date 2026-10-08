@@ -149,8 +149,11 @@ passes `--same-family "<reason>"`, which runs it with the ledger row labelled
 `same_family` (and review.json and a CLEAN receipt with it). A
 `--same-family` on a reviewer outside the author families is not a
 same-family read: it is ignored, and said. `--probe` asks the guard first, so
-a barred Codex costs no call. Without `--authors` the guard is not applied
-(callers that predate L-0712) and stderr says so on every run.
+a barred Codex costs no call. Without `--authors`, a reservation by a Claude
+(or unknown-family) reviewer is refused the same way unless `--same-family`
+labels it: crew's author is Claude unless proven otherwise. Any other
+reviewer, and the recording call (`--round`), run with the guard not applied
+(callers that predate L-0712), and stderr says so on every run.
 
 BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
 asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
@@ -1777,6 +1780,15 @@ def family_guard(args):
         # usage error, never a label the ledger refuses after the gates.
         reason = review_ledger._one_line_arg(reason, "--same-family", "a same-family read")  # pylint: disable=protected-access
     if getattr(args, "authors", None) is None:
+        fam = crew_state.family(args.provider, args.model or None)
+        if getattr(args, "round", None) is None and fam in (None, "claude") and reason is None:
+            # Round 4 BLOCK: crew's author is Claude unless proven otherwise, so a
+            # Claude (or unknown-family) reservation with no --authors is
+            # could-not-tell, never an unlabelled independent round.
+            return (f"review-run: same-family: no --authors given, so {args.provider} "
+                    f"({fam or 'unknown'} family) may be the author's family; not an "
+                    "independent review. Pass --authors \"$AUTHORS\", or --same-family "
+                    "\"<reason>\" to run it labelled. Nothing launched, no round spent\n"), None
         _err("review-run: family guard NOT applied: no --authors given, so nothing here "
              "checked this reviewer against the diff's author (L-0712)\n")
         return None, reason

@@ -119,6 +119,20 @@ def test_no_authors_runs_but_says_the_guard_was_not_applied(setup):
     assert (result.returncode, "family guard NOT applied" in result.stderr) == (0, True)
 
 
+def test_a_claude_reservation_with_no_authors_is_refused_with_no_round_spent(setup):
+    result = _run(setup, "claude", "--reserve-only")
+
+    assert (result.returncode, "no --authors given" in result.stderr,
+            rl.status(str(setup[0]), "T1")["rounds_used"]) == (2, True, 0), result.stderr
+
+
+def test_a_claude_reservation_with_no_authors_runs_labelled_on_same_family(setup):
+    result = _run(setup, "claude", "--reserve-only", "--same-family", "operator chose it")
+
+    row = rl.status(str(setup[0]), "T1")["rounds"][0]
+    assert (result.returncode, row.get("same_family")) == (0, True), result.stderr
+
+
 def test_the_probe_asks_the_family_guard_before_calling_codex(setup):
     _, _, fakes, _ = setup
 
@@ -236,6 +250,7 @@ def test_review_md_names_no_fallback_unless_the_probe_said_unavailable(tmp_path,
     [{"verdict": "CLEAN", "refunded": False}],
     ["not an object"],
     {"verdict": "INCOMPLETE"},
+    None,
 ])
 def test_status_never_counts_a_malformed_no_reviewer_record_as_refunded(entries):
     import crew_status  # pylint: disable=import-outside-toplevel

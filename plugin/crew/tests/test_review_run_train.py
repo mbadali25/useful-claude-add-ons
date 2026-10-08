@@ -75,7 +75,7 @@ def _run(top, ticket, tmp_path):
     _bundle(top, ticket, scratch)
     return subprocess.run(
         [sys.executable, _RUN, "--root", str(top), "--ticket", ticket, "--scratch",
-         str(scratch), "--provider", "claude", "--reserve-only"],
+         str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
 
 
@@ -139,7 +139,7 @@ def test_train_step_follows_the_clean_receipt_and_the_verify_gate(lanes, tmp_pat
     scratch = tmp_path / "s-clean"
     scratch.mkdir()
     code = review_run.main(["--root", str(lanes["T-2"]), "--ticket", "T-2", "--scratch",
-                            str(scratch), "--provider", "claude", "--reserve-only"])
+                            str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"])
     assert code == 0 and "ALREADY_CLEAN=1" in capsys.readouterr().out
 
 
@@ -154,7 +154,7 @@ def test_train_crash_refuses_never_reserves(lanes, tmp_path, monkeypatch, capsys
     scratch.mkdir()
     _bundle(lanes["T-1"], "T-1", scratch)
     code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
-                            str(scratch), "--provider", "claude", "--reserve-only"])
+                            str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"])
 
     assert code == review_run.EXIT_TRAIN
     assert "fixture crash" in capsys.readouterr().err
@@ -184,7 +184,7 @@ def test_a_train_skipped_for_a_spent_budget_never_reserves_gated(lanes, tmp_path
     scratch.mkdir()
     _bundle(lanes["T-1"], "T-1", scratch)
     code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
-                            str(scratch), "--provider", "claude", "--reserve-only"])
+                            str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"])
 
     err = capsys.readouterr().err
     assert (code, review_ledger.GATE_CHANGED in err) == (review_run.EXIT_USAGE, True), err
@@ -266,7 +266,7 @@ def test_an_unreadable_ledger_is_answered_before_the_later_checks(lanes, tmp_pat
     scratch = tmp_path / "s-unknown"
     scratch.mkdir()
     code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
-                            str(scratch), "--provider", "claude", "--reserve-only"])
+                            str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"])
 
     assert (code, later) == (4, [])
     assert "train" not in capsys.readouterr().err
@@ -283,7 +283,7 @@ def test_a_needs_replan_ticket_never_calls_acquire(lanes, tmp_path, monkeypatch,
     scratch = tmp_path / "s-replan"
     scratch.mkdir()
     code = review_run.main(["--root", str(lanes["T-1"]), "--ticket", "T-1", "--scratch",
-                            str(scratch), "--provider", "claude", "--reserve-only"])
+                            str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"])
 
     assert code == 4 and called == []
     assert "train" not in capsys.readouterr().err
@@ -305,7 +305,7 @@ def test_the_train_answers_before_the_pre_review_checks(lanes, tmp_path):
 
     done = subprocess.run(
         [sys.executable, _RUN, "--root", str(lanes["T-2"]), "--ticket", "T-2", "--scratch",
-         str(scratch), "--provider", "claude", "--reserve-only"],
+         str(scratch), "--provider", "claude", "--reserve-only", "--authors", "gpt"],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
 
     assert done.returncode == review_run.EXIT_TRAIN, done.stderr

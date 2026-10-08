@@ -149,7 +149,7 @@ def test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt(repo, tmp_pat
         "".join(f"READ|{p['name']}\n" for p in parts) + "CLEAN\n", encoding="utf-8")
     common = [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
               "--scratch", str(scratch), "--provider", "claude"]
-    subprocess.run(common + ["--reserve-only"], capture_output=True,
+    subprocess.run(common + ["--reserve-only", "--authors", "gpt"], capture_output=True,
                    stdin=subprocess.DEVNULL, check=True)
 
     verdict = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
@@ -272,7 +272,7 @@ def _claude_round(repo, tmp_path, edit_manifest, max_part_bytes=None):
         encoding="utf-8")
     common = [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
               "--scratch", str(scratch), "--provider", "claude"]
-    subprocess.run(common + ["--reserve-only"], capture_output=True,
+    subprocess.run(common + ["--reserve-only", "--authors", "gpt"], capture_output=True,
                    stdin=subprocess.DEVNULL, check=True)
     return subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
                                     "--exit-code", "0", "--work-dir", str(tmp_path / "w")],
