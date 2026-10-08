@@ -27,6 +27,7 @@ MERGED_MAIN = os.path.join(_S, "merged_main.py")
 SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
 # L-0711: the verify gate's `outside-scope:` line.
 SCOPE_REPORT = os.path.join(_S, "scope_report.py")
+VERIFY_SH = os.path.join(_S, "verify-gate.sh")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
@@ -676,7 +677,7 @@ SCOPE_MUTATIONS = (
      '    spec = crew_ticket.ticket_dir(top, ticket) + ".md"\n',
      _SR + "test_a_sed_i_write_outside_touch_is_named"),
     ("the scope report passes a pre-1.0 ticket as no ticket", SCOPE_REPORT,
-     "        if legacy:\n",
+     "        if os.path.isfile(os.path.join(top, rel)):\n",
      "        if False:\n",
      _SR + "test_a_pre_1_0_ticket_is_could_not_tell_never_in_scope[tickets]"),
     ("the scope report judges an unapproved Touch", SCOPE_REPORT,
@@ -690,15 +691,40 @@ SCOPE_MUTATIONS = (
      "    return [p for p in judged if not any(matches(p, g) for g in touch)]\n",
      _SR + "test_a_glob_touch_is_matched_by_segments"),
     ("the scope report counts its own changed list, not the audit's", SCOPE_REPORT,
-     "        return completion_audit.changed_paths(top, base, merged_main.resolve(top, base))\n",
-     "        return scope_base.changed(top, base)\n",
+     "        kept = completion_audit.changed_paths(top, base, merged)\n",
+     "        kept = scope_base.changed(top, base)\n",
      _SR + "test_a_rename_into_touch_names_the_old_path"),
     ("the scope report counts merged main's changes", SCOPE_REPORT,
-     "        return completion_audit.changed_paths(top, base, merged_main.resolve(top, base))\n",
-     "        return completion_audit.changed_paths(top, base)\n",
+     "        kept = completion_audit.changed_paths(top, base, merged)\n",
+     "        kept = completion_audit.changed_paths(top, base)\n",
      _SR + "test_a_path_identical_to_merged_main_is_not_named"),
     ("/crew:done check 3 exits 0 on a refusal", AUDIT,
      '    print("\\n".join(physical(lines)))\n    return 1\n',
      '    print("\\n".join(physical(lines)))\n    return 0\n',
      _CA + "test_check_refuses_a_sed_i_write_outside_touch"),
+    # L-0711 review round 3: the report agrees with /crew:done check 3 on the
+    # gate's own list, on bookkeeping and on an INDEX ticket with no folder;
+    # and the gate never blocks on the scope line.
+    ("the scope report keeps main's changes in the gate's list", SCOPE_REPORT,
+     "        changed = [p for p in changed if p not in dropped]\n",
+     "        changed = list(changed)\n",
+     _SR + "test_the_gates_list_loses_paths_identical_to_merged_main"),
+    ("the scope report drops all of .crew/ as bookkeeping again", SCOPE_REPORT,
+     '    return path == ".work" or path.startswith(".work/") or crew_ticket.is_crew_bookkeeping(path)\n',
+     '    return path.startswith((".work/", ".crew/")) or crew_ticket.is_crew_bookkeeping(path)\n',
+     _SR + "test_a_tracked_crew_file_outside_touch_is_named_as_the_audit_refuses"),
+    ("the scope report drops TODO.md as bookkeeping again", SCOPE_REPORT,
+     '    return path == ".work" or path.startswith(".work/") or crew_ticket.is_crew_bookkeeping(path)\n',
+     '    return path.startswith(".work/") or path == "TODO.md" or crew_ticket.is_crew_bookkeeping(path)\n',
+     _SR + "test_the_report_and_the_completion_audit_agree[writes4]"),
+    ("the scope report calls an INDEX ticket with no folder no open ticket", SCOPE_REPORT,
+     "    if not os.path.isdir(folder):\n"
+     "        return (f\".work/INDEX.md names {ticket} as open, but .work/tickets/{ticket}/ \"\n"
+     "                \"does not exist\")\n",
+     "    if not os.path.isdir(folder):\n        return None\n",
+     _SR + "test_an_index_ticket_with_no_ticket_folder_is_could_not_tell"),
+    ("the bash gate blocks on the scope line", VERIFY_SH,
+     ": # keep the scope report from ever deciding this script's status\n",
+     "exit 2\n",
+     _SR + "test_both_gates_print_the_same_scope_line[sh-outside]"),
 )
