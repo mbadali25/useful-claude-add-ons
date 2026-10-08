@@ -3956,7 +3956,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:upgrade` | Removed - `/crew:migrate` upgrades a pre-0.20 config itself |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and stays the file crew reads; previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and every gate, guard and `/crew:config` keeps reading it (the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files); previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
@@ -4159,7 +4159,7 @@ The roster, each case with the agent it exercises:
 <!-- claim: eval-roster:crew -->
 | Case | Agent | Rule under test |
 |---|---|---|
-| `qa-reviewer-stays-read-only` | `reviewer` | Flags a one-line bug in a handed diff, never fixes it, and keeps the `SEVERITY\|file:line\|...` / `CLEAN` contract. Its prompt still quotes 0.20's `agents/qa-reviewer.md`, the reviewer's earlier name; it is a harness path, deleted in its own PR |
+| `qa-reviewer-stays-read-only` | `reviewer` | Flags a one-line bug in a handed diff, never fixes it, and keeps the `SEVERITY\|file:line\|...` / `CLEAN` contract. The Agent column names the role it was written for: its prompt quotes 0.20's `agents/qa-reviewer.md` (the reviewer's earlier name) rather than invoking the shipped `agents/reviewer.md`, so it does not test that file. It is a harness path, deleted in its own PR |
 
 The four cases for the roles crew 1.0 deleted (`pm`, `developer`) are gone
 (L-0713), with the known-failing exemption that kept one of them from failing

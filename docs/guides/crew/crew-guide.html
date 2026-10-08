@@ -179,7 +179,7 @@ reported to you instead (exit 3). <code>/crew:onboard</code> and <code>/crew:onb
 repository crew 0.20 set up (<code>/crew:status</code> says <code>run /crew:migrate</code>): it moves the tickets, metrics
 and PM journal to the 1.0 layout and writes <code>.crew/crew.json</code> as a record of the old config, once
 per repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that <code>--rollback</code> restores.
-<code>.crew/config.json</code> stays, and stays the file crew reads its settings from. Every historical metric it cannot recover is written
+<code>.crew/config.json</code> stays, and every gate, guard and <code>/crew:config</code> keeps reading it; the context hook, resume and the diagram commands read <code>.crew/crew.json</code> first when it exists, so after a migrate a <code>memory</code>, <code>context</code> or <code>docs</code> setting is changed in both files. Every historical metric it cannot recover is written
 <code>UNKNOWN</code>, never <code>0</code>. A config older than 0.20 (no <code>schema</code>, or 1-6) is
 upgraded by <code>/crew:migrate</code> itself in the same run; <code>/crew:upgrade</code> was removed.</p>
 <p>Deeper: <a href="quickstart.md">Quickstart</a>.</p>

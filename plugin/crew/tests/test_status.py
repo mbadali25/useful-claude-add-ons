@@ -1082,3 +1082,44 @@ def test_owner_view_is_read_only_with_a_next_md(tmp_path):
 
     assert (done.returncode, _stat_tree(root) == before, done.stdout.splitlines()[1].startswith(
         "T-1  revisit  revisit 2000-01-01 (due)")) == (0, True, True), done.stdout
+
+
+@pytest.mark.parametrize("extra", [".work/tickets/README.md", ".crew/metrics.md",
+                                   ".work/cache/SDP-12.md"])
+def test_a_current_config_beside_crew_1_files_asks_for_no_migrate(tmp_path, extra):
+    """A README in tickets/ is not a ticket, and crew 1.x writes the metrics
+    file and the SDP cache itself, so none of them is a 0.20 marker."""
+    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    (root / extra).parent.mkdir(parents=True, exist_ok=True)
+    (root / extra).write_text("# notes\n", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1] == "config   .crew/config.json schema 7"
+
+
+def test_roles_not_a_list_is_could_not_tell(tmp_path):
+    root = make_repo(tmp_path, config={"schema": 7, "roles": "explorer"})
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1] == ("config   .crew/config.json schema 7 - could not tell whether "
+                        "/crew:migrate is needed (`roles` is not a list)")
+
+
+@pytest.mark.parametrize("folder", [".crew", os.path.join(".work", "tickets")])
+def test_an_unlistable_folder_is_could_not_tell(tmp_path, monkeypatch, folder):
+    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    (root / folder).mkdir(parents=True, exist_ok=True)
+    real = os.listdir
+    denied = os.path.join(str(root), folder)
+
+    def listdir(path="."):
+        if os.path.normpath(str(path)) == os.path.normpath(denied):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    lines = crew_status.collect(str(root))
+
+    assert "could not tell whether /crew:migrate is needed" in lines[1]

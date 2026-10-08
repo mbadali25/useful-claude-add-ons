@@ -118,11 +118,19 @@ def _config_lines_for(root, crew, legacy):
         return [f"config   .crew/crew.json schema {crew.get('schema', '?')}",
                 f"roster   {', '.join(agents) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], crew
-    if isinstance(legacy, dict) and not _is_0_20_setup(root, legacy):
+    legacy_setup, why = _is_0_20_setup(root, legacy) if isinstance(legacy, dict) else (None, "")
+    if isinstance(legacy, dict) and legacy_setup is False:
         # L-0713: `/crew:init` writes this file, every gate reads it, and
         # nothing in it needs `/crew:migrate`.
         roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)]
         return [f"config   .crew/config.json schema {legacy.get('schema')}",
+                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
+                _tracker_line(root)], legacy
+    if isinstance(legacy, dict) and legacy_setup is None:
+        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)] \
+            if isinstance(legacy.get("roles"), list) else []
+        return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - could not tell "
+                f"whether /crew:migrate is needed ({why})",
                 f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], legacy
     if isinstance(legacy, dict):
@@ -138,32 +146,41 @@ def _config_lines_for(root, crew, legacy):
 
 
 def _is_0_20_setup(root, legacy):
-    """True when `.crew/config.json` (with no crew.json beside it) still holds
-    something only `/crew:migrate` moves: a schema older than the current one,
-    a role the 1.0 roster does not have (`qa-reviewer` included: migrate renames
-    it), a `.work/tickets/<ID>.md` ticket file, or a PM journal. A config
-    `/crew:init` wrote has none of these. A `roles` that is not a list is
-    could-not-tell, and that keeps the migrate prompt rather than hiding it."""
+    """Whether `.crew/config.json` (with no crew.json beside it) still holds
+    something only `/crew:migrate` moves, as (True | False | None, reason).
+
+    True: a schema older than the current one, a role the 1.0 roster does not
+    have (`qa-reviewer` included: migrate renames it), a `.work/tickets/<ID>.md`
+    ticket file (an id-shaped name, as `crew_migrate._ticket_candidates` reads
+    it, so a README there is not one), or a PM journal. A config `/crew:init`
+    wrote has none of these: False. None is could-not-tell - a `roles` that is
+    not a list, or a `.crew/` or `.work/tickets/` that cannot be listed - and
+    status says so rather than answering either way. `.crew/metrics.md` and
+    `.work/cache/<ID>.md` are not markers: crew 1.x writes both itself."""
     schema = legacy.get("schema")
     if isinstance(schema, bool) or not isinstance(schema, int) \
             or schema < crew_state.SCHEMA_CURRENT:
-        return True
+        return True, ""
     roles = legacy.get("roles", [])
-    if not isinstance(roles, list) or any(r not in crew_migrate.ROSTER for r in roles):
-        return True
+    if not isinstance(roles, list):
+        return None, "`roles` is not a list"
+    if any(r not in crew_migrate.ROSTER for r in roles):
+        return True, ""
     try:
         crew_dir = set(os.listdir(os.path.join(root, ".crew")))
-    except OSError:
-        return True
+    except OSError as exc:
+        return None, f".crew/ could not be listed: {exc.strerror or exc}"
     if crew_dir.intersection(crew_migrate.JOURNAL_FILES):
-        return True
+        return True, ""
+    folder = os.path.join(root, ".work", "tickets")
     try:
-        names = os.listdir(os.path.join(root, ".work", "tickets"))
+        names = os.listdir(folder)
     except FileNotFoundError:
-        return False
-    except OSError:
-        return True
-    return any(n.endswith(".md") for n in names)
+        return False, ""
+    except OSError as exc:
+        return None, f".work/tickets/ could not be listed: {exc.strerror or exc}"
+    return any(n.endswith(".md") and crew_common.TICKET_ID.match(n[:-3])
+               and not os.path.isdir(os.path.join(folder, n)) for n in names), ""
 
 
 def _ticket_lines(root):

@@ -73,10 +73,20 @@ def make_plugin(tmp: str, cases: dict[str, str]) -> str:
 def run(runner: str, tmp: str, plugin: str, **stub) -> tuple[int, str, list[list[str]]]:
     bindir = os.path.join(tmp, "bin")
     os.makedirs(bindir, exist_ok=True)
-    claude = os.path.join(bindir, "claude")
-    with open(claude, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(STUB.replace("python3", sys.executable, 1) if os.name != "nt" else STUB)
-    os.chmod(claude, os.stat(claude).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    if os.name == "nt":
+        # Windows runs no shebang: a `claude.cmd` beside the script is what
+        # both pwsh's Get-Command and `& claude` resolve to there.
+        script = os.path.join(bindir, "claude_stub.py")
+        with open(script, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(STUB)
+        with open(os.path.join(bindir, "claude.cmd"), "w", encoding="utf-8",
+                  newline="\r\n") as fh:
+            fh.write(f'@"{sys.executable}" "{script}" %*\n')
+    else:
+        claude = os.path.join(bindir, "claude")
+        with open(claude, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(STUB.replace("python3", sys.executable, 1))
+        os.chmod(claude, os.stat(claude).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     log = os.path.join(tmp, "calls.jsonl")
     env = dict(os.environ, PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
                EVAL_PLUGIN_DIR=plugin, EVAL_OUTPUT_DIR=os.path.join(tmp, "out"),

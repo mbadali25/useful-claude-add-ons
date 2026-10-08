@@ -19,7 +19,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
   /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
   that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
-  files, a PM journal); a current config reads `config   .crew/config.json schema 7`.
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `roles`
+  that is not a list, or a `.crew/` or `.work/tickets/` it cannot list, prints `could not tell
+  whether /crew:migrate is needed (<why>)` instead of either answer.
   `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
   the status comes back clean.
 - **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin

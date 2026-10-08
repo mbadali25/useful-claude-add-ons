@@ -64,7 +64,7 @@ What apply does, in order:
 
 | From | To |
 |---|---|
-| `.crew/config.json` (schema up to 7) | copied to `.crew/crew.json` (schema 1); the original stays in use |
+| `.crew/config.json` (schema up to 7) | copied to `.crew/crew.json` (schema 1); the original stays in use by every gate, guard and `/crew:config`; the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files |
 | `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above |
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |

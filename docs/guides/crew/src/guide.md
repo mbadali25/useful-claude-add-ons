@@ -92,7 +92,7 @@ reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
 repository crew 0.20 set up (`/crew:status` says `run /crew:migrate`): it moves the tickets, metrics
 and PM journal to the 1.0 layout and writes `.crew/crew.json` as a record of the old config, once
 per repository: `--preview` first, then `--apply`, which takes a backup that `--rollback` restores.
-`.crew/config.json` stays, and stays the file crew reads its settings from. Every historical metric it cannot recover is written
+`.crew/config.json` stays, and every gate, guard and `/crew:config` keeps reading it; the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files. Every historical metric it cannot recover is written
 `UNKNOWN`, never `0`. A config older than 0.20 (no `schema`, or 1-6) is
 upgraded by `/crew:migrate` itself in the same run; `/crew:upgrade` was removed.
 

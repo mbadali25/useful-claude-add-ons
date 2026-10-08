@@ -57,7 +57,14 @@ jobs:
       # rather than passing vacuously.
       - name: Count eval cases
         run: |
-          count=$(find plugin/crew/evals -mindepth 2 -maxdepth 2 -name case.yaml 2>/dev/null | wc -l)
+          set -o pipefail
+          # An absent evals/ holds no cases; one find cannot read fails the
+          # step rather than counting as zero and skipping the billed run.
+          if [ -e plugin/crew/evals ]; then
+            count=$(find plugin/crew/evals -mindepth 2 -maxdepth 2 -name case.yaml | wc -l)
+          else
+            count=0
+          fi
           echo "EVAL_CASES=$count" >> "$GITHUB_ENV"
           if [ "$count" -eq 0 ]; then
             echo "::notice::no eval cases under plugin/crew/evals/ - the plugin eval suite had nothing to run, which is not a pass."
