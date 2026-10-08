@@ -73,6 +73,15 @@ cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 # acted on once the command is known to be a deploy, matched against the
 # working map AND the committed one, so an edit that renames the deploy
 # command cannot make it match nothing.
+# L-0703 review r2: a map that exists but is neither a regular file nor a
+# directory (a FIFO, a socket, a device) would hold `git hash-object` below,
+# and every later read, past the hook timeout - which is not a block. Refuse it
+# here, before anything opens it. (A directory is read below and refused as
+# unreadable, as before.)
+if [ -e .crew/verify.json ] && [ ! -f .crew/verify.json ] && [ ! -d .crew/verify.json ]; then
+  echo "PROMOTION BLOCKED: .crew/verify.json is not a regular file (a FIFO, socket or device), so crew cannot read the deployment map without hanging. This is not a pass. Replace it with the map file." >&2
+  exit 2
+fi
 HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
 MAP_DIRTY=""
 if [ ! -e .crew/verify.json ]; then
@@ -128,25 +137,88 @@ if [ -z "$PY" ]; then
   }
   NP_CMD=$(crew_strip_cr "$NP_RAW")
   [ -z "${NP_CMD//[[:space:]]/}" ] && exit 0
-  NP_FCMD=$(printf '%s' "$NP_CMD" | LC_ALL=C tr 'A-Z' 'a-z')
   NP_HIT=""
+  # A key repeated in one object: jq keeps only the LAST value, so the first
+  # is never scanned, and python refuses such a map. Comparing leaf paths
+  # missed `"prod": {"deploy": ...}, "prod": {"rollback": ...}`, whose leaves
+  # differ (L-0703 Codex r2). So: a path is FINISHED once a leaf at it is seen
+  # or the container at it closes (a closing event `[p]` closes p[:-1]), and
+  # any later event at or under a finished path is a repeated key.
+  NP_DUP='
+    reduce inputs as $e ({fin: {}, dup: false};
+      if .dup then . else
+        ($e[0]) as $p
+        | if ($e | length) == 2 then
+            .fin as $f
+            | if any(range(1; ($p | length) + 1); $f[$p[:.] | tojson] != null) then .dup = true
+              else .fin[$p | tojson] = true end
+          else .fin[$p[:-1] | tojson] = true end
+      end) | .dup'
+  # A value and the command are compared under a fold COARSER than python's
+  # (L-0703 Codex r2): python upper-cases per character over Unicode, so
+  # `DÉPLOY` matches `déploy`, which ascii_downcase never saw. ASCII letters
+  # fold to lower case; the only non-ASCII characters python folds onto ASCII,
+  # U+0131 (dotless i) and U+017F (long s), fold onto i and s; every other
+  # non-ASCII character folds onto one placeholder. Two strings python calls
+  # equal are equal here too, so this matches everything python matches (and
+  # more, which only blocks). `python3 -c` over sys.maxunicode re-measures the
+  # set: characters whose single-character upper() is ASCII.
+  NP_FOLD='def coarse: explode | map(if . >= 65 and . <= 90 then . + 32 elif . < 128 then . elif . == 305 then 105 elif . == 383 then 115 else 65533 end) | implode;'
   # ONE jq process per map, never one per string: a fork per value cost 20.8s
   # on this repo's own 847-string map, past the hook timeout (L-0703 security
   # review). An empty text, a map jq cannot parse, and a key repeated in one
   # object (jq keeps only the last value, so the first would never be
   # scanned; python refuses such a map) all block as unreadable.
+  # Then the map's SHAPE, held to python's reading below (L-0703 Codex r1):
+  # a map python refuses is could-not-tell here too, never "no string
+  # matched". `"deploy": true` holds no string at all, so the scan alone
+  # passed every command while python refused the map. $3 is "strict" for the
+  # working map (python's strict=True: an environment that is not an object, a
+  # `deploy` that is not a string or a list of strings, a list or object
+  # `requireHuman`) and "lenient" for the committed one, which python reads
+  # leniently but still refuses when it is not an object, has no object of
+  # environments, or carries a bad environment name. Keys are compared with
+  # ASCII case folded; python folds Unicode, so a key holding any non-ASCII
+  # character is one this fallback cannot compare and blocks.
+  NP_SHAPE='
+    def ci($k): [to_entries[] | select(.key | ascii_downcase == $k)];
+    def has_ci($k): ci($k) | length > 0;
+    def get_ci($k): ci($k) | .[0].value;
+    def bad_name: . == "" or (explode | any(. == 44 or . < 32 or (. >= 127 and . <= 159)));
+    def twins: any(.. | objects | keys_unsorted | map(ascii_downcase); length != (unique | length));
+    def non_ascii: any(.. | objects | keys_unsorted[]; explode | any(. > 127));
+    def deploy_ok: type == "string" or (type == "array" and all(.[]; type == "string"));
+    if type != "object" then "it holds a JSON \(type), not an object"
+    elif twins then "it holds two keys in one object that differ only by case"
+    elif non_ascii then "a key holds a non-ASCII character, which crew cannot compare ignoring case without python"
+    else (if has_ci("environments") then get_ci("environments") else {} end) as $envs
+      | if ($envs | type) != "object" then "`environments` is not an object"
+        elif any($envs | keys_unsorted[]; bad_name) then "an environment name is empty, holds a control character or holds a comma"
+        elif $mode != "strict" then "ok"
+        else first(($envs | to_entries[] | .key as $n | .value
+            | if type != "object" then "environment `\($n)` is not an object"
+              elif has_ci("requirehuman") and (get_ci("requirehuman") | type == "array" or type == "object") then "environment `\($n)` has a `requireHuman` that is a list or an object"
+              elif has_ci("deploy") and (get_ci("deploy") | deploy_ok | not) then "environment `\($n)` has a `deploy` that is not a command or a list of commands"
+              else empty end), "ok")
+        end
+    end'
   np_scan() {
-    local text=$1 where=$2 dup
-    dup=$(printf '%s' "$text" | np_jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
+    local text=$1 where=$2 mode=$3 dup shape
+    dup=$(printf '%s' "$text" | np_jq -n --stream "$NP_DUP" 2>/dev/null)
     if [ -z "${text//[[:space:]]/}" ] || [ "$dup" != "false" ]; then
       echo "PROMOTION BLOCKED: no usable python, and $where is empty, does not parse, or repeats a key, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
+      exit 2
+    fi
+    shape=$(printf '%s' "$text" | np_jq -r --arg mode "$mode" "$NP_SHAPE" 2>/dev/null)
+    if [ "$shape" != "ok" ]; then
+      echo "PROMOTION BLOCKED: no usable python, and crew cannot classify $where as a deployment map: ${shape:-jq could not read it}. This is not a pass. Install python 3.8+, or fix the map." >&2
       exit 2
     fi
     # The hit is printed as JSON (`tojson`), never raw: a value of only
     # newlines would otherwise be stripped by $(...) to nothing and read as
     # "no match" (L-0703 review r1).
-    NP_HIT=$(printf '%s' "$text" | np_jq -r --arg c "$NP_FCMD" \
-      'first(.. | strings | select(length > 0) | select((ascii_downcase as $v | ($c | contains($v))) or (ascii_downcase | contains($c))) | tojson) // empty' 2>/dev/null) || {
+    NP_HIT=$(printf '%s' "$text" | np_jq -r --arg c "$NP_CMD" \
+      "$NP_FOLD"' ($c | coarse) as $c | first(.. | strings | select(length > 0) | select(coarse as $v | ($c | contains($v)) or ($v | contains($c))) | tojson) // empty' 2>/dev/null) || {
       echo "PROMOTION BLOCKED: no usable python, and jq could not scan $where, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
       exit 2
     }
@@ -155,9 +227,31 @@ if [ -z "$PY" ]; then
       exit 2
     fi
   }
-  [ -e .crew/verify.json ] && np_scan "$(cat .crew/verify.json 2>/dev/null)" ".crew/verify.json"
+  # A map that is not a regular file (a FIFO with no writer would hold `cat`
+  # past the hook timeout) is refused; the read itself is bounded too.
+  if [ -e .crew/verify.json ]; then
+    if [ ! -f .crew/verify.json ]; then
+      echo "PROMOTION BLOCKED: no usable python, and .crew/verify.json is not a regular file, so crew cannot read the map. This is not a pass." >&2
+      exit 2
+    fi
+    NP_LEFT=$(( GATE_DEADLINE - $(date +%s) ))
+    [ "$NP_LEFT" -ge 1 ] || NP_LEFT=1
+    NP_MAP=$(timeout "$NP_LEFT" cat .crew/verify.json 2>/dev/null) || {
+      echo "PROMOTION BLOCKED: no usable python, and .crew/verify.json could not be read inside the hook's deadline. This is not a pass." >&2
+      exit 2
+    }
+    np_scan "$NP_MAP" ".crew/verify.json" strict
+  fi
+  # Bounded like the working map's read (L-0703 Codex r3): a stalled
+  # `git cat-file` would otherwise hold the hook past its timeout.
   if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
-    np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json"
+    NP_LEFT=$(( GATE_DEADLINE - $(date +%s) ))
+    [ "$NP_LEFT" -ge 1 ] || NP_LEFT=1
+    NP_HEAD_MAP=$(timeout "$NP_LEFT" git cat-file blob "$HEAD_MAP" 2>/dev/null) || {
+      echo "PROMOTION BLOCKED: no usable python, and the committed .crew/verify.json could not be read inside the hook's deadline, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
+      exit 2
+    }
+    np_scan "$NP_HEAD_MAP" "the committed .crew/verify.json" lenient
   fi
   exit 0
 fi
@@ -830,7 +924,13 @@ fi
 REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \
   "$GATE_DEADLINE" "${ENVLIST[@]}")
 REVIEW_STATUS=$?
-if [ "$REVIEW_STATUS" -ne 0 ]; then
+if [ "$REVIEW_STATUS" -ne 0 ] && crew_incident_active; then
+  # An open incident records a review check that could not run as a skip, like
+  # every other unmet precondition: exiting 2 here, before the emergency lane
+  # below, blocked the very deploys an incident exists to let through (L-0703
+  # Codex r1). The twin is Deny-ReviewUnknown in promote-gate.ps1.
+  REVIEW="the review-evidence check could not be evaluated (exit $REVIEW_STATUS): _promote_review.py failed or is missing. This is not a pass."
+elif [ "$REVIEW_STATUS" -ne 0 ]; then
   echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
   echo "  - the review-evidence check could not be evaluated (exit $REVIEW_STATUS)." >&2
   echo "    This is not a pass. _promote_review.py failed or is missing; its" >&2

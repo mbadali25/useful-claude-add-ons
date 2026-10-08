@@ -623,6 +623,164 @@ def test_the_helper_refuses_a_map_that_is_not_the_committed_one(tmp_path):
     assert "not the map committed at HEAD" in proc.stderr
 
 
+def _helper(repo, deadline_in=15, path=None):
+    env = dict(os.environ)
+    env.pop(_BUDGET, None)
+    if path is not None:
+        env["PATH"] = path
+    start = time.monotonic()
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           repo.head, str(int(time.time()) + deadline_in), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60, env=env)
+    return proc, time.monotonic() - start
+
+
+def _git_wrapper(tmp_path, body):
+    shim_dir = tmp_path / "gitwrap"
+    shim_dir.mkdir()
+    shim = shim_dir / "git"
+    shim.write_text(f'#!/bin/sh\n{body}\nexec "{_GIT}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return f"{shim_dir}{os.pathsep}{os.environ['PATH']}"
+
+
+@_POSIX_ONLY
+def test_the_helper_never_reads_a_failed_map_probe_as_no_map(tmp_path):
+    """L-0703 review r2: a failing probe of HEAD's map must not pass for "HEAD
+    has no map", which would let an uncommitted opt-out waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.write_map({"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK,
+                                                     **_OPT_OUT}}})
+    path = _git_wrapper(tmp_path, 'case "$*" in *ls-tree*) exit 128 ;; esac')
+    proc, _ = _helper(repo, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert "could not list" in proc.stderr
+
+
+@_POSIX_ONLY
+def test_the_helper_bounds_its_map_probes_by_the_deadline(tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    path = _git_wrapper(tmp_path, 'case "$*" in *hash-object*) exec sleep 30 ;; esac')
+    proc, took = _helper(repo, deadline_in=3, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert took < 8, took
+
+
+@_POSIX_ONLY
+def test_windows_cleanup_stays_inside_the_reap_allowance(tmp_path, monkeypatch):
+    """The gate's 16s deadline leaves 4s of the 20s hook timeout for the
+    helper to stop its search. On Windows that stop ran `taskkill` for up to
+    5s and then waited 2s more for the pipes, so a refusal could arrive after
+    the hook had already timed out, which is not a block (L-0703 Codex r3).
+    The Windows branch is driven here with a `taskkill` that hangs."""
+    import _promote_review  # pylint: disable=import-outside-toplevel
+    bin_dir = tmp_path / "winbin"
+    bin_dir.mkdir()
+    (bin_dir / "taskkill").write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+    (bin_dir / "taskkill").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(_promote_review.os, "name", "nt")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    start = time.monotonic()
+    _promote_review._stop(proc)  # pylint: disable=protected-access
+    took = time.monotonic() - start
+    monkeypatch.undo()
+    assert proc.poll() is not None, "the search was left running"
+    assert took <= _promote_review.REAP_SECONDS + 0.5, took
+
+
+def test_an_unreadable_ledger_is_reported_as_could_not_tell(tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP)
+    repo.clean_receipt()
+    repo.ledger().write_text("{not json", encoding="utf-8")
+    proc, _ = _helper(repo)
+    assert proc.returncode == 0, proc.stderr
+    assert "requires an accepted review" in proc.stdout
+    assert "could not tell: 1 ledger(s) could not be read (T-0001)" in proc.stdout
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("with_python", [False, True])
+def test_sh_refuses_a_map_that_is_not_a_regular_file(with_python, tmp_path):
+    """A FIFO map held `git hash-object` (and every later read) past the hook
+    timeout, which is not a block (L-0703 review r2)."""
+    if not with_python and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    path = repo.root / ".crew" / "verify.json"
+    path.unlink()
+    os.mkfifo(path)
+    code, err, took = run_gate("sh", repo, "deploy-dev", timeout=30,
+                               path=None if with_python else _path_without_python(tmp_path))
+    assert code == 2, err
+    assert took < 10, took
+
+
+@_POSIX_ONLY
+@_NEEDS_PWSH
+@pytest.mark.parametrize("kind", ["fifo", "link-to-fifo"])
+def test_ps1_refuses_a_map_that_is_not_a_regular_file(kind, tmp_path):
+    """The .ps1 runs for the PowerShell tool on any OS; a FIFO map held it past
+    the hook timeout just as it held the .sh (L-0703 review r2)."""
+    repo = Repo(tmp_path, SHA_MAP)
+    path = repo.root / ".crew" / "verify.json"
+    path.unlink()
+    if kind == "fifo":
+        os.mkfifo(path)
+    else:
+        os.mkfifo(repo.root / ".crew" / "pipe")
+        path.symlink_to("pipe")
+    code, err, took = run_gate("ps1", repo, "deploy-dev", timeout=30)
+    assert code == 2, err
+    assert "not a regular file" in err, err
+    assert took < 10, took
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_map_reached_through_a_link_to_a_regular_file_is_read(flavour, tmp_path):
+    """Must-allow twin of the two above: a link is judged by its target, so a
+    map symlinked to a regular file is a map, not "not a regular file". The
+    map is an ignored, never-committed one (policy as it stands, not dirt):
+    git stores a committed link as its target's path, not as a map."""
+    repo = Repo(tmp_path, SHA_MAP)
+    path = repo.root / ".crew" / "verify.json"
+    (repo.root / ".crew" / "real-map.json").write_bytes(path.read_bytes())
+    _git(repo.root, "rm", "-q", "--cached", ".crew/verify.json")
+    (repo.root / ".gitignore").write_text(".crew/\n.work/\n", encoding="utf-8")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-q", "-m", "stop tracking the map")
+    path.unlink()
+    path.symlink_to("real-map.json")
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.short}"
+
+
+@_POSIX_ONLY
+def test_sh_without_python_bounds_the_committed_map_read(tmp_path):
+    """Must-block: with the working map dirty, the fallback reads the
+    committed map too; a `git cat-file` that stalls must block inside the
+    hook's 20s, never run past it (L-0703 Codex r3)."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.write_map({**SHA_MAP, "note": "an uncommitted edit"})
+    bin_dir = pathlib.Path(_path_without_python(tmp_path))
+    (bin_dir / "git").unlink()
+    (bin_dir / "git").write_text(
+        f'#!/bin/sh\n[ "$1" = cat-file ] && exec sleep 60\nexec "{_GIT}" "$@"\n',
+        encoding="utf-8")
+    (bin_dir / "git").chmod(0o755)
+    code, err, took = run_gate("sh", repo, "ls -la", path=str(bin_dir), timeout=40)
+    assert code == 2, err
+    assert "committed .crew/verify.json could not be read" in err, err
+    assert took < 19, took
+
+
 @_POSIX_ONLY
 def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
     """One jq process per map: a fork per string took 20.8s on this repo's
@@ -636,6 +794,137 @@ def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
     code, err, took = run_gate("sh", repo, "npm test", path=_path_without_python(tmp_path))
     assert code == 0, err
     assert took < 5, took
+
+
+# Maps python's strict reading refuses (status 4 in promote-gate.sh, a
+# Deny-UnreadableMap in the .ps1), none of which holds a string the deploy
+# command contains: the jq fallback found no string to match, so it let
+# `deploy-prod` through (L-0703 Codex r1 BLOCK 1).
+_MALFORMED_MAPS = {
+    "deploy-true": '{"environments": {"prod": {"deploy": true}}}',
+    "deploy-null": '{"environments": {"prod": {"deploy": null}}}',
+    "deploy-number": '{"environments": {"prod": {"deploy": 5}}}',
+    "deploy-object": '{"environments": {"prod": {"deploy": {}}}}',
+    "deploy-list-of-bool": '{"environments": {"prod": {"deploy": [true]}}}',
+    "deploy-case-key": '{"environments": {"prod": {"Deploy": false}}}',
+    "env-not-object": '{"environments": {"prod": 7}}',
+    "environments-list": '{"environments": [1]}',
+    "environments-null": '{"Environments": null}',
+    "doc-list": '[1]',
+    "require-human-list": '{"environments": {"prod": {"deploy": "x", "requireHuman": []}}}',
+    "env-name-comma": '{"environments": {"a,b": {"deploy": "x"}}}',
+    "env-name-control": '{"environments": {"a\\u0001": {"deploy": "x"}}}',
+    "case-twin-keys": '{"environments": {"prod": {"deploy": "x", "DEPLOY": "y"}}}',
+    "case-twin-envs": '{"environments": {"prod": {"deploy": "x"}, "PROD": {"deploy": "y"}}}',
+    # Codex r2: a key repeated with DIFFERENT child paths. The leaf-path
+    # check saw no repeat, and jq kept only the second `prod`.
+    "dup-key-other-children": '{"environments": {"prod": {"deploy": "deploy-prod"}, '
+                              '"prod": {"rollback": "none"}}}',
+    "dup-key-container-then-leaf": '{"environments": {"prod": {"deploy": "deploy-prod"}, '
+                                   '"prod": 1}}',
+}
+
+
+def _commit_raw_map(repo, text, message="malformed map"):
+    (repo.root / ".crew" / "verify.json").write_text(text + "\n", encoding="utf-8")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-q", "-m", message)
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(_MALFORMED_MAPS))
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_without_python_a_map_it_cannot_classify_blocks(flavour, case, tmp_path):
+    """Must-block: with no python, a map the gate cannot classify is unknown,
+    never "no environment matched" (L-0703 Codex r1 BLOCK 1). The .ps1 reads
+    the map natively, so its case holds the parity: both refuse."""
+    if flavour == "sh" and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    _commit_raw_map(repo, _MALFORMED_MAPS[case])
+    code, err, _ = run_gate(flavour, repo, "deploy-prod", path=_path_without_python(tmp_path))
+    assert code == 2, err
+    assert repo.in_flight() is None
+    if flavour == "sh":
+        assert "cannot classify" in err or "repeats a key" in err, err
+    else:
+        # Refused for the MAP, not by the review step's own "no usable python".
+        assert "verify.json" in err and "review-evidence" not in err, err
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(_MALFORMED_MAPS))
+def test_with_python_the_same_maps_are_refused(case, tmp_path):
+    """The reference the fallback is held to: python refuses every one."""
+    repo = Repo(tmp_path, SHA_MAP)
+    _commit_raw_map(repo, _MALFORMED_MAPS[case])
+    code, err, _ = run_gate("sh", repo, "deploy-prod")
+    assert code == 2, err
+
+
+# Codex r2: python folds case per character over Unicode (`fold` in
+# promote-gate.sh), so `DÉPLOY` matches `déploy` and `deploy-ſ` (long s)
+# matches `DEPLOY-S`; jq's ascii_downcase matched neither and let the
+# declared deploy through. Each pair is (declared deploy, command run).
+_UNICODE_FOLDS = {
+    "e-acute": ("D\u00c9PLOY", "d\u00e9ploy"),
+    "long-s": ("deploy-\u017f", "DEPLOY-S"),
+    "dotless-i": ("deploy-\u0131", "deploy-I"),
+    "command-holds-it": ("D\u00c9PLOY", "x d\u00e9ploy --now"),
+}
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(_UNICODE_FOLDS))
+@pytest.mark.parametrize("with_python", [False, True])
+def test_sh_without_python_matches_as_the_matcher_folds_case(with_python, case, tmp_path):
+    """Must-block: whatever python's matcher calls a deploy, the fallback
+    blocks too; with_python=True is the reference it is held to."""
+    if not with_python and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    declared, command = _UNICODE_FOLDS[case]
+    repo = Repo(tmp_path, {"environments": {"prod": {"deploy": declared, **_ROLLBACK}}})
+    code, err, _ = run_gate("sh", repo, command,
+                            path=None if with_python else _path_without_python(tmp_path))
+    assert code == 2, err
+    if not with_python:
+        assert "contain one another" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_passes_an_unrelated_command_on_a_unicode_map(tmp_path):
+    """Must-allow twin: a non-ASCII value does not make every command a deploy."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, {"environments": {"prod": {"deploy": "d\u00e9ploy-pr\u00f8d",
+                                                     **_ROLLBACK}}})
+    code, err, _ = run_gate("sh", repo, "ls -la", path=_path_without_python(tmp_path))
+    assert code == 0, err
+
+
+# Maps python reads, holding nothing the command matches: the fallback must
+# not refuse them, or a host without python is locked out of every command.
+_WELL_FORMED_MAPS = {
+    "deploy-list": '{"environments": {"prod": {"deploy": ["deploy-p", "ship-p"]}}}',
+    "deploy-absent": '{"environments": {"prod": {"rollback": "none"}}}',
+    "deploy-empty-list": '{"environments": {"prod": {"deploy": []}}}',
+    "no-environments": '{"smoke": ["x"]}',
+    "require-human-bool": '{"environments": {"prod": {"deploy": "deploy-p", "requireHuman": true}}}',
+    "case-key": '{"Environments": {"prod": {"DEPLOY": "deploy-p"}}}',
+    "nested-objects": '{"environments": {"prod": {"deploy": "deploy-p", "x": {"y": [{"z": 1}]}}}}',
+}
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(_WELL_FORMED_MAPS))
+def test_sh_without_python_passes_an_unrelated_command_on_a_valid_map(case, tmp_path):
+    """Must-allow twin of the case above."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    _commit_raw_map(repo, _WELL_FORMED_MAPS[case])
+    code, err, _ = run_gate("sh", repo, "ls -la", path=_path_without_python(tmp_path))
+    assert code == 0, err
 
 
 @_POSIX_ONLY
@@ -733,6 +1022,47 @@ def test_the_union_refuses_for_the_environment_that_did_not_opt_out(flavour, tmp
     assert code == 2, err
     assert "[b] 'b' requires an accepted review" in err, err
     assert "'a' requires an accepted review" not in err
+
+
+def _scripts_with_broken_helper(tmp_path, how):
+    scripts = tmp_path / "scripts"
+    shutil.copytree(_SCRIPTS, scripts, ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    helper = scripts / "_promote_review.py"
+    if how == "missing":
+        helper.unlink()
+    else:
+        helper.write_text("import sys\nprint('helper broke', file=sys.stderr)\nsys.exit(3)\n",
+                          encoding="utf-8")
+    return scripts
+
+
+@pytest.mark.parametrize("how", ["missing", "exits-nonzero"])
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_failing_helper_blocks_outside_an_incident(flavour, how, tmp_path):
+    """Must-block half of the pair below."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    scripts = _scripts_with_broken_helper(tmp_path, how)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev", scripts=scripts)
+    assert code == 2, err
+    assert "could not be evaluated" in err, err
+    assert repo.in_flight() is None
+
+
+@pytest.mark.parametrize("how", ["missing", "exits-nonzero"])
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_an_open_incident_records_a_failing_helper_as_a_skip(flavour, how, tmp_path):
+    """Must-allow in an incident: a review check that could not run is an
+    unmet precondition like any other, recorded as a skip - it used to exit 2
+    before the emergency lane ran (L-0703 Codex r1 BLOCK 2)."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    (repo.root / ".crew" / "incident.json").write_text(
+        json.dumps({"expiresAtEpoch": int(time.time()) + 3600}), encoding="utf-8")
+    scripts = _scripts_with_broken_helper(tmp_path, how)
+    code, err, _ = run_gate(flavour, repo, "deploy-dev", scripts=scripts)
+    assert code == 0, err
+    log = (repo.root / ".crew" / "incident-skips.log").read_text(encoding="utf-8")
+    assert "review-evidence check could not be evaluated" in log, log
+    assert repo.in_flight() == f"development {repo.short}"
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
