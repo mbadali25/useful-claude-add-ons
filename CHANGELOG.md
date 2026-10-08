@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-## [1.2.6] - 2026-10-08
+## [1.2.10] - 2026-10-08
 
-### Changed — crew 1.2.6: no reviewer is INCOMPLETE and refunded; a same-family review is opt-in (L-0712, harness half)
+### Changed — crew 1.2.10: no reviewer is INCOMPLETE and refunded; a same-family review is opt-in (L-0712, harness half)
 
 - **Summary.** When no reviewer from another model family can run, `/crew:review` now records the
   round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a
@@ -46,6 +46,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
   receipt labels, the auto-accept bar, the status count, a malformed status record and a null one).
 
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
 ## [1.2.5] - 2026-10-08
 
 ### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
@@ -68,6 +91,59 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
   `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
   harness half (crew 1.2.6), per the tooling-PR rule.
+
+## [1.2.1] - 2026-10-08
+
+Crew 1.2.1: L-0703 (promote-gate exact-sha rows and review evidence) and L-0704 (hermetic
+autopilot tests), merged onto 1.2.0.
+
+### Changed — crew 1.2.1: promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING
+
+- **Summary.** A deploy now needs an accepted review of the exact tree being deployed, and an
+  upstream promotion row counts only when it records the full 40-character sha; an environment
+  that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
+- **Exact sha.** `promote-gate.sh` matched a `.work/PROMOTIONS.md` row with
+  `startswith(sha[:7])` (`.ps1`: `StartsWith` of 7 characters), so a PASS row for a different
+  commit sharing the first 7 characters admitted the deploy, and a longer short sha was cut to 7.
+  A row now counts only when its sha cell is the deploying commit's full sha, case ignored. A short
+  row is never counted, even for the right commit, and the block names it. BREAKING: re-record old
+  short rows (re-run the promotion, or rewrite the row with the full sha after checking it). No
+  back-compat: accepting a short row that resolves to the deploying sha re-opens the hole whenever
+  the row's own commit is no longer in the object store.
+- **Review evidence.** Every gated environment needs an accepted review receipt - a ticket's ledger
+  whose receipt stands on its latest round, whose reviewed head has the same tree as the commit
+  being deployed, confirmed by `review_ledger.check_receipt` in the deploying tree. `requireHuman`
+  does not waive it. The only opt-out is `"requireReview": false` with a non-empty `reviewReason`
+  string; any other value blocks. BREAKING: maps that deploy unreviewed builds must opt out, and a
+  merge commit whose tree differs from the reviewed head (main moved, or a bump landed after the
+  review) is not covered. Both flavours decide through one new helper, `_promote_review.py`. What
+  it does not prove - paths the review bundle left out, ignored build output, and who wrote the
+  (local, unauthenticated) ledger - is stated in promote.md and the README.
+- **Fails closed.** The review search runs in a killable process group under one 16s deadline for
+  the whole gate, inside the 20s hook timeout. Without python `promote-gate.sh` no longer stands
+  down: with `jq` it blocks a command that and a string in the map contain one another, without
+  `jq` every command while a map exists. `promote-gate.ps1` resolves python with the shared
+  `Resolve-CrewPython`; no python, a timeout or a helper failure blocks.
+- **Tests.** `test_promote_gate_review.py` (both flavours, ledgers written through
+  `review_ledger` itself) and L-0703's entries in `promote_tree_mutations.py`, each RED. Existing
+  promote fixtures opt out of review and write full-sha rows; one assertion was tightened (the
+  dirty-map test now checks the block's own sentence, not a word its tmp path also held).
+
+### Fixed — crew 1.2.1: autopilot tests spawn crew scripts under an isolated HOME (L-0704)
+
+- **Summary.** The autopilot tests no longer read the machine's real `~/.claude/crew/config.json`:
+  every crew script they spawn runs under an isolated HOME.
+- **Cause.** conftest's `_no_real_global_config` patches `GLOBAL_CONFIG_PATH` in the pytest
+  process only. A spawned crew script recomputes it from `~`, so the status, next, assign,
+  settings/approve and replan CLI tests read the machine's real `~/.claude/crew/config.json`; with
+  `autopilot.mode=plan` there, `test_status_mode_line_reads_off_by_default` saw "mode: plan,
+  maxPhases 100".
+- **Fix.** `crew_fixtures.isolated_home_env` points HOME and USERPROFILE at an empty directory
+  under tmp_path; every leaking subprocess call in
+  `test_crew_autopilot{,_status,_assign,_policy,_replan}.py` now passes it.
+  `test_status_mode_line_ignores_a_parent_home_set_to_plan` seeds a parent HOME with
+  `autopilot.mode=plan`, proves an inheriting run reports plan, then asserts the isolated status
+  run still reports `mode: off`. Test-only.
 
 ## [1.2.0] - 2026-10-08
 

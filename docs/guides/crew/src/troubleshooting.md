@@ -188,6 +188,22 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
   leaves `crew_ticket.CREW_BOOKKEEPING_PATHS` out, whatever `.gitignore` says.
 
+- **Symptom: `/crew:done` refuses at check 2 although every Stop turn exited 0.** Stop never fails
+  a turn on a deferral: a rule priced over `verify.stopBudgetSeconds` on its own is `chronic`,
+  deferred to CI, and a turn where `0 rules ran` writes no verified marker (L-0710). Check 2 needs
+  evidence for HEAD itself.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_status.py" --root .
+  python3 "<crew>/hooks/scripts/ci_receipt.py" check --root .
+  ```
+  **Fix:** commit and push the branch so the `verify-gate` workflow runs the whole map, then rerun
+  `/crew:done` once `CI_RECEIPT VERIFIED` names HEAD; or run `/crew:verify --all` here, which empties
+  the record (`verify   no rules recorded`) and leaves the gate's `GATE VERIFIED` answer for this
+  tree. An uncommitted edit after that pass turns it back to `GATE UNVERIFIED`: commit, then re-run. `UNKNOWN` (exit 3) is `gh`, the
+  network or the artifact, never a pass; a branch that changes the gate or the workflow itself
+  never gets a VERIFIED receipt, so it needs the local run.
+
 - **Symptom: a receipt accepted under an older crew reads stale after the upgrade.** The upgrade
   to the release that brought T-0068 drops crew's bookkeeping from the bundle, so a receipt whose
   bundle held a non-ignored bookkeeping file (a repository that does not ignore `.crew/*`) no
@@ -582,6 +598,16 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
   under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
 - **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
   an uncommitted map is not policy.
+- **"records the short sha X"** (L-0703): a `requires` row counts only with the full 40-character
+  sha. Re-run the upstream promotion, or rewrite the row with `git rev-parse HEAD` of the tree that
+  passed, after checking it is that commit.
+- **"requires an accepted review of the sha being deployed"** (L-0703): no ticket's accepted
+  receipt was of a tree identical to the one being deployed. A merge commit whose tree differs from
+  the reviewed head (main moved, or a bump landed after the review) is not covered: deploy the
+  reviewed head, or review the merged tree. An environment that genuinely takes unreviewed builds
+  sets `requireReview: false` plus a `reviewReason` in the committed map. "could not tell ... did
+  not finish" means the receipt check ran past the gate's 16s deadline; "no usable python" means
+  the gate cannot evaluate at all - install python 3.8+.
 - Never route around a block by running the deploy yourself with `!`. `/crew:promote` fixes the
   precondition the message names and asks you only for a `requireHuman` yes or a genuinely
   interactive step.

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.6**: No reviewer is INCOMPLETE and refunded; a same-family review is opt-in. When no reviewer from another model family can run, `/crew:review` now records the round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a same-family review runs only when you ask for one, labelled as such.
-- **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
+- **crew 1.2.10**: No reviewer is INCOMPLETE and refunded; a same-family review is opt-in. When no reviewer from another model family can run, `/crew:review` now records the round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a same-family review runs only when you ask for one, labelled as such.
+- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

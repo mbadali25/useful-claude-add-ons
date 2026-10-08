@@ -1690,7 +1690,8 @@ that deletes, and any apply whose plan crew cannot read — including
 `terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.42:**
 under `terraformApply: allow` these now ask (and are denied unattended) where
 they used to run; approve one command with the marker the refusal names.
-`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`, nor
+its review-evidence check (L-0703).
 Details: [CONFIG.md §16](CONFIG.md), `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
@@ -3224,6 +3225,16 @@ a VERIFIED receipt where the local gate is UNVERIFIED or UNKNOWN; any other
 receipt answer leaves the local verdict standing. The Stop hook does not consult
 it: that would put network calls in a hook that runs every turn.
 
+`/crew:done` check 2 makes this receipt the precondition for whatever Stop did
+not check (L-0710): a rule deferred to CI (`chronic`), a `skipped` or
+`unverified` rule, a turn where `0 rules ran`, or no record at all. Check 2
+passes on `CI_RECEIPT VERIFIED` (exit 0), on `NO_GATE` (exit 4), or on a record
+with nothing outstanding (`verify   no rules recorded`: a clean pass empties it)
+together with `GATE VERIFIED` from `review_gate.gate_state` (marker at HEAD and
+the working tree's fingerprint unchanged since that pass; the marker alone
+survives an uncommitted edit). Anything else refuses the close. The workflow is
+not a required check on `main`; making it one is a branch-protection setting.
+
 The receipt's per-command list is informative only. A command reads PASS, FAIL,
 SKIP or UNKNOWN; UNKNOWN is a `COULD NOT TELL` line, or a command named failed,
 skipped or could-not-tell with no elapsed line after it (L-0673). `log_complete` is
@@ -3568,8 +3579,16 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 ```
 | when (UTC) | env | sha | smoke | regression | verify | by |
 |---|---|---|---|---|---|---|
-| 2026-08-23T14:02Z | qa | a1b2c3d | pass | pass | pass | mbadali |
+| 2026-08-23T14:02Z | qa | a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 | pass | pass | pass | mbadali |
 ```
+
+The sha is written **in full** (40 characters). Since L-0703 `requires`
+counts a row only when its sha cell is the deploying commit's full sha (case
+ignored): a short row such as `a1b2c3d` never counts, even for the right
+commit, and the block names it. A 7-character match admitted a PASS row for a
+different commit that shares the prefix. Breaking change: re-record an old
+short row (re-run the promotion, or rewrite the row with the full sha after
+checking it).
 
 `requires` reads this file. It is also the only honest answer to "is production running what qa signed off on" — compare the shas, not the branch names. A promotions log with no failures in it is a log nobody is writing to.
 
@@ -3588,6 +3607,33 @@ literal sha in the command must be its HEAD):
 - `rollback` is set: a runbook that exists and carries `last verified: YYYY-MM-DD` inside 90 days, or the literal `"none"` plus a `rollbackReason` - an absent key blocks the deploy
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - that tree is clean - you cannot deploy a sha plus uncommitted changes
+- **review evidence** (L-0703): an accepted review receipt covers the sha -
+  a ticket's review ledger (`<git-common-dir>/crew/review/`) whose receipt
+  stands on its latest round, whose reviewed head has **the same tree** as
+  the commit being deployed, and which `review_ledger.check_receipt`, run in
+  the deploying tree, confirms. `requireHuman` does not waive it: a human's
+  yes is a deploy go/no-go, not a code review. The only opt-out is
+  `"requireReview": false` plus a non-empty `reviewReason` string on the
+  environment; any other `requireReview` value blocks. Breaking change: a map
+  that deploys unreviewed builds (a development environment fed from feature
+  branches, say) must opt out explicitly.
+
+What the review evidence proves is narrow, on purpose. It proves the
+deployed commit's tracked tree is byte-identical to a tree a reviewer was
+shown under a receipt crew considers standing - not (a) that paths the review
+bundle left out were reviewed (paths identical to merged main, and the
+excluded `.work/`, `graphify-out/`, `.crew/metrics.md`), (b) that ignored
+build output a deploy script ships was reviewed, or (c) who wrote the ledger:
+it is local JSON, protected only by the scope guard's refusal to write under
+`<git-common-dir>/crew/`, not authenticated. A merge commit whose tree differs
+from the reviewed head (main moved, or a version bump landed after the review)
+is NOT covered: deploy the reviewed head, or review the merged tree.
+
+The review search is bounded: one 16s deadline for the whole gate, under the
+20s hook timeout, after which it is killed and the deploy blocks as
+could-not-tell. Without python the gate no longer stands down: with `jq` it
+blocks any command that and a string in the map contain one another, and
+without `jq` it blocks every command while a map exists.
 
 Both flavours (`.sh` and `.ps1`) choose the environment by one rule, on the
 working map and, when that is dirty, the committed map alike (L-1503):
@@ -3886,7 +3932,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
-| `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
+| `/crew:done <id>` | Close a ticket: accepted review receipt, a verify gate settled for HEAD (every rule passed here, or the CI receipt VERIFIED), passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
 | `/crew:status [--memory \| --approvals \| --owner]` | Read-only status in at most 40 lines - config, inert settings, roster, tickets, a `waiting` line counting what is stopped on you (`--owner` lists it, one line per ticket with the command to type, L-0551), review budget and the repo-wide same-family share (L-0712), in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, gitignore, handoff; `--memory` adds the context hook's stats; `--approvals` prints only the `/crew:approve <id>` lines for tickets whose approval is missing, stale or unaccepted |
@@ -3947,7 +3993,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha** is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha**, written in full, is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, an accepted review receipt covers this tree (or the environment opts out with `requireReview: false` + `reviewReason`), and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |

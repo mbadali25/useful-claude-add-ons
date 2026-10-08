@@ -2046,7 +2046,12 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments
+needs that off. Nor does it stand down promote-gate's review evidence
+(L-0703): every gated environment needs an accepted review receipt whose
+reviewed head has the deployed commit's tree, unless that environment in
+`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` - a map
+key, not a config key, and committed like the rest of the map. Unattended
+production therefore deploys only reviewed trees. `.crew/verify.json` stays promote-gate's list of environments
 (and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether
 or not `environments.workflows` is set, T-0062),
 read from the session's project directory even when the deploy runs from a
@@ -3030,6 +3035,19 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
   not recorded as verified either.
+
+**Who settles what Stop did not check (L-0710).** A `chronic` rule (deferred
+to CI), a `skipped` one, and a Stop turn where `0 rules ran` all leave HEAD
+without a clean pass, and none of them fails the turn. `/crew:done` check 2
+settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
+(the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
+on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
+nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
+pass empties it) together with `review_gate.gate_state` answering `VERIFIED`
+(the marker names HEAD and the working tree still has the fingerprint that
+pass wrote; a marker at HEAD alone survives an uncommitted edit). Anything
+else refuses the close. No config key
+changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
 operator command, never something a hook runs.** `.crew/verify.json` is

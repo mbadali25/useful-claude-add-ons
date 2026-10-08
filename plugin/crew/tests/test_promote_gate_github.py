@@ -22,9 +22,9 @@ from test_promote_gate_literal_match import FLAVOURS, Repo, _blocked_as, _git, r
 
 def _envs():
     return {"development": {"deploy": "gh workflow run deploy.yml --ref main -f target=dev",
-                            "rollback": "none", "rollbackReason": "fixture"},
+                            "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
             "qa": {"deploy": "deploy-qa", "requires": ["development"],
-                   "rollback": "none", "rollbackReason": "fixture"}}
+                   "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW}}
 
 
 def _record_fail(monkeypatch, repo, log):
@@ -110,6 +110,10 @@ def test_a_pass_recorded_after_a_recorded_fail_admits(flavour, tmp_path, monkeyp
 
 import test_promote_gate_effective_tree as tree  # noqa: E402  pylint: disable=wrong-import-position
 
+# L-0703: review evidence is opted out here; test_promote_gate_review.py owns
+# the review rule.
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+
 
 def _prefix(target):
     return f"gh workflow run deploy.yml --ref main -f target={target}"
@@ -120,14 +124,14 @@ def _gh_env(target, sha_input=True, **extra):
     if sha_input:
         entry["shaInput"] = "sha"
     return dict({"deploy": [_prefix(target)], "github": entry,
-                 "rollback": "none", "rollbackReason": "fixture"}, **extra)
+                 "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW}, **extra)
 
 
 _GH_MAP = {"environments": {
     "development": _gh_env("dev"),
     "qa": _gh_env("qa", requires=["development"]),
     "nosha": _gh_env("nosha", sha_input=False),
-    "legacy": {"deploy": "deploy-legacy", "rollback": "none", "rollbackReason": "fixture"},
+    "legacy": {"deploy": "deploy-legacy", "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
 }}
 
 

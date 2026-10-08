@@ -24,7 +24,9 @@ def _row(env, sha, smoke="pass", regression="pass", verify="pass"):
 
 def _table(repo):
     """name -> (rows, exit code, text the block must name or None)."""
-    sha, other = repo.main_sha, repo.wt_sha
+    # L-0703: a row counts only with the full sha, so every row is written in
+    # full (test_promote_gate_review.py owns the short-row refusal).
+    sha, other = repo.main_full, repo.wt_full
     fail = _row("development", sha, verify="FAIL")
     good = _row("development", sha)
     return {
