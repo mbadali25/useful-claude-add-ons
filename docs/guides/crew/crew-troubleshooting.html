@@ -1044,6 +1044,19 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
+<h2 id="autopilot-refused-a-successor-plan-after-an-automatic-reject">Autopilot Refused a Successor Plan After an Automatic Reject</h2>
+<ul>
+<li><strong>Symptom:</strong> <code>/crew:autopilot</code> stops with <code>refused: successor plan lacks &lt;n&gt; of &lt;m&gt; finding
+  line(s), first: &lt;line&gt;</code> after it rejected a review round itself (<code>autopilot.maxAutoReplans</code>).</li>
+<li><strong>Cause:</strong> after an automatic reject, autopilot approves a successor plan only when <code>plan.md</code>
+  holds every <code>BLOCK|</code> and <code>FIX|</code> line of the rejected round verbatim, each as a whole line, as many
+  times as the round carries it (L-0670). NIT lines are not required. <code>could not tell: ...</code>
+  means the ledger, the rejected round's row or <code>plan.md</code> could not be read.</li>
+<li><strong>Check:</strong> <code>python3 plugin/crew/hooks/scripts/crew_autopilot.py replan-check --root . --ticket
+  &lt;id&gt;</code> prints <code>applies= ok= missing=</code> and the reason, and writes nothing.</li>
+<li><strong>Fix:</strong> quote the missing lines in the plan, or approve it yourself with <code>/crew:approve &lt;id&gt;</code>,
+  which this check never blocks.</li>
+</ul>
 <h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
 <p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an
 agent this machine lacks reviews less, and nothing in the output says so.</p>

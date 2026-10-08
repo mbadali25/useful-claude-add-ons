@@ -122,9 +122,9 @@ def gate(top, ticket, stage, answer, policy=True):
                   if not why and decision == "slices" and stage == "plan" else [])
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return answer("split-check-unknown", True, f"the size check after {stage} could not "
-                      f"run ({type(exc).__name__}: {exc}) - a person looks", look)
+                      f"run ({type(exc).__name__}: {exc}) - a person looks")  # L-0666: a stop names no command
     if size["unknown"]:
-        return answer("split-check-unknown", True, _unknown_words(stage, size["unknown"]), look)
+        return answer("split-check-unknown", True, _unknown_words(stage, size["unknown"]))
     if not size["fired"]:
         return None
     fired = f"after {stage}: {', '.join(size['fired'])} fired (a trigger means look, never split)"
@@ -140,8 +140,7 @@ def gate(top, ticket, stage, answer, policy=True):
                       f"not yet applied{hint}", f"/crew:split {ticket}")
     if slices is None:
         return answer("split-check-unknown", True, f"{fired}; the slices decision needs the "
-                      f"plan's ## PR slices checked, which arrives with {SLICES_ARRIVE}",
-                      f"/crew:plan {ticket}")
+                      f"plan's ## PR slices checked, which arrives with {SLICES_ARRIVE}")
     if slices:
         return answer("plan", True, f"{fired}; the plan's ## PR slices fail: "
                       + "; ".join(str(p) for p in slices), f"/crew:plan {ticket}")

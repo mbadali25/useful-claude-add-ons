@@ -3103,6 +3103,9 @@ gate reaching in afterward to kill what a rule left running.
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
+Every stop names the owner decision it asks for (`decision=`, L-0666) and
+never a refresh, a graph build or a review round autopilot runs itself; no
+setting changes that.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.
@@ -3137,7 +3140,7 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 | `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
-| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict; `crew_autopilot.settings` (T-0067, `crew_autopilot_fix.py`): what a single-ticket run does with a FINDINGS round no receipt stands on | Wave: `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Single ticket: `stop` and `clean-only` stop at `accept-review` as before; `fix-and-rereview` makes `next` name the `fix` phase (`fix-findings <id> round <n>`) for a round with a round left and a BLOCK or FIX line, then the refresh and `/crew:review` once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes every BLOCK and FIX line and the bundle changed. A config that cannot be read reads `unknown`, which never fixes. Anything else reads as `stop`, with a warning. No setting lets autopilot accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -3313,7 +3316,12 @@ T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
 the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
-`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+`/crew:approve <id>`; `next` is what names the policy's route. A policy value
+that is not a policy (`approval: "bogus"`) is warned about by `settings`
+(`policyWarnings`), never by `status` (T-0027); `status` keeps every other
+warning, the could-not-tell one for an unreadable config included. `approve`
+under such an unreadable config refuses naming that cause, not "autopilot.mode is
+not plan". The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 
@@ -3427,7 +3435,6 @@ that brings each known-but-unbuilt key, and the values that do nothing yet:
 
 | Key or value | Brought by |
 |---|---|
-| `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
 | `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | L-0541 (T-0012 landed `goal`; backlog and the caps follow) |
 
 Any other unknown key is named `(unknown key)`: a typo, or a key from another

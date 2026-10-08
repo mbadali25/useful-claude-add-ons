@@ -269,6 +269,22 @@ triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or 
 not match CI's font hinting and subpixel rendering, and fails every later run for
 reasons unrelated to the change under test. Outside that image the visual rule reports
 <strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="what-is-waiting-on-me">What Is Waiting on Me</h2>
+<p><code>/crew:status</code> prints one <code>waiting</code> line: how many open tickets are stopped on
+you. <code>/crew:status --owner</code> lists them, one line per ticket with the command
+to type or the question to answer, for example <code>T-5  approve  /crew:approve
+T-5</code>. The list comes from the same phase table <code>/crew:autopilot</code> uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as <code>review-unread</code>, and
+<code>/crew:autopilot status &lt;id&gt;</code> reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (<code>2 held, 1 blocked</code>); a hold that is due
+is listed as <code>revisit</code> with its reason. No <code>.work/INDEX.md</code> prints <code>waiting
+unknown (...)</code>, never "nothing on you".</p>
+<h2 id="after-autopilot-rejects-a-review-round-itself">After Autopilot Rejects a Review Round Itself</h2>
+<p>With <code>autopilot.maxAutoReplans</code> set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; <code>crew_autopilot.py replan-check --ticket &lt;id&gt;</code> shows the same answer
+without approving. Your own <code>/crew:approve</code> is never held to it.</p>
 <h2 id="contracts-between-two-sessions">Contracts Between Two Sessions</h2>
 <p>When two sessions build against each other (a service and its client, two
 repositories sharing a format), the interface goes on the coordination channel

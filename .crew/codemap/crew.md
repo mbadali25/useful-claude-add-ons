@@ -1049,7 +1049,7 @@ so its approve and open-questions reasons are the fixed `POLICY_FREE_APPROVE` /
 `POLICY_FREE_QUESTIONS` (`:2276`, `:2279`) and at the approve phase it names `/crew:approve <id>`
 under every setting (`test_route_and_status_unaffected_by_approval_policy`,
 `test_status_at_approve_reads_the_same_under_an_allowing_policy`); the one policy effect it shows is
-`crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. Its `resume:` line reads usable
+`crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. T-0027: a policy value that is not a policy is warned about by `settings` only - `_settings_at` returns those warnings as `policyWarnings` too (`plugin/crew/hooks/scripts/crew_autopilot.py:1881`), `settings` (`:1759`) adds the inert entries under `autopilot.approval`/`autopilot.questions` from `crew_config.autopilot_inert_split`, and `status` (`:3091`) leaves `policyWarnings` out, keeping every other warning (the could-not-tell one included); `approve`, unarmed because the config could not be read, names `_unreadable_autopilot`'s cause (`:2315`). Its `resume:` line reads usable
 only where bare `/crew:autopilot` - `resume_target` itself - would take it (`_resume_line`,
 `:3027`; `_takes`, `:2928`), asked only after `_resume_line`'s own read of the handoff passes the
 branch, head and folder checks, so a file rewritten after `resume_target` read it is never
@@ -1159,7 +1159,10 @@ file, does not parse or cannot be read, not an object, or this worktree's entry 
 (`:2103`): through `_remove_by_hand` (`:2090`), the POSIX and PowerShell removal
 commands for the exact path only when `_paste_safe` (`:2075`) holds (no control character, whitespace run
 or PowerShell quote, and the rm parses back to the path), else the path as JSON with no command, never an empty mapping
-in its place. `focus_state` (`:2165`) reports `focus` from the marker only, `unknown` beside it,
+in its place. DERIVED (G6a landing): `_focus_remedy`, `_remove_by_hand`, `_paste_safe` and the lock class now
+live in `plugin/crew/hooks/scripts/crew_autopilot_paste.py`, moved unchanged for pylint's 3400-line cap and
+re-exported; `_focus_lock` stays in `crew_autopilot.py` as a wrapper that reads `FOCUS_LOCK_WAIT` at call time.
+`focus_state` (`:2165`) reports `focus` from the marker only, `unknown` beside it,
 and the active-ticket pointer separately (`pointer`, never the `.work/INDEX.md` fallback).
 `focus_guard` (`:2183`) lets `status`, `focus off` and `NO_TICKET` (`:299`, L-0652's
 `sleep`/`wake`) through; an `unknown` marker refuses everything else without offering `focus
@@ -1662,12 +1665,83 @@ Obsidian vault). A CLI the commands call, not a hook.
   (`plugin/crew/hooks/scripts/crew_autopilot.py:185`, `:188`), used by
   `_phase` (`plugin/crew/hooks/scripts/crew_autopilot.py:472`) and `_closed`
   (`plugin/crew/hooks/scripts/crew_autopilot.py:1470`), whose closed reason
-  quotes a `split-into:` / `superseded-by:` line (`_successor`,
-  `plugin/crew/hooks/scripts/crew_autopilot.py:295`). `_phase` stops an
-  INDEX `needs-owner` row as phase `needs-owner`
-  (`plugin/crew/hooks/scripts/crew_autopilot.py:454`), waiting on `owner`
-  (`WAITING`, `plugin/crew/hooks/scripts/crew_autopilot.py:1378`).
-  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:109`)
+  quotes a `split-into:` / `superseded-by:` line (`successor`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:78`, since L-0550; a
+  `superseded` one with none names next.md's `superseded-by:` or says
+  "successor not named").
+- DERIVED (L-0550; measured on this tree): `_phase`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:981`) asks
+  `crew_ticket_state.view` once, after the INDEX `done` branch and before the
+  `DIRECTION_APPROVED` test (`crew_autopilot_gates.gate`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:1034`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:119`): an INDEX cell
+  `hold`/`landing`/`needs-owner`, else that header word as `view` reads it,
+  stops as itself; a header `cancelled`/`superseded` as `closed`; a gate
+  `view` cannot tell as `direction-approval`. Immediately before the review
+  phase `crew_autopilot_gates.blocked`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1102`,
+  `plugin/crew/hooks/scripts/crew_autopilot_gates.py:162`) stops `blocked`
+  on a `depends-on:` ticket not closed or a line it cannot read, as does
+  `before_ship` ahead of a `ship` or `next-slice` that would act. `FIXED_STOPS`
+  gains the four (`plugin/crew/hooks/scripts/crew_autopilot.py:343`; count it
+  with `crew_autopilot.py stops --json`, never by hand), and `WAITING`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2916`) maps `hold` and
+  `needs-owner` to `owner`, `landing` to `the land step` and `blocked` to
+  `another ticket` (`_waiting`, `plugin/crew/hooks/scripts/crew_autopilot.py:2957`).
+  Writes nothing; the sabotage mutations are L-0686 (harness).
+- DERIVED (T-0067; measured on this tree): `autopilot.reviewPolicy` reaches a
+  single-ticket run. `_settings_at` reads it through
+  `crew_autopilot_fix.review_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1868`,
+  `plugin/crew/hooks/scripts/crew_autopilot_fix.py:55`; anything but the three
+  words is `stop` with a warning, an unreadable config `unknown`). `_review_phase`'s
+  FINDINGS branch asks `crew_autopilot_fix.decide` first
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1391`,
+  `plugin/crew/hooks/scripts/crew_autopilot_fix.py:107`): under
+  `fix-and-rereview`, with a round left and a BLOCK or FIX line, `next` names
+  `fix` (stop=0, `fix-findings <id> round <n>`) until `fixes.md`'s `## Round <n>`
+  quotes every BLOCK and FIX line and the rebuilt bundle differs, then goes
+  through `_toward_review`; every could-not-tell keeps the `accept-review` stop
+  with its cause appended, and `stop`/`clean-only` keep its reason byte for byte.
+  `PROCEDURE_STOPS` gains `fix-refused`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:351`). The mutations are L-0668.
+- DERIVED (L-0666; measured on this tree): every `next` stop carries `decision`.
+  `_phase`'s `answer` adds it from the phase (`crew_autopilot_stops.decided`,
+  `plugin/crew/hooks/scripts/crew_autopilot.py:992`; `BY_PHASE`, else `look`)
+  unless the site names one; `next_phase`'s guard stops name theirs
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:1515`), and a phase that runs
+  carries none. `_refresh_state` builds three reasons
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:945`): only the non-stop
+  `refresh` phase names commands. `stops()` gains `decisions`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2473`). JUDGEMENT: the stop
+  contract is the test, `plugin/crew/tests/test_crew_autopilot_stop_contract.py`,
+  which walks `crew_autopilot.py` and the `crew_autopilot_*.py` modules handed
+  `answer`; `crew_ship.merged_phase`'s stops reach `next` through the same
+  `answer` but its module is not walked. The mutations are L-0668.
+- DERIVED (L-0551; measured on this tree): `_phase` takes `deep`
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:977`); `deep=False` stops at
+  `review-unread` (`crew_autopilot_stops.UNREAD`) where `next` would rebuild a
+  bundle (`plugin/crew/hooks/scripts/crew_autopilot.py:1401`, and in
+  `crew_autopilot_fix.decide`) or ask gh
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:460`). `crew_autopilot_owner.owner_items`
+  (`plugin/crew/hooks/scripts/crew_autopilot_owner.py:87`, actions in `OWNER_ACTIONS` `:36`)
+  reads every open ticket that way; `crew_status.py` prints its count as the
+  `waiting` line (`plugin/crew/hooks/scripts/crew_status.py:522`, `waiting_line` `:477`)
+  and `--owner` (`owner_lines` `:494`). It lives outside `crew_autopilot.py` for
+  the line cap (C-0034); the spec named `crew_autopilot.owner_items`.
+- DERIVED (L-0687; measured on this tree): `owner_items` also returns `held`
+  and `blocked`: a `hold` stop reads `crew_ticket_state.view` (`_hold`,
+  `plugin/crew/hooks/scripts/crew_autopilot_owner.py:105`); `revisit_due` False is
+  `held`, True or None is listed as `revisit`; `blocked` is counted, `landing`
+  skipped, `needs-owner` listed with next.md's `next:`. The `waiting` line
+  prints `H held, B blocked` when non-zero.
+- DERIVED (L-0670; measured on this tree): `crew_autopilot.approve` asks
+  `crew_autopilot_replan.replan_check` after `approval_policy` allows
+  (`plugin/crew/hooks/scripts/crew_autopilot.py:2314`,
+  `plugin/crew/hooks/scripts/crew_autopilot_replan.py:78`): under a NEEDS_REPLAN that
+  `AUTO_REJECT_BY` wrote, `plan.md` must hold every BLOCK and FIX line of the
+  rejected round as whole lines, counted; could-not-tell refuses. `replan-check`
+  is the read-only script action. The owner's `/crew:approve` is not checked.
+  `crew_status._ticket_lines` (`plugin/crew/hooks/scripts/crew_status.py:132`)
   prints `owner    <ids> (needs-owner)`. `crew_ticket.STATUS_VALUES`
   (`plugin/crew/hooks/scripts/crew_ticket.py:163`) is unchanged, so a
   `cancelled`/`superseded`/`needs-owner` header edit stales an approval.
