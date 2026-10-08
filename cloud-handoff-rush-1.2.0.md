@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T04:33Z
+Last updated: 2026-10-08T04:39Z
 
 ## >>> RESUME HERE
 
@@ -105,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T04:39Z Owner: land L-0703 (#544) and L-0704 (#545) together as crew 1.2.1. Codex reviews of both started (base 7cb44221, graphify excluded). Builder assembling rush/1.2.1 from main 3f2c4244. Backup WIP branch for L-0703 excluded.
 - 2026-10-08T04:33Z RUSH COMPLETE: MERGED #575 (H2b) to main at 3f2c4244, crew 1.2.0. Release fast-forwarded. Closed H2b sources #472 #415 #430 #448 #457 #460 #487 and partials #423 #438 #484.
 - 2026-10-08T04:13Z H2b opened #575 into main, head a2a417d5, crew 1.2.0. Local checks clean. Waiting on CI.
 - 2026-10-08T04:11Z H2b Codex FIX done in ffa949ce: a rule covers a guard module only if its pytest run names a test file importing it; must-allow and must-block cases plus a new sabotage entry, all RED. Step 7 checks clean (tooling-pr OK, 9 harness paths). Sent go for the 1.2.0 version commit and PR.
