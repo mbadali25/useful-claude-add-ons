@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T02:32Z
+Last updated: 2026-10-08T02:35Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-08T02:35Z WAVE 10 MERGED #569 to main at 7a62e848 (crew 1.1.19); the wallclock re-run passed. Closed #434 and #547 as landed. Opened #571 to re-pin the README install URLs to 7a62e848.
 - 2026-10-08T02:32Z Owner: keep L-0666 for the stale-after-review stop (G6a as built).
 - 2026-10-08T02:31Z G6a opened #570 into release, head 12d99dfe, crew 1.1.20. Decision needed: the L-0522 vs L-0666 stale-after-review stop was resolved in L-0666's favour (no command in the stop). Also: crew_autopilot split into crew_autopilot_paste.py, and an owner-list bug fixed (Complete/ archive shown as open).
 - 2026-10-08T02:22Z Owner set CREW_WINDOWS_RUNNER=winrepo2. #568 now accepts one bare label; pushed so its CI runs as the trial.
