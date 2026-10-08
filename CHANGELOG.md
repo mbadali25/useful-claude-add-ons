@@ -30,17 +30,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **`/crew:review`.** A failed Codex probe on a codex-pinned `review` role is `resolve_role`'s
   `available`: `$FALLBACK` names the fallback on its family's provider (a `gpt-6.1-sol` fallback
   runs on Codex), else the next cross-family `qa.order` provider, else `INCOMPLETE`, and sets
-  `QA_MODEL` / `QA_KIMI_MODEL` from it. A limit (5) or no answer (7) takes all of Codex out, its
+  `QA_MODEL` / `QA_KIMI_MODEL` from it; step 2a launches `$RUN_PROVIDER` / `$RUN_MODEL` (codex on a
+  probe ok, the fallback's provider, else empty, which the runner refuses), never Codex regardless. A limit (5) or no answer (7) takes all of Codex out, its
   gpt fallback too; only a failed call (6) is that model alone; any other exit falls back to nothing. An empty
   `$ELIGIBLE`, or a Codex limit with nothing cross-family left, is `--no-reviewer`; step 2c on the author's family runs only on `SAME_FAMILY`. The owner's
   2026-09-28 "codex limit -> Claude" practice becomes that explicit choice.
 - **`/crew:status`** (declared seam). A ticket line with no-reviewer outcomes says
   `N with no reviewer (INCOMPLETE, refunded)`.
-- **Sabotage.** Nineteen L-0712 entries in `sabotage_review.py`, each red on its named test: the
+- **Sabotage.** Twenty-two L-0712 entries in `sabotage_review.py`, each red on its named test: the
   feature half's four (fallback to claude, the author skip, an unasked same-family walk, the status
-  share's model family) and fifteen here (the guard, an empty `--authors`, an unknown author
-  source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter
-  and its model hand-off, a no-reviewer outcome written as a round, the reservation label, both
+  share's model family) and eighteen here (the guard, an empty `--authors`, an unknown author
+  source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter,
+  its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
   receipt labels, the auto-accept bar, the status count and a malformed status record).
 
 ## [1.2.5] - 2026-10-08

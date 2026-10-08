@@ -150,14 +150,31 @@ def _fallback_line():
         return next(line for line in fh if line.startswith('case "$PROBE_STATUS" in'))
 
 
+def _launch_lines():
+    """Step 2a's own launch command, both lines, as review.md writes it."""
+    with open(_REVIEW_MD, encoding="utf-8") as fh:
+        lines = fh.readlines()
+    at = next(i for i, line in enumerate(lines) if '--provider "$RUN_PROVIDER"' in line)
+    return lines[at - 1] + lines[at]
+
+
 def _fallback(tmp_path, qa, probe_status, authors="claude"):
     repo = init_repo(tmp_path / "fb")
     (repo / ".crew").mkdir(exist_ok=True)
     (repo / ".crew" / "config.json").write_text(json.dumps({"qa": qa}), encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
+    # A stand-in plugin root whose review_run.py prints the provider and model step 2a
+    # launched, so a launch line that ignores the resolved fallback goes red here.
+    fake = tmp_path / "fakeroot" / "hooks" / "scripts"
+    fake.mkdir(parents=True, exist_ok=True)
+    (fake / "review_run.py").write_text(
+        "import sys\na = sys.argv\nprint('LAUNCH=[%s %s]' % (a[a.index('--provider') + 1], "
+        "a[a.index('--model') + 1]))\nsys.exit(2 if not a[a.index('--provider') + 1] else 0)\n",
+        encoding="utf-8")
     script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; QA_KIMI_MODEL=; '
               f'AUTHORS="{authors}"\n' + _fallback_line()
+              + f'CLAUDE_PLUGIN_ROOT="{tmp_path / "fakeroot"}"\n' + _launch_lines()
               + 'printf "FALLBACK=[%s] QA_MODEL=[%s] QA_KIMI_MODEL=[%s]\\n" "$FALLBACK" '
               '"$QA_MODEL" "$QA_KIMI_MODEL"\n')
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
@@ -190,6 +207,22 @@ def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, p
     got, result = _fallback(tmp_path, _qa(fallback, order), probe)
 
     assert got == expected, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("fallback,order,probe,launched", [
+    ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol]"),
+    ("claude-sonnet-5", _ALL, 6, "[kimi k3]"),
+    ("gpt-6.1-sol", _ALL, 5, "[kimi k3]"),
+    ("gpt-6.1-sol", _ALL, 0, "[codex gpt-6-astra]"),
+    # No 2a reviewer (INCOMPLETE, or a probe error): the launch is refused, never Codex.
+    ("claude-sonnet-5", ("codex", "claude"), 6, "[ ]"),
+    ("gpt-6.1-sol", _ALL, 1, "[ ]"),
+])
+def test_review_md_step_2a_launches_the_resolved_provider(tmp_path, fallback, order, probe,
+                                                          launched):
+    _, result = _fallback(tmp_path, _qa(fallback, order), probe)
+
+    assert f"LAUNCH={launched}" in result.stdout, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("probe", [0, 1, 2])
