@@ -263,6 +263,28 @@ def test_status_mode_line_reads_off_by_default(tmp_path):
     assert _field(lines, "mode").startswith("mode: off")
 
 
+def test_status_mode_line_ignores_a_parent_home_set_to_plan(tmp_path, monkeypatch):
+    """L-0704 regression. The test above passes on a clean host whether or not
+    `_lines` isolates HOME, because there is no global config to leak. Here
+    the PARENT's HOME and USERPROFILE point at a home whose
+    `~/.claude/crew/config.json` (crew_state.GLOBAL_CONFIG_PATH) sets
+    `autopilot.mode=plan`, so a status run that inherits them says `plan`."""
+    parent_home = tmp_path / "parent-home"
+    _write(str(parent_home / ".claude" / "crew" / "config.json"),
+           json.dumps({"autopilot": {"mode": "plan"}}))
+    monkeypatch.setenv("HOME", str(parent_home))
+    monkeypatch.setenv("USERPROFILE", str(parent_home))
+    root = _approved(tmp_path / "repo")
+    leaked = subprocess.run([sys.executable, _SCRIPT, "status", "--root", str(root),
+                             "--ticket", T], capture_output=True, text=True, check=False,
+                            env=dict(os.environ), stdin=subprocess.DEVNULL).stdout.splitlines()
+
+    _code, lines = _lines(root, "--ticket", T)
+
+    assert (_field(leaked, "mode").startswith("mode: plan"),
+            _field(lines, "mode").startswith("mode: off")) == (True, True)
+
+
 def test_status_waiting_on_owner_at_approve(tmp_path):
     root = make_repo(tmp_path, mode="off")
     _ticket(root)
