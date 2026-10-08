@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T01:17Z
+Last updated: 2026-10-08T01:31Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-08T01:31Z Owner started 3 self-hosted Linux runners and set CREW_RUNNER=self-hosted by hand. Not verified from here (proxy blocks Actions paths). Check on G3d's PR CI: start-if-stopped should be skipped and test (3.12) should run on a self-hosted runner. Windows jobs stay on windows-latest.
 - 2026-10-08T01:17Z WAVE 9 MERGED #566 to main at 720cc8cd (crew 1.1.18). Closed #408 and #410 as landed. Next: G3d (1.1.19); its builder is running.
 - 2026-10-08T00:58Z MERGED #565 (G3c) into release at 33d35605, crew 1.1.18. Opened WAVE 9 #566. Starting the G3d builder on release 33d35605.
 - 2026-10-08T00:34Z G3c opened #565 into release, head dfcc08a3, crew 1.1.18. Local checks clean. Gate sabotage step: 22 non-red entries, all identical on release cb17abdf (pre-existing, not G3c). Waiting on CI.
