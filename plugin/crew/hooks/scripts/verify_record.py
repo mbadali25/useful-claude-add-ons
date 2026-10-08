@@ -875,7 +875,7 @@ def reach_notice(root, items):
     notice_path = os.path.join(root, REACH_NOTICE_PATH)
     if digest is not None and os.path.isfile(notice_path):
         try:
-            with open(notice_path, encoding="utf-8") as fh:
+            with open(notice_path, encoding="utf-8", errors="replace", newline="") as fh:
                 if fh.read(128).strip() == digest:
                     return []
         except (OSError, ValueError):
@@ -934,9 +934,14 @@ def cmd_reach_notice():
     """verify-gate.ps1's half of `reach_notice` (the .sh matcher imports it):
     stdin is a JSON list of [index, reason] pairs; prints the lines."""
     try:
-        items = [(int(i), str(r)) for i, r in json.load(sys.stdin)]
-    except (OSError, ValueError, TypeError):
-        items = []
+        payload = json.load(sys.stdin)
+    except (OSError, ValueError):
+        payload = None
+    # Shape first (PYTHON-10): a list of [int, str] pairs, nothing else.
+    items = [(pair[0], pair[1]) for pair in payload
+             if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[0], int)
+             and not isinstance(pair[0], bool) and isinstance(pair[1], str)] \
+        if isinstance(payload, list) else []
     for line in reach_notice(os.getcwd(), items):
         print(line)
     return 0
