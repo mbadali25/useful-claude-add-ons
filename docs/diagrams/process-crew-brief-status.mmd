@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@5cdfb775 on 2026-10-04, re-anchored on rush/g6a-autopilot 2026-10-07 (L-0551). Verify before trusting.
+%% Generated from useful-claude-add-ons@1d10d8f6 on 2026-10-04, re-anchored on L-0712-cross-family-fallback 2026-10-08 (L-0712). Verify before trusting.
 %% Anchors: plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_autopilot_owner.py
 %% Purpose: What /crew:status reads when run on demand, and the one place it differs from the SessionStart hooks: it checks a fixed handoff path and applies no stale rule.
 %% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
@@ -8,16 +8,20 @@
 %% Re-anchored for L-0551 / L-0687: collect() is now crew_status.py:514-550, the HANDOFF check :541;
 %%    the `waiting` line (:528) is crew_autopilot_owner.owner_items, autopilot's own phase read
 %%    (policy=False, deep=False: no bundle rebuild, no gh), and `--owner` lists it (owner_lines).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :514-550 report lines.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:541),
+%% Re-anchored 5cdfb775 -> 1d10d8f6 (L-0712): _review_lines (:172) reads EVERY ledger for the
+%%    same-family share and prints `review   same-family: N of M completed rounds (P%)` after the
+%%    newest three ledgers' lines; same_family_round decides a row. collect() is now :603-642, the
+%%    waiting line :617, the review lines :618, the HANDOFF check :633 (re-read with grep -n).
+%% /crew:status: commands/status.md:14 -> crew_status.py; :603-642 report lines.
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:633),
 %% not context.handoffPath, and does not apply the stale rule.
 %% Note st2: git header, config file, roster, tracker (crew_tracker.resolve, :67), tickets,
-%%    waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers, verify, shell (Windows
-%%    only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate
-%%    :514-550
+%%    waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers and the same-family share
+%%    (L-0712), verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics,
+%%    handoff, interrupted migrate :603-642
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting ... gitignore,<br/>handoff :514-550"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:541),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting, review<br/>+ same-family share ... gitignore,<br/>handoff :603-642"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:633),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
         st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
