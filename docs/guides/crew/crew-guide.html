@@ -258,7 +258,7 @@ review, then done.</p>
 <p><code>crew_refresh_check.py --root . --ticket &lt;id&gt;</code> reports each artifact the
 ticket's changes reach as <code>fresh</code>, <code>stale</code> (with the command that refreshes
 it: <code>/crew:onboard --refresh &lt;subsystem&gt;</code>, <code>/crew:diagram refresh</code>,
-<code>/crew:reference --integrations</code> or <code>graphify update .</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
+<code>/crew:reference --integrations</code> or <code>/crew:graph --refresh</code>) or <code>unknown</code>. <code>/crew:implement</code> runs those commands and
 commits before review, so the reviewer reads the refreshed files. <code>/crew:done</code>
 runs the same check and refuses anything but <code>fresh</code>. It never refreshes
 anything itself: a write after review would stale the receipt.</p>
@@ -314,7 +314,12 @@ reviewer are the backstop.</p>
 <p><code>/crew:autopilot &lt;id&gt;</code> drives one ticket through spec, plan, approval,
 implement, refresh, review and done. Each turn it asks
 <code>crew_autopilot.py next</code> which phase comes next, read from files on disk, so a
-skipped phase is visible. It is off until <code>autopilot.mode</code> is exactly <code>plan</code>.</p>
+skipped phase is visible. It is off until <code>autopilot.mode</code> is exactly <code>plan</code>
+(one ticket per run) or <code>backlog</code>. <code>/crew:autopilot --goal &lt;slug&gt;</code> works a goal's
+minted tickets one at a time in dependency order, each through its own
+approval; <code>backlog</code> goes on to the next ticket while <code>autopilot.maxTicketsPerRun</code>
+(3) and <code>autopilot.maxTokensPerSession</code> (2,000,000) allow, and every stop prints
+<code>resume: /crew:autopilot --goal &lt;slug&gt;</code> (L-0541).</p>
 <p>The five <code>autopilot.*</code> settings are personal: set them in the repo's
 <code>.crew/config.json</code>, or once in the machine-global file as your default for
 every repo. Where both files set one, the stricter value wins, so a repo can

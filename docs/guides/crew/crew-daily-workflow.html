@@ -269,6 +269,39 @@ triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or 
 not match CI's font hinting and subpixel rendering, and fails every later run for
 reasons unrelated to the change under test. Outside that image the visual rule reports
 <strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="what-is-waiting-on-me">What Is Waiting on Me</h2>
+<p><code>/crew:status</code> prints one <code>waiting</code> line: how many open tickets are stopped on
+you. <code>/crew:status --owner</code> lists them, one line per ticket with the command
+to type or the question to answer, for example <code>T-5  approve  /crew:approve
+T-5</code>. The list comes from the same phase table <code>/crew:autopilot</code> uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as <code>review-unread</code>, and
+<code>/crew:autopilot status &lt;id&gt;</code> reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (<code>2 held, 1 blocked</code>); a hold that is due
+is listed as <code>revisit</code> with its reason. No <code>.work/INDEX.md</code> prints <code>waiting
+unknown (...)</code>, never "nothing on you".</p>
+<h2 id="after-autopilot-rejects-a-review-round-itself">After Autopilot Rejects a Review Round Itself</h2>
+<p>With <code>autopilot.maxAutoReplans</code> set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; <code>crew_autopilot.py replan-check --ticket &lt;id&gt;</code> shows the same answer
+without approving. Your own <code>/crew:approve</code> is never held to it.</p>
+<h2 id="contracts-between-two-sessions">Contracts Between Two Sessions</h2>
+<p>When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:</p>
+<ol>
+<li>One side writes the draft: <code>crew_contract.py put --name &lt;n&gt; --file &lt;path&gt;</code>.
+   While it is a draft, <code>put</code> replaces it in place.</li>
+<li>Each side, once its ticket is approved, records what it built against:
+   <code>crew_contract.py build-against --name &lt;n&gt; --version &lt;N&gt; --ticket &lt;id&gt;</code>.
+   That freezes the version and writes the binding, with the remote it was
+   built on, to <code>.work/tickets/&lt;id&gt;/contracts.json</code>.</li>
+<li>A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: <code>put --name &lt;n&gt; --file &lt;path&gt; --new-version --ticket &lt;new id&gt;</code>.</li>
+</ol>
+<p><code>crew_contract.py status</code> lists every version, who built against it and
+anything it cannot read (<code>unknown</code>, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>
@@ -367,7 +400,11 @@ and <code>/crew:autopilot wake</code> ends it now (L-0652); they write only
 <code>&lt;git-common-dir&gt;/crew/autopilot-sleep.json</code>. Until L-1504 a manual sleep only
 tightens: outside the window it applies a night value only where it is stricter than the day
 value. <code>sleep</code> needs <code>scope.allowCliApproval: true</code> and an override stricter than its day value, or the
-window open. Autopilot's one other ledger writer is <code>crew_autopilot.py auto-reject</code> (T-0074), only with
+window open. Every approval and answer autopilot makes while asleep goes into the local log
+<code>.work/autopilot/sleep-log.md</code> (L-0653; never committed, never read to decide anything), and the
+morning summary prints them once, grouped by ticket: <code>/crew:autopilot wake</code> prints it, and once
+the window has ended <code>settings</code> warns until <code>crew_autopilot.py sleep-summary</code> has reported them.
+Autopilot's one other ledger writer is <code>crew_autopilot.py auto-reject</code> (T-0074), only with
 <code>autopilot.maxAutoReplans</code> set: it moves the ledger REVIEWED -&gt; NEEDS_REPLAN after a final round
 with a BLOCK. The
 approval is a step you take, not a lock.</p>

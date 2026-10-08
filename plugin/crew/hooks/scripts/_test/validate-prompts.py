@@ -331,6 +331,38 @@ def check_skills():
     return total
 
 
+# L-0637: the main session is the hub; lanes never message a peer. A subagent's
+# SendMessage goes out under its parent's address and the reply lands in the
+# parent's conversation, so no crew agent is granted either bridge tool, and the
+# wave's lane prompt (crew_wave.lane_prompt, rendered from this source file)
+# never names one. KNOWN_TOOLS keeps both: they are real tools, valid elsewhere.
+BRIDGE_TOOLS = ("SendMessage", "ListAgents")
+LANE_PROMPT_SOURCE = "hooks/scripts/crew_wave.py"
+
+
+def check_bridge_tools():
+    """No agent grants a bridge tool; the lane prompt names none."""
+    print("=== BRIDGE TOOLS ===")
+    for path in sorted(glob.glob("agents/*.md")):
+        name = os.path.basename(path)
+        fields, _ = frontmatter(path)
+        granted = [raw.strip() for raw in str((fields or {}).get("tools", "")).split(",")]
+        held = [tool for tool in BRIDGE_TOOLS if tool in granted]
+        if held:
+            bad(f"{name}: grants {', '.join(held)} - the main session is the hub; an agent never "
+                "messages another session (L-0637)")
+        else:
+            ok(f"{name}: no bridge tool")
+    text = _text(LANE_PROMPT_SOURCE)
+    if text is not None:
+        named = [tool for tool in BRIDGE_TOOLS if tool in text]
+        if named:
+            bad(f"{LANE_PROMPT_SOURCE}: the lane prompt's source names {', '.join(named)} - a lane "
+                "returns a question for another session to the main session (L-0637)")
+        else:
+            ok(f"{LANE_PROMPT_SOURCE}: the lane prompt names no bridge tool")
+
+
 def _text(path):
     try:
         with open(path, encoding="utf-8") as handle:
@@ -382,6 +414,7 @@ def main():
     check_agents()
     description_chars = check_skills()
     check_verification_rule()
+    check_bridge_tools()
 
     print()
     print(f"PASS: {len(PASSED)} checks")

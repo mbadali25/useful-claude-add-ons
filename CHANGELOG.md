@@ -9,6 +9,363 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.1.21: held pings while asleep, and the morning summary sent once (L-0656, notify half)
+
+- **Summary.** With `autopilot.sleep.notifyHold: true`, the pings that only ask for your attention wait while autopilot sleeps, and the morning summary tells you how many there were and is sent to you once; a failure still pings at once.
+- **What changed.** New repo key `autopilot.sleep.notifyHold` (`null` or exactly `true`; anything else holds nothing, with a warning). `crew_notify.send` asks the new `crew_notify_hold.py` after its filters: every `question` and the blockers Approval waiting and Review out of rounds are held while `crew_autopilot.settings` says armed, asleep by the schedule (a manual sleep outside the window only tightens until L-1504, so it holds nothing) and the hold on; each held ping is dropped and counted once in `.work/autopilot/held.json` (per worktree). Never held: every deploy result, Stop gate refused, Lane stalled, Lane state unknown, a blocker of no or an unknown kind. Anything crew cannot tell (a settings read that raises, a record it cannot read or write) sends the ping. `settings` warns `<n> pings were held while asleep - run crew_autopilot.py sleep-summary`; the summary ends `held pings: <n>`, and reported awake it empties the count and passes the same text to the notifier once (silent, the configured provider and credentials, only when `question` or `blocker` is in `notify.events`), under a lock. `notify.sh` and `notify.ps1` are unchanged: the hold is decided in Python, once for both.
+- **Not in this change.** The review half (`autopilot.sleep.reviewPolicy`) waits for `autopilot.reviewPolicy` (T-0029 / T-0067); that key still reads "not available in this crew version".
+- **Also (group review fixes, 2026-10-07).** L-0541 r6: a goal file's ticket id counts only when that ticket's direction.md carries the goal's `goal-ticket:` mark for its place (a goal file naming another ticket stops, and `goal-approve --ticket` refuses it); a negative or non-integer usage count makes the session's token use unknown. L-0658 r4: a `--goal` handoff skips the branch/head drift checks whatever its run state, so a stopped goal is named when the handoff is read, never archived for drift first; a not-minted stop no longer echoes the goal file's title. L-0659 r1 / T-0056 r3: a `.work/autopilot` that is a dangling link or a file, and a goal file whose name is not lowercase, are could-not-tell for goal discovery; a ticket handoff that wins keeps the running-goal note beside a second disagreement and names an unreadable goal file; `--wrap-up` on a dirty tree still writes a running goal's line. L-0654 r2: a manual `wake` inside the window keeps the night's deploy cap, and the deploy note names a manual sleep by its end. L-0653 r1: the summary marker records the bytes it read (`- reported <ISO> upto <n>`), so a decision appended meanwhile stays unreported; `wake` exits non-zero when its summary fails; `approve`'s `warning: sleep log not written` is its own line. Round 2 (L-0653 r2, L-0656 r1, T-0056 r4, L-0659 r2, L-0654 r3): the summary is marked reported and the held pings removed only once it was delivered (or no notifier is set up), so a failed send keeps everything for the next run, and a long summary keeps its held count; a log line that is not an entry is could-not-tell; the approval entry follows the decision the receipt was written under; an unreadable config keeps the unreported warning; a `stopped`/`done` mark that cannot reach the goal file goes to `.work/autopilot/<slug>.stop`, which every reader takes over a stale `running`; `goal-mark --reason-file` takes the stop reason from a file the command writes, never a command line; `goal-run --discovered` (a goal found by discovery or a handoff) never resumes past a stop marked meanwhile, while the owner's `--goal` still restarts it; the deploy matrix test covers all 27 cells. Round 3: the PreCompact skeleton's header may carry the running goal's line and only that header is read (a resume-like file name under Changed files still never counts); a run state on a file that is not a goal file is could-not-tell; the handoff reader takes a UTF-8 BOM and refuses a goal file name that is not the lowercase slug, as discovery does; `sleep-summary` reports and sends only in a known awake (or off) state, never under `unknown`; a delivered summary is recorded (`summary-delivered.json`) before its cleanup, so a cleanup that fails is finished by the next run and the summary is never sent twice. Round 4: a `.json` in `.work/autopilot` whose name is not a goal slug is could-not-tell, never dropped; a marker whose `upto` is past its own line makes the log could-not-tell; an unknown `notify.provider` keeps the summary pending; a ping already sent before the window (same episode, or inside `realertHours`) is not counted as held; autopilot runs `sleep-note` after every taken answer and its awake refusal is no stop. Round 5: a summary carries at most 3,000 characters of decisions and marks only those it carried (the rest are reported next); a held ping's key names the resolved ticket; a notifier that cannot send (missing credentials) is reported, never held; a log entry without its final newline is could-not-tell; a sleep note under a manual sleep names `sleep=manual`; sleep-log appends take a lock (on Windows O_APPEND is not one step); autopilot runs `sleep-summary` right after `settings`, before anything can stop. Round 6: the held record and the delivered-summary record live in each worktree's `.work/autopilot/`, so one worktree never reports or clears another's pings; the sleep log is never written through a link (`.work`, `.work/autopilot` or the log itself); `questions-check` prints `asleep=` and `sleep-note --taken-asleep <0|1>` logs an answer by the state it was taken in. The summary's record is written before it is sent, so a run that dies after a send never sends it again (at most once).
+- **Tests.** `test_crew_autopilot_sleep.py` (held asleep, both wrappers against a fake Telegram, the `.ps1` case skipping without `pwsh`; failures sent; awake, unknown, not armed, manual sleep, a crash; an unreadable record; the summary sent once, from held pings alone, not asleep, not under a held lock; the review-fix cases), `test_crew_autopilot_goal_resume.py` (the review-fix cases).
+
+### Added — crew 1.1.21: sleep log and morning summary (L-0653)
+
+- **Summary.** Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
+- **What changed.** `.work/autopilot/sleep-log.md` (local, append-only, one whole line per write, never committed or read to decide anything): `approve` appends an `approved` entry after its receipt while asleep (a log that cannot be written never undoes the approval; it warns); `crew_autopilot.py sleep-note --ticket <id> --kind answered|note --text <t>` appends one entry, only while asleep; `crew_autopilot.py sleep-summary` prints the unreported entries and, once awake, appends a `- reported` marker. `wake` prints the summary when there is one, and `settings` warns while decisions are unreported. Fields are folded to one line with `|` replaced, so none can forge an entry or a marker; an unreadable log is never read as empty. `autopilot.md` calls `sleep-note` for each answer it takes while asleep.
+- **Also (L-0654 review round 1).** A manual sleep whose only tightening is `deploy` is admitted.
+- **Also (L-0541 review round 5).** Minting re-checks, under the goal lock, that the proposal is still the one approved; a goal whose remaining tickets were all cancelled or superseded stops for the owner instead of reporting done.
+- **Also (L-0658 review round 3).** A `.work/autopilot` that is a dangling link or a file makes a goal file could-not-tell, never missing.
+- **Tests.** `test_crew_autopilot_sleep.py` (one entry per approve asleep, sleep-note asleep and awake, forged fields, the summary once, asleep marks nothing, settings' count, wake's summary, an unreadable log, an unwritable log, two processes appending), and the only-writer test in `test_crew_autopilot_policy.py`.
+
+### Added — crew 1.1.21: sleep deploy override, `nonprod` only; production always waits while asleep (L-0654)
+
+- **Summary.** While autopilot is asleep it may deploy to non-production environments if you allow it, and it never deploys to production unattended.
+- **What changed.** New repo key `autopilot.sleep.deploy` (`null`, `nonprod` or `none`; `all` or anything else is refused with a warning and the day value stands). While asleep, a valid value replaces `autopilot.deploy` (stricter-only for a manual sleep outside the window), and an effective `all` reads as `nonprod`. Awake, off or `unknown`, the day value stands. `deploy-allowed`'s reason names the sleep state when it changed the answer; the incident check, the one-root rule, the layer probes and every could-not-tell `ask` run first, as before. Inert until T-0045 dispatches a deploy.
+- **Tests.** `test_crew_autopilot_sleep.py`: must-allow nonprod asleep, the must-block cases, awake production unchanged, and a hand-written state x day value x override x class matrix; the 324-case deploy matrix is unchanged.
+
+### Changed — crew 1.1.21: bare `/crew:autopilot` finds a running goal when there is no usable handoff (L-0659)
+
+- **Summary.** A session that died without writing a handoff no longer loses its autopilot goal: a bare `/crew:autopilot` resumes the one running goal before falling back to the active ticket.
+- **The order.** Argument, handoff, running goal, active ticket, INDEX. One running goal resumes at its next ticket (source `goal-file`); several stop and list them (`name one: /crew:autopilot --goal <slug>`); a goal file that cannot be read stops as could-not-tell and the active ticket is not driven; a `stopped` goal is named in a `fell through:` line with its reason and `--goal` command and never resumed; with no goal, or only `done` ones, the answer is exactly today's.
+- **Also.** An argument still wins, and so does a usable ticket handoff, with a `disagreement:` line naming the running goal. Status shows `(from goal-file, goal <slug>)`. Autopilot's context handoff now leaves the goal `running` (it is not a stop), so the next session resumes it.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (one goal, two goals, unreadable alone and beside a running goal, stopped, no goal, argument and handoff win, status, the owner's crash scenario).
+
+### Changed — crew 1.1.21: a `--goal` handoff is checked against the goal file, not the branch and head (L-0658)
+
+- **Summary.** A goal handoff written on one ticket's branch now resumes the goal after the next ticket's branch is checked out, as long as the goal is still running.
+- **What changed.** `crew_goal_state.py` (new) reads a goal file's run state; `crew_resume.decide`, `crew_autopilot._handoff_ticket` and status's resume line take a `resume: /crew:autopilot --goal <slug>` line only while that goal is `running`, and no longer compare its `branch:` and `head:`. The ticket form is checked exactly as before. A missing, unreadable, not-started, `done` or `stopped` goal is not taken: `decide` waits; `resume_target` falls through (missing, not started, done) or stops (unreadable as could-not-tell; stopped, named with its reason and `/crew:autopilot --goal <slug>`). Every other auto-resume condition still binds a goal handoff. SessionStart's staleness rule (`crew_state.handoff_staleness`) no longer archives a running goal's handoff for branch or head drift; its age still counts.
+- **Also (L-0541 review round 2).** A ticket marked done is closed for the goal picker only once autopilot's phase table says `closed`, so a goal never starts the next ticket before the current one ships.
+- **Also (T-0056 review round 1).** A goal run whose `running` mark cannot be written stops instead of running unmarked; a goal folder that cannot be listed is could-not-tell for `handoff-resume`.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (cross-branch resume, the six must-block cases, the owner's scenario part (b)), `test_crew_resume.py` (`decide` across branches, must-block cases, every other condition kept, ticket form unchanged).
+
+### Added — crew 1.1.21: a running autopilot goal is written into every handoff - goal run state and `handoff_resume` (T-0056)
+
+- **Summary.** While an autopilot goal runs, every handoff names the goal (`resume: /crew:autopilot --goal <slug>`) instead of the ticket in hand, so a resume after `/clear` continues the goal.
+- **Run state.** The goal file gains a `run` block (`state` `running|stopped|done`, `ticket`, `reason`, `at`), written by `crew_autopilot.py goal-mark` (temp file and `os.replace`, under the goal lock, every other key kept) and by `goal-run` itself; `running_goals` reads it, an unreadable file as `unknown`.
+- **One decider.** `crew_autopilot.py handoff-resume --root . [--ticket <id>]` (`crew_autopilot_handoff.handoff_resume`): one running goal gives the goal line; none gives the ticket form or `resume: none`; two running goals or an unreadable goal file give `resume: none` with `kind=unknown`, never the ticket form.
+- **Writers.** Autopilot's low-context stop (`autopilot.md` section 5) and `/crew:handoff` step 5 (and the `crew-context` skill) write the line it prints; the PreCompact skeleton in both `handoff-write.sh` and `handoff-write.ps1` adds it after `head:` only while exactly one goal runs, and is otherwise unchanged. The goal loop marks `running` at each phase start and `stopped` at each stop.
+- **Not in this change.** Reading a `--goal` handoff across branches (L-0658), bare-run goal discovery (L-0659), sabotage entries (L-0660, harness), T-0017's wrap-up writer.
+- **Tests.** `test_crew_autopilot_goal_resume.py` (new), the skeleton cases in `test_crew_resume_hook.py` (both flavours; the `.ps1` cases skip without `pwsh`), two command tests in `test_lifecycle_commands.py`.
+
+### Added — crew 1.1.21: autopilot goal runs - the approved split is minted, the goal's tickets are worked in dependency order with `mode: backlog`, each through its own approval, inside per-run caps, resumable with `--goal` (L-0541)
+
+- **Summary.** Once a goal's split is approved, autopilot mints its tickets and works them one at a time with `/crew:autopilot --goal <slug>`, stopping at each ticket the policy will not approve and at its ticket and token caps.
+- **Mint.** `crew_autopilot.py goal-approve --goal <slug>` mints every proposed ticket without an id after the split approval, in list order, through T-0019's unchanged `crew_ticket.mint` (`ready`; the direction names the goal file, `goal-ticket: <slug> <n>/<m>`, the risk and the dependencies). A failure stops naming the minted and the unminted tickets; a re-run mints only what is missing and adopts a folder whose id never reached the goal file. Goal-file writes hold `.work/autopilot/<slug>.lock`.
+- **The run.** `crew_autopilot.py goal-run --goal <slug> --session <id>` answers in place of `resume`: the first ticket in list order that is not closed (a `cancelled`/`superseded` one is passed unless a later ticket depends on it; `needs-owner`, an unknown state or an unminted ticket stops), the active pointer re-pointed only from a closed ticket of the same goal. `autopilot.mode: backlog` arms like `plan` (and ranks above it between the two config layers) and goes on after a ticket closes; `plan` works one ticket per run. New repo-only keys `autopilot.maxTicketsPerRun` (3) and `autopilot.maxTokensPerSession` (2000000, input + output from the session transcript via `crew_metrics.transcript_tokens(fields=)`); a transcript that cannot be read stops. Every stop but "done" prints `resume: /crew:autopilot --goal <slug>`.
+- **Per-ticket approval.** `goal-approve --goal <slug> --ticket <id>` is T-0010's `approve` for one minted ticket; a refusal stops with exactly `/crew:approve <id>` and the resume line.
+- **Resume.** `route` takes `--goal <slug>` and `run --goal <slug>`; `resume_target(goal=)` and a handoff's `resume: /crew:autopilot --goal <slug>` line answer the goal's next ticket; `status` shows that line as usable. The "arrives with L-0541" stops are gone.
+- **Not in this change (harness follow-up, T-0087).** Sabotage entries for the picker, the caps and the per-ticket approval (`plugin/crew/tests/sabotage*.py`); the `armed = mode == "plan"` line stays because a shipped mutation anchors on it.
+- **Tests.** `test_crew_autopilot_goals.py` (mint, picker, caps, transcript could-not-tell, resume), `test_crew_autopilot_policy.py::test_backlog_grants_nothing_plan_does_not`, `test_crew_metrics.py::test_transcript_tokens_fields_sums_only_those`; leaf count 145.
+
+### Added — crew 1.1.20: after an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line (L-0670)
+
+- **Summary.** When autopilot rejects a review round itself and plans again, it no longer approves
+  a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
+- **How.** New `hooks/scripts/crew_autopilot_replan.py`: `replan_check` reads the auto-rejected
+  round's `BLOCK|` and `FIX|` lines and requires each as a whole line of `plan.md`, as many times
+  as the round carries it (CRLF read as LF; NIT lines not required). `crew_autopilot.py approve`
+  refuses (exit 2, nothing written) when it fails; `crew_autopilot.py replan-check --ticket <id>`
+  gives the same answer read-only. Anything it cannot read is could-not-tell, a refusal,
+  including a `rejected` record that does not say who rejected.
+- **Unchanged.** An owner's reject, a first plan and `/crew:approve` are never checked.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0671.
+
+### Added — crew 1.1.20: the owner list knows hold, blocked, landing and needs-owner (L-0687)
+
+- **Summary.** `/crew:status` now counts held and blocked tickets on its `waiting` line
+  (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as
+  `revisit` with its reason and a `needs-owner` ticket with the question next.md asks.
+- **Rules.** A hold whose `revisit:` date is still ahead is counted, not listed; one that is due,
+  or has no usable date, is listed (cannot tell is never "not yet"). A blocked ticket is counted,
+  not listed; `landing` is the land step's and is left out. The phase still comes from autopilot's
+  `_phase`, so the list and `/crew:autopilot` agree.
+
+### Added — crew 1.1.20: `/crew:status --owner` and the `waiting` line (L-0551)
+
+- **Summary.** `/crew:status` now says how many open tickets are waiting on you, and
+  `/crew:status --owner` lists them, one line each with the command to type or the question to
+  answer.
+- **How.** New `hooks/scripts/crew_autopilot_owner.py`: `owner_items` asks autopilot's own phase
+  table (`_phase(policy=False, deep=False)`) about every open ticket and every ticket folder with no
+  INDEX row, so the list agrees with `/crew:autopilot`. `deep=False` stops at `review-unread` where
+  `next` would rebuild a review bundle or ask gh; the list never does either and writes nothing.
+- **Could not tell.** No `.work/INDEX.md`, or a module that cannot be imported, prints `waiting
+  unknown (<why>)`; a ticket whose phase read raises is counted as could-not-tell, never dropped.
+  So is a linked worktree whose main checkout cannot be named or whose main `.work/INDEX.md`
+  cannot be read: its open rows would otherwise vanish into "nothing on you".
+- **Archive.** The archive folder `.work/tickets/Complete/` (L-0509) is never listed as a ticket
+  with no INDEX row; the folder is named through `crew_common.tickets_root`.
+- **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
+  the line and 0.13s without, on a 4-CPU container shared with other builders.
+
+### Changed — crew 1.1.20: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
+
+- **Summary.** When `/crew:autopilot` stops, it now says which decision is yours (accept the
+  review, approve the plan, answer a question, look at something it could not tell, ...) and no
+  longer tells you to run a refresh, a graph build, the next review round or a crew helper.
+- **decision.** Every stop `next` returns carries `decision`, one of a closed list
+  (`crew_autopilot_stops.OWNER_DECISIONS`; `crew_autopilot.py stops --json` lists it as
+  `decisions`), and the CLI prints `decision=<id>` before `reason=` on a stop. A stop's command is
+  empty or that decision's own. A stale or unknown in-flight marker's stop is `clear-inflight`, carrying the owner's `clear`
+  command. A stop that cannot tell (no INDEX row, disagreeing rows, a
+  `needs-owner` with nothing asked) is `look`, never a decision it cannot vouch for.
+- **Reworded.** The FINDINGS stop asks only for the owner's accept or reject and names
+  `autopilot.reviewPolicy` (it no longer names the refresh check and the next round, T-0043's
+  wording); the ticket-mismatch stop names only `crew_ticket.py activate`; an unsettled-artifact
+  stop lists only what a refresh cannot settle; the `docs` and size-check stops carry no command;
+  the max-phases stop's command is `/crew:autopilot <id>`. Owner decision 2026-10-07: the
+  FINDINGS stop then ends "fixed them instead? run the refresh check, then /crew:review"
+  (`FIXED_INSTEAD`, the one mechanical line a stop may carry, on `accept-review` only). A `closed`
+  stop whose successor cannot be told (next.md names `superseded-by:` twice) is `look`.
+- **Merged with L-0522 (release/1.2.0).** An artifact stale after an accepted review whose refresh
+  would settle it now stops as `stale-after-review` with no command, naming the delta gate (an
+  anchor-only refresh committed on a clean tree keeps the receipt), instead of a `refresh` stop
+  carrying the refresh command. Nothing is written either way.
+- **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
+  site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
+
+### Added — crew 1.1.20: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
+
+- **Summary.** A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy:
+  fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK
+  and FIX test-first, records the fixes, refreshes and runs the next round itself. The default
+  (`stop`) leaves today's behaviour unchanged.
+- **The `fix` phase** (new `hooks/scripts/crew_autopilot_fix.py`). For a FINDINGS round no receipt
+  stands on, with a round left and at least one BLOCK or FIX line, `next` names `phase=fix stop=0
+  command=fix-findings <id> round <n>`. Once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes
+  every BLOCK and FIX line verbatim (as many times as the round carries it) and the rebuilt bundle
+  differs from the round's, `next` goes on to the refresh and `/crew:review`.
+- **Fail closed.** The policy `unknown` (an unreadable config), a `rounds_left` that is not an
+  integer, the final round, a row without findings, or whose base or bundle hash is missing or malformed, finding lines that disagree with the row's counts,
+  a verdict recovered from stray lines (`ignored_lines`), a bundle that cannot be rebuilt or rebuilds empty, and a fixes.md that is not UTF-8 each keep the `accept-review` stop, naming the cause. An
+  unrefunded INCOMPLETE round, NEEDS_REPLAN and a reserved round stop as before. `fix` named again
+  right after it ran is `no-progress`. A finding the phase cannot fix inside Touch, or disputes, is
+  the new `fix-refused` procedure stop. Nothing accepts a review.
+- **Settings.** `crew_autopilot.py settings` returns `reviewPolicy` (T-0029's key, now read by
+  single-ticket runs too) and prints `reviewPolicy=<value>` on its own line.
+- **Not in this entry.** The sabotage mutations are harness (T-0087): L-0668.
+
+### Added — crew 1.1.20: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
+
+- **Summary.** `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the
+  owner, replaced by another, or waiting on a dependency: it stops and says why, and
+  `/crew:autopilot status` says who each of those stops waits on.
+- **Stops.** `next` reads `crew_ticket_state.view` once (new `hooks/scripts/crew_autopilot_gates.py`):
+  an INDEX cell `hold`, `landing` or `needs-owner`, else that word in the spec header, stops as
+  itself. `hold` quotes `next.md`'s `reason:` and `revisit:` ("(passed)" once due; a date never lifts
+  a hold); `landing` stops even with a current receipt; `needs-owner` quotes `next:` and the open
+  questions, or says it cannot tell what is asked. A header `cancelled`/`superseded` is `closed`, and
+  a superseded ticket names its successor or says "successor not named". An approved ticket whose
+  `depends-on:` names a ticket that is not closed, or whose line cannot be read, stops as `blocked`
+  before implement, review and done. A `ship` or `next-slice` that would act stops on any of these,
+  and `ship` reads them again on every CI poll and right before `gh pr merge`, with the main
+  checkout's INDEX row as well as this one, so a hold set while CI runs stops the merge. Two disagreeing INDEX rows stop as `direction-approval`.
+- **status.** `waiting on:` is `owner` for `hold` and `needs-owner`, `the land step` for `landing`
+  and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
+- **Help.** `/crew:help` gives `hold`, `landing`, `blocked` and T-0067's `fix` two related commands
+  each (`crew_help.RELATED`, keyed by `crew_autopilot.WAITING`; merged with T-0025).
+- **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
+
+### Fixed — crew 1.1.20: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
+
+- **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
+  `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read
+  instead of telling you to arm a mode that may already say `plan`.
+- **status.** `settings` returns the approval/questions value warnings (`"bogus", not one of
+  human|self|risk`) in a new `policyWarnings` key as well as in `warnings`; `status` leaves those
+  out and keeps every other warning, including the single could-not-tell one for an unreadable
+  `.crew/config.json` or a non-object `autopilot` block. An object-valued policy key
+  (`approval: {"x": "self"}`) also leaves its `inert:` entries out of `status`
+  (`crew_config.autopilot_inert_split`). `settings`, `approval_policy` and `question_policy`
+  still carry the value warning.
+- **approve.** Unarmed because the config could not be read (not JSON, not an object, or an
+  `autopilot` value that is not an object), `approve` refuses with that cause; a plain unarmed
+  config keeps today's "autopilot.mode is not plan" refusal.
+- **Not in this entry.** Two sabotage mutations for these (T-0087 harness): a later tooling PR.
+  T-0010 round 6's other findings are L-0542 and L-0543.
+
+### Fixed — crew 1.1.20: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
+
+- **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the
+  questions after it from autopilot; a fence autopilot cannot read for certain now stops the run
+  instead of reading as "no questions".
+- **What changed.** `crew_autopilot._open_items` is now the union of main's parser (kept byte for
+  byte as `_legacy_open_items`, the floor), a strict fence view, and a could-not-tell item. The
+  view (new `hooks/scripts/crew_autopilot_fences.py`) tracks only a fence opened at column 0 and
+  closed at column 0 by the same marker, at least as long, with nothing after it; its lines are
+  neither headings nor items, so a `# how to check` line inside it no longer ends the section. A
+  tracked fence that opens the section before any item is itself an item. Any other fence shape
+  (indented, a backtick in a backtick info string, a shorter run inside a fence) or a fence left
+  open adds one `could not tell` item naming the line, when the file names an Open-questions
+  section anywhere. No CommonMark emulation: put fences at column 0 and close each one.
+- **Measured.** 18 new parser tests (a generated corpus of 17,282 texts against a verbatim copy of
+  main's parser at 155fe6d8: nothing below main, every unclean text with a section stops) and 3 new
+  `next` tests. Over the 29 ticket files this clone holds, 10 stop under main and the same 10 under
+  the new parser; none newly stops.
+- **Not in this entry.** The sabotage mutations for the parser are harness (T-0087): L-0643.
+
+### Fixed — crew 1.1.20: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
+
+- **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
+  round, and a review you accepted that a later edit staled goes back through refresh and review
+  instead of being reported as unfinished.
+- **FIX 1.** The un-accepted FINDINGS stop's reason ends: or fixes, then reruns
+  `crew_refresh_check.py --root . --ticket <id>` until it says fresh (committing what each
+  `refresh with` writes and each `uncommitted:` path; unknown is a stop), then `/crew:review <id>`. The
+  L-0510 auto-accept clause in front of it is unchanged; it is still a stop, with no new stop id.
+  `commands/autopilot.md` and the README no longer claim `next` refreshes before every later round:
+  it does so only for a round it reaches itself.
+- **FIX 2.** A FINDINGS round whose receipt stands (owner- or auto-accepted) and was then staled by
+  an edit goes through `_toward_review` (refresh, then `/crew:review`), the same as a stale CLEAN
+  receipt, instead of "the reviewer did not finish reading". Only a receipt `check_receipt`
+  confirms stale takes that route: a missing or uncheckable one stops (`accept-review`), and a
+  round that is INCOMPLETE or has no verdict still stops; the INCOMPLETE line, a sabotage anchor, is byte-identical.
+- **Also.** `_settles`' refreshable guard gets a failing control test, and `INSTALLATION.md`'s crew
+  command count (36) carries a `plugin-commands:crew` claim marker, so `check_self_claims` checks it.
+- **Not in this entry.** The sabotage mutations for these fixes are harness (T-0087) and land with
+  L-0643.
+
+### Fixed — crew 1.1.19: an empty `/tmp/.git` no longer refuses every Kimi probe (L-0708)
+
+- **Summary.** Codex's workspace-write sandbox leaves an empty, read-only `/tmp/.git`, and the Kimi
+  probe read any `.git` above the temporary directory as a repository, so every Kimi probe and
+  review was refused while it existed. Git is now asked instead.
+- **Fixed.** `kimi_probe._inside_a_repository` runs `git rev-parse --git-dir` in the resolved
+  temporary directory (every `GIT_*` variable removed, `LC_ALL=C`, 10-second bound, stdin
+  closed). A repository, a linked worktree included, is refused as before; only git's exit-128
+  "not a git repository" answer allows; git missing, a timeout, "dubious ownership" or any other
+  answer is could-not-tell and refuses, naming what happened.
+- **Kept.** Kimi Code 2.1.1 takes the nearest directory holding any `.git` as its project root
+  (read from its bundle), so a `.git` git rejects still refuses when Kimi would read a file
+  there: `.kimi-code`, `.agents` or `.mcp.json` at that root, or `AGENTS.md`, `agents.md` or
+  `.kimi-code/AGENTS.md` in any directory from it down to the temporary directory.
+
+### Added — crew 1.1.19: `/crew:graph`, one command for the code graph (L-0667)
+
+- **Summary.** Crew has one command for the code graph: `/crew:graph --status` says in one line
+  whether the graph is current, and `/crew:graph --refresh` runs the refresh this repo sanctions
+  and proves the tracked pair agrees before anyone commits it.
+- **Added.** `plugin/crew/commands/graph.md` and `plugin/crew/hooks/scripts/crew_graph.py`.
+  `status` prints `graph=<fresh|stale|unknown|absent> built_at=<sha|none>
+  pair=<agree|disagree|unknown|untracked> ignore=<covered|uncovered|unknown> command=<line>` and
+  writes nothing. `refresh` stops at the first failure: graphify missing (exit 2), a
+  secrets-denylisted file uncovered (exit 1) or uncertain (exit 2) before anything is built, the
+  graphify line failing (exit 1, its output verbatim), no `built_at_commit` (exit 2), and, where
+  `GRAPH_REPORT.md` is tracked, the report's `## Summary` counts against `graph.json`'s `nodes`
+  and `links` (a mismatch exit 1 with all four numbers; an unreadable side, or a graph with no
+  `links`, exit 2). It never installs, stages or commits.
+- **Changed.** The refresh check's graph artifact names `/crew:graph --refresh` as its `command`
+  and carries the graphify line in a new `runs` field; `/crew:autopilot`'s refresh list, the
+  crew-graph skill (a Refresh section), the README and the guide say so. crew now has 38 commands, counting T-0025's `/crew:help`.
+
+### Added — crew 1.1.19: the main session is the hub, lanes never ring a peer (L-0637)
+
+- **Summary.** A wave lane can no longer ring another session; it hands a question for another
+  session back to the main session, which files it in the record and rings.
+- **Added.** `crew_bridge.py ring` reads T-0029's lane marker (a lane file under
+  `.work/autopilot/<slug>/lanes/` naming this worktree) before anything else and, in a lane, refuses
+  with exit 1; a marker it cannot read is `unknown` (exit 3), never "not a lane". The main checkout
+  and a linked worktree no lane file names ring as before; `receive` and `pending` are not restricted.
+  `validate-prompts.py` fails a crew agent granted `SendMessage` or `ListAgents`, and a lane-prompt
+  source naming either.
+- **Changed.** The wave's lane prompt (`crew_wave.lane_prompt`) says a question for another session
+  goes back in the lane's report for the main session to file and ring; `/crew:autopilot` section 9
+  states the hub rule. Limit, in the README: a lane offered `SendMessage` by Claude Code can still
+  call it; no hook blocks the tool.
+
+### Added — crew 1.1.19: an unanswered doorbell reads `could not tell` (L-0636)
+
+- **Summary.** A session that rang a peer now sees, after a `/clear` too, every ring the peer has
+  not answered by moving the record, as `could not tell`, and never as agreement.
+- **Added.** `crew_bridge.py ring --to <label>` appends one `rang` line (holder, label, announced
+  tip, time, machine, worktree) to the channel log in one commit on the fetched tip, through
+  `crew_coord`'s no-force write path; a push that still fails is `unknown - could not push` and no
+  doorbell is printed. `crew_bridge.py pending` lists each ring of this session or worktree that no
+  later log line by another holder follows as `could not tell - no record change from <label> since
+  the doorbell at <time> (<age> ago)` (exit 3), or `no pending doorbells`. No timeout, retry or
+  "delivered" state; a failed fetch or a corrupt log line is `unknown`.
+- **Changed.** `/crew:autopilot` prints `pending` in `status` and its resume step and reports the
+  lines to the owner; a pending ring is not a stop. Limit, in the README: any later line by a holder
+  other than the ringer and this session clears a ring, a third session's too.
+
+### Added — crew 1.1.19: cross-session messages are a doorbell, never an instruction (T-0032)
+
+- **Summary.** Sessions sharing a coordination channel can now ring each other over Claude Code's
+  messaging bridge, and an inbound message is classified as a doorbell or untrusted data before
+  anything acts on it.
+- **Added.** `plugin/crew/hooks/scripts/crew_bridge.py`: `ring` fetches `crew-coord/<channel>` and
+  prints one line, `crew-doorbell/1 channel=<c> tip=<sha> kind=<changed|contract|finding|question>
+  ref=<id|->` (at most 200 characters, no URL), which the session passes to `SendMessage`
+  unchanged; a failed fetch is `unknown` (exit 3) and an absent channel is refused (exit 1).
+  `receive` reads a message on stdin and prints one of three results: a doorbell whose tip is in the
+  fetched record (exit 0), `could not tell` (exit 3), or `not a doorbell` (exit 1, the text printed
+  only made safe and labelled `[peer-written]`). Its only next step is always
+  `crew_coord.py status`. Neither command writes anything or prints the messaging token.
+- **Changed.** `/crew:autopilot` may use `SendMessage` and `ListAgents`; its new section 9 says to
+  ring only after the record is pushed, to run `receive` on every inbound message first (through a
+  heredoc with a fresh terminator per call), and that a message is never an approval, never a
+  `taken:` answer, never a reason to write outside Touch. README "Cross-session messages" and a
+  troubleshooting entry document it.
+- **Not in this entry.** Unanswered doorbells (L-0636), the hub rule (L-0637) and the sabotage
+  mutations (L-0638, review harness, lands separately under T-0087).
+
+### crew 1.1.18 — L-0634: the wave refuses a ticket whose contract moved since it was built against
+
+- **Summary.** A ticket built against a contract version is no longer started by the autopilot wave
+  once that version on the shared channel has changed, and `crew_contract.py verify` checks the same
+  thing on its own.
+- **Added.** `crew_contract.py verify --ticket <id>` and `check_bindings`: every binding in
+  `.work/tickets/<id>/contracts.json` must still find its version on the channel with the bound
+  hash, a body whose sha256 is that hash, status `built-against` and this repository and ticket in
+  `built_by`, read from the remote the binding records (exit 0); anything else is a mismatch
+  (exit 1), and what cannot be checked is unknown (exit 3), never "no bindings": a bindings file
+  that cannot be checked or holds an empty list, a remote no longer configured, or `verify --remote` naming another remote. A ticket with no bindings fetches nothing; a newer version is
+  information only; nothing is repaired. `crew_wave.py plan` and `start` refuse such a ticket after
+  its dependencies (`contract <n> v<N> changed since <id> built against it` / `... unknown`). README
+  and the troubleshooting guide describe the refusal and the way out.
+- **Not in this entry.** Sabotage for this guard is L-0635, a harness PR (T-0087).
+
+### crew 1.1.18 — L-0633: a wave ticket can depend on a ticket another session works
+
+- **Summary.** An autopilot wave can now wait on a ticket another session is working, written
+  `<channel>:<id>`, and starts it only once that session's claim reads `done`.
+- **Added.** `crew_wave.py` accepts `<channel>:<id>` and `<channel>:<repo>:<id>` in a set file's
+  `deps`, in `--deps` and in an INDEX row's `(depends on ...)`. `plan` fetches `crew-coord/<channel>`
+  from `coord.remote` (default `origin`), once per channel and writing nothing but objects, and
+  counts the dependency closed only when exactly one claim for the id reads `done`. `working` (stale
+  or not) and `released` are `not closed`; no claim, an ambiguous short form, a corrupt claim, an
+  absent channel, a failed fetch or an unconfigured remote are `unknown`; each refuses the ticket.
+  Local dependencies are judged first, so a ticket with none cross fetches nothing. The README and
+  the troubleshooting guide list each refusal.
+- **Not in this entry.** Sabotage for this check is L-0635, a harness PR (T-0087).
+
+### crew 1.1.18 — T-0031: versioned contracts between sessions, frozen once built against
+
+- **Summary.** Two sessions building against each other can now put the interface between them on
+  the shared coordination channel as a numbered, hashed version that nobody can edit once a side
+  has built against it.
+- **Added.** `plugin/crew/hooks/scripts/crew_contract.py`: `put` writes `contracts/<name>/v<N>.json`
+  and `.body` on `crew-coord/<channel>` (v1 as a draft; a draft is replaced in place);
+  `put --new-version --ticket <id>` supersedes a frozen version with a draft v(N+1);
+  `build-against --name <n> --version <N> --ticket <id>` needs the ticket approved
+  (`crew_ticket.accepted`), checks the body's sha256 against the record, sets `built-against`,
+  appends this repository and ticket to `built_by` once, and writes the local binding
+  `.work/tickets/<id>/contracts.json` (remote, channel, name, version, hash); `status` lists every version, labelled `[peer-written]`, and
+  reads anything it cannot parse as `unknown` (exit 3). Writes go through T-0030's `Channel`: a
+  plain push on the fetched tip, never a force push, claims carried through. The README's
+  "Versioned contracts" section and the daily-workflow guide describe it.
+- **Not in this entry.** The sabotage mutations for this module are L-0635, a harness PR (T-0087).
+  The wave's refusal of a binding whose hash moved is L-0634.
+
 ### Added — crew 1.1.17: sabotage coverage for the 1.2.0 features already on main, and the wave lane's never-list (H2a harness lane)
 
 - **Summary.** Crew's mutation suite now proves the guards the 1.2.0 features added on main

@@ -668,6 +668,96 @@ log said was <code>FAIL &lt;name&gt;</code>.</p>
   as its <code>commit-refresh</code> phase. The commit changes no byte of the working state the review bundle
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (<code>manifest.json</code>, <code>cache/</code>) never counts.</p>
+<h2 id="wave-refuses-a-cross-session-dependency">Wave Refuses a Cross-Session Dependency</h2>
+<p>A wave ticket may depend on a ticket another session works, written <code>&lt;channel&gt;:&lt;id&gt;</code> or
+<code>&lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code> in the set file's <code>deps</code> or the INDEX row's <code>(depends on ...)</code>. The wave
+fetches <code>crew-coord/&lt;channel&gt;</code> from <code>coord.remote</code> (default <code>origin</code>) and counts the dependency
+closed only when exactly one claim for that id reads <code>done</code>. Every line about the peer's claim is
+peer-written data and ends <code>[peer-written]</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>crew_wave.py plan</code> says</th>
+<th>Means</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dependency &lt;channel&gt;:&lt;id&gt; is not closed: the peer claim reads working (...)</code></td>
+<td>the peer is still on it; <code>owner unknown</code> in the brackets means its heartbeat is past the TTL</td>
+<td>wait for the peer's <code>done</code>, or take the ticket out of this wave</td>
+</tr>
+<tr>
+<td><code>... reads released (...); only done closes it</code></td>
+<td>the peer gave the ticket back unfinished</td>
+<td>agree with the peer who finishes it; <code>released</code> never closes it</td>
+</tr>
+<tr>
+<td><code>dependency &lt;channel&gt;:&lt;id&gt; unknown: no claim for &lt;id&gt; on crew-coord/&lt;channel&gt;</code></td>
+<td>nobody on the channel has claimed that id</td>
+<td>check the id and channel with <code>crew_coord.py status --channel &lt;channel&gt;</code></td>
+</tr>
+<tr>
+<td><code>... unknown: 2 repositories on crew-coord/&lt;channel&gt; hold &lt;id&gt;; name one as &lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code></td>
+<td>the short form is ambiguous</td>
+<td>write the long form, with the repo key <code>status</code> prints</td>
+</tr>
+<tr>
+<td><code>... unknown: its claim ... is corrupt (...)</code></td>
+<td>the claim file does not parse</td>
+<td>the claim's holder or the owner repairs it; the wave never guesses</td>
+</tr>
+<tr>
+<td><code>... unknown: crew-coord/&lt;channel&gt; does not exist on &lt;remote&gt;</code> or <code>could not fetch ...</code></td>
+<td>the channel is absent, or the remote cannot be reached</td>
+<td>check the channel name and <code>coord.remote</code>, then plan again</td>
+</tr>
+<tr>
+<td><code>... unknown: '&lt;remote&gt;' (coord.remote) is not a configured remote</code></td>
+<td><code>coord.remote</code> names no remote of this checkout</td>
+<td><code>git remote add &lt;remote&gt; &lt;url&gt;</code>, or fix <code>coord.remote</code></td>
+</tr>
+<tr>
+<td><code>dependencies unknown: ...</code></td>
+<td>a dependency is not <code>&lt;id&gt;</code>, <code>&lt;channel&gt;:&lt;id&gt;</code> or <code>&lt;channel&gt;:&lt;repo&gt;:&lt;id&gt;</code></td>
+<td>fix the set file's <code>deps</code> or the INDEX row; <code>crew_wave.py set</code> refuses a malformed one</td>
+</tr>
+</tbody>
+</table>
+<h2 id="wave-refuses-a-tickets-contract">Wave Refuses a Ticket's Contract</h2>
+<p>A ticket that built against a contract version (<code>crew_contract.py build-against</code>) keeps a binding
+in <code>.work/tickets/&lt;id&gt;/contracts.json</code>, naming the git remote it was built on. The wave checks each
+binding, on that remote, after the ticket's dependencies;
+run the same check alone with <code>crew_contract.py verify --ticket &lt;id&gt;</code> (exit 0 current, 1 changed,
+3 cannot tell).</p>
+<table>
+<thead>
+<tr>
+<th><code>crew_wave.py plan</code> says</th>
+<th>Means</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>contract &lt;n&gt; v&lt;N&gt; changed since &lt;id&gt; built against it (...)</code></td>
+<td>the channel no longer shows that version with the bound hash, a matching body, status <code>built-against</code> and this ticket in <code>built_by</code>: someone rewrote it</td>
+<td>do not rebind: agree a new version (<code>put --name &lt;n&gt; --new-version --ticket &lt;new id&gt;</code>) and a new ticket on each side, then build against it</td>
+</tr>
+<tr>
+<td><code>contract &lt;n&gt; v&lt;N&gt; unknown (...)</code></td>
+<td>the fetch failed, the binding's remote is no longer configured, the channel or the version's files are missing, or the record is corrupt</td>
+<td>fix what the brackets name (remote, channel name), then plan again; nothing is assumed current</td>
+</tr>
+<tr>
+<td><code>contract bindings unknown (...)</code></td>
+<td><code>contracts.json</code> cannot be checked, does not parse or holds no binding</td>
+<td>restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run <code>build-against</code> again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings"</td>
+</tr>
+</tbody>
+</table>
+<p>A newer version on the channel is information only and never refuses. The check writes nothing.</p>
 <h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
 <p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
 judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
@@ -943,6 +1033,20 @@ command — no keystrokes appear at all.</p>
   <code>crew_autoclear_setup.py apply-method sendkeys --yes</code> (<code>${CLAUDE_PLUGIN_ROOT}/hooks/scripts/</code>)
   to opt in, after reading what SendKeys does. See <code>plugin/crew/CONFIG.md</code> §14.</li>
 </ul>
+<h3 id="bare-crewautopilot-stopped-on-a-goal">"Bare /crew:autopilot Stopped on a Goal"</h3>
+<p><strong>Symptom:</strong> <code>/crew:autopilot</code> with no argument stops naming autopilot goals, or a <code>fell through:</code>
+line names a stopped goal.</p>
+<p>With no usable handoff, a bare run looks for a running goal in <code>.work/autopilot/</code> before the active
+ticket (the order is argument, handoff, running goal, active ticket, INDEX; L-0659).</p>
+<ul>
+<li><strong><code>several autopilot goals are running: a, b</code>:</strong> pick one: <code>/crew:autopilot --goal &lt;slug&gt;</code>.</li>
+<li><strong><code>could not tell whether an autopilot goal is running: .work/autopilot/&lt;slug&gt;.json ... could not be
+  read</code>:</strong> the file is not JSON, not an object, or its <code>run.state</code> is not <code>running</code>, <code>stopped</code> or
+  <code>done</code>. Fix or remove it; until then the active ticket is not driven, because a goal might be
+  running. Naming the work (<code>/crew:autopilot &lt;ticket&gt;</code> or <code>--goal &lt;slug&gt;</code>) still runs.</li>
+<li><strong><code>goal &lt;slug&gt; stopped: &lt;reason&gt;</code></strong> as a <code>fell through:</code> line: a goal you or a cap stopped is never
+  resumed by a bare run; <code>/crew:autopilot --goal &lt;slug&gt;</code> resumes it when you choose to.</li>
+</ul>
 <h3 id="claude-code-compacted-by-itself">"Claude Code Compacted by Itself"</h3>
 <p><strong>Symptom:</strong> the session cleared or summarised itself with no <code>/clear</code> or <code>/compact</code> typed, and no
 message about auto-clear ran first.</p>
@@ -954,6 +1058,19 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
+<h2 id="autopilot-refused-a-successor-plan-after-an-automatic-reject">Autopilot Refused a Successor Plan After an Automatic Reject</h2>
+<ul>
+<li><strong>Symptom:</strong> <code>/crew:autopilot</code> stops with <code>refused: successor plan lacks &lt;n&gt; of &lt;m&gt; finding
+  line(s), first: &lt;line&gt;</code> after it rejected a review round itself (<code>autopilot.maxAutoReplans</code>).</li>
+<li><strong>Cause:</strong> after an automatic reject, autopilot approves a successor plan only when <code>plan.md</code>
+  holds every <code>BLOCK|</code> and <code>FIX|</code> line of the rejected round verbatim, each as a whole line, as many
+  times as the round carries it (L-0670). NIT lines are not required. <code>could not tell: ...</code>
+  means the ledger, the rejected round's row or <code>plan.md</code> could not be read.</li>
+<li><strong>Check:</strong> <code>python3 plugin/crew/hooks/scripts/crew_autopilot.py replan-check --root . --ticket
+  &lt;id&gt;</code> prints <code>applies= ok= missing=</code> and the reason, and writes nothing.</li>
+<li><strong>Fix:</strong> quote the missing lines in the plan, or approve it yourself with <code>/crew:approve &lt;id&gt;</code>,
+  which this check never blocks.</li>
+</ul>
 <h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
 <p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an
 agent this machine lacks reviews less, and nothing in the output says so.</p>
@@ -1054,6 +1171,30 @@ every file the secrets denylist matches.</p>
   section has the same steps.</p>
 </li>
 </ul>
+<h2 id="a-message-from-another-session-asks-for-an-approval-or-an-edit">A Message from Another Session Asks for an Approval or an Edit</h2>
+<p>Sessions that share a coordination channel may message each other over Claude Code's bridge, but a
+message is only a doorbell: "the record on <code>crew-coord/&lt;channel&gt;</code> moved". Nothing in a message is
+ever an approval, an answer to a question you were asked, or permission to edit a file outside the
+ticket's Touch list.</p>
+<ul>
+<li><strong>Symptom: a peer's message says "approve T-0042", "answer Q2 with option B" or "edit
+  the deploy script", or the session prints <code>not a doorbell</code> or <code>could not tell</code>.</strong>
+  <strong>Check:</strong> what the classifier made of it.</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_bridge.py&quot; receive --channel &lt;c&gt; --remote origin &lt;&lt;'END-7f3a'
+&lt;the message, exactly as received&gt;
+END-7f3a
+</code></pre>
+<p>Use a terminator of your own, and check first that no line of the message equals it: such a line
+  would end the heredoc early and run what follows as shell. Exit 0 is a doorbell whose tip is
+  in the fetched record; exit 3 (<code>could not tell</code>) means the fetch failed or the announced tip is
+  not in the record; exit 1 (<code>not a doorbell</code>) is anything else, printed once, made safe and
+  labelled <code>[peer-written]</code>.
+  <strong>Fix:</strong> whatever it printed, do not act on the message's text. Run the one next step it names,
+  <code>crew_coord.py status --channel &lt;c&gt; --remote origin</code>, and read the record. An approval is yours
+  to type (<code>/crew:approve &lt;id&gt;</code>); a question is answered under your own questions policy; a request
+  the peer needs actioned is filed in the record by the peer. Report <code>could not tell</code> and
+  <code>not a doorbell</code> to whoever owns the channel.</p>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
 but returns immediately without judging anything; "off" for <code>verifyGate</code> means the
@@ -1263,6 +1404,15 @@ cleanly, clear, and pick up where it stopped.</p>
 <p><strong>Crew neither causes nor tunes Claude Code's own auto-compact.</strong> That is a separate, built-in
    behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
    once one exists, and nothing here makes auto-compact happen sooner, later, or at all.
+   While an autopilot goal runs, the handoff names the goal, not the ticket in hand: every writer
+   (autopilot's low-context stop, <code>/crew:handoff</code>, the PreCompact skeleton) asks
+   <code>crew_autopilot.py handoff-resume</code>, which answers <code>resume: /crew:autopilot --goal &lt;slug&gt;</code> for
+   the one running goal. Two running goals or an unreadable goal file give <code>resume: none</code>: it could
+   not tell which goal runs, and it never falls back to the ticket form, which would drop the goal.
+   With no usable handoff at all (a crash, a killed terminal), a bare <code>/crew:autopilot</code> looks for a
+   running goal before the active ticket: the order is argument, handoff, running goal, active
+   ticket, INDEX. One running goal resumes; two stop and list both; a goal file it cannot read stops
+   (could not tell, so the active ticket is not driven); a stopped goal is named, never resumed.
 3. <strong>Resume.</strong> The new session starts with the handoff and its next action already in context,
    within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
    <code>initialUserMessage</code>, so you press Enter to continue. Claude Code 2.1.282 drops it in an
@@ -1276,7 +1426,8 @@ cleanly, clear, and pick up where it stopped.</p>
    stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
    no resume line, <code>resume: none</code>, or a line the grammar refuses (a second line, trailing text, an
    unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
-   does not match the checkout; the ticket directory or goal file is missing; the command is not
+   does not match the checkout (a ticket line only: a <code>--goal</code> line is judged by its goal file, and
+   waits unless that goal is <code>running</code>); the ticket directory or goal file is missing; the command is not
    installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
    handoff; a later handoff write could not replace or remove <code>handoff-author.json</code> (<code>handoff-author.json.stuck</code>), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without

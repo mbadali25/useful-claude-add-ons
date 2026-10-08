@@ -657,8 +657,9 @@ def _outcome(outcome, reason):
     return "fail" if failed else "pass"
 
 
-def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
-    """Everything after the filters: credentials, line, episode, dedupe, transport."""
+def _credentials(cfg):
+    """`(provider, token, target, None)`, or `(provider, None, None, word)` when
+    nothing can be sent (`missing-credentials` or `off`), the reason said."""
     provider = cfg.get("provider")
     # Every credential is stripped: a token set with a trailing space or newline
     # (setx, a paste, the System Properties dialog) put it inside the URL, and the
@@ -673,19 +674,19 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=No
         if not token_env:
             _say("telegram notify.tokenEnv is not set in ~/.claude/crew/config.json or the notify "
                  "skill's bot_token_env (a repo's notify.tokenEnv is ignored); nothing sent")
-            return "missing-credentials"
+            return provider, None, None, "missing-credentials"
         if not token:
             _say(f"telegram token missing: ${token_env} is empty or unset in this process's "
                  "environment; nothing sent")
-            return "missing-credentials"
+            return provider, None, None, "missing-credentials"
         if not _BOT_TOKEN.fullmatch(token):
             _say(f"${token_env} does not look like a Telegram bot token (<digits>:<letters>); "
                  "nothing sent")
-            return "missing-credentials"
+            return provider, None, None, "missing-credentials"
         if not target:
             _say("telegram chatId missing: set notify.chatId in this repo's crew config or the "
                  "machine-global one; nothing sent")
-            return "missing-credentials"
+            return provider, None, None, "missing-credentials"
     elif provider == "teams":
         url_env = cfg.get("urlEnv")
         url_env = url_env.strip() if isinstance(url_env, str) else ""
@@ -693,11 +694,37 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=No
         token = None
         if not target:
             _say(f"teams url env ${url_env} not set; nothing sent")
-            return "missing-credentials"
+            return provider, None, None, "missing-credentials"
     else:
         _say(f"unknown notify.provider {provider!r}; nothing sent")
-        return "off"
+        return provider, None, None, "off"
 
+    return provider, token, target, None
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _already_sent(root, cfg, event, reason, ticket, episode, dedupe):
+    """Whether `_deliver` would send nothing for this ping as one already sent
+    (the same waiting episode, or the same message inside realertHours), read
+    without a lock: a held ping is then not counted (L-0656 review r3)."""
+    state = state_dir(root)
+    if episode:
+        seen = _read_json(os.path.join(state, "episodes.json")).get(episode[0])
+        if isinstance(seen, dict) and seen.get("key") == episode[1]:
+            return True
+    material = "|".join([event, ticket or where(root)["ticket"] or "", reason]
+                        + (list(episode) if episode else []) + ([str(dedupe)] if dedupe else []))
+    at = _read_json(os.path.join(state, "sent.json")).get(
+        hashlib.sha256(material.encode("utf-8")).hexdigest())
+    window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
+    return isinstance(at, (int, float)) and time.time() - at < window
+
+
+def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
+    """Everything after the filters: credentials, line, episode, dedupe, transport."""
+    provider, token, target, stop = _credentials(cfg)
+    if stop:
+        return stop
     place = where(root)
     ticket = ticket or place["ticket"]
     phase = place["phase"] if ticket == place["ticket"] else ""
@@ -789,7 +816,8 @@ def _filter(cfg, event):
 def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None,
          episode=None, cfg=None, dedupe=None):
     """Send one message. Returns `sent`, `deduped`, `episode`, `off`, `filtered`,
-    `missing-credentials` or `failed:<why>`; never raises."""
+    `held` (asleep, L-0656: crew_notify_hold.py), `missing-credentials` or
+    `failed:<why>`; never raises."""
     try:
         if cfg is None:
             cfg, notices = effective_config(root)
@@ -805,6 +833,16 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
             kind = kind if kind in KINDS else None
         elif kind not in ("ask", "permission"):
             kind = "ask"
+        import crew_notify_hold  # pylint: disable=import-outside-toplevel  # L-0656, imports this
+        if (event, kind) in crew_notify_hold.HOLDABLE:  # L-0656 review r4: config failures surface
+            stop = _credentials(cfg)[3]
+            if stop:
+                return stop
+            if not _already_sent(root, cfg, event, reason, ticket, episode, dedupe) and \
+                    crew_notify_hold.holds(root, event, kind, "|".join(
+                        [ticket or where(root)["ticket"] or "", reason, repr(episode),
+                         str(dedupe or "")])):
+                return "held"
         return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"failed ({exc.__class__.__name__})")

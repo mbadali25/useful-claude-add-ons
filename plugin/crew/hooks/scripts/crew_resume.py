@@ -30,6 +30,7 @@ import crew_common
 from crew_common import git_out, read_text
 import crew_autocycle
 import crew_context
+import crew_goal_state
 import crew_state
 
 # The closed allowlist: (command, argument kinds). A module constant and not
@@ -89,6 +90,22 @@ def _refuse(reason):
     return {"ok": False, "command": "", "arg": "", "kind": "", "reason": reason}
 
 
+_SKELETON_GOAL_RE = re.compile(r"/crew:autopilot --goal [a-z0-9][a-z0-9-]{0,63}")
+
+
+def _skeleton_goal_header(text):
+    """T-0056 review r5: the PreCompact skeleton's header (before its first
+    blank line, so before Changed files) may carry exactly the running goal's
+    line; then only that header is read. Any other text comes back as it was."""
+    if crew_autocycle.SKELETON_MARK not in (text or ""):
+        return text
+    header = text.replace("\r\n", "\n").split("\n\n", 1)[0]
+    found = _RESUME_LINE_RE.findall(header)
+    if len(found) == 1 and _SKELETON_GOAL_RE.fullmatch(found[0].strip()):
+        return header
+    return text
+
+
 def parse_resume(text):
     """{ok, command, arg, kind, reason} for the handoff `text`.
 
@@ -99,7 +116,10 @@ def parse_resume(text):
     The automatic PreCompact skeleton is refused whole, before any line is
     read: its Changed files list is bare `git diff` / `git ls-files` output,
     so a file named `resume: /crew:status` would otherwise be its resume
-    line (review round 4, T-0006). It names no next action by construction."""
+    line (review round 4, T-0006). It names no next action by construction,
+    except the one goal line (T-0056) its header may carry, which is the
+    only line read from it."""
+    text = _skeleton_goal_header(text)
     if crew_autocycle.SKELETON_MARK in (text or ""):
         return _refuse("the handoff is the automatic PreCompact skeleton; it names no next action")
     lines = _RESUME_LINE_RE.findall(text or "")
@@ -769,6 +789,13 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     if not parsed["ok"]:
         return _decision("wait", parsed["reason"], sha=sha)
     prompt = render(parsed)
+    if parsed["kind"] == "goal":
+        # L-0658: a goal moves across ticket branches, so a goal handoff is
+        # judged by its goal file's run state, never by branch: and head:.
+        refused = crew_goal_state.handoff_refusal(root, parsed["arg"])[1]
+        if refused:
+            return _decision("wait", refused, prompt, sha)
+        return _decide_rest(root, payload, parsed, prompt, sha, plugin_root)
     branch_line = _BRANCH_RE.search(handoff_text)
     branch = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
     if not branch_line or not branch or branch_line.group(1) != branch:
@@ -777,6 +804,13 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     head = git_out(root, "rev-parse", "HEAD")
     if not head_line or not head or not head.lower().startswith(head_line.group(1).lower()):
         return _decision("wait", "the handoff's head: line does not match HEAD", prompt, sha)
+    return _decide_rest(root, payload, parsed, prompt, sha, plugin_root)
+
+
+def _decide_rest(root, payload, parsed, prompt, sha,  # pylint: disable=too-many-arguments,too-many-positional-arguments
+                 plugin_root):
+    """`decide` once the note is bound to this checkout: by branch and head
+    for the ticket form, by the goal file for the goal form (L-0658)."""
     ticket = parsed["arg"] if parsed["kind"] == "ticket" else None
     goal = parsed["arg"] if parsed["kind"] == "goal" else None
     where, why = (crew_common.locate_ticket(root, ticket)[1:]) if ticket else (None, None)
@@ -785,8 +819,6 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     if where == crew_common.ABSENT:
         return _decision("wait", f".work/tickets/{ticket}/ does not exist (nor under "
                          f"{crew_common.ARCHIVE_DIR}/)", prompt, sha)
-    if goal and not os.path.isfile(os.path.join(root, ".work", "autopilot", goal + ".json")):
-        return _decision("wait", f".work/autopilot/{goal}.json does not exist", prompt, sha)
     name = parsed["command"].split(":", 1)[1]
     if not os.path.isfile(os.path.join(plugin_root, "commands", name + ".md")):
         return _decision("wait", f"{parsed['command']} is not installed", prompt, sha)

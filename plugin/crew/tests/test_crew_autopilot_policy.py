@@ -704,6 +704,11 @@ GOAL_WRITERS += ("split",)
 # plan) write slices.json; test_crew_autopilot_slices.py pins each. The usage
 # names the three on one line.
 GOAL_WRITERS += ("slice|slice-done|next-slice",)
+# L-0541: `goal-approve` also mints the approved split (crew_ticket.mint's writes)
+# and `goal-run` records the run in the goal file; test_crew_autopilot_goals.py
+# pins both. Neither is in the usage block (their usage is
+# crew_autopilot_backlog.py's), so this entry only documents them.
+GOAL_WRITERS += ("goal-run",)
 
 
 def _usage_subcommands():
@@ -1009,3 +1014,89 @@ def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
     got = json.loads(_cli(root, "settings", "--json").stdout)
 
     assert (got["approval"], got["questions"]) == (approval, questions)
+
+
+# --- L-0541: `backlog` arms exactly as `plan` does, and grants nothing more ------
+
+REFUSALS = [("human", "low", True), ("risk", "med", True), ("risk", "high", True),
+            ("risk", None, True), ("self", "low", MISSING), ("self", "low", False),
+            ("self", "low", "true"), ("risk", "low", False), ("Self", "low", True),
+            ("auto", "high", True)]
+
+
+def _mode(root, mode):
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["mode"] = mode
+    _write(root / ".crew" / "config.json", json.dumps(config))
+
+
+@pytest.mark.parametrize("approval,risk,allow", REFUSALS)
+def test_backlog_grants_nothing_plan_does_not(tmp_path, approval, risk, allow):
+    answers = {}
+    for mode in ("plan", "backlog"):
+        root = _repo(tmp_path / mode, approval=approval, risk=risk, allow=allow)
+        _mode(root, mode)
+        policy = crew_autopilot.approval_policy(str(root), T)
+        code, text = crew_autopilot.approve(str(root), T)
+        answers[mode] = (policy["allow"], policy["reason"], code, text,
+                         os.path.exists(crew_ticket.approval_path(str(root), T)))
+
+    assert (answers["backlog"], answers["plan"][0], answers["plan"][2]) == (
+        answers["plan"], False, 2)
+
+
+# --- L-0653: `sleep-note` and `sleep-summary` write only the sleep log -------------
+
+def test_sleep_log_actions_are_only_writing_the_sleep_log(tmp_path, monkeypatch):
+    import datetime  # pylint: disable=import-outside-toplevel
+    import crew_sleep  # pylint: disable=import-outside-toplevel
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="human", risk="low")
+    config = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    config["autopilot"]["sleep"] = {"schedule": "22:00-07:00", "approval": "self"}
+    _write(root / ".crew" / "config.json", json.dumps(config))
+    log = str(root / ".work" / "autopilot" / crew_sleep.LOG_NAME)
+    monkeypatch.setattr(crew_sleep, "now", lambda: datetime.datetime(2026, 10, 4, 23, 0))
+    before = _files(root)
+
+    noted = _main(root, "sleep-note", "--ticket", T, "--kind", "note", "--text", "x")
+    after_note = _files(root)
+    monkeypatch.setattr(crew_sleep, "now", lambda: datetime.datetime(2026, 10, 5, 12, 0))
+    summed = _main(root, "sleep-summary")
+    after_summary = _files(root)
+
+    def changed(old, new):
+        return sorted(p for p in set(old) | set(new) if old.get(p) != new.get(p))
+    assert (noted, changed(before, after_note), summed, changed(after_note, after_summary)) == (
+        0, [log], 0, [log])
+
+
+# --- T-0027: settings keeps the policy-value warning; approve names an unreadable config --------
+
+def test_settings_still_reports_a_policy_value_warning(tmp_path):
+    root = _repo(tmp_path, approval="bogus", risk="low")
+
+    got = crew_autopilot.settings(str(root))
+    printed = _cli(root, "settings").stdout
+    policy = crew_autopilot.approval_policy(str(root), T)
+
+    def named(lines):
+        return [w for w in lines if "autopilot.approval is 'bogus'" in w]
+    assert (len(named(got["warnings"])), len(named(got["policyWarnings"])),
+            "warning: autopilot.approval is 'bogus'" in printed,
+            len(named(policy.get("warnings") or []))) == (1, 1, True, 1)
+
+
+@pytest.mark.parametrize("text,cause", [
+    ("{bad", "could not be read"), ("[1]", "could not be read"),
+    (json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}), "not an object")],
+    ids=["not-json", "top-level-list", "non-object-block"])
+def test_autopilot_approve_names_a_config_it_could_not_read(tmp_path, text, cause):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, text)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith("refused:"), cause in done.stdout,
+            "autopilot.mode is not plan" in done.stdout, f"/crew:approve {T}" in done.stdout,
+            _receipt(root)) == (2, True, True, False, True, None), done.stdout

@@ -10,6 +10,7 @@ repository is built under tmp_path; nothing touches the real one or
 ~/.claude. `sabotage_autopilot.STATUS_MUTATIONS` mutates the must-refuse and
 must-say-unknown branches to prove these tests can fail.
 """
+import datetime
 import json
 import os
 import re
@@ -55,7 +56,8 @@ def test_route_goal_flag_is_run(tmp_path):
 
     got = crew_autopilot.route(str(root), "--goal")
 
-    assert (got["sub"], got["stop"], "L-0541" in got["reason"]) == ("run", True, True)
+    # L-0541: the flag needs its slug, which only route_args sees.
+    assert (got["sub"], got["stop"], "goal slug" in got["reason"]) == ("run", True, True)
 
 
 @pytest.mark.parametrize("token", ["T-1", "T-0018", "ABC-42"])
@@ -177,8 +179,8 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
 
     got = crew_autopilot.route_args(str(root), "run --goal ship")
 
-    assert (got["sub"], got["stop"], got["ticket"], "arrives with L-0541" in got["reason"]) == (
-        "run", True, "", True)
+    # L-0541: `run --goal <slug>` is a goal run, never a ticket id.
+    assert (got["sub"], got["stop"], got["ticket"], got["goal"]) == ("run", False, "", "ship")
 
 
 @pytest.mark.parametrize("argv,line", [
@@ -186,16 +188,17 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
     (["--first", "run"], "sub=run stop=0 reason="),
     (["--first", ""], "sub=run stop=0 reason="),
     (["--first", "T-0018"], "sub=run stop=0 reason="),
-    (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with L-0541"),
+    (["--first", "--goal"], "sub=run stop=1 reason=/crew:autopilot --goal takes one goal slug"),
     (["--first", "stauts"], "sub= stop=1 reason=unknown subcommand; one of "
                             "status|run|assign|goal|focus"),
     (["--first", "assign"], "sub=assign stop=1 reason=/crew:autopilot assign arrives with "
                             "T-0019"),
-    (["--args", "--goal"], "sub=run stop=1 ticket= reason=run --goal <slug> arrives with "
-                           "L-0541"),
+    (["--args", "--goal"], "sub=run stop=1 ticket= reason=/crew:autopilot --goal takes one "
+                           "goal slug ([a-z0-9][a-z0-9-]{0,63})"),
+    (["--args", "--goal ship"], "sub=run stop=0 ticket= goal=ship reason="),
     (["--args", "-h"], "sub= stop=1 ticket= reason=unknown subcommand"),
 ], ids=["first-status", "first-run", "first-empty", "first-id", "first-goal", "first-typo",
-        "first-assign", "args-goal", "args-dash"])
+        "first-assign", "args-goal", "args-goal-slug", "args-dash"])
 def test_route_cli_takes_a_token_that_starts_with_a_dash(tmp_path, capsys, argv, line):
     root = make_repo(tmp_path, mode="off")
 
@@ -451,7 +454,7 @@ def test_status_resume_line_usable(tmp_path):
     (f"resume: /crew:autopilot {T}", "0123456789", "head: does not match this checkout"),
     (f"resume: /crew:approve {T}", None, "/crew:approve is excluded from auto-resume"),
     ("resume: rm -rf ~ EVIL", None, "not an allowlisted /crew: command"),
-    ("resume: /crew:autopilot --goal ship-it", None, "goal resume arrives with L-0541"),
+    ("resume: /crew:autopilot --goal ship-it", None, "ship-it.json does not exist"),
 ], ids=["head", "excluded", "not-allowlisted", "goal"])
 def test_status_resume_line_mismatch_reason(tmp_path, line, head, reason):
     root = _approved(tmp_path)
@@ -1199,3 +1202,613 @@ def test_status_renders_needs_owner_within_the_line_budget(tmp_path):
     assert (code, _field(lines, "phase").startswith("phase: needs-owner"),
             _field(lines, "waiting on").split(" - ")[0], len(lines) <= crew_autopilot.STATUS_MAX_LINES) == (
         0, True, "waiting on: owner", True)
+
+
+# --- T-0027: status prints no policy-value warning (T-0010 review round 6 FIX) ------------------
+
+def _status_both(root):
+    """status's text lines and its --json output."""
+    code, lines = _lines(root)
+    done = subprocess.run([sys.executable, _SCRIPT, "status", "--root", str(root), "--json"],
+                          capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+    return code, lines, json.loads(done.stdout)
+
+
+@pytest.mark.parametrize("key", ["approval", "questions"])
+@pytest.mark.parametrize("value", ["bogus", True, ["self"], {"bogus": "self"}],
+                         ids=["string", "bool", "list", "object"])
+def test_status_prints_no_policy_value_warning(tmp_path, key, value):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, risk="low")
+    config = root / ".crew" / "config.json"
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"][key] = value
+    _write(config, json.dumps(settings))
+    bad = _status_both(root)
+    del settings["autopilot"][key]
+    _write(config, json.dumps(settings))
+
+    plain = _status_both(root)
+
+    assert bad == plain
+    # The approve phase's own reason names autopilot.approval in both runs; no
+    # warning line may name either policy key.
+    assert not [line for line in bad[1] if line.startswith("warning:") and (
+        "autopilot.approval" in line or "autopilot.questions" in line)]
+
+
+def test_status_keeps_a_non_policy_warning(tmp_path):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="bogus", risk="low")
+    config = root / ".crew" / "config.json"
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"]["mode"] = "Plan"
+    _write(config, json.dumps(settings))
+
+    warnings = [line for line in _lines(root)[1] if line.startswith("warning:")]
+
+    assert (any("autopilot.mode is 'Plan'" in w for w in warnings),
+            any("autopilot.approval" in w for w in warnings)) == (True, False)
+
+
+@pytest.mark.parametrize("text", ["{bad", json.dumps({"autopilot": ["x"]})],
+                         ids=["unreadable", "non-object-block"])
+def test_status_keeps_the_could_not_tell_warning(tmp_path, text):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, risk="low")
+    _write(root / ".crew" / "config.json", text)
+
+    warnings = [line for line in _lines(root)[1] if line.startswith("warning:")]
+
+    assert (len(warnings), ".crew/config.json" in warnings[0]) == (1, True), warnings
+
+
+# --- L-0550: who the gate stops wait on ---------------------------------------
+
+def _gate_stop(root, phase):
+    if phase == "blocked":
+        spec = root / ".work" / "tickets" / T / "spec.md"
+        first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+        _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+        _index(root, f"{T} | ready | high | r | title", "T-2 | spec | high | r | other")
+        approve_as_user(root, T)
+    else:
+        _index(root, f"{T} | {phase} | high | r | title")
+
+
+@pytest.mark.parametrize("phase, who", [("hold", "owner"), ("landing", "the land step"),
+                                        ("needs-owner", "owner"), ("blocked", "another ticket")])
+def test_status_waiting_on_a_gate_is_never_autopilot(tmp_path, phase, who):
+    root = _approved(tmp_path)
+    _gate_stop(root, phase)
+
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (shown["phase"], shown["waiting"].split(" - ")[0]) == (phase, who), shown
+
+
+def test_closed_reads_a_cancelled_header(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, header="status: cancelled   risk: high")
+
+    assert crew_autopilot._closed(str(root), T) is True  # pylint: disable=protected-access
+
+
+# --- L-0551: owner_items, what waits on the owner -----------------------------
+
+import crew_autopilot_owner  # noqa: E402  pylint: disable=wrong-import-position
+import review_patch  # noqa: E402  pylint: disable=wrong-import-position
+
+
+def _owner_fixture(tmp_path):
+    """One ticket per owner stop, plus the ones autopilot drives or nobody does."""
+    root = make_repo(tmp_path, mode="off")
+    rows = []
+
+    def add(ticket, status="ready", **kwargs):
+        _ticket(root, ticket=ticket, status=status, **kwargs)
+        rows.append(f"{ticket} | {status} | high | r | t")
+
+    add("T-1", direction=False)                                   # brainstorm
+    add("T-2", status="direction")                                 # direction-approval
+    add("T-3")                                                     # open-questions
+    _write(root / ".work" / "tickets" / "T-3" / "spec.md",
+           _spec_text("T-3") + "\n## Open questions\n- which tracker?\n")
+    add("T-4", plan=False)                                         # spec fails validate
+    _write(root / ".work" / "tickets" / "T-4" / "spec.md", "# T-4 bad          status: spec\n")
+    add("T-5")                                                     # approve
+    for ticket in ("T-6", "T-7", "T-8", "T-9", "T-10"):
+        add(ticket)
+    add("T-11", status="merged")                                   # closed
+    _index(root, *rows)
+    for ticket in ("T-6", "T-7", "T-8", "T-9", "T-10"):
+        approve_as_user(root, ticket)
+    ledger = {"T-6": ([_round(1, "FINDINGS"), _round(2, "FINDINGS")], "NEEDS_REPLAN"),  # replan
+              "T-7": ([_round(1, "FINDINGS")], "REVIEWED"),                           # accept-review
+              "T-9": ([_round(1, status="reserved")], None)}                          # reviewer
+    for ticket, (rounds, state) in ledger.items():
+        path = review_ledger.ledger_path(str(root), ticket)
+        _write(path, json.dumps({"ticket": ticket, "budget": 2, "rounds": rounds, "refused": [],
+                                 "state": state or "IN_REVIEW", "receipt": None}))
+    _write(review_ledger.ledger_path(str(root), "T-8"), "{not json")                   # review
+    return root
+
+
+EXPECTED = [("T-1", "brainstorm", "/crew:brainstorm T-1"),
+            ("T-2", "direction-approval", "/crew:brainstorm T-2"),
+            ("T-3", "open-questions", "answer: spec.md: which tracker?"),
+            ("T-4", "spec", "/crew:spec T-4"),
+            ("T-5", "approve", "/crew:approve T-5"),
+            ("T-6", "replan", "/crew:plan T-6, then /crew:approve T-6"),
+            ("T-7", "accept-review", None),
+            ("T-8", "review", "see /crew:autopilot status T-8")]
+
+
+def test_owner_items_lists_each_stop_with_its_action(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    items = {ticket: (phase, action) for ticket, phase, action in got["items"]}
+    assert [(t, items.get(t, (None, None))[0]) for t, _p, _a in EXPECTED] == [
+        (t, p) for t, p, _a in EXPECTED]
+    assert [items[t][1] for t, _p, a in EXPECTED if a] == [a for _t, _p, a in EXPECTED if a]
+    assert "--accept --ticket T-7" in items["T-7"][1]
+
+
+def test_owner_items_skips_what_autopilot_drives(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    assert [t for t, _p, _a in got["items"] if t == "T-10"] == []  # approved, no round
+
+
+def test_owner_items_skips_closed_tickets(tmp_path):
+    root = _owner_fixture(tmp_path)
+    _write(root / ".work" / "tickets" / "T-5" / "spec.md", _spec_text("T-5", "status: done   risk: high"))
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    # T-5's done header with autopilot off: closed for autopilot, but a person still ships it
+    # (L-0666 review r5), so it is listed; T-11's merged row is closed for everyone.
+    assert ("T-11" in names, "T-5" in names) == (False, True)
+
+
+def test_owner_items_skips_a_reserved_round(tmp_path):
+    got = crew_autopilot_owner.owner_items(str(_owner_fixture(tmp_path)))
+
+    assert "T-9" not in [t for t, _p, _a in got["items"]] + got["unread"]
+
+
+def test_owner_items_agree_with_phase(tmp_path):
+    root = _owner_fixture(tmp_path)
+    got = crew_autopilot_owner.owner_items(str(root))
+    listed = {ticket: phase for ticket, phase, _a in got["items"]}
+
+    for ticket in [f"T-{n}" for n in range(1, 12)]:
+        phase = crew_autopilot._phase(str(root), ticket, policy=False)  # pylint: disable=protected-access
+        reserved = crew_autopilot._reserved_round(str(root), ticket)  # pylint: disable=protected-access
+        wants = phase["stop"] and phase["phase"] != "closed" and not reserved
+        assert (ticket in listed, listed.get(ticket, phase["phase"])) == (wants, phase["phase"]), ticket
+
+
+def test_owner_items_never_rebuilds_a_bundle(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED",
+            receipt={"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+                     "verdict": "CLEAN"})
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("a bundle rebuild from the owner list")
+
+    monkeypatch.setattr(review_ledger, "check_receipt", boom)
+    monkeypatch.setattr(review_patch, "compute", boom)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["unread"], got["items"], got["unknown"]) == ([T], [], [])
+
+
+def test_owner_items_phase_that_raises_is_unknown_not_dropped(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(crew_autopilot, "_phase", boom)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["unknown"], got["items"]) == ("ok", [(T, "RuntimeError")], [])
+
+
+def test_owner_items_without_an_index_is_unknown(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["why"]) == ("unknown", "no .work/INDEX.md")
+
+
+def test_owner_items_lists_a_folder_with_no_index_row(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _ticket(root, ticket="T-2")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert ("T-2", "direction-approval") in [(t, p) for t, p, _a in got["items"]]
+
+
+def test_owner_items_never_list_the_archive_folder(tmp_path):
+    """L-0509 meets L-0551: `.work/tickets/Complete/` holds archived tickets and is
+    no ticket itself, so the owner list never names it."""
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="T-3", status="done")
+    _index(root, "T-3 | done | low | r | closed")
+    archive_ticket(root, "T-3")
+
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert ([t for t, _p, _a in got["items"]], got["unknown"], got["state"]) == ([], [], "ok"), got
+
+
+def test_phase_deep_default_is_unchanged(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED",
+            receipt={"kind": "clean", "round": 1, "bundle_sha256": "a" * 64, "base": "HEAD",
+                     "verdict": "CLEAN"})
+    monkeypatch.setattr(review_ledger, "check_receipt", lambda root, ticket: (True, "receipt current"))
+    monkeypatch.setattr(crew_autopilot, "_refresh_state", lambda root, ticket: {
+        "state": "fresh", "command": "", "reason": ""})
+    monkeypatch.setattr(crew_autopilot.crew_autopilot_docs, "_docs_state", lambda root, ticket: {
+        "state": "ok", "missing": [], "reason": ""})
+
+    deep = crew_autopilot._phase(str(root), T)  # pylint: disable=protected-access
+    shallow = crew_autopilot._phase(str(root), T, deep=False)  # pylint: disable=protected-access
+
+    assert ((deep["phase"], deep["stop"]), shallow["phase"],
+            "deep" in crew_autopilot.next_phase.__code__.co_varnames) == (
+        ("done", False), "review-unread", False)
+
+
+def test_owner_items_unlistable_tickets_folder_is_unknown(tmp_path, monkeypatch):
+    """L-0551 review r1 BLOCK: a folder listing that fails is could-not-tell."""
+    root = _approved(tmp_path)
+    real = os.listdir
+
+    def listdir(path):
+        if str(path).endswith("tickets"):
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+
+    monkeypatch.setattr(crew_autopilot_owner.os, "listdir", listdir)
+    got = crew_autopilot_owner.owner_items(str(root))
+
+    assert (got["state"], got["why"].startswith("could not list .work/tickets/")) == ("unknown", True)
+
+
+@pytest.mark.parametrize("status, line", [("landing", None), ("ready", "blocked")])
+def test_owner_items_leave_out_what_waits_elsewhere(tmp_path, status, line):
+    """L-0551 review r1 BLOCK: `landing` and `blocked` wait on the land step or
+    another ticket (WAITING), never on the owner."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, status=status)
+    if line:
+        spec = root / ".work" / "tickets" / T / "spec.md"
+        first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+        _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+        _index(root, f"{T} | ready | high | r | t", "T-2 | spec | high | r | o")
+    approve_as_user(root, T)
+
+    got = crew_autopilot_owner.owner_items(str(root))
+    phase = crew_autopilot._phase(str(root), T, policy=False)["phase"]  # pylint: disable=protected-access
+
+    assert (phase, [i for i in got["items"] if i[0] == T]) == (status if status == "landing" else "blocked", [])
+
+
+def test_owner_items_a_missing_row_names_the_status_read(tmp_path):
+    """L-0551 review r1 FIX: no INDEX row is could-not-tell; the action points at
+    the status read (whose reason says to add the row), not /crew:brainstorm."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    _ticket(root, ticket="T-2")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = dict(((t, p), a) for t, p, a in crew_autopilot_owner.owner_items(str(root))["items"])
+
+    assert got[("T-2", "direction-approval")] == "see /crew:autopilot status T-2"
+
+
+def test_owner_items_one_ticket_whatever_the_folder_case(tmp_path):
+    """L-0551 review r1 FIX: `T-1` in INDEX and a folder `t-1` (one folder on a
+    case-insensitive filesystem) are one ticket."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    os.makedirs(str(root / ".work" / "tickets" / "t-1"), exist_ok=True)
+    if not os.path.samefile(str(root / ".work" / "tickets" / "t-1"), str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-sensitive filesystem: two folders, two tickets (the next test)")
+
+    names = [t.casefold() for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert names.count("t-1") <= 1
+
+
+# --- L-0687: held, blocked, revisit and needs-owner in the owner list ----------
+
+TODAY = datetime.date(2026, 10, 7)
+
+
+def _parked(tmp_path, status, next_md=None):
+    root = _approved(tmp_path, status=status)
+    if next_md is not None:
+        _write(root / ".work" / "tickets" / T / "next.md", next_md)
+    return root
+
+
+def _owned(root):
+    return crew_autopilot_owner.owner_items(str(root), today=TODAY)
+
+
+def test_owner_items_skips_a_future_hold(tmp_path):
+    got = _owned(_parked(tmp_path, "hold", "reason: vendor\nrevisit: 2026-12-01\n"))
+
+    assert (got["held"], got["items"]) == ([T], [])
+
+
+def test_owner_items_counts_a_blocked_ticket_without_listing_it(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\ndepends-on: T-2\n{rest}")
+    _index(root, f"{T} | ready | high | r | t", "T-2 | spec | high | r | o")
+    approve_as_user(root, T)
+
+    got = _owned(root)
+
+    # T-2's row has no folder: it is listed for a person (L-0551 r6), T-1 only counted.
+    assert (got["blocked"], [i for i in got["items"] if i[0] == T]) == ([T], [])
+
+
+def test_owner_items_skips_landing(tmp_path):
+    got = _owned(_parked(tmp_path, "landing"))
+
+    assert (got["items"], got["held"], got["blocked"]) == ([], [], [])
+
+
+@pytest.mark.parametrize("date", ["2026-10-07", "2026-01-01"])
+def test_owner_items_lists_a_due_hold_as_revisit(tmp_path, date):
+    got = _owned(_parked(tmp_path, "hold", f"reason: the vendor answers\nrevisit: {date}\n"))
+
+    ticket, phase, action = (got["items"] or [("", "", "")])[0]
+    assert (len(got["items"]), ticket, phase, "the vendor answers" in action, f"revisit {date} (due)" in action,
+            got["held"]) == (1, T, "revisit", True, True, [])
+
+
+@pytest.mark.parametrize("next_md", [None, "revisit: soon\n"])
+def test_owner_items_hold_without_a_usable_revisit_is_listed(tmp_path, next_md):
+    """Must-block: cannot tell when is never "not yet"."""
+    got = _owned(_parked(tmp_path, "hold", next_md))
+
+    assert ([(t, p, "revisit date: cannot tell" in a) for t, p, a in got["items"]], got["held"]) == (
+        [(T, "revisit", True)], [])
+
+
+def test_owner_items_needs_owner_gives_the_next_line(tmp_path):
+    got = _owned(_parked(tmp_path, "needs-owner", "next: say which tracker closes it\n"))
+
+    assert got["items"] == [(T, "needs-owner", "next: say which tracker closes it")]
+
+
+def test_owner_items_needs_owner_without_next_says_cannot_tell(tmp_path):
+    got = _owned(_parked(tmp_path, "needs-owner"))
+
+    assert got["items"] == [(T, "needs-owner", "cannot tell what is asked (no next: in next.md)")]
+
+
+def test_owner_items_agree_with_phase_over_parked_tickets(tmp_path):
+    cases = {"hold": "reason: r\nrevisit: 2026-12-01\n", "needs-owner": "next: n\n",
+             "landing": None}
+    for status, next_md in cases.items():
+        root = _parked(tmp_path / status, status, next_md)
+        got = _owned(root)
+        phase = crew_autopilot._phase(str(root), T, policy=False)  # pylint: disable=protected-access
+        listed = [p for _t, p, _a in got["items"]]
+        assert (phase["stop"], phase["phase"]) == (True, status)
+        assert (listed or got["held"] or ["skipped"]) == {"hold": [T], "needs-owner": ["needs-owner"],
+                                                          "landing": ["skipped"]}[status], status
+
+
+def test_owner_items_a_done_row_that_still_ships_is_not_hidden(tmp_path):
+    """L-0551 review r2 BLOCK: a done row with a done header and autopilot armed
+    is the ship path, which the owner list counts as not read (gh)."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+
+    got = _owned(root)
+
+    assert (got["unread"], got["items"]) == ([T], [])
+
+
+@pytest.mark.parametrize("line, rows", [("depends-on: [T-2", ()),
+                                        ("depends-on: T-7", ())])
+def test_owner_items_an_unreadable_dependency_is_could_not_tell(tmp_path, line, rows):
+    """L-0551 review r2 / L-0687 review r1 BLOCK: blocked because a dependency
+    cannot be told is could-not-tell, never a plain blocked count."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\n{line}\n{rest}")
+    _index(root, f"{T} | ready | high | r | t", *rows)
+    approve_as_user(root, T)
+
+    got = _owned(root)
+
+    assert ([t for t, _why in got["unknown"]], got["blocked"], got["items"]) == ([T], [], [])
+
+
+@pytest.mark.parametrize("status", ["hold", "needs-owner"])
+def test_owner_items_an_unreadable_next_md_is_not_an_absent_field(tmp_path, status):
+    """L-0687 review r1 FIX: a next.md that cannot be read is cannot-tell, never
+    'no reason given' or 'no next: in next.md'."""
+    got = _owned(_parked(tmp_path, status, "reason: a\nreason: b\nnext: x\nnext: y\n"))
+
+    (action,) = [a for _t, _p, a in got["items"]] or [""]
+    assert ("more than once" in action, "no reason given" in action,
+            "no next: in next.md" in action) == (True, False, False), action
+
+
+def test_owner_items_two_done_rows_are_one_ticket(tmp_path):
+    """L-0551 review r3 FIX: duplicate done rows list a ticket once."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"mode": "plan"}}))
+    _index(root, f"{T} | done | high | r | t", f"{T} | done | high | r | t")
+
+    assert _owned(root)["unread"] == [T]
+
+
+@pytest.mark.parametrize("policy, listed", [("stop", True), ("fix-and-rereview", False)])
+def test_owner_items_read_the_review_policy_only_to_leave_autopilots_fix_out(tmp_path, policy, listed):
+    """L-0551 review r3 FIX (with T-0067): a FINDINGS round autopilot fixes itself
+    (fix-and-rereview, a round left, fixes owed) is autopilot's, not the owner's."""
+    root = _approved(tmp_path)
+    _write(root / ".crew" / "config.json", json.dumps({"scope": {"mode": "off"},
+                                                        "autopilot": {"reviewPolicy": policy}}))
+    line = "FIX|src/app.py|1|x|y"
+    _ledger(root, [dict(_round(1, "FINDINGS"), findings=[line], ignored_lines=0,
+                        counts={"BLOCK": 0, "FIX": 1, "NIT": 0})], state="REVIEWED")
+
+    got = _owned(root)
+
+    assert ([p for _t, p, _a in got["items"]] == ["accept-review"]) is listed, got
+
+
+def test_owner_items_needs_owner_question_keeps_an_unreadable_next_md(tmp_path):
+    """L-0687 review r2 BLOCK: the fallback question never hides next.md's parse failure."""
+    root = _parked(tmp_path, "needs-owner", "next: a\nnext: b\n")
+    _write(root / ".work" / "tickets" / T / "direction.md", "go\n## Open questions\n- which tracker?\n")
+
+    (action,) = [a for _t, _p, a in _owned(root)["items"]] or [""]
+
+    assert ("answer: direction.md: which tracker?" in action, "next.md: cannot tell" in action) == (
+        True, True), action
+
+
+def test_status_waits_on_the_owner_when_dependencies_cannot_be_told(tmp_path):
+    """L-0550 review r6 FIX: a blocked stop that cannot tell its dependencies waits on
+    the owner (the depends-on: line), never 'another ticket'."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    _write(spec, f"{first}\ndepends-on: [T-2\n{rest}")
+    _index(root, f"{T} | ready | high | r | t")
+    approve_as_user(root, T)
+
+    shown = crew_autopilot.status(str(root), T)
+
+    assert (shown["phase"], shown["waiting"].startswith("owner - cannot tell the dependencies")) == (
+        "blocked", True), shown
+
+
+@pytest.mark.parametrize("header", ["hold", "landing", "cancelled"])
+def test_owner_items_keep_an_unknown_index_cell_visible(tmp_path, header):
+    """L-0551 review r4 / L-0687 review r3 BLOCK: a header gate under an INDEX cell
+    autopilot does not know is listed (look), never held, skipped or closed."""
+    root = _approved(tmp_path, status="mystery")
+    _write(root / ".work" / "tickets" / T / "spec.md", _spec_text(T, f"status: {header}   risk: high"))
+    _write(root / ".work" / "tickets" / T / "next.md", "reason: r\nrevisit: 2999-01-01\n")
+
+    got = _owned(root)
+
+    # L-0551 review r6: could-not-tell, never shown as a definite phase.
+    assert ([t for t, why in got["unknown"] if "not one autopilot knows" in why], got["items"],
+            got["held"]) == ([T], [], [])
+
+
+def test_owner_items_a_case_only_folder_without_its_own_folder_is_listed(tmp_path):
+    """L-0551 review r4 BLOCK: INDEX `T-1` with no T-1 folder on a case-sensitive
+    filesystem and a sole folder `t-1`: the folder is its own ticket, never hidden."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="t-1", status="ready")
+    _index(root, f"{T} | ready | high | r | t")
+    if os.path.isdir(str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-insensitive filesystem: T-1 and t-1 are one folder")
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert "t-1" in names
+
+
+def test_owner_items_list_a_ticket_a_person_still_ships(tmp_path):
+    """L-0666 review r5: a done ticket with autopilot off is closed for autopilot, but a
+    person still pushes and merges it, so the owner list names it."""
+    root = _approved(tmp_path, status="done", header="status: done   risk: high")
+
+    got = _owned(root)
+
+    assert got["items"] == [(T, "closed", f"see /crew:autopilot status {T}")]
+
+
+def test_owner_items_two_folders_differing_in_case_are_two_tickets(tmp_path):
+    """L-0551 review r5 BLOCK: on a case-sensitive filesystem T-1 and t-1 are separate
+    folders; the unindexed t-1 stays visible."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    os.makedirs(str(root / ".work" / "tickets" / "t-1"), exist_ok=True)
+    if os.path.samefile(str(root / ".work" / "tickets" / "t-1"), str(root / ".work" / "tickets" / T)):
+        pytest.skip("case-insensitive filesystem: one folder")
+    _index(root, f"{T} | ready | high | r | t")
+
+    names = [t for t, _p, _a in crew_autopilot_owner.owner_items(str(root))["items"]]
+
+    assert "t-1" in names
+
+
+def test_owner_items_an_unreadable_main_index_is_could_not_tell(tmp_path, monkeypatch):
+    """L-0551 review r5 BLOCK: a main-checkout INDEX that could not be compared is
+    could-not-tell, never a bare action."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    real = crew_autopilot._index_row  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_autopilot, "_index_row", lambda top, ticket: dict(
+        real(top, ticket), why="/main/.work/INDEX.md exists but could not be read"))
+
+    got = _owned(root)
+
+    assert ([t for t, _w in got["unknown"]], got["items"]) == ([T], [])
+
+
+@pytest.mark.parametrize("main_index, words", [
+    (None, "git worktree list failed"), ("unreadable", "could not read"), ("readable", "")])
+def test_owner_items_a_main_checkout_it_cannot_read_is_could_not_tell(
+        tmp_path, monkeypatch, main_index, words):
+    """L-0551 fixer BLOCK: open rows only the main checkout holds must not vanish
+    into "nothing on you" when that checkout cannot be named or its INDEX read."""
+    root = make_repo(tmp_path / "here", mode="off")
+    _index(root, "T-1 | merged | high | r | t")
+    main = tmp_path / "main"
+    if main_index == "unreadable":
+        os.makedirs(str(main / ".work" / "INDEX.md"))
+    elif main_index == "readable":
+        _write(main / ".work" / "INDEX.md", "T-2 | ready | high | r | t\n")
+    found = (str(main), "") if main_index else (None, "git worktree list failed, so the main "
+                                                  "checkout cannot be named")
+    monkeypatch.setattr(crew_autopilot, "_main_checkout", lambda top: found)
+
+    got = _owned(root)
+
+    assert (got["state"], "cannot tell the main checkout's open rows" in got["why"]
+            and words in got["why"]) == (("unknown", True) if words else ("ok", False)), got
+
+
+def test_owner_items_read_an_open_row_whose_folder_is_elsewhere(tmp_path):
+    """L-0551 review r6 BLOCK: an open INDEX row with no folder in this checkout stops at
+    folder-elsewhere (or no folder) for a person; it is never dropped from the list."""
+    root = make_repo(tmp_path, mode="off")
+    _index(root, f"{T} | ready | high | r | t")
+
+    got = _owned(root)
+
+    assert [t for t, _p, _a in got["items"]] + [t for t, _w in got["unknown"]] == [T], got

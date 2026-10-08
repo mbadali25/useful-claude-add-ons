@@ -195,6 +195,45 @@ not match CI's font hinting and subpixel rendering, and fails every later run fo
 reasons unrelated to the change under test. Outside that image the visual rule reports
 **UNVERIFIED**, not a pass; see [Troubleshooting](troubleshooting.md).
 
+## What is waiting on me
+
+`/crew:status` prints one `waiting` line: how many open tickets are stopped on
+you. `/crew:status --owner` lists them, one line per ticket with the command
+to type or the question to answer, for example `T-5  approve  /crew:approve
+T-5`. The list comes from the same phase table `/crew:autopilot` uses, so the
+two never disagree. It runs nothing and never rebuilds a review bundle: a
+ticket whose finished review would need one shows as `review-unread`, and
+`/crew:autopilot status <id>` reads it. A hold whose revisit date is still ahead
+and a blocked ticket are only counted (`2 held, 1 blocked`); a hold that is due
+is listed as `revisit` with its reason. No `.work/INDEX.md` prints `waiting
+unknown (...)`, never "nothing on you".
+
+## After autopilot rejects a review round itself
+
+With `autopilot.maxAutoReplans` set, autopilot may reject an out-of-rounds BLOCK round and plan
+again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
+rejected round as whole lines; `crew_autopilot.py replan-check --ticket <id>` shows the same answer
+without approving. Your own `/crew:approve` is never held to it.
+
+## Contracts between two sessions
+
+When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:
+
+1. One side writes the draft: `crew_contract.py put --name <n> --file <path>`.
+   While it is a draft, `put` replaces it in place.
+2. Each side, once its ticket is approved, records what it built against:
+   `crew_contract.py build-against --name <n> --version <N> --ticket <id>`.
+   That freezes the version and writes the binding, with the remote it was
+   built on, to `.work/tickets/<id>/contracts.json`.
+3. A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: `put --name <n> --file <path> --new-version --ticket <new id>`.
+
+`crew_contract.py status` lists every version, who built against it and
+anything it cannot read (`unknown`, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".
+
 ## If something refuses
 
 | Refusal | Means | Do |

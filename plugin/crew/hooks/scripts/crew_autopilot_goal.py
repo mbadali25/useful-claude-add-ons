@@ -1,17 +1,21 @@
 """T-0012: `/crew:autopilot goal` -- the goal file, the printed /goal line and
 the split approval, split out of `crew_autopilot.py` (pylint's module-length
-limit). `crew_autopilot.py goal-propose` and `goal-approve` dispatch here;
-route's goal constants (`GOAL_ROUTE_FIRST`, `GOAL_RESUME_ARRIVES`) stay in
+limit). `crew_autopilot.py goal-propose`, `goal-approve` and `goal-run`
+dispatch here; route's goal constant (`GOAL_ROUTE_FIRST`) stays in
 `crew_autopilot`, which imports this module only when a goal action runs.
 
-Minting the proposed tickets, `--goal` resume, `mode: backlog` and the caps
-are L-0541's. The hook that records the owner's `/crew:approve goal:<slug>`
-is a review-harness change (scripts/check-tooling-pr.py) that lands on its
-own; until it does, `split_approved` only reads that receipt. Writes only the
+Minting the approved split, the picker, `goal-run` (`mode: backlog` and the
+caps), `--goal` resume and the per-ticket approval are L-0541's, in
+crew_autopilot_backlog.py. The hook that records the owner's
+`/crew:approve goal:<slug>` is a review-harness change
+(scripts/check-tooling-pr.py) that lands on its own; until it does,
+`split_approved` only reads that receipt. This module writes only the
 working file `.work/autopilot/<slug>.json`, never a receipt.
 
     python3 crew_autopilot.py goal-propose --root . --proposal-file <f> [--json]
-    python3 crew_autopilot.py goal-approve --root . --goal <slug> [--json]
+    python3 crew_autopilot.py goal-approve --root . --goal <slug> [--ticket <id>] [--json]
+    python3 crew_autopilot.py goal-run --root . --goal <slug> [--session <id>]
+                                       [--transcript <path>] [--json]
 
 Two writers of one working file, `.work/autopilot/<slug>.json` (schema 1),
 never of a receipt. `goal-propose` reads a proposal staged under
@@ -24,8 +28,10 @@ answers the split: the owner's receipt under
 `<git-common-dir>/crew/goals/<slug>/approval.json` matching `goal_digest`, at
 any setting, or `split_policy` (T-0010's rules, the goal risk the highest
 ticket risk) re-asked on every call; a yes is noted in the goal file and the
-note grants nothing. It mints nothing: minting, `--goal` resume, backlog and
-caps are L-0541's, and recording the owner's receipt is approval_hook.py's.
+note grants nothing, and then mints the proposed tickets
+(`crew_autopilot_backlog.mint_goal`). With `--ticket <id>` it is the
+per-ticket approval of one minted ticket instead. Recording the owner's
+receipt is approval_hook.py's.
 """
 import hashlib
 import importlib
@@ -52,8 +58,6 @@ GOAL_UNSEEN = ("autopilot cannot see Claude Code's /goal state - paste the line 
 OWNER_SPLIT = "/crew:approve goal:{slug}"
 OWNER_HOOK_PENDING = ("approval_hook.py records it once its goal: token lands (a review-harness "
                       "change, landing separately); until then the hook refuses it")
-MINT_PENDING = ("mint: arrives with L-0541 - until then the human mints each ticket in list "
-                "order with crew_ticket.py mint --root . --title <title>")
 # The entry point T-0013 would expose to type an allowlisted `/goal` line. As
 # specced it types only `decide`'s prompt, so the probe finds nothing today.
 GOAL_TYPER = ("crew_resume", "type_goal_line")
@@ -440,7 +444,7 @@ def _split_rule(conf, warnings, allowed, low, risk_refusal):
                                "the split"),
         (allowed is not True, f"{ap.ALLOW_CLI} is not exactly true in .crew/config.json, so no "
                               "split approval but the human's counts"),
-        (conf["armed"] is not True, "autopilot is not armed (autopilot.mode is not plan), so "
+        (conf["armed"] is not True, "autopilot is not armed (autopilot.mode is not plan or backlog), so "
                                     "it approves no split"),
         # `human`, and anything settings did not map to a policy: never approves.
         (policy not in (ap.SELF, ap.RISK), f"autopilot.approval is {policy}: the split waits "
@@ -495,7 +499,7 @@ def split_approved(root, slug):
         return dict(no, reason=f"could not tell whether the split is approved "
                                f"({type(exc).__name__}: {exc})")
     if state == "match":
-        return dict(no, approved=True, via="user-prompt", owner="",
+        return dict(no, approved=True, via="user-prompt", owner="", proposal_sha256=digest,
                     risk=goal_risk(goal["tickets"])["risk"],
                     reason="the owner approved this proposal")
     policy = split_policy(top, slug, goal)
@@ -507,27 +511,28 @@ def split_approved(root, slug):
     warnings = list(policy["warnings"]) + ([why] if why else [])
     # The note goes onto the proposal the policy judged, and only while the
     # file still holds it: an edit since the read is never approved or overwritten.
+    # L-0541: under the goal lock, onto the file as it is now, so a run the
+    # goal-run writer recorded since the first read is kept.
     try:
-        same = goal_digest(read_goal(top, slug)) == digest
+        with importlib.import_module("crew_autopilot_backlog").goal_lock(top, slug):
+            current = read_goal(top, slug)
+            if goal_digest(current) != digest:
+                return dict(base, reason="the proposal changed while its split was being "
+                                         "approved; nothing was written - ask again")
+            _write_json_atomic(goal_path(top, slug), dict(current, approval={
+                "via": via, "proposal_sha256": digest}))
+    except OSError as exc:
+        warnings.append(f"the approval note was not written to the goal file ({exc})")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return dict(base, reason=f"could not re-read the goal file before noting the approval "
                                  f"({type(exc).__name__}: {exc})")
-    if not same:
-        return dict(base, reason="the proposal changed while its split was being approved; "
-                                 "nothing was written - ask again")
-    try:
-        _write_json_atomic(goal_path(top, slug), dict(goal, approval={
-            "via": via, "proposal_sha256": digest}))
-    except OSError as exc:
-        warnings.append(f"the approval note was not written to the goal file ({exc})")
     return dict(base, approved=True, via=via, owner="", warnings=warnings,
-                reason=policy["reason"])
+                proposal_sha256=digest, reason=policy["reason"])
 
 
 def split_approved_text(slug, result):
     if result["approved"]:
-        lines = [f"split-approved {slug} via={result['via']} risk={result['risk']}",
-                 MINT_PENDING]
+        lines = [f"split-approved {slug} via={result['via']} risk={result['risk']}"]
     else:
         lines = [ap._one_line(f"refused: {result['reason']}"),
                  ap._one_line(f"note: {OWNER_HOOK_PENDING}")]
@@ -538,18 +543,34 @@ def split_approved_text(slug, result):
 
 
 def main(args):
-    """`goal-propose` (exit 0 written, 2 refused) and `goal-approve` (0
-    approved, 2 not). A crash is a refusal, exit 1, never silence."""
+    """`goal-propose` (exit 0 written, 2 refused), `goal-approve` (0 approved
+    and every ticket minted, 2 not) and `goal-run` (exit 0, the answer in
+    `stop=`). A crash is a refusal, exit 1, never silence."""
+    backlog = importlib.import_module("crew_autopilot_backlog")
     try:
         if args.action == "goal-propose":
             result = goal_propose(args.root, args.proposal_file)
             code, text = 0, goal_propose_text(result)
+        elif not _goal_slug_ok(args.goal):
+            raise GoalError(f"--goal {args.goal!r} is not a goal slug "
+                            "([a-z0-9][a-z0-9-]{0,63})")
+        elif args.action == "goal-run":
+            result = backlog.goal_run(args.root, args.goal, args.session or None,
+                                      args.transcript or None, args.discovered)
+            code, text = 0, backlog.goal_run_text(result)
+        elif args.ticket:
+            code, text = backlog.ticket_approve(args.root, args.goal, args.ticket)
+            result = {"code": code, "text": text}
         else:
-            if not _goal_slug_ok(args.goal):
-                raise GoalError(f"--goal {args.goal!r} is not a goal slug "
-                                "([a-z0-9][a-z0-9-]{0,63})")
             result = split_approved(args.root, args.goal)
             code, text = (0 if result["approved"] else 2), split_approved_text(args.goal, result)
+            if result["approved"]:
+                minted = backlog.mint_goal(args.root, args.goal, result["proposal_sha256"])
+                result["mint"] = minted
+                code = 2 if minted["stop"] else 0
+                text = "\n".join([text] + backlog.mint_text(minted)
+                                 + ([backlog.RESUME.format(slug=args.goal)]
+                                    if minted["stop"] else []))
     except (GoalError, crew_ticket.TicketError) as exc:
         result, code, text = {"refused": str(exc)}, 2, ap._one_line(f"refused: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
@@ -560,10 +581,15 @@ def main(args):
 
 
 def add_parsers(sub):
-    """`goal-propose` and `goal-approve` on crew_autopilot.py's subparsers."""
-    for name in ("goal-propose", "goal-approve"):
+    """`goal-propose`, `goal-approve` and `goal-run` on crew_autopilot.py's subparsers."""
+    for name in ("goal-propose", "goal-approve", "goal-run"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         action.add_argument("--root", default=".")
     sub.choices["goal-propose"].add_argument("--proposal-file", required=True)
-    sub.choices["goal-approve"].add_argument("--goal", required=True)
+    for name in ("goal-approve", "goal-run"):
+        sub.choices[name].add_argument("--goal", required=True)
+    sub.choices["goal-approve"].add_argument("--ticket", default="")
+    sub.choices["goal-run"].add_argument("--session", default="")
+    sub.choices["goal-run"].add_argument("--transcript", default="")
+    sub.choices["goal-run"].add_argument("--discovered", action="store_true")

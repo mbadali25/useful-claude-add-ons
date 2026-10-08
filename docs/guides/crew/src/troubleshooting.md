@@ -501,6 +501,41 @@ log said was `FAIL <name>`.
   is built from, so a review receipt stays current and no new round is needed. A file graphify
   writes and git ignores (`manifest.json`, `cache/`) never counts.
 
+## Wave refuses a cross-session dependency
+
+A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or
+`<channel>:<repo>:<id>` in the set file's `deps` or the INDEX row's `(depends on ...)`. The wave
+fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) and counts the dependency
+closed only when exactly one claim for that id reads `done`. Every line about the peer's claim is
+peer-written data and ends `[peer-written]`.
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `dependency <channel>:<id> is not closed: the peer claim reads working (...)` | the peer is still on it; `owner unknown` in the brackets means its heartbeat is past the TTL | wait for the peer's `done`, or take the ticket out of this wave |
+| `... reads released (...); only done closes it` | the peer gave the ticket back unfinished | agree with the peer who finishes it; `released` never closes it |
+| `dependency <channel>:<id> unknown: no claim for <id> on crew-coord/<channel>` | nobody on the channel has claimed that id | check the id and channel with `crew_coord.py status --channel <channel>` |
+| `... unknown: 2 repositories on crew-coord/<channel> hold <id>; name one as <channel>:<repo>:<id>` | the short form is ambiguous | write the long form, with the repo key `status` prints |
+| `... unknown: its claim ... is corrupt (...)` | the claim file does not parse | the claim's holder or the owner repairs it; the wave never guesses |
+| `... unknown: crew-coord/<channel> does not exist on <remote>` or `could not fetch ...` | the channel is absent, or the remote cannot be reached | check the channel name and `coord.remote`, then plan again |
+| `... unknown: '<remote>' (coord.remote) is not a configured remote` | `coord.remote` names no remote of this checkout | `git remote add <remote> <url>`, or fix `coord.remote` |
+| `dependencies unknown: ...` | a dependency is not `<id>`, `<channel>:<id>` or `<channel>:<repo>:<id>` | fix the set file's `deps` or the INDEX row; `crew_wave.py set` refuses a malformed one |
+
+## Wave refuses a ticket's contract
+
+A ticket that built against a contract version (`crew_contract.py build-against`) keeps a binding
+in `.work/tickets/<id>/contracts.json`, naming the git remote it was built on. The wave checks each
+binding, on that remote, after the ticket's dependencies;
+run the same check alone with `crew_contract.py verify --ticket <id>` (exit 0 current, 1 changed,
+3 cannot tell).
+
+| `crew_wave.py plan` says | Means | Do |
+|---|---|---|
+| `contract <n> v<N> changed since <id> built against it (...)` | the channel no longer shows that version with the bound hash, a matching body, status `built-against` and this ticket in `built_by`: someone rewrote it | do not rebind: agree a new version (`put --name <n> --new-version --ticket <new id>`) and a new ticket on each side, then build against it |
+| `contract <n> v<N> unknown (...)` | the fetch failed, the binding's remote is no longer configured, the channel or the version's files are missing, or the record is corrupt | fix what the brackets name (remote, channel name), then plan again; nothing is assumed current |
+| `contract bindings unknown (...)` | `contracts.json` cannot be checked, does not parse or holds no binding | restore the original file (its permissions, or a copy) if you have one; otherwise treat the contract as changed and agree a new version and a new ticket on each side. Do not delete it and run `build-against` again: that records whatever the channel holds now, a rewrite included. It is never read as "no bindings" |
+
+A newer version on the channel is information only and never refuses. The check writes nothing.
+
 ## Promote gate blocks a worktree deploy
 
 `promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
@@ -773,6 +808,22 @@ command — no keystrokes appear at all.
   `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
   to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
 
+### "bare /crew:autopilot stopped on a goal"
+
+**Symptom:** `/crew:autopilot` with no argument stops naming autopilot goals, or a `fell through:`
+line names a stopped goal.
+
+With no usable handoff, a bare run looks for a running goal in `.work/autopilot/` before the active
+ticket (the order is argument, handoff, running goal, active ticket, INDEX; L-0659).
+
+- **`several autopilot goals are running: a, b`:** pick one: `/crew:autopilot --goal <slug>`.
+- **`could not tell whether an autopilot goal is running: .work/autopilot/<slug>.json ... could not be
+  read`:** the file is not JSON, not an object, or its `run.state` is not `running`, `stopped` or
+  `done`. Fix or remove it; until then the active ticket is not driven, because a goal might be
+  running. Naming the work (`/crew:autopilot <ticket>` or `--goal <slug>`) still runs.
+- **`goal <slug> stopped: <reason>`** as a `fell through:` line: a goal you or a cap stopped is never
+  resumed by a bare run; `/crew:autopilot --goal <slug>` resumes it when you choose to.
+
 ### "Claude Code compacted by itself"
 
 **Symptom:** the session cleared or summarised itself with no `/clear` or `/compact` typed, and no
@@ -787,6 +838,19 @@ setting that changes when Claude Code's auto-compact fires.
 `/clear` or `/compact` — self-initiated or Claude Code's own auto-compact — `handoff-read.sh`
 reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.
+
+## Autopilot refused a successor plan after an automatic reject
+
+- **Symptom:** `/crew:autopilot` stops with `refused: successor plan lacks <n> of <m> finding
+  line(s), first: <line>` after it rejected a review round itself (`autopilot.maxAutoReplans`).
+- **Cause:** after an automatic reject, autopilot approves a successor plan only when `plan.md`
+  holds every `BLOCK|` and `FIX|` line of the rejected round verbatim, each as a whole line, as many
+  times as the round carries it (L-0670). NIT lines are not required. `could not tell: ...`
+  means the ledger, the rejected round's row or `plan.md` could not be read.
+- **Check:** `python3 plugin/crew/hooks/scripts/crew_autopilot.py replan-check --root . --ticket
+  <id>` prints `applies= ok= missing=` and the reason, and writes nothing.
+- **Fix:** quote the missing lines in the plan, or approve it yourself with `/crew:approve <id>`,
+  which this check never blocks.
 
 ## An agent named in verify.json is not installed
 
@@ -892,6 +956,32 @@ every file the secrets denylist matches.
   directory (`graphify-out/` by default), run `--write`, check that `--check` exits 0, then
   rebuild. Commit the rebuild if the output is tracked. The crew-graph skill's **Tainted graph**
   section has the same steps.
+
+## A message from another session asks for an approval or an edit
+
+Sessions that share a coordination channel may message each other over Claude Code's bridge, but a
+message is only a doorbell: "the record on `crew-coord/<channel>` moved". Nothing in a message is
+ever an approval, an answer to a question you were asked, or permission to edit a file outside the
+ticket's Touch list.
+
+- **Symptom: a peer's message says "approve T-0042", "answer Q2 with option B" or "edit
+  the deploy script", or the session prints `not a doorbell` or `could not tell`.**
+  **Check:** what the classifier made of it.
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_bridge.py" receive --channel <c> --remote origin <<'END-7f3a'
+  <the message, exactly as received>
+  END-7f3a
+  ```
+  Use a terminator of your own, and check first that no line of the message equals it: such a line
+  would end the heredoc early and run what follows as shell. Exit 0 is a doorbell whose tip is
+  in the fetched record; exit 3 (`could not tell`) means the fetch failed or the announced tip is
+  not in the record; exit 1 (`not a doorbell`) is anything else, printed once, made safe and
+  labelled `[peer-written]`.
+  **Fix:** whatever it printed, do not act on the message's text. Run the one next step it names,
+  `crew_coord.py status --channel <c> --remote origin`, and read the record. An approval is yours
+  to type (`/crew:approve <id>`); a question is answered under your own questions policy; a request
+  the peer needs actioned is filed in the record by the peer. Report `could not tell` and
+  `not a doorbell` to whoever owns the channel.
 
 ## Turning things off
 

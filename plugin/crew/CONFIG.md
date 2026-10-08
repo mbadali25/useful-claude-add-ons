@@ -762,7 +762,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-88 of 152 keys are settable in the machine-global file (generated; 64 are repo-only, section 11).
+88 of 156 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -847,7 +847,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `change.jiraIssueType` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string) | `"Change"` |
 | `change.category` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
 | `git.forbiddenTrailers` | both | list of trailer tokens (letters, digits and `-`, no `:`) (checked in `hooks/scripts/crew_trailers.py`) | `[]` |
-| `autopilot.mode` | both, stricter wins | `off` \| `plan` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
+| `autopilot.mode` | both, stricter wins | `off` \| `plan` \| `backlog` (checked in `hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | `"off"` |
 | `autopilot.maxPhases` | both, stricter wins | positive integer (checked in `hooks/scripts/crew_autopilot.py`); personal: the smaller wins | `12` |
 | `autopilot.deploy` | both, stricter wins | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | `"none"` |
 | `autopilot.approval` | both, stricter wins | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | `"risk"` |
@@ -894,7 +894,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-64 of 152 keys are repo-only (generated; 88 are global-settable, section 10).
+68 of 156 keys are repo-only (generated; 88 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -956,12 +956,16 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `scope.mode` | repo | `off` \| `report` \| `block` \| `auto` | `"off"` |
 | `scope.allowCliApproval` | repo | `false` \| `true` (checked in `hooks/scripts/crew_ticket.py`) | `false` |
 | `autopilot.maxAutoReplans` | repo | non-negative integer (checked in `hooks/scripts/crew_autopilot.py`) | `0` |
-| `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
-| `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
-| `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
 | `autopilot.ship` | repo | `pr` \| `merge` | `"merge"` |
 | `autopilot.knownFailures` | repo | list of check names (checked in `hooks/scripts/crew_autopilot.py`) | `[]` |
 | `autopilot.ciTimeoutMinutes` | repo | positive integer (checked in `hooks/scripts/crew_autopilot.py`) | `60` |
+| `autopilot.sleep.schedule` | repo | HH:MM-HH:MM or null (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.approval` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.questions` | repo | `null` \| `human` \| `self` \| `risk` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.deploy` | repo | `null` \| `nonprod` \| `none` (checked in `hooks/scripts/crew_sleep.py`) | `null` |
+| `autopilot.sleep.notifyHold` | repo | `null` \| `true` (checked in `hooks/scripts/crew_notify_hold.py`) | `null` |
+| `autopilot.maxTicketsPerRun` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `3` |
+| `autopilot.maxTokensPerSession` | repo | positive integer (checked in `hooks/scripts/crew_autopilot_backlog.py`) | `2000000` |
 | `autopilot.maxLanes` | repo | positive integer or null (checked in `hooks/scripts/crew_wave.py`) | `null` |
 | `autopilot.reviewPolicy` | repo | `stop` \| `clean-only` \| `fix-and-rereview` | `"stop"` |
 | `tickets.baseBranch` | repo | branch name or null (checked in `hooks/scripts/scope_base.py`) | `null` |
@@ -1413,8 +1417,13 @@ as stale, or one judged stale that could not be archived; the handoff is the
 automatic PreCompact skeleton (its Changed files list is bare `git` output, so
 a file named `resume: ...` would otherwise be read as the line); no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
-that does not match the checkout; a missing `.work/tickets/<id>/` or
-`.work/autopilot/<slug>.json`; a command not installed in the plugin; a
+that does not match the checkout (the ticket form only: a `--goal` line is
+judged by its goal file instead, L-0658 -- missing, unreadable, not started,
+`done` or `stopped` waits, and only `running` may run); a missing `.work/tickets/<id>/` or
+`.work/autopilot/<slug>.json`; a command not installed in the plugin (a
+`--goal` line is written only while that goal's `run.state` is `running`,
+T-0056: `crew_autopilot.py handoff-resume` decides every writer's line, and its
+`resume: none` with `kind=unknown` means it could not tell which goal runs); a
 `handoff-author.json` that could not be read; no record of which session wrote
 this handoff; a later handoff write could not replace or remove `handoff-author.json` (`handoff-author.json.stuck`), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the
 handoff was written by another session; this session's process could not be
@@ -3103,6 +3112,9 @@ gate reaching in afterward to kill what a rule left running.
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
+Every stop names the owner decision it asks for (`decision=`, L-0666) and
+never a refresh, a graph build or a review round autopilot runs itself; no
+setting changes that.
 `crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
 L-0611) mints one ticket from a staged direction, with no key of its own, and
 that ticket is approved under `autopilot.approval` like any other.
@@ -3124,7 +3136,7 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 
 | Key | Default | Read by | What an unexpected value does |
 |---|---|---|---|
-| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
+| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact strings `"plan"` and `"backlog"` (L-0541: a goal run goes on to the goal's next ticket; it ranks above `plan` between layers) arm it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. A machine value is the default where the repo is silent (§20a). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` or machine-global file that exists but is not a readable JSON object, or an `autopilot` value in either that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. Since T-0050 the machine file counts too: `read_global_config` collapses a corrupt one to `{}`, which would turn a global `human` into the default `risk`, so `crew_autopilot._unreadable_machine_autopilot` reads it raw first. An absent file or block reads the default. |
@@ -3133,11 +3145,15 @@ value by the rule in §20a (the stricter of the layers that set it wins). The
 | `autopilot.sleep.schedule` | `null` | `crew_sleep.resolve`, from `crew_autopilot._settings_at` (T-0053) | Only a whole `HH:MM-HH:MM` string (24-hour, zero-padded, ASCII digits, no spaces, start not equal to end) is read. `"7:00-22:00"`, `"22:00 - 07:00"`, `"24:00-07:00"`, `"22:00-22:00"`, `2200` — anything else — is could not tell, with a warning: only an override stricter than the day value applies (an override that is not a policy or cannot be read, or a non-object `autopilot.sleep`, counts as `human`). `null` is off. |
 | `autopilot.sleep.approval` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.approval` inside the window | `null` keeps the day value. Anything but exactly `human`, `self` or `risk` (`"Human"` included) counts as `human`, the strictest, with a warning: it applies asleep and, under could not tell, is the stricter value; it never reads as permission. |
 | `autopilot.sleep.questions` | `null` | `crew_autopilot._settings_at` (T-0053): `autopilot.questions` inside the window | Same as `autopilot.sleep.approval`. |
+| `autopilot.sleep.deploy` | `null` | `crew_sleep.deploy_overlay`, from `crew_autopilot._settings_at` (L-0654): `autopilot.deploy` inside the window, which `deploy_allowed` reads | `null` keeps the day value; exactly `nonprod` or `none` replaces it while asleep (stricter-only for a manual sleep outside the window). `all`, or anything else, is refused with a warning and the day value stands. Asleep, an effective `all` reads as `nonprod`: **production never runs unattended asleep**. A manual `wake` inside the window only tightens, so the night's cap stands (review r2). Otherwise awake, off or `unknown`, the day value stands, `all` included. |
+| `autopilot.sleep.notifyHold` | `null` | `crew_notify_hold.holds`, from `crew_notify.send` (L-0656), reading `crew_autopilot.settings` | Exactly `true` holds the pings that only ask for attention (every `question`, and the blockers Approval waiting and Review out of rounds) while autopilot is armed and asleep by the schedule; each is dropped and counted in `.work/autopilot/held.json` (per worktree), and the morning summary carries the count. A failure is never held: every `deploy` result, Stop gate refused, Lane stalled, Lane state unknown, a blocker of no or an unknown kind. A manual sleep outside the window holds nothing (it only tightens until L-1504). `false`, `"true"`, `1` or anything else holds nothing, with a warning; a held record that cannot be read or written sends the ping. |
 | `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.349) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
 | `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
+| `autopilot.maxTicketsPerRun` | `3` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Tickets one goal run (one session, recorded in the goal file's `runs`) may start; the next stops the run with its `resume: /crew:autopilot --goal <slug>` line. Anything but a positive integer reads as `3`, with a warning. Repo only. |
+| `autopilot.maxTokensPerSession` | `2000000` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Input + output tokens this session's transcript may hold before a goal run stops (cache tokens are not counted). A transcript that is not found, or a line that does not parse, stops as could-not-tell. Anything but a positive integer reads as `2000000`, with a warning. Repo only. |
 | `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
-| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict | `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Anything else reads as `stop`, with a warning. No setting lets a lane accept or reject a review. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict; `crew_autopilot.settings` (T-0067, `crew_autopilot_fix.py`): what a single-ticket run does with a FINDINGS round no receipt stands on | Wave: `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Single ticket: `stop` and `clean-only` stop at `accept-review` as before; `fix-and-rereview` makes `next` name the `fix` phase (`fix-findings <id> round <n>`) for a round with a round left and a BLOCK or FIX line, then the refresh and `/crew:review` once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes every BLOCK and FIX line and the bundle changed. A config that cannot be read reads `unknown`, which never fixes. Anything else reads as `stop`, with a warning. No setting lets autopilot accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -3152,15 +3168,53 @@ the stricter value wins (§20a).
 on its first text line, the effective `approval` and `questions` on its second, and
 `sleep=<off|awake|asleep|unknown> schedule=<window|none> approval=<override|->
 questions=<override|-> source=<schedule|manual>` on its third (L-0652 adds
-`until=<HH:MM>` for a manual state); `--json` adds `day` (the two day values)
+`until=<HH:MM>` for a manual state), and `maxTicketsPerRun` and
+`maxTokensPerSession` on its fourth (L-0541); `--json` adds `day` (the two day values)
 and `sleep`.
+
+**Sleep log and morning summary (L-0653).** Every decision autopilot makes
+while asleep -- an `approve` (`approved`), and each answer the command takes
+(`sleep-note --kind answered`) -- is appended to `.work/autopilot/sleep-log.md`
+as `- <ISO local time> | <ticket> | <kind> | <text> | <setting>`, with the
+setting that allowed it (`sleep.approval=self (day risk)`). The log is local
+(`.work/` is ignored; two worktrees keep two logs), append-only (one write of
+one whole line, O_APPEND), never committed and never read to decide anything:
+it grants nothing. Every field is folded to one line with `|` replaced, so no
+field can forge an entry or a `- reported` marker. `crew_autopilot.py
+sleep-summary` prints the entries the last marker does not cover, grouped by
+ticket, and appends a new marker -- not while still asleep, and not when there
+is nothing to report. The marker is `- reported <ISO> upto <n>`, `n` the bytes
+it read, so a decision another process appends between the read and the
+marker is reported next time. `wake` prints the summary after its state line
+(and exits non-zero when the summary fails), and once the window has ended
+`settings` warns `<n> sleep decisions are unreported`. **Held pings
+(L-0656).** With `autopilot.sleep.notifyHold: true`, the pings held while
+asleep are counted, `settings` warns `<n> pings were held while asleep`, and
+the summary ends `held pings: <n>`; reported awake, it passes the same text to
+the notifier once (silent, through the configured provider, only when
+`question` or `blocker` is in `notify.events`), under a lock so two runs never
+both send, and only once it was delivered (or no notifier is set up) marks the
+log reported and removes the pings it counted: a failed send exits 1 and keeps
+both for the next run. Only a known awake (or off) state reports: asleep or
+`unknown`, it prints and keeps everything. A delivered summary is recorded in
+`.work/autopilot/summary-delivered.json` before its cleanup, so a
+cleanup that fails is finished by the next run, never sent again. A log line that is neither an entry nor a marker makes
+the log could-not-tell. A
+log that cannot be written never undoes an approval (`warning: sleep log not
+written`); a log that is there and cannot be read is said so, never "nothing
+to report".
 
 **Sleep (T-0053).** `autopilot.sleep.schedule` names one nightly window for
 every day, `HH:MM-HH:MM` in the machine's local time: start inclusive, end
 exclusive, and a start later than the end crosses midnight (`22:00-07:00` is
 asleep from 22:00 to 06:59). Inside it, a non-null `autopilot.sleep.approval`
 or `autopilot.sleep.questions` replaces the day value, so an unattended run
-keeps going where the day setting would stop. The window is re-resolved from
+keeps going where the day setting would stop. `autopilot.sleep.deploy`
+(L-0654) does the same for `autopilot.deploy`, but only as `nonprod` or
+`none`, and asleep an effective `all` reads as `nonprod`: production never
+runs unattended asleep, and `deploy_allowed`'s reason names the sleep state
+when it changed the answer (`autopilot.deploy=nonprod allows nonProd (asleep
+22:00-07:00; day value none)`). The window is re-resolved from
 the clock on every policy read, never cached, so a run that crosses 07:00 is
 back on the day values at its next decision. A window can be as long as
 23h59 (`00:00-23:59`; only start equal to end is refused), and a night
@@ -3178,7 +3232,7 @@ that is not an object has no night value to read, so both keys read as
 override that is readable but not a policy (`"always"`, `true`, `"Human"`)
 counts as `human` too, asleep and under `unknown`, rather than keeping the day
 value (landing decision, consistent with review round 2's). `settings`' third line ends with `applied=<keys|->` under `unknown`. A key under `autopilot.sleep` this version does not have
-(`deploy`, `reviewPolicy`, held pings) is named "not available in this crew
+(`reviewPolicy`, until T-0029 lands it) is named "not available in this crew
 version" and has no effect. An override can lower authority as well as raise
 it. Everything else still binds asleep: `scope.allowCliApproval` exactly
 `true`, autopilot armed, a readable ledger, every stop. While asleep the
@@ -3313,7 +3367,12 @@ T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
 the checkout instead: a push, a PR and at most one merge commit), and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
-`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+`/crew:approve <id>`; `next` is what names the policy's route. A policy value
+that is not a policy (`approval: "bogus"`) is warned about by `settings`
+(`policyWarnings`), never by `status` (T-0027); `status` keeps every other
+warning, the could-not-tell one for an unreadable config included. `approve`
+under such an unreadable config refuses naming that cause, not "autopilot.mode is
+not plan". The one policy
 effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 
@@ -3423,12 +3482,10 @@ before the crew that reads it (T-0010) existed, and nothing said so.
 key of `default_config()` is inert — outside `platform.*` (machine facts
 `platform-sync` stamps) and `schema`, and a key under an open table such as
 `dev.roles` counts as known. A small `INERT_PENDING` table adds the ticket
-that brings each known-but-unbuilt key, and the values that do nothing yet:
-
-| Key or value | Brought by |
-|---|---|
-| `reviewPolicy`, `maxLanes` under `autopilot` | T-0029 |
-| `maxTicketsPerRun` under `autopilot`, and `mode: "backlog"` | L-0541 (T-0012 landed `goal`; backlog and the caps follow) |
+that brings each known-but-unbuilt key, and the values that do nothing yet.
+It is empty in this crew: T-0029 (`reviewPolicy`, `maxLanes` under `autopilot`),
+L-0649 (`deploy: "nonprod"` or `"all"`) and L-0541 (`maxTicketsPerRun`, and
+`mode: "backlog"`) each removed their rows when they landed.
 
 Any other unknown key is named `(unknown key)`: a typo, or a key from another
 crew version. A path the global filter drops from the machine file (this crew

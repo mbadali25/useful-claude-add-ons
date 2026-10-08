@@ -2255,11 +2255,8 @@ def inspect_global(root, path=None):
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy` in the
 # defaults, so their rows went with it. L-0649 (G4) made `autopilot.deploy`
 # `nonprod` and `all` work (the deploy phase), so their value rows went too.
+# L-0541 (G6b) landed `autopilot.maxTicketsPerRun` and `mode: backlog`; their rows went too.
 INERT_PENDING = {
-    "autopilot.maxTicketsPerRun": ("would cap how many tickets one backlog run takes",
-                                   "L-0541"),
-    ("autopilot.mode", "backlog"): ("would let autopilot take tickets from the backlog; "
-                                    "only `plan` arms it today", "L-0541"),
 }
 
 _UNKNOWN_EFFECT = "not read by this crew - a typo, or a key from another crew version"
@@ -2459,13 +2456,25 @@ def autopilot_inert_warnings(top, failure=lambda exc: f"{type(exc).__name__}: {e
     up. A repo `autopilot.deploy` value is left to autopilot's deploy warning,
     which names L-0649's deploy phase. `failure` renders an exception (autopilot's
     `_failure`); anything that raises is one could-not-tell warning."""
+    return autopilot_inert_split(top, failure)[0]
+
+
+def autopilot_inert_split(top, failure=lambda exc: f"{type(exc).__name__}: {exc}",
+                          policy_keys=()):
+    """`(warnings, policy)`: `autopilot_inert_warnings`' list, and the entries
+    of it under one of `policy_keys` (`autopilot.<key>` or below it), which
+    `crew_autopilot.status` leaves out (T-0027). A could-not-tell warning is
+    never a policy entry."""
+    under = tuple(f"autopilot.{key}" for key in policy_keys)
     try:
-        return [f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}"
-                for e in inert_settings(top)
-                if e["key"].startswith("autopilot.")
-                and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
+        rendered = [(e, f"inert: {inert_items([e], 10 ** 6)} - {e['effect']}")
+                    for e in inert_settings(top) if e["key"].startswith("autopilot.")
+                    and not (e["key"] == "autopilot.deploy" and e["kind"] == "pending")]
     except Exception as exc:  # pylint: disable=broad-except
-        return [f"inert: could not tell which settings are inert ({failure(exc)})"]
+        return [f"inert: could not tell which settings are inert ({failure(exc)})"], []
+    return [text for _e, text in rendered], [
+        text for e, text in rendered
+        if any(e["key"] == key or e["key"].startswith(key + ".") for key in under)]
 
 
 def inert_items(entries, room):

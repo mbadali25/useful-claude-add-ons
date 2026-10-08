@@ -110,6 +110,15 @@ RELATED = {
                    ("/crew:autopilot status {t}", "which slice is current")),
     "ship": (("/crew:autopilot status {t}", "the PR and receipt state"),
              ("/crew:status", "the full picture of this repo")),
+    # Phases G6a (L-0550, T-0067) added to crew_autopilot.WAITING.
+    "hold": (("/crew:status --owner", "every ticket waiting on you; a due hold reads revisit"),
+             ("/crew:autopilot status {t}", "this ticket's standing")),
+    "landing": (("/crew:autopilot status {t}", "this ticket's standing"),
+                ("/crew:status", "the full picture of this repo")),
+    "blocked": (("/crew:autopilot status {t}", "which dependency is not closed"),
+                ("/crew:status --owner", "every ticket waiting on you")),
+    "fix": (("/crew:autopilot {t}", "let autopilot fix the round's findings"),
+            ("/crew:autopilot status {t}", "the review budget and this ticket's standing")),
 }
 NO_TICKET_RELATED = (("/crew:status", "the full picture of this repo"),
                      ("/crew:help commands", "every command, by group"))
@@ -157,7 +166,7 @@ HELP = {
 GROUPS = (
     ("core", ("brainstorm", "spec", "plan", "approve", "implement", "review", "done", "fix",
               "autopilot", "status", "help")),
-    ("through-help", ("docs", "diagram", "onboard", "reference", "verify", "runbook", "handoff",
+    ("through-help", ("docs", "diagram", "graph", "onboard", "reference", "verify", "runbook", "handoff",
                       "init", "config", "config-setup", "model", "migrate", "debug", "survey")),
     ("merge-candidates", ("jira-sync", "sdp-sync", "obsidian-sync")),
     ("specialist", ("change", "emergency", "gate", "promote", "split", "webtest")),

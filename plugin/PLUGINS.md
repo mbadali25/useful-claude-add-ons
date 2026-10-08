@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.1.17<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.21<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 37 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -81,7 +81,12 @@ repository containing docs, rather than skipping them. Before any build,
 `crew_graph_ignore.py --check` confirms graphify will read no
 secrets-denylisted file: `.gitignore` does not stop graphify reading a tracked
 file, so the root `.graphifyignore` must exclude every one, and `--write` adds
-what is missing. Exporting the graph
+what is missing. `/crew:graph` is the one command for it (L-0667): `--status`
+prints one read-only line (fresh or not, the tracked pair, the denylist, the
+line a refresh runs), and `--refresh` runs that check, then the repo's
+sanctioned build (`graphify update .` where `GRAPH_REPORT.md` is tracked,
+else the code-only build), then proves the report's `## Summary` counts match
+`graph.json`'s `nodes` and `links`; it never commits. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
 the user in `.crew/config.json`; no crew command ever sets that flag itself.
 
@@ -160,7 +165,7 @@ to CI or to branch protection.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
 | `/crew:spec <ticket id>` | Fill the ticket contract from an approved direction - Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
 | `/crew:split <ticket-id-or-ISSUE-KEY> [--dry-run]` | Split an oversized ticket into 2-5 children with evidence and one confirmation, through `crew_split.py`'s rulebook: files/Obsidian children are minted and the parent becomes `superseded`; Jira as before; SDP stops |
-| `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
+| `/crew:status [--memory \| --approvals \| --owner]` | Read-only crew status for this repo - config, roster, tickets, what waits on you (`--owner`), review budget, gate, codemap, handoff |
 | `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
 | `/crew:upgrade` | Removed - use /crew:migrate, which upgrades a pre-0.20 config itself |
