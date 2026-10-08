@@ -5322,3 +5322,6 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 - JUDGEMENT. The line stays report-only. `verify-gate.sh` runs without `errexit`, so its
   `|| true` on the scope call changes no status; the refusal is `/crew:done` check 3, which
   already refused shell-made writes (`plugin/crew/tests/test_completion_audit.py:322`).
+- DERIVED. `plugin/crew/hooks/scripts/_test/run-tests.sh` scope cases (a) and (b) build a 1.0
+  ticket (spec.md, `crew_ticket.py activate`, a `/crew:approve` prompt through `approval_hook.py`)
+  and expect the outside path named, then `could not tell` naming spec.md once it is removed.
