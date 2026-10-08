@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**149 keys**: 87 settable in the machine-global file, 62 repo-only.
+**152 keys**: 88 settable in the machine-global file, 64 repo-only.
 
 Columns:
 
@@ -190,6 +190,7 @@ Columns:
 | `memory.inject` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_context.py` (expects boolean) | 1.0.25 | Inject the handoff and recall at session start; only an explicit `false` stops it. |
 | `memory.recall.vaults` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of vault names) | 1.0.25 | This repo's vault priority for recall; empty uses the obsidian config's roles. |
 | `memory.recall.maxChars` | repo | `800` | positive integer (coerced in `plugin/crew/hooks/scripts/crew_recall.py`) | 1.0.25 | Recall output budget; a non-positive or non-integer value reads as 800. |
+| `memory.recall.projects` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of project names) | 1.1.11 | Project names sent to vault recall as `--project` so this repo's notes rank first; empty sends the main checkout's directory name. |
 
 ### `context`
 
@@ -320,6 +321,7 @@ Columns:
 | `guards.mergeGate` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | Taking a live repo's merge gate down (read by `/crew:gate`). |
 | `guards.cloudDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive cloud CLI commands. |
 | `guards.sqlDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive SQL. |
+| `guards.deployWorkflow` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.1.16 | A `gh workflow run` or `gh api .../dispatches` of a workflow `environments.workflows` lists. |
 | `guards.prodDatabase` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production database crew may reach. |
 | `guards.prodServer` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production host crew may reach. |
 | `guards.roleWrites` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 0.19.92 | Enforce each role's write scope. Default `off`; a malformed value reads as `block`. |
@@ -346,6 +348,7 @@ Columns:
 |---|---|---|---|---|---|
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
+| `environments.workflows` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects object of glob to string) | 1.1.16 | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
 
 ### `change`
 
@@ -406,21 +409,14 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
-| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
-| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
-| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.8 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
+| `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
+| `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
+| `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 
 Keys from approved tickets that have not landed. Each moves into the table above when its ticket lands, because it is then in the code; a test fails until it does (`test_no_coming_key_is_in_code`).
-
-### T-0009
-
-| Setting | Change | Layer | Default | Values | Summary |
-|---|---|---|---|---|---|
-| `guards.deployWorkflow` | new key | both, ratchet | block |  | Whether crew may dispatch a deploy workflow. |
-| `environments.workflows` | new key | repo | {} |  | Deploy workflows per environment. |
 
 ### T-0012
 

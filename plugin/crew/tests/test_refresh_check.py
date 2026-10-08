@@ -200,7 +200,8 @@ def test_graph_behind_is_stale(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (item["status"], item["command"]) == ("stale", "graphify update .")
+    assert (item["status"], item["command"], item["runs"]) == (
+        "stale", "/crew:graph --refresh", "graphify update .")
 
 
 def test_graph_rebuilt_after_the_change_is_fresh(tmp_path):
@@ -270,8 +271,8 @@ def test_graph_refresh_named_once_covered(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (item["status"], item["refreshable"], item["command"]) == (
-        "stale", True, "graphify update ."), item
+    assert (item["status"], item["refreshable"], item["command"], item["runs"]) == (
+        "stale", True, "/crew:graph --refresh", "graphify update ."), item
 
 
 def test_graph_refresh_unknown_coverage_stops(tmp_path):
@@ -463,7 +464,33 @@ def test_graph_without_a_tracked_report_names_the_code_only_build(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert item["command"] == "graphify . --no-viz --code-only", item
+    assert (item["command"], item["runs"]) == (
+        "/crew:graph --refresh", "graphify . --no-viz --code-only"), item
+
+
+def test_graph_with_a_tracked_report_names_crew_graph_refresh(tmp_path):
+    """L-0667: the hint names the command; the raw graphify line is `runs`,
+    and the rendered line tells the session to run the command."""
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _commit(root, "src/app.py", "print('changed')\n")
+    result = _check(root)
+    item = _artifact(result, "graph", "graphify-out")
+    line = [x for x in crew_refresh_check._render(TICKET, result).splitlines()  # pylint: disable=protected-access
+            if x.startswith("  graph ")][0]
+
+    assert (item["command"], item["runs"], line.endswith("refresh with /crew:graph --refresh")) \
+        == ("/crew:graph --refresh", "graphify update .", True), (item, line)
+
+
+def test_graph_without_a_graph_file_still_names_crew_graph_refresh(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (item["status"], item["command"], item["runs"]) == (
+        "not applicable", "/crew:graph --refresh", "graphify . --no-viz --code-only"), item
 
 
 def test_an_anchor_naming_no_commit_is_refreshable(tmp_path):
@@ -494,11 +521,11 @@ def _approved_paths(root, cfg=None):
     return crew_refresh_check.refresh_artifact_paths(str(root))
 
 
-def test_refresh_artifact_paths_default_to_the_four_documented_dirs(tmp_path):
+def test_refresh_artifact_paths_default_to_the_four_dirs_and_the_one_file(tmp_path):
     root, _start = _repo(tmp_path)
 
     assert _approved_paths(root) == [".crew/codemap", "docs/diagrams", "graphify-out",
-                                     ".claude/rules"]
+                                     ".claude/rules", "docs/reference/integrations.md"]
 
 
 def test_refresh_artifact_paths_follow_the_configured_dirs(tmp_path):
@@ -507,7 +534,8 @@ def test_refresh_artifact_paths_follow_the_configured_dirs(tmp_path):
     paths = _approved_paths(root, {"docs": {"diagramsDir": "design/mmd"},
                                    "graph": {"out": "out/graph"}})
 
-    assert paths == [".crew/codemap", "design/mmd", "out/graph", ".claude/rules"]
+    assert paths == [".crew/codemap", "design/mmd", "out/graph", ".claude/rules",
+                     "docs/reference/integrations.md"]
 
 
 def test_a_configured_dir_naming_the_repo_root_is_never_an_artifact_dir(tmp_path):
@@ -515,7 +543,7 @@ def test_a_configured_dir_naming_the_repo_root_is_never_an_artifact_dir(tmp_path
 
     paths = _approved_paths(root, {"docs": {"diagramsDir": "."}, "graph": {"out": "./"}})
 
-    assert paths == [".crew/codemap", ".claude/rules"]
+    assert paths == [".crew/codemap", ".claude/rules", "docs/reference/integrations.md"]
 
 
 def test_an_artifact_dir_reached_through_a_link_is_dropped(tmp_path):
@@ -542,6 +570,19 @@ def test_an_artifact_dir_reached_through_a_link_is_dropped(tmp_path):
 ])
 def test_is_refresh_artifact_matches_whole_segments_only(rel, expected):
     dirs = [".crew/codemap", "docs/diagrams", "graphify-out", ".claude/rules", "**"]
+
+    assert crew_refresh_check.is_refresh_artifact(rel, dirs) is expected
+
+
+@pytest.mark.parametrize("rel,expected", [
+    ("docs/reference/integrations.md", True),
+    ("docs/reference/api.md", False),
+    ("docs/reference/flows/order-sync.md", False),
+    ("docs/reference/integrations.md/x.md", False),
+    ("docs/reference", False),
+])
+def test_the_reference_entry_admits_the_integrations_file_alone(rel, expected):
+    dirs = [".crew/codemap", "docs/reference/integrations.md"]
 
     assert crew_refresh_check.is_refresh_artifact(rel, dirs) is expected
 
@@ -1042,7 +1083,7 @@ def test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head(tmp_
 # `expected_rules`, so an edit there can widen a blocking check.
 _GUARD_MODULES = ("crew_refresh_check.py", "scope_guard.py", "completion_audit.py",
                   "crew_freshness.py", "scope_base.py", "crew_instructions.py",
-                  "crew_diagrams.py", "crew_graph_ignore.py")
+                  "crew_diagrams.py", "crew_reference.py", "crew_graph_ignore.py")
 
 
 def _gate_matches(path, pat):
@@ -1337,7 +1378,8 @@ def test_graph_manifest_with_an_old_hash_is_stale(tmp_path):
 
     graph = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (graph["status"], graph["command"]) == ("stale", "graphify update ."), graph
+    assert (graph["status"], graph["command"], graph["runs"]) == (
+        "stale", "/crew:graph --refresh", "graphify update ."), graph
 
 
 def test_graph_manifest_never_confirms_a_deleted_path(tmp_path):
@@ -1388,3 +1430,164 @@ def test_graph_manifest_confirms_only_every_reached_path(tmp_path):
     graph = _artifact(_check(root), "graph", "graphify-out")
 
     assert graph["status"] == "stale", graph
+
+
+# --- T-0036: docs/reference/integrations.md --------------------------------------
+
+_INTEGRATIONS = "docs/reference/integrations.md"
+
+
+def _reference(root, rel, anchor, cites):
+    """A reference doc whose Generated header names `anchor` (none when
+    `anchor` is None) and one `### ` entry citing each path."""
+    body = (f"> Generated from repo@{anchor} on 2026-09-27. Every entry is anchored.\n\n"
+            if anchor else "> Written by hand.\n\n")
+    body += "## Shop\n\n### GET https://shop.example/orders\n"
+    body += "".join(f"`{c}:1`\n" for c in cites) + "\nAuth: none\n"
+    _commit(root, rel, body)
+
+
+def test_reference_doc_citing_changed_path_behind_is_stale(tmp_path):
+    root, start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, start, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    result = _check(root)
+    item = _artifact(result, "reference", "integrations")
+
+    assert (result["status"], item["status"], item["refreshable"]) == ("stale", "stale", True)
+    assert item["command"] == "/crew:reference --integrations"
+
+
+def test_reference_doc_refreshed_is_fresh(tmp_path):
+    root, start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, start, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+    _reference(root, _INTEGRATIONS, head_sha(root, length=40), ["src/app.py"])
+
+    result = _check(root)
+
+    assert (result["status"], _artifact(result, "reference", "integrations")["status"]) == (
+        "fresh", "fresh"), result
+
+
+def test_reference_doc_not_citing_a_changed_path_is_out_of_scope(tmp_path):
+    root, start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, start, ["src/other.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    result = _check(root)
+
+    assert [a for a in result["artifacts"] if a["kind"] == "reference"] == [], result
+
+
+def test_reference_doc_without_generated_header_is_unknown_and_refreshable(tmp_path):
+    root, _start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, None, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    result = _check(root)
+    item = _artifact(result, "reference", "integrations")
+
+    assert (result["status"], item["status"], item["refreshable"]) == (
+        "unknown", "unknown", True), result
+    assert "Generated from" in item["reason"]
+
+
+def test_reference_doc_citing_no_path_is_unknown(tmp_path):
+    root, start = _repo(tmp_path)
+    _commit(root, _INTEGRATIONS, f"> Generated from repo@{start} on 2026-09-27.\n\nNo citation.\n")
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], item["refreshable"]) == ("unknown", True), item
+
+
+def test_an_unreadable_reference_doc_is_unknown_and_a_stop(tmp_path, monkeypatch):
+    root, start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, start, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+    real = crew_refresh_check.read_text
+    monkeypatch.setattr(crew_refresh_check, "read_text",
+                        lambda p: None if p.endswith("integrations.md") else real(p))
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], item["refreshable"]) == ("unknown", False), item
+
+
+def test_a_reference_doc_whose_presence_cannot_be_told_is_unknown(tmp_path, monkeypatch):
+    root, start = _repo(tmp_path)
+    _reference(root, _INTEGRATIONS, start, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+    real = crew_refresh_check.os.lstat
+
+    def lstat(path, *args, **kwargs):
+        if str(path).endswith("integrations.md"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(crew_refresh_check.os, "lstat", lstat)
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], item["refreshable"]) == ("unknown", False), item
+
+
+def test_an_extensionless_anchor_reaches_the_reference_doc(tmp_path):
+    root, start = _repo(tmp_path)
+    _commit(root, "Dockerfile", "FROM scratch\n")
+    _reference(root, _INTEGRATIONS, start, ["Dockerfile", "src/other.py"])
+    _commit(root, "Dockerfile", "FROM alpine\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], "Dockerfile" in item["reason"]) == ("stale", True), item
+
+
+def test_an_anchor_only_in_a_fenced_example_is_no_citation(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+    head = head_sha(root, length=40)
+    _commit(root, _INTEGRATIONS, f"> Generated from repo@{head} on 2026-09-27.\n\n## Shop\n\n"
+            "### GET https://shop.example/orders\n```\n`src/app.py:1`\n```\nAuth: none\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], "cites no path" in item["reason"]) == ("unknown", True), item
+
+
+def test_api_and_features_docs_are_not_judged(tmp_path):
+    root, start = _repo(tmp_path)
+    _reference(root, "docs/reference/api.md", start, ["src/app.py"])
+    _reference(root, "docs/reference/features.md", start, ["src/app.py"])
+    _reference(root, "docs/reference/flows/order-sync.md", start, ["src/app.py"])
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    result = _check(root)
+
+    assert [a for a in result["artifacts"] if a["kind"] == "reference"] == [], result
+
+
+def test_a_reference_refresh_commit_stales_nothing(tmp_path):
+    root, start = _repo(tmp_path)
+    _codemap(root, "docs", start, ["docs/reference/integrations.md"])
+    _reference(root, _INTEGRATIONS, start, ["src/other.py"])
+
+    result = _check(root)
+
+    assert result["status"] == "fresh", result
+
+
+def test_a_header_inside_a_fenced_example_is_not_the_doc_header(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+    head = head_sha(root, length=40)
+    _commit(root, _INTEGRATIONS,
+            "# Integrations\n\n```\n> Generated from repo@" + head + " on 2026-09-27.\n```\n\n"
+            "## Shop\n\n### GET https://shop.example/orders\n`src/app.py:1`\n\nAuth: none\n")
+
+    item = _artifact(_check(root), "reference", "integrations")
+
+    assert (item["status"], item["refreshable"]) == ("unknown", True), item

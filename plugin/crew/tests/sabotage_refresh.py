@@ -24,6 +24,8 @@ each, not just whichever runs first.
 """
 import os
 
+import crew_fixtures
+
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _S = os.path.join(CREW, "hooks", "scripts")
 CHECK = os.path.join(_S, "crew_refresh_check.py")
@@ -47,6 +49,17 @@ _UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
 _DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
+TICKET = os.path.join(_S, "crew_ticket.py")
+GATE_SH = os.path.join(_S, "verify-gate.sh")
+GATE_PS1 = os.path.join(_S, "verify-gate.ps1")
+_BK = "tests/test_crew_bookkeeping.py::"
+_GB = "tests/test_verify_gate_bookkeeping.py::"
+_SH_DROP = 'changed = [f for f in changed if _kinds.get(f) != "bookkeeping"]\n'
+_SH_UNMAPPED = '    if not hit and _kinds.get(f) != "artifact": unmatched.append(f)\n'
+_PS1_DROP = ("$changed = @($changed | Where-Object { -not $crewBookkeeping.Contains("
+             "[string]$_) })\n")
+_PS1_UNMAPPED = ("  if (-not $hit -and -not $crewArtifacts.Contains([string]$f)) "
+                 "{ [void]$unmapped.Add($f) }\n")
 
 
 def _scope_guard_rule_span():
@@ -271,7 +284,157 @@ REFRESH_MUTATIONS = (
      "    if not path.startswith('\"'):\n        return path\n",
      "    if True:\n        return path\n",
      _CAI + "test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change"),
+    # T-0068: crew's own bookkeeping (crew_ticket.CREW_BOOKKEEPING_PATHS).
+    ("the gate records are not bookkeeping", TICKET,
+     '    ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177\n',
+     "",
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("bookkeeping matches below the root", TICKET,
+     "and walk(i + 1, j + 1)\n\n    return walk(0, 0)\n\n\ndef _crew_listed",
+     "and walk(i + 1, j + 1)\n\n    return any(walk(0, k) for k in range(len(names)))"
+     "\n\n\ndef _crew_listed",
+     _BK + "test_is_crew_bookkeeping_matches_whole_segments_at_the_root"),
+    ("a config path is bookkeeping", TICKET,
+     '    ".crew/*.lock",                       # lock files\n',
+     '    ".crew/*.lock",                       # lock files\n    ".crew/*.json",\n',
+     _BK + "test_every_crew_state_path_is_classified"),
+    ("the matcher and git disagree on a directory", TICKET,
+     "            first = j + 1 if i == len(pat) - 1 else j\n",
+     "            first = j\n",
+     _BK + "test_a_trailing_double_star_is_everything_below_never_the_directory"),
+    ("the sh gate reports bookkeeping as unmapped", GATE_SH,
+     _SH_DROP, "",
+     _GB + "test_untracked_bookkeeping_is_not_unmapped[sh]"),
+    ("the sh gate reports refresh artifacts as unmapped", GATE_SH,
+     _SH_UNMAPPED, "    if not hit: unmatched.append(f)\n",
+     _GB + "test_a_refresh_artifact_with_no_rule_is_not_unmapped[sh]"),
+    ("the sh gate maps every unmatched path", GATE_SH,
+     _SH_UNMAPPED, "    if False: unmatched.append(f)\n",
+     _GB + "test_an_ordinary_unmapped_file_still_fails[sh]"),
+    ("the sh gate drops refresh artifacts instead of mapping them", GATE_SH,
+     _SH_DROP, 'changed = [f for f in changed if _kinds.get(f) not in ("bookkeeping", '
+               '"artifact")]\n',
+     _GB + "test_a_refresh_artifact_a_rule_names_still_runs_it[sh]"),
+    ("classify calls everything bookkeeping", AUDIT,
+     "        elif crew_ticket.is_crew_bookkeeping(path):\n",
+     "        elif True:\n",
+     _CAI + "test_classify_names_each_kind"),
+    ("classify reads an unknown artifact list as every path an artifact", AUDIT,
+     "        dirs, is_artifact = [], None\n",
+     "        dirs, is_artifact = [], lambda _p, _d: True\n",
+     _CAI + "test_classify_without_refresh_check_calls_nothing_an_artifact"),
+    # Review of f4f9c691, BLOCK: an unreadable config reads as the defaults.
+    ("classify reads an unreadable config as the default artifact dirs", AUDIT,
+     "        if why is not None:\n"
+     "            raise ValueError(f\"the crew config is unreadable: {why}\")\n",
+     "        cfg = cfg if why is None else {}\n",
+     _CAI + "test_classify_with_an_unreadable_config_calls_nothing_an_artifact"),
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
 )
+
+# The .ps1 twins need pwsh to run their test; without it the [ps1] cases skip
+# and a mutation could only read as vacuous, so they join where pwsh exists
+# (sabotage_tooling.py's convention) and the report says when they did not.
+# Review of a73a1ed6: the shared resolver, as the target tests use, so a pwsh
+# installed off PATH (the documented Git Bash setup) still registers them.
+if crew_fixtures.resolve_pwsh():
+    REFRESH_MUTATIONS += (
+        ("the ps1 gate reports bookkeeping as unmapped", GATE_PS1,
+         _PS1_DROP, "",
+         _GB + "test_untracked_bookkeeping_is_not_unmapped[ps1]"),
+        ("the ps1 gate reports refresh artifacts as unmapped", GATE_PS1,
+         _PS1_UNMAPPED, "  if (-not $hit) { [void]$unmapped.Add($f) }\n",
+         _GB + "test_a_refresh_artifact_with_no_rule_is_not_unmapped[ps1]"),
+        ("the ps1 gate drops refresh artifacts instead of mapping them", GATE_PS1,
+         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewArtifacts.Add([string]$changed[$i]) }\n",
+         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewBookkeeping.Add([string]$changed[$i]) }\n",
+         _GB + "test_a_refresh_artifact_a_rule_names_still_runs_it[ps1]"),
+        ("the ps1 gate maps every unmatched path", GATE_PS1,
+         _PS1_UNMAPPED, "  if ($false) { [void]$unmapped.Add($f) }\n",
+         _GB + "test_an_ordinary_unmapped_file_still_fails[ps1]"),
+    )
+
+# C-0025: T-0064's denylist coverage, run by hand at T-0064 (fifteen, each red
+# on its named test) and registered here because sabotage*.py is harness.
+IGNORE = os.path.join(_S, "crew_graph_ignore.py")
+STATUS = os.path.join(_S, "crew_status.py")
+_GI = "tests/test_graph_ignore.py::"
+
+GRAPH_IGNORE_MUTATIONS = (
+    ("graph-ignore: .gitignore counts as coverage", IGNORE,
+     "        denied, uncovered = _judge(top, paths, groups, _ignore_lines(top), git)\n",
+     "        denied, uncovered = _judge(top, paths, groups, _ignore_lines(top)\n"
+     '                                   + (_read(top, ".gitignore") or "").splitlines(), git)\n',
+     _GI + "test_gitignore_alone_does_not_cover_a_tracked_file"),
+    ("graph-ignore: an unknown reads as covered", IGNORE,
+     '    except _Unknown as exc:\n        result["reason"] = str(exc)\n        return result\n',
+     '    except _Unknown as exc:\n        result["reason"] = str(exc)\n'
+     "        return dict(result, status=COVERED)\n",
+     _GI + "test_unknowns_never_read_as_covered[git-missing]"),
+    ("graph-ignore: a ! line is read as excluding too", IGNORE,
+     '            if not pattern.startswith("!")}\n',
+     "            if True}\n",
+     _GI + "test_negation_in_graphifyignore_uncovers"),
+    ("graph-ignore: --write truncates .graphifyignore before building the text", IGNORE,
+     '        with open(target, "rb") as handle:\n            before = handle.read()\n',
+     '        with open(target, "rb") as handle:\n            before = handle.read()\n'
+     '        with open(target, "wb"):\n            pass\n',
+     _GI + "test_write_never_truncates_on_a_failed_build"),
+    ("graph-ignore: settings.local.json is dropped as a source", IGNORE,
+     "        for rel in SETTINGS_FILES:\n",
+     "        for rel in SETTINGS_FILES[:1]:\n",
+     _GI + "test_each_source_contributes"),
+    ("graph-ignore: the user's global excludes count as coverage", IGNORE,
+     '        return _run_git(git, scratch, ["-c", f"core.excludesFile={empty}",\n'
+     '                                       "-c", f"core.ignoreCase',
+     '        return _run_git(git, scratch, [\n'
+     '                                       "-c", f"core.ignoreCase',
+     _GI + "test_global_excludes_never_count_as_coverage"),
+    ("graph-ignore: untracked and ignored files are not candidates", IGNORE,
+     '                                "--cached", "--others"])\n',
+     '                                "--cached"])\n',
+     _GI + "test_untracked_and_ignored_files_are_candidates"),
+    ("graph-ignore: a directory git lists without its files passes unread", IGNORE,
+     "    if blind:\n        raise _Unknown(",
+     "    if False:\n        raise _Unknown(",
+     _GI + "test_a_nested_repository_is_unknown_until_excluded"),
+    ("graph-ignore: a symlink is not judged by its target", IGNORE,
+     "    through = {path for path, pair in judged.items() if hits.intersection(pair)}\n",
+     "    through = set()\n",
+     _GI + "test_a_symlink_is_judged_by_its_target"),
+    ("graph-ignore: a .gitignore negation no longer reopens a covered secret", IGNORE,
+     "    uncovered |= _reopened(top, paths, files, git)\n",
+     "",
+     _GI + "test_a_gitignore_negation_reopens_a_covered_secret"),
+    ("graph-ignore: a line with a backslash still counts as covering", IGNORE,
+     '    return ["" if "\\\\" in line else line for line in lines]\n',
+     "    return lines\n",
+     _GI + "test_a_backslash_escaped_line_does_not_count_as_covering"),
+    ("refresh check: the graph skips the denylist coverage call", CHECK,
+     "    refused = _graph_ignore_refusal(root, graph_out, command)\n",
+     "    refused = None\n",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    # T-0064's plan named test_autopilot_does_not_settle_a_refused_graph; that
+    # one stays green, since `_settles` also needs ORPHANED_ANCHOR in the reason
+    # of an `unknown`. The refusal's own test asserts `refreshable` False.
+    ("refresh check: a refused graph stays refreshable", CHECK,
+     "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=False)\n",
+     "\"crew-graph SKILL 'Tainted graph'\", command, refreshable=True)\n",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    ("refresh check: unknown denylist coverage passes", CHECK,
+     "    if cover[\"status\"] != crew_graph_ignore.COVERED:\n        return _entry(\"graph\", graph_out, UNKNOWN,\n"
+     "                      f\"denylist coverage unknown",
+     "    if False:\n        return _entry(\"graph\", graph_out, UNKNOWN,\n"
+     "                      f\"denylist coverage unknown",
+     _T + "test_graph_refresh_unknown_coverage_stops"),
+    ("status: the graph-ignore line hides an uncovered path", STATUS,
+     "    if cover[\"status\"] == crew_graph_ignore.UNCOVERED:\n        paths = cover[\"uncovered\"]\n"
+     "        shown = crew_graph_ignore.listed(paths, 3)\n        return (f\"graph-ignore  UNCOVERED",
+     "    if cover[\"status\"] == crew_graph_ignore.UNCOVERED:\n        return \"graph-ignore  ok\"\n"
+     "    if False:\n        return (f\"graph-ignore  UNCOVERED",
+     "tests/test_status.py::test_status_flags_uncovered_denylisted_path"),
+)
+
+REFRESH_MUTATIONS += GRAPH_IGNORE_MUTATIONS

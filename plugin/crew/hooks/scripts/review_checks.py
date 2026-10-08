@@ -41,7 +41,7 @@ read, a config entry this module does not understand, and a file the tool
 could not parse on either side (ShellCheck SC1072, ruff `invalid-syntax`,
 PSScriptAnalyzer `ParseError`, actionlint `syntax-check`), because then that
 file was not checked, and a broken base would baseline new findings away.
-`review_run.py` refuses a round on `fail` and on `could-not-check` (exit 5,
+`review_run.py` refuses a round on `fail` and on `could-not-check` (exit 9,
 nothing reserved). `--allow-unverified` overrides only `could-not-check`, and
 review.json records the override.
 
@@ -56,11 +56,13 @@ import os
 import re
 import shutil
 import secrets
+import selectors
 import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 import crew_ticket
 
@@ -135,17 +137,22 @@ try {
         [Console]::Error.WriteLine("psscriptanalyzer: unknown rule(s): " + ($unknown -join ', '))
         exit 3
     }
-    $rows = foreach ($path in @(Get-Content -Raw -Encoding utf8 -LiteralPath $ListFile | ConvertFrom-Json)) {
+    # A typed list, never a foreach statement's output (L-0605, review round
+    # 10 BLOCK :148): an empty statement leaves AutomationNull, which @()
+    # turns into [] only by an engine rule; a real $null there prints [null].
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($path in @(Get-Content -Raw -Encoding utf8 -LiteralPath $ListFile | ConvertFrom-Json)) {
         # -Path takes wildcards: a name with [ ] would match nothing and
         # read as clean, so the name is escaped to match only itself.
         $params = @{ Path = [System.Management.Automation.WildcardPattern]::Escape($path) }
         if ($rules.Count -gt 0) { $params.IncludeRule = $rules }
         foreach ($r in @(Invoke-ScriptAnalyzer @params)) {
-            [pscustomobject]@{ file = $path; rule = [string]$r.RuleName;
-                               severity = [string]$r.Severity; message = [string]$r.Message }
+            $rows.Add([pscustomobject]@{ file = $path; rule = [string]$r.RuleName;
+                                         severity = [string]$r.Severity;
+                                         message = [string]$r.Message })
         }
     }
-    [Console]::Out.WriteLine((ConvertTo-Json -InputObject @($rows) -Depth 3 -Compress))
+    [Console]::Out.WriteLine((ConvertTo-Json -InputObject $rows.ToArray() -Depth 3 -Compress))
     exit 0
 } catch {
     [Console]::Error.WriteLine("psscriptanalyzer: " + $_.Exception.Message)
@@ -155,8 +162,11 @@ try {
 
 
 # C0, DEL, C1 and the Unicode line/paragraph separators: anything that can
-# start a new line on a terminal or in a log (review round 7 FIX :847).
-_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff]")
+# start a new line on a terminal or in a log (review round 7 FIX :847); and
+# Unicode's Bidi_Control set, a closed list, which can visually reorder a
+# status line (L-0605, review round 10 FIX :159).
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2028\u2029"
+                      "\u2066-\u2069\ud800-\udfff]")
 
 
 def one_line(text):
@@ -190,6 +200,21 @@ _WALK_BY_FD = (os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
 def _not_plain(info):
     return stat.S_ISLNK(info.st_mode) or bool(
         getattr(info, "st_file_attributes", 0) & _REPARSE_POINT)
+
+
+def not_a_regular_file(path):
+    """Why `path` must not be opened for an automatic read, or None when it is
+    missing or a regular file (lstat, so a link is refused too). A FIFO with no
+    writer would block a plain open() forever (review of 84c841e6, L-0526)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"{path} cannot be inspected: {exc}"
+    if _not_plain(info) or not stat.S_ISREG(info.st_mode):
+        return f"{path} is not a regular file"
+    return None
 
 
 def read_regular(path, base):
@@ -569,6 +594,7 @@ _WINDOWS = os.name == "nt"
 _CREATE_SUSPENDED = 0x00000004
 _KILL_ON_JOB_CLOSE = 0x00002000
 _EXTENDED_LIMIT_INFORMATION = 9
+_BASIC_ACCOUNTING_INFORMATION = 1
 
 
 class WindowsJob:
@@ -593,6 +619,9 @@ class WindowsJob:
                                                 wintypes.DWORD]
         k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
         k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        k32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                  ctypes.c_void_p, wintypes.DWORD,
+                                                  ctypes.c_void_p]
         k32.CloseHandle.argtypes = [wintypes.HANDLE]
         self._ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
         self._k32 = k32
@@ -635,7 +664,32 @@ class WindowsJob:
             raise OSError(errno.EIO, "NtResumeProcess failed")
 
     def terminate(self):
-        self._k32.TerminateJobObject(self._handle, 1)
+        """End every process in the job; OSError when Windows says it did not
+        (L-0605: a discarded failure read as "the tree ended")."""
+        if not self._k32.TerminateJobObject(self._handle, 1):
+            raise OSError(self._ctypes.get_last_error(), "TerminateJobObject failed")
+
+    def active_processes(self):
+        """How many processes are in the job now (L-0527 group review: Kimi
+        waits for its job to empty); OSError when Windows will not say."""
+        ctypes = self._ctypes
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        class _Accounting(ctypes.Structure):  # JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+            _fields_ = [("TotalUserTime", ctypes.c_int64),
+                        ("TotalKernelTime", ctypes.c_int64),
+                        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+                        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+                        ("TotalPageFaultCount", wintypes.DWORD),
+                        ("TotalProcesses", wintypes.DWORD),
+                        ("ActiveProcesses", wintypes.DWORD),
+                        ("TotalTerminatedProcesses", wintypes.DWORD)]
+        info = _Accounting()
+        if not self._handle or not self._k32.QueryInformationJobObject(
+                self._handle, _BASIC_ACCOUNTING_INFORMATION, ctypes.byref(info),
+                ctypes.sizeof(info), None):
+            raise OSError(ctypes.get_last_error(), "QueryInformationJobObject failed")
+        return info.ActiveProcesses
 
     def close(self):
         if self._handle:
@@ -692,16 +746,28 @@ def _spawn(argv, cwd, timeout):
             job.close()
 
 
+def _waitid_ok():
+    """True where a clean exit's leftovers can be ended safely: the leader can
+    be waited for without being reaped (Linux; not macOS, where CPython has
+    no os.waitid). ADR 0005."""
+    return not _WINDOWS and hasattr(os, "waitid") and hasattr(os, "WNOWAIT")
+
+
 def _run_in(job, argv, cwd, timeout, env):
+    drain = job is None and _waitid_ok()
     try:
         # surrogateescape: tool output carries paths, which must round-trip.
         # Not a `with` block: on a timeout the group is killed before any wait.
+        # The draining path reads binary pipes itself (see _drain_then_end_group).
+        text = {} if drain else {"text": True, "encoding": "utf-8", "errors": "surrogateescape"}
         proc = subprocess.Popen(  # pylint: disable=consider-using-with
             argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="surrogateescape",
-            stdin=subprocess.DEVNULL, env=env, **_group_flags())
+            stdin=subprocess.DEVNULL, env=env, **text, **_group_flags())
     except OSError as exc:
         raise CouldNotCheck(f"could not start {argv[0]}: {exc}") from exc
+    if drain:
+        stdout, stderr = _drain_then_end_group(proc, argv, timeout)
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
     if job is not None:
         try:
             job.adopt(proc)
@@ -722,18 +788,145 @@ def _run_in(job, argv, cwd, timeout, env):
                 pipe.close()
         raise CouldNotCheck(f"timed out after {timeout}s") from exc
     # A linter that exited cleanly may still have left children behind. On
-    # Windows the job ends them by handle. On POSIX its group is signalled
-    # only while the leader is unreaped (review round 9 FIX :727, review_run's
-    # guard): communicate() has reaped it here, so its group id may already
-    # belong to an unrelated process, and nothing is signalled.
+    # Windows the job ends them by handle. Here, on POSIX without os.waitid
+    # (macOS), communicate() has reaped the leader, so its group id may
+    # already belong to an unrelated process: nothing is signalled, and a
+    # clean exit's leftovers survive (ADR 0005; review round 9 FIX :727).
+    # A job that cannot be ended is could-not-check, as on POSIX (L-0605).
     if job is not None:
-        job.terminate()
-    elif proc.returncode is None:
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass  # the group is empty: nothing was left behind
+            job.terminate()
+        except OSError as exc:
+            raise CouldNotCheck(f"could not end what {argv[0]} left running: {exc}") from exc
     return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+
+def _read_chunk(stream):
+    """One read from a pipe the selector says is ready; a seam for tests."""
+    return os.read(stream.fileno(), 65536)
+
+
+def _decode(data):
+    """What text=True with utf-8/surrogateescape gave: universal newlines."""
+    return data.decode("utf-8", "surrogateescape").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _pump(selector, chunks, until):
+    """Read ready pipes into `chunks` until both reach EOF or `until`
+    (monotonic) passes; True at EOF on both. A read error unregisters that
+    pipe, then is raised."""
+    while selector.get_map() and time.monotonic() < until:
+        for key, _ in selector.select(timeout=max(0.0, until - time.monotonic())):
+            try:
+                data = _read_chunk(key.fileobj)
+            except OSError:
+                selector.unregister(key.fileobj)
+                raise
+            if data:
+                chunks[key.data].append(data)
+            else:
+                selector.unregister(key.fileobj)
+    return not selector.get_map()
+
+
+def _drain_then_end_group(proc, argv, timeout):
+    """(stdout, stderr) of a POSIX linter, its leftovers ended (ADR 0005).
+
+    Reads both pipes to EOF and waits for the leader to exit WITHOUT reaping
+    it (waitid WNOWAIT), all inside one `timeout` deadline. The leader is
+    then a zombie, so its pid, and the group id equal to it, cannot be
+    reused: killpg reaches only the group the linter left behind. Only
+    ProcessLookupError means nothing was left; any other refusal is
+    could-not-check. Every other exit (deadline, a read or selector error)
+    kills the group while the leader is still unreaped, drains and reaps
+    within ONE post-kill deadline of _REAP_SECONDS, and closes the selector
+    and both pipes whatever that cleanup meets; nothing here can block
+    without bound, even on a process that left the group holding a pipe."""
+    deadline = time.monotonic() + timeout
+    chunks = {"out": [], "err": []}
+    selector = None
+    failure = None
+    try:
+        try:
+            selector = selectors.DefaultSelector()
+            selector.register(proc.stdout, selectors.EVENT_READ, "out")
+            selector.register(proc.stderr, selectors.EVENT_READ, "err")
+        except (OSError, ValueError) as exc:
+            failure = CouldNotCheck(f"could not watch {argv[0]}: {exc}")
+        if failure is None:
+            try:
+                drained = _pump(selector, chunks, deadline)
+            except OSError as exc:
+                drained, failure = False, CouldNotCheck(
+                    f"could not read {argv[0]}'s output: {exc}")
+            if failure is None and drained:
+                try:
+                    exited = _await_exit(proc, deadline)
+                except OSError as exc:
+                    exited, failure = False, CouldNotCheck(f"could not watch {argv[0]}: {exc}")
+                if exited:
+                    return _end_group_then_reap(proc, argv, chunks)
+            if failure is None:
+                failure = CouldNotCheck(f"timed out after {timeout}s (a process that left the "
+                                        "linter's group may still be running)")
+        _cleanup(proc, selector, chunks)
+    finally:
+        _close(selector, proc)
+    raise failure
+
+
+def _await_exit(proc, until):
+    """True once the leader has exited, still unreaped; False at `until`."""
+    while True:
+        if os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG) is not None:
+            return True
+        if time.monotonic() >= until:
+            return False
+        time.sleep(0.01)
+
+
+def _end_group_then_reap(proc, argv, chunks):
+    # The leader is an unreaped zombie: its pid, and so this group id,
+    # cannot be reused.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        refused = None  # the group held only the zombie: nothing was left
+    except OSError as exc:
+        refused = exc
+    else:
+        refused = None
+    proc.wait()
+    if refused is not None:
+        raise CouldNotCheck(f"could not end what {argv[0]} left running: {refused}")
+    return _decode(b"".join(chunks["out"])), _decode(b"".join(chunks["err"]))
+
+
+def _cleanup(proc, selector, chunks):
+    """Kill while unreaped, then drain and reap within one post-kill deadline."""
+    _kill_tree(proc, None)
+    post = time.monotonic() + _REAP_SECONDS
+    if selector is not None:
+        while selector.get_map() and time.monotonic() < post:
+            try:
+                if _pump(selector, chunks, post):
+                    break
+            except OSError:
+                continue  # that pipe is unregistered; drain the other
+    try:
+        proc.wait(timeout=max(0.0, post - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _close(selector, proc):
+    if selector is not None:
+        selector.close()
+    for pipe in (proc.stdout, proc.stderr):
+        try:
+            pipe.close()
+        except OSError:
+            pass
 
 
 def _rows(proc, ok_codes, tool, extract):

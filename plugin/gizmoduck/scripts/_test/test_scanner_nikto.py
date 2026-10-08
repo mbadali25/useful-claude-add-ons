@@ -30,7 +30,7 @@ def test_is_available_true_via_nikto_pl_and_path_perl(monkeypatch, tmp_path):
     monkeypatch.setattr(
         base, "which",
         {"perl": "/usr/bin/perl"}.get)  # no native nikto, perl on PATH
-    monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
+    monkeypatch.setattr(nikto, "_nikto_pl_candidates", lambda: (str(nikto_pl),))
 
     assert nikto.is_available() is True
 
@@ -39,7 +39,7 @@ def test_is_available_false_when_no_perl_is_found(monkeypatch, tmp_path):
     nikto_pl = tmp_path / "nikto.pl"
     nikto_pl.write_text("# stand-in")
     monkeypatch.setattr(base, "which", lambda name: None)
-    monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
+    monkeypatch.setattr(nikto, "_nikto_pl_candidates", lambda: (str(nikto_pl),))
 
     assert nikto.is_available() is False
 
@@ -50,7 +50,7 @@ def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, 
     monkeypatch.setattr(
         base, "which",
         {"perl": "/usr/bin/perl"}.get)
-    monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
+    monkeypatch.setattr(nikto, "_nikto_pl_candidates", lambda: (str(nikto_pl),))
 
     captured = {}
 
@@ -75,7 +75,7 @@ def test_run_returns_an_error_when_no_native_binary_and_no_working_perl_route(mo
     # must decline with a ToolResult explaining why, and must never call
     # base.run_tool (nothing to invoke).
     monkeypatch.setattr(base, "which", lambda name: None)
-    monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", ())
+    monkeypatch.setattr(nikto, "_nikto_pl_candidates", lambda: ())
 
     called = []
     monkeypatch.setattr(base, "run_tool", lambda *a, **k: called.append(1))

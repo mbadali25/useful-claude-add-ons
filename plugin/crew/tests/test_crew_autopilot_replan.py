@@ -813,3 +813,15 @@ def test_replan_check_cli_prints_the_owed_line_verbatim(tmp_path):
     done = _cli(root, "replan-check", "--ticket", T)
 
     assert (done.returncode, done.stdout.rstrip("\n").endswith(f"first: {owed}")) == (1, True), done.stdout
+
+
+# --- L-0671: the sabotage entries that prove the policy -------------------------
+
+def test_replan_mutations_anchor_once_and_are_registered():
+    import sabotage  # pylint: disable=import-outside-toplevel
+    from sabotage_autopilot import REPLAN_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in REPLAN_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_autopilot_replan.py::"), label
+    assert [m[0] for m in REPLAN_MUTATIONS if m not in sabotage.MUTATIONS] == []

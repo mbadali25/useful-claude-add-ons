@@ -10,7 +10,7 @@ done
 echo "== QA reviewer =="
 if command -v codex >/dev/null 2>&1; then
   say "codex:" "found ($(codex --version 2>/dev/null | head -1))"
-  say "auth:" "run: codex exec --skip-git-repo-check 'reply OK'  -  must return without prompting"
+  say "auth:" "run: python3 \${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py codex --root .  -  one real call from the repo root, review's own flags"
 else
   say "codex:" "NOT FOUND -> /crew:review moves to the next provider in qa.order"
 fi

@@ -160,7 +160,8 @@ result back. A config change nobody verified is a claim, not a change.
    itself, never a copy), compares the moved bytes with what the preview
    read, and if the file changed since, moves it straight back, never over a
    file saved in between, and deletes nothing (exit 2: preview again).
-   Exit 1 means another writer interleaved with the move: nothing is lost.
+   Exit 1 means another writer interleaved, or an OS error came after the
+   move and the file is not back: the message names where it is. Nothing is lost.
    Read out every path it names (the backup, `.crew/config.json`, and a
    `*.moving` name holding the other writer's file) and stop; never delete
    one for the owner.

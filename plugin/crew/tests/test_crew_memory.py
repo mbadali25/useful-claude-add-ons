@@ -178,6 +178,16 @@ def test_pointer_grammar_refuses(host, capsys, body):
     assert path_of(out) is None
 
 
+def test_an_absolute_note_path_is_refused_as_absolute(host, capsys):
+    """L-0679: the leading-`/` rule names the path absolute. The empty first
+    segment would refuse it too, so only the reason shows the rule holds."""
+    host.vault("work", notes=("notes/fact.md",))
+    host.obsidian({"vaults": {"work": {"path": str(host.base / "vaults" / "work")}}})
+    mem = host.memory("vault: work | note: /notes/fact.md\n")
+    code, out = resolve(host, mem, capsys)
+    assert (code, state_of(out), "absolute" in reason_of(out)) == (1, "malformed", True), out
+
+
 @pytest.mark.parametrize("body,frontmatter", [
     ("A fact written out in prose.\nWith a second line.\n", FRONTMATTER),
     ("A fact in prose.\nvault: work | note: notes/fact.md\n", FRONTMATTER),

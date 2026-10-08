@@ -127,7 +127,9 @@ ps_check() {
   # this check pass while opening a single file. Found by sabotage: breaking an
   # untracked .ps1 left the check green. So: CI mode once for everything tracked,
   # then one invocation per untracked file (normally none).
-  "$PWSH" -NoProfile -File scripts/check-powershell.ps1 || rc=1
+  # Every pwsh starts through the launcher: a private startup-profile cache per run, so
+  # concurrent pwsh cannot corrupt a shared one (T-0506; L-0557 for the cause).
+  PWSH="$PWSH" sh scripts/pwsh-isolated.sh -NoProfile -File scripts/check-powershell.ps1 || rc=1
 
   untracked="$(git ls-files -o --exclude-standard '*.ps1' '*.psm1')"
   n=0
@@ -135,7 +137,7 @@ ps_check() {
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       n=$((n+1))
-      "$PWSH" -NoProfile -File scripts/check-powershell.ps1 -Path "$f" || rc=1
+      PWSH="$PWSH" sh scripts/pwsh-isolated.sh -NoProfile -File scripts/check-powershell.ps1 -Path "$f" || rc=1
     done <<EOF
 $untracked
 EOF
@@ -184,7 +186,7 @@ localgpu_cli_check() {
     if command -v cygpath >/dev/null 2>&1; then
       win_dir="$(cygpath -w "$1" 2>/dev/null)" || win_dir="$1"
     fi
-    TARGET_DIR="$win_dir" "$PWSH" -NoProfile -Command '
+    TARGET_DIR="$win_dir" PWSH="$PWSH" sh scripts/pwsh-isolated.sh -NoProfile -Command '
       $dirs = [Environment]::GetEnvironmentVariable("Path","User") -split ";" | Where-Object { $_ }
       if ($dirs -contains $env:TARGET_DIR) { exit 0 } else { exit 1 }
     ' >/dev/null 2>&1

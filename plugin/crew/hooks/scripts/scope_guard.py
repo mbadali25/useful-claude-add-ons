@@ -10,10 +10,15 @@ the payload in, so the two shells cannot disagree.
 1. `scope.mode` resolves to `off` (the default, and what a repo that never set
    the key gets) -> exit 0 before anything else is read.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
-   ledger, the active-ticket pointer, the ramp count -- or the scope base
-   `.crew/.scope-base` is REFUSED in every mode but `off`, whether or not a
-   ticket is active. Those files are what the guard and the Stop audit trust;
-   an Edit that could write them could approve its own plan.
+   ledger, the active-ticket pointer, the ramp count -- or crew bookkeeping
+   that is not write-allowed (`crew_ticket.is_crew_write_refused`: the scope
+   base `.crew/.scope-base`, the verify gate's record, marker, fingerprint,
+   timings and lock, `metrics.jsonl`) is REFUSED in every mode but `off`,
+   whether or not a ticket is active, whatever Touch says. Those files are
+   what the guard, the Stop audit and the review gate trust, and the
+   bookkeeping ones are left out of the review bundle and the audit (T-0068),
+   so a write to them would be both a forgery and invisible; an Edit that
+   could write them could approve its own plan or green its own gate.
 3. A BROKEN active-ticket pointer (`crew_ticket.resolve_active`: it names a
    ticket with no directory, is not an id, or does not parse) is refused
    under `block` -- never read as "no active ticket".
@@ -41,9 +46,19 @@ the payload in, so the two shells cannot disagree.
    carry a write anywhere else. A configured dir resolving to the repository
    root opens nothing. Config is already this guard's trust root --
    `scope.mode` lives there -- so a configured dir is not a new way round it.
-   Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the
-   rest of `.claude/`, not crew's policy files. Put them in Touch if the
-   ticket is meant to change them.
+5a. `crew_ticket.CREW_WRITE_ALLOWED_PATHS` -- only `.crew/metrics.md`, the
+   row `/crew:review` step 6 appends with Edit -- is writable with or without
+   an approval (T-0068): it is crew writing for itself, never a scope
+   change, and nothing reads it as policy. BOTH the real and the named path
+   must be on the list, whole segments from the root, so a link cannot carry
+   a write out of `.crew/`. Nothing crew reads as a trust input is on it:
+   `.crew/tfplan/`, `.crew/incident.json` and `.crew/.deploy-in-flight` are
+   judged against Touch like any file, and the gate's files are refused by
+   rule 2, which runs first.
+   Nothing else is exempt: not the rest of `.crew/` (`config.json`,
+   `verify.json`, the code map outside rule 6), not `TODO.md`, not the rest
+   of `.claude/`, not crew's policy files. Put them in Touch if the ticket is
+   meant to change them.
 
 ## Bash and PowerShell
 
@@ -62,6 +77,14 @@ and only as the whole command `python3 [-B] <path>/crew_autopilot.py approve
 and only while `crew_autopilot.approval_policy` says yes for that ticket in
 this worktree (which needs `scope.allowCliApproval: true`). Any other command
 naming it is refused; a policy that cannot be told refuses too.
+
+A SUBAGENT (the payload carries a non-empty `agent_type`; T-0029 -- a
+`/crew:autopilot wave` lane is one) is refused, besides, the never-list:
+`review_ledger.py --accept|--reject` -- and every abbreviation argparse would
+once have expanded to them, `--a` up to `--accept` and `--rej` up to
+`--reject` -- and `gh pr merge ... --admin`. Accepting or rejecting a review
+and an admin merge are the owner's, from the main session; with no
+`agent_type` (the main thread, the owner's path) nothing here changes.
 
 That is a
 textual check, not a shell parser: it stops drift and accidental bypass, and
@@ -120,6 +143,13 @@ _AUTOPILOT_APPROVE_RE = re.compile(r"crew_autopilot(?:\.py)?\b[^\n;&|]*\bapprove
 _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
+# T-0029: the never-list, refused only when the payload shows a subagent.
+_ACCEPT_RE = re.compile(r"review_ledger(?:\.py)?\b[^\n;&|]*--(?:a(?:c(?:c(?:e(?:pt?)?)?)?)?"
+                        r"|rej(?:e(?:ct?)?)?)(?![\w-])", re.IGNORECASE)
+_ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*--admin\b",
+                             re.IGNORECASE)
+LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
+                "main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
@@ -192,6 +222,8 @@ def classify(top, common, ticket, touch, approval, target, base):
         return True, "outside the worktree"
     if all(os.path.normcase(r).startswith(os.path.normcase(own)) for r in checks):
         return True, "the ticket's own files"
+    if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):
+        return True, "crew bookkeeping"
     if _refresh_artifact(top, real_rel, checks, approval):
         return True, "a refresh artifact of an approved ticket"
     if approval["status"] != "approved":
@@ -221,7 +253,8 @@ def _refresh_artifact(top, real_rel, checks, approval):
 
 
 def protected(top, state, target, base):
-    """True when `target` names crew's approval/ledger state."""
+    """True when `target` names crew's approval/ledger state, or bookkeeping
+    a Write/Edit may never touch (module docstring, rule 2)."""
     absolute = target if os.path.isabs(target) else os.path.join(base, target)
     real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
     named = os.path.normpath(absolute)
@@ -230,6 +263,8 @@ def protected(top, state, target, base):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
+            return True
+        if rel is not None and crew_ticket.is_crew_write_refused(rel):
             return True
     return False
 
@@ -262,26 +297,30 @@ def _joined(command):
     return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
 
 
-def shell_refusal(command, common, top=None):
+def shell_refusal(command, common, top=None, agent_type=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
     command that names crew's state beside a writing word is refused too.
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
-    approve`; without it that command is refused. Every reading `_joined`
-    gives is judged; the first refusal wins."""
+    approve`; without it that command is refused. `agent_type`, when a
+    non-empty string, is a subagent: the never-list is refused too. Every
+    reading `_joined` gives is judged; the first refusal wins."""
     if not isinstance(command, str):
         return None
     for reading in _joined(command):
-        reason = _reading_refusal(reading, command, common, top)
+        reason = _reading_refusal(reading, command, common, top, agent_type)
         if reason:
             return reason
     return None
 
 
-def _reading_refusal(command, written, common, top):
+def _reading_refusal(command, written, common, top, agent_type=None):
     """Why one reading (`_joined`) of the shell command `written` is refused,
     or None. The autopilot bare-command rule judges `written` as written, so
     a line continuation never makes an approve bare."""
+    if isinstance(agent_type, str) and agent_type.strip() and (
+            _ACCEPT_RE.search(command) or _ADMIN_MERGE_RE.search(command)):
+        return LANE_REFUSAL
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
     if _AUTOPILOT_APPROVE_RE.search(command):
@@ -351,9 +390,13 @@ def decide(data):
     if tool in SHELLS:
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
-        reason = shell_refusal(command, common, top)
+        reason = shell_refusal(command, common, top, data.get("agent_type"))
         if reason is None:
             return 0
+        if reason == LANE_REFUSAL:
+            _log(top, configured, "block", None, "-", "lane-never-list")
+            return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
+                          "  Write it as a question for the owner and stop the lane."])
         _log(top, configured, "block", None, "-", f"{tool}: {reason}")
         return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
                       "  Approval is recorded when the USER types `/crew:approve <id>`;",
@@ -364,8 +407,8 @@ def decide(data):
     for path in paths:
         if protected(top, state, path, base):
             _log(top, configured, "block", None, path, "crew approval/ledger state")
-            return _deny([f"SCOPE GUARD: {path} is crew's approval/ledger state and is never "
-                          "written by Write/Edit.",
+            return _deny([f"SCOPE GUARD: {path} is crew's approval/ledger state (or a record "
+                          "it trusts) and is never written by Write/Edit.",
                           "  Approval is recorded when the USER types `/crew:approve <id>`."])
     ticket, source, broken = crew_ticket.resolve_active(root)
     if broken:

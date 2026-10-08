@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.1.8<!-- claim: plugin-version:crew --> |
+| **Version** | 1.1.19<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 36 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -81,7 +81,12 @@ repository containing docs, rather than skipping them. Before any build,
 `crew_graph_ignore.py --check` confirms graphify will read no
 secrets-denylisted file: `.gitignore` does not stop graphify reading a tracked
 file, so the root `.graphifyignore` must exclude every one, and `--write` adds
-what is missing. Exporting the graph
+what is missing. `/crew:graph` is the one command for it (L-0667): `--status`
+prints one read-only line (fresh or not, the tracked pair, the denylist, the
+line a refresh runs), and `--refresh` runs that check, then the repo's
+sanctioned build (`graphify update .` where `GRAPH_REPORT.md` is tracked,
+else the code-only build), then proves the report's `## Summary` counts match
+`graph.json`'s `nodes` and `links`; it never commits. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
 the user in `.crew/config.json`; no crew command ever sets that flag itself.
 
@@ -126,7 +131,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 35, all explicit
+### Commands — 37, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -144,6 +149,7 @@ to CI or to branch protection.
 | `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
 | `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
 | `/crew:handoff [--clear]` | Write the handoff note for the next session |
+| `/crew:help [command \| question \| commands \| ticket id]` | What to do next, and what any crew command is for - with no argument, where you are, the one command to type next and 2-3 related ones in at most 8 lines; read-only, it never runs what it names |
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
@@ -153,7 +159,7 @@ to CI or to branch protection.
 | `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
 | `/crew:plan <ticket id> [--approve]` | Turn an approved spec into a step-by-step plan, then get it approved |
 | `/crew:promote <development \| qa \| production> [--dry-run \| --status]` | Promote a build to the next environment, with the full post-deploy proof |
-| `/crew:reference [--api \| --features \| --audit \| <area>]` | Generate the API and feature reference from the code, with anchors |
+| `/crew:reference [--api \| --features \| --integrations \| --audit \| <area>]` | Generate the API, feature and integrations reference from the code, with anchors |
 | `/crew:review [ticket id]` | Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean) |
 | `/crew:runbook <name \| --from-ticket T-#### \| --audit \| --verify <name>>` | Write, update, or audit operational runbooks |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
@@ -202,7 +208,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
 | `crew-best-practices` | Community best practices for Claude Code, audited against crew — what crew already does, the three architectural rules it departs from and why (ADR 0003), and the five contradictions the source records about itself |
-| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
+| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API, feature and integrations reference under `docs/reference/` |
 | `crew-lint` | Linters and formatters for PowerShell, PHP, Python, Terraform, and JavaScript, wired into the gate |
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |
 | `crew-runbooks` | Writing, indexing, and maintaining operational runbooks |
@@ -241,7 +247,7 @@ Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a
 | `.crew/verify.json` | phase 5 | Which checks a changed path requires, which specialist reviews it, and the promotion sequence per environment |
 | `.crew/codemap/` | phase 4 | One note per subsystem, every claim anchored to `file:line` and a sha |
 | `_verify/` | phase 3 | `smoke.sh`, `run-all.sh`, `cases/`, and a `README.md` recording what each check covers and when it last proved it could fail |
-| `docs/reference/` | `/crew:reference` | Every endpoint and every headless capability, anchored |
+| `docs/reference/` | `/crew:reference` | Every endpoint, every headless capability and every outbound call (`integrations.md`, linted, judged by the refresh check), anchored |
 | `.work/` | as work happens | Tickets, findings, the handoff note, and `PROMOTIONS.md` |
 | `CLAUDE.md` | phase 1 | Created if absent; if present, missing sections are **appended, never overwritten** |
 
@@ -453,7 +459,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.9<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.11<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |

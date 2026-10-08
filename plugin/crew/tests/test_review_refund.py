@@ -212,10 +212,13 @@ def _run(repo, tmp_path, mode, *extra):
 
 
 def _assert_refunded_tool_failure(repo, result, review):
+    """Round 1 is refunded. A timeout ends there; any other tool failure is
+    retried once (L-0514), and the retry fails the same way and is refunded too."""
     status = rl.status(str(repo), "T1")
     assert result.returncode == 3, result.stdout + result.stderr
     assert (review["failure_class"], review["refunded"]) == ("tool", True)
-    assert (status["rounds_left"], status["rounds_refunded"]) == (2, 1)
+    assert (_rows(repo)[0]["failure_class"], _rows(repo)[0]["refunded"]) == ("tool", True)
+    assert (status["rounds_left"], status["rounds_refunded"]) == (2, len(_rows(repo)))
     assert any(ln.startswith("review: round 1 was a tool failure") and "refunded" in ln
                for ln in result.stdout.splitlines()), result.stdout
 
@@ -264,7 +267,7 @@ def test_clean_and_findings_rounds_carry_no_failure_class(repo, tmp_path, mode):
     assert (review["failure_class"], review["refunded"]) == (None, False)
 
 
-def _finish_claude(repo, tmp_path, body, before=None):
+def _finish_claude(repo, tmp_path, body, before=None, exit_code="0"):
     """Reserve a claude round and record `body` (after a READ line per part)
     through the subagent path, as /crew:review step 2c does."""
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
@@ -281,7 +284,7 @@ def _finish_claude(repo, tmp_path, body, before=None):
     subprocess.run(common + ["--reserve-only"], capture_output=True,
                    stdin=subprocess.DEVNULL, check=True, timeout=120)
     result = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
-                                      "--exit-code", "0", "--work-dir", str(work)],
+                                      "--exit-code", exit_code, "--work-dir", str(work)],
                             capture_output=True, text=True, stdin=subprocess.DEVNULL,
                             check=False, timeout=120)
     return result, json.loads((work / "review.json").read_text(encoding="utf-8"))
@@ -362,21 +365,294 @@ def test_finish_records_no_ignored_lines_on_a_strict_round(repo, tmp_path):
 
 
 def test_refund_limit_holds_through_review_run(repo, tmp_path):
+    """Two invocations: the first's round and its retry take both refunds, so
+    the second's round is NOT refunded, counts, and is not retried."""
     outs = []
-    for n in range(3):
+    for n in range(2):
         result, _ = _run(repo, tmp_path / str(n), "turnfail")
         outs.append(result.stdout)
 
-    assert "NOT refunded" in outs[2], outs[2]
-    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+    assert "NOT refunded" in outs[1], outs[1]
+    assert (len(_rows(repo)), rl.status(str(repo), "T1")["rounds_left"]) == (3, 1)
 
 
 def test_summary_line_after_refunds_is_never_over_budget(repo, tmp_path):
-    for n in range(2):
-        _run(repo, tmp_path / str(n), "turnfail")
+    _run(repo, tmp_path / "0", "turnfail")  # round 1 and its retry, both refunded
 
     result, _ = _run(repo, tmp_path / "2", "findings")
 
     first = result.stdout.splitlines()[0]
     assert (first.startswith("review: FINDINGS round 3, 1 of 2 budget rounds used, "
                              "2 refunded ("), "3/2" in result.stdout) == (True, False), first
+
+
+# --- L-0514: a refunded tool round is retried once, in-process -----------------------
+
+def _retry_lines(result):
+    return [ln for ln in result.stdout.splitlines() if ln.startswith("review: retry:")]
+
+
+def _calls(tmp_path):
+    state = tmp_path / "bin" / "calls.txt"
+    return int(state.read_text(encoding="utf-8")) if state.exists() else 0
+
+
+def _not_retried(repo, tmp_path, result, rounds, why):
+    """Nothing reserved after the last round; one not-retried line naming
+    `why`, then the options line; exit 3."""
+    lines = _retry_lines(result)
+    refusals = [ln for ln in lines if ln.startswith("review: retry: not retried - ")]
+    assert (result.returncode, len(_rows(repo)), len(refusals),
+            lines and lines[-1].startswith("review: retry: not retried - ")
+            and why in lines[-1],
+            "review: options: " in result.stdout) == (3, rounds, 1, True, True), (
+        result.stdout + result.stderr)
+    return lines
+
+
+def test_refunded_tool_round_retries_once_and_clean_wins(repo, tmp_path):
+    result, review = _run(repo, tmp_path, "turnfail,clean")
+
+    rows = _rows(repo)
+    assert (result.returncode, [(r["verdict"], r["refunded"]) for r in rows],
+            _retry_lines(result), review["round"], review["verdict"], _calls(tmp_path)) == (
+        0, [("INCOMPLETE", True), ("CLEAN", False)],
+        ["review: retry: round 1 was a tool failure; retrying once"], 2, "CLEAN", 2), (
+        result.stdout + result.stderr)
+    first = json.loads((tmp_path / "work" / "review.json.round1").read_text(encoding="utf-8"))
+    assert review["prereview"] == dict(first["prereview"], round=2)
+
+
+def test_retry_limit_is_one_per_invocation(repo, tmp_path):
+    result, _ = _run(repo, tmp_path, "turnfail,turnfail")
+
+    lines = _not_retried(repo, tmp_path, result, 2, "retry limit 1 per invocation")
+    assert (lines[0], _calls(tmp_path)) == (
+        "review: retry: round 1 was a tool failure; retrying once", 2)
+
+
+def test_no_retry_for_reviewer_class(repo, tmp_path):
+    result, _ = _run(repo, tmp_path, "prose,clean")
+
+    _not_retried(repo, tmp_path, result, 1, "round 1 is a reviewer INCOMPLETE")
+
+
+def test_no_retry_for_tree_class(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    review_fixtures.bundle(repo, scratch)
+    first = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"][0]
+    with open(first["path"], "ab") as fh:
+        fh.write(b"x")
+    fakes = review_fixtures.fake_reviewer_bin(tmp_path / "bin")
+
+    result = review_fixtures.run_review(repo, scratch, fakes, "clean", "--work-dir", str(work))
+
+    _not_retried(repo, tmp_path, result, 1, "round 1 is a tree INCOMPLETE")
+
+
+def test_no_retry_when_refund_refused(repo, tmp_path):
+    for _ in range(rl.REFUND_LIMIT):
+        _round(repo, "T1", "INCOMPLETE", "tool")
+
+    result, _ = _run(repo, tmp_path, "turnfail,clean")
+
+    _not_retried(repo, tmp_path, result, rl.REFUND_LIMIT + 1,
+                 f"refund was refused (refund limit {rl.REFUND_LIMIT} per plan reached)")
+    assert _calls(tmp_path) == 1
+
+
+def test_no_retry_on_usage_limit(repo, tmp_path):
+    result, _ = _run(repo, tmp_path, "limit,clean")
+
+    _not_retried(repo, tmp_path, result, 1, "a usage limit is not retried")
+    assert "review: codex usage limit in round 1: " in result.stdout, result.stdout
+
+
+def test_no_retry_on_timeout(repo, tmp_path):
+    result, _ = _run(repo, tmp_path, "hang", "--timeout", "2")
+
+    _not_retried(repo, tmp_path, result, 1, "round 1 timed out")
+
+
+@pytest.mark.parametrize("mode, code", [("clean", 0), ("findings", 1)])
+def test_clean_and_findings_rounds_are_not_retried(repo, tmp_path, mode, code):
+    result, _ = _run(repo, tmp_path, mode)
+
+    assert (result.returncode, len(_rows(repo)), _retry_lines(result),
+            "review: options:" in result.stdout) == (code, 1, [], False), result.stdout
+
+
+def test_failed_round_files_are_kept(repo, tmp_path):
+    result, review = _run(repo, tmp_path, "turnfail,clean")
+
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    kept = json.loads((work / "review.json.round1").read_text(encoding="utf-8"))
+    assert (result.returncode, review["round"], kept["round"], kept["failure_class"],
+            "turn.failed" in (scratch / "codex-events.jsonl.round1").read_text(encoding="utf-8"),
+            "turn.failed" in (scratch / "codex-events.jsonl").read_text(encoding="utf-8"),
+            (scratch / "out.txt.round1").exists(), (scratch / "stderr.txt.round1").exists()) == (
+        0, 2, 1, "tool", True, False, True, True), result.stdout + result.stderr
+
+
+def test_claude_fallback_never_retries_in_process(repo, tmp_path):
+    """Step 2c records a round in two calls; a subagent that failed (non-zero
+    exit) is a refunded tool round, and the second call still ends there."""
+    result, review = _finish_claude(repo, tmp_path, "", exit_code="1")
+
+    assert (result.returncode, review["failure_class"], review["refunded"], len(_rows(repo)),
+            _retry_lines(result)) == (3, "tool", True, 1, []), result.stdout + result.stderr
+
+
+def _in_process(repo, tmp_path, monkeypatch, mode, sleep):
+    """review_run.main in this process, so its sleep and reserve can be seen."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    review_fixtures.bundle(repo, scratch)
+    fakes = review_fixtures.fake_reviewer_bin(tmp_path / "bin")
+    for key, value in review_fixtures.env_with_path(
+            fakes, FAKE_REVIEWER_MODE=mode,
+            FAKE_REVIEWER_STATE=str(fakes / "calls.txt")).items():
+        monkeypatch.setenv(key, value)
+    events = []
+    real_reserve = review_run.review_ledger.reserve
+
+    def reserve(*args, **kwargs):
+        events.append("reserve")
+        return real_reserve(*args, **kwargs)
+
+    real_sleep = review_run.time.sleep
+
+    def fake_sleep(seconds):
+        # `time` is one module: only the backoff is the retry's; a poll loop's
+        # short waits (the standards gate's tools, asked again) really wait.
+        if seconds != review_run.RETRY_BACKOFF_SECONDS:
+            real_sleep(seconds)
+            return
+        events.append(("sleep", seconds))
+        sleep(scratch)
+
+    monkeypatch.setattr(review_run.review_ledger, "reserve", reserve)
+    monkeypatch.setattr(review_run.time, "sleep", fake_sleep)
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "codex", "--work-dir", str(work)])
+    return code, events
+
+
+def test_backoff_precedes_the_retry_reservation(repo, tmp_path, monkeypatch, capsys):
+    import review_run  # pylint: disable=import-outside-toplevel
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean", lambda _: None)
+
+    assert (code, events) == (0, ["reserve", ("sleep", review_run.RETRY_BACKOFF_SECONDS),
+                                  "reserve"]), capsys.readouterr()
+
+
+def test_no_retry_when_tree_changed(repo, tmp_path, monkeypatch, capsys):
+    def damage(scratch):
+        part = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"][0]
+        with open(part["path"], "ab") as fh:
+            fh.write(b"x")
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean", damage)
+
+    out = capsys.readouterr().out
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the tree changed: " in out,
+            "review: options: " in out) == (3, 1, 1, True, True), out
+
+
+def test_no_retry_when_the_gate_changed(repo, tmp_path, monkeypatch, capsys):
+    """`preflight` is asked again after the backoff: a gate that no longer
+    accepts the tree stops the retry before anything is reserved."""
+    import review_gate  # pylint: disable=import-outside-toplevel
+    real = review_gate.accepted_state
+    moved = []
+    monkeypatch.setattr(review_gate, "accepted_state", lambda root: (
+        (review_gate.UNVERIFIED, "the tree moved") if moved else real(root)))
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: moved.append(True))
+
+    captured = capsys.readouterr()
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the gate or the review receipt changed" in captured.out,
+            "gate UNVERIFIED: the tree moved" in captured.err) == (3, 1, 1, True, True), (
+        captured.out + captured.err)
+
+
+def test_no_retry_when_the_self_check_went_stale(repo, tmp_path, monkeypatch, capsys):
+    """Group review of #540: the standards self-check is asked again after
+    the backoff; one that went stale (it lives under .work/, outside the
+    bundle and the gate) stops the retry before anything is reserved."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    real = review_run.crew_standards.review_gate
+    moved = []
+    monkeypatch.setattr(review_run.crew_standards, "review_gate", lambda *a: (
+        (["the self-check is stale"], None) if moved else real(*a)))
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: moved.append(True))
+
+    captured = capsys.readouterr()
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the standards self-check no longer passes"
+            in captured.out,
+            "self-check: the self-check is stale" in captured.err) == (3, 1, 1, True, True), (
+        captured.out + captured.err)
+
+
+def test_no_retry_when_a_source_file_changed(repo, tmp_path, monkeypatch, capsys):
+    """L-0514 review: the saved parts still match their manifest when a SOURCE
+    file moves during the backoff; the bundle is rebuilt from the tree, so the
+    retry never reviews the old patch."""
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: (repo / "change.txt").write_text(
+                                   "changed during the backoff\n", encoding="utf-8"))
+
+    out = capsys.readouterr().out
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the tree changed: it now builds bundle" in out) == (
+        3, 1, 1, True), out
+
+
+def test_a_retry_whose_preflight_read_a_spent_budget_never_reserves_gated(
+        repo, tmp_path, monkeypatch, capsys):
+    """H1 group review r4 (must-block): the retry's preflight reads the
+    budget as spent, so it skips the merge train; the ledger, read again
+    under the reservation's lock, is not spent. The retry must reserve on
+    preflight's decision (ungated), so the lock refuses it (GATE_CHANGED) and
+    no second round starts without the train."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    spent = []
+    real = review_run._budget_spent  # pylint: disable=protected-access
+    monkeypatch.setattr(review_run, "_budget_spent", lambda args: bool(spent) or real(args))
+
+    code, events = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean",
+                               lambda _: spent.append(True))
+
+    captured = capsys.readouterr()
+    assert (code, events.count("reserve"), len(_rows(repo)),
+            "review: retry: not retried - the ledger refused the retry's reservation"
+            in captured.out, rl.GATE_CHANGED in captured.err) == (3, 2, 1, True, True), (
+        captured.out + captured.err)
+
+
+def test_a_refused_retry_keeps_review_json_canonical(repo, tmp_path, monkeypatch, capsys):
+    """L-0514 review: the failed round's review.json is moved aside only once
+    the retry holds a round; a refused reservation leaves it in place."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    real = review_run.review_ledger.reserve
+    calls = []
+
+    def refuse_the_second(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs) if len(calls) == 1 else (False, None, "refused")
+
+    monkeypatch.setattr(review_run.review_ledger, "reserve", refuse_the_second)
+    code, _ = _in_process(repo, tmp_path, monkeypatch, "turnfail,clean", lambda _: None)
+
+    out = capsys.readouterr().out
+    review = json.loads((tmp_path / "work" / "review.json").read_text(encoding="utf-8"))
+    assert (code, review["round"], (tmp_path / "work" / "review.json.round1").exists(),
+            "the ledger refused the retry's reservation" in out) == (3, 1, False, True), out

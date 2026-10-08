@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>149 keys</strong>: 87 settable in the machine-global file, 62 repo-only.</p>
+<p><strong>152 keys</strong>: 88 settable in the machine-global file, 64 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -660,6 +660,14 @@ the plugin.</p>
 <td>positive integer (coerced in <code>plugin/crew/hooks/scripts/crew_recall.py</code>)</td>
 <td>1.0.25</td>
 <td>Recall output budget; a non-positive or non-integer value reads as 800.</td>
+</tr>
+<tr>
+<td><code>memory.recall.projects</code></td>
+<td>repo</td>
+<td><code>[]</code></td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_recall.py</code> (expects list of project names)</td>
+<td>1.1.11</td>
+<td>Project names sent to vault recall as <code>--project</code> so this repo's notes rank first; empty sends the main checkout's directory name.</td>
 </tr>
 </tbody>
 </table>
@@ -1377,6 +1385,14 @@ the plugin.</p>
 <td>Destructive SQL.</td>
 </tr>
 <tr>
+<td><code>guards.deployWorkflow</code></td>
+<td>both, ratchet</td>
+<td><code>"block"</code></td>
+<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
+<td>1.1.16</td>
+<td>A <code>gh workflow run</code> or <code>gh api .../dispatches</code> of a workflow <code>environments.workflows</code> lists.</td>
+</tr>
+<tr>
 <td><code>guards.prodDatabase</code></td>
 <td>both, ratchet</td>
 <td><code>"none"</code></td>
@@ -1508,6 +1524,14 @@ the plugin.</p>
 <td><code>false</code> | <code>true</code> (ratchet: narrower layer wins; listed narrowest first)</td>
 <td>1.0.37</td>
 <td>Whether production terraform may run unattended; <code>true</code> only when both layers say so.</td>
+</tr>
+<tr>
+<td><code>environments.workflows</code></td>
+<td>repo</td>
+<td><code>{}</code></td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_config.py</code> (expects object of glob to string)</td>
+<td>1.1.16</td>
+<td>Deploy workflow globs, each mapped to its environment or <code>input:&lt;name&gt;</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -1819,7 +1843,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>profile name, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The AWS profile an unattended run exports credentials from (<code>aws configure export-credentials</code>); it must yield temporary credentials. Machine file only.</td>
 </tr>
 <tr>
@@ -1827,7 +1851,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>ARN prefix ending in <code>/</code>, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The assumed-role ARN prefix STS must report for that profile, ending in <code>/</code>; null refuses every launch. Machine file only.</td>
 </tr>
 <tr>
@@ -1835,7 +1859,7 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>null</code></td>
 <td>region, or null (coerced in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>The AWS region the unattended run gets; null is <code>us-east-1</code>. Machine file only.</td>
 </tr>
 <tr>
@@ -1843,44 +1867,13 @@ the plugin.</p>
 <td>machine-only</td>
 <td><code>{}</code></td>
 <td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
-<td>1.1.8</td>
+<td>1.1.10</td>
 <td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
 </tr>
 </tbody>
 </table>
 <h2 id="coming-not-in-code-yet">Coming (Not in Code Yet)</h2>
 <p>Keys from approved tickets that have not landed. Each moves into the table above when its ticket lands, because it is then in the code; a test fails until it does (<code>test_no_coming_key_is_in_code</code>).</p>
-<h3 id="t-0009">T-0009</h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th>Change</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>guards.deployWorkflow</code></td>
-<td>new key</td>
-<td>both, ratchet</td>
-<td>block</td>
-<td></td>
-<td>Whether crew may dispatch a deploy workflow.</td>
-</tr>
-<tr>
-<td><code>environments.workflows</code></td>
-<td>new key</td>
-<td>repo</td>
-<td>{}</td>
-<td></td>
-<td>Deploy workflows per environment.</td>
-</tr>
-</tbody>
-</table>
 <h3 id="t-0012">T-0012</h3>
 <table>
 <thead>

@@ -649,6 +649,15 @@ def test_lane_init_refuses_main_checkout(tmp_path):
         False, True, "pending")
 
 
+def test_the_init_refusal_names_the_main_checkout(tmp_path):
+    """H2a: the refusal itself, before lane_init acts on it -- with both location
+    checks gone, lane_init would go on to copy the ticket folder onto itself."""
+    root = _started(tmp_path)
+    top = crew_ticket.toplevel(str(root))
+
+    assert "main checkout" in (crew_wave._init_refusal(top, top, "s", "T-1") or "")  # pylint: disable=protected-access
+
+
 def test_lane_init_refuses_worktree_outside_claude_worktrees(tmp_path):
     root = _started(tmp_path)
     elsewhere = _isolated(root, "x", where=tmp_path / "elsewhere")

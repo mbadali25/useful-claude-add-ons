@@ -116,6 +116,7 @@
     "mergeGate": "block",
     "cloudDestructive": "block",
     "sqlDestructive": "block",
+    "deployWorkflow": "block",
     "prodDatabase": "none",
     "prodServer": "none",
     "roleWrites": "off",

@@ -6,7 +6,11 @@ retrieval (docs/review/04-redesign.md, "Memory and Obsidian"), so this module
 calls that plugin's read-only contract and nothing else:
 
     python3 <obsidian-vault root>/scripts/vault_ops.py recall \
-        --query <text> --vaults <a,b,c> --max-chars N --json
+        --query <text> --vaults <a,b,c> --max-chars N --json [--project=<a,b>]
+
+`--project` (L-0675) names the repo's project so that CLI ranks this repo's
+notes first; crew itself still ranks nothing inside a vault. A CLI that
+predates the option exits 2 on it, and crew asks once more without it.
 
 Four rules hold everywhere below, and each has a test:
 
@@ -25,7 +29,8 @@ Four rules hold everywhere below, and each has a test:
   second. With no list, vaults come from `~/.claude/obsidian/config.json`:
   role `primary` first, then `recall`; role `ignore` is never asked.
 
-Standard library only. Read-only: this module writes nothing anywhere.
+Standard library plus crew_common (git, resolved the way the user's shell
+resolves it). Read-only: this module writes nothing anywhere.
 """
 
 import glob
@@ -34,6 +39,9 @@ import os
 import re
 import subprocess
 import sys
+import time
+
+import crew_common
 
 DEFAULT_MAX_CHARS = 800
 CLI_TIMEOUT_SECONDS = 4
@@ -43,6 +51,9 @@ CLI_TIMEOUT_SECONDS = 4
 # a logged miss, not a crash.
 _CLI_RELATIVE = (("scripts", "vault_ops.py"), ("hooks", "scripts", "vault_ops.py"))
 _ROLE_ORDER = {"primary": 0, "recall": 1}
+# Less time than this left after a `--project` call exits 2: no retry.
+RETRY_MIN_SECONDS = 0.5
+_clock = time.monotonic
 
 
 def obsidian_config_path():
@@ -150,6 +161,48 @@ def max_chars(crew_cfg):
     return DEFAULT_MAX_CHARS
 
 
+def _recall_cfg(crew_cfg):
+    recall = (crew_cfg or {}).get("memory", {})
+    recall = recall.get("recall", {}) if isinstance(recall, dict) else {}
+    return recall if isinstance(recall, dict) else {}
+
+
+def _usable_project(name):
+    """A project name that cannot split or break the `--project=a,b` value."""
+    return bool(name) and "," not in name and not _CONTROL_RE.search(name)
+
+
+def _main_checkout_name(root):
+    """The main checkout's directory name: the parent of the git common dir,
+    so a linked worktree answers with the main checkout, not itself. None
+    when git cannot answer or the common dir is not a `.git` directory."""
+    common = crew_common.git_out(root, "rev-parse", "--git-common-dir")
+    if not common:
+        return None
+    common = os.path.normpath(common if os.path.isabs(common) else os.path.join(root, common))
+    if os.path.basename(common) != ".git":
+        return None
+    return os.path.basename(os.path.dirname(common)) or None
+
+
+def projects(crew_cfg, root):
+    """The project names to pass as `--project`. `memory.recall.projects`
+    when it is a non-empty list (usable names only, trimmed, de-duplicated;
+    an all-unusable list sends none); else the main checkout's directory
+    name; else nothing."""
+    listed = _recall_cfg(crew_cfg).get("projects")
+    if isinstance(listed, list) and listed:
+        # Control characters are checked before trimming: `"acme\n"` is
+        # dropped, not sent as `acme`.
+        names = [n.strip() for n in listed
+                 if isinstance(n, str) and not _CONTROL_RE.search(n)]
+        return list(dict.fromkeys(n for n in names if _usable_project(n)))
+    if not root:
+        return []
+    name = _main_checkout_name(root)
+    return [name] if name and _usable_project(name) else []
+
+
 def _items(parsed):
     if isinstance(parsed, list):
         return parsed
@@ -215,13 +268,18 @@ def label(snippet):
     return f"- [vault:{snippet['vault']}] {snippet['note']}: {snippet['text']}"
 
 
-def recall(query, crew_cfg, crew_root=None, budget=None, runner=None):
+def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None):
     """Ask the vault CLI. Returns a dict that never raises:
 
     {"status": "hit"|"miss"|"skipped", "reason": str, "snippets": [...],
-     "dropped": int, "vaults": [...]}
+     "dropped": int, "vaults": [...], "project": [...], "projectUsed": bool|None}
+
+    `project` is the list sent as `--project`; `projectUsed` is true when the
+    answer came from a call carrying it, false when it came from the retry
+    without it, None when no project was sent or no call answered with JSON.
     """
-    result = {"status": "skipped", "reason": "", "snippets": [], "dropped": 0, "vaults": []}
+    result = {"status": "skipped", "reason": "", "snippets": [], "dropped": 0, "vaults": [],
+              "project": [], "projectUsed": None}
     query = " ".join((query or "").split())
     if len(query) < 3:
         result["reason"] = "no-query"
@@ -243,17 +301,28 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None):
         return result
     argv = [sys.executable, cli, "recall", "--query", query[:500],
             "--vaults", ",".join(order), "--max-chars", str(limit), "--json"]
+    names = projects(crew_cfg, root)
+    result["project"] = names
     run = runner or subprocess.run
-    try:
-        done = run(argv, capture_output=True, text=True, encoding="utf-8",
-                   errors="replace", timeout=CLI_TIMEOUT_SECONDS, check=False,
-                   stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        result.update(status="miss", reason="cli-timeout")
-        return result
-    except (OSError, subprocess.SubprocessError):
-        result.update(status="miss", reason="cli-unrunnable")
-        return result
+    deadline = _clock() + CLI_TIMEOUT_SECONDS
+    tries = [argv + ["--project=" + ",".join(names)], argv] if names else [argv]
+    done, answered_by = None, 0
+    for answered_by, call in enumerate(tries):
+        left = CLI_TIMEOUT_SECONDS if answered_by == 0 else deadline - _clock()
+        try:
+            done = run(call, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=left, check=False,
+                       stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            result.update(status="miss", reason="cli-timeout")
+            return result
+        except (OSError, subprocess.SubprocessError):
+            result.update(status="miss", reason="cli-unrunnable")
+            return result
+        # Only a usage error (exit 2, an unknown option) earns the retry, and
+        # only while the one shared deadline leaves time for it.
+        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:
+            break
     if done.returncode != 0:
         result.update(status="miss", reason=f"cli-exit-{done.returncode}")
         return result
@@ -261,6 +330,9 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None):
     if snippets is None:
         result.update(status="miss", reason="cli-bad-json")
         return result
+    # Only a parsed answer counts as one: bad JSON leaves `projectUsed` None.
+    if names:
+        result["projectUsed"] = answered_by == 0
     result["dropped"] = dropped
     if not snippets:
         result.update(status="miss", reason="no-hits")

@@ -24,12 +24,12 @@ from test_crew_config import _TEMPLATE_PATH, _global
 # path the global filter drops. `autopilot.approval: self` (the incident) landed in
 # T-0010, so it is must-stay-quiet now, and so is `autopilot.ship` since T-0011 landed;
 # T-0029 (crew 1.1.6) landed `autopilot.maxLanes` and `autopilot.reviewPolicy`, so they are
-# must-stay-quiet too; `autopilot.maxTicketsPerRun` (L-0541) carries must-warn.
+# must-stay-quiet too, as is `autopilot.deploy: nonprod|all` since L-0649 (G4);
+# `autopilot.maxTicketsPerRun` (L-0541) carries must-warn.
 
 _INERT_CASES = [
     ("autopilot.maxTicketsPerRun", 50, "L-0541"),
-    ("autopilot.mode", "backlog", "L-0541"), ("autopilot.deploy", "nonprod", "T-0045"),
-    ("autopilot.deploy", "all", "T-0045")]
+    ("autopilot.mode", "backlog", "L-0541")]
 
 
 def _nested(dotted, value):
@@ -110,6 +110,8 @@ def test_platform_facts_are_quiet(tmp_path):
 
 @pytest.mark.parametrize("dotted,value", [
     ("autopilot.mode", "plan"), ("autopilot.mode", "off"), ("autopilot.deploy", "none"),
+    # L-0649 (G4): the deploy phase acts on both arming values.
+    ("autopilot.deploy", "nonprod"), ("autopilot.deploy", "all"),
     # T-0010 is on main: the incident's own key now does something.
     ("autopilot.approval", "self"), ("autopilot.questions", "self"), ("autopilot.maxPhases", 100),
     # T-0029's wave keys landed with crew_wave.py.

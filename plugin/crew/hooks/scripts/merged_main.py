@@ -64,9 +64,12 @@ def _is_ancestor(root, older, newer):
     return {0: True, 1: False}.get(done.returncode)
 
 
-def resolve(root, base_sha):
+def resolve(root, base_sha, head="HEAD"):
     """{"ref", "commit", "applies", "reason"} for the ticket that started at
-    `base_sha`. `commit` is None only on could-not-tell."""
+    `base_sha`. `commit` is None only on could-not-tell. `head` is the commit
+    whose merge of the integration ref is asked about: HEAD for a bundle of the
+    working state, a reviewed head when the delta gate rebuilds the bundle that
+    round read (L-0522)."""
     ref, problem = scope_base.base_branch(root)
     if problem:
         return {"ref": None, "commit": None, "applies": False,
@@ -81,14 +84,14 @@ def resolve(root, base_sha):
                 "reason": f"{UNKNOWN}: HEAD is detached, so which commits since the start "
                           f"are {ref}'s cannot be told; nothing dropped"}
     if branch in (ref, ref.removeprefix("origin/")):
-        return {"ref": ref, "commit": crew_common.git_out(root, "rev-parse", "HEAD"),
+        return {"ref": ref, "commit": crew_common.git_out(root, "rev-parse", head),
                 "applies": False,
                 "reason": f"HEAD is on {branch} itself; every commit since the start is "
                           "this ticket's; nothing dropped"}
-    commit = crew_common.git_out(root, "merge-base", "HEAD", ref)
+    commit = crew_common.git_out(root, "merge-base", head, ref)
     if not commit:
         return {"ref": ref, "commit": None, "applies": False,
-                "reason": f"{UNKNOWN}: git merge-base HEAD {ref} gave no answer; "
+                "reason": f"{UNKNOWN}: git merge-base {head} {ref} gave no answer; "
                           "nothing dropped"}
     before = _is_ancestor(root, commit, base_sha)
     if before is None:

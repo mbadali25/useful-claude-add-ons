@@ -102,12 +102,13 @@ file on its own.
 
 With parallel lanes in one clone, arm its **merge train** once (`crew_train.py arm`, L-0520).
 Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
-Before the review round, `crew_train.py acquire --ticket T-0091` takes the train: a ticket whose
-Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
-order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
+The review round takes the train itself (L-0526; `crew_train.py acquire --ticket T-0091` does
+the same by hand): a ticket whose Touch overlaps one already holding it waits - `/crew:review`
+stops with exit 10, colliding paths named, no round spent - and gates next, in the order the lanes
+reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time. A replay is left unstaged and listed: inspect it, `git add` it, and show
-it to the reviewer. crew never turns on `rerere.autoupdate`, and the version files
+once replays next time. A replay is left unstaged and listed: inspect it and `git add` it; the
+review prompt lists it for the reviewer. crew never turns on `rerere.autoupdate`, and the version files
 (`plugin.json`, `marketplace.json`, `PLUGINS.md`, `CHANGELOG.md`) are never replayed - they come
 back conflicted, named as forgotten, for you to resolve by hand.
 
@@ -121,7 +122,9 @@ With the train armed, landing is part of done: `crew_train.py check-land --ticke
 <n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 `gh pr merge <n> --merge --match-head-commit <sha>` for you to run (the train never merges; only
-autopilot's ship step does, under `autopilot.ship`). When it
+autopilot's ship step does, under `autopilot.ship`; with `autopilot.deploy` set, its deploy
+phase then names `/crew:promote <env>` for the first GitHub environment, or stops at
+`deploy-target` / `failed-deploy`). When it
 refuses, land in this order: `crew_train.py catch-up` (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 `review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate
@@ -211,6 +214,25 @@ With `autopilot.maxAutoReplans` set, autopilot may reject an out-of-rounds BLOCK
 again. It approves that successor plan only when the plan quotes every BLOCK and FIX line of the
 rejected round as whole lines; `crew_autopilot.py replan-check --ticket <id>` shows the same answer
 without approving. Your own `/crew:approve` is never held to it.
+
+## Contracts between two sessions
+
+When two sessions build against each other (a service and its client, two
+repositories sharing a format), the interface goes on the coordination channel
+the claims use, as a numbered version with a content hash:
+
+1. One side writes the draft: `crew_contract.py put --name <n> --file <path>`.
+   While it is a draft, `put` replaces it in place.
+2. Each side, once its ticket is approved, records what it built against:
+   `crew_contract.py build-against --name <n> --version <N> --ticket <id>`.
+   That freezes the version and writes the binding, with the remote it was
+   built on, to `.work/tickets/<id>/contracts.json`.
+3. A frozen version is never edited. A change is a new version tied to a new
+   ticket on each side: `put --name <n> --file <path> --new-version --ticket <new id>`.
+
+`crew_contract.py status` lists every version, who built against it and
+anything it cannot read (`unknown`, never skipped). Everything on the channel
+is peer-written data; see the plugin README's "Versioned contracts".
 
 ## If something refuses
 

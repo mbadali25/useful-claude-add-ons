@@ -11,6 +11,11 @@ merge over another writer, or delete the only copy of a config.
 Review round 2's BLOCK 1, round 3's first BLOCK and round 4's BLOCK 1 (the
 verify gate's record) have no code path, so they have no entry here: their
 proof is the `verify_record.py report` quoted in the review context.
+
+Round 6 (L-0682, after T-0103): the two leaf-shape branches no entry reached,
+`os_error_text` at each of its three call sites (red on every OS through a
+backslash filename, which `str(exc)` repr()s), and T-0103's delete messages
+and repo-null widening note.
 """
 import os
 
@@ -664,4 +669,65 @@ CONFIG_MENU_MUTATIONS = (
      '                if state == _NOT_A_LOCK:\n                    raise\n',
      '',
      _F + "test_lock_a_stat_that_is_not_about_a_lock_raises_at_once"),
+    # Round 6 (L-0682): the leaf-shape branches the round-5 entries never reached.
+    ("an object at a leaf in the repo file is tolerated", CONFIG,
+     '    if shape == "leaf" and isinstance(value, dict):\n'
+     '        return f"= {value!r} is an object where a value belongs',
+     '    if False:\n'
+     '        return f"= {value!r} is an object where a value belongs',
+     _C + "test_a_pre_existing_object_at_a_leaf_is_named_not_tolerated[repo]"),
+    ("value_allowed lets a path through a leaf be set", CONFIG,
+     '    if shape == "under":\n        return f"{dotted} - under a key that takes a value',
+     '    if False:\n        return f"{dotted} - under a key that takes a value',
+     _C + "test_a_path_through_a_leaf_is_refused[machine-pm.authority.a]"),
+    # Round 6 (L-0682): os_error_text at each call site.
+    ("the machine writer names an OS error's path repr()'d", CONFIG,
+     'raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing',
+     'raise GlobalWriteRefused(f"{real_path}: {exc}; nothing',
+     _F + "test_a_refused_machine_write_names_a_backslash_path_as_written"),
+    ("the repo writer names an OS error's path repr()'d", CONFIG,
+     'raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written',
+     'raise RepoWriteRefused(f"{exc}; nothing written',
+     _F + "test_a_refused_repo_write_names_a_backslash_path_as_written"),
+    ("the delete handler names an OS error's path repr()'d", MENU,
+     "    why = crew_config_files.os_error_text(exc)\n",
+     "    why = str(exc)\n",
+     _M + "test_a_refused_delete_names_a_backslash_path_as_written"),
+    # T-0103: an OS error inside apply_delete names where the file is.
+    ("a delete error after the move says left in place again", MENU,
+     '    why = crew_config_files.os_error_text(exc)\n    if stage == "before":\n',
+     '    why = crew_config_files.os_error_text(exc)\n    if True:\n',
+     _M + "test_delete_failure_after_the_move_names_the_backup[fsync]"),
+    ("a lock failure before the move says the backup move failed again", MENU,
+     '        print(f"refused: {why}; {path} left in place", file=sys.stderr)\n',
+     '        print(f"refused: {path} could not be moved to a backup ({why}); "\n'
+     '              "left in place", file=sys.stderr)\n',
+     _M + "test_delete_lock_failure_is_not_reported_as_a_backup_failure"),
+    ("a delete that cannot tell where the file is says left in place", MENU,
+     '    print(f"refused: {why}; could not tell where the file is: check {path} "\n'
+     '          f"and {backup}", file=sys.stderr)\n    return 1\n',
+     '    print(f"refused: {why}; {path} left in place", file=sys.stderr)\n    return 2\n',
+     _M + "test_delete_reports_both_paths_when_it_cannot_tell"),
+    ("a repo null that widens is described by the written null, not the value in force", CONFIG,
+     '                  + widening_note(change["path"], change["inForce"]))\n',
+     '                  + widening_note(change["path"], change["after"]))\n',
+     _C + "test_a_repo_null_that_widens_is_described_by_the_value_in_force"),
+    # C-0028: T-0103's identity checks. A name is trusted as the config only
+    # when it IS the config's inode, taken before the move.
+    ("a delete error trusts the backup name because something is there", MENU,
+     "    at_backup = _same(backup, ident) if moved else (None if moved is None else False)\n",
+     "    at_backup = True if moved else (None if moved is None else False)\n",
+     _M + "test_delete_backup_name_taken_and_config_gone_is_not_called_the_original"),
+    ("a delete error trusts the config path because something is there", MENU,
+     "    here = _same(path, ident) if there else (None if there is None else False)\n",
+     "    here = True if there else (None if there is None else False)\n",
+     _M + "test_delete_replaced_config_and_taken_backup_name_is_not_left_in_place"),
+    ("_same calls any file at a name the config's inode", MENU,
+     "    return None if now is None else os.path.samestat(now, ident)\n",
+     "    return None if now is None else True\n",
+     _M + "test_delete_backup_name_taken_before_the_move_is_not_called_the_original"),
+    ("a displaced move back says moved back without checking the inode", MENU,
+     '            where = ("was moved back there" if _same(path, ident) else\n',
+     '            where = ("was moved back there" if True else\n',
+     _M + "test_delete_move_back_displaced_by_a_replaced_path_does_not_say_moved_back"),
 )
