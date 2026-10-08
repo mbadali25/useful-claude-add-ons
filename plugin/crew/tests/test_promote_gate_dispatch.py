@@ -31,6 +31,10 @@ import context  # noqa: F401  pylint: disable=unused-import
 import test_promote_gate_effective_tree as tree
 from test_promote_gate_effective_tree import _git, run_gate
 
+# L-0703: review evidence is opted out here; test_promote_gate_review.py owns
+# the review rule.
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+
 
 
 @pytest.fixture(name="flavour", params=tree.FLAVOURS)
@@ -40,9 +44,9 @@ def _flavour(request):
 DEV = "gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)"
 PROD = "gh workflow run deploy.yml -f environment=production -f ref=$(git rev-parse HEAD)"
 MAP = {"environments": {
-    "dev": {"deploy": DEV, "rollback": "none", "rollbackReason": "fixture"},
+    "dev": {"deploy": DEV, "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
     "prod": {"deploy": PROD, "requires": ["dev"], "requireHuman": True,
-             "rollback": "none", "rollbackReason": "fixture"},
+             "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW},
 }}
 REST = ("gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches "
         "-f ref=main -f 'inputs[environment]={env}'")
@@ -146,7 +150,7 @@ def test_a_declared_workflow_fitting_no_environment_blocks(flavour, repo):
 def test_a_declared_workflow_fitting_two_environments_blocks(flavour, repo):
     doc = json.loads(json.dumps(MAP))
     doc["environments"]["qa"] = {"deploy": "gh workflow run deploy.yml",
-                                 "rollback": "none", "rollbackReason": "fixture"}
+                                 "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW}
     _write_map(repo, doc)
     code, err = gate(repo, REST.format(env="production"), flavour)
     assert code == 2, err

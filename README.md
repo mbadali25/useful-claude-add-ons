@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.7**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
-- **crew 1.2.0**: Sabotage coverage for the 1.2.0 groups (H2b harness lane). Crew's mutation suite now proves the guards every 1.2.0 group added: 511 entries, each red on its named test, cover the cloud guard's workflow-dispatch reader, GitHub deploys, cross-session contracts and messaging, autopilot's stops, fix phase, goals and sleep.
+- **crew 1.2.1**: Promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING. A deploy now needs an accepted review of the exact tree being deployed, and an upstream promotion row counts only when it records the full 40-character sha; an environment that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

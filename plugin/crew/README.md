@@ -1698,7 +1698,8 @@ that deletes, and any apply whose plan crew cannot read — including
 `terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.42:**
 under `terraformApply: allow` these now ask (and are denied unattended) where
 they used to run; approve one command with the marker the refusal names.
-`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`, nor
+its review-evidence check (L-0703).
 Details: [CONFIG.md §16](CONFIG.md), `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
@@ -3574,8 +3575,16 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 ```
 | when (UTC) | env | sha | smoke | regression | verify | by |
 |---|---|---|---|---|---|---|
-| 2026-08-23T14:02Z | qa | a1b2c3d | pass | pass | pass | mbadali |
+| 2026-08-23T14:02Z | qa | a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 | pass | pass | pass | mbadali |
 ```
+
+The sha is written **in full** (40 characters). Since L-0703 `requires`
+counts a row only when its sha cell is the deploying commit's full sha (case
+ignored): a short row such as `a1b2c3d` never counts, even for the right
+commit, and the block names it. A 7-character match admitted a PASS row for a
+different commit that shares the prefix. Breaking change: re-record an old
+short row (re-run the promotion, or rewrite the row with the full sha after
+checking it).
 
 `requires` reads this file. It is also the only honest answer to "is production running what qa signed off on" — compare the shas, not the branch names. A promotions log with no failures in it is a log nobody is writing to.
 
@@ -3594,6 +3603,33 @@ literal sha in the command must be its HEAD):
 - `rollback` is set: a runbook that exists and carries `last verified: YYYY-MM-DD` inside 90 days, or the literal `"none"` plus a `rollbackReason` - an absent key blocks the deploy
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - that tree is clean - you cannot deploy a sha plus uncommitted changes
+- **review evidence** (L-0703): an accepted review receipt covers the sha -
+  a ticket's review ledger (`<git-common-dir>/crew/review/`) whose receipt
+  stands on its latest round, whose reviewed head has **the same tree** as
+  the commit being deployed, and which `review_ledger.check_receipt`, run in
+  the deploying tree, confirms. `requireHuman` does not waive it: a human's
+  yes is a deploy go/no-go, not a code review. The only opt-out is
+  `"requireReview": false` plus a non-empty `reviewReason` string on the
+  environment; any other `requireReview` value blocks. Breaking change: a map
+  that deploys unreviewed builds (a development environment fed from feature
+  branches, say) must opt out explicitly.
+
+What the review evidence proves is narrow, on purpose. It proves the
+deployed commit's tracked tree is byte-identical to a tree a reviewer was
+shown under a receipt crew considers standing - not (a) that paths the review
+bundle left out were reviewed (paths identical to merged main, and the
+excluded `.work/`, `graphify-out/`, `.crew/metrics.md`), (b) that ignored
+build output a deploy script ships was reviewed, or (c) who wrote the ledger:
+it is local JSON, protected only by the scope guard's refusal to write under
+`<git-common-dir>/crew/`, not authenticated. A merge commit whose tree differs
+from the reviewed head (main moved, or a version bump landed after the review)
+is NOT covered: deploy the reviewed head, or review the merged tree.
+
+The review search is bounded: one 16s deadline for the whole gate, under the
+20s hook timeout, after which it is killed and the deploy blocks as
+could-not-tell. Without python the gate no longer stands down: with `jq` it
+blocks any command that and a string in the map contain one another, and
+without `jq` it blocks every command while a map exists.
 
 Both flavours (`.sh` and `.ps1`) choose the environment by one rule, on the
 working map and, when that is dirty, the committed map alike (L-1503):
@@ -3956,7 +3992,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha** is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha**, written in full, is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, an accepted review receipt covers this tree (or the environment opts out with `requireReview: false` + `reviewReason`), and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
