@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.7**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
-- **crew 1.2.1**: Promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING. A deploy now needs an accepted review of the exact tree being deployed, and an upstream promotion row counts only when it records the full 40-character sha; an environment that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
+- **crew 1.2.5**: A gone pin falls back across families, never to Claude by default. When a pinned reviewer model is gone, crew now falls back to a reviewer from another model family instead of always handing the review to Claude, and `/crew:status` shows how many review rounds were same-family.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

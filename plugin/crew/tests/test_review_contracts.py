@@ -300,7 +300,21 @@ def test_status_review_lines_come_from_the_ledger_summary(tmp_path, monkeypatch)
 
     lines = crew_status._review_lines(str(repo))  # pylint: disable=protected-access
 
-    assert lines == ["review   T1: SENTINEL, 7/9 rounds used, 5 refunded"]
+    assert lines[0] == "review   T1: SENTINEL, 7/9 rounds used, 5 refunded"
+
+
+def test_status_same_family_share_never_reads_absent_rounds_as_none(tmp_path, monkeypatch):
+    """L-0712: a summary whose rounds cannot be read is could-not-tell for the
+    share line, never `no completed rounds`."""
+    repo = init_repo(tmp_path / "r")
+    _record(repo, "T1", "FINDINGS")
+    monkeypatch.setattr(review_ledger, "summary", lambda data, state, ticket, path: {
+        "state": "SENTINEL", "rounds_spent": 7, "budget": 9, "rounds_refunded": 5})
+
+    lines = crew_status._review_lines(str(repo))  # pylint: disable=protected-access
+
+    assert lines[-1] == ("review   same-family: no completed rounds; "
+                         "could not tell: 1 ledger(s) unreadable")
 
 
 def test_resume_fingerprint_watches_the_paths_the_producers_write(tmp_path):

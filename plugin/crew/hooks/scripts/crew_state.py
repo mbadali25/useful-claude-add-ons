@@ -1499,7 +1499,45 @@ def _provider_block(block, provider):
     return dict_or_empty(block.get(provider)) if isinstance(provider, str) else {}
 
 
-def resolve_role(cfg, kind, role, author=None, available=None):
+# The provider that serves a model FAMILY natively (L-0712): a `gpt-6.1-sol`
+# fallback went to a Claude subagent on 2026-10-08. Copilot hosts several
+# families, so none names it; `gemini` has no provider here.
+FAMILY_PROVIDER = {"claude": "claude", "gpt": "codex", "kimi": "kimi"}
+
+
+def provider_for_model(model):
+    """The provider serving `model`'s family (`family(None, model)`), or None."""
+    if not isinstance(model, str) or not model.strip():
+        return None
+    return FAMILY_PROVIDER.get(family(None, model))
+
+
+def _fallback_candidates(kind, block, failed, fallback):
+    """`(provider, model, effort, via)` in walk order: the fallback on its own
+    provider, then the block's `order` (else `QA_DEFAULTS["order"]`) on each
+    provider's own model, minus the pair that failed and `auto`."""
+    out = []
+    owner = provider_for_model(fallback)
+    if owner is not None:
+        out.append((owner, fallback, None, "fallback"))
+    order = block.get("order")
+    if not isinstance(order, list) or not order:
+        order = QA_DEFAULTS["order"]
+    for name in order:
+        if not isinstance(name, str) or name == "auto":
+            continue
+        sub = _provider_block(block, name)
+        model = sub.get("model")
+        if (name, model) == failed:
+            continue
+        if kind == "qa" and name not in QA_PROVIDERS:
+            continue
+        out.append((name, model, sub.get("reasoningEffort"), "order"))
+    return out
+
+
+def resolve_role(cfg, kind, role, author=None, available=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments
+                 same_family_ok=False):
     """What actually backs one role, and why. Pure.
 
     `kind` is `"qa"` or `"dev"`; `role` is a name in that block's `roles`
@@ -1516,7 +1554,8 @@ def resolve_role(cfg, kind, role, author=None, available=None):
 
         {"kind", "role", "provider", "model", "reasoningEffort", "family",
          "source", "barred", "barredBy", "fellBack", "fallback",
-         "fallbackBarred", "announce"}
+         "fallbackBarred", "fallbackVia", "incomplete", "sameFamily",
+         "announce"}
 
     `source` is `"role-pin"` when the `roles` table decided it and
     `"block-default"` when the block's own `provider` did. Order of
@@ -1536,10 +1575,11 @@ def resolve_role(cfg, kind, role, author=None, available=None):
          write).
       1. **The family guard.** If the resolved family is the author's, the
          role is BARRED and the pin does not save it.
-      2. **The pin, and only then the fallback.** A pinned model that
-         `available` says is gone falls back to `fallback` -- and the fallback
-         is family-checked too, because a claude fallback on claude-authored
-         work is the same-family review the guard exists to prevent.
+      2. **The pin, and only then the fallback** (L-0712, `_fall_back`): the
+         `fallback` model on its family's provider (a `gpt-*` one on codex),
+         then `order`. An author-family candidate is skipped (`fallbackBarred`
+         for the fallback); none left is `incomplete` -- record INCOMPLETE and
+         refund -- unless `same_family_ok` runs it labelled `sameFamily`.
 
     `announce` is never empty when something happened. A review that quietly
     ran on the fallback is indistinguishable from one that ran on the pin, and
@@ -1577,6 +1617,9 @@ def resolve_role(cfg, kind, role, author=None, available=None):
         "fellBack": False,
         "fallback": fallback,
         "fallbackBarred": False,
+        "fallbackVia": None,
+        "incomplete": False,
+        "sameFamily": False,
         "announce": [],
     }
 
@@ -1616,23 +1659,65 @@ def resolve_role(cfg, kind, role, author=None, available=None):
 
     # 2. The pin, and only then the fallback.
     if model and available is not None and not available(provider, model):
-        out["announce"].append(
-            f"{kind}.{role}: FELL BACK -- pinned model `{model}` on "
-            f"{provider} is unavailable; running `{fallback}` instead"
-        )
-        out["fellBack"] = True
-        out["provider"] = "claude"
-        out["model"] = fallback
-        out["family"] = family("claude", fallback)
-        out["reasoningEffort"] = None
-        if out["family"] in authors:
-            out["fallbackBarred"] = True
-            out["announce"].append(
-                f"{kind}.{role}: the fallback `{fallback}` is also the "
-                f"`{out['family']}` family that wrote this diff -- this is "
-                "not an independent review"
-            )
+        _fall_back(out, kind, block, (provider, model), authors, available,
+                   same_family_ok)
     return out
+
+
+def _fall_back(out, kind, block, failed, authors, available, same_family_ok):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    """Step 2 of `resolve_role` once the pin is gone (L-0712). The fallback
+    model is the operator's answer, so it is not probed (as before L-0712);
+    each `order` step is crew's guess and must answer `available`."""
+    tag = f"{kind}.{out['role']}"
+    fallback = out["fallback"]
+    out["fellBack"] = True
+    out["announce"].append(
+        f"{tag}: FELL BACK -- pinned model `{failed[1]}` on {failed[0]} is "
+        f"unavailable; looking for a provider outside the {', '.join(sorted(authors)) or 'no known'} "
+        f"author family, starting with the fallback `{fallback}`")
+    owner = provider_for_model(fallback)
+    if owner is None:
+        out["announce"].append(
+            f"{tag}: no provider serves the fallback `{fallback}`'s family; "
+            f"walking {kind}.order")
+    for provider, model, effort, via in _fallback_candidates(
+            kind, block, failed, fallback):
+        fam = family(provider, model)
+        if fam is None:
+            out["announce"].append(
+                f"{tag}: skipped {provider} -- no model pinned, so its family is unknown")
+            continue
+        if fam in authors:
+            if via == "fallback":
+                out["fallbackBarred"] = True
+            out["announce"].append(
+                f"{tag}: skipped {provider} `{model or '(cli default)'}` -- it speaks as the "
+                f"`{fam}` family that wrote this diff, which is not an "
+                "independent review")
+            continue
+        if via == "order" and not available(provider, model):
+            out["announce"].append(
+                f"{tag}: skipped {provider} `{model or '(cli default)'}` -- it did not answer")
+            continue
+        out.update({"provider": provider, "model": model, "family": fam,
+                    "reasoningEffort": effort, "fallbackVia": via})
+        out["announce"].append(
+            f"{tag}: running {provider} `{model or '(cli default)'}` ({fam} family) "
+            f"instead, from the {'fallback' if via == 'fallback' else kind + '.order walk'}")
+        return
+    if same_family_ok and owner is not None:
+        out.update({"provider": owner, "model": fallback,
+                    "family": family(owner, fallback), "reasoningEffort": None,
+                    "fallbackVia": "fallback", "sameFamily": True})
+        out["announce"].append(
+            f"{tag}: SAME-FAMILY by operator choice -- running `{fallback}` on "
+            f"{owner}; this is not an independent review")
+        return
+    out.update({"provider": None, "model": None, "family": None,
+                "reasoningEffort": None, "incomplete": True})
+    out["announce"].append(
+        f"{tag}: INCOMPLETE -- no cross-family provider answers; record the "
+        "round INCOMPLETE and refund it, never a same-family read")
 
 
 # Where a dispatch is recorded. `.work/`, not `.crew/`: this is ephemeral

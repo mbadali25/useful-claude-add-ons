@@ -349,8 +349,8 @@ def test_the_fallback_value_is_configurable_not_hardcoded():
 
 def test_a_fallback_that_lands_on_the_authors_own_family_says_that_too():
     """The fallback is family-checked. A claude fallback on claude-authored
-    work is the same-family review the guard exists to prevent, and a silent
-    one is indistinguishable from an independent review."""
+    work is the same-family review the guard exists to prevent, so it is
+    passed over -- and said to be -- rather than run (L-0712)."""
     cfg = {"qa": {"provider": "auto", "fallback": "claude-sonnet-5",
                   "roles": {"review": {"provider": "copilot",
                                        "model": "kimi-k3"}}}}
@@ -358,7 +358,161 @@ def test_a_fallback_that_lands_on_the_authors_own_family_says_that_too():
                                   available=_gone)
     assert got["fellBack"] is True
     assert got["fallbackBarred"] is True
+    assert got["provider"] != "claude"
     assert any("not an independent review" in line for line in got["announce"])
+
+
+# --- L-0712: the fallback is the next CROSS-family provider ----------------
+#
+# Until L-0712 a gone pin set `provider = "claude"` whatever `qa.order` said
+# and whatever family the fallback model was: a `gpt-6.1-sol` fallback was
+# sent to Claude (2026-10-08), and claude-authored work fell back to a Claude
+# read that only a label called out. 70 of 220 rounds were Claude-family.
+
+
+def _gone_only(*dead):
+    """Only the named (provider, model) pairs are gone; everything else answers."""
+    def available(provider, model):
+        return (provider, model) not in dead
+    return available
+
+
+def _order_cfg(fallback="claude-sonnet-5"):
+    return {"qa": {"provider": "auto",
+                   "order": ["codex", "kimi", "copilot", "claude"],
+                   "fallback": fallback,
+                   "codex": {"model": "gpt-6-astra", "reasoningEffort": "high"},
+                   "kimi": {"model": "k3"},
+                   "copilot": {"model": None},
+                   "roles": {"review": {"provider": "codex",
+                                        "model": "gpt-6-astra"}}}}
+
+
+def test_a_gone_pin_on_claude_work_falls_back_to_kimi_never_claude():
+    """Acceptance check 1: the next provider in qa.order whose family did not
+    write the diff, on THAT provider's model. Codex's own model is the pin
+    that is gone, so codex is skipped; kimi is next and answers."""
+    got = crew_state.resolve_role(
+        _order_cfg(), "qa", "review", author="claude",
+        available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert (got["provider"], got["model"], got["family"]) == ("kimi", "k3", "kimi")
+
+
+def test_a_gone_pin_never_names_claude_on_claude_work():
+    got = crew_state.resolve_role(
+        _order_cfg(), "qa", "review", author="claude",
+        available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert "claude" not in (got["provider"], got["family"])
+    assert got["sameFamily"] is False
+    assert got["incomplete"] is False
+
+
+def test_a_gpt_fallback_dispatches_to_codex_with_its_own_model():
+    """Acceptance check 2, the gpt-6.1-sol case of 2026-10-08: a fallback
+    whose model belongs to another provider is dispatched to that provider."""
+    got = crew_state.resolve_role(
+        _order_cfg(fallback="gpt-6.1-sol"), "qa", "review", author="claude",
+        available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert (got["provider"], got["model"], got["family"]) == (
+        "codex", "gpt-6.1-sol", "gpt")
+    assert got["fallbackVia"] == "fallback"
+
+
+def test_no_cross_family_provider_answering_is_incomplete_not_claude():
+    """Acceptance check 3, the resolution half: nobody cross-family answers,
+    so nothing runs and the round is INCOMPLETE -- never a same-family read."""
+    got = crew_state.resolve_role(_order_cfg(), "qa", "review",
+                                  author="claude", available=_gone)
+
+    assert (got["incomplete"], got["provider"], got["model"]) == (True, None, None)
+    assert any("INCOMPLETE" in line and "refund" in line
+               for line in got["announce"])
+
+
+def test_an_explicit_same_family_choice_runs_and_is_labelled():
+    """Acceptance check 4, the resolution half: the operator may still choose
+    a same-family read, and it comes back labelled as one."""
+    got = crew_state.resolve_role(_order_cfg(), "qa", "review",
+                                  author="claude", available=_gone,
+                                  same_family_ok=True)
+
+    assert (got["provider"], got["model"], got["sameFamily"],
+            got["incomplete"]) == ("claude", "claude-sonnet-5", True, False)
+    assert any("SAME-FAMILY" in line for line in got["announce"])
+
+
+def test_a_fallback_no_provider_serves_walks_the_order():
+    """A fallback model whose family no provider serves natively cannot be
+    dispatched anywhere it would be the model named, so the order is walked."""
+    got = crew_state.resolve_role(
+        _order_cfg(fallback="gemini-3-pro"), "qa", "review", author="claude",
+        available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert (got["provider"], got["fallbackVia"]) == ("kimi", "order")
+    assert any("gemini-3-pro" in line for line in got["announce"])
+
+
+def test_an_order_candidate_carries_its_own_effort():
+    cfg = _order_cfg()
+    cfg["qa"]["roles"]["review"] = {"provider": "kimi", "model": "k3"}
+    got = crew_state.resolve_role(cfg, "qa", "review", author="claude",
+                                  available=_gone_only(("kimi", "k3")))
+
+    assert (got["provider"], got["model"], got["reasoningEffort"]) == (
+        "codex", "gpt-6-astra", "high")
+
+
+def test_an_order_candidate_that_does_not_answer_is_skipped():
+    cfg = _order_cfg()
+    cfg["qa"]["roles"]["review"] = {"provider": "kimi", "model": "k3"}
+    got = crew_state.resolve_role(
+        cfg, "qa", "review", author="claude",
+        available=_gone_only(("kimi", "k3"), ("codex", "gpt-6-astra")))
+
+    assert (got["incomplete"], got["provider"]) == (True, None)
+
+
+def test_the_order_walk_skips_an_unprobed_family_and_the_authors():
+    """copilot unpinned has no family and claude wrote it: neither may be the
+    answer even when both answer the probe."""
+    cfg = _order_cfg()
+    cfg["qa"]["order"] = ["copilot", "claude"]
+    got = crew_state.resolve_role(cfg, "qa", "review", author="claude",
+                                  available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert got["incomplete"] is True
+
+
+def test_a_dev_role_falls_back_along_dev_order():
+    """The dev kind walks `dev.order` when it has one."""
+    cfg = {"dev": {"provider": "claude", "fallback": "gemini-3-pro",
+                   "order": ["kimi", "codex"], "kimi": {"model": "k3"},
+                   "roles": {"developer": {"provider": "codex",
+                                           "model": "gpt-6-astra"}}}}
+    got = crew_state.resolve_role(cfg, "dev", "developer",
+                                  available=_gone_only(("codex", "gpt-6-astra")))
+
+    assert (got["provider"], got["model"]) == ("kimi", "k3")
+
+
+def test_a_dev_role_with_no_order_walks_the_default_order():
+    cfg = {"dev": {"provider": "claude", "fallback": "gemini-3-pro",
+                   "roles": {"developer": {"provider": "kimi", "model": "k3"}}}}
+    got = crew_state.resolve_role(cfg, "dev", "developer",
+                                  available=_gone_only(("kimi", "k3")))
+
+    assert got["provider"] == crew_state.QA_DEFAULTS["order"][0]
+
+
+@pytest.mark.parametrize("model, provider", [
+    ("gpt-6.1-sol", "codex"), ("openai/GPT-5", "codex"),
+    ("claude-sonnet-5", "claude"), ("k3", "kimi"), ("kimi-k3", "kimi"),
+    ("gemini-3-pro", None), ("", None), (None, None)])
+def test_provider_for_model_names_the_provider_that_serves_the_family(model, provider):
+    assert crew_state.provider_for_model(model) == provider
 
 
 def test_nothing_falls_back_when_no_probe_is_supplied():
