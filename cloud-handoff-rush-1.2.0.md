@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T02:45Z
+Last updated: 2026-10-08T02:40Z
 
 ## >>> RESUME HERE
 
@@ -110,6 +110,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T02:40Z Owner asked for a handoff cleanup. Closed 10 cloud-handoff PRs landed via H2a #564: #413 #417 #419 #424 #429 #440 #466 #470 #482 #522. Kept the partials #423, #438 and #484 (the rest is in H2b), and every G6a/G6b/H2b source until landed. #391 updated, not closed (it is read-cloudhead's notes branch).
 - 2026-10-08T02:35Z WAVE 10 MERGED #569 to main at 7a62e848 (crew 1.1.19); the wallclock re-run passed. Closed #434 and #547 as landed. Opened #571 to re-pin the README install URLs to 7a62e848.
 - 2026-10-08T02:32Z Owner: keep L-0666 for the stale-after-review stop (G6a as built).
 - 2026-10-08T02:31Z G6a opened #570 into release, head 12d99dfe, crew 1.1.20. Decision needed: the L-0522 vs L-0666 stale-after-review stop was resolved in L-0666's favour (no command in the stop). Also: crew_autopilot split into crew_autopilot_paste.py, and an owner-list bug fixed (Complete/ archive shown as open).
