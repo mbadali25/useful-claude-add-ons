@@ -151,8 +151,11 @@ def _is_0_20_setup(root, legacy):
     roles = legacy.get("roles", [])
     if not isinstance(roles, list) or any(r not in crew_migrate.ROSTER for r in roles):
         return True
-    if any(os.path.lexists(os.path.join(root, ".crew", name))
-           for name in crew_migrate.JOURNAL_FILES):
+    try:
+        crew_dir = set(os.listdir(os.path.join(root, ".crew")))
+    except OSError:
+        return True
+    if crew_dir.intersection(crew_migrate.JOURNAL_FILES):
         return True
     try:
         names = os.listdir(os.path.join(root, ".work", "tickets"))
