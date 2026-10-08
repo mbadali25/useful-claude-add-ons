@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T05:19Z
+Last updated: 2026-10-08T05:44Z
 
 ## >>> RESUME HERE
 
@@ -105,6 +105,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T05:44Z L-0703 done: head 0fa6614e, Codex CLEAN round 4 (6 findings fixed across 3 rounds, sh+ps1). Promote-tree sabotage 60/60 RED. Owner WIP kept. Lane builder merging it; Codex review of the lane's combined promote-gate rule before 1.2.1.
 - 2026-10-08T05:19Z 1.2.1 lane at 1c0b53d8 (unpushed): L-0703 and L-0704 merged onto main. Promote-gate rule combined: main's newest-row rule + L-0703 full-sha (the newest FULL-sha row decides). Fixtures of 25 main promote tests updated, 1 slow test re-timed, 1 sabotage entry re-aimed. 67/67 promote-tree RED. 1 pre-existing STILL GREEN on main ('unparseable map as not a deployment'), harness, out of scope. Waiting on the L-0703 fixer.
 - 2026-10-08T04:49Z L-0704 done: head 1164e01e, Codex r2 CLEAN. New test test_status_mode_line_ignores_a_parent_home_set_to_plan fails when isolation is removed and passes restored.
 - 2026-10-08T04:42Z 1.2.1 Codex r1: L-0703 BLOCK x2 (no-python fallback allows a malformed map; review-helper failure bypasses the incident lane, sh+ps1). L-0704 FIX x1 (needs a conflicting-parent-HOME regression test). The backup WIP is the owner's own L-0703 review-r2 work (FIFO map, bounded read); the L-0703 fixer builds on it. Fixers started for both; the lane is rebuilt from the fixed heads.
