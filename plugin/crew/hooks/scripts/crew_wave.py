@@ -1073,6 +1073,9 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         f"write .work/tickets/{ticket}/questions.md in this shape, recommendation first, and "
         "go to step 8 with --state question:",
         shape,
+        "A question for another session (a peer on a coordination channel) is never sent from "
+        "this lane: return it in your report like any question (questions.md and the lane-done "
+        "reason) for the main session to file in the record and ring.",
         "Never, at any setting: accepting or rejecting a review, approving a plan, merging, or "
         "opening a PR. Those are the owner's. If a step needs one, it is a question.",
     ])

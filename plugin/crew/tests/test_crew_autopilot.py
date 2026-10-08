@@ -14,6 +14,7 @@ can fail.
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -2378,3 +2379,13 @@ def test_next_cancelled_index_row_is_closed(tmp_path, word):
     _ticket(root, status=word)
     got = _next(root)
     assert (got["phase"], got["stop"]) == ("closed", True)
+
+
+# --- L-0667: the graph's refresh command is /crew:graph --refresh -------------
+
+def test_autopilot_md_lists_crew_graph_refresh_among_the_refresh_commands():
+    with open(_COMMAND, encoding="utf-8") as handle:
+        text = handle.read()
+    listed = re.search(r"refresh\s+command \(([^)]*)\)", text)
+    assert listed and "`/crew:graph --refresh`" in listed.group(1) \
+        and "graphify update" not in listed.group(1), listed

@@ -1083,6 +1083,7 @@ _REGEX_ANCHORED = {
 # A regex of the plain-id SHAPE that is not a ticket id at all.
 _NOT_A_TICKET_ID = {
     "crew_coord.py": "_PART_RE is one part of a coordination repo key, not a ticket id",
+    "crew_bridge.py": "LABEL_RE is a peer session's label for `ring --to`, not a ticket id",
 }
 
 

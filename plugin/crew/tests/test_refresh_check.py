@@ -200,7 +200,8 @@ def test_graph_behind_is_stale(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (item["status"], item["command"]) == ("stale", "graphify update .")
+    assert (item["status"], item["command"], item["runs"]) == (
+        "stale", "/crew:graph --refresh", "graphify update .")
 
 
 def test_graph_rebuilt_after_the_change_is_fresh(tmp_path):
@@ -270,8 +271,8 @@ def test_graph_refresh_named_once_covered(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (item["status"], item["refreshable"], item["command"]) == (
-        "stale", True, "graphify update ."), item
+    assert (item["status"], item["refreshable"], item["command"], item["runs"]) == (
+        "stale", True, "/crew:graph --refresh", "graphify update ."), item
 
 
 def test_graph_refresh_unknown_coverage_stops(tmp_path):
@@ -463,7 +464,33 @@ def test_graph_without_a_tracked_report_names_the_code_only_build(tmp_path):
 
     item = _artifact(_check(root), "graph", "graphify-out")
 
-    assert item["command"] == "graphify . --no-viz --code-only", item
+    assert (item["command"], item["runs"]) == (
+        "/crew:graph --refresh", "graphify . --no-viz --code-only"), item
+
+
+def test_graph_with_a_tracked_report_names_crew_graph_refresh(tmp_path):
+    """L-0667: the hint names the command; the raw graphify line is `runs`,
+    and the rendered line tells the session to run the command."""
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _commit(root, "src/app.py", "print('changed')\n")
+    result = _check(root)
+    item = _artifact(result, "graph", "graphify-out")
+    line = [x for x in crew_refresh_check._render(TICKET, result).splitlines()  # pylint: disable=protected-access
+            if x.startswith("  graph ")][0]
+
+    assert (item["command"], item["runs"], line.endswith("refresh with /crew:graph --refresh")) \
+        == ("/crew:graph --refresh", "graphify update .", True), (item, line)
+
+
+def test_graph_without_a_graph_file_still_names_crew_graph_refresh(tmp_path):
+    root, _start = _repo(tmp_path)
+    _commit(root, "src/app.py", "print('changed')\n")
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (item["status"], item["command"], item["runs"]) == (
+        "not applicable", "/crew:graph --refresh", "graphify . --no-viz --code-only"), item
 
 
 def test_an_anchor_naming_no_commit_is_refreshable(tmp_path):
@@ -1351,7 +1378,8 @@ def test_graph_manifest_with_an_old_hash_is_stale(tmp_path):
 
     graph = _artifact(_check(root), "graph", "graphify-out")
 
-    assert (graph["status"], graph["command"]) == ("stale", "graphify update ."), graph
+    assert (graph["status"], graph["command"], graph["runs"]) == (
+        "stale", "/crew:graph --refresh", "graphify update ."), graph
 
 
 def test_graph_manifest_never_confirms_a_deleted_path(tmp_path):

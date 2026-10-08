@@ -51,11 +51,11 @@ Counted by walking the directories at this anchor:
 | | Count | How counted |
 |---|---|---|
 | Agents | 4 | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` |
-| Commands | 37 | `.md` files in `plugin/crew/commands/` (37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
+| Commands | 38 | `.md` files in `plugin/crew/commands/` (38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
 | Skills | 33 | subdirectories of `plugin/crew/skills/` (includes 10 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267, `stack-php` since L-0533, `stack-node` since L-0537) |
 
 `.claude-plugin/marketplace.json:223` states the identical three numbers (4
-agents, 37 commands, 33 skills) in its `crew` entry's description, and `:224`
+agents, 38 commands, 33 skills) in its `crew` entry's description, and `:224`
 the version, 1.0.184 (T-0061-build's number, allocated by the coordinator after main reached 1.0.162 with L-0601 #327; 1.0.163-1.0.183 not used by it); before that 1.0.162 (L-0601's number, allocated by the coordinator after main reached 1.0.154 with L-0510 #318, #328, #329 and #330; 1.0.141 and 1.0.155-1.0.161 not used by it); before that 1.0.140 (L-0574's claim, allocated by the coordinator 2026-10-03, set last after L-0574 merged main `2a2d6e07` (L-0592 #325, 1.0.139), whose crew is 1.0.139; L-0574 held 1.0.136 after merging main `ffeb0e2f` (L-0598 #321, 1.0.135) and `6ac3b1b3`, whose crew was 1.0.135; L-0574 had earlier merged main `e0c70fc9` (L-0555 #310 1.0.132, #317 1.0.134, L-0597 #316), whose crew was 1.0.134; L-0574 was 1.0.131 after merging main `0487fc39` (L-0599 #315, L-0575 1.0.129), whose crew was 1.0.129; L-0574 had earlier merged main `7ba4f9ea` (L-0593 #312, L-0572 #309, #295), whose crew was 1.0.126; that 1.0.126 is L-0572's bump after merging main `d2ec37d3` (W-0120 #307/#308, 1.0.119), past 1.0.120-1.0.125, held or burned by other lanes; before that 1.0.119 (L-0578's bump after merging main `ffd11270` (L-0557 #300, 1.0.114), past 1.0.115-1.0.118, held or burned by other lanes; before that 1.0.114 (L-0557's re-set at `6053b65d` after merging main `2906dcbd` (L-0516 #298, 1.0.110) at `2f3fb34c`, past 1.0.111 (W-0117-land), 1.0.112 (L-0510) and 1.0.113 (T-0504); L-0557 was 1.0.111 at `c43a9ce3` after merging main `ddcbf90d` (W-0115 #299, 1.0.106) at `0597e5c6`, past 1.0.107 (T-0504), 1.0.108 (L-0510), 1.0.109 (T-0501) and 1.0.110 (L-0516); L-0557 was 1.0.105 at `773ce841` after merging main `05a679bf` (L-0558 #293, 1.0.102) at `2169bd11`, unchanged by the merge of main `cacf7ff0` (L-0513 #301, no plugin version) at `a9608aa5`, skipping 1.0.103 (L-0510) and 1.0.104 (L-0516); these two citations read `:217`/`:218` before this pass, which on this tree are another entry's description and version; L-0557 was 1.0.101 at `90186613` after merging main `52489039` at `327e6ec1`: past main's 1.0.98 (T-0040 #290), skipping 1.0.100 (L-0516) and L-0558's 1.0.95 (#293); L-0557 was 1.0.99 at `4fc11923`, after merging main `44d3dbc6` (T-0110 #297, 1.0.97); L-0557 was 1.0.96 at `97ace923` and `550c39cd`, when main was 1.0.92 (T-0505 #296); before T-0505 main was 1.0.89 (W-0116 #292); L-0557 was 1.0.95 at `d9ccfd5a` and 1.0.89 at `b1d8a4e8`; main's 1.0.86 before W-0116 is L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
@@ -1225,6 +1225,41 @@ Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_
 registered at `plugin/crew/tests/sabotage.py:76` and `:3065`; `.crew/verify.json` rule 29
 (`:355-362`; rule 28 at `:310-316` after T-0094 merged `8ab733d7`, `:307-313` before, until L-0516 inserted rule 10), which also maps `commands/autopilot.md` since review round 2.
 
+**Cross-session messages (T-0032).** DERIVED on `rush/g3d-bridge` (release/1.2.0 plus the T-0030
+port), 2026-10-05. `plugin/crew/hooks/scripts/crew_bridge.py` is the doorbell: `DOORBELL_RE`
+(`:110`) is the closed grammar, `compose` (`:117`) builds the line `ring` prints (`cmd_ring`, `:429`),
+`parse` (`:131`) full-matches stdin (4096 bytes, strict UTF-8, one trailing newline stripped) and
+`cmd_receive` (`:466`) prints confirmed / `could not tell` / `not a doorbell`, the tip confirmed by
+`_confirm` (`:447`: the fetched tip, else `cat-file -e` then `merge-base --is-ancestor`), each
+result ending in `next_step` (`:225`), the remote shell-quoted whole. Apart from L-0636's
+`ring --to` it writes nothing, and it builds only on `crew_coord`'s public names (`Channel`,
+`safe`, `peer`, `run_git`, the exit codes); `CHANNEL_RE` (`:103`) restates `crew_coord._CHANNEL_RE`,
+pinned equal by `test_channel_rule_is_crew_coords`. `commands/autopilot.md:116` is section 9, the
+untrusted-data rules. JUDGEMENT: `kind` and `ref` change no behaviour on purpose; the receiver
+always re-reads the record, so a lying hint costs a fetch, not an action.
+
+**Unanswered doorbells (L-0636).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `crew_bridge.py
+ring --to <label>` (`cmd_ring_to`, `:256`) appends one `rang` line (`rang_line`, `:250`) through
+`crew_coord.Channel.write`, on `RecordChannel` (`:238`), which remembers the tip of its last fetch
+because `write` hands `change` only the files. `pending` (`cmd_pending`, `:390`) reads `unknown` for
+a failed fetch, an absent channel or a missing log, and parses the whole log (`read_log`, `:296`: a
+line that is not a whole `log_line` entry, or a `rang` line without its fields, is `unknown`), then
+keeps each ring of this session id, or this machine and worktree, that no later line by a holder
+other than the ringer and this session follows (`pending_rings`, `:372`), once `lost_ring`
+(`:332`) has found no merge in the history and no deleted log line (`--numstat`) from the oldest ring commit to the tip. `crew_coord.cmd_status`
+reads only `claims/`, so the new event cannot disturb it. JUDGEMENT: matching on machine and
+worktree as well as the session id is what lets the resume step after `/clear` still see a ring.
+
+**The hub rule (L-0637).** DERIVED on `rush/g3d-bridge`, 2026-10-05. `ring` calls `lane_state`
+(`:162`) before any fetch: the main checkout (the first `crew_wave.worktrees` entry) is never a lane;
+elsewhere every lane file under `<main>/.work/autopilot/<slug>/lanes/` is read with
+`crew_wave.read_lane`, and one whose `worktree` is this worktree makes it a lane (`HUB_REFUSAL`,
+`:147`, exit 1); a listing or lane file that cannot be read is `unknown` (exit 3). The lane prompt
+(`crew_wave.lane_prompt`) returns a question for another session to the main session, and
+`hooks/scripts/_test/validate-prompts.py`'s `check_bridge_tools` fails an agent granted
+`SendMessage` or `ListAgents` and a lane-prompt source naming either. JUDGEMENT: a linked worktree
+alone is never read as a lane; an owner may run a main session in one.
+
 ## Contextual help: /crew:help (T-0025, crew 1.1.13)
 
 DERIVED at `b32e9fc9` (T-0025-build); line citations re-read on rush/g1b-ports after the port's
@@ -2092,9 +2127,9 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   present, **not run and not read** by this note.
 
 **The secrets-denylist gate on the graph (T-0064, crew 1.0.237).** DERIVED at `687759ce`
-(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167); line citations re-measured at the 1.2.0 port. `_graph`
-(`plugin/crew/hooks/scripts/crew_refresh_check.py:1388`) calls `_graph_ignore_refusal` (`:1366`,
-called at `:1396`) after its "no code changed" return and before the graphify-missing check.
+(T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167); line citations re-measured at the 1.2.0 port and again for L-0667. `_graph_entry`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1409`) calls `_graph_ignore_refusal` (`:1366`,
+called at `:1416`) after its "no code changed" return and before the graphify-missing check.
 While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
 does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
 graphify command is run and autopilot's `_settles` stops on it unchanged. The checker is
@@ -2114,6 +2149,24 @@ last `.crew/verify.json` rule maps them. Its mutations were run by hand; they jo
 `plugin/crew/tests/sabotage_refresh.py` in a harness-only change, because `sabotage*.py` is in
 `HARNESS` (`scripts/check-tooling-pr.py`). JUDGEMENT: graphify's post-commit hook still builds
 without the check; `/crew:status`'s line is the only warning on that path.
+
+**`/crew:graph` (L-0667).** DERIVED on `rush/g3d-bridge` (release/1.2.0 line). The command file is
+`plugin/crew/commands/graph.md`; the script `plugin/crew/hooks/scripts/crew_graph.py`. The graphify
+line a refresh runs has one definition, `graph_command`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1391`, the sabotage-anchored `command = (...)`
+line kept byte-identical inside it); `_graph` (`:1402`) wraps `_graph_entry` and sets every graph
+artifact's `command` to `GRAPH_REFRESH` (`:1388`, `/crew:graph --refresh`) and its new `runs`
+field to that line. `crew_graph.py`: `status` (`:209`) reads freshness from
+`crew_freshness._read_graph` (`graph_state`, `:109`, plus the refresh check's T-0063 manifest rule, `_manifest_current`, `:124`), the pair from `pair_state` (`:187`) and the
+denylist from `crew_graph_ignore.coverage`; `_report_tracked` (`:88`) re-asks git whether
+`GRAPH_REPORT.md` is tracked, because `_read_graph` reads a failed `ls-files` as untracked and
+that would skip the pair check. `refresh` (`:275`) refuses in order (graphify missing, coverage
+uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:236`), then
+`_verify` (`:321`): no `built_at_commit` exit 2, `_graph_counts` (`:166`, `nodes` and `links`;
+no `links` list is unknown, never zero), `_summary_counts` (`:145`, the first `- N nodes · M
+edges` line under `## Summary`), and `_changed` (`:258`, `git status --porcelain -z` under the
+graph dir). It never stages or commits. Tests: `plugin/crew/tests/test_crew_graph.py`, and the
+`runs` cases in `test_refresh_check.py`; the last `.crew/verify.json` rule maps them.
 
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
@@ -2238,16 +2291,19 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
   launchable (`:194`); `resolve_alias` (`:257`) maps an id to the config.toml alias served by a
-  `type = "kimi"` provider; `probe` (`:506`) runs one live call in a throwaway directory with the
+  `type = "kimi"` provider; `probe` (`:619`) runs one live call in a throwaway directory with the
   read-only agent file (`write_agent_file`, `:214`; `read_only_flags`, `:236`) and a scrubbed env
-  (`kimi_env`, `:205`), and `classify` (`:478`) reads its stream through `final_message`
+  (`kimi_env`, `:205`), and `classify` (`:591`) reads its stream through `final_message`
   (`:151`), the stream-json parser, which lives here so the review harness can import it. A
   timed-out probe's process group is killed and the follow-up read is bounded (`_run`). `probe`
   refuses (`unknown`) when the temporary directory lies inside a repository
-  (`_inside_a_repository`, `:382`), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
+  (`_inside_a_repository`, `:478`; L-0708: git is asked, `git rev-parse --git-dir` with every
+  `GIT_*` removed and `LC_ALL=C`, and only its exit-128 "not a git repository" allows; any other
+  answer is could-not-tell; a `.git` git rejects refuses only when Kimi Code 2.1.1, which takes
+  any `.git` as its project root, would read `KIMI_PROJECT_FILES` at that root or `KIMI_PER_DIRECTORY` below it), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
   Round 7: a non-string `default_model` is `unknown`; only the provider's own credential file
   (`credentials/<name>.json` for `key = "oauth/<name>"`) counts as a login; each output pipe is
-  drained by `_CappedReader` (`:440`) keeping at most `OUTPUT_CAP`, past which the call is
+  drained by `_CappedReader` (`:553`) keeping at most `OUTPUT_CAP`, past which the call is
   `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
   (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`
