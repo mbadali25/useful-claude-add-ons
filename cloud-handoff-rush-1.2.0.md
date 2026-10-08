@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T03:12Z
+Last updated: 2026-10-08T03:14Z
 
 ## >>> RESUME HERE
 
@@ -110,6 +110,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T03:14Z Owner deleted CREW_WINDOWS_RUNNER. Closed #568 and kept the branch ci/windows-self-hosted for later.
 - 2026-10-08T03:12Z Owner chose C: Windows CI stays on GitHub-hosted. #568 stays unmerged. CREW_WINDOWS_RUNNER=winrepo2 is still set; it must be deleted before #568 can ever merge, or main's Windows CI moves to winrepo2.
 - 2026-10-08T03:11Z G6b opened #573. Fixed the 4 G6b settings' since-version 1.1.16 -> 1.1.21 inside a fresh version commit; new head b39c433220e81910dcc4e8df8644971b9527d2e2. H2b note: the anchor 'an edit to scope_guard.py runs no pytest rule' (verify.json block) matches 0 times after G6b; re-anchor it at H2b landing.
 - 2026-10-08T03:09Z WAVE 11 MERGED #572 to main at 21bdec76 (crew 1.1.20). Closed #485 and #486 as landed. Next: G6b (1.1.21); its builder is running.
