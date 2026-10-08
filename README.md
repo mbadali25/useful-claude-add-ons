@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.1.16**: Held pings while asleep, and the morning summary sent once. With `autopilot.sleep.notifyHold: true`, the pings that only ask for your attention wait while autopilot sleeps, and the morning summary tells you how many there were and is sent to you once; a failure still pings at once.
-- **crew 1.1.16**: Sleep log and morning summary. Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
+- **crew 1.1.21**: Held pings while asleep, and the morning summary sent once. With `autopilot.sleep.notifyHold: true`, the pings that only ask for your attention wait while autopilot sleeps, and the morning summary tells you how many there were and is sent to you once; a failure still pings at once.
+- **crew 1.1.21**: Sleep log and morning summary. Every approval and answer autopilot makes while asleep is logged locally with the setting that allowed it, and the next morning `wake` or `sleep-summary` prints them once, grouped by ticket.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
