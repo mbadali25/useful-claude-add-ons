@@ -2,6 +2,16 @@
 
 ## >>> RESUME HERE ("read Cloudhead") <<<
 
+### >>> CURRENT (2026-10-08T02:45Z): crew 1.2.0 feature rush is live - start there <<<
+Session `session_01H49aKnVMcvefcadqBGmuMu`. Everything below this block is the previous rush (closed at crew 1.1.0) and is history.
+
+1. `git fetch origin claude/eloquent-wozniak-iqb4hf` and read **`cloud-handoff-rush-1.2.0.md`** (sections RESUME HERE, Standing rules, State) and `pending-tickets.md` "Feature rush 1.2.0" on that branch (PR #514).
+2. State: **10 of 12 waves on main** (`main` = `7a62e848`, crew 1.1.19). Remaining in order: G6a (#570, crew 1.1.20) -> G6b (`rush/g6b-goals-sleep`, 1.1.21) -> H2b (`rush/h2b-sabotage`, sets **1.2.0**, harness-only, lands alone).
+3. Side PRs: #571 (README install-URL re-pin, merge when green); #568 (Windows self-hosted runner switch, **hold**: winrepo2 trial failed).
+4. Tools are copied in `docs/handoff/cloud/rush-1.2.0/` on that branch; the scratchpad does not survive.
+5. Verify every head on GitHub before acting, then give the owner a short table.
+
+
 Written 2026-10-04 22:22 UTC by session `session_016wQA2o38aSB65bpjaGpMVJ` at the owner's request to clear and restart.
 A new session should: (1) read this section, (2) read `CLOUD-SESSION-TICKETS.md` (same branch, repo root), (3) copy `docs/handoff/cloud/procedures/*` into its scratchpad, (4) check the "In flight at handoff" table below against GitHub before acting.
 
