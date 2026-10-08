@@ -125,6 +125,15 @@ launched. An unarmed clone never asks. The prompt also carries a `== Catch-up me
 block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
 reviews each as a change; a merge log it cannot read is written there as `UNREADABLE`.
 
+## When a pinned Codex model is retired
+
+A pin to a model Codex no longer serves falls back to `qa.fallback`, and since L-0712 the fallback
+runs on the provider that serves its family: a `gpt-6.1-sol` fallback dispatches to Codex with that
+model, not to Claude. A fallback in the author's family (the shipped `claude-sonnet-5`, on
+Claude-written work) is skipped for the next provider in `qa.order` that did not write the diff and
+answers, such as Kimi. When none answers, the round is INCOMPLETE and refunded rather than spent on
+a same-family read. `/crew:status` prints the share of same-family rounds across every ticket.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
