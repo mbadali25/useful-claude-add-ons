@@ -3225,6 +3225,16 @@ a VERIFIED receipt where the local gate is UNVERIFIED or UNKNOWN; any other
 receipt answer leaves the local verdict standing. The Stop hook does not consult
 it: that would put network calls in a hook that runs every turn.
 
+`/crew:done` check 2 makes this receipt the precondition for whatever Stop did
+not check (L-0710): a rule deferred to CI (`chronic`), a `skipped` or
+`unverified` rule, a turn where `0 rules ran`, or no record at all. Check 2
+passes on `CI_RECEIPT VERIFIED` (exit 0), on `NO_GATE` (exit 4), or on a record
+with nothing outstanding (`verify   no rules recorded`: a clean pass empties it)
+together with `GATE VERIFIED` from `review_gate.gate_state` (marker at HEAD and
+the working tree's fingerprint unchanged since that pass; the marker alone
+survives an uncommitted edit). Anything else refuses the close. The workflow is
+not a required check on `main`; making it one is a branch-protection setting.
+
 The receipt's per-command list is informative only. A command reads PASS, FAIL,
 SKIP or UNKNOWN; UNKNOWN is a `COULD NOT TELL` line, or a command named failed,
 skipped or could-not-tell with no elapsed line after it (L-0673). `log_complete` is
@@ -3922,7 +3932,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
-| `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
+| `/crew:done <id>` | Close a ticket: accepted review receipt, a verify gate settled for HEAD (every rule passed here, or the CI receipt VERIFIED), passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
 | `/crew:status [--memory \| --approvals \| --owner]` | Read-only status in at most 40 lines - config, inert settings, roster, tickets, a `waiting` line counting what is stopped on you (`--owner` lists it, one line per ticket with the command to type, L-0551), review budget and the repo-wide same-family share (L-0712), in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, gitignore, handoff; `--memory` adds the context hook's stats; `--approvals` prints only the `/crew:approve <id>` lines for tickets whose approval is missing, stale or unaccepted |
