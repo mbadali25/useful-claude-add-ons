@@ -242,8 +242,16 @@ if [ -z "$PY" ]; then
     }
     np_scan "$NP_MAP" ".crew/verify.json" strict
   fi
+  # Bounded like the working map's read (L-0703 Codex r3): a stalled
+  # `git cat-file` would otherwise hold the hook past its timeout.
   if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
-    np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json" lenient
+    NP_LEFT=$(( GATE_DEADLINE - $(date +%s) ))
+    [ "$NP_LEFT" -ge 1 ] || NP_LEFT=1
+    NP_HEAD_MAP=$(timeout "$NP_LEFT" git cat-file blob "$HEAD_MAP" 2>/dev/null) || {
+      echo "PROMOTION BLOCKED: no usable python, and the committed .crew/verify.json could not be read inside the hook's deadline, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
+      exit 2
+    }
+    np_scan "$NP_HEAD_MAP" "the committed .crew/verify.json" lenient
   fi
   exit 0
 fi

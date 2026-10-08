@@ -67,6 +67,9 @@ MIN_SECONDS = 1.0
 BUDGET_ENV = "CREW_PROMOTE_REVIEW_BUDGET"
 SEP = "\x1e"
 GIT_SECONDS = 10
+# Killing and reaping a search that ran out of time; the gate's 16s deadline
+# leaves 4s of the 20s hook timeout for this and the hook's own exit.
+REAP_SECONDS = 2.0
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
 
@@ -248,8 +251,8 @@ def _left(deadline):
     return min(left, GIT_SECONDS)
 
 
-def _kill_group(proc):
-    """Kill the child and everything it started."""
+def _kill_group(proc, until):
+    """Kill the child and everything it started, by `until` (a monotonic time)."""
     if os.name == "nt":
         # PATH first, then the system copy: a PATH without System32 must not
         # leave the search's descendants running.
@@ -258,8 +261,10 @@ def _kill_group(proc):
                                       "taskkill.exe"),) if os.path.isfile(p)), None)
         if taskkill:
             try:
+                # Half of what is left, so the reap below keeps the rest.
                 subprocess.run([taskkill, "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
-                               check=False, timeout=5, stdin=subprocess.DEVNULL)
+                               check=False, stdin=subprocess.DEVNULL,
+                               timeout=max((until - time.monotonic()) / 2, 0.1))
             except (OSError, subprocess.SubprocessError):
                 pass  # the child is still killed below; the deploy is refused either way
         proc.kill()
@@ -268,6 +273,20 @@ def _kill_group(proc):
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
             proc.kill()
+
+
+def _stop(proc):
+    """Kill the search's group and reap it, the two together inside
+    REAP_SECONDS. The gate's deadline is 16s of the 20s hook timeout, and
+    this is what spends the difference: on Windows a flat 5s `taskkill` and
+    then a 2s reap returned the refusal after the hook had timed out, which is
+    not a block (L-0703 Codex r3)."""
+    until = time.monotonic() + REAP_SECONDS
+    _kill_group(proc, until)
+    try:
+        proc.communicate(timeout=max(until - time.monotonic(), 0.1))
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def search(tree, sha, seconds):
@@ -283,11 +302,7 @@ def search(tree, sha, seconds):
     try:
         out, err = proc.communicate(timeout=seconds)
     except subprocess.TimeoutExpired:
-        _kill_group(proc)
-        try:
-            proc.communicate(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
+        _stop(proc)
         return False, (f"could not tell: the receipt check did not finish inside {seconds:.1f}s "
                        "and was stopped")
     try:

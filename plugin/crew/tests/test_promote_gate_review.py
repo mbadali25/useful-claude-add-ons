@@ -659,6 +659,31 @@ def test_the_helper_bounds_its_map_probes_by_the_deadline(tmp_path):
     assert took < 8, took
 
 
+@_POSIX_ONLY
+def test_windows_cleanup_stays_inside_the_reap_allowance(tmp_path, monkeypatch):
+    """The gate's 16s deadline leaves 4s of the 20s hook timeout for the
+    helper to stop its search. On Windows that stop ran `taskkill` for up to
+    5s and then waited 2s more for the pipes, so a refusal could arrive after
+    the hook had already timed out, which is not a block (L-0703 Codex r3).
+    The Windows branch is driven here with a `taskkill` that hangs."""
+    import _promote_review  # pylint: disable=import-outside-toplevel
+    bin_dir = tmp_path / "winbin"
+    bin_dir.mkdir()
+    (bin_dir / "taskkill").write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+    (bin_dir / "taskkill").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(_promote_review.os, "name", "nt")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    start = time.monotonic()
+    _promote_review._stop(proc)  # pylint: disable=protected-access
+    took = time.monotonic() - start
+    monkeypatch.undo()
+    assert proc.poll() is not None, "the search was left running"
+    assert took <= _promote_review.REAP_SECONDS + 0.5, took
+
+
 def test_an_unreadable_ledger_is_reported_as_could_not_tell(tmp_path):
     repo = Repo(tmp_path, REVIEW_MAP)
     repo.clean_receipt()
@@ -725,6 +750,27 @@ def test_a_map_reached_through_a_link_to_a_regular_file_is_read(flavour, tmp_pat
     code, err, _ = run_gate(flavour, repo, "deploy-dev")
     assert code == 0, err
     assert repo.in_flight() == f"development {repo.short}"
+
+
+@_POSIX_ONLY
+def test_sh_without_python_bounds_the_committed_map_read(tmp_path):
+    """Must-block: with the working map dirty, the fallback reads the
+    committed map too; a `git cat-file` that stalls must block inside the
+    hook's 20s, never run past it (L-0703 Codex r3)."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    repo.write_map({**SHA_MAP, "note": "an uncommitted edit"})
+    bin_dir = pathlib.Path(_path_without_python(tmp_path))
+    (bin_dir / "git").unlink()
+    (bin_dir / "git").write_text(
+        f'#!/bin/sh\n[ "$1" = cat-file ] && exec sleep 60\nexec "{_GIT}" "$@"\n',
+        encoding="utf-8")
+    (bin_dir / "git").chmod(0o755)
+    code, err, took = run_gate("sh", repo, "ls -la", path=str(bin_dir), timeout=40)
+    assert code == 2, err
+    assert "committed .crew/verify.json could not be read" in err, err
+    assert took < 19, took
 
 
 @_POSIX_ONLY

@@ -272,4 +272,13 @@ PROMOTE_TREE_MUTATIONS = (
      'elif . == 305 then 105 elif . == 383 then 115 else 65533 end',
      'else 65533 end',
      _R + "test_sh_without_python_matches_as_the_matcher_folds_case[False-long-s]"),
+    # --- L-0703 Codex r3 -------------------------------------------------------
+    ("promote-gate.sh's fallback reads the committed map without a bound", SH,
+     '    NP_HEAD_MAP=$(timeout "$NP_LEFT" git cat-file blob "$HEAD_MAP" 2>/dev/null) || {\n',
+     '    NP_HEAD_MAP=$(git cat-file blob "$HEAD_MAP" 2>/dev/null) || {\n',
+     _R + "test_sh_without_python_bounds_the_committed_map_read"),
+    ("_promote_review.py gives Windows taskkill a flat 5s again", REVIEW,
+     'timeout=max((until - time.monotonic()) / 2, 0.1))',
+     'timeout=5)',
+     _R + "test_windows_cleanup_stays_inside_the_reap_allowance"),
 )
