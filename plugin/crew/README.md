@@ -4067,7 +4067,7 @@ under the real home or spawns a process with the real HOME, naming the path;
 `tests/test_hermetic_home.py` holds it, with a regression run against a planted
 home that carries those keys. A test that is a known timing flake is not
 skipped: it carries `@pytest.mark.quarantine(owner=..., ticket=...)`, which
-deselects it until `-m quarantine` names it, and a quarantine without both, or
+deselects it until `-m quarantine` or its node id names it, and a quarantine without both, or
 a skip whose reason says flaky, fails (at collection for a marker, at run time
 for `pytest.skip()`).
 

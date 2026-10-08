@@ -259,6 +259,24 @@ def test_claude_dirs_are_unset_for_the_session_too():
     assert done.stdout.split() == ["None", "None"]
 
 
+
+@pytest.fixture(scope="module")
+def _module_config_paths():
+    """Set up before any function-scoped fixture, so before
+    `_no_real_global_config` moves the path for the test."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+    import crew_state  # pylint: disable=import-outside-toplevel
+    return crew_state.GLOBAL_CONFIG_PATH, crew_config.GLOBAL_CONFIG_PATH
+
+
+def test_a_module_fixture_sees_no_real_machine_config_path(_module_config_paths):
+    homes = [os.path.normcase(os.path.join(h, "")) for h in crew_fixtures.real_homes()]
+
+    reached = [p for p in _module_config_paths
+               if any(os.path.normcase(p).startswith(h) for h in homes)]
+
+    assert not reached, (reached, homes)
+
 # --- the audit: end to end ----------------------------------------------------
 
 _AUDIT_PROBE = '''
@@ -355,6 +373,25 @@ def test_a_quarantined_test_runs_when_named(tmp_path):
 
     assert (done.returncode, "PASSED test_quarantined.py::test_flaky" in done.stdout) == \
         (0, True), done.stdout
+
+
+def test_a_quarantined_test_runs_when_its_node_id_is_named(tmp_path):
+    probe = _probe(tmp_path, "test_quarantined.py", _QUARANTINED)
+
+    done = _pytest(tmp_path, ["-p", "conftest", f"{probe}::test_flaky", f"{probe}::test_steady"],
+                   _conftest_env(tmp_path / "h"))
+
+    assert (done.returncode, "2 passed" in done.stdout) == (0, True), done.stdout
+
+
+def test_naming_another_test_in_the_file_keeps_the_quarantine(tmp_path):
+    probe = _probe(tmp_path, "test_quarantined.py", _QUARANTINED)
+
+    done = _pytest(tmp_path, ["-p", "conftest", f"{probe}::test_steady"],
+                   _conftest_env(tmp_path / "h"))
+
+    assert (done.returncode, "PASSED test_quarantined.py::test_flaky" in done.stdout) == \
+        (0, False), done.stdout
 
 
 @pytest.mark.parametrize("marker,complaint", [

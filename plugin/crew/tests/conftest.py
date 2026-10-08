@@ -262,6 +262,9 @@ _XDG_PREVIOUS = "unset"
 # Every variable the session home (below) sets, with the value it replaced
 # (None = unset), restored at unconfigure.
 _HOME_PREVIOUS = {}
+# Each module's `GLOBAL_CONFIG_PATH` before the session moved it, restored at
+# unconfigure.
+_CONFIG_PATH_PREVIOUS = {}
 _HOME_SESSION = None
 _HOME_ALLOWED = ()
 _REAL_HOMES = ()
@@ -303,6 +306,17 @@ def _isolate_home():
     for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR"):
         _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
         os.environ.pop(name, None)
+    # The in-process half: `GLOBAL_CONFIG_PATH` was computed from the real
+    # HOME when this conftest imported `crew_state`. `_no_real_global_config`
+    # moves it per test, but a module or session fixture is set up BEFORE any
+    # function-scoped fixture, so it read the operator's file
+    # (test_crew_autopilot_stop_contract.py's module-scoped `built`, caught by
+    # the audit). Moved for the session to a path under the session home,
+    # which does not exist; the per-test fixture still narrows it.
+    unused = os.path.join(_HOME_SESSION, ".claude", "crew", "config.json")
+    for module in (crew_state, crew_config):
+        _CONFIG_PATH_PREVIOUS.setdefault(module, module.GLOBAL_CONFIG_PATH)
+        module.GLOBAL_CONFIG_PATH = unused
     crew_fixtures.install_home_audit()
 
 
@@ -326,6 +340,9 @@ def _restore_home():
         else:
             os.environ[name] = value
     _HOME_PREVIOUS.clear()
+    for module, value in _CONFIG_PATH_PREVIOUS.items():
+        module.GLOBAL_CONFIG_PATH = value
+    _CONFIG_PATH_PREVIOUS.clear()
     if _HOME_SESSION:
         shutil.rmtree(_HOME_SESSION, ignore_errors=True)
     _HOME_SESSION = None
@@ -409,18 +426,48 @@ def _quarantine_problem(item):
     return None
 
 
+def _named_tests(config):
+    """The tests the command line names by node id (`file.py::test`), as
+    (absolute file, the id after the first `::`) pairs. A file or directory
+    argument names no test."""
+    base = pathlib.Path(config.invocation_params.dir)
+    named = []
+    for arg in config.args:
+        path, sep, rest = str(arg).partition("::")
+        if sep and rest:
+            named.append((os.path.normcase(str((base / path).resolve())), rest))
+    return named
+
+
+def _is_named(item, named):
+    """True when `item` is one a command-line node id names: the same file,
+    and the same test, or one parametrized case of it."""
+    if not named:
+        return False
+    here = os.path.normcase(str(pathlib.Path(str(item.path)).resolve()))
+    tail = item.nodeid.partition("::")[2]
+    return any(here == path and (tail == rest or tail.startswith(rest + "["))
+               for path, rest in named)
+
+
 def _deselect_quarantined(config, items):
     """Validate every quarantine marker, refuse an ownerless flake skip, and
-    deselect quarantined tests unless a `-m` expression names `quarantine`."""
+    deselect quarantined tests unless a `-m` expression names `quarantine` or
+    the command line names the test by node id. The second exemption is the
+    sabotage suite's: each of its entries runs one test by node id, and a
+    quarantined target collecting nothing reads as a mutation it cannot
+    prove caught (`a clean linter's leftover survives (S5a)`)."""
     problems = [f"{item.nodeid}: {why}" for item in items
                 for why in [_quarantine_problem(item)] if why]
     if problems:
         raise pytest.UsageError("crew quarantine rule (L-0709):\n  " + "\n  ".join(problems))
     if _QUARANTINE_TOKEN_RE.search(config.option.markexpr or ""):
         return
+    named = _named_tests(config)
     keep, drop = [], []
     for item in items:
-        (drop if item.get_closest_marker("quarantine") else keep).append(item)
+        quarantined = item.get_closest_marker("quarantine") and not _is_named(item, named)
+        (drop if quarantined else keep).append(item)
     if drop:
         config.hook.pytest_deselected(items=drop)
         items[:] = keep
