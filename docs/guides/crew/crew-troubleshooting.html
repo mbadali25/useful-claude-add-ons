@@ -347,6 +347,21 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
   leaves <code>crew_ticket.CREW_BOOKKEEPING_PATHS</code> out, whatever <code>.gitignore</code> says.</p>
 <ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses at check 2 although every Stop turn exited 0.</strong> Stop never fails
+  a turn on a deferral: a rule priced over <code>verify.stopBudgetSeconds</code> on its own is <code>chronic</code>,
+  deferred to CI, and a turn where <code>0 rules ran</code> writes no verified marker (L-0710). Check 2 needs
+  evidence for HEAD itself.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_status.py&quot; --root .
+python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
+</code></pre>
+<p><strong>Fix:</strong> commit and push the branch so the <code>verify-gate</code> workflow runs the whole map, then rerun
+  <code>/crew:done</code> once <code>CI_RECEIPT VERIFIED</code> names HEAD; or run <code>/crew:verify --all</code> here, which leaves
+  every rule <code>pass</code> with <code>.crew/.verify-verified-at</code> at HEAD. <code>UNKNOWN</code> (exit 3) is <code>gh</code>, the
+  network or the artifact, never a pass; a branch that changes the gate or the workflow itself
+  never gets a VERIFIED receipt, so it needs the local run.</p>
+<ul>
 <li>
 <p><strong>Symptom: a receipt accepted under an older crew reads stale after the upgrade.</strong> The upgrade
   to the release that brought T-0068 drops crew's bookkeeping from the bundle, so a receipt whose
