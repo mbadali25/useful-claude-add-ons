@@ -85,14 +85,12 @@ quietly ran on the fallback is indistinguishable from one that ran on the
 pin, and the difference matters most exactly when the pin was chosen to get
 a different model family onto the diff.
 
-The fallback runs on the provider that serves its family (L-0712,
-`crew_state.provider_for_model`): `gpt-*` on codex, `kimi-*`/`k3` on kimi,
-`claude-*` on claude. Before L-0712 every fallback was sent to claude, so a
-`gpt-6.1-sol` fallback became a Claude read. A fallback in the author's family
-is skipped for the next provider in `qa.order` (or `dev.order`) whose family
-did not write the diff and which answers its probe. When none answers, the
-round is INCOMPLETE and refunded, never a same-family read, unless the
-operator explicitly asks for one, which is then labelled same-family.
+The fallback runs on its family's provider (L-0712, `provider_for_model`):
+`gpt-*` on codex, `kimi-*`/`k3` on kimi, `claude-*` on claude. One in the
+author's family is skipped for the next `qa.order` (or `dev.order`) provider
+whose family did not write the diff and which answers its probe. When none
+answers, the round is INCOMPLETE and refunded; a same-family read runs only
+when the operator asks for one, labelled.
 
 ### The family guard beats every pin above
 
