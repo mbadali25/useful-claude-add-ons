@@ -195,7 +195,10 @@ PY
   sleep 1
   pid=$(field pid); d=$(dirname "$(field cache)")
   alive=no; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=yes
-  if [ "$rc" != hung ] && [ $alive = no ] && [ ! -e "$d" ]; then
+  # A driver that died before launching prints no status and records no pid:
+  # that is a failure in its own right, not left to dirname "" being ".".
+  rc=${rc:-none}
+  if [ -n "$pid" ] && [ "$rc" != hung ] && [ "$rc" != none ] && [ $alive = no ] && [ ! -e "$d" ]; then
     ok "$name"
   else
     bad "$name" "launcher=$rc child_alive=$alive"
