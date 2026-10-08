@@ -206,6 +206,13 @@ first, or meets a train it cannot read is refused with exit 10, nothing spent an
 launched. An unarmed clone never asks. The prompt also carries a <code>== Catch-up merges (rerere) ==</code>
 block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
 reviews each as a change; a merge log it cannot read is written there as <code>UNREADABLE</code>.</p>
+<h2 id="when-a-pinned-codex-model-is-retired">When a Pinned Codex Model Is Retired</h2>
+<p>A pin to a model Codex no longer serves falls back to <code>qa.fallback</code>, and since L-0712 the fallback
+runs on the provider that serves its family: a <code>gpt-6.1-sol</code> fallback dispatches to Codex with that
+model, not to Claude. A fallback in the author's family (the shipped <code>claude-sonnet-5</code>, on
+Claude-written work) is skipped for the next provider in <code>qa.order</code> that did not write the diff and
+answers, such as Kimi. When none answers, the round is INCOMPLETE and refunded rather than spent on
+a same-family read. <code>/crew:status</code> prints the share of same-family rounds across every ticket.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,

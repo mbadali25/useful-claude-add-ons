@@ -15,23 +15,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$1" --che
 Rebuilds the bundle and fails if anything changed since the receipt was written. No receipt, a failing rebuild, or a ticket
 still `NEEDS_REPLAN` (budget spent, no successor plan approved) all refuse — say which, and point at `/crew:review $1` or `/crew:plan $1` for a replan.
 
-## Check 2 — the verify gate
+## Check 2 — the verify gate, settled for HEAD
 
-The Stop hook already refuses to end a turn on a red gate, so this check is confirming, not re-deriving:
+Stop never refuses a deferral: a rule over `verify.stopBudgetSeconds` is deferred to CI (`chronic`), and a turn
+where `0 rules ran` records nothing (L-0710). So this check needs evidence that HEAD itself passed every rule:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import review_gate; print("GATE %s %s" % review_gate.gate_state("."))' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
 ```
 
-Read its `verify` line. Every rule `pass` passes this check. Anything else —
-`fail`, `unverified`, or no record at all — passes only on what
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .` says:
-exit 0 `CI_RECEIPT VERIFIED` (the self-hosted gate passed every rule on exactly
-this committed tree), or exit 4 `NO_GATE` (no verify map, or the gate is stood
-down; `check-land` and `/crew:review` pass it too). Any other exit (local edits,
-no run for HEAD, an unreadable artifact) refuses done; say its `CI_RECEIPT`
-line. Then run `./_verify/smoke.sh` (or the mapped `.crew/verify.json` rule)
-yourself and re-read the `verify` line.
+It passes on exit 0 `CI_RECEIPT VERIFIED` (the `verify-gate` workflow ran the whole map, unbudgeted, on
+exactly this committed tree), on exit 4 `NO_GATE` (no verify map, or the gate stood down), or when the
+`verify` line reads `no rules recorded` (a clean pass empties the record) AND the `GATE` line reads
+`VERIFIED` (the marker names HEAD and the tree still has that pass's fingerprint: a marker at HEAD alone also
+survives an uncommitted edit). Anything else (a `chronic`, `unverified`, `skipped` or `fail` count, `no gate record
+yet`, `GATE UNVERIFIED`/`UNKNOWN`) refuses: quote both lines, push for the workflow or run `/crew:verify --all`, rerun.
 
 ## Check 3 — the completion audit
 

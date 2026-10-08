@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.3**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
-- **crew 1.2.1**: Promote-gate counts only full-sha rows and requires review evidence (L-0703) — BREAKING. A deploy now needs an accepted review of the exact tree being deployed, and an upstream promotion row counts only when it records the full 40-character sha; an environment that takes unreviewed builds must opt out with `requireReview: false` plus a `reviewReason`.
+- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
