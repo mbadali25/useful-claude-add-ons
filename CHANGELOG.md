@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-10-08
+
+### Fixed — crew 1.2.9: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
+
+- **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since
+  L-0527: `/crew:review` launches Kimi as a reviewer.
+- `plugin/crew/skills/crew-providers/SKILL.md` said "`/crew:review` does not launch Kimi yet" and
+  that the launch gate leaves Kimi ineligible; `review_run.LAUNCHED` has named `kimi` since L-0527,
+  so `crew_config.review_launchable()` makes it eligible in the `qa.order` walk (step 2e).
+  `kimi_probe.py`'s docstring made the same claim. Text only; no behaviour changes.
+
 ## [1.2.1] - 2026-10-08
 
 Crew 1.2.1: L-0703 (promote-gate exact-sha rows and review evidence) and L-0704 (hermetic

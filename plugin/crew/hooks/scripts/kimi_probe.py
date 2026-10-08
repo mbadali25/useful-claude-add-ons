@@ -10,9 +10,8 @@ a logged-out or out-of-quota CLI resolves on PATH and then fails at the first
 call. `review_run.py` reserves a review round BEFORE it launches the reviewer,
 so a quota wall hit after reservation spends a round for nothing -- which is
 how a Codex quota error burned one. This probe is built to run BEFORE the round
-is reserved, and only `ok` may launch. `review_run.py` does not launch Kimi yet:
-that wiring is the review harness's, and lands as L-0527 (tooling only).
-Until then the probe runs from `providers.sh --probe-kimi` or directly.
+is reserved, and only `ok` may launch. `review_run.py` runs it before reserving
+a Kimi round (L-0527); it also runs from `providers.sh --probe-kimi` or directly.
 
 THE STATES, each its own value:
 
