@@ -5306,3 +5306,17 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `goal_run(discovered=True)` and `goal_mark(only_if_running=True)` never overwrite a stop.
 
 **T-0065 citations, 2026-10-04 (T-0065-build at `cd25d088`, on a merge of origin/main `f7ab26b9`); anchor NOT moved.** The section "TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)" and the four `crew_status.py` citations corrected for its five added lines (`:226` -> `:251`, `:140` -> `:144`, `:155` -> `:159`, `:67` -> `:71`) were read at `cd25d088`. The file's `anchor:` stays `42effe14`: main changed many files this map cites after that commit, and none of those claims was re-derived for this note, so moving the anchor would claim a check that was not made. Ported onto release/1.2.0 (crew 1.0.351) on 2026-10-05: the section's citations and this map's `crew_status.py` body citations were re-derived by symbol against the merged files; the verify-gate JUDGEMENT now records that `RULE_OUT_FILE` joined the cleanup registry on main.
+
+**L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`): the gate's scope line; anchor NOT moved.**
+
+- DERIVED. `plugin/crew/hooks/scripts/scope_report.py:162` `report` resolves the ticket with
+  `crew_ticket.resolve_active` (`:166`); a broken pointer, a non-repository, a pre-1.0 ticket
+  (`legacy_ticket`, `:47`) and an unjudgeable Touch (`approved_touch`, `:63`: no readable
+  spec.md, `parse_touch` finding no entry, `crew_ticket.accepted` not `approved`) each print
+  `outside-scope: (could not tell - <why>)` and exit 0.
+- DERIVED. `outside` (`:139`) drops `bookkeeping` paths (`.work/`, `.crew/`, `TODO.md`), then
+  refresh artifacts through `completion_audit._outside_refresh_artifacts` (`:143`), then judges
+  `crew_ticket.in_touch` (`:145`): the completion audit's matcher and admission.
+- JUDGEMENT. The line stays report-only. `verify-gate.sh` runs without `errexit`, so its
+  `|| true` on the scope call changes no status; the refusal is `/crew:done` check 3, which
+  already refused shell-made writes (`plugin/crew/tests/test_completion_audit.py:322`).

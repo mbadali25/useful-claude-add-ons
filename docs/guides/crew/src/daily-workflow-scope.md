@@ -129,6 +129,11 @@ bookkeeping (the scope base, the gate's records, the metrics files) is never a c
 whatever `.gitignore` says, so a `.crew/` path the audit lists (say `.crew/verify.json` or a
 committed `.crew/incident.json`) is a real finding, not crew's noise.
 
+The verify gate also prints an `outside-scope:` line every Stop, in any `scope.mode`. It reads the
+same approved `spec.md ## Touch` the audit reads, so it names the same paths early, a `sed -i`
+write included; it never blocks. `outside-scope: (could not tell - <why>)` means it could not judge:
+no `spec.md`, no `## Touch`, a Touch not yet approved, or a ticket still in the pre-1.0 layout.
+
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code

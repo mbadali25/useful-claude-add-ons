@@ -1,18 +1,25 @@
-"""Report which changed paths fall outside the open ticket's declared scope.
+"""Report which changed paths fall outside the active ticket's approved Touch.
 
 REPORT-ONLY, ALWAYS EXIT 0. This is called from verify-gate.sh and
 verify-gate.ps1, both of which can exit 2 to block a turn. Nothing here may
 change that: the scope layer was chosen as report-only precisely so it would
 not take on the blocking-hook regression obligation, and an exit code leaking
-out of this file would take it on by accident.
+out of this file would take it on by accident. The REFUSAL is `/crew:done`
+check 3 (`completion_audit.py --check`), and, under `scope.mode: block`, the
+completion audit's own Stop hook.
 
-## Why a shared script rather than two implementations
+## The crew 1.0 contract, read the way the audit reads it (L-0711)
 
-`read_work` (crew_state.py) parses `.work/INDEX.md` with real rules -- a done
-marker skips a line, a table status wins over a text marker, no in-progress
-line yields None rather than a guess. Re-deriving that in bash AND in
-PowerShell is two copies that drift from the original and from each other.
-crew_context.py makes the same call for its own wrappers.
+The active ticket is `crew_ticket.resolve_active`; its Touch is
+`crew_ticket.accepted` (spec.md `## Touch`, from the same bytes the approval
+hash was checked against); a path is in scope by `crew_ticket.in_touch`; and a
+refresh artifact is admitted by the audit's own rule
+(`completion_audit._outside_refresh_artifacts`). Those are the calls the scope
+guard and the completion audit make, so this line and `/crew:done` cannot
+disagree about a path. Until L-0711 this file read the pre-1.0 `- touch:` line
+in `.work/tickets/<id>.md` or `.work/cache/<id>.md`, so every 1.0 ticket read
+as "ticket file is missing" and a `sed -i` outside Touch was never named here.
+A 0.20-layout ticket is now could-not-tell, never judged and never in scope.
 
 ## Unknowns stay unknown
 
@@ -25,63 +32,50 @@ uninformative output look identical.
 """
 import fnmatch
 import os
-import re
 import sys
 
+import completion_audit
 import crew_state
+import crew_ticket
 import scope_base
 
-# `- touch: path, path` under `## Scope`, per commands/ticket.md's template.
-_TOUCH = re.compile(r"^\s*[-*]\s*touch\s*:\s*(.+?)\s*$", re.IGNORECASE)
-_SPLIT = re.compile(r"[,\s]+")
-
-# Where a ticket file can live, in the order work.md reads them. `tickets` is
-# files mode; `cache` is what /crew:jira-sync, /crew:sdp-sync and
-# /crew:obsidian-sync write.
-_TICKET_DIRS = ("tickets", "cache")
-
-# Sentinel: the ticket file INDEX.md names does not exist. Not the same answer
-# as "the ticket declared no paths", and folding the two loses which to fix.
-MISSING = object()
+# Where a pre-1.0 ticket lived: files mode, then the tracker cache. Read only
+# to say WHY such a ticket cannot be judged, never for its `- touch:` line.
+_LEGACY_DIRS = ("tickets", "cache")
 
 
-def declared_paths(root, ticket):
-    """The globs a ticket says it may touch, or None when it does not say.
-
-    None and [] are different answers and the caller must keep them apart:
-    None is "the ticket declared nothing", [] is "it declared an empty list",
-    and only the second would justify reporting every changed file.
-    """
-    # TWO locations, because the tracker decides which one exists. Files mode
-    # keeps the ticket at .work/tickets/<id>.md; Jira, ServiceDesk Plus and
-    # Obsidian Kanban modes keep it at .work/cache/<id>.md (commands/work.md
-    # step 1). Reading only the first reported "the ticket file is missing"
-    # for tickets that exist -- including on this repository, whose tracker is
-    # obsidian, so the defect was live here on every turn.
-    text = None
-    for folder in _TICKET_DIRS:
-        text = crew_state.read_text(
-            os.path.join(root, ".work", folder, f"{ticket}.md"))
-        if text is not None:
-            break
-    if text is None:
-        # Distinct from "the ticket declared nothing": the file INDEX.md names
-        # is not there. Different cause, different fix, so it gets its own
-        # sentence rather than being folded into the commoner case.
-        return MISSING
-    for line in text.splitlines():
-        found = _TOUCH.match(line)
-        if not found:
-            continue
-        raw = found.group(1).replace("`", "").strip()
-        # The template ships a literal placeholder. A ticket that still carries
-        # it declared nothing, and treating `<paths>` as a glob would put every
-        # changed file outside scope and teach the reader to ignore the line.
-        if not raw or raw.startswith("<"):
+def legacy_ticket(top):
+    """`(ticket, rel)` when `.work/INDEX.md`'s open ticket exists only in the
+    pre-1.0 layout, else None."""
+    try:
+        ticket = crew_state.read_work(top).get("ticket")
+        if not ticket or os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return None
-        globs = [p for p in _SPLIT.split(raw) if p and not p.startswith("<")]
-        return globs or None
+    except Exception:  # pylint: disable=broad-except
+        return None
+    for folder in _LEGACY_DIRS:
+        rel = f".work/{folder}/{ticket}.md"
+        if os.path.isfile(os.path.join(top, rel)):
+            return ticket, rel
     return None
+
+
+def approved_touch(top, ticket):
+    """`(touch, approval, None)`, or `(None, None, why)` when the ticket's
+    Touch cannot be judged. One `accepted` call: the Touch and the approval
+    it travels with come from one read of spec.md, as in the audit."""
+    spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")
+    rel = os.path.relpath(spec, top).replace(os.sep, "/")
+    text = crew_state.read_text(spec)
+    if text is None:
+        return None, None, f"{ticket} has no readable {rel}"
+    entries, problems = crew_ticket.parse_touch(text)
+    if not entries:
+        return None, None, f"{rel}: {'; '.join(problems)}"
+    approval = crew_ticket.accepted(top, ticket)
+    if approval["status"] != "approved" or not approval["touch"]:
+        return None, None, f"{ticket}'s ## Touch is not approved ({approval['why']})"
+    return approval["touch"], approval, None
 
 
 # Crew's own bookkeeping. Updating the ticket, the handoff or the codemap IS
@@ -128,15 +122,13 @@ def gate_matches(path, pat):
 
 
 def matches(path, glob):
-    """The gate's matcher, plus the bare-directory form a TICKET declares.
+    """The gate's matcher, plus the bare-directory form.
 
-    A `- touch:` line is written by a person and routinely names a directory
-    (`plugin/crew/hooks/`) where a verify.json rule would write a glob. Those
-    two extra forms are a deliberate SUPERSET of the gate: every path the gate
-    calls a match, this calls a match too, never the reverse. The direction
-    matters -- a superset can only ever report FEWER files as outside scope,
-    so the divergence cannot invent a scope violation the gate would not also
-    see. Widening it further needs that argument to still hold.
+    No longer what this report judges Touch with -- since L-0711 that is
+    `crew_ticket.in_touch`, the audit's matcher. Kept because
+    `test_crew_ticket` holds `crew_ticket.path_matches` to it where no `*`
+    crosses a `/`, and it must stay a SUPERSET of the gate: every path the
+    gate calls a match, this calls a match too, never the reverse.
     """
     if gate_matches(path, glob):
         return True
@@ -144,43 +136,48 @@ def matches(path, glob):
     return fnmatch.fnmatch(path, stem + "/*") or path.startswith(stem + "/")
 
 
-def outside(changed, globs):
-    out = []
-    for path in changed:
-        if bookkeeping(path):
-            continue
-        if any(matches(path, g) for g in globs):
-            continue
-        out.append(path)
-    return out
+def outside(top, changed, touch, approval):
+    """The changed paths `/crew:done` check 3 would refuse: not bookkeeping,
+    not a refresh artifact the audit admits, not inside Touch."""
+    judged = [p for p in changed if not bookkeeping(p)]
+    judged = completion_audit._outside_refresh_artifacts(  # pylint: disable=protected-access
+        top, judged, approval)
+    return [p for p in judged if not crew_ticket.in_touch(p, touch)]
+
+
+def _could_not_tell(why):
+    sys.stderr.write(f"outside-scope: (could not tell - {why})\n")
+    return 0
 
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     changed = [l.strip() for l in sys.stdin.read().splitlines() if l.strip()]
-
     try:
-        ticket = crew_state.read_work(root).get("ticket")
+        return report(root, changed)
     except Exception as exc:  # pylint: disable=broad-except
-        sys.stderr.write(
-            f"outside-scope: (could not read the ticket: {exc})\n")
-        return 0
+        return _could_not_tell(f"{type(exc).__name__}: {exc}")
 
+
+def report(root, changed):
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return _could_not_tell(f"{root} is not a git repository")
+    ticket, source, broken = crew_ticket.resolve_active(top)
+    if broken:
+        return _could_not_tell(source)
     if not ticket:
+        legacy = legacy_ticket(top)
+        if legacy:
+            return _could_not_tell(
+                f"{legacy[0]} is in the pre-1.0 layout ({legacy[1]}); crew 1.0 reads "
+                f".work/tickets/{legacy[0]}/spec.md ## Touch - run /crew:migrate")
         sys.stderr.write("outside-scope: (no open ticket)\n")
         return 0
 
-    globs = declared_paths(root, ticket)
-    if globs is MISSING:
-        sys.stderr.write(
-            f"outside-scope: ({ticket} is open but its ticket file is "
-            f"missing from both .work/tickets/{ticket}.md and "
-            f".work/cache/{ticket}.md)\n")
-        return 0
-    if globs is None:
-        sys.stderr.write(
-            f"outside-scope: (cannot check - no declared paths in {ticket})\n")
-        return 0
+    globs, approval, why = approved_touch(top, ticket)
+    if why:
+        return _could_not_tell(why)
 
     # The list on stdin is what the GATE saw this turn, diffed from the commit
     # it last verified. That base advances on every clean pass, so a commit
@@ -192,8 +189,8 @@ def main():
     # gate's list still stands and the line below says the union did not.
     base_note = None
     try:
-        base, source, reason = scope_base.resolve(root, ticket)
-        ticket_wide = scope_base.changed(root, base) if base else None
+        base, source, reason = scope_base.resolve(top, ticket)
+        ticket_wide = scope_base.changed(top, base) if base else None
     except Exception as exc:  # pylint: disable=broad-except
         base, source, ticket_wide = None, None, None
         reason = f"could not resolve: {exc}"
@@ -215,13 +212,13 @@ def main():
         base_note = f"scope-base: {base[:12]} ({reason})"
         changed = sorted(set(changed) | set(ticket_wide))
 
-    extra = outside(changed, globs)
+    extra = outside(top, changed, globs, approval)
     if extra:
         sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}{suffix}\n")
         sys.stderr.write(
             f"  {ticket} declares: {chr(32).join(globs)}\n"
-            "  Report-only. Under the scope clause these belong in TODO.md "
-            "with a reason, not fixed here.\n")
+            "  Report-only here; /crew:done check 3 refuses them. Revert them, "
+            "file them to TODO.md, or amend ## Touch and re-approve.\n")
     else:
         sys.stderr.write(f"outside-scope:{suffix}\n")
     # After the list, not before: the first line of this report is the list,

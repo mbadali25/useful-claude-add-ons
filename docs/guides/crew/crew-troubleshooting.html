@@ -510,6 +510,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   amending scope is edit-then-approve, same as any other spec change.</p>
 </li>
 <li>
+<p><strong>Symptom: the Stop prints <code>outside-scope: (could not tell - ...)</code>.</strong>
+  The verify gate's scope line (<code>scope_report.py</code>) reads the active ticket's approved
+  <code>.work/tickets/&lt;id&gt;/spec.md ## Touch</code>, as the completion audit does. The reason names the gap:
+  no readable <code>spec.md</code>, no <code>## Touch</code> paths, a Touch that is not approved (approve it, or approve
+  it again after a spec edit), a broken active-ticket pointer, or a pre-1.0
+  <code>.work/tickets/&lt;id&gt;.md</code> ticket (run <code>/crew:migrate</code>). Before L-0711 the line said every 1.0
+  ticket's file was missing. It is report-only: the refusal is <code>/crew:done</code> check 3.</p>
+</li>
+<li>
 <p><strong>Symptom: <code>/crew:done</code> refuses on "out of scope" for a file the edit guard never saw.</strong>
   This is the Stop-time completion audit (<code>completion_audit.py</code>), not the edit guard. The edit guard
   only sees <code>Write</code>/<code>Edit</code>/<code>MultiEdit</code>/<code>NotebookEdit</code> tool calls; a <code>sed -i</code>, a redirect, a
