@@ -11,7 +11,9 @@ Must-allow: an empty evals/ prints "no eval cases", exits 0 and never calls
 `claude`; one case with a scored result exits 0, called once with
 `--case <name>` (and `--scaffold` when case.yaml names a scaffold_script).
 Must-block: a non-zero exit, and an exit-0 run with no scored result, each
-exit 1.
+exit 1; a case folder that cannot be listed exits 2 (could-not-tell), never
+"no eval cases". Root can list any folder, so as root that case runs the
+runner as `nobody` through setpriv; with neither, it says NOT RUN.
 
 The .ps1 runs only where pwsh resolves; when it does not, the suite says so
 rather than counting it as passed.
@@ -70,7 +72,8 @@ def make_plugin(tmp: str, cases: dict[str, str]) -> str:
     return plugin
 
 
-def run(runner: str, tmp: str, plugin: str, **stub) -> tuple[int, str, list[list[str]]]:
+def run(runner: str, tmp: str, plugin: str, prefix: tuple[str, ...] = (),
+        **stub) -> tuple[int, str, list[list[str]]]:
     bindir = os.path.join(tmp, "bin")
     os.makedirs(bindir, exist_ok=True)
     if os.name == "nt":
@@ -93,8 +96,8 @@ def run(runner: str, tmp: str, plugin: str, **stub) -> tuple[int, str, list[list
                HOME=os.path.join(tmp, "home"), USERPROFILE=os.path.join(tmp, "home"),
                STUB_LOG=log, STUB_RESULT=json.dumps(SCORED),
                **{k: str(v) for k, v in stub.items()})
-    argv = (["bash", SH] if runner == "sh"
-            else [pwsh_path(), "-NoProfile", "-NonInteractive", "-File", PS1])
+    argv = [*prefix] + (["bash", SH] if runner == "sh"
+                        else [pwsh_path(), "-NoProfile", "-NonInteractive", "-File", PS1])
     os.makedirs(os.path.join(tmp, "home"), exist_ok=True)
     done = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
                           errors="replace", env=env, check=False, timeout=300)
@@ -143,6 +146,47 @@ def case_no_scored_result(runner, tmp):
     return code == 1 and "no scored result" in out, (code, out, calls)
 
 
+def as_unprivileged(tmp: str) -> tuple[str, ...] | None:
+    """The argv prefix that runs the runner without root's read-anything
+    override: () when not root, setpriv to `nobody` as root, None when neither
+    is possible (Windows, or root with no setpriv)."""
+    if os.name == "nt" or not hasattr(os, "geteuid"):
+        return None
+    if os.geteuid() != 0:
+        return ()
+    setpriv = shutil.which("setpriv")
+    if not setpriv:
+        return None
+    for path in (tmp, os.path.join(tmp, "home")):
+        os.makedirs(path, exist_ok=True)
+        os.chmod(path, 0o777)
+    return (setpriv, "--reuid=65534", "--regid=65534", "--clear-groups")
+
+
+def case_unreadable_case_dir(runner, tmp):
+    prefix = as_unprivileged(tmp)
+    if prefix is None:
+        return None, "no way to drop root's read-anything override here"
+    if prefix and runner == "ps1":
+        probe = subprocess.run([*prefix, pwsh_path(), "-NoProfile", "-NonInteractive",
+                                "-Command", "exit 0"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", check=False, timeout=120)
+        if probe.returncode != 0:
+            return None, f"pwsh does not start as nobody here (exit {probe.returncode})"
+    plugin = make_plugin(tmp, {"a-locked": "name: a\n"})
+    for root, dirs, files in os.walk(tmp):
+        for name in dirs + files:
+            os.chmod(os.path.join(root, name), 0o755)
+    locked = os.path.join(plugin, "evals", "a-locked")
+    os.chmod(locked, 0)
+    try:
+        code, out, calls = run(runner, tmp, plugin, prefix)
+    finally:
+        os.chmod(locked, 0o755)
+    return (code == 2 and "could not tell" in out and "no eval cases" not in out
+            and not calls), (code, out[-300:], calls)
+
+
 CASES = (
     ("must-allow: empty evals/ says no eval cases, exit 0, claude never called", case_empty),
     ("must-allow: a plugin with no evals/ folder says no eval cases", case_no_evals_folder),
@@ -150,11 +194,13 @@ CASES = (
     ("must-block: an EVAL_PLUGIN_DIR that does not exist exits 2", case_missing_plugin_dir),
     ("must-block: a non-zero claude exit fails the run", case_nonzero_exit),
     ("must-block: exit 0 with no scored result fails the run", case_no_scored_result),
+    ("must-block: a case folder that cannot be listed exits 2, not no eval cases",
+     case_unreadable_case_dir),
 )
 
 
 def main() -> int:
-    passed = failed = 0
+    passed = failed = not_run = 0
     runners = ["sh"]
     if pwsh_path():
         runners.append("ps1")
@@ -164,13 +210,16 @@ def main() -> int:
         for name, case in CASES:
             with tempfile.TemporaryDirectory() as tmp:
                 ok, detail = case(runner, tmp)
-            if ok:
+            if ok is None:
+                not_run += 1
+                print(f"  NOT RUN [{runner}] {name} - {detail}; not a pass")
+            elif ok:
                 passed += 1
                 print(f"  ok   [{runner}] {name}")
             else:
                 failed += 1
                 print(f"  FAIL [{runner}] {name}\n       got {detail}")
-    print(f"\nplugin-evals-runner: {passed} passed, {failed} failed")
+    print(f"\nplugin-evals-runner: {passed} passed, {failed} failed, {not_run} not run")
     return 1 if failed else 0
 
 

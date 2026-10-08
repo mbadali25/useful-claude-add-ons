@@ -39,7 +39,19 @@ if ((Test-Path -LiteralPath $EvalsDir) -and -not (Test-Path -LiteralPath $EvalsD
 }
 $Cases = @()
 if (Test-Path -LiteralPath $EvalsDir -PathType Container) {
-    $Cases = @(Get-ChildItem -LiteralPath $EvalsDir -Directory -ErrorAction Stop |
+    # Test-Path answers $false, not an error, for a case.yaml inside a folder it
+    # cannot list, so an unreadable case would vanish and the run would say "no
+    # eval cases" with exit 0. List each case folder first: could-not-tell.
+    $CaseDirs = @(Get-ChildItem -LiteralPath $EvalsDir -Directory -ErrorAction Stop)
+    foreach ($CaseDir in $CaseDirs) {
+        try {
+            $null = Get-ChildItem -LiteralPath $CaseDir.FullName -Force -ErrorAction Stop
+        } catch {
+            Write-Error "$($CaseDir.FullName) cannot be listed - could not tell whether it holds a case" -ErrorAction Continue
+            exit 2
+        }
+    }
+    $Cases = @($CaseDirs |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "case.yaml") -PathType Leaf } |
         Sort-Object -Property Name -CaseSensitive |
         ForEach-Object { $_.Name })

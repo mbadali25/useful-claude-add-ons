@@ -38,9 +38,17 @@ if [ -e "$PLUGIN_DIR/evals" ] && { [ ! -d "$PLUGIN_DIR/evals" ] || [ ! -r "$PLUG
   exit 2
 fi
 CASES=()
-for case_yaml in "$PLUGIN_DIR"/evals/*/case.yaml; do
-  [ -f "$case_yaml" ] || continue
-  CASES+=("$(basename "$(dirname "$case_yaml")")")
+# Walk the case folders, not `*/case.yaml`: a glob cannot see inside a folder it
+# cannot search, so an unreadable case would vanish and the run would say "no
+# eval cases" with exit 0. A folder that cannot be listed is could-not-tell.
+for case_dir in "$PLUGIN_DIR"/evals/*/; do
+  [ -d "$case_dir" ] || continue
+  if [ ! -r "$case_dir" ] || [ ! -x "$case_dir" ]; then
+    echo "${case_dir%/} cannot be listed - could not tell whether it holds a case" >&2
+    exit 2
+  fi
+  [ -f "${case_dir}case.yaml" ] || continue
+  CASES+=("$(basename "$case_dir")")
 done
 if [ "${#CASES[@]}" -eq 0 ]; then
   echo "no eval cases under $PLUGIN_DIR/evals/ - nothing ran (not a pass)"

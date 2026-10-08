@@ -33,8 +33,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
   `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
   discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
-  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` they cannot list, exits 2);
-  the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` or a case folder they cannot
+  list, exits 2); the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
   runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
   `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
 - **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
