@@ -31,6 +31,11 @@ Crew 1.2.2: L-0709 (hermetic tests; folds in L-0729). Test-only; no hook or scri
   temp directory are allowed. `test_hermetic_home.py` holds it, with a regression run against a
   planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
   the sabotage-suite entries are L-0738, a tooling PR).
+- **`monkeypatch.undo()` no longer drops the isolation.** conftest's isolation fixtures shared the
+  test's `monkeypatch`, so the 16 tests that call `monkeypatch.undo()` to drop their own patches
+  also put `GLOBAL_CONFIG_PATH` back on the real `~/.claude/crew/config.json`; the new audit caught
+  `test_crew_split.py::test_orphan_without_index_row_not_adopted` opening it on a runner with a
+  user layer. The fixtures now write through a private `MonkeyPatch`.
 - **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
   until `-m quarantine` names it; a quarantine missing either, or a skip marker whose reason
   says flaky/timing/intermittent, fails collection, and a `pytest.skip()` saying so at run time

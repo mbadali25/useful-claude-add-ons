@@ -29,8 +29,23 @@ from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-i
 from crew_fixtures import fixture_git_env
 
 
+@pytest.fixture
+def _crew_isolation_patch():
+    """The MonkeyPatch every isolation fixture below writes through: a private
+    one, NOT the test's `monkeypatch`. A test calling `monkeypatch.undo()` to
+    drop its own patches used to drop these too -- `GLOBAL_CONFIG_PATH` went
+    back to the real `~/.claude/crew/config.json`, which the L-0709 home audit
+    caught on a runner whose user layer exists (test_crew_split.py's
+    `test_orphan_without_index_row_not_adopted`). Sixteen tests call it."""
+    patch = pytest.MonkeyPatch()
+    try:
+        yield patch
+    finally:
+        patch.undo()
+
+
 @pytest.fixture(autouse=True)
-def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
+def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     """Point every reader of the machine-global config at a path that does not
     exist, so no test can read or write the developer's real
     `~/.claude/crew/config.json`.
@@ -47,13 +62,13 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     attribute does nothing to another module's binding of the same object.
     """
     unused = str(tmp_path / "unused-global-config.json")
-    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
+    _crew_isolation_patch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
+    _crew_isolation_patch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
     # T-0050: every crew config write takes a backup first. An ENVIRONMENT
     # variable rather than a patched attribute, so a test's subprocess (a
     # hook, the CLI) inherits it too and never writes under the real
     # `~/.claude/crew/backups`.
-    monkeypatch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
+    _crew_isolation_patch.setenv("CREW_BACKUP_DIR", str(tmp_path / "crew-backups"))
 
     # Same rule, second environment channel. `pm_brief.main` resolves its root
     # as `payload["cwd"] or $CLAUDE_PROJECT_DIR or os.getcwd()`, so a test that
@@ -70,14 +85,14 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     # Cleared for every test by default. A test that wants the variable sets it
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
-    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    _crew_isolation_patch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     # Same rule for T-0016's session records: auto-clear reads
     # `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and every case points HOME at
     # a fixture -- so an ambient CLAUDE_CONFIG_DIR would be the one way left to
     # read the developer's real records. crew_fixtures.bind_session sets it
     # back, to the fixture, wherever a case wants a record.
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    monkeypatch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
+    _crew_isolation_patch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    _crew_isolation_patch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing
@@ -96,7 +111,7 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     # of its own (URL rewrites, credential.interactive), and overwriting slots
     # 0-1 while setting the count to 2 silently dropped all three.
     for name, value in fixture_git_env(os.environ).items():
-        monkeypatch.setenv(name, value)
+        _crew_isolation_patch.setenv(name, value)
 
     # Fourth channel (L-0557): pwsh's multicore-JIT startup profile,
     # `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`. Every
@@ -117,12 +132,12 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     # numbers each one, so no two tests share it, and pytest removes it with
     # the basetemp.
     xdg_cache = tmp_path_factory.mktemp("xdg-cache")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg_cache))
-    monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
+    _crew_isolation_patch.setenv("XDG_CACHE_HOME", str(xdg_cache))
+    _crew_isolation_patch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
 
 
 @pytest.fixture(autouse=True)
-def _isolated_home(tmp_path_factory, monkeypatch):
+def _isolated_home(tmp_path_factory, _crew_isolation_patch):
     """Sixth channel (L-0709): the home directory itself. Every test, and every
     subprocess that inherits `os.environ`, gets a home of its own as HOME,
     USERPROFILE and the XDG config/data/state directories.
@@ -147,8 +162,8 @@ def _isolated_home(tmp_path_factory, monkeypatch):
     cache above is: tests assert exactly what their tmp_path holds."""
     home = tmp_path_factory.mktemp("home")
     for name, value in crew_fixtures.home_env(home).items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.delenv(crew_fixtures.REAL_HOME_VAR, raising=False)
+        _crew_isolation_patch.setenv(name, value)
+    _crew_isolation_patch.delenv(crew_fixtures.REAL_HOME_VAR, raising=False)
     return home
 
 
@@ -191,7 +206,7 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
 
 
 @pytest.fixture(autouse=True)
-def _isolated_tmpdir(tmp_path_factory, monkeypatch):
+def _isolated_tmpdir(tmp_path_factory, _crew_isolation_patch):
     """Fifth channel (T-0065, item 7): the temp directory. Every test, and
     every subprocess that inherits `os.environ`, gets its own directory as
     `TMPDIR`/`TEMP`/`TMP` and as `tempfile`'s own cached directory.
@@ -214,8 +229,8 @@ def _isolated_tmpdir(tmp_path_factory, monkeypatch):
     own `TMPDIR` afterwards (or passes an explicit `env=`) and that wins."""
     tmp = tmp_path_factory.mktemp("tmpdir")
     for name in ("TMPDIR", "TEMP", "TMP"):
-        monkeypatch.setenv(name, str(tmp))
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp))
+        _crew_isolation_patch.setenv(name, str(tmp))
+    _crew_isolation_patch.setattr(tempfile, "tempdir", str(tmp))
 
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------

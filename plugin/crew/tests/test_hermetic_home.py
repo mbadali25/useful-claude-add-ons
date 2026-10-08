@@ -394,3 +394,17 @@ def test_a_skip_for_another_reason_is_not_a_quarantine(tmp_path):
     done = _pytest(tmp_path, ["-p", "conftest", str(probe)], _conftest_env(tmp_path / "h"))
 
     assert (done.returncode, "1 skipped" in done.stdout) == (0, True), done.stdout + done.stderr
+
+
+def test_a_test_that_undoes_its_monkeypatch_keeps_the_isolation(monkeypatch):
+    """`monkeypatch.undo()` drops the test's own patches only: conftest's
+    isolation is written through a MonkeyPatch of its own."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+    home = os.environ["HOME"]
+    monkeypatch.setenv("CREW_UNDO_PROBE", "1")
+
+    monkeypatch.undo()
+
+    assert (os.environ["HOME"], "CREW_UNDO_PROBE" in os.environ,
+            os.path.exists(crew_config.GLOBAL_CONFIG_PATH),
+            crew_fixtures.guarded_homes() != ()) == (home, False, False, True)
