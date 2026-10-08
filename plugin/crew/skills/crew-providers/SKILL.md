@@ -375,12 +375,11 @@ answer. Only the provider's own credential (`credentials/<name>.json` for
 probe runs in a throwaway directory outside the repo with an agent file allowing
 only Read, Grep and Glob, and an empty `--skills-dir`.
 
-**`/crew:review` does not launch Kimi yet.** The launch - the probe before the
-round is reserved, and a working-tree fingerprint to catch a reviewer that edits
-instead of reporting - is crew's review harness, and lands on its own as L-0527.
-Until then the launch gate skips it: `crew_config.review_launchable()` (the one
-coupling, `review_run.LAUNCHED` plus `claude`) leaves Kimi ineligible in the
-`qa.order` walk; a pin to kimi validates and is family-guarded.
+**`/crew:review` launches Kimi** (step 2e, since L-0527): `review_run.py` probes
+before the round is reserved, and a working-tree fingerprint catches a reviewer
+that edits instead of reporting. The launch gate, `crew_config.review_launchable()`
+(the one coupling, `review_run.LAUNCHED` plus `claude`), names `kimi`, so Kimi is
+eligible in the `qa.order` walk; a pin to kimi validates and is family-guarded.
 `alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
 route), and a private second opinion on local hardware.
 
