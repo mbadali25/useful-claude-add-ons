@@ -46,6 +46,23 @@ Set-Location $root -ErrorAction SilentlyContinue
 # blob, which skip-worktree/assume-unchanged cannot silence, and a dirty map is
 # matched against the committed one too, so renaming the deploy command in an
 # uncommitted edit cannot make it match nothing.
+# L-0703 review r2, the twin of promote-gate.sh's block: a map that exists but
+# is neither a regular file nor a directory (a FIFO, a socket, a device) would
+# hold `git hash-object` below, and Get-Content after it, past the hook timeout
+# - which is not a block. Refuse it here, before anything opens it. This hook
+# runs for the PowerShell tool on any OS, so the check is on the item, not on
+# the OS: UnixStat (pwsh 7.4+) is $null on Windows, which has no such files in
+# the tree. A link is judged by what it points at, as the .sh's `-f` does.
+$mapItem = Get-Item -LiteralPath .crew/verify.json -Force -ErrorAction SilentlyContinue
+if ($mapItem -and $mapItem.LinkTarget) {
+  $mapTarget = try { $mapItem.ResolveLinkTarget($true) } catch { $null }
+  $mapItem = if ($mapTarget -and $mapTarget.Exists) { Get-Item -LiteralPath $mapTarget.FullName -Force -ErrorAction SilentlyContinue } else { $null }
+}
+$mapStat = if ($mapItem) { $mapItem.PSObject.Properties['UnixStat'] } else { $null }
+if ($mapStat -and $mapStat.Value -and @('File', 'Directory') -notcontains "$($mapStat.Value.ItemType)") {
+  [Console]::Error.WriteLine("PROMOTION BLOCKED: .crew/verify.json is not a regular file (it is a $($mapStat.Value.ItemType)), so crew cannot read the deployment map without hanging. This is not a pass. Replace it with the map file.")
+  exit 2
+}
 $headMap = (git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>$null)
 $mapDirty = $null
 $mapPresent = Test-Path .crew/verify.json
@@ -928,69 +945,86 @@ function Resolve-CrewPython {
   return ''
 }
 
+# During an open incident a review check that could not run is an unmet
+# precondition like every other: it joins $problems, which the emergency lane
+# below records as a skip. Exiting 2 here unconditionally blocked the very
+# deploys an incident exists to let through (L-0703 Codex r1). The twin is the
+# `crew_incident_active` branch after _promote_review.py in promote-gate.sh.
 function Deny-ReviewUnknown([string]$Why) {
+  if ($incident) {
+    $problems.Add("the review-evidence check could not be evaluated: $Why This is not a pass.")
+    return
+  }
   [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName, sha $sha, tree ${tree}):")
   [Console]::Error.WriteLine("  - the review-evidence check could not be evaluated: $Why")
   [Console]::Error.WriteLine("    This is not a pass.")
   exit 2
 }
-$reviewPy = Resolve-CrewPython
-if (-not $reviewPy) {
-  Deny-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."
-}
-$helper = Join-Path $PSScriptRoot '_promote_review.py'
-if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
-  Deny-ReviewUnknown "$helper is missing."
+# The helper's stdout, or $null once Deny-ReviewUnknown has recorded why not.
+function Invoke-PromoteReview([string]$Python, [string]$Helper) {
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Python
+    $quoted = @($Helper, $tree, $full, "$gateDeadlineEpoch") + @($envNames) | ForEach-Object { '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }
+    $psi.Arguments = ($quoted -join ' ')
+    $psi.WorkingDirectory = (Get-Location).Path
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Close()
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    # The helper kills its own search at the deadline; this wait is the backstop
+    # for a helper that cannot even start its clock.
+    $waitMs = [int][Math]::Max(1000, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds() + 1) * 1000)
+    if (-not $proc.WaitForExit($waitMs)) {
+      # Best effort: whatever is left running, the deploy is refused below.
+      try { $proc.Kill($true) } catch {
+        # Windows PowerShell 5.1 has no Kill($true). taskkill is waited on for at
+        # most 2s, so a stalled one cannot outlive the hook timeout either.
+        try {
+          $tk = Start-Process -FilePath 'taskkill.exe' -ArgumentList '/T', '/F', '/PID', "$($proc.Id)" -NoNewWindow -PassThru -ErrorAction Stop
+          $null = $tk.WaitForExit(2000)
+        } catch { $null = $_ }
+        try { $proc.Kill() } catch { $null = $_ }
+      }
+      Deny-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
+      return $null
+    }
+    # Bounded too: a helper that exited while something it started still holds
+    # its stdout or stderr would otherwise leave .Result waiting past the hook
+    # timeout, and a timed-out hook is not a block.
+    if (-not $outTask.Wait(2000) -or -not $errTask.Wait(2000)) {
+      Deny-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
+      return $null
+    }
+    if ($proc.ExitCode -ne 0) {
+      $errText = "$($errTask.Result)".Trim()
+      if ($errText) { [Console]::Error.WriteLine($errText) }
+      Deny-ReviewUnknown "_promote_review.py exited $($proc.ExitCode); its reason is above."
+      return $null
+    }
+    return "$($outTask.Result)"
+  } catch {
+    Deny-ReviewUnknown "_promote_review.py could not be run ($($_.Exception.Message))."
+    return $null
+  }
 }
 $reviewOut = $null
-try {
-  $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = $reviewPy
-  $quoted = @($helper, $tree, $full, "$gateDeadlineEpoch") + @($envNames) | ForEach-Object { '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }
-  $psi.Arguments = ($quoted -join ' ')
-  $psi.WorkingDirectory = (Get-Location).Path
-  $psi.UseShellExecute = $false
-  $psi.RedirectStandardInput = $true
-  $psi.RedirectStandardOutput = $true
-  $psi.RedirectStandardError = $true
-  $psi.CreateNoWindow = $true
-  $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-  $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-  $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
-  $proc = [System.Diagnostics.Process]::Start($psi)
-  $proc.StandardInput.Close()
-  $outTask = $proc.StandardOutput.ReadToEndAsync()
-  $errTask = $proc.StandardError.ReadToEndAsync()
-  # The helper kills its own search at the deadline; this wait is the backstop
-  # for a helper that cannot even start its clock.
-  $waitMs = [int][Math]::Max(1000, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds() + 1) * 1000)
-  if (-not $proc.WaitForExit($waitMs)) {
-    # Best effort: whatever is left running, the deploy is refused below.
-    try { $proc.Kill($true) } catch {
-      # Windows PowerShell 5.1 has no Kill($true). taskkill is waited on for at
-      # most 2s, so a stalled one cannot outlive the hook timeout either.
-      try {
-        $tk = Start-Process -FilePath 'taskkill.exe' -ArgumentList '/T', '/F', '/PID', "$($proc.Id)" -NoNewWindow -PassThru -ErrorAction Stop
-        $null = $tk.WaitForExit(2000)
-      } catch { $null = $_ }
-      try { $proc.Kill() } catch { $null = $_ }
-    }
-    Deny-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
-  }
-  # Bounded too: a helper that exited while something it started still holds
-  # its stdout or stderr would otherwise leave .Result waiting past the hook
-  # timeout, and a timed-out hook is not a block.
-  if (-not $outTask.Wait(2000) -or -not $errTask.Wait(2000)) {
-    Deny-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
-  }
-  if ($proc.ExitCode -ne 0) {
-    $errText = "$($errTask.Result)".Trim()
-    if ($errText) { [Console]::Error.WriteLine($errText) }
-    Deny-ReviewUnknown "_promote_review.py exited $($proc.ExitCode); its reason is above."
-  }
-  $reviewOut = "$($outTask.Result)"
-} catch {
-  Deny-ReviewUnknown "_promote_review.py could not be run ($($_.Exception.Message))."
+$reviewPy = Resolve-CrewPython
+$helper = Join-Path $PSScriptRoot '_promote_review.py'
+if (-not $reviewPy) {
+  Deny-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."
+} elseif (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
+  Deny-ReviewUnknown "$helper is missing."
+} else {
+  $reviewOut = Invoke-PromoteReview $reviewPy $helper
 }
 foreach ($reason in ($reviewOut -split [char]0x1e)) {
   if ($reason) { $problems.Add($reason) }

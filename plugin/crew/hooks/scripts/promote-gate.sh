@@ -144,11 +144,49 @@ if [ -z "$PY" ]; then
   # review). An empty text, a map jq cannot parse, and a key repeated in one
   # object (jq keeps only the last value, so the first would never be
   # scanned; python refuses such a map) all block as unreadable.
+  # Then the map's SHAPE, held to python's reading below (L-0703 Codex r1):
+  # a map python refuses is could-not-tell here too, never "no string
+  # matched". `"deploy": true` holds no string at all, so the scan alone
+  # passed every command while python refused the map. $3 is "strict" for the
+  # working map (python's strict=True: an environment that is not an object, a
+  # `deploy` that is not a string or a list of strings, a list or object
+  # `requireHuman`) and "lenient" for the committed one, which python reads
+  # leniently but still refuses when it is not an object, has no object of
+  # environments, or carries a bad environment name. Keys are compared with
+  # ASCII case folded; python folds Unicode, so a key holding any non-ASCII
+  # character is one this fallback cannot compare and blocks.
+  NP_SHAPE='
+    def ci($k): [to_entries[] | select(.key | ascii_downcase == $k)];
+    def has_ci($k): ci($k) | length > 0;
+    def get_ci($k): ci($k) | .[0].value;
+    def bad_name: . == "" or (explode | any(. == 44 or . < 32 or (. >= 127 and . <= 159)));
+    def twins: any(.. | objects | keys_unsorted | map(ascii_downcase); length != (unique | length));
+    def non_ascii: any(.. | objects | keys_unsorted[]; explode | any(. > 127));
+    def deploy_ok: type == "string" or (type == "array" and all(.[]; type == "string"));
+    if type != "object" then "it holds a JSON \(type), not an object"
+    elif twins then "it holds two keys in one object that differ only by case"
+    elif non_ascii then "a key holds a non-ASCII character, which crew cannot compare ignoring case without python"
+    else (if has_ci("environments") then get_ci("environments") else {} end) as $envs
+      | if ($envs | type) != "object" then "`environments` is not an object"
+        elif any($envs | keys_unsorted[]; bad_name) then "an environment name is empty, holds a control character or holds a comma"
+        elif $mode != "strict" then "ok"
+        else first(($envs | to_entries[] | .key as $n | .value
+            | if type != "object" then "environment `\($n)` is not an object"
+              elif has_ci("requirehuman") and (get_ci("requirehuman") | type == "array" or type == "object") then "environment `\($n)` has a `requireHuman` that is a list or an object"
+              elif has_ci("deploy") and (get_ci("deploy") | deploy_ok | not) then "environment `\($n)` has a `deploy` that is not a command or a list of commands"
+              else empty end), "ok")
+        end
+    end'
   np_scan() {
-    local text=$1 where=$2 dup
+    local text=$1 where=$2 mode=$3 dup shape
     dup=$(printf '%s' "$text" | np_jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
     if [ -z "${text//[[:space:]]/}" ] || [ "$dup" != "false" ]; then
       echo "PROMOTION BLOCKED: no usable python, and $where is empty, does not parse, or repeats a key, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
+      exit 2
+    fi
+    shape=$(printf '%s' "$text" | np_jq -r --arg mode "$mode" "$NP_SHAPE" 2>/dev/null)
+    if [ "$shape" != "ok" ]; then
+      echo "PROMOTION BLOCKED: no usable python, and crew cannot classify $where as a deployment map: ${shape:-jq could not read it}. This is not a pass. Install python 3.8+, or fix the map." >&2
       exit 2
     fi
     # The hit is printed as JSON (`tojson`), never raw: a value of only
@@ -177,10 +215,10 @@ if [ -z "$PY" ]; then
       echo "PROMOTION BLOCKED: no usable python, and .crew/verify.json could not be read inside the hook's deadline. This is not a pass." >&2
       exit 2
     }
-    np_scan "$NP_MAP" ".crew/verify.json"
+    np_scan "$NP_MAP" ".crew/verify.json" strict
   fi
   if [ -n "$MAP_DIRTY" ] && [ -n "$HEAD_MAP" ]; then
-    np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json"
+    np_scan "$(git cat-file blob "$HEAD_MAP" 2>/dev/null)" "the committed .crew/verify.json" lenient
   fi
   exit 0
 fi
@@ -776,7 +814,13 @@ fi
 REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \
   "$GATE_DEADLINE" "${ENVLIST[@]}")
 REVIEW_STATUS=$?
-if [ "$REVIEW_STATUS" -ne 0 ]; then
+if [ "$REVIEW_STATUS" -ne 0 ] && crew_incident_active; then
+  # An open incident records a review check that could not run as a skip, like
+  # every other unmet precondition: exiting 2 here, before the emergency lane
+  # below, blocked the very deploys an incident exists to let through (L-0703
+  # Codex r1). The twin is Deny-ReviewUnknown in promote-gate.ps1.
+  REVIEW="the review-evidence check could not be evaluated (exit $REVIEW_STATUS): _promote_review.py failed or is missing. This is not a pass."
+elif [ "$REVIEW_STATUS" -ne 0 ]; then
   echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
   echo "  - the review-evidence check could not be evaluated (exit $REVIEW_STATUS)." >&2
   echo "    This is not a pass. _promote_review.py failed or is missing; its" >&2
