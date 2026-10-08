@@ -27,6 +27,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   check 3 already refused a `sed -i` write outside Touch on a 1.0 ticket; L-0711 adds the test
   that proves it (`test_check_refuses_a_sed_i_write_outside_touch`). The bookkeeping exclusions
   (`.work/`, `.crew/`, `TODO.md`) are unchanged.
+- **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
+  (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
 
 ## [1.2.1] - 2026-10-08
 
