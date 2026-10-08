@@ -105,6 +105,21 @@ def test_a_marker_behind_head_is_unverified(tmp_path):
     assert "have not been through the gate" in reason
 
 
+def test_a_marker_at_head_with_only_the_gates_own_file_differing_is_verified(tmp_path):
+    """MUST-ALLOW: the gate's own marker is not material. Here `.crew/` is not
+    ignored, so the marker is itself an untracked path, and no fingerprint
+    exists; counting the marker as a change would refuse this tree forever.
+    L-0710 replaced the real-gate `clean-tree` shape that pinned this (a
+    zero-rules turn no longer writes the marker), so it is pinned here."""
+    root = _repo(tmp_path)
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "everything")
+    (root / ".crew" / ".verify-verified-at").write_text(git(root, "rev-parse", "HEAD") + "\n",
+                                                        encoding="utf-8")
+    state, reason = review_gate.gate_state(str(root))
+    assert state == review_gate.VERIFIED, reason
+
+
 # --- the invariant, against the real gate --------------------------------------
 
 def _modify(root):
