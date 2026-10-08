@@ -210,17 +210,25 @@ def _review_lines(root):
             line += f", {summary['rounds_refunded']} refunded"
         if True in marks:
             line += ", same-family round"
-        unreviewed = summary.get("unreviewed")
-        if isinstance(unreviewed, list) and unreviewed:
-            # L-0712: INCOMPLETE with no reviewer, refunded -- no round spent.
-            line += f", {len(unreviewed)} with no reviewer (INCOMPLETE, refunded)"
-        elif unreviewed is not None and not isinstance(unreviewed, list):
-            line += ", no-reviewer record unreadable"
+        line += _unreviewed_note(summary.get("unreviewed"))
         lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")
     lines.append(_same_family_line(tally))
     return lines
+
+
+def _unreviewed_note(unreviewed):
+    """L-0712: the ticket line's no-reviewer outcomes (INCOMPLETE, refunded,
+    no round spent). Only entries in exactly the shape `no_reviewer` writes
+    are counted; anything else is unreadable, never counted as refunded."""
+    if unreviewed is None or unreviewed == []:
+        return ""
+    if not isinstance(unreviewed, list) or not all(
+            isinstance(e, dict) and e.get("verdict") == "INCOMPLETE"
+            and e.get("refunded") is True for e in unreviewed):
+        return ", no-reviewer record unreadable"
+    return f", {len(unreviewed)} with no reviewer (INCOMPLETE, refunded)"
 
 
 def same_family_round(row):

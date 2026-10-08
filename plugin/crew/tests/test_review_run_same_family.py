@@ -156,14 +156,16 @@ def _fallback(tmp_path, qa, probe_status, authors="claude"):
     (repo / ".crew" / "config.json").write_text(json.dumps({"qa": qa}), encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; AUTHORS="{authors}"\n'
-              + _fallback_line() + 'printf "FALLBACK=[%s]\\n" "$FALLBACK"\n')
+    script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; QA_KIMI_MODEL=; '
+              f'AUTHORS="{authors}"\n' + _fallback_line()
+              + 'printf "FALLBACK=[%s] QA_MODEL=[%s] QA_KIMI_MODEL=[%s]\\n" "$FALLBACK" '
+              '"$QA_MODEL" "$QA_KIMI_MODEL"\n')
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
                CLAUDE_PLUGIN_ROOT=context._ROOT)  # pylint: disable=protected-access
     result = subprocess.run(["bash", "-c", script], cwd=str(repo), capture_output=True,
                             text=True, stdin=subprocess.DEVNULL, check=False, env=env,
                             timeout=60)
-    return result.stdout.rsplit("FALLBACK=[", 1)[-1].split("]")[0], result
+    return result.stdout.rsplit("FALLBACK=", 1)[-1].strip(), result
 
 
 def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
@@ -172,18 +174,53 @@ def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
             "roles": {"review": {"provider": "codex", "model": "gpt-6-astra"}}}
 
 
-@pytest.mark.parametrize("fallback,order,expected", [
-    ("gpt-6.1-sol", ("codex", "kimi", "copilot", "claude"), "codex gpt-6.1-sol"),
-    ("claude-sonnet-5", ("codex", "kimi", "copilot", "claude"), "kimi k3"),
-    ("claude-sonnet-5", ("codex", "claude"), "INCOMPLETE"),
+_ALL = ("codex", "kimi", "copilot", "claude")
+
+
+@pytest.mark.parametrize("fallback,order,probe,expected", [
+    ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol] QA_MODEL=[gpt-6.1-sol] QA_KIMI_MODEL=[]"),
+    ("claude-sonnet-5", _ALL, 6, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
+    ("claude-sonnet-5", ("codex", "claude"), 6,
+     "[INCOMPLETE] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[]"),
+    # A limit (5) or no answer (7) is all of codex: a gpt fallback never lands on it.
+    ("gpt-6.1-sol", _ALL, 5, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
+    ("gpt-6.1-sol", _ALL, 7, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
 ])
-def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, expected):
-    got, result = _fallback(tmp_path, _qa(fallback, order), 6)
+def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, probe, expected):
+    got, result = _fallback(tmp_path, _qa(fallback, order), probe)
 
     assert got == expected, result.stdout + result.stderr
 
 
-def test_review_md_names_no_fallback_when_the_probe_answered(tmp_path):
-    got, result = _fallback(tmp_path, _qa("gpt-6.1-sol"), 0)
+@pytest.mark.parametrize("probe", [0, 1, 2])
+def test_review_md_names_no_fallback_unless_the_probe_said_unavailable(tmp_path, probe):
+    got, result = _fallback(tmp_path, _qa("gpt-6.1-sol"), probe)
 
-    assert got == "", result.stdout + result.stderr
+    assert got == "[] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[]", result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("entries", [
+    [{"verdict": "CLEAN", "refunded": False}],
+    ["not an object"],
+    {"verdict": "INCOMPLETE"},
+])
+def test_status_never_counts_a_malformed_no_reviewer_record_as_refunded(entries):
+    import crew_status  # pylint: disable=import-outside-toplevel
+
+    note = crew_status._unreviewed_note(entries)  # pylint: disable=protected-access
+
+    assert note == ", no-reviewer record unreadable"
+
+
+def test_an_owner_accepted_same_family_round_keeps_the_label(setup):
+    repo, scratch, _, _ = setup
+    _run(setup, "claude", "--reserve-only", "--authors", "claude", "--same-family", "chosen")
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['path']}\n" for p in json.loads(
+            (scratch / "manifest.json").read_text(encoding="utf-8"))["parts"])
+        + "FIX|change.txt:1|a defect|read it\n", encoding="utf-8")
+    _run(setup, "claude", "--round", "1", "--output", str(scratch / "out.txt"), "--exit-code", "0")
+
+    receipt = rl.accept(str(repo), "T1", "owner")
+
+    assert (receipt["kind"], receipt.get("same_family")) == ("owner-accepted", True)

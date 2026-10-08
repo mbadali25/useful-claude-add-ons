@@ -221,7 +221,7 @@ times by different people, and the ordering is a preference while this is a rule
 
 If striking the author's family leaves **no** candidate, no reviewer runs (L-0712): say
 `NO INDEPENDENT REVIEWER` in the verdict and record it INCOMPLETE and refunded — no round, no budget:
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --no-reviewer --reason "<why>"`.
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --no-reviewer --reason "<why>"`.
 Step 2c on the author's family runs only when I ask for that same-family read, with
 `SAME_FAMILY="<my reason>"`; its round, review.json and a CLEAN receipt are labelled `same_family`.
 
@@ -231,7 +231,7 @@ family had looked.
 
 Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
-not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
+not a cue to fall back (except a `review` role pinned to codex: it runs `$FALLBACK`, L-0712). If `qa.provider` is `auto`, walk `qa.order` and take the
 first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
@@ -321,9 +321,9 @@ the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
 
 ```bash
-case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
-# L-0712: the probe is resolve_role's `available`: a failed codex pin falls back (stderr says how); run what FALLBACK names (`<provider> <model>`, empty model = CLI default); INCOMPLETE = --no-reviewer.
-case "$PROBE_STATUS" in ""|0) FALLBACK=;; *) FALLBACK=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_config as c, crew_state as s; gone = ("codex", sys.argv[2] or None); r = s.resolve_role(c.resolve_config("."), "qa", "review", author=sys.argv[3].split(), available=lambda p, m: (p, m or None) != gone); sys.stderr.write("".join(a + "\n" for a in r["announce"])); print("INCOMPLETE" if r["incomplete"] else r["provider"] + " " + (r["model"] or "") if r["fellBack"] else "")' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts" "$QA_MODEL" "$AUTHORS"); echo "fallback: ${FALLBACK:-none - no codex pin fell back}";; esac
+case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
+# L-0712: the probe is resolve_role's `available` (a limit or no answer is all of codex, its gpt fallback too; a failure, that model): a failed codex pin falls back (stderr says how); run the provider FALLBACK names (`<provider> <model>`; its model is set in QA_MODEL / QA_KIMI_MODEL); INCOMPLETE = --no-reviewer.
+case "$PROBE_STATUS" in 5|6|7) FALLBACK=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_config as c, crew_state as s; gone = ("codex", sys.argv[2] or None); whole = sys.argv[4] in ("5", "7"); cfg = c.resolve_config("."); qa = cfg.setdefault("qa", {}); qa.update(fallback=None) if whole and s.provider_for_model(qa.get("fallback")) == "codex" else None; r = s.resolve_role(cfg, "qa", "review", author=sys.argv[3].split(), available=lambda p, m: p != "codex" if whole else (p, m or None) != gone); sys.stderr.write("".join(a + "\n" for a in r["announce"])); print("INCOMPLETE" if r["incomplete"] else r["provider"] + " " + (r["model"] or "") if r["fellBack"] else "")' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts" "$QA_MODEL" "$AUTHORS" "$PROBE_STATUS"); echo "fallback: ${FALLBACK:-none - no codex pin fell back}"; case "$FALLBACK" in "codex "*) QA_MODEL=${FALLBACK#codex };; "kimi "*) QA_KIMI_MODEL=${FALLBACK#kimi };; esac;; *) FALLBACK=;; esac
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.

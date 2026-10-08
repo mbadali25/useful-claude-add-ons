@@ -150,7 +150,7 @@ would become the latest round (blocking `--accept` of an earlier FINDINGS) and
 draw on `REFUND_LIMIT`, which bounds LAUNCHED rounds. A same-family read runs
 only by the operator's explicit choice: `reserve(..., same_family=<reason>)`
 labels the row `same_family: true` with that reason, and a CLEAN round's
-receipt copies the label. A labelled row is never auto-accepted.
+receipt, or an owner's `--accept` of its FINDINGS, copies the label. A labelled row is never auto-accepted.
 
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 """
@@ -582,6 +582,8 @@ def accept(root, ticket, by):
             "bundle_sha256": row["bundle_sha256"], "base": row["base"],
             "verdict": "FINDINGS", "accepted_by": by.strip(), "accepted_at": _now(),
         }
+        if row.get("same_family") is True:
+            data["receipt"]["same_family"] = True
         data["state"] = ACCEPTED
         return data, data["receipt"]
 
