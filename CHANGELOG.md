@@ -25,7 +25,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
   could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
 
-### Fixed — crew 1.2.3: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+### Fixed — crew 1.2.10: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
@@ -53,6 +53,52 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (owner ruling 2026-10-08: report/audit agreement wins over the spec's frozen exclusion).
 - **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
   (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
+
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
+## [1.2.5] - 2026-10-08
+
+### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
+
+- **Summary.** When a pinned reviewer model is gone, crew now falls back to a reviewer from another
+  model family instead of always handing the review to Claude, and `/crew:status` shows how many
+  review rounds were same-family.
+- **Resolution (`crew_state.resolve_role`).** The hard-coded `provider = "claude"` is gone. The
+  `fallback` model runs on the provider that serves its family (`provider_for_model`: a
+  `gpt-6.1-sol` fallback dispatches to Codex, the 2026-10-08 fleet-swap case). A fallback in the
+  author's family is skipped for the next provider in `qa.order` (`dev.order`, else the shipped
+  order, for the dev kind) that is not the author's family and answers, on its own model and effort.
+  None left is `incomplete` (the round is recorded INCOMPLETE and refunded, by the harness half);
+  `same_family_ok` is the operator's explicit choice, labelled `sameFamily`. New result keys:
+  `fallbackVia`, `incomplete`, `sameFamily`.
+- **`/crew:status`.** One `review   same-family: N of M completed rounds (P%)` line over every
+  ledger, and `same-family round` on a ticket's line. A round with no provider is could-not-tell,
+  never counted independent. The target is under 5%.
+- **Docs.** README, CONFIG.md, `/crew:model`, `/crew:status`, crew-providers, the Codex guide and
+  the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
+  `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
+  harness half (crew 1.2.6), per the tooling-PR rule.
 
 ## [1.2.1] - 2026-10-08
 

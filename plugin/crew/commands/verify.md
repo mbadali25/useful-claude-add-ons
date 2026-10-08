@@ -39,7 +39,8 @@ no map, because the gate turns green and everyone relaxes.
 **Running the whole map, unbudgeted.** The Stop gate spends a budget
 (`verify.stopBudgetSeconds`, default 60) cheapest-first and DEFERS what does
 not fit, printing `deferred to /crew:verify: <cmd> (<n>s)` for each one. Those
-were not checked.
+were not checked. A rule over the budget alone is `NOT VERIFIED ... deferred to CI`, never a block;
+a turn that ran no rule says `verify-gate: 0 rules ran` and writes no verified marker (L-0710).
 
 **`seconds` prices the RULE, and is charged ONCE.** A rule runs whole or
 defers whole, however many commands its `run` holds -- so a rule with
@@ -103,10 +104,12 @@ rule re-matched and re-ran from that same old commit, forever.
 per-rule status alongside the two markers. A rule that is PERMANENTLY over
 budget on its own — chronic, not a fluke of this turn's ordering — no longer
 blocks the baseline; it is named in the record instead, and reported EVERY
-turn ("NOT VERIFIED ON THIS TREE") until it actually runs clean, which only
-`--all` can do. A rule that fits alone but lost to this turn's contention
-(acute) still blocks the baseline exactly as before — that case is genuinely
-unverified for THIS commit, not permanently unverifiable.
+turn ("NOT VERIFIED ON THIS TREE ... deferred to CI") until it actually runs
+clean, which only `--all` can do: the `verify-gate` CI workflow on a pushed
+branch, or this command here (`/crew:done` refuses until one has). A rule
+that fits alone but lost to this turn's contention (acute) still blocks the
+baseline exactly as before — genuinely unverified for THIS commit, not
+permanently unverifiable.
 
 ## `--price` (operator only, never from Stop)
 
