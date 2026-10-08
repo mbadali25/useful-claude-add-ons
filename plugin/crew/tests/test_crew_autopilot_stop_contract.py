@@ -470,6 +470,29 @@ def r_broken_second(tmp, mp):
     return crew_autopilot.resume_target(str(root), T)
 
 
+def _both_places(tmp):
+    from scope_fixtures import both_places  # pylint: disable=import-outside-toplevel
+    root = _approved(tmp)
+    both_places(root, T)
+    return root
+
+
+def b_could_not_tell_where(tmp, _mp):
+    return _next(_both_places(tmp))
+
+
+def b_archived(tmp, _mp):
+    from scope_fixtures import archive_ticket  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp, mode="off")
+    _ticket(root, status="ready")
+    archive_ticket(root, T)
+    return _next(root)
+
+
+def r_could_not_tell_where(tmp, _mp):
+    return crew_autopilot.resume_target(str(_both_places(tmp)), T)
+
+
 def r_other_active(tmp, _mp):
     root = _approved(tmp)
     _ticket(root, ticket="T-2")
@@ -662,6 +685,8 @@ CASES = [
     ('answer("ship", True, order)', b_order, "ship", "look"),
     ("the review receipt no longer stands", b_ship_receipt, "ship", "look"),
     ("answer(held[0], True, held[1], decision=", b_ship_held, "direction-approval", "look"),
+    ('answer("invalid", True', b_could_not_tell_where, "invalid", "look"),
+    ('answer("closed", True, _archived_reason(ticket))', b_archived, "closed", "closed"),
     ('answer("folder-elsewhere"', b_folder_elsewhere, "folder-elsewhere", "look"),
     ('answer("brainstorm", True', b_brainstorm, "brainstorm", "direction"),
     ("index-disagreement: {here} says", b_index_disagreement, "direction-approval", "look"),
@@ -704,10 +729,11 @@ CASES = [
     ("stopped(source, _folder_elsewhere", r_folder_elsewhere, None, None),
     ("has no .work/tickets/ folder", r_no_folder, None, None),
     ("stopped(source, stop_reason)", r_handoff, None, None),
-    ("a broken pointer is not guessed \" \"past", r_broken_first, None, None),
+    ('stopped("active-ticket", _broken_pointer(top, where))', r_broken_first, None, None),
     ("several open tickets and no pointer", r_several, None, None),
     ("no open ticket with a .work/tickets/", r_none_open, None, None),
-    ("a broken pointer is not guessed past - \"", r_broken_second, None, None),
+    ('stopped("active-ticket", _broken_pointer(top, where))', r_broken_second, None, None),
+    ('stopped(source, f"could not tell where', r_could_not_tell_where, None, None),
     ("but this worktree's active ticket", r_other_active, None, None),
     ("reason=GOAL_ROUTE_FIRST", route_goal, None, None),
     ("takes no other word", route_no_word, None, None),

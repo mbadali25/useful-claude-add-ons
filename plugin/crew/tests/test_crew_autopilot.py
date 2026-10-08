@@ -523,11 +523,10 @@ def _receipt_says(monkeypatch, ok, message):
     return calls
 
 
-def test_autopilot_stale_artifact_after_review_stops_with_commit_then_rerun(tmp_path,
-                                                                           monkeypatch):
-    """L-0522: a stale artifact after an accepted review routes to its refresh
-    and STOPS - the receipt is re-checked on the next run, on the committed
-    refresh, never in this one."""
+def test_autopilot_stale_artifact_after_review_stops_for_the_owner(tmp_path, monkeypatch):
+    """L-0522 under L-0666: a stale artifact after an accepted review STOPS for
+    the owner, names the delta gate and no refresh command, and writes nothing -
+    the receipt is re-checked on the next run, on a committed refresh."""
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
     calls = _receipt_says(monkeypatch, True, "receipt current")
@@ -536,9 +535,10 @@ def test_autopilot_stale_artifact_after_review_stops_with_commit_then_rerun(tmp_
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], got["command"]) == (
-        "refresh", True, "/crew:onboard --refresh crew"), got
-    assert "commit the anchor-only refresh, then rerun autopilot" in got["reason"], got
+    assert (got["phase"], got["stop"], got["command"], got["decision"]) == (
+        "stale-after-review", True, "", "stale-after-review"), got
+    assert ("keeps the receipt (delta gate)" in got["reason"],
+            "/crew:onboard --refresh" in got["reason"]) == (True, False), got
     assert (len(calls), _snapshot(root) == before) == (1, True)
 
 

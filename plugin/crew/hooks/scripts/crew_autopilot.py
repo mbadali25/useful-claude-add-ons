@@ -259,6 +259,7 @@ import crew_autopilot_docs
 import crew_autopilot_fences
 import crew_autopilot_fix
 import crew_autopilot_gates
+import crew_autopilot_paste
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
@@ -1490,7 +1491,11 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     if not ok:
         return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
-    if refresh["state"] != FRESH:  # L-0522: a refresh command settles it, then a rerun
+    if refresh["state"] == STALE:  # L-0666 over L-0522: the owner decides; the stop names no command
+        return answer("stale-after-review", True, "an artifact is stale after an accepted review; an "
+                      "anchor-only refresh, committed on a clean tree, keeps the receipt (delta gate) "
+                      f"- human decides. {refresh.get('stop_reason', refresh['reason'])}")
+    if refresh["state"] != FRESH:  # L-0522: unsettled or unavailable - a human decides
         return answer(*review_ledger.review_delta.after_review_refresh(refresh, STALE))
     return crew_autopilot_docs.after_review(top, ticket, answer) or answer(
         "done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
@@ -2641,55 +2646,14 @@ def focus_path(root):
 FOCUS_LOCK_WAIT = 5.0
 
 
-# PowerShell reads U+2018..U+201B as single quotes too.
-_PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
-# C0, DEL and C1 controls (a terminal acts on C1 too), the PowerShell quotes,
-# and the bidi embedding/override/isolate controls U+202A..U+202E and
-# U+2066..U+2069 (they reorder what a person reads): the JSON form instead.
-_UNSAFE_PATH = re.compile(r"[\x00-\x1f\x7f-\x9f\u2018-\u201b\u202a-\u202e\u2066-\u2069]|\s{2,}")
+# The paste-safe removal text and the marker lock live in crew_autopilot_paste (line cap).
+_posix_quoted, _ps_quoted = crew_autopilot_paste.posix_quoted, crew_autopilot_paste.ps_quoted
+_paste_safe, _remove_by_hand = crew_autopilot_paste.paste_safe, crew_autopilot_paste.remove_by_hand
+_FocusLockError, _focus_remedy = crew_autopilot_paste.FocusLockError, crew_autopilot_paste.focus_remedy
 
 
-def _posix_quoted(path):
-    return "'" + path.replace("'", "'\\''") + "'"
-
-
-def _ps_quoted(path):
-    for mark in _PS_QUOTES:
-        path = path.replace(mark, mark * 2)
-    return "'" + path + "'"
-
-
-def _paste_safe(path):
-    """Whether `path` survives into a printed command unchanged: no control
-    character (C0, DEL or C1), no bidi control, no run of whitespace (`_one_line` would collapse it), no
-    quote PowerShell also reads, and the POSIX command parses back to exactly
-    `rm -- <path>`."""
-    if _UNSAFE_PATH.search(path):
-        return False
-    rm_part = f"rm -- {_posix_quoted(path)}"
-    try:
-        return shlex.split(rm_part) == ["rm", "--", path] and _one_line(rm_part) == rm_part
-    except ValueError:
-        return False
-
-
-def _remove_by_hand(path, effect):
-    """`effect`, then paste-ready removal commands for `path` (POSIX and
-    PowerShell) when it is paste-safe, else the path as JSON and "remove
-    this file by hand", with no command that could name another file."""
-    if not _paste_safe(path):
-        # JSON escapes control characters; a run of spaces is escaped too, so
-        # `_one_line`'s collapse cannot change the path it names.
-        shown = re.sub(r" {2,}", lambda run: "\\u0020" * len(run.group()), json.dumps(path))
-        return f"{effect}: remove this file by hand: {shown}"
-    return (f"{effect}: rm -- {_posix_quoted(path)} (POSIX shell) or "
-            f"Remove-Item -LiteralPath {_ps_quoted(path)} (PowerShell)")
-
-
-def _focus_remedy(path):
-    """The way out of an unknown marker, naming its exact path: `focus off`
-    refuses to touch a file it cannot read, so the human removes it."""
-    return _remove_by_hand(path, "removing it drops EVERY worktree's focus, not only this one's")
+def _focus_lock(path):  # reads FOCUS_LOCK_WAIT here, at call time
+    return crew_autopilot_paste.FocusLock(path, FOCUS_LOCK_WAIT)
 
 
 def _focus_marker(top):
@@ -2713,39 +2677,6 @@ def _focus_marker(top):
         return path, None, (f"the focus marker {path} names {entry!r}, not a ticket; "
                             f"{_focus_remedy(path)}")
     return path, mapping, ""
-
-
-class _FocusLockError(Exception):
-    """The marker's lock could not be taken; nothing was written."""
-
-
-class _focus_lock:  # pylint: disable=invalid-name,too-few-public-methods
-    """`<marker>.lock`, crew_config_files.Lock's exclusive create with a
-    bounded wait, around every read-modify-write of the marker: two worktrees
-    running `focus` at once would otherwise both read the old mapping and the
-    later write would drop the other's entry while both report success. A
-    lock that cannot be taken raises _FocusLockError; nothing writes
-    unlocked."""
-
-    def __init__(self, path):
-        import crew_config_files  # pylint: disable=import-outside-toplevel
-        self.path, self.files = path, crew_config_files
-        self.lock = crew_config_files.Lock(path, FOCUS_LOCK_WAIT)
-
-    def __enter__(self):
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            self.lock.__enter__()
-        except (self.files.Busy, OSError) as exc:
-            raise _FocusLockError(
-                f"refused: the focus marker's lock {self.path}.lock could not be taken "
-                f"({exc}); nothing written. If no focus command is running, a process "
-                "died holding it; " + _remove_by_hand(
-                    self.path + ".lock", "removing the lock releases it")) from exc
-        return self
-
-    def __exit__(self, *exc):
-        self.lock.__exit__(*exc)
 
 
 def focus_state(root):

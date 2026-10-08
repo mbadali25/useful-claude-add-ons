@@ -954,7 +954,7 @@ Both come from `crew_autopilot_owner.owner_items`, which asks autopilot's own ph
 | receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
 | receipt not current, artifacts fresh | `review` | runs `/crew:review` |
 | receipt changed beyond an anchor sha | `stale-after-review` | stop, before the budget check — a refresh after review moved more than an anchor (L-0522) |
-| receipt current, artifacts stale | `refresh` | stop with the refresh command: run it, commit, rerun — the delta gate keeps the receipt across an anchor-only refresh |
+| receipt current, artifacts stale | `stale-after-review` | stop for the owner, no command (L-0666) — the delta gate keeps the receipt across an anchor-only refresh committed on a clean tree |
 | receipt current, artifact unsettled | `stale-after-review` | stop, nothing written |
 | receipt current, a document owed | `docs-after-review` | stop, nothing written — writing it now would stale the receipt |
 | receipt current, artifacts fresh | `done` | runs `/crew:done` |

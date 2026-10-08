@@ -67,6 +67,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   FINDINGS stop then ends "fixed them instead? run the refresh check, then /crew:review"
   (`FIXED_INSTEAD`, the one mechanical line a stop may carry, on `accept-review` only). A `closed`
   stop whose successor cannot be told (next.md names `superseded-by:` twice) is `look`.
+- **Merged with L-0522 (release/1.2.0).** An artifact stale after an accepted review whose refresh
+  would settle it now stops as `stale-after-review` with no command, naming the delta gate (an
+  anchor-only refresh committed on a clean tree keeps the receipt), instead of a `refresh` stop
+  carrying the refresh command. Nothing is written either way.
 - **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
   site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
 

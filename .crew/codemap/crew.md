@@ -1159,7 +1159,10 @@ file, does not parse or cannot be read, not an object, or this worktree's entry 
 (`:2103`): through `_remove_by_hand` (`:2090`), the POSIX and PowerShell removal
 commands for the exact path only when `_paste_safe` (`:2075`) holds (no control character, whitespace run
 or PowerShell quote, and the rm parses back to the path), else the path as JSON with no command, never an empty mapping
-in its place. `focus_state` (`:2165`) reports `focus` from the marker only, `unknown` beside it,
+in its place. DERIVED (G6a landing): `_focus_remedy`, `_remove_by_hand`, `_paste_safe` and the lock class now
+live in `plugin/crew/hooks/scripts/crew_autopilot_paste.py`, moved unchanged for pylint's 3400-line cap and
+re-exported; `_focus_lock` stays in `crew_autopilot.py` as a wrapper that reads `FOCUS_LOCK_WAIT` at call time.
+`focus_state` (`:2165`) reports `focus` from the marker only, `unknown` beside it,
 and the active-ticket pointer separately (`pointer`, never the `.work/INDEX.md` fallback).
 `focus_guard` (`:2183`) lets `status`, `focus off` and `NO_TICKET` (`:299`, L-0652's
 `sleep`/`wake`) through; an `unknown` marker refuses everything else without offering `focus

@@ -459,6 +459,7 @@
                 "plugin/crew/hooks/scripts/crew_autopilot_fix.py",
                 "plugin/crew/tests/test_crew_autopilot_review_policy.py",
                 "plugin/crew/hooks/scripts/crew_autopilot_stops.py",
+                "plugin/crew/hooks/scripts/crew_autopilot_paste.py",
                 "plugin/crew/hooks/scripts/crew_autopilot_owner.py",
                 "plugin/crew/tests/test_crew_autopilot_stop_contract.py",
                 "plugin/crew/tests/test_crew_autopilot_fences.py",
