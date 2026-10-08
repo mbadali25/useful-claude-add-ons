@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T00:34Z
+Last updated: 2026-10-08T00:58Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-08T00:58Z MERGED #565 (G3c) into release at 33d35605, crew 1.1.18. Opened WAVE 9 #566. Starting the G3d builder on release 33d35605.
 - 2026-10-08T00:34Z G3c opened #565 into release, head dfcc08a3, crew 1.1.18. Local checks clean. Gate sabotage step: 22 non-red entries, all identical on release cb17abdf (pre-existing, not G3c). Waiting on CI.
 - 2026-10-07T23:29Z Codex review of H2b at 6601d15 came back CLEAN (0/0/0). It ran ~110 commands and checked that live and deferred anchors are unique; it did not execute tests (read-only sandbox). The builder's RED runs cover execution.
 - 2026-10-07T23:25Z H2b built at 6601d151: 393 entries on main, all RED; 115 deferred in docs/tickets/H2b/deferred.patch, all RED on a scratch merge. L-0651 (k) unresolved (needs a new must-block test). Codex review of H2b started.
