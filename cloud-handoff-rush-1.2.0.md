@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T01:40Z
+Last updated: 2026-10-08T01:49Z
 
 ## >>> RESUME HERE
 
@@ -98,6 +98,7 @@ commits keep `Claude-Session:` only.
 
 ## Log (newest first)
 
+- 2026-10-08T01:49Z G3d #567: test (3.12) failed 92 tests on a self-hosted runner. Real L-0708 bug: TMPDIR on its own mount makes git stop at the boundary with a two-line answer, read as could-not-tell. Fix dcb479c9 sets GIT_DISCOVERY_ACROSS_FILESYSTEM=1, plus a regression test (sabotage-checked). New head 0e29e05797d9f163ffd0a73b95097f7169a5743d, crew 1.1.19 re-applied last.
 - 2026-10-08T01:40Z G3d opened #567 into release, head cf1224e4, crew 1.1.19. Command count now 38; both install scripts' catalog label changed, so re-pin the README install URLs after wave 10 reaches main. Local full pytest passed: 17438 passed.
 - 2026-10-08T01:39Z Owner: run pytest on the self-hosted runners via PR CI instead of locally. From G3d on, builders run only fast checks plus targeted pytest before pushing; CI does the full suite. No group merges until CI is green.
 - 2026-10-08T01:31Z Owner started 3 self-hosted Linux runners and set CREW_RUNNER=self-hosted by hand. Not verified from here (proxy blocks Actions paths). Check on G3d's PR CI: start-if-stopped should be skipped and test (3.12) should run on a self-hosted runner. Windows jobs stay on windows-latest.
