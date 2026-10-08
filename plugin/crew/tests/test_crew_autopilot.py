@@ -12,6 +12,7 @@ is built under tmp_path; nothing touches the real one or ~/.claude.
 can fail.
 """
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -1197,6 +1198,9 @@ def render(parsed):
 def stub_resume(tmp_path, monkeypatch):
     where = tmp_path / "stub"
     _write(where / "crew_resume.py", textwrap.dedent(_STUB_RESUME))
+    # Import the real module first, so monkeypatch records it and puts it back:
+    # otherwise the stub stays in sys.modules for every later test in the worker.
+    importlib.import_module("crew_resume")
     monkeypatch.syspath_prepend(str(where))
     monkeypatch.delitem(sys.modules, "crew_resume", raising=False)
     return where
@@ -1305,7 +1309,10 @@ def test_resume_goal_line_stops_until_t0012(tmp_path, stub_resume):  # pylint: d
 
     got = crew_autopilot.resume_target(str(root))
 
-    assert (got["ticket"], got["stop"], "L-0541" in got["reason"]) == (None, True, True)
+    # L-0541 resumes a goal line; L-0658 judges it by its goal file, and a goal
+    # file that does not exist falls through, naming it, to the active ticket.
+    assert (got["ticket"], got["source"], "ship-it.json" in got["fallthrough"][0]) == (
+        "T-2", "active-ticket", True)
 
 
 def test_resume_active_ticket(tmp_path):
@@ -1485,8 +1492,10 @@ def test_autopilot_defaults_are_the_config_block():
     assert crew_config.default_config()["autopilot"] == {
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
-        "sleep": {"schedule": None, "approval": None, "questions": None},
+        "sleep": {"schedule": None, "approval": None, "questions": None,
+                  "deploy": None, "notifyHold": None},  # L-0654, L-0656
         "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+        "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,  # L-0541's caps
         "maxLanes": None, "reviewPolicy": "stop"}
 
 
@@ -2004,19 +2013,18 @@ def _inert(got):
 def test_settings_warns_on_inert_autopilot_keys(tmp_path):
     root = make_repo(tmp_path, mode="off")
     # T-0029 landed `maxLanes` and `reviewPolicy` (crew 1.1.6): set, they stay quiet.
+    # L-0541 landed `maxTicketsPerRun` (rush G6b): set, it stays quiet too.
     _config(root, {"mode": "plan", "reviewPolicy": "fix-and-rereview", "maxLanes": 3,
-                   "maxTicketsPerRun": 50})
+                   "maxTicketsPerRun": 50, "laterKnob": 50})
 
     got = crew_autopilot.settings(str(root))
 
-    assert [w.split(" - ")[0] for w in _inert(got)] == [
-        "inert: autopilot.maxTicketsPerRun=50 (L-0541)"]
+    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.laterKnob=50 (unknown key)"]
     done = subprocess.run([sys.executable, _SCRIPT, "settings", "--root", str(root)],
                           capture_output=True, text=True, check=False)
     lines = done.stdout.splitlines()
     assert lines[0].startswith("mode=plan")
-    assert "warning: inert: autopilot.maxTicketsPerRun=50 (L-0541) - would cap how many " \
-           "tickets one backlog run takes" in lines
+    assert [line for line in lines if line.startswith("warning: inert: autopilot.laterKnob=50")]
 
 
 def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
@@ -2024,7 +2032,7 @@ def test_settings_warns_when_naming_an_inert_key_fails(tmp_path, monkeypatch):
     # `inert_items` reaches fails, the run still gets its settings and the
     # warning says the inert keys could not be told.
     root = make_repo(tmp_path, mode="off")
-    _config(root, {"mode": "plan", "maxTicketsPerRun": 3})
+    _config(root, {"mode": "plan", "laterKnob": 3})
     monkeypatch.setitem(sys.modules, "completion_audit", None)
 
     got = crew_autopilot.settings(str(root))
@@ -2079,8 +2087,8 @@ def test_settings_backlog_mode_names_its_ticket(tmp_path):
 
     got = crew_autopilot.settings(str(root))
 
-    assert "'backlog'" in got["warnings"][0]
-    assert [w.split(" - ")[0] for w in _inert(got)] == ["inert: autopilot.mode=backlog (L-0541)"]
+    # L-0541 landed: `backlog` arms, with no warning and no inert line.
+    assert (got["armed"], got["mode"], got["warnings"], _inert(got)) == (True, "backlog", [], [])
 # --- T-0037: cancelled and superseded close; needs-owner waits on the owner ------
 
 def _with_line2(root, line, ticket=T, header=HEADER):

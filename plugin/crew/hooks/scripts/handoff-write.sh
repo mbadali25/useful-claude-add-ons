@@ -104,11 +104,20 @@ HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.
 if [ ! -f "$HANDOFF" ]; then
+  # T-0056: while exactly one autopilot goal runs here, the skeleton names it.
+  # crew_autopilot_handoff.handoff_resume decides; only its exact goal line is
+  # taken -- `resume: none`, no python, or anything else adds no line.
+  GOAL_LINE=""
+  if GOAL_PY=$(crew_py); then
+    GOAL_LINE=$("$GOAL_PY" -B "$(dirname "${BASH_SOURCE[0]}")/crew_autopilot.py" handoff-resume --root . 2>/dev/null | head -n 1 | tr -d '\r')
+    [[ "$GOAL_LINE" =~ ^resume:\ /crew:autopilot\ --goal\ [a-z0-9][a-z0-9-]{0,63}$ ]] || GOAL_LINE=""
+  fi
   {
     echo "# Handoff"
     echo "written: $(date -u +%Y-%m-%dT%H:%M:%SZ) (auto, at ${TRIGGER:-auto} compact)"
     echo "branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
     echo "head: $(git rev-parse --short HEAD 2>/dev/null)"
+    [ -z "$GOAL_LINE" ] || echo "$GOAL_LINE"
     echo
     echo "## Changed files"
     git diff --name-only HEAD 2>/dev/null | head -30

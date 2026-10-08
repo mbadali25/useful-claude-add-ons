@@ -41,6 +41,7 @@ import crew_guards
 import crew_notify
 import crew_platform
 import crew_shell
+import crew_sleep
 import crew_state
 import crew_ticket
 import crew_tracker
@@ -476,8 +477,10 @@ KEY_META = {
                                    "exactly `true` allows it.", "branch", (False, True),
                                    "1.0.25", _S + "crew_ticket.py"),
     # --- autopilot
-    "autopilot.mode": _row("Only the exact string `plan` arms `/crew:autopilot`; anything "
-                           "else reads as off, with a warning.", "branch", ("off", "plan"),
+    "autopilot.mode": _row("Only the exact strings `plan` (one ticket per run) and `backlog` "
+                           "(L-0541: a goal's tickets in dependency order, inside the caps) "
+                           "arm `/crew:autopilot`; anything else reads as off, with a "
+                           "warning.", "branch", ("off", "plan", "backlog"),
                            "1.0.41", _S + "crew_autopilot.py"),
     "autopilot.maxPhases": _row("Phases one run may take; anything but a positive integer "
                                 "reads as 12, with a warning.", "branch", None, "1.0.41",
@@ -508,6 +511,22 @@ KEY_META = {
                                       "keeps the day value; anything else counts as human, "
                                       "the strictest, with a warning.", "branch", SLEEP_OVERRIDE_VALUES,
                                       "1.0.332", _S + "crew_sleep.py"),
+    "autopilot.sleep.deploy": _row("`autopilot.deploy` inside the sleep window (L-0654): null "
+                                   "keeps the day value, `nonprod` or `none` replaces it; "
+                                   "anything else, `all` included, is refused with a warning. "
+                                   "Asleep, an effective `all` reads as `nonprod`: production "
+                                   "never runs unattended asleep.", "branch",
+                                   (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.21",
+                                   _S + "crew_sleep.py"),
+    "autopilot.sleep.notifyHold": _row("Inside the sleep window (L-0656): `true` holds the pings "
+                                       "that only ask for attention (questions, Approval waiting, "
+                                       "Review out of rounds) and counts them; the morning "
+                                       "summary carries the count. A failure (a deploy result, "
+                                       "a refused Stop gate, a stalled lane) is never held. Only "
+                                       "while armed and asleep by the schedule (a manual sleep "
+                                       "outside it holds nothing); anything but null or true "
+                                       "holds nothing, with a warning.", "branch", (None, True),
+                                       "1.1.21", _S + "crew_notify_hold.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",
@@ -523,6 +542,18 @@ KEY_META = {
                                        "with a warning.", "branch", None, "1.0.349",
                                        _S + "crew_autopilot.py",
                                        type_="positive integer"),
+    "autopilot.maxTicketsPerRun": _row("Tickets one goal run (one session) may start; the "
+                                       "next one stops the run. Anything but a positive "
+                                       "integer reads as 3, with a warning.", "branch", None,
+                                       "1.1.21", _S + "crew_autopilot_backlog.py",
+                                       type_="positive integer"),
+    "autopilot.maxTokensPerSession": _row("Input plus output tokens one goal session may "
+                                          "spend before the run stops; a transcript that "
+                                          "cannot be read stops too. Anything but a "
+                                          "positive integer reads as 2000000, with a "
+                                          "warning.", "branch", None, "1.1.21",
+                                          _S + "crew_autopilot_backlog.py",
+                                          type_="positive integer"),
     "autopilot.maxLanes": _row("Lanes one `/crew:autopilot wave` runs at once; null is the "
                                "resolved `pm.maxDispatches`, a larger value is capped to it and "
                                "anything but a positive integer reads as it, each with a "
@@ -560,13 +591,6 @@ def _coming(key, ticket, change, summary, default, layer, values=None):
 # spec on 2026-10-03. `change` is `new key`, or `changes <what>` for a key
 # already in KEY_META. Defaults and layers are the spec's words, not a guess.
 COMING = (
-    _coming("autopilot.maxTicketsPerRun", "T-0012", "new key",
-            "Tickets one goal run may work before it stops.", "3", "repo"),
-    _coming("autopilot.maxTokensPerSession", "T-0012", "new key",
-            "Token cap for one goal session.", "2000000", "repo"),
-    _coming("autopilot.mode", "T-0012", "changes values",
-            "Adds `backlog`: work a goal's tickets one at a time.", "off", "repo",
-            ("off", "plan", "backlog")),
     _coming("coord.ttlMinutes", "T-0030", "new key",
             "Lifetime of a cross-session coordination claim (1-10080).", "30",
             "set when T-0030 lands"),

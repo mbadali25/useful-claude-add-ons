@@ -1033,6 +1033,20 @@ command — no keystrokes appear at all.</p>
   <code>crew_autoclear_setup.py apply-method sendkeys --yes</code> (<code>${CLAUDE_PLUGIN_ROOT}/hooks/scripts/</code>)
   to opt in, after reading what SendKeys does. See <code>plugin/crew/CONFIG.md</code> §14.</li>
 </ul>
+<h3 id="bare-crewautopilot-stopped-on-a-goal">"Bare /crew:autopilot Stopped on a Goal"</h3>
+<p><strong>Symptom:</strong> <code>/crew:autopilot</code> with no argument stops naming autopilot goals, or a <code>fell through:</code>
+line names a stopped goal.</p>
+<p>With no usable handoff, a bare run looks for a running goal in <code>.work/autopilot/</code> before the active
+ticket (the order is argument, handoff, running goal, active ticket, INDEX; L-0659).</p>
+<ul>
+<li><strong><code>several autopilot goals are running: a, b</code>:</strong> pick one: <code>/crew:autopilot --goal &lt;slug&gt;</code>.</li>
+<li><strong><code>could not tell whether an autopilot goal is running: .work/autopilot/&lt;slug&gt;.json ... could not be
+  read</code>:</strong> the file is not JSON, not an object, or its <code>run.state</code> is not <code>running</code>, <code>stopped</code> or
+  <code>done</code>. Fix or remove it; until then the active ticket is not driven, because a goal might be
+  running. Naming the work (<code>/crew:autopilot &lt;ticket&gt;</code> or <code>--goal &lt;slug&gt;</code>) still runs.</li>
+<li><strong><code>goal &lt;slug&gt; stopped: &lt;reason&gt;</code></strong> as a <code>fell through:</code> line: a goal you or a cap stopped is never
+  resumed by a bare run; <code>/crew:autopilot --goal &lt;slug&gt;</code> resumes it when you choose to.</li>
+</ul>
 <h3 id="claude-code-compacted-by-itself">"Claude Code Compacted by Itself"</h3>
 <p><strong>Symptom:</strong> the session cleared or summarised itself with no <code>/clear</code> or <code>/compact</code> typed, and no
 message about auto-clear ran first.</p>
@@ -1390,6 +1404,15 @@ cleanly, clear, and pick up where it stopped.</p>
 <p><strong>Crew neither causes nor tunes Claude Code's own auto-compact.</strong> That is a separate, built-in
    behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
    once one exists, and nothing here makes auto-compact happen sooner, later, or at all.
+   While an autopilot goal runs, the handoff names the goal, not the ticket in hand: every writer
+   (autopilot's low-context stop, <code>/crew:handoff</code>, the PreCompact skeleton) asks
+   <code>crew_autopilot.py handoff-resume</code>, which answers <code>resume: /crew:autopilot --goal &lt;slug&gt;</code> for
+   the one running goal. Two running goals or an unreadable goal file give <code>resume: none</code>: it could
+   not tell which goal runs, and it never falls back to the ticket form, which would drop the goal.
+   With no usable handoff at all (a crash, a killed terminal), a bare <code>/crew:autopilot</code> looks for a
+   running goal before the active ticket: the order is argument, handoff, running goal, active
+   ticket, INDEX. One running goal resumes; two stop and list both; a goal file it cannot read stops
+   (could not tell, so the active ticket is not driven); a stopped goal is named, never resumed.
 3. <strong>Resume.</strong> The new session starts with the handoff and its next action already in context,
    within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
    <code>initialUserMessage</code>, so you press Enter to continue. Claude Code 2.1.282 drops it in an
@@ -1403,7 +1426,8 @@ cleanly, clear, and pick up where it stopped.</p>
    stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
    no resume line, <code>resume: none</code>, or a line the grammar refuses (a second line, trailing text, an
    unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
-   does not match the checkout; the ticket directory or goal file is missing; the command is not
+   does not match the checkout (a ticket line only: a <code>--goal</code> line is judged by its goal file, and
+   waits unless that goal is <code>running</code>); the ticket directory or goal file is missing; the command is not
    installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
    handoff; a later handoff write could not replace or remove <code>handoff-author.json</code> (<code>handoff-author.json.stuck</code>), or the file and its directory are both read-only so it can be neither replaced nor removed; the handoff changed since its author session wrote it; the handoff was written by
    another session; this session's process could not be identified (always on a host without

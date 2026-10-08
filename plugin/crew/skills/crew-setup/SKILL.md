@@ -239,8 +239,8 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "git": { "forbiddenTrailers": [] },
   "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null },
-                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+  "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null, "deploy": null, "notifyHold": null },
+                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60, "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,
                  "maxLanes": null, "reviewPolicy": "stop" },
   "tickets": { "baseBranch": null },
   "route": { "enabled": false }

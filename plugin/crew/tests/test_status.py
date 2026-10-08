@@ -541,9 +541,9 @@ def test_status_unlistable_complete_says_could_not_tell(tmp_path, monkeypatch):
 # --- T-0070: inert settings, and the approvals that actually need you -------
 
 def test_status_names_inert_settings(tmp_path):
-    root = make_repo(tmp_path, config={"autopilot": {"maxTicketsPerRun": 3}})
+    root = make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}})
     lines = [l for l in crew_status.collect(str(root)) if l.startswith("inert")]
-    assert lines == ["inert    autopilot.maxTicketsPerRun=3 (L-0541)"]
+    assert lines == ["inert    autopilot.laterKnob=3 (unknown key)"]
 
 
 def test_status_is_quiet_without_inert_settings(tmp_path):

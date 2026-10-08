@@ -1210,7 +1210,10 @@ today's) or any `taken:` while the policy in force says `stop`. `next` appends
 `_approval_hint` (`:2284`) / `_question_hint` (`:2293`) to the `approve` and `open-questions`
 stops (`:491` for approve), which stay `stop=1`; `commands/autopilot.md` section 3 (`:70-78`)
 runs the policy on exactly those two `stop=1` lines before stopping, with `python3 -B`, and
-states the `questions.md` shape `questions_check` enforces (review round 2). `main` (`:3257`)
+states the `questions.md` shape `questions_check` enforces (review round 2). DERIVED (G6b landing):
+the block parser it reads `questions.md` with (`_question_blocks` and its three patterns) now lives in
+`plugin/crew/hooks/scripts/crew_autopilot_questions.py`, moved unchanged for pylint's 3400-line cap;
+`crew_autopilot._question_blocks` is that function re-exported (`crew_wave` calls it there). `main` (`:3257`)
 sends both to `_policy_main` (`:3164`) before T-0018's branches. In
 `plugin/crew/hooks/scripts/crew_ticket.py`: `AUTOPILOT = "autopilot"` (`:144`), `_autopilot_refusal`
 (`:654`), `accepted` (`:671`) demotes an `autopilot` receipt unless that refusal is None, and
@@ -5187,5 +5190,119 @@ The coordinator re-allocated T-0063's crew version to 1.0.201 after the merge. T
 The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carries the main-checkout could-not-tell into the stop; `_folder_elsewhere` shell-quotes its `cp -r`). The version sentence above, the T-0063 autopilot paragraph and the `fresh` means committed bullet now name 1.0.213, with the manifests, `plugin/PLUGINS.md`, the CHANGELOG heading, four mentions in `plugin/crew/README.md` and the troubleshooting guide's source and HTML. JUDGEMENT: the fix commit moved lines in `plugin/crew/hooks/scripts/crew_autopilot.py` below `:352`, so its citations there (e.g. `_folder_elsewhere` `:362`) are not re-derived by this note; the anchor stays `5bd4fae2`, and a refresh re-checks them.
 
 **Re-anchored `5bd4fae2` -> `309575c2` on 2026-10-03 (T-0063 review fixes, crew 1.0.213).** `git diff --name-only 5bd4fae2 309575c2 -- plugin/crew/hooks/scripts/` returns only `crew_autopilot.py`; its 56 body citations into code the fix moved were re-mapped by a `difflib` line map from `6c6517a8` to `309575c2` (every mapped line text-identical at both ends) and, where the cited line itself changed, re-read with `grep -n` per symbol (`_main_folder`'s callers `:544`/`:852`, `_folder_elsewhere` `:365`). Two were wrong before this pass and were re-derived by symbol: `sys.dont_write_bytecode` under `__main__` is `:166-168` (was `:149-151`) and `main` registers `deploy-allowed` at `:1856` (was `:1683`). The `folder-elsewhere` sentence gains the could-not-tell stop and the quoted `cp -r`. Provenance sections were left as written.
+
+## Goal runs: mint, picker, caps, `--goal` resume (L-0541, rush/g6b-goals-sleep)
+
+- DERIVED. The goal run lives in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`
+  (pylint's module length keeps it out of `crew_autopilot.py`). `goal-approve`
+  (`plugin/crew/hooks/scripts/crew_autopilot_goal.py`, `main`) mints after `split_approved`
+  through `mint_goal` (`crew_autopilot_backlog.py:260`), which adopts a folder carrying
+  `MARK` (`:71`, `_adopt` `:245`) before calling `crew_ticket.mint`, and writes each id under
+  `goal_lock` (`:100`). `next_goal_ticket` (`:152`) reads `ticket_state` (`:124`; `CLOSED`
+  `:65`); `goal_run` (`:342`) asks `resume_target(goal=)` and holds `maxTicketsPerRun` and
+  `maxTokensPerSession` (`caps` `:84`, `transcript_for` `:310`, `session_tokens` `:325`,
+  `crew_metrics.transcript_tokens(fields=)` `plugin/crew/hooks/scripts/crew_metrics.py:440`);
+  `ticket_approve` (`:418`) wraps T-0010's `approve` for one minted ticket.
+- DERIVED. Call sites in `plugin/crew/hooks/scripts/crew_autopilot.py`: `backlog` arms in
+  `_settings_at` (`:1814`); `resume_target(goal=)` (`:1624`) and the handoff's goal branch
+  (`:1615`); a pointer at a closed ticket of the same goal re-points (`:1687`);
+  `route_args`' `--goal <slug>` (`:2531`). `autopilot.mode` ranks `backlog` above `plan`
+  (`plugin/crew/hooks/scripts/crew_guards.py:612`).
+- JUDGEMENT. The sabotage entries for the picker, the caps and the per-ticket approval are a
+  harness-only follow-up (`plugin/crew/tests/sabotage*.py`, T-0087); the line
+  `armed = mode == "plan"` stays as written because a shipped mutation anchors on it.
+
+## A running goal is written into every handoff (T-0056, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_autopilot_handoff.py`: `goal_mark` (`:71`) writes the
+  goal file's `run` block under `crew_autopilot_backlog.goal_lock`; `running_goals` (`:105`)
+  sorts this checkout's goal files by `run.state`, an unreadable one into `unknown`;
+  `handoff_resume` (`:148`) is the one decider of a handoff's `resume:` line, rendered through
+  `crew_resume.render` (`_render` `:143`). CLI `goal-mark` and `handoff-resume` (`main` `:174`)
+  dispatch through `EXTRA_ACTIONS` in `plugin/crew/hooks/scripts/crew_autopilot.py`.
+  `crew_autopilot_backlog.goal_run` marks `running`/`stopped`/`done` itself (`_marked`).
+- DERIVED. The PreCompact skeleton asks it in both flavours and takes only an exact goal line:
+  `plugin/crew/hooks/scripts/handoff-write.sh:110-113`,
+  `plugin/crew/hooks/scripts/handoff-write.ps1:522`.
+- JUDGEMENT. The function lives outside `crew_autopilot.py` (the spec names it
+  `crew_autopilot.handoff_resume`) because that module sits at pylint's 3400-line limit.
+
+## A `--goal` handoff is judged by the goal file (L-0658, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_goal_state.py` (standalone, so `crew_resume` imports it
+  without `crew_autopilot`): `run_state` (`:35`) and `handoff_refusal` (`:59`), only `running`
+  usable, an unreadable file `unknown`. Three sites ask it and skip `branch:`/`head:` for the goal
+  form only: `crew_resume.decide` (`plugin/crew/hooks/scripts/crew_resume.py:775`, the shared tail
+  `_decide_rest` `:790`, so every other auto-resume condition still binds), `_handoff_ticket`
+  through `crew_autopilot_backlog.handoff_pick` (`plugin/crew/hooks/scripts/crew_autopilot.py:1598`,
+  `crew_autopilot_backlog.py:213`) and status's resume line through `status_goal_line`
+  (`crew_autopilot.py:3060`, `crew_autopilot_backlog.py:230`).
+- DERIVED. L-0541 review round 2: a ticket marked done is closed for the picker only once
+  `_phase` says `closed` (`_lifecycle_closed`, `crew_autopilot_backlog.py:157`), so an unshipped
+  ticket is worked before the next.
+- DERIVED. Review round 2: `crew_state.handoff_staleness` (SessionStart's archive and
+  `crew_autocycle.resume_plan`) skips its branch/head drift reasons for a note whose one
+  `resume:` line is a goal line, whatever its run state (`crew_goal_state.goal_handoff`; review
+  round 4: the goal file judges it when read, so a stopped goal is named, never archived for
+  drift first); age still stales it.
+- JUDGEMENT. In `resume_target` a missing, not-started or done goal falls through with its reason;
+  an unreadable or stopped one stops. `decide` waits on all of them.
+
+## Bare `/crew:autopilot` finds a running goal (L-0659, rush/g6b-goals-sleep)
+
+- DERIVED. `resume_target`'s order is argument, handoff, running goal, active ticket, INDEX: one
+  call, `crew_autopilot_backlog.goal_source`, serves `--goal <slug>` and, with no ticket yet, the
+  discovery over `crew_autopilot_handoff.running_goals` (`plugin/crew/hooks/scripts/crew_autopilot.py`,
+  the `if not ticket:` block before the active pointer). Several running goals or an unreadable goal
+  file stop; a stopped goal is a fall-through line; none or only done ones leave the order as it was.
+  A usable ticket handoff still wins, with `running_goal_note` as its `disagreement:` line; status
+  prints `(from goal-file, goal <slug>)` on its ticket line.
+
+## The sleep deploy override, nonprod only (L-0654, rush/g6b-goals-sleep)
+
+- DERIVED. `plugin/crew/hooks/scripts/crew_sleep.py`: `read_deploy` (`autopilot.sleep.deploy`,
+  `null|nonprod|none`, anything else refused with a warning) feeds `resolve`'s `deploy`;
+  `deploy_overlay` applies it asleep and reads an effective `all` as `nonprod`, noting
+  `day["deploy"]` and a `deployNote`. `crew_autopilot._settings_at` returns its answer as
+  `deploy`; `_decide` pins the note and `deploy_allowed` appends it to the reason.
+- JUDGEMENT. Inert until T-0045 dispatches a deploy; `unknown` leaves the day value (main's
+  behaviour), as the spec chose. Review r1: a manual sleep whose only tightening is `deploy`
+  is admitted (`crew_autopilot_sleep.sleep_now`). Review r2: a manual `wake` inside the window
+  (`awake` with `tightenOnly`) keeps the night cap in `deploy_overlay`, and the note names a
+  manual sleep by its end, not the schedule.
+
+## The sleep log and the morning summary (L-0653, rush/g6b-goals-sleep)
+
+- DERIVED. Text in `plugin/crew/hooks/scripts/crew_sleep.py` (`log_line`, `marker_line`,
+  `unreported`, `summary_text`; the module still opens nothing); the file in
+  `plugin/crew/hooks/scripts/crew_autopilot_sleep.py` (`_append`: one O_APPEND write per line;
+  `log_approval`, `sleep_note`, `sleep_summary`, `with_log_warnings`). Call sites in
+  `crew_autopilot.py`: `approve` appends after its receipt; `settings` adds the warnings;
+  `EXTRA_ACTIONS` routes `sleep-note` and `sleep-summary`.
+- DERIVED. Review r1: the marker is `- reported <ISO> upto <n>` (`crew_sleep.marker_line`), `n`
+  the bytes the summary read, and `unreported` keeps every entry at or after the last cutoff, so
+  a line appended between the read and the marker stays unreported; `wake` exits non-zero when
+  its summary fails.
+
+## Held pings while asleep, and the morning summary sent once (L-0656, rush/g6b-goals-sleep)
+
+- DERIVED. `autopilot.sleep.notifyHold` (`null` or exactly `true`) is read by
+  `crew_sleep.read_notify_hold` into `resolve`'s `notifyHold`. `crew_notify.send` asks
+  `plugin/crew/hooks/scripts/crew_notify_hold.py`'s `holds` after its filters: only `HOLDABLE`
+  pings (every `question`, blocker `approval` and `rounds`), only while `crew_autopilot.settings`
+  says armed, asleep, not `tightenOnly`, hold on; the ping is recorded in
+  `.work/autopilot/held.json` (per worktree) (one key per distinct message) or sent.
+  `crew_autopilot_sleep.sleep_summary` adds `held_line`, and awake, under `summary_lock`, marks
+  the log, empties the record (`take`) and calls `send_summary` once. `crew_notify._credentials`
+  is `_deliver`'s credential checks, factored out so the summary uses the same ones.
+- JUDGEMENT. The review half (`autopilot.sleep.reviewPolicy`) waits for T-0029 / T-0067; that
+  key still reads "not available". Fail direction is send: anything that cannot be told sends
+  the ping.
+- DERIVED. Review round 2 (L-0653 r2, L-0656 r1): `sleep_summary` sends first and marks / `take`s
+  the reported keys only on `sent`, `off` or `filtered`; `crew_sleep.malformed` makes a bad log
+  line could-not-tell; `log_approval` reads the pinned decision's `asleep`. T-0056 r4 and L-0659
+  r2: `crew_autopilot_handoff.stop_mark_fallback` writes `.work/autopilot/<slug>.stop`, which
+  `crew_goal_state.stop_override` lays over a `running` goal file; `goal-mark --reason-file`;
+  `goal_run(discovered=True)` and `goal_mark(only_if_running=True)` never overwrite a stop.
 
 **T-0065 citations, 2026-10-04 (T-0065-build at `cd25d088`, on a merge of origin/main `f7ab26b9`); anchor NOT moved.** The section "TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)" and the four `crew_status.py` citations corrected for its five added lines (`:226` -> `:251`, `:140` -> `:144`, `:155` -> `:159`, `:67` -> `:71`) were read at `cd25d088`. The file's `anchor:` stays `42effe14`: main changed many files this map cites after that commit, and none of those claims was re-derived for this note, so moving the anchor would claim a check that was not made. Ported onto release/1.2.0 (crew 1.0.351) on 2026-10-05: the section's citations and this map's `crew_status.py` body citations were re-derived by symbol against the merged files; the verify-gate JUDGEMENT now records that `RULE_OUT_FILE` joined the cleanup registry on main.

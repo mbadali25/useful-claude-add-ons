@@ -442,7 +442,9 @@ def test_autopilot_not_installed_waits(fx):
 def test_autopilot_goal_runs_when_installed_and_the_goal_exists(fx):
     (fx.plugin / "commands" / "autopilot.md").write_text("x\n", encoding="utf-8")
     (fx.root / ".work" / "autopilot").mkdir(parents=True)
-    (fx.root / ".work" / "autopilot" / "ship-it.json").write_text("{}", encoding="utf-8")
+    # L-0658: only a goal whose run state is `running` is taken.
+    (fx.root / ".work" / "autopilot" / "ship-it.json").write_text(
+        '{"run": {"state": "running"}}', encoding="utf-8")
 
     got = fx.decide(text=_handoff(fx.root, resume="/crew:autopilot --goal ship-it"))
 
@@ -1664,6 +1666,87 @@ def test_every_wait_reason_is_named_in_the_docs():
         missing += [f"{rel}: {phrase!r}" for phrase in _REASON_PHRASES if phrase not in text]
 
     assert missing == []
+
+
+# --- L-0658: a --goal handoff is judged by the goal file, not branch and head ----
+
+def _goal_note(fx, slug="ship-it", run=None, branch="elsewhere", head="0123456789"):
+    """A goal handoff whose branch: and head: do NOT match the checkout, and a
+    goal file holding `run` (a dict; None leaves the run block out; a str is
+    the file's whole text; "missing" writes no file)."""
+    (fx.plugin / "commands" / "autopilot.md").write_text("x\n", encoding="utf-8")
+    folder = fx.root / ".work" / "autopilot"
+    folder.mkdir(parents=True, exist_ok=True)
+    if run == "missing":
+        pass
+    elif isinstance(run, str):
+        (folder / f"{slug}.json").write_text(run, encoding="utf-8")
+    else:
+        data = {"schema": 1, "slug": slug}
+        if run is not None:
+            data["run"] = run
+        (folder / f"{slug}.json").write_text(json.dumps(data), encoding="utf-8")
+    return _handoff(fx.root, resume=f"/crew:autopilot --goal {slug}", branch=branch, head=head,
+                    written=fx.written)
+
+
+def test_decide_runs_a_goal_handoff_across_branches(fx):
+    text = _goal_note(fx, run={"state": "running", "ticket": "T-0002"})
+
+    got = fx.decide(text=text)
+
+    assert (got["action"], got["prompt"], got["reason"]) == (
+        "run", "/crew:autopilot --goal ship-it", "")
+
+
+@pytest.mark.parametrize("run,words", [
+    ("missing", "does not exist"),
+    ("{not json", "could not read"),
+    ("[1]", "could not read"),
+    ({"state": "done"}, "is done"),
+    ({"state": "stopped", "reason": "token cap reached"}, "token cap reached"),
+    ({"state": "paused"}, "could not read"),
+    (None, "has not started"),
+], ids=["missing", "not-json", "not-object", "done", "stopped", "unlisted-state", "no-run"])
+def test_decide_waits_on_a_goal_that_is_not_running(fx, run, words):
+    got = fx.decide(text=_goal_note(fx, run=run))
+
+    assert (got["action"], words in got["reason"],
+            "--goal ship-it" in got["reason"] if run and isinstance(run, dict)
+            and run.get("state") == "stopped" else True) == ("wait", True, True)
+
+
+@pytest.mark.parametrize("branch,head", [("elsewhere", None), (None, "0123456789")],
+                         ids=["branch", "head"])
+def test_ticket_handoff_branch_or_head_mismatch_still_waits(fx, branch, head):
+    got = fx.decide(text=_handoff(fx.root, branch=branch, head=head, written=fx.written))
+
+    assert (got["action"], "does not match" in got["reason"]) == ("wait", True)
+
+
+@pytest.mark.parametrize("condition", ["no-author", "consumed", "no-progress", "unarmed",
+                                       "auto-compact"])
+def test_goal_handoff_keeps_every_other_resume_condition(fx, condition):
+    text = _goal_note(fx, run={"state": "running", "ticket": "T-0002"})
+    kwargs = {}
+    if condition == "no-author":
+        got = fx.decide(text=text, bound=False)
+    elif condition in ("consumed", "no-progress"):
+        first = fx.decide(text=text)
+        assert first["action"] == "run"
+        assert crew_resume.record_run(str(fx.root), first)[0]
+        if condition == "no-progress":
+            text = text.replace("Close the ticket.", "Close the ticket again.")
+        got = fx.decide(text=text, **kwargs)
+    elif condition == "unarmed":
+        fx.machine(False)
+        got = fx.decide(text=text)
+    else:
+        got = fx.decide(text=text, source="compact")
+
+    words = {"no-author": "no record", "consumed": "already", "no-progress": "no progress",
+             "unarmed": "", "auto-compact": "not a manual"}[condition]
+    assert (got["action"] in ("wait", "off"), words in got["reason"]) == (True, True), got
 
 
 # --- a ticket archived in Complete/ (L-0509) ---------------------------------------

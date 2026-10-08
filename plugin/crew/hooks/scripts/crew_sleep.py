@@ -45,6 +45,31 @@ only as `tightenOnly` outside the scheduled window: owner decision 2026-10-04
 stricter than the day value, because the session can run the CLI itself. An
 `awake` record while the schedule is asleep or cannot tell is `tightenOnly`
 too, so neither `wake` nor a planted file can loosen a value.
+
+L-0654: `deploy`, a fourth key, `null` or exactly `nonprod` or `none`
+(DEPLOY_OVERRIDES). `resolve` reads it (`read_deploy`; `all` or anything
+else is refused with a warning, and the day value stands) and
+`deploy_overlay` applies it: asleep, a valid override replaces the day
+value of `autopilot.deploy` (stricter-only under `tightenOnly`), and then an
+effective `all` reads as `nonprod` -- production never runs unattended
+asleep. A manual wake inside the window (`awake` with `tightenOnly`) is
+treated the same way, so `wake` never loosens it. Otherwise awake, off or
+`unknown`, the day value stands. `deploy_allowed`
+reads the result through `crew_autopilot._settings_at`, and its reason
+names the sleep state when that changed the answer.
+
+L-0656: `notifyHold`, a fifth key, `null` or exactly `true`
+(`read_notify_hold`; anything else warns and holds nothing). `resolve`
+passes it through as `notifyHold`; crew_notify_hold.py decides, at send
+time, whether a ping is held.
+
+L-0653: the sleep log's text. `log_line` builds one entry,
+`- <ISO local time> | <ticket> | <kind> | <text> | <setting>`, every field
+folded to one printable line with `|` replaced, so no field can start a
+second entry or a `- reported <ISO> upto <n>` marker (`marker_line`). `unreported`
+reads the entries after the last marker; `summary_text` groups them by
+ticket. The file itself is crew_autopilot_sleep.py's: this module still
+opens nothing.
 """
 import datetime
 import re
@@ -60,7 +85,10 @@ MANUAL_SLEEP_HOURS = 12
 # (review round 2 FIX-2).
 MANUAL_MAX = datetime.timedelta(hours=24)
 MANUAL_MAX_REAL = datetime.timedelta(hours=25)
-KEYS = ("schedule",) + OVERRIDES
+KEYS = ("schedule",) + OVERRIDES + ("deploy", "notifyHold")
+DEPLOY_OVERRIDES = ("nonprod", "none")
+# crew_autopilot.DEPLOY_VALUES' order, loosest last (a test holds the two equal).
+DEPLOY_ORDER = ("none", "nonprod", "all")
 OFF, AWAKE, ASLEEP, UNKNOWN = "off", "awake", "asleep", "unknown"
 # What an override crew cannot read counts as: the strictest policy, the
 # first of crew_autopilot.STRICTNESS (a test holds the two equal).
@@ -246,7 +274,11 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
     `overrides` holds each key's override (`read_overrides`), whatever the
     state. `manual` is `read_manual`'s `found` (L-0652); a valid record adds
     `until` and `by` and wins over the schedule (module docstring)."""
-    got = dict(_scheduled(block, when, policies), source="schedule")
+    deploy, refused = read_deploy(block)
+    hold, unheld = read_notify_hold(block)
+    got = dict(_scheduled(block, when, policies), source="schedule", deploy=deploy,
+               notifyHold=hold)
+    got["warnings"] = got["warnings"] + [w for w in (refused, unheld) if w]
     record = read_manual(manual, when) if manual is not None else {"kind": "none"}
     if record["kind"] == "none":
         return got
@@ -266,6 +298,59 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
     if got["state"] in (ASLEEP, UNKNOWN):
         return dict(got, state=AWAKE, tightenOnly=True)
     return dict(got, state=AWAKE)
+
+
+def read_deploy(block):
+    """`(override, warning)` for `autopilot.sleep.deploy` (L-0654): None for
+    null or a block that is not an object, the value when it is exactly one
+    of DEPLOY_OVERRIDES, else None with a warning -- the day value stands, and
+    production is never unattended asleep."""
+    value = block.get("deploy") if isinstance(block, dict) else None
+    if value is None or (isinstance(value, str) and value in DEPLOY_OVERRIDES):
+        return value, ""
+    return None, (f"autopilot.sleep.deploy is {render(value)}, not null, nonprod or none; the "
+                  "day value of autopilot.deploy stands, and production never runs unattended "
+                  "asleep")
+
+
+def read_notify_hold(block):
+    """`(hold, warning)` for `autopilot.sleep.notifyHold` (L-0656): True only
+    for exactly `true`; None for null or a block that is not an object; None
+    with a warning for anything else (`false`, `"true"` and `1` included) --
+    a value crew cannot read never hides a ping."""
+    value = block.get("notifyHold") if isinstance(block, dict) else None
+    if value is None or value is True:
+        return value, ""
+    return None, (f"autopilot.sleep.notifyHold is {render(value)}, not null or true; no ping is "
+                  "held")
+
+
+def deploy_overlay(deploy, sleep, day):
+    """The effective `autopilot.deploy` for `resolve`'s answer `sleep`, given
+    the day value `deploy` (already one of DEPLOY_ORDER). Notes the day value
+    in `day["deploy"]`; when sleep changed it, adds `deploy` to
+    `sleep["applied"]` and a `deployNote` for `deploy_allowed`'s reason."""
+    day["deploy"] = deploy
+    # A manual wake inside the window (or beside a schedule that cannot be
+    # told) is tightenOnly: it never loosens the night's deploy (review r2).
+    woke = sleep.get("state") == AWAKE and sleep.get("tightenOnly")
+    if sleep.get("state") != ASLEEP and not woke:
+        return deploy
+    value, override = deploy, sleep.get("deploy")
+    if override in DEPLOY_OVERRIDES and not (
+            sleep.get("tightenOnly") and DEPLOY_ORDER.index(override) > DEPLOY_ORDER.index(deploy)):
+        value = override
+    value = "nonprod" if value == "all" else value
+    if value != deploy:
+        sleep["applied"] = list(sleep.get("applied") or []) + ["deploy"]
+        if woke:
+            why = "awake by hand inside the sleep window, which only tightens"
+        elif sleep.get("source") == "manual":
+            why = f"asleep by hand until {sleep.get('until')}"
+        else:
+            why = f"asleep {sleep.get('schedule')}"
+        sleep["deployNote"] = f" ({why}; day value {deploy})"
+    return value
 
 
 def _scheduled(block, when, policies):
@@ -297,3 +382,110 @@ def _scheduled(block, when, policies):
                 "warnings": warnings}
     state = ASLEEP if in_window(start, end, when.hour * 60 + when.minute) else AWAKE
     return {"state": state, "schedule": value, "overrides": overrides, "warnings": warnings}
+
+
+# --- L-0653: the sleep log's text (the file is crew_autopilot_sleep.py's) --------
+
+LOG_NAME = "sleep-log.md"
+LOG_KINDS = ("approved", "answered", "note")
+LOG_FIELD_MAX = 300
+_ENTRY_RE = re.compile(r"^- (\S+) \| (.*?) \| (approved|answered|note) \| (.*?) \| (.*)$")
+_MARK_RE = re.compile(r"^- reported (\S+)(?: upto ([0-9]{1,15}))?$")
+
+
+def log_field(value):
+    """One field: printable, one line, no `|`, at most LOG_FIELD_MAX, `-` when empty."""
+    text = value if isinstance(value, str) else render(value)
+    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())
+    return text.replace("|", "/")[:LOG_FIELD_MAX] or "-"
+
+
+def log_line(when, ticket, kind, text, setting):
+    """One log entry, newline included. `when` is a naive local datetime."""
+    if kind not in LOG_KINDS:
+        raise ValueError(f"kind {kind!r} is not one of {'|'.join(LOG_KINDS)}")
+    stamp = when.replace(microsecond=0).isoformat()
+    return " | ".join([f"- {stamp}", log_field(ticket), kind, log_field(text),
+                       log_field(setting)]) + "\n"
+
+
+def marker_line(when, upto):
+    """The `- reported <ISO> upto <n>` line `sleep-summary` appends after
+    reporting: `n` is the byte length of the log it read, so an entry another
+    process appended after that read and before this marker is still
+    unreported (L-0653 review r1). A marker with no `upto` covers every line
+    above it."""
+    return f"- reported {when.replace(microsecond=0).isoformat()} upto {int(upto)}\n"
+
+
+def last_cutoff(text):
+    """The byte offset the last marker covers up to (0 with no marker)."""
+    cutoff, offset = 0, 0
+    for raw in (text or "").split("\n"):
+        mark = _MARK_RE.match(raw[:-1] if raw.endswith("\r") else raw)
+        if mark:
+            cutoff = int(mark.group(2)) if mark.group(2) else offset
+        offset += len(raw.encode("utf-8")) + 1
+    return cutoff
+
+
+def unreported_spans(text):
+    """`[(start, end, entry)]` for `unreported`'s entries: each entry's byte
+    span in the log, so a summary that reports only some of them can mark
+    exactly those (L-0656 review r4)."""
+    spans, cutoff, offset = [], 0, 0
+    for raw in (text or "").split("\n"):
+        line = raw[:-1] if raw.endswith("\r") else raw
+        mark = _MARK_RE.match(line)
+        end = offset + len(raw.encode("utf-8")) + 1
+        if mark:
+            cutoff = int(mark.group(2)) if mark.group(2) else offset
+        else:
+            found = _ENTRY_RE.match(line)
+            if found:
+                spans.append((offset, end, dict(zip(("at", "ticket", "kind", "text", "setting"),
+                                                    found.groups()))))
+        offset = end
+    return [span for span in spans if span[0] >= cutoff]
+
+
+def unreported(text):
+    """The entries the last marker does not cover, as `{"at", "ticket",
+    "kind", "text", "setting"}`, in order: those starting at or after its
+    `upto` byte offset (UTF-8, "\n"-split lines, as crew_autopilot_sleep appends them).
+    A line that is neither is not an entry."""
+    return [entry for _start, _end, entry in unreported_spans(text)]
+
+
+def malformed(text):
+    """The 1-based numbers of the non-blank lines that are neither an entry
+    nor a marker (a truncated or hand-edited line), or a marker whose `upto`
+    is past its own line: the log then cannot be read as "no decisions"
+    (L-0653 review r2, r4)."""
+    bad, offset = [], 0
+    for n, raw in enumerate((text or "").split("\n"), 1):
+        line, mark = raw.rstrip("\r"), _MARK_RE.match(raw.rstrip("\r"))
+        # A marker covers only bytes above it: a larger `upto` would hide
+        # entries below it (review r4), so it is not a marker this log wrote.
+        if raw.strip() and not _ENTRY_RE.match(line) and (
+                not mark or (mark.group(2) and int(mark.group(2)) > offset)):
+            bad.append(n)
+        offset += len(raw.encode("utf-8")) + 1
+    lines = (text or "").split("\n")
+    if lines[-1].strip() and len(lines) not in bad:  # no final newline: an append cut short
+        bad.append(len(lines))
+    return bad
+
+
+def summary_text(entries):
+    """The morning summary: a heading line, then the entries grouped by ticket."""
+    tickets = []
+    for entry in entries:
+        if entry["ticket"] not in tickets:
+            tickets.append(entry["ticket"])
+    lines = [f"sleep summary: {len(entries)} decision(s) while asleep"]
+    for ticket in tickets:
+        lines.append(f"{ticket}:")
+        lines += [f"  {e['at']} {e['kind']}: {e['text']} ({e['setting']})"
+                  for e in entries if e["ticket"] == ticket]
+    return "\n".join(lines)

@@ -434,9 +434,17 @@ def r_no_folder(tmp, _mp):
 
 
 def r_handoff(tmp, _mp):
+    """G6b (L-0658): a `--goal` handoff is judged by its goal file; one that
+    cannot be read stops (before G6b, every goal handoff stopped here)."""
     root = make_repo(tmp, mode="off")
     _write(root / ".work" / "HANDOFF.md", "resume: /crew:autopilot --goal faster\n")
+    _write(root / ".work" / "autopilot" / "faster.json", "{not json")
     return crew_autopilot.resume_target(str(root))
+
+
+def r_goal_early(tmp, _mp):
+    """G6b (L-0541): `--goal <slug>` whose goal file is missing stops at the picker."""
+    return crew_autopilot.resume_target(str(make_repo(tmp, mode="off")), goal="faster")
 
 
 def _broken_pointer(root, mp):
@@ -729,6 +737,7 @@ CASES = [
     ("stopped(source, _folder_elsewhere", r_folder_elsewhere, None, None),
     ("has no .work/tickets/ folder", r_no_folder, None, None),
     ("stopped(source, stop_reason)", r_handoff, None, None),
+    ('stopped(source, early["reason"])', r_goal_early, None, None),
     ('stopped("active-ticket", _broken_pointer(top, where))', r_broken_first, None, None),
     ("several open tickets and no pointer", r_several, None, None),
     ("no open ticket with a .work/tickets/", r_none_open, None, None),
