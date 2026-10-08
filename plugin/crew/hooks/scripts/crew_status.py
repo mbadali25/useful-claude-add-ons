@@ -210,6 +210,12 @@ def _review_lines(root):
             line += f", {summary['rounds_refunded']} refunded"
         if True in marks:
             line += ", same-family round"
+        unreviewed = summary.get("unreviewed")
+        if isinstance(unreviewed, list) and unreviewed:
+            # L-0712: INCOMPLETE with no reviewer, refunded -- no round spent.
+            line += f", {len(unreviewed)} with no reviewer (INCOMPLETE, refunded)"
+        elif unreviewed is not None and not isinstance(unreviewed, list):
+            line += ", no-reviewer record unreadable"
         lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")

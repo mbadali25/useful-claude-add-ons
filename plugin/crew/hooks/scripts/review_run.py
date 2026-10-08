@@ -142,12 +142,15 @@ THE FAMILY GUARD (L-0712) comes first, before any probe or question below.
 `--authors "<families>"` (`/crew:review` passes `$AUTHORS`) names the author
 families. A reviewer whose family (`crew_state.family(provider, model)`) is
 one of them, or cannot be told, or an empty `--authors` (no author family
-known), is refused with exit 2 and nothing reserved -- unless the operator
+known), or an `--author-source unknown` (a dispatch whose family could not
+be told: the families named are not all the authors), is refused with exit 2
+and nothing reserved -- unless the operator
 passes `--same-family "<reason>"`, which runs it with the ledger row labelled
 `same_family` (and review.json and a CLEAN receipt with it). A
 `--same-family` on a reviewer outside the author families is not a
-same-family read: it is ignored, and said. Without `--authors` the guard is
-not applied (callers that predate L-0712).
+same-family read: it is ignored, and said. `--probe` asks the guard first, so
+a barred Codex costs no call. Without `--authors` the guard is not applied
+(callers that predate L-0712) and stderr says so on every run.
 
 BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
 asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
@@ -1774,10 +1777,13 @@ def family_guard(args):
         # usage error, never a label the ledger refuses after the gates.
         reason = review_ledger._one_line_arg(reason, "--same-family", "a same-family read")  # pylint: disable=protected-access
     if getattr(args, "authors", None) is None:
+        _err("review-run: family guard NOT applied: no --authors given, so nothing here "
+             "checked this reviewer against the diff's author (L-0712)\n")
         return None, reason
     authors = {a.strip().lower() for a in args.authors.replace(",", " ").split() if a.strip()}
     fam = crew_state.family(args.provider, args.model or None)
-    if authors and fam is not None and fam not in authors:
+    unknown_source = getattr(args, "author_source", None) == "unknown"
+    if authors and not unknown_source and fam is not None and fam not in authors:
         if reason is not None:
             _err(f"review-run: --same-family ignored: {args.provider} ({fam} family) is not "
                  f"the author's ({', '.join(sorted(authors))})\n")
@@ -1786,6 +1792,9 @@ def family_guard(args):
         return None, reason
     why = (f"{args.provider} speaks as the `{fam}` family that wrote this diff"
            if fam is not None and fam in authors else
+           "the author source is `unknown`: a dispatch's family could not be told, so "
+           f"{', '.join(sorted(authors)) or 'no family'} may not be every author"
+           if unknown_source else
            f"could not tell whether {args.provider} ({fam or 'unknown'} family) is the "
            f"author's ({', '.join(sorted(authors)) or 'no author family known'})")
     return (f"review-run: same-family: {why}; not an independent review. Walk to the next "
@@ -2103,6 +2112,8 @@ def main(argv):
     parser.add_argument("--authors", default=None,
                         help="the author families ($AUTHORS); a reviewer of one of them, or "
                              "of an unknown family, is refused unless --same-family (L-0712)")
+    parser.add_argument("--author-source", default=None,
+                        help="$AUTHOR_SOURCE; `unknown` is could-not-tell (L-0712)")
     parser.add_argument("--same-family", default=None, metavar="REASON",
                         help="the operator's explicit choice of a same-family read, one line; "
                              "the round is labelled same_family")
@@ -2122,6 +2133,10 @@ def main(argv):
             if args.reserve_only or args.round is not None:
                 parser.error("--probe reserves nothing; it takes neither --reserve-only "
                              "nor --round")
+            refusal, _ = family_guard(args)
+            if refusal:
+                _err(refusal)
+                return EXIT_USAGE
             outcome, detail = probe(args)
             _out(f"PROBE={outcome}")
             _out("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))

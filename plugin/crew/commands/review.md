@@ -236,7 +236,7 @@ first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): skip Codex, pinned or not, with `PROBE_DETAIL` quoted verbatim, and take the next provider in `$ELIGIBLE`; none left is the no-candidate case above (`--no-reviewer`). A Claude read after a limit (the owner's 2026-09-28 practice) is now my explicit choice (L-0712): step 2c with `SAME_FAMILY="codex limit"`, announced `same-family (codex limit)`, not independent. The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed), 7 (unknown, timed out) or 5 (limited): skip Codex with `PROBE_DETAIL` quoted verbatim. A `review` role pinned to codex runs what `$FALLBACK` names (L-0712: the fallback on its family's provider, else the next cross-family `qa.order` provider; `INCOMPLETE` is `--no-reviewer`); otherwise take the next provider in `$ELIGIBLE`, none left being the no-candidate case above (`--no-reviewer`). A Claude read after a limit (the owner's 2026-09-28 practice) is now my explicit choice (L-0712): step 2c with `SAME_FAMILY="codex limit"`, announced `same-family (codex limit)`, not independent. The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
 | `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does. Exit 8, the probe changed the tree or it could not be checked after the probe: stop | step 2e |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes (it is in `$ELIGIBLE` only when Claude is not the author) | step 2c |
@@ -322,6 +322,8 @@ as though it were a preference.
 
 ```bash
 case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
+# L-0712: the probe is resolve_role's `available`: a failed codex pin falls back (stderr says how); run what FALLBACK names (`<provider> <model>`, empty model = CLI default); INCOMPLETE = --no-reviewer.
+case "$PROBE_STATUS" in ""|0) FALLBACK=;; *) FALLBACK=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_config as c, crew_state as s; gone = ("codex", sys.argv[2] or None); r = s.resolve_role(c.resolve_config("."), "qa", "review", author=sys.argv[3].split(), available=lambda p, m: (p, m or None) != gone); sys.stderr.write("".join(a + "\n" for a in r["announce"])); print("INCOMPLETE" if r["incomplete"] else r["provider"] + " " + (r["model"] or "") if r["fellBack"] else "")' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts" "$QA_MODEL" "$AUTHORS"); echo "fallback: ${FALLBACK:-none - no codex pin fell back}";; esac
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
@@ -432,7 +434,7 @@ Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invari
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
-  --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --authors "$AUTHORS"
+  --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
 # or: --provider kimi --model "$QA_KIMI_MODEL"
 REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 9 gate red, 10 train wait, 2 not run (incl. `same-family:`, L-0712), 8 kimi probe changed the tree (or could not check it)
@@ -463,7 +465,7 @@ then hand its output to the same verdict parser:
 
 ```bash
 ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
-  --scratch "$SCRATCH" --provider claude --reserve-only --authors "$AUTHORS" ${SAME_FAMILY:+--same-family "$SAME_FAMILY"} | sed -n 's/^ROUND=//p')
+  --scratch "$SCRATCH" --provider claude --reserve-only --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE" ${SAME_FAMILY:+--same-family "$SAME_FAMILY"} | sed -n 's/^ROUND=//p')
 # ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --round "$ROUND" \

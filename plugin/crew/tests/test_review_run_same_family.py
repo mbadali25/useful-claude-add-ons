@@ -104,3 +104,86 @@ def test_an_empty_same_family_reason_is_refused_before_anything_is_reserved(setu
                   "--same-family", " ")
 
     assert (result.returncode, rl.status(str(setup[0]), "T1")["rounds_used"]) == (2, 0)
+
+
+def test_an_unknown_author_source_is_could_not_tell_and_refused(setup):
+    result = _run(setup, "codex", "--authors", "claude", "--author-source", "unknown")
+
+    assert (result.returncode, "author source is `unknown`" in result.stderr,
+            rl.status(str(setup[0]), "T1")["rounds_used"]) == (2, True, 0), result.stderr
+
+
+def test_no_authors_runs_but_says_the_guard_was_not_applied(setup):
+    result = _run(setup, "codex")
+
+    assert (result.returncode, "family guard NOT applied" in result.stderr) == (0, True)
+
+
+def test_the_probe_asks_the_family_guard_before_calling_codex(setup):
+    _, _, fakes, _ = setup
+
+    result = _run(setup, "codex", "--probe", "--authors", "gpt")
+
+    assert (result.returncode, "review-run: same-family:" in result.stderr,
+            os.path.exists(os.path.join(str(fakes), "calls.txt"))) == (2, True, False)
+
+
+def _status_line(repo, ticket="T1"):
+    import crew_status  # pylint: disable=import-outside-toplevel
+    return next(line for line in crew_status._review_lines(str(repo))  # pylint: disable=protected-access
+                if line.startswith(f"review   {ticket}:"))
+
+
+def test_status_shows_a_no_reviewer_outcome_on_the_ticket_line(setup):
+    rl.no_reviewer(str(setup[0]), "T1", "no cross-family provider")
+
+    assert "1 with no reviewer (INCOMPLETE, refunded)" in _status_line(setup[0])
+
+
+# ---- review.md's fallback line: the probe is resolve_role's `available` -----
+
+_REVIEW_MD = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
+
+
+def _fallback_line():
+    with open(_REVIEW_MD, encoding="utf-8") as fh:
+        return next(line for line in fh if line.startswith('case "$PROBE_STATUS" in'))
+
+
+def _fallback(tmp_path, qa, probe_status, authors="claude"):
+    repo = init_repo(tmp_path / "fb")
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "config.json").write_text(json.dumps({"qa": qa}), encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; AUTHORS="{authors}"\n'
+              + _fallback_line() + 'printf "FALLBACK=[%s]\\n" "$FALLBACK"\n')
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PLUGIN_ROOT=context._ROOT)  # pylint: disable=protected-access
+    result = subprocess.run(["bash", "-c", script], cwd=str(repo), capture_output=True,
+                            text=True, stdin=subprocess.DEVNULL, check=False, env=env,
+                            timeout=60)
+    return result.stdout.rsplit("FALLBACK=[", 1)[-1].split("]")[0], result
+
+
+def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
+    return {"provider": "auto", "order": list(order), "fallback": fallback,
+            "codex": {"model": "gpt-6-astra"}, "kimi": {"model": "k3"},
+            "roles": {"review": {"provider": "codex", "model": "gpt-6-astra"}}}
+
+
+@pytest.mark.parametrize("fallback,order,expected", [
+    ("gpt-6.1-sol", ("codex", "kimi", "copilot", "claude"), "codex gpt-6.1-sol"),
+    ("claude-sonnet-5", ("codex", "kimi", "copilot", "claude"), "kimi k3"),
+    ("claude-sonnet-5", ("codex", "claude"), "INCOMPLETE"),
+])
+def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, expected):
+    got, result = _fallback(tmp_path, _qa(fallback, order), 6)
+
+    assert got == expected, result.stdout + result.stderr
+
+
+def test_review_md_names_no_fallback_when_the_probe_answered(tmp_path):
+    got, result = _fallback(tmp_path, _qa("gpt-6.1-sol"), 0)
+
+    assert got == "", result.stdout + result.stderr
