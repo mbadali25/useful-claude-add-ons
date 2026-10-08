@@ -1,10 +1,9 @@
 """T-0045 `crew_ghdeploy.py check` mutations, in `sabotage.py`'s tuple shape.
 
-NOT yet wired into `sabotage.py`: `scripts/check-tooling-pr.py` (owner rule,
-T-0087) makes `plugin/crew/tests/sabotage*.py` harness, and a harness change
-may not ride in a feature PR. L-0650, a tooling-only PR, appends
-`GHDEPLOY_MUTATIONS` to `sabotage.py`'s MUTATIONS. Until then run them with
-sabotage.py's own machinery:
+Wired into `sabotage.py`'s MUTATIONS by L-0650 (C-0046, harness lane H2b),
+so the full run and `test_every_shipped_anchor_is_present_in_its_target_exactly_once`
+cover them; `test_ghdeploy_mutations_are_wired` keeps them there. To run this
+family alone, with sabotage.py's own machinery:
 
     cd plugin/crew/tests && python3 -c "import sabotage, ghdeploy_mutations as m; \
         sabotage.MUTATIONS = m.GHDEPLOY_MUTATIONS; raise SystemExit(sabotage.main())"
@@ -681,10 +680,12 @@ GHDEPLOY_MUTATIONS = (
      "    if not isinstance(name, str) or not name:\n        return None\n        return (f\"the"
      " `github` entry's `shaInput`",
      _G + "test_a_sha_input_that_names_no_input_blocks[number-sh]"),
+    # Re-aimed in H2b (C-0046): T-0062's `_promote_dispatch.py` now refuses the
+    # echoed case first with the same words, so the old row stayed green.
     ("promote-gate: a dispatch that fits no entry is sha-checked anyway", GHRULE,
      "        if not fit:\n",
      "        if False:\n",
-     _G + "test_an_echoed_declared_dispatch_does_not_vouch_for_another[sh]"),
+     _G + "test_a_dispatch_on_another_ref_fits_no_github_entry[sh]"),
     ("promote-gate: an entry no dispatch fits goes unchecked", GHRULE,
      "    if missing:\n",
      "    if False:\n",

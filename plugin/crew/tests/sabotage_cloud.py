@@ -291,7 +291,14 @@ CLOUD_GUARD_MUTATIONS = (
 # through this harness.
 GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
 TFPLAN = os.path.join(SCRIPTS, "crew_tfplan.py")
+# T-0009 as ported (G4, c08f45a5): the dispatch reader moved out of
+# crew_guards.py into its own module, so its entries aim there.
+DISPATCH = os.path.join(SCRIPTS, "crew_dispatch.py")
 _E = "tests/test_cloud_guard_environments.py::"
+# T-0009's deploy tables live in their own module since review round 1.
+_ED = "tests/test_cloud_guard_deploy.py::"
+_DB = _ED + "test_must_block_deploy_python"
+_DA = _ED + "test_must_allow_deploy_python"
 _EB = _E + "test_must_block_env_python"
 _EP = _E + "test_must_block_allow_policy_python"
 _EA = _E + "test_must_allow_env_python"
@@ -370,6 +377,12 @@ CLOUD_GUARD_MUTATIONS += (
      '    if out["policy"] == "block":\n        return "deny"',
      '    if out["policy"] == "block-x":\n        return "deny"',
      _EB + "[block-not-loosened]"),
+    ("cloud guard env: prodUnattended read from the repo alone", GUARD,
+     '    out["prodUnattended"] = crew_config.resolve_ratcheted(root, '
+     '"environments.prodUnattended")["effective"] is True\n',
+     '    out["prodUnattended"] = crew_state.load_config(root).get(\n'
+     '        "environments", {}).get("prodUnattended") is True\n',
+     _EB + "[prod-repo-only-unattended]"),
     ("crew_guards: the ratchet takes the WIDER layer (prodUnattended)", GUARDS,
      "    return tiers[min(rank(repo_value), rank(global_value))]",
      "    return tiers[max(rank(repo_value), rank(global_value))]",
@@ -377,6 +390,12 @@ CLOUD_GUARD_MUTATIONS += (
     ("crew_guards: prodUnattended normalised by truthiness", GUARDS,
      "    return value if isinstance(value, bool) else False\n",
      "    return bool(value)\n", _EB + "[prod-unattended-string]"),
+    # RE-ANCHORED in T-0009, not re-aimed: the line gained the `workflows`
+    # key; the mutation still drops the problem and nothing else.
+    ("cloud guard env: a malformed environments block reads as empty", GUARD,
+     '            out = {"nonProd": [], "problem": problem, "workflows": {}}\n',
+     '            out = {"nonProd": [], "problem": "", "workflows": {}}\n',
+     _EB + "[unknown-malformed-block]"),
     ("cloud guard env: no payload cwd falls back to the project root", GUARD,
      '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None\n',
      '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else root\n',
@@ -723,6 +742,11 @@ _S9 = _E + "test_command_word_must_block_python"
 _S9A = _E + "test_command_word_must_allow_python"
 
 CLOUD_GUARD_MUTATIONS += (
+    ('cloud guard step 9: the gate triggered by any word again', GUARD,
+     '        found = command_trigger(text, GATE_HELPERS)\n',
+     '        named = __import__("crew_guards").names_terraform(text, shell)\n'
+     '        found = None if named is None else (named, False)\n',
+     _S9A + "[s9a-commit-message]"),
     ("cloud guard step 9: the gate run at every depth again", GUARD,
      "    gated = _literal_gate(shell, text) if depth == 0 else None\n",
      "    gated = _literal_gate(shell, text)\n", _S9A + "[s9a-commit-heredoc]"),
@@ -739,8 +763,44 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard step 9: an fd number read as a word", GUARDS,
      r'_FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")',
      r'_FD_WORD_RE = re.compile(r"^(?!)$")', _S9 + "[s9-fd-redirect-plan]"),
+    ('cloud guard step 9: an unknown command word never gated', GUARDS,
+     '        named = _verb_on_line(top) if shell == "bash" else _ps_verb_on_line(top)\n',
+     '        named = None if shell == "bash" else _ps_verb_on_line(top)\n',
+     _S9 + "[s9-variable-name]"),
+    ('cloud guard step 9: `bash -c` payload not read', GUARDS,
+     '            return _bash_trigger(positional[0], top, helpers, depth + 1,\n'
+     '                                 line, tool)\n',
+     '            return None\n',
+     _T + "test_could_not_tell_is_refused_under_block"
+     "[was-bash-c-dashdash-taint]"),
+    ('cloud guard step 9: a shell reading stdin not gated', GUARDS,
+     '        named = tool.on_line(top, "bash")\n'
+     '        return None if named is None else (named, True)\n'
+     '    if head in _GATE_PWSH:\n',
+     '        return None\n'
+     '    if head in _GATE_PWSH:\n',
+     _S9 + "[s9-pipe-to-shell]"),
+    ('cloud guard step 9: `pwsh -c` payload not read', GUARDS,
+     '        return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1, tool)\n',
+     '        return None\n',
+     _S9 + "[s9-pwsh-c]"),
+    ('cloud guard step 9: `eval` payload not read', GUARDS,
+     '        return _bash_trigger(" ".join(args), top, helpers, depth + 1, line,\n'
+     '                             tool)\n',
+     '        return None\n',
+     _S9 + "[s9-eval]"),
+    ('cloud guard step 9: a command word that is a script not read', GUARDS,
+     '        return _bash_trigger(" ".join(argv), top, helpers, depth + 1, line,\n'
+     '                             tool)\n',
+     '        return None\n',
+     _S9 + "[s9-watch-string]"),
     ("cloud guard step 9: script runners read as programs", GUARDS,
      "    if head in _GATE_OPAQUE:\n", "    if False:\n", _S9 + "[s9-ssh]"),
+    ("cloud guard step 9: the reader's give-up gates nothing", GUARDS,
+     '        named = tool.on_line(text, "bash") or tool.on_line(top, "bash")\n'
+     '        return None if named is None else (named, True)\n',
+     '        return None\n',
+     _S9 + "[s9-case]"),
     ("cloud guard step 9: `$(...)` commands dropped", GUARDS,
      '            self.pos += 2\n            self.read(")")\n'
      "            return _HOLE\n",
@@ -800,6 +860,19 @@ CLOUD_GUARD_MUTATIONS += (
      '            w.lower().startswith(("alias:", "function:")) for w in '
      "args):\n", "            False for w in args):\n",
      _R5 + "[r5-ps-set-item-alias]"),
+    ('cloud guard r5: a PowerShell path run with a verb not read', GUARDS,
+     '    if head in copies:\n',
+     '    if False:\n',
+     _R5 + "[r5-ps-copied-binary]"),
+    ('cloud guard r5: a bash command run with a verb not read', GUARDS,
+     '    if head in line["copies"]:\n',
+     '    if False:\n',
+     _R5 + "[r5-ln-dot-slash]"),
+    ('cloud guard r5: a copied binary not noticed', GUARDS,
+     '    line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,\n'
+     '                                        tool.copy_source)\n',
+     '    line["copies"] |= set()\n',
+     _R5 + "[r5-cp-bare-name]"),
     ("cloud guard r5: a copy inside `bash -c` forgotten", GUARDS,
      '    line = {"copies": set()} if line is None else line\n',
      '    line = {"copies": set()}\n', _R5 + "[r5-nested-copy-bare-name]"),
@@ -816,9 +889,38 @@ CLOUD_GUARD_MUTATIONS += (
      "    if True:\n"
      '        while rest and rest[0].startswith("-"):\n',
      _R5 + "[r5-terragrunt-option-before]"),
+    ("cloud guard r5: zsh's =terraform as the command word ignored", GUARDS,
+     '        if _zsh_names_tool(first):\n'
+     '            return first, True\n',
+     '',
+     _R5 + "[r5-zsh-equals-taint]"),
     ("cloud guard r5: zsh's =terraform as an argument ignored", GUARDS,
      "    return _names_tool(word) or _zsh_names_tool(word)\n",
      "    return _names_tool(word)\n", _R5 + "[r5-zsh-copy-bare-name]"),
+    ('cloud guard r5: find -exec not read', GUARDS,
+     '        return _find_exec_trigger(args, top, helpers, depth, line, tool)\n',
+     '        return None\n',
+     _R5 + "[r5-find-exec-found-binary]"),
+    ('cloud guard r5: find -exec read line-wide again', GUARDS,
+     '        return _find_exec_trigger(args, top, helpers, depth, line, tool)\n',
+     '        named = tool.on_line(top, "bash")\n'
+     '        return None if named is None else (named, True)\n',
+     _R5A + "[r5a-find-exec-grep]"),
+    ('cloud guard r5: a script runner read line-wide again', GUARDS,
+     '        return names_terraform(top if any(_HOLE in a for a in args)\n'
+     '                               else " ".join(args), "bash")\n',
+     '        return names_terraform(top, "bash")\n',
+     _R5A + "[r5a-source-then-plan]"),
+    ("cloud guard r5: a script runner's run-time words not read", GUARDS,
+     '        return names_terraform(top if any(_HOLE in a for a in args)\n'
+     '                               else " ".join(args), "bash")\n',
+     '        return names_terraform(" ".join(args), "bash")\n',
+     _S9 + "[s9-source-procsub]"),
+    ('cloud guard r5: a shell running a script file gated', GUARDS,
+     '        if not has_c and positional and _HOLE not in positional[0] \\\n'
+     '                and not tool.names(positional[0]):\n',
+     '        if False:\n',
+     _R5A + "[r5a-bash-script-file]"),
     ("cloud guard r5: an unseen command after a followed one lost", GUARDS,
      "            found = found or hit[0]\n"
      "            unseen = unseen or hit[1]\n",
@@ -882,6 +984,35 @@ CLOUD_GUARD_MUTATIONS += (
      '            if words[0] == "." and len(words) > 1 and '
      "_head_name(words[1]) in _TF_HEADS:\n",
      "            if False:\n", _S10 + "[s10-ps-dot-ask]"),
+    ('cloud guard s10: the unknown-wrapper fallback reinstated', GUARDS,
+     '        return tool.copied(argv, top)\n'
+     '    return None\n',
+     '        return tool.copied(argv, top)\n'
+     '    for index, arg in enumerate(args):\n'
+     '        if _HOLE in arg or not _arg_names_tool(arg):\n'
+     '            continue\n'
+     '        rest = [a for a in args[index + 1:] if not a.startswith("-")]\n'
+     '        if rest and (_HOLE in rest[0] or rest[0].lower() in _GATE_VERBS):\n'
+     '            return arg, True\n'
+     '    return None\n',
+     _S10A + "[s10a-rg-var]"),
+    ('cloud guard s10: PowerShell gets the any-word trigger again', GUARD,
+     '        found = ps_trigger(_ps_normalise(text)[0], GATE_HELPERS)\n',
+     '        named = __import__("crew_guards").names_terraform(\n'
+     '            _ps_normalise(text)[0], shell)\n'
+     '        found = None if named is None else (named, False)\n',
+     _S10A + "[s10a-ps-commit-message]"),
+    ("cloud guard s10: PowerShell's read-only subcommands gated", GUARDS,
+     '            return None if _tf_read_only(argv, fed) else (first, False)\n',
+     '            return first, False\n',
+     _S10A + "[s10a-ps-output-raw]"),
+    # Re-aimed in H2b (C-0047): as ported (G4), PowerShell's mention backstop
+    # still asks on `& "terraform" plan` with the command word ignored, so the
+    # old row stayed green; `. "terraform" plan` reaches no backstop.
+    ("cloud guard s10: PowerShell's command word naming terraform ignored", GUARDS,
+     '            return None if _tf_read_only(argv, fed) else (first, False)\n',
+     '            return None\n',
+     _S10 + "[s10-ps-dot-quoted-plan-ask]"),
     ("cloud guard s10: PowerShell's `.` and `&` not stripped by the gate",
      GUARDS, '    if argv and argv[0] in ("&", "."):\n',
      "    if False:\n", _S10A + "[s10a-ps-dot-plan]"),
@@ -891,13 +1022,378 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard s10: a lone PowerShell `$x` read as a program", GUARDS,
      '    if not argv or len(argv) == 1 and (argv[0].startswith("$") or type(\n',
      '    if not argv or len(argv) == 1 and (False or type(\n', _S10A + "[s10a-ps-foreach-fmt]"),
+    ('cloud guard s10: a PowerShell command word made at run time ignored', GUARDS,
+     '        named = _verb_on_line(top) if shell == "bash" else _ps_verb_on_line(top)\n',
+     '        named = _verb_on_line(top) if shell == "bash" else None\n',
+     _S10 + "[s10-ps-variable-command-ask]"),
+    ("cloud guard s10: PowerShell's `pwsh -c` payload not read", GUARDS,
+     '            return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1,\n'
+     '                              tool)\n',
+     '            return None\n',
+     _S10 + "[s10-ps-pwsh-quoted-plan-ask]"),
+    ("cloud guard s10: PowerShell's `bash -c` payload not read", GUARDS,
+     '            return _bash_trigger(positional[0], positional[0], helpers,\n'
+     '                                 depth + 1, None, tool)\n',
+     '            return None\n',
+     _S10 + "[s10-ps-bash-c-quoted-plan-ask]"),
     ("cloud guard s10: PowerShell's Invoke-Expression string not read", GUARDS,
      "    if head in _PS_EVAL:\n", "    if False:\n",
      _S10 + "[s10-ps-iex-quoted-plan-ask]"),
+    ("cloud guard s10: PowerShell's `$(...)` not read", GUARDS,
+     '    hits = [ps_trigger(sub, helpers, depth + 1, tool) for sub in subs]\n',
+     '    hits = []\n',
+     _S10 + "[s10-ps-subexpression-quoted-plan-ask]"),
+    ('cloud guard s10: a verb after a mention read as a renamed terraform', GUARDS,
+     '    if head in line["copies"]:\n',
+     '    if names_terraform(top, "bash"):\n',
+     _S10A + "[s10a-fmt-then-kubectl]"),
     ("cloud guard s10: find -exec's found path read as a literal", GUARDS,
      '            sub.append(word.replace("{}", _HOLE))  # a path found at '
      "run time\n", "            sub.append(word)\n",
      _R5 + "[r5-find-exec-found-binary]"),
+
+    # --- T-0009: workflow dispatches (`guards.deployWorkflow`) -------------
+    # The classifier lives in crew_dispatch.py (G4's port moved it out of
+    # crew_guards.py, H2b re-aimed these entries there; four anchors gained a
+    # line of context, as promote's `_read_line` repeats them); the call sites
+    # stay in cloud_guard.py. Rebuilt for
+    # the successor plan's grammar (2026-09-27): each entry run alone by hand
+    # first (cp aside, mutate, run the named test, restore, cmp) and then
+    # through this harness; all red with a real test failure.
+    #
+    # Deleted with their code, not re-anchored (this file's rule): the eleven
+    # round-1 entries on `Rewritable`, `_exact_stdout`, the stdin body reader,
+    # `_EXPANDS_RE`'s glob, brace and `~` branches, the spread check,
+    # `cloud_guard`'s `stdin_unsure` and here-string fd test, and the
+    # resolved-variable re-read. The grammar refuses every construct they
+    # read, and the grammar entries below replace them.
+    #
+    # Layered on purpose, so no single mutation turns these repros red:
+    # `r2-sed-bash` and `r1-stdin-sed` (the `|` rule, the shell-reading-stdin
+    # rule, `--json`, and the two-readings check each refuse them alone),
+    # `r2-fd-dup-0-from-3` (`<<<`, `<(`, `--json`, `0>&3`) and
+    # `r2-bash-c-literal` (the nested rule and the literal reading's
+    # disagreement). Each of those rules is sabotaged against a row where it
+    # stands alone, named beside it.
+    ('deploy guard: an absent input read as nonProd', DISPATCH,
+     '    if not seen:\n'
+     '        return ENV_UNKNOWN, None, (f"no `{name}` input is given',
+     '    if not seen:\n'
+     '        return ENV_NONPROD, "absent", ""\n'
+     '        return ENV_UNKNOWN, None, (f"no `{name}` input is given',
+     _DB + "[no-input]"),
+    ('deploy guard: the first of two conflicting fields wins', DISPATCH,
+     '    values = sorted({value for _n, value, _w in seen})\n',
+     '    values = [seen[0][1]]\n',
+     _DB + "[conflicting-fields]"),
+    # Re-anchored: the typed-field test moved into `_dispatch_reads`.
+    ('deploy guard: `-F k=@file` read as a literal value', DISPATCH,
+     '        if _GH_FIELD_OPTS.get(name) == "typed" and \\\n'
+     '                (value or "").partition("=")[2].startswith("@"):\n',
+     '        if False:\n',
+     _DB + "[field-at-file]"),
+    # Neighbour of the entry above: the reads found, then ignored.
+    ("deploy guard: gh's stdin and file reads no longer could-not-tell", DISPATCH,
+     '    if reads is not None:\n'
+     '        return _not_literal(',
+     '    if False:\n'
+     '        return _not_literal(',
+     _DB + "[g-field-at-stdin]"),
+    # Re-aimed: `"$WF"` is could-not-tell at the grammar now, so the
+    # non-literal branch is reached by a single-quoted glob.
+    ('deploy guard: a non-literal workflow read as unlisted', DISPATCH,
+     '    if named and len(keys) == len(named) and not any(keys.values()):\n',
+     '    if not any(keys.values()):\n',
+     _DB + "[display-name-glob]"),
+    ('deploy guard: the environment layer applied under `block`', DISPATCH,
+     '    if policy == "block":\n'
+     '        return "deny", f"{base}: {out[\'reason\']}", "block", marker\n'
+     '    if live(marker):\n',
+     '    if False:\n'
+     '        return "deny", f"{base}: {out[\'reason\']}", "block", marker\n'
+     '    if live(marker):\n',
+     _DB + "[block-not-loosened]"),
+    ('deploy guard: every workflow classified (key match ignored)', DISPATCH,
+     '    keys = {w: [k for k in workflows if fnmatch.fnmatch(w.lower(), k.lower())]\n',
+     '    keys = {w: list(workflows)[:1]\n',
+     _DA + "[unlisted-workflow]"),
+    ('deploy guard: the `--field=k=v` form not parsed', DISPATCH,
+     '            name, sep, value = arg.partition("=")\n'
+     '            if not sep and name in _GH_VALUE_OPTS:\n',
+     '            name, sep, value = arg, "", ""\n'
+     '            if not sep and name in _GH_VALUE_OPTS:\n',
+     _DA + "[staging-field-eq]"),
+    ('deploy guard: xargs/parallel no longer unseen', DISPATCH,
+     '        return first, bool(zsh or depth > 0 or fed)\n',
+     '        return first, bool(zsh or depth > 0)\n',
+     _DB + "[g-xargs]"),
+    ('deploy guard: xargs/parallel no longer unseen (parallel)', DISPATCH,
+     '        return first, bool(zsh or depth > 0 or fed)\n',
+     '        return first, bool(zsh or depth > 0)\n',
+     _DB + "[g-parallel]"),
+    # Re-anchored at review round 3: the marking moved into `_fed_args`.
+    ('deploy guard: xargs placeholders read as literal words', DISPATCH,
+     '    args = [w + _HOLE if fed and ("{" in w or any(r in w for r in reps))\n'
+     '            else w for w in args]\n',
+     '    args = list(args)\n',
+     _DB + "[g-xargs-placeholder-subcommand]"),
+    ('deploy guard: the `gh api` dispatch no longer recognised', DISPATCH,
+     '    elif positionals[:1] == ["api"]:\n'
+     '        scope = _dispatch_from_api(',
+     '    elif False:\n'
+     '        scope = _dispatch_from_api(',
+     _DB + "[api-prod-input]"),
+    ('deploy guard: `gh api` with fields and no -X read as GET', DISPATCH,
+     '    elif not fields and not any(n == "--input" for n, _v in options):\n',
+     '    elif not any(n == "--input" for n, _v in options):\n',
+     _DB + "[api-implied-post]"),
+    ('deploy guard: `gh api --input FILE` with no -X read as GET', DISPATCH,
+     '    elif not fields and not any(n == "--input" for n, _v in options):\n',
+     '    elif not fields:\n',
+     _DB + "[api-input-implied-post]"),
+    ('deploy guard: `gh api -X GET` read as a dispatch', DISPATCH,
+     '        if _dispatch_literal(method) and method.upper() != "POST":\n'
+     '            return None\n',
+     '        if _dispatch_literal(method) and method.upper() != "POST":\n'
+     '            pass\n',
+     _DA + "[api-get-dispatches]"),
+    ('deploy guard: the REST `ref` field read as an input', DISPATCH,
+     '            if _dispatch_literal(key):\n'
+     '                return None\n',
+     '            if _dispatch_literal(key):\n'
+     '                return (key if key != "ref" else "environment", value, "")\n',
+     _DB + "[api-ref-not-input]"),
+    ("deploy guard: `allow` reads T-0005's apply row", DISPATCH,
+     '    head = f"{base}: guards.deployWorkflow is `{policy}`"\n',
+     '    if policy == "allow":\n'
+     '        return "allow", base, policy, marker\n'
+     '    head = f"{base}: guards.deployWorkflow is `{policy}`"\n',
+     _DB + "[allow-prod-unattended]"),
+    ('deploy guard: a malformed environments block reads as unlisted', DISPATCH,
+     '    if _envs_problem(envs):\n'
+     '        return _not_literal("the environments block cannot be read: "\n',
+     '    if False:\n'
+     '        return _not_literal("the environments block cannot be read: "\n',
+     _DB + "[malformed-environments]"),
+    ('deploy guard: `environments.workflows` counts toward engaged', GUARD,
+     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])\n',
+     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"]\n'
+     '                          or out["workflows"])\n',
+     _ED + "test_workflows_alone_do_not_engage_the_environment_layer"),
+    # Red on the reason: unrouted, a dispatch finding reaches T-0005's
+    # verdict, which cannot read it, and the hook's fail-closed internal-error
+    # deny names neither the rule nor the environment.
+    ('deploy guard: `_judge_one` no longer routes dispatches', GUARD,
+     '        if finding.rule == DEPLOY_RULE:  # keyed on the whole command and what was judged\n'
+     '            return judge_dispatch(',
+     '        if False:\n'
+     '            return judge_dispatch(',
+     _DB + "[prod-input]"),
+    ('deploy guard r1: a short cluster stops at its first boolean', DISPATCH,
+     '                    options.append((name, None))\n'
+     '                    continue\n',
+     '                    options.append((name, None))\n'
+     '                    break\n',
+     _DB + "[r1-api-cluster-iX]"),
+    # Re-aimed: round 1's pair are could-not-tell now, keyed on the text by
+    # design; the remap test is where the workflow and environment matter.
+    ('deploy guard r1: the approval marker keyed on the text alone', DISPATCH,
+     '    return text + "\\n" + json.dumps(\n',
+     '    return text or json.dumps(\n',
+     _ED + "test_marker_does_not_survive_a_remap"),
+    ('deploy guard r1: a quoted display name read as not literal', DISPATCH,
+     '            for w in named if _workflow_literal(w)}\n',
+     '            for w in named if _dispatch_literal(w)}\n',
+     _DA + "[r1-display-name-unlisted]"),
+    # The grammar (successor plan, Step 3). Round 2 BLOCK 1 first.
+    ('deploy grammar: the raw-line gate dropped', GUARD,
+     '    if depth == 0:  # the dispatch grammar, on the raw line (T-0009)\n',
+     '    if False:  # the dispatch grammar, on the raw line (T-0009)\n',
+     _DB + "[r2-bracket-glob]"),
+    # Neighbour: `r2-bash-c-literal` stays refused under this one -- the
+    # literal reading finds no dispatch there, the next entry's rule.
+    ('deploy grammar: a nested or fed dispatch read as seen', DISPATCH,
+     '    if found[1]:\n'
+     '        return _not_literal((\n',
+     '    if False:\n'
+     '        return _not_literal((\n',
+     _DB + "[g-xargs]"),
+    ("deploy grammar: the literal reading's disagreement ignored", DISPATCH,
+     '    if not shaped:\n'
+     '        # The reader found a dispatch the literal reading does not run as\n'
+     '        # one (`. gh ...` in PowerShell): the two disagree, so neither is\n'
+     '        # believed.\n'
+     '        return _not_literal(',
+     '    if False:\n'
+     '        # The reader found a dispatch the literal reading does not run as\n'
+     '        # one (`. gh ...` in PowerShell): the two disagree, so neither is\n'
+     '        # believed.\n'
+     '        return _not_literal(',
+     _DB + "[g-ps-dot-source]"),
+    ("deploy grammar: the lexer's reading not compared with the literal one", DISPATCH,
+     '    if raw == sorted(_dispatch_row(s.get("state"), s) for s in lexed):\n',
+     '    if True:\n',
+     _ED + "test_dispatch_gate_refuses_a_disagreement"),
+    ('deploy grammar: `[` and `]` read as plain', DISPATCH,
+     '    return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))\n',
+     '    return bool(re.match(r"^[A-Za-z0-9_./:=@%+,\\[\\]-]+$", word)\n'
+     '                or _SINGLE_QUOTED_RE.match(word))\n',
+     _DB + "[r2-inputs-unquoted]"),
+    ('deploy grammar: `[` and `]` read as plain (bracket glob)', DISPATCH,
+     '    return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))\n',
+     '    return bool(re.match(r"^[A-Za-z0-9_./:=@%+,\\[\\]-]+$", word)\n'
+     '                or _SINGLE_QUOTED_RE.match(word))\n',
+     _DB + "[r2-bracket-glob]"),
+    ('deploy grammar: `$` read as plain (the shared word rule)', GUARDS,
+     '_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,-]+$")',
+     '_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,$-]+$")',
+     _DB + "[g-var]"),
+    ('deploy grammar: a double quote read as plain', DISPATCH,
+     '    return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))\n',
+     '    return bool(_PLAIN_WORD_RE.match(word.replace(\'"\', \'\')) or _SINGLE_QUOTED_RE.match(word))\n',
+     _DB + "[g-double-quotes-elsewhere]"),
+    ('deploy grammar: a quote inside a single-quoted word accepted', DISPATCH,
+     '_SINGLE_QUOTED_RE = re.compile(r"^\'[^\'\\x00-\\x1f\\x7f]*\'$")\n',
+     '_SINGLE_QUOTED_RE = re.compile(r"^\'.*\'$")\n',
+     _DB + "[g-single-quote-inside-elsewhere]"),
+    ("deploy grammar: `$'...'` accepted", DISPATCH,
+     '    return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))\n',
+     '    return bool(_PLAIN_WORD_RE.match(re.sub(r"\\$\'[^\']*\'", "x", word))\n'
+     '                or _SINGLE_QUOTED_RE.match(word))\n',
+     _DB + "[g-ansi-c-elsewhere]"),
+    ('deploy grammar: `|` accepted between commands', DISPATCH,
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>"))\n',
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>", "|"))\n',
+     _DB + "[g-pipe-in]"),
+    ('deploy grammar: `|` accepted between commands (out of the dispatch)', DISPATCH,
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>"))\n',
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>", "|"))\n',
+     _DB + "[g-pipe-out]"),
+    ('deploy grammar: `<` accepted', DISPATCH,
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>"))\n',
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>", "<"))\n',
+     _DB + "[g-redirect-in]"),
+    ('deploy grammar: `<&` accepted', DISPATCH,
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>"))\n',
+     '_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\\n", ">", ">>", "&>", "&>>", "<&"))\n',
+     _DB + "[g-dup-in]"),
+    ('deploy grammar: any `N>&M` accepted as `2>&1`', DISPATCH,
+     '            if redirect != _STDERR_TO_STDOUT:\n',
+     '            if False:\n',
+     _DB + "[r2-fd-dup-0-alone]"),
+    ('deploy grammar: any `N>&M` accepted as `2>&1` (fd 1)', DISPATCH,
+     '            if redirect != _STDERR_TO_STDOUT:\n',
+     '            if False:\n',
+     _DB + "[r2-fd-dup-1-from-3]"),
+    ('deploy grammar: gh no longer a name the trigger knows', DISPATCH,
+     '_GH_NAMES = ("gh", "gh.exe")\n',
+     '_GH_NAMES = ("gh-x",)\n',
+     _DB + "[g-var]"),
+    # Neighbour `g-hole-command` stays refused: the lexer resolves `$x`
+    # and the two readings then disagree.
+    ('deploy grammar: a command word made at run time not gated', DISPATCH,
+     '        if not _hole_shape(argv[1:], (), shell != "powershell"):\n'
+     '            return None\n',
+     '        if True:\n'
+     '            return None\n',
+     _DB + "[g-hole-command-env]"),
+    # Re-anchored at review round 4: `g-alias-on-line` is now caught by the
+    # alias copy (`bash_aliases`, its own r4 entry); the opaque read of the
+    # `alias` command itself is what catches `alias g='gh workflow'`.
+    ('deploy grammar: an alias made on the line not followed', DISPATCH,
+     '            return named if named and verb else None\n',
+     '            return None\n',
+     _DB + "[r4-alias-quoted-both]"),
+    ('deploy grammar: a copy of gh made on the line not followed', DISPATCH,
+     '        return _HOLE in word or _gh_name(word.lstrip("="))\n',
+     '        return False\n',
+     _DB + "[g-cp-literal]"),
+    ('deploy grammar: a copy of gh from a substitution not followed', DISPATCH,
+     '        return _HOLE in word or _gh_name(word.lstrip("="))\n',
+     '        return False\n',
+     _DB + "[g-cp-on-line]"),
+    ("deploy grammar: the reader's give-up gates no dispatch", DISPATCH,
+     '        named, verb = _dispatch_mentions(text, shell)\n'
+     '        return named if verb else None\n',
+     '        return None\n',
+     _DB + "[g-control-char]"),
+    ("deploy grammar: every gh command dispatch-shaped (Step 9's over-block)", DISPATCH,
+     '        return _HOLE in second or bool(_DISPATCH_RE.match(second))\n'
+     '    return False\n',
+     '        return _HOLE in second or bool(_DISPATCH_RE.match(second))\n'
+     '    return True\n',
+     _DA + "[g-other-gh-quoted]"),
+    ('deploy grammar: the gate runs with an empty map', DISPATCH,
+     '    return bool(envs.get("workflows") or _envs_problem(envs))\n',
+     '    return True\n',
+     _DA + "[g-empty-map]"),
+    ('deploy grammar: the gate skips a malformed block', DISPATCH,
+     '    return bool(envs.get("workflows") or _envs_problem(envs))\n',
+     '    return bool(envs.get("workflows"))\n',
+     _DB + "[malformed-environments]"),
+    ('deploy grammar: `--json` read as a literal dispatch', DISPATCH,
+     '        if name in ("--json", "--input"):\n',
+     '        if name in ("--input",):\n',
+     _DB + "[g-json]"),
+    ('deploy grammar: `--input -` read as a literal dispatch', DISPATCH,
+     '        if name in ("--json", "--input"):\n',
+     '        if name in ("--json",):\n',
+     _DB + "[g-input-dash]"),
+    ('deploy grammar: `--help` honoured as a value', DISPATCH,
+     '    if helped:\n'
+     '        return []\n',
+     '    if helped or any("--help" in a for a in args):\n'
+     '        return []\n',
+     _ED + "test_ask_deploy_python[g-ask-help-value]"),
+    ('deploy grammar: `--help` honoured after `--`', DISPATCH,
+     '    if helped:\n'
+     '        return []\n',
+     '    if helped or "--help" in args:\n'
+     '        return []\n',
+     _ED + "test_ask_deploy_python[g-ask-dashdash-help]"),
+    ('deploy grammar: `--help` not honoured', DISPATCH,
+     '    if helped:\n'
+     '        return []\n',
+     '    if False:\n'
+     '        return []\n',
+     _DA + "[g-help-standalone]"),
+    ('deploy grammar: `--help` honoured on a non-literal line', DISPATCH,
+     '        return ENV_UNLISTED, "the line sends no workflow dispatch", None\n'
+     '    word = dispatch_first_non_literal(text, shell)\n',
+     '        return ENV_UNLISTED, "the line sends no workflow dispatch", None\n'
+     '    if "--help" in text.split():\n'
+     '        return ENV_UNLISTED, "", None\n'
+     '    word = dispatch_first_non_literal(text, shell)\n',
+     _ED + "test_ask_deploy_python[g-ask-help-nonliteral]"),
+    # `g-dashdash-positional` reads the same either way (`--` then one
+    # workflow), so the ask row that `--` changes is the aim.
+    ("deploy grammar: `--` no longer ends gh's options", DISPATCH,
+     '        if arg == "--":\n'
+     '            positionals.extend(args[index + 1:])\n'
+     '            break\n'
+     '        if arg in _GH_HELP:\n',
+     '        if arg in _GH_HELP:\n',
+     _ED + "test_ask_deploy_python[g-ask-dashdash-help]"),
+    ('deploy grammar: a second workflow argument ignored', DISPATCH,
+     '    if len(named) > 1:\n',
+     '    if False:\n',
+     _DB + "[g-double-positional]"),
+    ('deploy grammar: a could-not-tell marker keyed on the argv', DISPATCH,
+     '    if scope.get("op") == OP_LINE_NOT_LITERAL:\n'
+     '        return text\n',
+     '    if scope.get("op") == OP_LINE_NOT_LITERAL:\n'
+     '        return text.split(" <")[0]\n',
+     _ED + "test_r2_a_marker_covers_exact_bytes_only"),
+    ('deploy grammar: `_classify` reaches the parser around the gate', GUARD,
+     '        state, why, scope = dispatch_answer(dispatch_text(argv), shell,',
+     '        state, why, scope = dispatch_scopes(args) and dispatch_answer(dispatch_text(argv), shell,',
+     _ED + "test_dispatch_answer_is_the_only_road"),
+    ('deploy grammar: `dispatch_answer` parses before it gates', DISPATCH,
+     '    helpers = helpers or _gate_helpers()\n'
+     '    found = dispatch_trigger(text, helpers, shell, fed)\n',
+     '    helpers = helpers or _gate_helpers()\n'
+     '    found = dispatch_trigger(text, helpers, shell, fed) if dispatch_scopes([]) == [] else None\n',
+     _ED + "test_dispatch_answer_is_the_only_road"),
 )
 
 # T-0005 review round 7 (GUjM5s): direct spellings the option readers lost,
@@ -961,4 +1457,295 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r7: terragrunt run-all's subcommand not read", GUARDS,
      "            rest = rest[1:][tf_skip_options(rest[1:], 0):]\n",
      "            pass\n", _R7A + "[r7a-tg-run-all-plan]"),
+
+    # --- T-0009 review round 3 (Codex, head 6494d149) ---------------------
+    # Each run alone by hand first (cp aside, mutate, run the named test,
+    # restore, cmp), then through this harness. Neighbours are separate
+    # entries on separate anchors, so each rule is shown to be load-bearing.
+    ("deploy r3: a run-time command word gated by what the line mentions", DISPATCH,
+     '        if not _hole_shape(argv[1:], (), shell != "powershell"):\n',
+     '        if not _dispatch_mentions(top, shell, wild=False)[1]:\n',
+     _DB + "[r3-hole-both-words]"),
+    ("deploy r3: a run-time command word read without its argv's shape", DISPATCH,
+     '    if _dispatch_shape([_HOLE] + args):\n'
+     '        return True\n',
+     '    if False:\n'
+     '        return True\n',
+     _DB + "[r3-hole-both-words]"),
+    ("deploy r3: bash's run-time command word read as one word", DISPATCH,
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     '    return False and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     _DB + "[r3-hole-whole-command]"),
+    ("deploy r3: a run-time `gh workflow` then `run` not read", DISPATCH,
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run-x"\n',
+     _DB + "[r3-hole-command-then-run]"),
+    ("deploy r3: an xargs placeholder command word read as a name", DISPATCH,
+     '        if fed and ("{" in first or any(r and r in first for r in reps)):\n',
+     '        if False:\n',
+     _DB + "[r3-xargs-placeholder-command]"),
+    # On the raw line the reader already makes any `{` word a hole, so both a
+    # `{}` and a `{1}` aim stayed GREEN; the rule is load-bearing on
+    # `_classify`'s road, where `dispatch_text` has quoted the word.
+    ("deploy r3: a `{1}` command word under parallel read as a name", DISPATCH,
+     '        if fed and ("{" in first or any(r and r in first for r in reps)):\n',
+     '        if fed and any(r and r in first for r in reps):\n',
+     _ED + "test_r3_a_fed_command_word_on_the_classify_road"),
+    ("deploy r3: the unreadable fed finding kept beside the dispatch one", GUARD,
+     'if f.rule != DEPLOY_RULE and not (f.scope or {}).get("fed_dispatch")] + [',
+     'if f.rule != DEPLOY_RULE] + [',
+     _ED + "test_ask_deploy_python[r3-ask-xargs-placeholder-command]"),
+    ("deploy r3: every fed placeholder command left to the dispatch gate", DISPATCH,
+     '    return _dispatch_shape(["gh"] + list(argv[1:]))\n',
+     '    return True\n',
+     _ED + "test_r3_the_xargs_placeholder_is_the_deploy_guards"),
+    ("deploy r3: a PowerShell launcher's target not read", DISPATCH,
+     '                target, top)) and _dispatch_shape([_HOLE] + rest):\n',
+     '                target, top)) and False:\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: `-ArgumentList` read as one word", DISPATCH,
+     '            _ps_quoted(value, text) else re.split(r"[\\s,]+", str(value))\n',
+     '            _ps_quoted(value, text) else [str(value)]\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: `-FilePath` not read as the launched program", DISPATCH,
+     '_PS_TARGET_PARAMS = ("-filepath", "-path", "-literalpath", "-value")\n',
+     '_PS_TARGET_PARAMS = ("-path", "-literalpath", "-value")\n',
+     _DB + "[r3-ps-start-process-filepath-last]"),
+    ("deploy r3: a PowerShell variable read as a literal name", DISPATCH,
+     '    if "$" in word or word.startswith("@"):\n'
+     '        return True\n',
+     '    if False:\n'
+     '        return True\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: a grouped PowerShell word read as its guessed value", DISPATCH,
+     '    return type(word).__name__ != "_Bare" and not any(\n',
+     '    return False and not any(\n',
+     _DB + "[r3-ps-start-process-group]"),
+    ("deploy r3: PowerShell's own gh argv read as written", DISPATCH,
+     '        return argv[:1] + [_HOLE if _ps_runtime(w, text) else str(w)\n',
+     '        return argv or [_HOLE if _ps_runtime(w, text) else str(w)\n',
+     _DB + "[r3-ps-hole-arg]"),
+    ("deploy r3: an alias to a run-time value not followed", DISPATCH,
+     '                out.add(_head_name(str(name)))\n',
+     '                pass\n',
+     _DB + "[r3-ps-alias-hole-arg]"),
+    ("deploy r3: `-Name` not bound before the positional value", DISPATCH,
+     '        name = found.get("-name") or (values.pop(0) if values else None)\n',
+     '        name = values.pop(0) if values else None\n',
+     _DB + "[r3-ps-alias-value-first]"),
+    ("deploy r3: an `alias:` provider path not followed", DISPATCH,
+     '            elif path is not None:\n',
+     '            elif False:\n',
+     _DB + "[r3-ps-alias-provider]"),
+    ("deploy r3: a malformed global block read as absent", CONFIG,
+     '    if layer_state(path, environments=True) != "corrupt":\n'
+     '        return ""\n',
+     '    if True:\n'
+     '        return ""\n',
+     _DB + "[r3-global-malformed]"),
+    ("deploy r3: the global layer's problem not carried to dispatches", GUARD,
+     '    out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()\n',
+     '    out["dispatchProblem"] = out["problem"]\n',
+     _DB + "[r3-global-null]"),
+    ("deploy r3: the global layer's problem does not engage the gate", DISPATCH,
+     '    return envs.get("problem") or envs.get("dispatchProblem") or ""\n',
+     '    return envs.get("problem") or ""\n',
+     _DB + "[r3-global-malformed-empty-map]"),
+
+    # --- T-0009 review round 4 (Codex, head 6d0f5a69) ---------------------
+    # The launcher rule, the same-command rule and their neighbours. Each run
+    # alone by hand first (cp aside, mutate, run the named test, restore,
+    # cmp), then through this harness.
+    ("deploy r4: every PowerShell launcher parameter trusted", DISPATCH,
+     "    return all(name in table for name in (_ps_param(w) for w in words[1:])\n",
+     "    return True or all(name in table for name in (_ps_param(w) for w in words[1:])\n",
+     _DB + "[r4-ps-switch-before-target]"),
+    ("deploy r4: only a launcher's first word checked for parameters", DISPATCH,
+     "    return all(name in table for name in (_ps_param(w) for w in words[1:])\n",
+     "    return all(name in table for name in (_ps_param(w) for w in words[1:2])\n",
+     _DB + "[r4-ps-switch-after-args]"),
+    ("deploy r4: an abbreviation trusted as its full parameter name", DISPATCH,
+     "    return all(name in table for name in (_ps_param(w) for w in words[1:])\n",
+     "    return all(any(t.startswith(name) for t in table) for name in (_ps_param(w) for w in words[1:])\n",
+     _DB + "[r4-ps-abbrev-filepath]"),
+    ("deploy r4: a one-letter abbreviation trusted", DISPATCH,
+     "    return all(name in table for name in (_ps_param(w) for w in words[1:])\n",
+     "    return all(name in table or len(name) == 2 and any(t.startswith(name) "
+     "for t in table) for name in (_ps_param(w) for w in words[1:])\n",
+     _DB + "[r4-ps-abbrev-single]"),
+    ("deploy r4: a parameter alias (-PSPath) trusted", DISPATCH,
+     '        "-filepath", "-argumentlist", "-workingdirectory", "-credential",\n',
+     '        "-filepath", "-pspath", "-argumentlist", "-workingdirectory", "-credential",\n',
+     _DB + "[r4-ps-param-alias-pspath]"),
+    # No entry trusts `-RedirectStandardInput`: measured STILL GREEN on
+    # `r4-ps-redirect-stdin-runtime`, because `_ps_values` passes gh only the
+    # positional values and `-ArgumentList`, and a dispatch that reads stdin
+    # needs `--json`, which is could-not-tell by itself. Leaving it out of
+    # `_PS_FULL_PARAMS` is the spec's decision, kept as a second wall.
+    # No entry either for `ps_aliases` skipping an untrusted aliaser: removing
+    # the skip left every r3/r4/alias row green (99 passed) -- the line is
+    # already refused by the launcher rule, so the skip is a second wall.
+    ("deploy r4: a run-time launcher word not dispatch-shaped", DISPATCH,
+     "    return _ps_runtime(word, text) or _ps_names_dispatch(str(word))\n",
+     "    return _ps_names_dispatch(str(word))\n",
+     _DB + "[r4-ps-switch-all-runtime]"),
+    ("deploy r4: a literal gh launcher word not dispatch-shaped", DISPATCH,
+     '    return any(_gh_name(p) or p.lower() == "workflow"\n',
+     '    return any(p.lower() == "workflow"\n',
+     _DB + "[r4-ps-new-alias-abbrev]"),
+    ("deploy r4: saps not canonicalised to Start-Process", DISPATCH,
+     '_PS_CANON = {"saps": "start-process", "start": "start-process",\n',
+     '_PS_CANON = {"saps-x": "start-process", "start": "start-process",\n',
+     _DA + "[r4-ps-saps-full-params-other]"),
+    ("deploy r4: a module-qualified command word kept whole", DISPATCH,
+     '    head = str(word).replace("\\\\", "/").rsplit("/", 1)[-1].lower()\n',
+     "    head = str(word).lower()\n",
+     _DB + "[r4-ps-module-qualified-alias]"),
+    ("deploy r4: an en dash not read as a parameter's dash", DISPATCH,
+     '_PS_DASHES = ("-", "\\u2013", "\\u2014", "\\u2015")\n',
+     '_PS_DASHES = ("-",)\n',
+     _DB + "[r4-ps-en-dash-switch]"),
+    ("deploy r4: aliasers skipped by the launcher rule", DISPATCH,
+     "    shaped = [w for w in words[1:] if _ps_dispatch_word(w, text)]\n",
+     "    shaped = [] if _ps_canon(words[0]) in _PS_ALIASERS else "
+     "[w for w in words[1:] if _ps_dispatch_word(w, text)]\n",
+     _DB + "[r4-ps-alias-switch]"),
+    ("deploy r4: an alias: path writer skipped by the launcher rule", DISPATCH,
+     '    return _PS_FULL_PARAMS["alias-path"]\n',
+     "    return frozenset(_ps_param(w) for w in words[1:])\n",
+     _DB + "[r4-ps-new-item-alias-abbrev]"),
+    ("deploy r4: every launcher word dispatch-shaped (over-block)", DISPATCH,
+     "    shaped = [w for w in words[1:] if _ps_dispatch_word(w, text)]\n",
+     "    shaped = list(words[1:])\n",
+     _DA + "[r4-ps-launcher-switch-no-dispatch]"),
+    ("deploy r4: a switch bound to $true read as run time (over-block)", DISPATCH,
+     "        if not bound or bound.lower() in _PS_CONSTANTS:\n",
+     "        if not bound:\n",
+     _DA + "[r4-ps-launcher-colon-true-no-dispatch]"),
+    ("deploy r4: a trusted parameter's value read as gh's argument", DISPATCH,
+     '    values += [v for k, v in found.items() if k == "-argumentlist"]\n',
+     "    values += [v for k, v in found.items() if k not in _PS_TARGET_PARAMS]\n",
+     _DB + "[r4-ps-full-params-before-args]"),
+    ("deploy r4: an alias: path's -Name not read", DISPATCH,
+     '                    words, "-name")\n',
+     '                    words, "-name-x")\n',
+     _DB + "[r4-ps-new-item-alias-name]"),
+    ("deploy r4: an alias:\\ path's leading backslash kept", DISPATCH,
+     '                name = path.split(":", 1)[1].lstrip("\\\\/") or _ps_named(\n',
+     '                name = path.split(":", 1)[1] or _ps_named(\n',
+     _DB + "[r4-ps-alias-path-backslash]"),
+    ("deploy r4: bash gh and `workflow` read from the whole line", DISPATCH,
+     "            return named if named and verb else None\n",
+     '            return named if named and _dispatch_mentions(top, "bash")[1] else None\n',
+     _DA + "[r4-alias-then-echo]"),
+    ("deploy r4: a run-time opaque word read from its own command", DISPATCH,
+     '            own = top if any(_HOLE in a for a in args) else " ".join(args)\n',
+     '            own = " ".join(args)\n',
+     _DB + "[r4-source-procsub]"),
+    ("deploy r4: a PowerShell launcher's `workflow` read from the line", DISPATCH,
+     '            else " ".join(launched)\n',
+     "            else top\n",
+     _DA + "[r4-ps-alias-then-echo]"),
+    ("deploy r4: a bash alias of gh not followed", GUARDS,
+     '        line["copies"] |= tool.bash_aliases([argv], helpers)\n',
+     '        line["copies"] |= set()\n',
+     _ED + "test_must_block_deploy_python[g-alias-on-line]"),
+    ("deploy r4: `hash -p` not followed", DISPATCH,
+     '            elif head == "hash":\n',
+     "            elif False:\n",
+     _DB + "[r4-hash-p-copy]"),
+    # Re-anchored at review round 5, when the value came to be read as the
+    # text bash reads again: its command word, past `_unwrap`'s wrappers.
+    ("deploy r4: an alias's value read by its first word only", DISPATCH,
+     '    if argv and helpers is not None:\n'
+     '        argv = helpers[0](argv, {}, [], {"cd": False})\n',
+     '    if argv and helpers is not None:\n'
+     "        argv = list(argv)\n",
+     _DB + "[r4-alias-wrapped-gh]"),
+    ("deploy r4: every bash alias name a copy of gh (over-block)", DISPATCH,
+     '                    if eq and not name.startswith("-") \\\n',
+     '                    if eq or not name.startswith("-") \\\n',
+     _DA + "[r4-alias-other-target]"),
+
+    # --- T-0009 review round 5 (Codex, head cc754aa0) ---------------------
+    # Each run alone by hand first (cp aside, mutate, run the named test,
+    # restore, cmp), then through this harness.
+    ("deploy r5: the gate's rows hold None again (the sort raises)", DISPATCH,
+     '    return tuple("-" if v is None else "=" + str(v) for v in (\n',
+     "    return tuple(v for v in (\n",
+     _DB + "[r5-two-unknown-dispatches]"),
+    ("deploy r5: the marker keyed on the top dispatch alone", DISPATCH,
+     '    judged = sorted(json.dumps([klass, s.get("key"), s.get("value")])\n',
+     '    judged = [] and sorted(json.dumps([klass, s.get("key"), s.get("value")])\n',
+     _ED + "test_r5_a_marker_covers_every_dispatch_judged"),
+    ("deploy r5: the marker keyed on the line's first dispatch only", DISPATCH,
+     '                    for klass, _why, s in scope.get("dispatches") or ())\n',
+     '                    for klass, _why, s in (scope.get("dispatches") or ())[:1])\n',
+     _ED + "test_r5_a_marker_covers_every_dispatch_judged"),
+    ("deploy r5: an alias or `hash -p` applied to the whole line", GUARDS,
+     "    if any(argv and helpers[4](argv[0]) in _GATE_DEFERS for argv in cmds):\n",
+     "    if True:\n",
+     _DA + "[r5-alias-after-dispatch-word]"),
+    ("deploy r5: `hash -p` applied to the whole line", GUARDS,
+     "    if any(argv and helpers[4](argv[0]) in _GATE_DEFERS for argv in cmds):\n",
+     "    if True:\n",
+     _DA + "[r5-hash-after-dispatch-word]"),
+    ("deploy r5: a loop read in order (its next pass not counted)", GUARDS,
+     '_GATE_DEFERS = frozenset(("for", "while", "until", "select", "function",\n',
+     '_GATE_DEFERS = frozenset(("while", "until", "select", "function",\n',
+     _DB + "[r5-loop-hash-after]"),
+    ("deploy r5: a function body read in order", GUARDS,
+     '_GATE_DEFERS = frozenset(("for", "while", "until", "select", "function",\n',
+     '_GATE_DEFERS = frozenset(("for", "while", "until", "select",\n',
+     _DB + "[r5-function-hash-after]"),
+    ("deploy r5: a trap read in order", GUARDS,
+     '                          "trap", "coproc"))\n',
+     '                          "coproc"))\n',
+     _DB + "[r5-trap-hash-after]"),
+    ("deploy r5: an opaque command's copy of gh not read as gh", DISPATCH,
+     "            named = named or next((w for w in own.split()\n",
+     "            named = named or next((w for w in []\n",
+     _DB + "[r5-trap-alias-before]"),
+    ("deploy r5: any word in an alias's value names gh again", DISPATCH,
+     "    argv = cmds[-1] if cmds else []\n",
+     "    argv = [w for w in value.split() if _gh_name(w)] or (cmds[-1] if cmds else [])\n",
+     _DA + "[r5-alias-echo-gh]"),
+    ("deploy r5: an alias's FIRST command read, not its last", DISPATCH,
+     "    argv = cmds[-1] if cmds else []\n",
+     "    argv = cmds[0] if cmds else []\n",
+     _DB + "[r5-alias-last-command-gh]"),
+    ("deploy r5: an alias value's run-time command word not a copy", DISPATCH,
+     "    return bool(argv) and (_HOLE in argv[0] or _gh_name(argv[0]))\n",
+     "    return bool(argv) and _gh_name(argv[0])\n",
+     _DB + "[r5-alias-dollar-value]"),
+    # No entry for `_alias_runs_gh`'s `if _HOLE in value` (`alias g="$x"`):
+    # measured STILL GREEN on `r5-alias-dq-dollar`, because the `alias`
+    # command's own opaque read takes the whole line when a word is made at
+    # run time and finds the dispatch there first -- a second wall.
+    ("deploy r5: a PowerShell comma refused inside single quotes", DISPATCH,
+     "                                  and not _SINGLE_QUOTED_RE.match(word)):\n",
+     "                                  and True):\n",
+     _DA + "[r5-ps-comma-quoted]"),
+    ("deploy r5: a bare PowerShell comma accepted", DISPATCH,
+     "                                  and not _SINGLE_QUOTED_RE.match(word)):\n",
+     "                                  and False):\n",
+     _DB + "[r5-ps-comma-bare]"),
+    ("deploy r5: a lexed word with a comma written back bare", DISPATCH,
+     '        w if _PLAIN_WORD_RE.match(w) and "," not in w else\n',
+     "        w if _PLAIN_WORD_RE.match(w) else\n",
+     _DA + "[r5-ps-comma-quoted]"),
+    ("deploy r6: an unseen character in a workflow name read as a name",
+     DISPATCH,
+     '        and not any(ch != " " and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     '        and not any(False and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     _ED + "test_r6_an_invisible_character_in_a_workflow_name_is_unknown"),
+    ("deploy r6: the ASCII blank in a workflow name unseen (over-block)",
+     DISPATCH,
+     '        and not any(ch != " " and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     '        and not any(ch != "" and unicodedata.category(ch) in '
+     '_WORKFLOW_UNSEEN\n',
+     _ED + "test_r6_a_printable_workflow_name_still_reads"),
 )

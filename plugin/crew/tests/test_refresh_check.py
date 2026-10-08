@@ -1096,21 +1096,72 @@ def _gate_matches(path, pat):
     return any(fnmatch.fnmatch(path, c) for c in cands)
 
 
+def _rule_suites(rule):
+    """The test files a rule's pytest commands name (`::` selectors dropped)."""
+    import re  # pylint: disable=import-outside-toplevel
+    import shlex  # pylint: disable=import-outside-toplevel
+    return [word.split("::")[0] for command in rule["run"] if "pytest" in command
+            for word in shlex.split(command)
+            if re.fullmatch(r"plugin/crew/tests/test_[\w.-]+\.py", word.split("::")[0])]
+
+
+def _imports(test, stem):
+    """Whether the test file at repo path `test` imports module `stem`: an
+    `import <stem>` or `from <stem> import` line, which loads its code."""
+    import re  # pylint: disable=import-outside-toplevel
+    try:
+        with open(os.path.join(_ROOT, "..", "..", test), encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return False
+    return re.search(rf"^[ \t]*(?:import {stem}\b|from {stem} import\b)", text, re.M) is not None
+
+
+def _runs_module_suite(rule, path):
+    """H2b (C-0038, Codex FIX): a rule covers the module at `path` when one of
+    its paths matches it AND its pytest run names a suite that imports it. Any
+    rule that merely runs pytest is not enough: L-1508's `plugin/**/*.py` rule
+    maps every module and runs only the tool-resolution suites."""
+    stem = os.path.basename(path)[:-len(".py")]
+    return (any(_gate_matches(path, p) for p in rule["paths"])
+            and any(_imports(test, stem) for test in _rule_suites(rule)))
+
+
 @pytest.mark.parametrize("name", _GUARD_MODULES)
 def test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule(name):
     """Review round 3 (.crew/verify.json:244): an edit to scope_guard.py ran
     only check-marketplace and lint, so dropping its approval gate passed the
     Stop gate. Each module the check or its allowance lives in must reach a
-    rule that runs pytest."""
+    rule that runs a suite importing it (`_runs_module_suite`)."""
     path = f"plugin/crew/hooks/scripts/{name}"
     with open(os.path.join(_ROOT, "..", "..", ".crew", "verify.json"),
               encoding="utf-8") as handle:
         rules = json.load(handle)["rules"]
 
-    hits = [r for r in rules if any(_gate_matches(path, p) for p in r["paths"])
-            and any("pytest" in c for c in r["run"])]
+    hits = [r for r in rules if _runs_module_suite(r, path)]
 
-    assert hits, f"{path} maps to no rule that runs pytest"
+    assert hits, f"{path} maps to no rule that runs a suite importing it"
+
+
+def test_a_broad_rule_running_the_modules_suite_counts():
+    """Must-allow: breadth is not the question. A glob over every hook script
+    that runs scope_guard.py's own suite covers it."""
+    rule = {"paths": ["plugin/crew/hooks/scripts/*.py"],
+            "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_scope_guard.py -q"]}
+
+    assert _runs_module_suite(rule, "plugin/crew/hooks/scripts/scope_guard.py")
+
+
+def test_the_tool_resolution_catch_all_does_not_cover_the_guard_modules():
+    """Must-block: L-1508's rule maps `plugin/**/*.py` and runs pytest, but no
+    suite of these modules, so it never stands in for their own rule."""
+    with open(os.path.join(_ROOT, "..", "..", ".crew", "verify.json"),
+              encoding="utf-8") as handle:
+        rules = json.load(handle)["rules"]
+    catch_all = [r for r in rules if "plugin/**/*.py" in r["paths"]]
+
+    assert (len(catch_all), [n for n in ("scope_guard.py", "scope_base.py", "crew_freshness.py")
+                             if _runs_module_suite(catch_all[0], f"plugin/crew/hooks/scripts/{n}")]) == (1, [])
 
 
 # --- T-0035: README embeds of the diagrams -----------------------------------

@@ -20,6 +20,11 @@ AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
 COMMAND = os.path.join(CREW, "commands", "autopilot.md")
 STATE = os.path.join(SCRIPTS, "crew_state.py")
+REPLAN = os.path.join(SCRIPTS, "crew_autopilot_replan.py")
+GATES = os.path.join(SCRIPTS, "crew_autopilot_gates.py")
+FIX = os.path.join(SCRIPTS, "crew_autopilot_fix.py")
+STOPS = os.path.join(SCRIPTS, "crew_autopilot_stops.py")
+FENCES = os.path.join(SCRIPTS, "crew_autopilot_fences.py")
 CLOUD = os.path.join(SCRIPTS, "cloud_guard.py")
 _T = "tests/test_crew_autopilot.py::"
 _D = "tests/test_crew_autopilot_deploy.py::"
@@ -1145,6 +1150,7 @@ AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
 SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
 AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
 _Z = "tests/test_crew_autopilot_sleep.py::"
+HOLD = os.path.join(SCRIPTS, "crew_notify_hold.py")
 
 SLEEP_MUTATIONS = (
     ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
@@ -1189,10 +1195,13 @@ SLEEP_MUTATIONS = (
      '            take = sleep["state"] == crew_sleep.ASLEEP\n',
      "            take = True\n",
      _Z + "test_outside_the_window_the_day_values_apply"),
-    # Item (k) (an autopilot.sleep.deploy key applied while asleep) is deferred
-    # to H2b: its anchor, the `"deploy": deploy` line of crew_autopilot.settings,
-    # is changed by rush G6b (L-0654, the deploy override), so G6b's CI would fail
-    # on a harness file it may not touch. H2b adds it against G6b's code.
+    # Item (k), re-aimed in H2b: L-0654 made `deploy` a real sleep key, so the
+    # unknown key applied is `reviewPolicy`, held by its own must-block test.
+    ("L-0651 (k): an unknown autopilot.sleep key is applied while asleep", AUTOPILOT,
+     '            "maxAutoReplans": replans, "reviewPolicy": review,\n',
+     '            "maxAutoReplans": replans, "reviewPolicy": (_sleep_block(top, block).get("reviewPolicy")'
+     ' if sleep["state"] == crew_sleep.ASLEEP else None) or review,\n',
+     _Z + "test_the_sleep_overlay_applies_no_unknown_key"),
     ("L-0651 (l): asleep, approval skips the scope.allowCliApproval check", AUTOPILOT,
      "        allowed = crew_ticket.cli_approval_allowed(top)\n",
      '        allowed = crew_ticket.cli_approval_allowed(top) or risk["sleep"].startswith(" (asleep")\n',
@@ -1242,18 +1251,87 @@ SLEEP_MUTATIONS = (
      '    if found["state"] != crew_sleep.ASLEEP and not tightens:\n',
      "    if False:\n",
      _Z + "test_sleep_refuses_and_writes_nothing"),
+    # --- H2b: L-0655 (j)-(s), rush G6b's sleep log (L-0653) and deploy override (L-0654)
+    ("L-0655 (j): a newline in --text is written raw", SLEEP,
+     '    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())\n',
+     "    text = text\n",
+     _Z + "test_log_fields_cannot_forge_an_entry"),
+    ("L-0655 (k): a | in a field is written raw", SLEEP,
+     '    return text.replace("|", "/")[:LOG_FIELD_MAX] or "-"\n',
+     '    return text[:LOG_FIELD_MAX] or "-"\n',
+     _Z + "test_a_pipe_in_a_log_field_never_separates_fields"),
+    ("L-0655 (l): sleep-note writes while awake", AUTOSLEEP,
+     '    if taken_asleep == "0" or (taken_asleep is None and not asleep):\n',
+     '    if taken_asleep == "0":\n',
+     _Z + "test_sleep_note"),
+    ("L-0655 (m): sleep-summary marks the log while asleep", AUTOSLEEP,
+     "    if state not in (crew_sleep.AWAKE, crew_sleep.OFF):\n        code, out, _, _, _ = _summary(top)\n",
+     "    if False:\n        code, out, _, _, _ = _summary(top)\n",
+     _Z + "test_summary_asleep_marks_nothing"),
+    ("L-0655 (n): an unreadable sleep log reads as empty", AUTOSLEEP,
+     '    except (OSError, ValueError) as exc:\n        return None, f"{type(exc).__name__}"\n',
+     '    except (OSError, ValueError) as exc:\n        return "", ""\n',
+     _Z + "test_unreadable_log_is_not_empty"),
+    ("L-0655 (o): a failed sleep-log write fails approve", AUTOSLEEP,
+     '    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n'
+     '        return "\\n" + ap._one_line(f"warning: sleep log not written',
+     '    except ZeroDivisionError as exc:  # noqa: BLE001  # pylint: disable=broad-except\n'
+     '        return "\\n" + ap._one_line(f"warning: sleep log not written',
+     _Z + "test_approve_survives_an_unwritable_log"),
+    ("L-0655 (p): sleep.deploy all is applied", SLEEP,
+     'DEPLOY_OVERRIDES = ("nonprod", "none")\n',
+     'DEPLOY_OVERRIDES = ("nonprod", "none", "all")\n',
+     _Z + "test_a_refused_sleep_deploy_keeps_the_day_value"),
+    ("L-0655 (q): a day value all stays all asleep", SLEEP,
+     '    value = "nonprod" if value == "all" else value\n',
+     "    value = value if value else value\n",
+     _Z + "test_sleep_deploy_matrix"),
+    ("L-0655 (r): the deploy override is applied awake", SLEEP,
+     '    if sleep.get("state") != ASLEEP and not woke:\n        return deploy\n',
+     "    if False:\n        return deploy\n",
+     _Z + "test_sleep_deploy_matrix"),
+    ("L-0655 (s): the deploy override is applied when the state is unknown", SLEEP,
+     '    if sleep.get("state") != ASLEEP and not woke:\n        return deploy\n',
+     '    if sleep.get("state") not in (ASLEEP, UNKNOWN) and not woke:\n        return deploy\n',
+     _Z + "test_sleep_deploy_matrix"),
+    # --- H2b: C-0055, L-0656's hold list and send-once summary ------------------------
+    # crew_notify.send asks HOLDABLE before holds() does, so the list itself is aimed at.
+    ("C-0055 L-0656: a deploy failure is on the hold list", HOLD,
+     'HOLDABLE = (("question", "ask"), ("question", "permission"),\n',
+     'HOLDABLE = (("deploy", "fail"), ("question", "ask"), ("question", "permission"),\n',
+     _Z + "test_failure_ping_is_sent_asleep"),
+    ("C-0055 L-0656: pings held awake or when sleep cannot be told", HOLD,
+     '    return (conf.get("armed") is True and sleep.get("state") == "asleep"\n',
+     '    return (conf.get("armed") is True and sleep.get("state") in ("asleep", "awake", "unknown")\n',
+     _Z + "test_hold_is_off_awake_and_when_unknown"),
+    # crew_sleep.resolve reads the key; holds() only sees its answer.
+    ("C-0055 L-0656: a notifyHold that is not exactly true holds", SLEEP,
+     "    if value is None or value is True:\n",
+     '    if value is None or value is True or value == "true":\n',
+     _Z + "test_a_notify_hold_that_is_not_true_holds_nothing"),
+    ("C-0055 L-0656: a summary that died mid-send is sent again", AUTOSLEEP,
+     "        unfinished = _finish_delivered(top)\n",
+     '        unfinished = ""\n',
+     _Z + "test_a_run_that_died_mid_send_is_said_and_printed_never_resent"),
+    ("C-0055 L-0656: a failed summary send marks it reported", AUTOSLEEP,
+     '        if word not in ("sent", "off", "filtered"):\n',
+     "        if False:\n",
+     _Z + "test_a_failed_summary_send_keeps_everything_pending"),
 )
 
 AUTOPILOT_MUTATIONS += SLEEP_MUTATIONS
 
-# L-0671 entries 1-14: T-0074's auto-replan policy. Entries 15-19 (L-0670's
-# successor-plan check) wait for L-0670, which is not on main.
+# L-0671 entries 1-14: T-0074's auto-replan policy; 15-19 (H2b): L-0670's
+# successor-plan check.
 _RP = "tests/test_crew_autopilot_replan.py::"
 _RJ = _RP + "test_auto_reject_refusals_write_nothing"
 
 REPLAN_MUTATIONS = (
-    # Entry 1 (maxAutoReplans defaults to 1, crew_state.py) is deferred to H2b:
-    # rush G6b rewrites the crew_state.py defaults line it anchors on.
+    # Entry 1 re-added in H2b, on the defaults line as G6b rewrote it.
+    ("L-0671 1: maxAutoReplans defaults to 1", STATE,
+     '"maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
+     '"maxAutoReplans": 1, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
+     _RP + "test_setting_defaults_to_zero"),
     ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
      "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
      "        replans = 1\n    if replans > MAX_AUTO_REPLANS:\n",
@@ -1308,6 +1386,276 @@ REPLAN_MUTATIONS = (
      '                and _count(latest) and rejected.get("round") == latest\n',
      "                and _count(latest)\n",
      _RP + "test_replan_stops_when_rejected_round_is_not_latest"),
+    ("L-0671 15: replan_check strips plan lines before comparing", REPLAN,
+     '    return collections.Counter(line[:-1] if line.endswith("\\r") else line\n'
+     '                               for line in text.split("\\n")), None\n',
+     '    return collections.Counter(line.strip() for line in text.split("\\n")), None\n',
+     _RP + "test_replan_check_owes_an_indented_finding_line"),
+    ("L-0671 16: replan_check ignores duplicate counts", REPLAN,
+     "    missing = list((collections.Counter(lines) - have).elements())\n",
+     "    missing = [line for line in dict.fromkeys(lines) if not have[line]]\n",
+     _RP + "test_replan_check_counts_duplicates"),
+    ("L-0671 17: a could-not-tell successor check reads as ok", REPLAN,
+     '    lines, why = _required(data)\n    if why:\n        return _result(True, False, ',
+     '    lines, why = _required(data)\n    if why:\n        return _result(True, True, ',
+     _RP + "test_replan_check_could_not_tell"),
+    ("L-0671 18: approve skips replan_check", AUTOPILOT,
+     '    if replan["applies"] and not replan["ok"]:\n',
+     "    if False:\n",
+     _RP + "test_approve_refuses_successor_that_drops_a_block"),
+    ("L-0671 19: FIX lines are not required of a successor plan", REPLAN,
+     'OWED = ("BLOCK|", "FIX|")\n',
+     'OWED = ("BLOCK|",)\n',
+     _RP + "test_replan_check_fails_on_a_missing_line"),
 )
 
 AUTOPILOT_MUTATIONS += REPLAN_MUTATIONS
+
+# --- H2b: rush G6a's autopilot stops (L-0686), fix phase (L-0668), T-0043 and
+# the fence parser (L-0643) -------------------------------------------------------
+_RV = "tests/test_crew_autopilot_review_policy.py::"
+_SC = "tests/test_crew_autopilot_stop_contract.py::"
+_FN = "tests/test_crew_autopilot_fences.py::"
+
+# L-0686: L-0550's hold, landing, needs-owner, closed and blocked stops.
+GATE_MUTATIONS = (
+    ("L-0686: a hold in the INDEX cell is driven", GATES,
+     "    if index_status in GATES:\n",
+     '    if index_status in GATES and index_status != "hold":\n',
+     _T + "test_next_hold_stops[index]"),
+    ("L-0686: a hold in the spec header is driven", GATES,
+     '    elif view["gate"] and view["gate_source"] == "header":\n',
+     '    elif view["gate"] and view["gate"] != "hold" and view["gate_source"] == "header":\n',
+     _T + "test_next_hold_stops[header]"),
+    ("L-0686: a landing ticket is driven to done", GATES,
+     "    if index_status in GATES:\n",
+     '    if index_status in GATES and index_status != "landing":\n',
+     _T + "test_next_landing_stops"),
+    ("L-0686: a needs-owner ticket is driven", GATES,
+     "    if index_status in GATES:\n",
+     '    if index_status in GATES and index_status != "needs-owner":\n',
+     _T + "test_next_needs_owner_stops_with_the_next_line"),
+    ("L-0686: a header cancelled is re-driven", GATES,
+     "    if word in CLOSING:\n        named = successor(",
+     "    if False:\n        named = successor(",
+     _T + "test_next_header_cancelled_is_closed"),
+    ("L-0686: a blocked ticket is implemented", AUTOPILOT,
+     "    found = crew_autopilot_gates.blocked(view, answer) or _review_phase(",
+     "    found = None or _review_phase(",
+     _T + "test_next_blocked_stops_before_implement"),
+    ("L-0686: an unknown dependency reads as closed", GATES,
+     '    open_deps = [d for d in view["dependencies"] if d["state"] != "closed"]\n',
+     '    open_deps = [d for d in view["dependencies"] if d["state"] not in ("closed", "unknown")]\n',
+     _T + "test_next_blocked_with_an_unknown_dependency_stops"),
+    ("L-0686: a gate phase reads as autopilot's in status", GATES,
+     'WAITING = {"hold": "owner", NEEDS_OWNER: "owner", "landing": "the land step",\n',
+     'WAITING = {"hold": "autopilot", NEEDS_OWNER: "autopilot", "landing": "autopilot",\n',
+     _S + "test_status_waiting_on_a_gate_is_never_autopilot"),
+)
+
+# L-0668: T-0067's reviewPolicy and fix phase, L-0666's stop contract.
+FIX_MUTATIONS = (
+    ("L-0668 (a): clean-only is treated as fix-and-rereview", FIX,
+     "    if policy in (STOP, CLEAN_ONLY):\n        return None\n",
+     "    if policy == STOP:\n        return None\n    policy = FIX if policy == CLEAN_ONLY else policy\n",
+     _RV + "test_policy_clean_only_stops_as_today"),
+    ("L-0668 (b): the policy value is normalised before comparison", FIX,
+     "    if isinstance(value, str) and value in POLICIES:\n        return value\n",
+     "    if isinstance(value, str) and value.strip().lower() in POLICIES:\n"
+     "        return value.strip().lower()\n",
+     _RV + "test_settings_review_policy_invalid_value_warns_and_reads_stop"),
+    ("L-0668 (c): an unknown policy reads as fix-and-rereview", FIX,
+     "    if policy != FIX:\n        return (",
+     "    if policy not in (FIX, UNKNOWN):\n        return (",
+     _RV + "test_policy_unknown_stops"),
+    # (d) aims at crew_state's defaults: resolve_config fills the autopilot
+    # block from them, so review_policy's own fallback is never reached.
+    ("L-0668 (d): the default reviewPolicy is fix-and-rereview", STATE,
+     '"maxLanes": None, "reviewPolicy": "stop"}',
+     '"maxLanes": None, "reviewPolicy": "fix-and-rereview"}',
+     _RV + "test_settings_review_policy_defaults_to_stop"),
+    ("L-0668 (e): the final round is fixed and re-reviewed", FIX,
+     "    if left < 1:\n        return cause + ",
+     "    if False:\n        return cause + ",
+     _RV + "test_final_round_stops_under_fix_and_rereview"),
+    ("L-0668 (f): a changed bundle alone goes to review", FIX,
+     "    if missing or current == recorded:\n",
+     "    if current == recorded:\n",
+     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
+    ("L-0668 (g): fixes.md alone goes to review", FIX,
+     "    if missing or current == recorded:\n",
+     "    if missing:\n",
+     _RV + "test_complete_fixes_md_with_an_unchanged_bundle_is_no_progress"),
+    ("L-0668 (h): a finding quoted inside a longer line counts", FIX,
+     "    have = collections.Counter(_section_lines(text, number))\n"
+     "    return list((collections.Counter(owed) - have).elements()), None\n",
+     '    section = "\\n".join(_section_lines(text, number))\n'
+     "    return [line for line in owed if line not in section], None\n",
+     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
+    ("L-0668 (i): the ## Round <n> heading is ignored", FIX,
+     "            inside = bool(match) and int(match.group(1)) == number\n",
+     "            inside = True\n",
+     _RV + "test_changed_bundle_with_incomplete_fixes_md_stays_fix"),
+    ("L-0668 (j): a bundle rebuild failure reads as changed", FIX,
+     '        return cause + f"the bundle could not be rebuilt from {base} ({exc}): could not tell"\n',
+     '        current = "0" * 64\n',
+     _RV + "test_a_bundle_rebuild_that_raises_stops"),
+    ("L-0668 (k): a row with no findings list reads as nothing to fix", FIX,
+     '        return cause + f"round {number} carries no list of finding lines: could not tell"\n',
+     "        return None\n",
+     _RV + "test_a_row_it_cannot_read_stops"),
+    ("L-0668 (l): the fix phase drops the test-first rule and the outside-Touch refusal", COMMAND,
+     "write the failing test first, then the fix, inside the spec's Touch;",
+     "write the fix;",
+     _RV + "test_command_describes_the_fix_phase"),
+    ("L-0668 (m): a stop with no decision gets one default decision", STOPS,
+     '    return {"decision": decision or BY_PHASE.get(phase, "look")} if stop else {}\n',
+     '    return {"decision": decision or "look"} if stop else {}\n',
+     _SC + "test_every_stop_names_an_owner_decision"),
+    ("L-0668 (n): MECHANICAL is emptied", STOPS,
+     'MECHANICAL = ("graphify update", "graphify . --", "/crew:onboard --refresh",\n',
+     'MECHANICAL = () and ("graphify update", "graphify . --", "/crew:onboard --refresh",\n',
+     _SC + "test_fixed_instead_is_mechanical_outside_the_findings_stop"),
+    ("L-0668 (o): the FINDINGS stop says or fixes then /crew:review again", AUTOPILOT,
+     '"round with one left itself" + (fix or "") + "; " + crew_autopilot_stops.FIXED_INSTEAD)',
+     '"round with one left itself" + (fix or "") + "; or fixes then /crew:review")',
+     _SC + "test_findings_stop_names_the_accept_and_the_policy"),
+)
+
+# L-0643: T-0043's FINDINGS and refresh fixes, L-0642's fence parser.
+FENCE_MUTATIONS = (
+    ("L-0643: an accepted FINDINGS round reads as INCOMPLETE", AUTOPILOT,
+     '    if latest.get("verdict") == "FINDINGS":  # T-0043: its receipt stood; an edit staled it\n',
+     "    if False:  # T-0043: its receipt stood; an edit staled it\n",
+     _T + "test_next_accepted_findings_then_an_edit_goes_through_refresh"),
+    # The spec's test_next_accept_review_names_the_refresh_before_the_next_round
+    # does not exist: L-0666 replaced the refresh clause with FIXED_INSTEAD.
+    ("L-0643: the FINDINGS stop names no refresh", AUTOPILOT,
+     '"round with one left itself" + (fix or "") + "; " + crew_autopilot_stops.FIXED_INSTEAD)',
+     '"round with one left itself" + (fix or ""))',
+     _SC + "test_findings_stop_names_the_accept_and_the_policy"),
+    ("L-0643: a stale artifact marked not refreshable settles", AUTOPILOT,
+     '        return artifact.get("refreshable", True) is not False\n',
+     "        return True\n",
+     _T + "test_refresh_stale_artifact_marked_not_refreshable_stops"),
+    ("L-0643: main's parser is no longer the floor", FENCES,
+     "    items = list(legacy(text))\n    view, unclear",
+     "    items = []\n    view, unclear",
+     _FN + "test_open_questions_fence_corpus_never_below_main"),
+    ("L-0643: an ambiguous fence reads as no questions", FENCES,
+     "    if unclear is not None and names_open_questions(text, heading):\n",
+     "    if False:\n",
+     _FN + "test_open_questions_ambiguous_fence_could_not_tell"),
+    ("L-0643: an indented fence line opens a fence", FENCES,
+     '            if line == line.lstrip() and not (run[0] == "`" and "`" in rest):\n',
+     '            if not (run[0] == "`" and "`" in rest):\n',
+     _FN + "test_open_questions_fence_corpus_never_below_main"),
+    ("L-0643: an indented closer closes a fence", FENCES,
+     "            if shape and line == line.lstrip() and run[0] == fence[0] \\\n",
+     "            if shape and run[0] == fence[0] \\\n",
+     _FN + "test_could_not_tell_names_the_first_unclear_line"),
+    ("L-0643: an unclosed fence at the end is settled", FENCES,
+     "    if fence is not None:\n        unclear = unclear or fence[2]\n",
+     "    if False:\n        unclear = unclear or fence[2]\n",
+     _FN + "test_open_questions_ambiguous_fence_could_not_tell[unclosed-after-section]"),
+    ("L-0643: only an unindented heading names a section", FENCES,
+     "        found = heading.match(line.lstrip())\n",
+     "        found = heading.match(line)\n",
+     _FN + "test_names_open_questions_sees_indented_and_fenced_headings"),
+    ("L-0643: ambiguity stops even with no section (must-allow)", FENCES,
+     '    """Whether any line, indentation stripped, is an Open-questions heading."""\n',
+     '    """Whether any line, indentation stripped, is an Open-questions heading."""\n    return True\n',
+     _FN + "test_open_questions_ambiguous_fence_without_a_section_does_not_stop"),
+)
+
+# --- H2b: rush G6b's goals (L-0660: T-0056, L-0658, L-0659; C-0055: L-0541) -------
+HANDOFF = os.path.join(SCRIPTS, "crew_autopilot_handoff.py")
+GOAL_STATE = os.path.join(SCRIPTS, "crew_goal_state.py")
+BACKLOG = os.path.join(SCRIPTS, "crew_autopilot_backlog.py")
+_GR = "tests/test_crew_autopilot_goal_resume.py::"
+_GL = "tests/test_crew_autopilot_goals.py::"
+
+GOAL_MUTATIONS = (
+    ("L-0660 (a): handoff_resume gives the ticket form with two goals running", HANDOFF,
+     '    if len(goals["running"]) > 1:\n        return {"line": NONE,',
+     '    if False:\n        return {"line": NONE,',
+     _GR + "test_handoff_resume_cases[two-running]"),
+    ("L-0660 (b): handoff_resume gives the ticket form beside an unreadable goal file", HANDOFF,
+     '    if goals["unknown"]:\n        return {"line": NONE,',
+     '    if False:\n        return {"line": NONE,',
+     _GR + "test_handoff_resume_cases[unknown]"),
+    ("L-0660 (c): running_goals drops a goal file it cannot read", HANDOFF,
+     '        except ValueError:\n            out["unknown"].append(f"{rel} (could not read it as JSON)")\n',
+     "        except ValueError:\n            continue\n",
+     _GR + "test_running_goals_unreadable_is_unknown_never_dropped"),
+    ("L-0660 (d): handoff_resume gives the goal form for a stopped goal", HANDOFF,
+     '        out[override["state"] if override else state].append(name)\n',
+     '        out["running" if state == "stopped" else override["state"] if override else state].append(name)\n',
+     _GR + "test_handoff_resume_cases[stopped]"),
+    ("L-0660 (e): goal_mark writes the goal file in place", HANDOFF,
+     "            goal_mod._write_json_atomic(path, data)  # pylint: disable=protected-access\n",
+     '            open(path, "w", encoding="utf-8").write(json.dumps(data))  # pylint: disable=protected-access\n',
+     _GR + "test_goal_mark_failed_replace_keeps_the_old_file"),
+    ("L-0660 (f): the goal-handoff gate takes a stopped goal", GOAL_STATE,
+     '    if state == "running":\n        return "", ""\n',
+     '    if state in ("running", "stopped"):\n        return "", ""\n',
+     _GR + "test_goal_handoff_not_running_is_not_taken"),
+    ("L-0660 (g): the goal-handoff gate takes a missing or unreadable goal file", GOAL_STATE,
+     '    if state == "running":\n        return "", ""\n',
+     '    if state in ("running", "missing", "unknown"):\n        return "", ""\n',
+     _GR + "test_goal_handoff_not_running_is_not_taken"),
+    ("L-0660 (h): a ticket handoff's branch check skipped in crew_autopilot", AUTOPILOT,
+     "    if not branch or branch.group(1) != here_branch:\n",
+     "    if False:\n",
+     _GR + "test_ticket_handoff_branch_mismatch_still_falls_through"),
+    ("L-0660 (j): bare resume takes the first of two running goals", BACKLOG,
+     '    if len(goals["running"]) > 1:\n        return None, None, "goal-file", ',
+     '    if False:\n        return None, None, "goal-file", ',
+     _GR + "test_two_running_goals_stop_and_list_both"),
+    ("L-0660 (k): bare resume reads an unreadable goal file as no goal", BACKLOG,
+     '    if goals["unknown"]:\n        return None, None, "goal-file", ',
+     '    if False:\n        return None, None, "goal-file", ',
+     _GR + "test_unreadable_goal_file_stops_bare_resume"),
+    ("L-0660 (l): bare resume resumes a stopped goal", BACKLOG,
+     '    for slug in goals["stopped"]:\n        fallthrough.append(goal_state.handoff_refusal(top, slug)[1])\n',
+     '    goals["running"] += goals["stopped"]\n',
+     _GR + "test_stopped_goal_is_named_not_resumed"),
+    ("C-0055 L-0541: the picker passes an open dependency", BACKLOG,
+     '        blocked = [states[d] for d in entry["depends_on"] if states[d][1] != "closed"]\n',
+     "        blocked = []\n",
+     _GL + "test_stopped_dependency_blocks"),
+    ("C-0055 L-0541: a ticket state that cannot be told reads as open", BACKLOG,
+     '        if state == "unknown":\n            return stop(f"could not tell whether {ticket}',
+     '        if False:\n            return stop(f"could not tell whether {ticket}',
+     _GL + "test_a_ticket_state_that_cannot_be_told_stops"),
+    ("C-0055 L-0541: a goal whose tickets ended without work reads as done", BACKLOG,
+     "    if settled:  # L-0541 review r5",
+     "    if False:  # L-0541 review r5",
+     _GL + "test_a_goal_whose_tickets_all_ended_without_work_is_not_done"),
+    ("C-0055 L-0541: the ticket cap is off by one", BACKLOG,
+     "                if len(worked) >= cap:\n",
+     "                if len(worked) > cap:\n",
+     _GL + "test_ticket_cap_stops"),
+    ("C-0055 L-0541: the token cap is not held", BACKLOG,
+     "    if tokens > limit:\n",
+     "    if False:\n",
+     _GL + "test_token_cap_stops"),
+    ("C-0055 L-0541: a token count that cannot be told reads as zero", BACKLOG,
+     '    if tokens is None:\n        return dict(base, reason=f"could not tell this session\'s token use ({why})")\n',
+     "    if tokens is None:\n        tokens = 0\n",
+     _GL + "test_a_token_count_that_raises_is_could_not_tell"),
+    ("C-0055 L-0541: plan mode goes on to a second ticket", BACKLOG,
+     '                if conf["mode"] != ap.BACKLOG and worked:\n',
+     "                if False:\n",
+     _GL + "test_plan_mode_stops_after_one"),
+    ("C-0055 L-0541: a cap that is not a positive integer is taken", BACKLOG,
+     "        if isinstance(value, bool) or not isinstance(value, int) or value < 1:\n",
+     "        if not isinstance(value, int):\n",
+     _GL + "test_ticket_cap_setting"),
+    ("C-0055 L-0541: a goal file naming a ticket it did not mint is trusted", BACKLOG,
+     "    if MARK.format(slug=slug, n=n, m=m) not in (line.strip() for line in text.splitlines()):\n",
+     "    if False:\n",
+     _GR + "test_a_goal_file_naming_a_ticket_it_did_not_mint_is_refused"),
+)
+
+AUTOPILOT_MUTATIONS += GATE_MUTATIONS + FIX_MUTATIONS + FENCE_MUTATIONS + GOAL_MUTATIONS

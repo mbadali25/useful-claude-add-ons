@@ -305,6 +305,21 @@ def test_an_echoed_declared_dispatch_does_not_vouch_for_another(flavour, ghrepo)
 
 
 @pytest.mark.parametrize("flavour", tree.FLAVOURS)
+def test_a_dispatch_on_another_ref_fits_no_github_entry(flavour, ghrepo):
+    """H2b (C-0046): beside development's canonical dispatch, a second one on
+    `--ref other` with the same inputs and the right sha. T-0062's reader
+    matches it on its inputs alone; the `github` rule also needs the entry's
+    `ref`, so it fits no entry and blocks, never a dispatch left unchecked."""
+    sep = " && " if flavour == "sh" else "; "
+    command = (_prefix("dev") + f" -f sha={ghrepo.main_full}" + sep
+               + f"gh workflow run deploy.yml --ref other -f target=dev -f sha={ghrepo.main_full}")
+    code, err = tree.run_gate(flavour, ghrepo, command)
+    assert code == 2, err
+    assert "does not give any matched entry's `ref` and declared inputs" in err, err
+    assert ghrepo.in_flight() is None
+
+
+@pytest.mark.parametrize("flavour", tree.FLAVOURS)
 def test_two_dispatches_to_two_environments_each_carry_head(flavour, ghrepo):
     """L-0648 r3: one command dispatching development and qa, each with the
     reviewed HEAD: each dispatch is bound to its own entry, so the sha rule

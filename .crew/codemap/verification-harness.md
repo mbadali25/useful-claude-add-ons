@@ -783,6 +783,28 @@ match by `plugin/crew/tests/test_sabotage_harness.py`. Count each with `len()` o
   part), `TRACKER_MUTATIONS` (L-0669, L-0672, C-0021), `STANDARDS_MUTATIONS` (C-0042: the PWSH set).
 - `sabotage_platform.PLATFORM_ONLY` declares the entries whose target test runs only on POSIX.
 
+## Sabotage lists wired by the second 1.2.0 harness lane (H2b)
+
+DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
+
+- `CLOUD_GUARD_MUTATIONS` (`plugin/crew/tests/sabotage_cloud.py`) carries T-0009's harness half:
+  the 28 entries C-0047 part 1 retired (`docs/tickets/C-0047/retired-entries.md`) and T-0009's
+  workflow-dispatch entries, the dispatch reader's aimed at `crew_dispatch.py` (`DISPATCH`).
+- `GHDEPLOY_MUTATIONS` (`plugin/crew/tests/ghdeploy_mutations.py`) and `PROMOTE_TREE_MUTATIONS`
+  (`plugin/crew/tests/promote_tree_mutations.py`), imported by `sabotage.py` (L-0650 / C-0046);
+  `test_ghdeploy_mutations_are_wired` keeps both in `MUTATIONS` by identity.
+- Added once rush G3c-G6b landed (their anchors are in that code): `CONTRACT_MUTATIONS`
+  (`sabotage_contract.py`, L-0635) and `BRIDGE_MUTATIONS` (`sabotage_bridge.py`, L-0638 and
+  C-0051's L-0637 rounds), imported by `sabotage.py`; C-0051's L-0708 entries in `KIMI_MUTATIONS`;
+  in `sabotage_autopilot.py` `GATE_MUTATIONS` (L-0686), `FIX_MUTATIONS` (L-0668), `FENCE_MUTATIONS`
+  (L-0643), `GOAL_MUTATIONS` (L-0660, C-0055) and the L-0651 (k), L-0655 (j)-(s), L-0656 and
+  L-0671 1 and 15-19 entries in `SLEEP_MUTATIONS`/`REPLAN_MUTATIONS`; L-0660 (i) in
+  `RESUME_MUTATIONS`; T-0029's "unknown dependencies read as none" back in `WAVE_MUTATIONS`.
+- `sabotage_refresh.py`'s "an edit to scope_guard.py runs no pytest rule" (C-0038): its span now
+  also drops the wave rule's listing, and `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule`
+  counts a rule only when it maps the module and its pytest run names a suite that imports it
+  (`_runs_module_suite`), so L-1508's `plugin/**/*.py` rule no longer stands in for one.
+
 ## Entry points
 
 - `.crew/verify.json:202-208` (rule 9) — the whole-suite pytest rule and its

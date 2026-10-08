@@ -1620,7 +1620,13 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
                                 "tests/test_crew_ticket_mint.py::",
                                 "tests/test_crew_autopilot_assign.py::",
                                 "tests/test_crew_autopilot_sleep.py::",
-                                "tests/test_crew_autopilot_replan.py::")), label
+                                "tests/test_crew_autopilot_replan.py::",
+                                # H2b: rush G6a's and G6b's autopilot modules.
+                                "tests/test_crew_autopilot_review_policy.py::",
+                                "tests/test_crew_autopilot_stop_contract.py::",
+                                "tests/test_crew_autopilot_fences.py::",
+                                "tests/test_crew_autopilot_goal_resume.py::",
+                                "tests/test_crew_autopilot_goals.py::")), label
     # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
     # share these targets, so an anchor either list moves must stay unique.
     from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel

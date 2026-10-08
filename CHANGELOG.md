@@ -9,6 +9,35 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-08
+
+Crew 1.2.0: the feature rush's groups (crew 1.1.1 to 1.1.21, below) and their sabotage coverage.
+
+### Added — crew 1.2.0: sabotage coverage for the 1.2.0 groups (H2b harness lane)
+
+- **Summary.** Crew's mutation suite now proves the guards every 1.2.0 group added: 511 entries,
+  each red on its named test, cover the cloud guard's workflow-dispatch reader, GitHub deploys,
+  cross-session contracts and messaging, autopilot's stops, fix phase, goals and sleep.
+- **Cloud guard (T-0009 harness half, C-0047).** The 28 entries C-0047 part 1 retired are back,
+  re-anchored to the ported dispatch reader (`crew_dispatch.py`), with T-0009's workflow-dispatch
+  entries (148 in `sabotage_cloud.py`).
+- **Wired (L-0650, C-0046).** `ghdeploy_mutations.py` (194) and `promote_tree_mutations.py` (51)
+  run in `sabotage.py`'s full run; `test_ghdeploy_mutations_are_wired` keeps them there.
+- **New lists.** `sabotage_contract.py` (L-0635: contracts, cross-session dependencies, the hash
+  refusal) and `sabotage_bridge.py` (L-0638 and C-0051: doorbell receive, ring, pending, the hub
+  rule), each registered in `sabotage.py`.
+- **Entries added to existing lists.** L-0708's `kimi_probe` git question (C-0051); L-0550's
+  hold, landing, needs-owner, closed and blocked stops (L-0686); `autopilot.reviewPolicy`, the fix
+  phase and the stop contract (L-0668); T-0043 and the fence parser (L-0643); L-0670's successor
+  check (L-0671 15-19) and the `maxAutoReplans` default (L-0671 1); the sleep log, deploy override
+  and held pings (L-0655 (j)-(s), C-0055); goal resume and the goal picker (L-0660, C-0055); T-0029's
+  "unknown dependencies read as none".
+- **Fixed vacuous entries.** Each entry that stayed green was re-aimed, never weakened; new tests
+  where nothing could see a rule: `test_the_sleep_overlay_applies_no_unknown_key` (L-0651 (k)),
+  `test_a_pipe_in_a_log_field_never_separates_fields`, `test_a_dispatch_on_another_ref_fits_no_github_entry`.
+  The refresh-allowance check now counts a verify rule for a guard module only when it runs a suite
+  importing that module, so L-1508's `plugin/**/*.py` rule no longer stands in (C-0038).
+
 ### Added — crew 1.1.21: held pings while asleep, and the morning summary sent once (L-0656, notify half)
 
 - **Summary.** With `autopilot.sleep.notifyHold: true`, the pings that only ask for your attention wait while autopilot sleeps, and the morning summary tells you how many there were and is sent to you once; a failure still pings at once.

@@ -417,6 +417,23 @@ def test_every_shipped_anchor_is_present_in_its_target_exactly_once():
         "the table shrank -- a mutation was deleted rather than re-anchored")
 
 
+@pytest.mark.parametrize("module, name", [
+    ("ghdeploy_mutations", "GHDEPLOY_MUTATIONS"),
+    ("promote_tree_mutations", "PROMOTE_TREE_MUTATIONS"),
+])
+def test_ghdeploy_mutations_are_wired(module, name):
+    """L-0650 / C-0046: the two families that lived beside the tests unwired --
+    T-0045's `crew_ghdeploy.py` mutations and T-0505's promote-gate tree
+    mutations -- run in the full `sabotage.py` run. Every entry is in
+    `sabotage.MUTATIONS` by identity, so the anchor check above covers them too
+    and dropping the term from `MUTATIONS +=` turns this red."""
+    family = getattr(importlib.import_module(module), name)
+    wired = {id(m) for m in sabotage.MUTATIONS}
+    assert family, f"{module}.{name} is empty"
+    missing = [m[0] for m in family if id(m) not in wired]
+    assert not missing, f"{len(missing)} of {len(family)} not wired: {missing[:3]}"
+
+
 # --- T-0080: the per-entry bound ---------------------------------------------
 
 def test_main_reports_a_timed_out_entry_as_unproven_and_fails(tmp_path, monkeypatch,

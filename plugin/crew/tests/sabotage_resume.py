@@ -368,6 +368,11 @@ RESUME_MUTATIONS = (
      'CLAUDE_COMM = "claude"\n',
      'CLAUDE_COMM = "node"\n',
      _H + "test_the_writing_session_clear_names_the_command[sh]"),
+    # H2b, L-0660 (i): L-0658's goal bypass widened to a ticket handoff.
+    ("L-0660 (i): a ticket handoff skips the branch and head check too", RESUME,
+     '    if parsed["kind"] == "goal":\n',
+     '    if parsed["kind"] in ("goal", "ticket"):\n',
+     _T + "test_branch_mismatch_waits"),
 )
 
 

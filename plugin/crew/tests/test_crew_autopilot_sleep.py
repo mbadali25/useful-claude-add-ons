@@ -336,6 +336,23 @@ def test_an_unknown_sleep_key_has_no_other_effect(tmp_path, clock, key):
         (False, "stop", "risk", "risk", "asleep"), True, "none")
 
 
+def test_the_sleep_overlay_applies_no_unknown_key(tmp_path, clock):
+    """H2b (L-0651 (k)): asleep, a sleep key this crew version does not know --
+    `reviewPolicy`, a real autopilot key but no sleep override, or a made-up
+    `maxPhases` -- is warned about and never takes effect: the settings keep
+    the day values."""
+    clock(NIGHT)
+    root = _repo(tmp_path, sleep=_night(reviewPolicy="fix-and-rereview", maxPhases=99))
+
+    conf = crew_autopilot.settings(str(root))
+    named = [k for k in ("reviewPolicy", "maxPhases") if any(
+        "not available in this crew version" in w and f"autopilot.sleep.{k}" in w
+        for w in conf["warnings"])]
+
+    assert (conf["sleep"]["state"], conf["reviewPolicy"], conf["maxPhases"], named) == (
+        "asleep", "stop", crew_state.AUTOPILOT_DEFAULTS["maxPhases"], ["reviewPolicy", "maxPhases"])
+
+
 # --- re-resolved per decision ---------------------------------------------------
 
 def test_a_run_that_crosses_the_window_end_returns_to_day_values(tmp_path, clock):
@@ -1726,6 +1743,14 @@ def test_log_fields_cannot_forge_an_entry(tmp_path, clock, capsys, text):
     lines = _log_text(root).splitlines()
     assert (len(lines), lines[0].startswith("- 2026-10-04T23:00:00 | T-1 | note | "),
             len(crew_sleep.unreported(_log_text(root)))) == (1, True, 1)
+
+
+def test_a_pipe_in_a_log_field_never_separates_fields():
+    """H2b (L-0655 (k)): `|` separates a log line's fields, so a field never
+    carries one: the parser reads past it, and only this pins the rule."""
+    line = crew_sleep.log_line(NIGHT, T, "note", "a | b | approved | c", "x|y")
+
+    assert (crew_sleep.log_field("a | b"), line.count(" | ")) == ("a / b", 4)
 
 
 def test_summary_reports_once(tmp_path, clock, capsys):
