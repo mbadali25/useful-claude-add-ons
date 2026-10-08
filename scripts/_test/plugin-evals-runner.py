@@ -80,11 +80,14 @@ def run(runner: str, tmp: str, plugin: str, **stub) -> tuple[int, str, list[list
     log = os.path.join(tmp, "calls.jsonl")
     env = dict(os.environ, PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
                EVAL_PLUGIN_DIR=plugin, EVAL_OUTPUT_DIR=os.path.join(tmp, "out"),
+               HOME=os.path.join(tmp, "home"), USERPROFILE=os.path.join(tmp, "home"),
                STUB_LOG=log, STUB_RESULT=json.dumps(SCORED),
                **{k: str(v) for k, v in stub.items()})
     argv = (["bash", SH] if runner == "sh"
             else [pwsh_path(), "-NoProfile", "-NonInteractive", "-File", PS1])
-    done = subprocess.run(argv, capture_output=True, text=True, env=env, check=False)
+    os.makedirs(os.path.join(tmp, "home"), exist_ok=True)
+    done = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=env, check=False, timeout=300)
     calls = []
     if os.path.exists(log):
         with open(log, encoding="utf-8") as fh:
