@@ -762,6 +762,12 @@ _MALFORMED_MAPS = {
     "env-name-control": '{"environments": {"a\\u0001": {"deploy": "x"}}}',
     "case-twin-keys": '{"environments": {"prod": {"deploy": "x", "DEPLOY": "y"}}}',
     "case-twin-envs": '{"environments": {"prod": {"deploy": "x"}, "PROD": {"deploy": "y"}}}',
+    # Codex r2: a key repeated with DIFFERENT child paths. The leaf-path
+    # check saw no repeat, and jq kept only the second `prod`.
+    "dup-key-other-children": '{"environments": {"prod": {"deploy": "deploy-prod"}, '
+                              '"prod": {"rollback": "none"}}}',
+    "dup-key-container-then-leaf": '{"environments": {"prod": {"deploy": "deploy-prod"}, '
+                                   '"prod": 1}}',
 }
 
 
@@ -800,6 +806,46 @@ def test_with_python_the_same_maps_are_refused(case, tmp_path):
     _commit_raw_map(repo, _MALFORMED_MAPS[case])
     code, err, _ = run_gate("sh", repo, "deploy-prod")
     assert code == 2, err
+
+
+# Codex r2: python folds case per character over Unicode (`fold` in
+# promote-gate.sh), so `DÉPLOY` matches `déploy` and `deploy-ſ` (long s)
+# matches `DEPLOY-S`; jq's ascii_downcase matched neither and let the
+# declared deploy through. Each pair is (declared deploy, command run).
+_UNICODE_FOLDS = {
+    "e-acute": ("D\u00c9PLOY", "d\u00e9ploy"),
+    "long-s": ("deploy-\u017f", "DEPLOY-S"),
+    "dotless-i": ("deploy-\u0131", "deploy-I"),
+    "command-holds-it": ("D\u00c9PLOY", "x d\u00e9ploy --now"),
+}
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(_UNICODE_FOLDS))
+@pytest.mark.parametrize("with_python", [False, True])
+def test_sh_without_python_matches_as_the_matcher_folds_case(with_python, case, tmp_path):
+    """Must-block: whatever python's matcher calls a deploy, the fallback
+    blocks too; with_python=True is the reference it is held to."""
+    if not with_python and shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    declared, command = _UNICODE_FOLDS[case]
+    repo = Repo(tmp_path, {"environments": {"prod": {"deploy": declared, **_ROLLBACK}}})
+    code, err, _ = run_gate("sh", repo, command,
+                            path=None if with_python else _path_without_python(tmp_path))
+    assert code == 2, err
+    if not with_python:
+        assert "contain one another" in err, err
+
+
+@_POSIX_ONLY
+def test_sh_without_python_passes_an_unrelated_command_on_a_unicode_map(tmp_path):
+    """Must-allow twin: a non-ASCII value does not make every command a deploy."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, {"environments": {"prod": {"deploy": "d\u00e9ploy-pr\u00f8d",
+                                                     **_ROLLBACK}}})
+    code, err, _ = run_gate("sh", repo, "ls -la", path=_path_without_python(tmp_path))
+    assert code == 0, err
 
 
 # Maps python reads, holding nothing the command matches: the fallback must

@@ -199,8 +199,8 @@ PROMOTE_TREE_MUTATIONS = (
      _R + "test_ps1_without_python_blocks_a_declared_deploy"),
     # --- L-0703 review round 1 ------------------------------------------------
     ("promote-gate.sh reads a newline-only jq hit as no match", SH,
-     "(ascii_downcase | contains($c))) | tojson) // empty'",
-     "(ascii_downcase | contains($c)))) // empty'",
+     "($v | contains($c))) | tojson) // empty'",
+     "($v | contains($c)))) // empty'",
      _R + "test_sh_without_python_sees_a_match_after_a_newline_only_value"),
     ("promote-gate.sh runs the no-python jq without a bound", SH,
      '    timeout "$left" jq "$@"\n',
@@ -258,4 +258,18 @@ PROMOTE_TREE_MUTATIONS = (
      '  if ($incident) {\n    $problems.Add("the review-evidence check',
      '  if ($false) {\n    $problems.Add("the review-evidence check',
      _R + "test_an_open_incident_records_a_failing_helper_as_a_skip[ps1-missing]"),
+    # --- L-0703 Codex r2 -------------------------------------------------------
+    ("promote-gate.sh's fallback compares leaf paths for repeated keys again", SH,
+     '    dup=$(printf \'%s\' "$text" | np_jq -n --stream "$NP_DUP" 2>/dev/null)\n',
+     '    dup=$(printf \'%s\' "$text" | np_jq -n --stream \'[inputs | select(length == 2) | .[0]]'
+     ' | (length != (unique | length))\' 2>/dev/null)\n',
+     _R + "test_without_python_a_map_it_cannot_classify_blocks[sh-dup-key-other-children]"),
+    ("promote-gate.sh's fallback folds ASCII case only", SH,
+     '"$NP_FOLD"\' ($c | coarse) as $c',
+     '\'def coarse: ascii_downcase; ($c | coarse) as $c',
+     _R + "test_sh_without_python_matches_as_the_matcher_folds_case[False-e-acute]"),
+    ("promote-gate.sh's fallback forgets the two characters python folds onto ASCII", SH,
+     'elif . == 305 then 105 elif . == 383 then 115 else 65533 end',
+     'else 65533 end',
+     _R + "test_sh_without_python_matches_as_the_matcher_folds_case[False-long-s]"),
 )

@@ -137,8 +137,33 @@ if [ -z "$PY" ]; then
   }
   NP_CMD=$(crew_strip_cr "$NP_RAW")
   [ -z "${NP_CMD//[[:space:]]/}" ] && exit 0
-  NP_FCMD=$(printf '%s' "$NP_CMD" | LC_ALL=C tr 'A-Z' 'a-z')
   NP_HIT=""
+  # A key repeated in one object: jq keeps only the LAST value, so the first
+  # is never scanned, and python refuses such a map. Comparing leaf paths
+  # missed `"prod": {"deploy": ...}, "prod": {"rollback": ...}`, whose leaves
+  # differ (L-0703 Codex r2). So: a path is FINISHED once a leaf at it is seen
+  # or the container at it closes (a closing event `[p]` closes p[:-1]), and
+  # any later event at or under a finished path is a repeated key.
+  NP_DUP='
+    reduce inputs as $e ({fin: {}, dup: false};
+      if .dup then . else
+        ($e[0]) as $p
+        | if ($e | length) == 2 then
+            .fin as $f
+            | if any(range(1; ($p | length) + 1); $f[$p[:.] | tojson] != null) then .dup = true
+              else .fin[$p | tojson] = true end
+          else .fin[$p[:-1] | tojson] = true end
+      end) | .dup'
+  # A value and the command are compared under a fold COARSER than python's
+  # (L-0703 Codex r2): python upper-cases per character over Unicode, so
+  # `DÉPLOY` matches `déploy`, which ascii_downcase never saw. ASCII letters
+  # fold to lower case; the only non-ASCII characters python folds onto ASCII,
+  # U+0131 (dotless i) and U+017F (long s), fold onto i and s; every other
+  # non-ASCII character folds onto one placeholder. Two strings python calls
+  # equal are equal here too, so this matches everything python matches (and
+  # more, which only blocks). `python3 -c` over sys.maxunicode re-measures the
+  # set: characters whose single-character upper() is ASCII.
+  NP_FOLD='def coarse: explode | map(if . >= 65 and . <= 90 then . + 32 elif . < 128 then . elif . == 305 then 105 elif . == 383 then 115 else 65533 end) | implode;'
   # ONE jq process per map, never one per string: a fork per value cost 20.8s
   # on this repo's own 847-string map, past the hook timeout (L-0703 security
   # review). An empty text, a map jq cannot parse, and a key repeated in one
@@ -179,7 +204,7 @@ if [ -z "$PY" ]; then
     end'
   np_scan() {
     local text=$1 where=$2 mode=$3 dup shape
-    dup=$(printf '%s' "$text" | np_jq -n --stream '[inputs | select(length == 2) | .[0]] | (length != (unique | length))' 2>/dev/null)
+    dup=$(printf '%s' "$text" | np_jq -n --stream "$NP_DUP" 2>/dev/null)
     if [ -z "${text//[[:space:]]/}" ] || [ "$dup" != "false" ]; then
       echo "PROMOTION BLOCKED: no usable python, and $where is empty, does not parse, or repeats a key, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+, or fix the map." >&2
       exit 2
@@ -192,8 +217,8 @@ if [ -z "$PY" ]; then
     # The hit is printed as JSON (`tojson`), never raw: a value of only
     # newlines would otherwise be stripped by $(...) to nothing and read as
     # "no match" (L-0703 review r1).
-    NP_HIT=$(printf '%s' "$text" | np_jq -r --arg c "$NP_FCMD" \
-      'first(.. | strings | select(length > 0) | select((ascii_downcase as $v | ($c | contains($v))) or (ascii_downcase | contains($c))) | tojson) // empty' 2>/dev/null) || {
+    NP_HIT=$(printf '%s' "$text" | np_jq -r --arg c "$NP_CMD" \
+      "$NP_FOLD"' ($c | coarse) as $c | first(.. | strings | select(length > 0) | select(coarse as $v | ($c | contains($v)) or ($v | contains($c))) | tojson) // empty' 2>/dev/null) || {
       echo "PROMOTION BLOCKED: no usable python, and jq could not scan $where, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+." >&2
       exit 2
     }
