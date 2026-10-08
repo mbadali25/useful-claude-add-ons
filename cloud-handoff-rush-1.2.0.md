@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T03:23Z
+Last updated: 2026-10-08T03:45Z
 
 ## >>> RESUME HERE
 
@@ -110,6 +110,7 @@ Close source PRs GitHub did not auto-mark merged, with a "landed via port" comme
 
 ## Log (newest first)
 
+- 2026-10-08T03:45Z MERGED #573 (G6b) into release at 16fc5147, crew 1.1.21. Opened WAVE 12 #574 (last feature wave). H2b lander started.
 - 2026-10-08T03:23Z G6b #573: test (3.12) failed test_autopilot_report_calls_run_stop. The merge had joined goal-mark --reason-file onto the run-stop line in autopilot.md. Restored the break, rejoined the focus paragraph to stay in budget. 1644 autopilot.md tests pass. New head c43f89a7, crew 1.1.21 re-applied last.
 - 2026-10-08T03:14Z Owner deleted CREW_WINDOWS_RUNNER. Closed #568 and kept the branch ci/windows-self-hosted for later.
 - 2026-10-08T03:12Z Owner chose C: Windows CI stays on GitHub-hosted. #568 stays unmerged. CREW_WINDOWS_RUNNER=winrepo2 is still set; it must be deleted before #568 can ever merge, or main's Windows CI moves to winrepo2.
