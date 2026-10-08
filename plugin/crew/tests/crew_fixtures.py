@@ -1221,7 +1221,8 @@ def home_allowed_prefixes(repo_root, homes=()):
 
 def home_open_violation(path, homes, allowed):
     """None, or a reason when opening `path` reads or writes under a real home
-    outside `allowed`. `path` may be relative (to the cwd), bytes, PathLike or
+    outside `allowed`. `homes` and `allowed` are normalised already (as
+    `set_home_guard` and `home_allowed_prefixes` leave them). `path` may be relative (to the cwd), bytes, PathLike or
     an int file descriptor (never a violation). Pure."""
     if isinstance(path, int) or path is None:
         return None

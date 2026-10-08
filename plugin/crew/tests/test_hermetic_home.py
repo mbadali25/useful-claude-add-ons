@@ -167,6 +167,11 @@ def test_user_layer_tests_pass_with_a_populated_operator_home(tmp_path):
 
 HOME = os.path.abspath(os.sep + os.path.join("home", "operator"))
 REPO = os.path.join(HOME, "work", "repo")
+# The audit compares against roots it normalised once (`set_home_guard`,
+# `home_allowed_prefixes`); the pure checks take them already normalised, so
+# on Windows a drive letter's case is not a difference.
+HOMES = (os.path.normcase(HOME),)
+ALLOWED = (os.path.normcase(REPO),)
 
 
 @pytest.mark.parametrize("path", [
@@ -177,7 +182,7 @@ REPO = os.path.join(HOME, "work", "repo")
     HOME,
 ], ids=["crew-config", "gitconfig", "bytes", "pathlike", "the-home-itself"])
 def test_an_open_under_the_real_home_is_a_violation(path):
-    assert crew_fixtures.home_open_violation(path, (HOME,), (REPO,)) is not None
+    assert crew_fixtures.home_open_violation(path, HOMES, ALLOWED) is not None
 
 
 @pytest.mark.parametrize("path", [
@@ -188,7 +193,7 @@ def test_an_open_under_the_real_home_is_a_violation(path):
     None,
 ], ids=["allowed-checkout", "outside", "sibling-prefix", "fd", "none"])
 def test_an_open_elsewhere_is_allowed(path):
-    assert crew_fixtures.home_open_violation(path, (HOME,), (REPO,)) is None
+    assert crew_fixtures.home_open_violation(path, HOMES, ALLOWED) is None
 
 
 @pytest.mark.parametrize("env,blocked", [
@@ -201,7 +206,7 @@ def test_an_open_elsewhere_is_allowed(path):
 ], ids=["home", "userprofile", "inside-the-home", "inside-an-allowed-prefix", "sibling-prefix",
         "neither"])
 def test_a_spawn_is_a_violation_only_when_handed_a_real_home(env, blocked):
-    assert (crew_fixtures.home_spawn_violation(env, (HOME,), (REPO,)) is not None) is blocked
+    assert (crew_fixtures.home_spawn_violation(env, HOMES, ALLOWED) is not None) is blocked
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
@@ -225,7 +230,7 @@ def test_an_import_path_that_holds_the_home_is_not_allowed(monkeypatch, prefix):
     allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
 
     assert crew_fixtures.home_open_violation(
-        os.path.join(HOME, ".claude", "crew", "config.json"), (HOME,), allowed) is not None
+        os.path.join(HOME, ".claude", "crew", "config.json"), HOMES, allowed) is not None
 
 
 def test_the_real_home_record_is_not_handed_to_a_test():
