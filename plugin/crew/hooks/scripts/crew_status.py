@@ -193,7 +193,11 @@ def _review_lines(root):
             if index < 3:
                 lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
             continue
-        marks = [same_family_round(row) for row in summary["rounds"]
+        rounds = summary.get("rounds")
+        if not isinstance(rounds, list):
+            tally["unreadable"] += 1  # rounds the share cannot read: could not tell
+            rounds = []
+        marks = [same_family_round(row) for row in rounds
                  if isinstance(row, dict) and row.get("status") == "completed"]
         tally["same"] += marks.count(True)
         tally["cross"] += marks.count(False)
