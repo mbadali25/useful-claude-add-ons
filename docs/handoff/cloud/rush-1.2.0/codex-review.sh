@@ -3,7 +3,7 @@
 # Runs gpt-6-sol (high) read-only over `git diff <base>...HEAD`; writes $S/reviews/<label>-<sha7>.json
 set -u
 WT=$1; BASE=$2; LABEL=$3; EXTRA=${4:-}
-S=/tmp/claude-0/-home-user-useful-claude-add-ons/cf8010ca-0ad0-5d92-8922-7bbd28b697af/scratchpad
+S=/tmp/claude-0/-home-user-useful-claude-add-ons/f618860f-8f5b-59cd-9e97-34813e49a135/scratchpad
 SHA=$(git -C "$WT" rev-parse --short=7 HEAD)
 OUT=$S/reviews/$LABEL-$SHA.json
 PROMPT="You are reviewing a pull request in this repository (cwd). Review ONLY the change: run \`git diff $BASE...HEAD\` and \`git log --oneline $BASE..HEAD\`, then read surrounding code as needed. Read CLAUDE.md first: its rules are the repo's policy (version bumps, matched install-script pairs, harness-alone rule, hook defaults, landmines).

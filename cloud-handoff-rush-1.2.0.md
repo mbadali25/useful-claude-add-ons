@@ -6,7 +6,7 @@ into crew **1.2.0**. Lives on branch `claude/eloquent-wozniak-iqb4hf` (draft PR 
 `docs/handoff/cloud/rush-1.2.0/note.sh "<what happened>"`, which commits and pushes. Ticket status
 and the group table are in `pending-tickets.md`, section "Feature rush 1.2.0".
 
-Last updated: 2026-10-08T02:35Z
+Last updated: 2026-10-08T02:45Z
 
 ## >>> RESUME HERE
 
@@ -50,51 +50,63 @@ Last updated: 2026-10-08T02:35Z
   7. Keep `gpt-6-sol`; switch reviews to `gpt-6.1-sol` only if capacity errors persist.
 - The other landing session (ended at crew 1.1.0, #512) stays out of #324-#538 (owner asked it, 2026-10-05).
 
-## State
+## State  [refreshed 2026-10-08T02:45Z, session_01H49aKnVMcvefcadqBGmuMu]
 
-- `main` = `a555ff37` (crew 1.1.0). `release/1.2.0` = `a555ff37` (fast-forwarded 2026-10-05).
-- Merged into release/1.2.0: #539 G8 (c510b764, crew 1.1.1); #541 G1 (3dbc033b, crew 1.1.2); #543 G3 (2c911427, crew 1.1.5).
-- Merged into main: #540 H3 (97dda0bd, crew 1.1.3); #542 H1 (7cb44221, crew 1.1.4; source PRs #418 #461 #422 #333 #340 #331 #343 #406 #490 closed). Source PRs closed: #526, #529, #531, #538; #527 closed as superseded.
-- Version counter: 1.1.3 = H3 (main), 1.1.4 = H1 (#542, reserved), 1.1.5 = G3 (release), 1.1.6 = G0 (landing). Next free: **1.1.7**.
-- Open group PRs: #540 H3 -> main (lands after H1). Source PRs are closed when their content reaches main.
+**10 of 12 waves are on main.** Each wave = one group PR into `release/1.2.0`, then `release/1.2.0` -> `main`.
 
-### Groups (scope given to each builder)
+| Ref | SHA | crew |
+|---|---|---|
+| `main` | `7a62e848` (wave 10, #569) | 1.1.19 |
+| `release/1.2.0` | `196e31fa` (G3d, #567) | 1.1.19 |
+| next free version | | **1.1.20** (G6a), then 1.1.21 (G6b), then **1.2.0** (H2b) |
 
-| Group | Branch base | Scope, in order | Placeholder crew |
-|---|---|---|---|
-| G0 coord+wave | release | T-0030 (#517) then T-0029 (#516), feature halves; harness halves saved as `$S/harness-T-00{29,30}.patch` | 1.1.9 |
-| G1 ports | release | #478 T-0081 (superseded by #513), #464 T-0071, #376 L-0604, #346 T-0039, #367 T-0064, #370 T-0038 | 1.1.1 |
-| G1b ports | release | #345 T-0036, #349 T-0065, #359 T-0025, #341 L-0509, #324 L-0590 | 1.1.6 |
-| G2 autopilot ports | release | #354 T-0012, #395 T-0049 (superseded by #513), #342 T-0070, #358 T-0022, #369 T-0044, #363 T-0060, #365 T-0058, #366 T-0059 | 1.1.2 |
-| G3 contracts | release | #409 L-0639, #411 L-0640; blocked until G0 lands: #408 T-0031, #412 L-0634, #410 L-0633 | 1.1.3 |
-| G3b bridge/config | release | #425 L-0675, #414 T-0103, #447 T-0106, #455 L-0667; blocked until G0: #434 T-0032, #437 L-0636, #442 L-0637 | 1.1.7 |
-| G4 deploy | release | #336 T-0009 (feature half), #467 T-0062, #428 L-0644, #432 L-0645, #436 L-0646, #439 L-0647, #445 L-0648, #471 L-0664, #473 L-0665, #488 L-0689, #452 L-0649 | 1.1.4 |
-| G5 platform | release | #441 T-0102, #458 L-0684, #468 L-0685, #476 T-0506, #474 T-0055, #480 L-0657, #454 T-0054, #465 T-0502, #477 T-0093 | 1.1.5 |
-| G6 autopilot builds | release, after G2 lands | #485, #486, #397, #426, #443 (needs T-0029), #449, #446, #453, #483, #444, #431, #435, L-0541 (#515), #459, #463, #469 | next free |
-| G7 standards | release | L-0519 (#525), L-0518 feature half (#533), then L-0532 #535, L-0535 #519, L-0536 #523, L-0538 #534, L-0533 #536, L-0534 #537, L-0537 #530 from public-source research in `$S/g7/research/` | 1.1.11 |
-| G8 late | release | L-0517 (#518), L-0511 PR 1 (#528), L-0530 (#521); L-0511 PR 2 deferred until L-0522 PR 2 is on main | 1.1.10 |
-| H1 harness | main | #418 T-0098 bundle (+#461, #422), #333 L-0605, #340 L-0526, #331 L-0608, #343 T-0068, #402 L-0540, #406 L-0681, #490 L-0690 | 1.1.8 |
-| H3 review harness | main | L-0528 #526, L-0514 #529, T-0033 #527, L-0518 tooling half #533, L-0522 PR 2 #538, L-0527 #531 | 1.1.12 |
-| H2 sabotage | main, last | #472, #413, #415, #417, #419, #423, #424, #429, #430, #438, #440, #448, #457, #460, #466, #470, #482, #484, #487, L-0525 #522, harness halves of #336, T-0029, T-0030 | **1.2.0** |
-| last | | #479 T-0507 code-map refresh | |
+### Remaining, in order
 
-Untouched: #391 (the other session's notes branch).
+| # | Lane | Branch / PR | State | Next |
+|---|---|---|---|---|
+| 11 | G6a autopilot | `rush/g6a-autopilot` -> #570 (head `12d99dfe`, crew 1.1.20) | CI running | merge into release, then wave 11 PR release -> main |
+| 12 | G6b goals+sleep | `rush/g6b-goals-sleep` (head `ebee2f34`, unmerged with release) | built, Codex-reviewed per ticket | builder: revert placeholder version, merge release, fast checks, crew 1.1.21 last, PR into release |
+| last | H2b harness | `rush/h2b-sabotage` (head `6601d151`, no version commit, no PR) | built; Codex CLEAN (0/0/0) | after G6b on main: merge main, `git apply docs/tickets/H2b/deferred.patch` (115 entries), add the L-0651 (k) must-block test, re-check every anchor, delete the patch file, crew **1.2.0** last, PR to main alone |
 
-### In flight
+H2b detail: 393 entries on main all RED; 115 deferred all RED on a scratch merge (anchors may move when
+G6b really lands: re-run them). Unresolved: L-0651 (k) needs a new must-block test (G6b made
+`autopilot.sleep.deploy` real; `reviewPolicy` has no assertion). Coordinator recommendation, not yet built.
 
-| What | State |
-|---|---|
-| Builders G0, G1, G1b, G2, G3, G3b, G4, G5, G7, G8, H1, H3 | running (relaunched after the 10:45 container restart) |
-| Research agent (Opus) | writing `$S/g7/research/{sql,php,powershell,dotnet,terraform,node,angular}.md` + `changesets-*.txt` + README.md (last) from public evidence only |
-| Watcher | PRs numbered above #538 |
+### Side PRs (not part of the release)
 
-### Waiting on the owner
+| PR | What | State |
+|---|---|---|
+| #571 | README install URLs re-pinned to `7a62e848` (wave 10 changed both install scripts) | CI running; merge when green |
+| #568 | CI: `CREW_WINDOWS_RUNNER` sends crew-windows-* jobs to a self-hosted pool | **do not merge yet**: trial on winrepo2 failed (wallclock 7.1 min vs 2.3 hosted, 8 timing bounds missed, `mktemp` not on PATH). Owner to fix the runners; fallback is to keep wallclock on hosted |
+| #514 | these notes | docs-only, merges last |
 
-1. Owner's local session to send its list of tickets pushed today; coordinator diffs it against #515-#538.
+### Runners (owner, 2026-10-08)
+- Linux self-hosted pool live: repo variable `CREW_RUNNER=self-hosted` (set by hand; the infra playbook normally owns it and deletes it when the host idles). `test (3.12)` 18 min hosted -> 4.4 min self-hosted. `start-if-stopped` is now skipped (no more red).
+- `CREW_WINDOWS_RUNNER=winrepo2` is set but only #568's workflow reads it; main ignores it until #568 merges.
+- The proxy blocks Actions **variables/runners** APIs from cloud sessions; job re-runs (`POST .../actions/runs/<id>/rerun-failed-jobs`) work.
 
-Decided 2026-10-05: T-0030 "1 of 3" = the family T-0030 -> T-0031 (#408) -> T-0032 (#434), all in the
-rush; SQL/PHP ship thin from public evidence with C-0020 to re-check against private repos;
-commits keep `Claude-Session:` only.
+### Owner decisions this session (2026-10-07/08)
+- Build H2b in parallel with the groups (deferred entries kept as a patch).
+- Testing policy: builders run only fast checks + targeted pytest; the **full suite runs in PR CI** on the self-hosted runners.
+- G6a: keep L-0666's contract for the stale-after-review stop (L-0522 stop names no command).
+- 10-12 waves, one group per wave.
+
+### Bugs the waves caught
+- G3d / L-0708: kimi_probe read git's two-line "Stopping at filesystem boundary" answer as could-not-tell when TMPDIR sits on its own mount (self-hosted runner). Fixed in `dcb479c9` (`GIT_DISCOVERY_ACROSS_FILESYSTEM=1`, regression test).
+- G6a: owner list showed `Complete/` archive as an open ticket; fixed with a test.
+
+### Follow-ups after 1.2.0 (not blocking)
+- C-0049..C-0064 (+ C-0033/35/36/38/41/48/62); next free **C-0065**.
+- 10 sabotage entries STILL GREEN on release that are not ticketed (promote gate, auto-accept, 5 cloud-guard PowerShell, limit markers, sabotage-bound) -> mint one C ticket.
+- C-0061 Windows wallclock overruns on hosted runners (wave 10 needed one re-run).
+- Autopilot verify rule runs ~54s vs declared 30s (re-price).
+- Owner: `RUNNER_START_TOKEN` 404 on github-runner-infra; #544/#545 (other session, stale 1.1.5).
+
+### Tools (scratchpad is ephemeral: copies here)
+`docs/handoff/cloud/rush-1.2.0/`: `codex-review.sh` (fix `S=`), `review-schema.json`, `waitci.sh`
+(`bash waitci.sh <sha>`: waits for CI, prints non-success checks), `note.sh`, `BRIEF.md`, `LANDING.md`.
+Merge with `gh api -X PUT repos/.../pulls/N/merge -f merge_method=merge -f sha=<head>` (the MCP merge tool 500s).
+Close source PRs GitHub did not auto-mark merged, with a "landed via port" comment.
 
 ## Log (newest first)
 
