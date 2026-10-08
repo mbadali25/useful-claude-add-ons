@@ -2916,7 +2916,8 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   whether or not that rule's own files changed this turn — until
   `/crew:verify --all` actually runs it clean. Its home is CI (L-0710): the
   line says `deferred to CI`, the `verify-gate` workflow runs it with no
-  budget, and `/crew:done` refuses until that run's receipt is VERIFIED. A
+  budget, and `/crew:done` refuses until that run's receipt is VERIFIED or
+  `/crew:verify --all` has run it clean here. A
   deferral alone never exits 2 at Stop; a rule that runs and fails still does.
 - **A turn where zero rules ran records nothing as verified** (L-0710). An
   empty changed set, or one for which the map selected no command (every
@@ -2924,8 +2925,10 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `verify-gate: 0 rules ran` and writes neither `.crew/.verify-verified-at`
   nor the fingerprint. It moves only the diff baseline,
   `.crew/.verify-gate.base-at` (HEAD), when the base did not come from the
-  marker: on a default branch with no marker that is what keeps the next
-  commit in scope. Nothing reads `base-at` as verified.
+  marker and nothing committed differs from the current base: on a default
+  branch with no marker that is what keeps the next commit in scope. It is
+  read only when it is an ancestor of HEAD, a write that fails refuses the
+  turn (exit 2), and nothing reads `base-at` as verified.
 - A rule that would fit `verify.stopBudgetSeconds` alone but lost to this
   turn's contention (another rule's cost crowded it out) is "acute", not
   chronic, and still blocks the sha marker exactly as before this feature —

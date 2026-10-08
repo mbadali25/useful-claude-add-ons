@@ -1066,7 +1066,7 @@ def _sync(sha, matched, cmd_log, all_run=False):
 
     for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
         print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {info.get('reason', '')}")
+              f"{info.get('label', key)}: {_shown_reason(info)}")
     if record_lost:
         print("verify-gate: the verified record was unreadable, so the obligations it "
               "held are UNKNOWN; NOT advancing the marker - run /crew:verify --all to rebuild it")
@@ -1076,6 +1076,25 @@ def _sync(sha, matched, cmd_log, all_run=False):
               "edited or removed; NOT advancing the marker - run /crew:verify --all")
         return False
     return failure is None
+
+
+_OLD_CHRONIC_TAIL = " - run /crew:verify --all"
+_CI_TAIL = (" - deferred to CI (the verify-gate check); "
+            "/crew:done needs its VERIFIED receipt, or run /crew:verify --all")
+
+
+def _shown_reason(info):
+    """The reason as printed. A chronic entry a pre-L-0710 gate wrote still
+    carries the old "run /crew:verify --all" tail, and an unchanged turn
+    only reports the record, never rewrites it - so that tail is re-said
+    the way the current gate says it, naming CI (L-0710 review round 1)."""
+    reason = info.get("reason", "")
+    if not isinstance(reason, str):
+        return ""
+    if (info.get("status") == "chronic" and "deferred to CI" not in reason
+            and reason.endswith(_OLD_CHRONIC_TAIL)):
+        return reason[:-len(_OLD_CHRONIC_TAIL)] + _CI_TAIL
+    return reason
 
 
 def cmd_report():
@@ -1088,7 +1107,7 @@ def cmd_report():
         return
     for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
         print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {info.get('reason', '')}")
+              f"{info.get('label', key)}: {_shown_reason(info)}")
 
 
 def cmd_timings_get():

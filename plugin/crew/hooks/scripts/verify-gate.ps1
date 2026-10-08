@@ -677,9 +677,21 @@ function Write-CrewVerified {
 function Write-CrewBase {
   $sha = ($null | git rev-parse HEAD 2>$null)
   if ($sha) {
-    if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
-    Set-Content -Path $baseAt -Value $sha.Trim() -Encoding ascii
+    try {
+      if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force -ErrorAction Stop | Out-Null }
+      Set-Content -Path $baseAt -Value $sha.Trim() -Encoding ascii -ErrorAction Stop
+    } catch {
+      # The twin of refuse_base_write in verify-gate.sh: a baseline that
+      # could not be written refuses the turn (L-0710 review round 1).
+      [Console]::Error.WriteLine("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
+      exit 2
+    }
   }
+}
+
+# The twin of zero_rules_line in verify-gate.sh.
+function Write-ZeroRulesLine {
+  [Console]::Error.WriteLine("verify-gate: 0 rules ran on $(@($changed).Count) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written.")
 }
 
 # SCOPE. Mirrors verify-gate.sh exactly; the long rationale lives there. In
@@ -704,8 +716,12 @@ if (-not $base -and (Test-Path $baseAt)) {
   $cand = (Get-Content $baseAt -TotalCount 1 -ErrorAction SilentlyContinue)
   if ($cand) { $cand = $cand.Trim() }
   if ($cand) {
+    # Only an ancestor of HEAD - the twin of the same check in verify-gate.sh.
     $null | git cat-file -e "$cand^{commit}" 2>$null
-    if ($LASTEXITCODE -eq 0) { $base = $cand }
+    if ($LASTEXITCODE -eq 0) {
+      $null | git merge-base --is-ancestor $cand HEAD 2>$null
+      if ($LASTEXITCODE -eq 0) { $base = $cand }
+    }
   }
 }
 if (-not $base) {
@@ -1727,7 +1743,7 @@ if ($null -ne $budget) {
     [void]$notices.Add('deferred to /crew:verify: ' + (Get-CrewIdentityText $c) + ' (' + [string][int]$cost[$c] + 's)')
   }
   foreach ($ri in $chronicRules) {
-    [void]$notices.Add("verify-gate: rules[$ri] is permanently over budget ($([int]$ruleSecs[$ri])s > $([int]$budget)s stop budget) - deferred to CI every Stop: NOT VERIFIED on this tree until the verify-gate CI check (verify-gate.sh --all on the runner) passes it, and /crew:done refuses until that receipt is VERIFIED. /crew:verify --all checks it here; the baseline still advances past it.")
+    [void]$notices.Add("verify-gate: rules[$ri] is permanently over budget ($([int]$ruleSecs[$ri])s > $([int]$budget)s stop budget) - deferred to CI every Stop: NOT VERIFIED on this tree until the verify-gate CI check (verify-gate.sh --all on the runner) passes it, and /crew:done refuses until that receipt is VERIFIED or /crew:verify --all runs it clean here; the baseline still advances past it.")
   }
   # deferredCount is now the ACUTE-only rule count (budget contention this
   # turn), not the deferred command count - the twin of the sh matcher's
@@ -2641,6 +2657,7 @@ if ($Ci) {
     $failed = $true
   }
 }
+if ($failed -and -not $Ci -and $cmds.Count -eq 0) { Write-ZeroRulesLine }
 if ($failed) { exit 2 }
 
 # -Ci never advances either marker, pass or not - the twin of verify-gate.sh,
@@ -2673,9 +2690,14 @@ $fullyVerified = ($deferredCount -eq 0) -and (-not $treeMoved) -and (-not $anySk
 
 # L-0710: a turn whose matcher selected no command checked nothing - the
 # twin of the FOURTH condition in verify-gate.sh, diff baseline included.
+# Review round 1: only when nothing COMMITTED differs from the base - the
+# twin of the `git diff --quiet BASE HEAD` condition in verify-gate.sh.
 if ($cmds.Count -eq 0) {
-  [Console]::Error.WriteLine("verify-gate: 0 rules ran on $(@($changed).Count) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written.")
-  if ($fullyVerified -and -not $baseFromMarker) { Write-CrewBase }
+  Write-ZeroRulesLine
+  if ($fullyVerified -and -not $baseFromMarker) {
+    $null | git diff --quiet $base HEAD -- 2>$null
+    if ($LASTEXITCODE -eq 0) { Write-CrewBase }
+  }
 } elseif ($fullyVerified) {
   if ($fingerprint) {
     try {

@@ -887,7 +887,9 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `.crew/.verify-gate.base-at` — the diff baseline a quiet turn records
   (`verify-gate.sh`'s `record_base`, `:244-248`; `Write-CrewBase` in the
   `.ps1`), read only by the BASE resolution between the marker and the
-  merge-base, removed by `record_verified`. Never read as verified.
+  merge-base and only when it is an ancestor of HEAD, removed by
+  `record_verified`. A zero-command turn moves it only when `git diff
+  --quiet BASE HEAD` holds; a failed write exits 2. Never read as verified.
 
 ## Calls out to
 

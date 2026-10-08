@@ -27,6 +27,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -38,6 +39,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
+_RECORD = os.path.join(_ROOT, "hooks", "scripts", "verify_record.py")
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 
@@ -68,7 +70,7 @@ def _git(root, *args):
                           timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
-def _repo(tmp_path, rules, with_a=True):
+def _repo(tmp_path, rules, with_a=True, unmapped="ignore"):
     """A default-branch (`main`) repo with everything committed, verify.json
     included, and the gate's own `.crew/.*` files ignored the way a real
     crew repo ignores them, so a second run sees only what the test changed."""
@@ -82,7 +84,7 @@ def _repo(tmp_path, rules, with_a=True):
     if with_a:
         (root / "a.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(json.dumps(
-        {"version": 1, "rules": rules, "default": [], "unmapped": "ignore"}),
+        {"version": 1, "rules": rules, "default": [], "unmapped": unmapped}),
         encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
@@ -269,6 +271,94 @@ def test_a_real_pass_writes_the_marker_and_retires_the_baseline(flavour, tmp_pat
     assert "echo RAN-pass" in _ran(result), result.stderr
     assert _read(root, _MARKER) == _head(root), result.stderr
     assert _read(root, _BASE_AT) is None, result.stderr
+
+
+# --- review round 1 (Codex): the diff baseline's own guards -----------------
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_baseline_left_on_another_branch_is_not_used(flavour, tmp_path):
+    """MUST-BLOCK. A baseline is trusted only when it is an ancestor of HEAD:
+    one left on a sibling branch with the same bytes would diff to nothing
+    and hide this branch's change from its failing rule."""
+    root = _repo(tmp_path, [_FAILING], with_a=False)
+    _git(root, "checkout", "-q", "-b", "other")
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "a.py")
+    _git(root, "commit", "-q", "-m", "a.py on other")
+    elsewhere = _head(root)
+    _git(root, "checkout", "-q", "main")
+    _git(root, "checkout", "-q", "-b", "feat")
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "a.py")
+    _git(root, "commit", "-q", "-m", "a.py on feat")
+    (root / _BASE_AT).write_text(elsewhere + "\n", encoding="utf-8")
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 2, (
+        "a.py changed on feat since its branch point and maps to a failing rule. "
+        + result.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_zero_command_turn_with_a_committed_change_keeps_the_baseline(flavour, tmp_path):
+    """A committed change no rule matched today stays in scope for a rule
+    added tomorrow, so a turn that ran nothing on it does not move the
+    baseline past it."""
+    root = _repo(tmp_path, [_FAILING], with_a=False)
+    _run(flavour, root)
+    first = _read(root, _BASE_AT)
+    (root / "notes.txt").write_text("unmapped", encoding="utf-8")
+    _git(root, "add", "notes.txt")
+    _git(root, "commit", "-q", "-m", "an unmapped commit")
+
+    result = _run(flavour, root)
+
+    assert first is not None, result.stderr
+    assert _read(root, _BASE_AT) == first, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_baseline_that_cannot_be_written_refuses_the_turn(flavour, tmp_path):
+    """MUST-BLOCK. A quiet turn whose baseline write fails would leave the
+    next commit on main out of scope; it says so and exits 2."""
+    root = _repo(tmp_path, [_FAILING], with_a=False)
+    (root / _BASE_AT).mkdir()
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 2, result.stderr
+    assert "could not write the diff baseline" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_an_unmapped_failure_with_no_command_still_says_0_rules_ran(flavour, tmp_path):
+    """`unmapped: fail` exits 2 before the marker decision; the turn still
+    ran nothing and says so."""
+    root = _repo(tmp_path, [_FAILING], unmapped="fail")
+    (root / "notes.txt").write_text("unmapped", encoding="utf-8")
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 2, result.stderr
+    assert _ZERO in result.stderr, result.stderr
+
+
+def test_an_old_chronic_record_is_reported_as_deferred_to_ci(tmp_path):
+    """A chronic entry a pre-L-0710 gate wrote still names CI when an
+    unchanged turn reports it."""
+    (tmp_path / ".crew").mkdir()
+    (tmp_path / ".crew" / ".verify-gate.record.json").write_text(json.dumps({"rules": {"k": {
+        "status": "chronic", "label": "rules[0]",
+        "reason": "permanently over budget (90s > 60s) - run /crew:verify --all"}}}),
+        encoding="utf-8")
+
+    result = subprocess.run([sys.executable, _RECORD, "report"], cwd=str(tmp_path),
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert "permanently over budget (90s > 60s) - deferred to CI" in result.stdout, (
+        result.stdout + result.stderr)
 
 
 def _lines(result):

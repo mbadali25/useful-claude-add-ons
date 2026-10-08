@@ -592,10 +592,11 @@ not errors, and neither blocks the turn:</p>
 <ul>
 <li><strong><code>verify-gate: 0 rules ran ...</code></strong>: nothing changed, or nothing that changed has a rule Stop can
   run. Nothing was checked, so <code>.crew/.verify-verified-at</code> is not written or advanced. Only the
-  diff baseline <code>.crew/.verify-gate.base-at</code> moves, so a later commit is still in scope.</li>
+  diff baseline <code>.crew/.verify-gate.base-at</code> moves (when nothing committed differs from the base),
+  so a later commit is still in scope. If that file cannot be written the turn exits 2 and says so.</li>
 <li><strong><code>rules[N] is permanently over budget ... deferred to CI</code></strong> and <strong><code>NOT VERIFIED ON THIS TREE -
   ... deferred to CI</code></strong>: that rule costs more than the whole budget, so Stop never runs it. The
-  <code>verify-gate</code> workflow does, and <code>/crew:done</code> refuses until its receipt for HEAD is VERIFIED.
+  <code>verify-gate</code> workflow does, and <code>/crew:done</code> refuses until its receipt for HEAD is VERIFIED or a local run passes it.
   Push the branch, or run <code>/crew:verify --all</code> to check it here.</li>
 </ul>
 <p>A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.</p>

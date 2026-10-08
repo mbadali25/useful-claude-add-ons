@@ -244,7 +244,22 @@ record_verified() {
 record_base() {
   BASE_SHA=$(git rev-parse HEAD 2>/dev/null) || return 0
   [ -n "$BASE_SHA" ] || return 0
-  mkdir -p .crew 2>/dev/null && printf '%s\n' "$BASE_SHA" > "$BASE_AT"
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$BASE_SHA" > "$BASE_AT" 2>/dev/null
+}
+
+# A baseline that could not be written is not a quiet success: the next
+# Stop would fall back to merge-base = HEAD on the default branch, and a
+# commit made there would never be in scope. Unknown resolves to checking
+# MORE, so the turn is refused and says why (L-0710 review round 1).
+refuse_base_write() {
+  echo "verify-gate: could not write the diff baseline ($BASE_AT) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run." >&2
+  exit 2
+}
+
+# The "0 rules ran" line, said on every path where no rule command ran -
+# the exit-2 path for an UNMAPPED change included.
+zero_rules_line() {
+  echo "verify-gate: 0 rules ran on $(printf '%s\n' "$CHANGED" | grep -c .) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written." >&2
 }
 
 # The fingerprint twin, written ONLY where everything ran and everything
@@ -345,7 +360,11 @@ if [ -f .crew/.verify-verified-at ]; then
 fi
 if [ -z "$BASE" ] && [ -f "$BASE_AT" ]; then
   read -r CAND < "$BASE_AT"
-  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
+  # And only if it is an ancestor of HEAD: a baseline a quiet turn left on
+  # ANOTHER branch can diff to nothing against this one (same bytes, other
+  # history) and hide a change no rule ever checked (L-0710 review round 1).
+  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null \
+     && git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
     BASE="$CAND"
   fi
 fi
@@ -436,7 +455,9 @@ if [ -z "$CHANGED" ]; then
   fi
   # L-0710: nothing ran, so nothing is recorded as verified (see BASE_AT).
   echo "verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written." >&2
-  [ "$BASE_FROM_MARKER" -eq 1 ] || record_base
+  if [ "$BASE_FROM_MARKER" -eq 0 ]; then
+    record_base || refuse_base_write
+  fi
   exit 0
 fi
 
@@ -1551,8 +1572,8 @@ if budget is not None:
         notices.append("verify-gate: rules[%d] is permanently over budget (%ss > %ss stop budget) - "
                         "deferred to CI every Stop: NOT VERIFIED on this tree until the verify-gate CI check "
                         "(verify-gate.sh --all on the runner) passes it, and /crew:done refuses until that "
-                        "receipt is VERIFIED. /crew:verify --all checks it here; the baseline still advances "
-                        "past it." % (_ri, int(rule_secs[_ri]), int(budget)))
+                        "receipt is VERIFIED or /crew:verify --all runs it clean here; the baseline still "
+                        "advances past it." % (_ri, int(rule_secs[_ri]), int(budget)))
     if deferred:
         notices.append(
             "verify-gate: stop budget " + str(int(budget)) + "s; ran " + str(int(spent))
@@ -2461,6 +2482,9 @@ if [ "$CI_MODE" -eq 1 ]; then
     FAILED=1
   fi
 fi
+if [ "$FAILED" -ne 0 ] && [ "$CI_MODE" -eq 0 ] && ! printf '%s\n' "$CMDS" | grep -q .; then
+  zero_rules_line
+fi
 [ "$FAILED" -eq 0 ] || exit 2
 
 # --ci never advances either marker, pass or not - see MARKERS in the CI_MODE
@@ -2493,10 +2517,18 @@ fi
 # without it a repo with untracked furniture on its default branch would
 # never get a baseline, so a commit there would never be in scope. Nothing
 # Stop could run is left behind it; what CI owes is in the record.
+#
+# Review round 1 narrowed that: the baseline moves only when nothing
+# COMMITTED differs from the current base (`git diff --quiet BASE HEAD`
+# exits 0). Untracked and uncommitted files stay in the changed set from
+# HEAD, so moving past them loses nothing; a committed change that no rule
+# matched today would be lost to a rule added for it tomorrow, so it keeps
+# the baseline where it is. A diff that cannot be read keeps it too.
 if ! printf '%s\n' "$CMDS" | grep -q .; then
-  echo "verify-gate: 0 rules ran on $(printf '%s\n' "$CHANGED" | grep -c .) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written." >&2
-  if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ] && [ "$BASE_FROM_MARKER" -eq 0 ]; then
-    record_base
+  zero_rules_line
+  if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ] && [ "$BASE_FROM_MARKER" -eq 0 ] \
+     && git diff --quiet "$BASE" HEAD -- 2>/dev/null; then
+    record_base || refuse_base_write
   fi
 elif fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ]; then
   record_verified
