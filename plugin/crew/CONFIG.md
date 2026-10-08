@@ -881,6 +881,23 @@ crew enumerating role names. A role pin **wins over** the provider block for
 that role — `/crew:review` resolves `review`'s model that way
 (`skills/crew-review/SKILL.md`, the `qm()` helper).
 
+### `qa.fallback` / `dev.fallback` run on their own family's provider (L-0712)
+
+When a pinned model is gone, `crew_state.resolve_role` falls back to the
+`fallback` model **on the provider that serves its family**
+(`crew_state.provider_for_model`: `gpt-*` on codex, `kimi-*` and `k3` on kimi,
+`claude-*` on claude; Copilot hosts several families, so no fallback is sent
+there). Until L-0712 every fallback was dispatched to `claude`, so a
+`gpt-6.1-sol` fallback became a Claude read. A fallback in the author's family is
+skipped for the next provider in `qa.order` (`dev.order`, else the shipped QA
+order, for the dev kind) that is not the author's family and answers its probe,
+on that provider's own model and effort. When none does, the result is
+`incomplete`: the round is recorded INCOMPLETE and refunded rather than spent on
+a same-family read. Only an explicit operator choice (`same_family_ok`) runs the
+fallback same-family, and the result says `sameFamily`. A fallback model whose
+family no provider serves (`gemini-*`) walks the order directly. `/crew:status`
+prints the repo-wide share of same-family rounds.
+
 ---
 
 ## 11. Repo-only keys
