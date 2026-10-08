@@ -1,17 +1,17 @@
 # Graph Report - agent-a799731bd6faa0bb4  (2026-10-08)
 
 ## Corpus Check
-- 1646 files · ~3,903,603 words
+- 1646 files · ~3,903,790 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 95 file(s) not represented in the graph (top: .mmd 38, (none) 34, .jsonl 5)
 
 ## Summary
-- 38981 nodes · 88837 edges · 1425 communities (1209 shown, 216 thin omitted)
+- 38981 nodes · 88838 edges · 1424 communities (1208 shown, 216 thin omitted)
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 8669 edges (avg confidence: 0.93)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1d10d8f6`
+- Built from commit: `067c0443`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1031,7 +1031,7 @@
 - L-0517: heavy-run logs each lane's slot wait (lane, slot, waited seconds, start/end) so contention is measurable          status: spec   risk: low
 - L-0533: PHP development standards set and a new stack-php skill, T-0086 slice 3          status: spec   risk: medium
 - crew_change.py
-- judge_settings
+- _run
 - _deploy_repo
 - scripts/ci-select.py
 - _css
@@ -1232,7 +1232,7 @@
 - Cloud handoff: T-0102
 - Cloud handoff: T-0506
 - _conflict
-- judge_probe
+- run_probe
 - role-write-guard.sh
 - test_a_done_check_that_raises_is_could_not_tell
 - Remote
@@ -1266,7 +1266,7 @@
 - effective_personal
 - classify
 - _Lock
-- _make_sealed
+- _export
 - windows_to_posix
 - run_test
 - _fake_ssh_programs
@@ -1297,7 +1297,6 @@
 - Clock
 - test_a_double_save_of_one_memory_reports_already_pointer
 - _Redirector
-- _lane_of_a_main_with_settings
 - test_a_cylinder_is_measured_and_a_line_through_it_fails
 - StubOllama
 - test_build_report_cases_the_title_it_renders
@@ -1400,7 +1399,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (1425 total, 216 thin omitted)
+## Communities (1424 total, 216 thin omitted)
 
 ### Community 0 - "test_provider_table.py"
 Cohesion: 0.01
@@ -2223,8 +2222,8 @@ Cohesion: 0.06
 Nodes (34): bin, mcp-o365-user, dependencies, @badali404/mcp-ms-core, @modelcontextprotocol/sdk, zod, description, devDependencies (+26 more)
 
 ### Community 205 - "_common.sh"
-Cohesion: 0.10
-Nodes (22): approval-hook.sh script, _cloud_guard_armed(), cloud-guard.sh script, crew_incident_active(), crew_incident_log(), crew_json_field(), crew_py(), crew_py_strict() (+14 more)
+Cohesion: 0.09
+Nodes (23): approval-hook.sh script, plugin_crew_hooks_scripts_cloud_guard, _cloud_guard_armed(), cloud-guard.sh script, crew_incident_active(), crew_incident_log(), crew_json_field(), crew_py() (+15 more)
 
 ### Community 206 - "ci_receipt.py"
 Cohesion: 0.09
@@ -3291,8 +3290,8 @@ Cohesion: 0.20
 Nodes (9): Escalation, Phase 0 — Stop the bleeding (do this first, takes a minute), Phase 1 — Capture a baseline before changing anything, Phase 2 — Establish the correct matching attribute, Phase 3 — Correct the Entra configuration, Phase 4 — Verify before going live, Phase 5 — Merge duplicates, then go live, Runbook: recovering a broken ADI → SCIM cutover (+1 more)
 
 ### Community 473 - "test_crew_unattended.py"
-Cohesion: 0.04
-Nodes (52): _assert_sealed_child(), _cfg(), _export(), _files_under(), _iso(), _linked_worktree(), parametrize, T-0044: `crew_unattended.py` -- unattended runs are STARTED holding short-lived… (+44 more)
+Cohesion: 0.05
+Nodes (45): _assert_sealed_child(), _files_under(), _lane_of_a_main_with_settings(), _lane_with_a_broken_dotgit(), _linked_worktree(), _main_admin(), parametrize, T-0044: `crew_unattended.py` -- unattended runs are STARTED holding short-lived… (+37 more)
 
 ### Community 474 - "check-dist-fresh.test.mjs"
 Cohesion: 0.23
@@ -3484,7 +3483,7 @@ Nodes (11): Auth, Endpoints, Failure modes, Interaction with duplicate user reco
 
 ### Community 522 - "crew_unattended.py"
 Cohesion: 0.06
-Nodes (53): plugin_crew_hooks_scripts_cloud_guard, _command_problem(), _first_line(), _homes(), judge_export(), judge_identity(), judge_version(), main() (+45 more)
+Nodes (54): _command_problem(), _credential_env(), _expand(), _git_top(), _homes(), judge_settings(), _load_settings(), main() (+46 more)
 
 ### Community 523 - "_half_write_then_fail"
 Cohesion: 0.15
@@ -5170,9 +5169,9 @@ Nodes (17): Acceptance checks, Approval, Dependencies, Exclusions, Intent, L-053
 Cohesion: 0.16
 Nodes (17): _answer_for(), check_answer(), describe(), main(), normalise_answer(), The ten-question gate on a change request. Pure, and the whole feature. The…, `value` reduced to the form `PLACEHOLDERS` is compared against. Lower-cased,…, One finding for question `number`, or None when it is answered. A finding is… (+9 more)
 
-### Community 1079 - "judge_settings"
-Cohesion: 0.11
-Nodes (18): _credential_env(), _expand(), _git_top(), judge_settings(), _load_settings(), _main_checkout(), The user settings file Claude Code loads, or None when it cannot be told: a…, `(main, why)` for the git root `top`. When `top/.git` is a file (a linked… (+10 more)
+### Community 1079 - "_run"
+Cohesion: 0.13
+Nodes (15): _first_line(), judge_export(), judge_identity(), judge_version(), _parse_time(), `(state, why)` for `aws configure export-credentials` output. Never names a…, `(state, why)`: STS's ARN must START WITH the named identity prefix., `(proc, why)`; `proc` is None and `why` names the failure when the process… (+7 more)
 
 ### Community 1080 - "_deploy_repo"
 Cohesion: 0.18
@@ -5974,9 +5973,9 @@ Nodes (5): Before landing, Cloud handoff: T-0506, Dependencies and work order, O
 Cohesion: 0.40
 Nodes (6): _conflict(), _glob_seg(), _overlap(), Two path segments, either of which may be a glob, that can name the same…, True when a negation's segments can name a path strictly below the directory…, _under()
 
-### Community 1280 - "judge_probe"
-Cohesion: 0.33
-Nodes (6): judge_probe(), `{tool_use id: Bash command}` for every Bash `tool_use` block., The text of every `tool_result` block in stream-json output. When `errors` is a…, `(state, why)` for the sandbox probe's stream-json output. A store reported…, _tool_commands(), _tool_results()
+### Community 1280 - "run_probe"
+Cohesion: 0.17
+Nodes (12): judge_probe(), probe_script(), The one Bash command the probe session runs. It prints `NONCE <nonce>` FIRST,…, `{tool_use id: Bash command}` for every Bash `tool_use` block., The text of every `tool_result` block in stream-json output. When `errors` is a…, `(state, why)` for the sandbox probe's stream-json output. A store reported…, The flags the launch AND the probe put first: the sealed settings, no project…, The probe runs the SAME executable the launch will exec, from the same… (+4 more)
 
 ### Community 1281 - "role-write-guard.sh"
 Cohesion: 0.60
@@ -6094,9 +6093,9 @@ Nodes (5): effective_personal(), personal_rank(), The rank of `value` at the per
 Cohesion: 0.40
 Nodes (5): _attempt(), classify(), True when the body is a pointer attempt: its first non-blank line, Cf removed…, `(kind, vault, note, reason)` for a body; kind is pointer / malformed / full-…, _strip_cf()
 
-### Community 1314 - "_make_sealed"
-Cohesion: 0.40
-Nodes (5): _make_sealed(), The `--settings` file: sandbox on, no escape hatch, filesystem isolation forced…, The sealed directory, named for this process: `exec` keeps the pid, so the…, sealed_settings(), _write_new()
+### Community 1314 - "_export"
+Cohesion: 0.20
+Nodes (11): _cfg(), _export(), _iso(), `launch -- /abs/claude` probes THAT file and execs it, not the `claude` first…, No monkeypatching of `execvpe`: a subprocess runs the real launcher, the exec…, test_core_env_strips_and_adds(), test_core_env_strips_foreign_credentials(), test_core_export_ready_and_floor_boundary() (+3 more)
 
 ### Community 1315 - "windows_to_posix"
 Cohesion: 0.40
@@ -6202,10 +6201,6 @@ Nodes (3): A GitHub Actions deploy under `/crew:promote`, Gate 2 for a `github` 
 Cohesion: 0.33
 Nodes (4): N6, with no file named for it, so it runs on Windows too: the memory_id a note…, N4: the second of two saves of the same memory finds it a pointer., test_a_double_save_of_one_memory_reports_already_pointer(), test_a_json_escaped_memory_id_matches_itself()
 
-### Community 1345 - "_lane_of_a_main_with_settings"
-Cohesion: 0.50
-Nodes (4): _lane_of_a_main_with_settings(), _lane_with_a_broken_dotgit(), _main_admin(), `--root` is a linked worktree; the MAIN checkout's local settings widen the…
-
 ### Community 1346 - "test_a_cylinder_is_measured_and_a_line_through_it_fails"
 Cohesion: 0.50
 Nodes (4): _cylinder(), Mermaid's cylinder ([( )] shape): relative arcs and lines, no absolute…, Mermaid draws [( )] with relative arcs; the first checker skipped it, so a line…, test_a_cylinder_is_measured_and_a_line_through_it_fails()
@@ -6240,7 +6235,7 @@ Nodes (3): Aliases match as loose prefixes again, as they did in the first draft
 
 ## Knowledge Gaps
 - **4406 isolated node(s):** `ci-status.sh script`, `codex-review.sh script`, `note.sh script`, `waitci.sh script`, `name` (+4401 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 15253 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 15252 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **216 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions

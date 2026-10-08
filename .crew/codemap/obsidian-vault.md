@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@1d10d8f6
+anchor: useful-claude-add-ons@067c0443
 verified: 2026-10-04
 
 ## Does
@@ -1350,3 +1350,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `53bee6e5` -> `92fda580` on 2026-10-04 (T-0083 review round 4).** Only `plugin/obsidian-vault/hooks/scripts/vault_recall.py` and `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py` changed among this note's cited paths. Every `vault_recall.py` cite was re-checked against the file at `92fda580` and moved (docstring `:1-58` -> `:1-60`; the plural rule now y/ies, es after `ES_ENDINGS`, plain s with `MIN_STEM` 3 and `S_EXCEPTIONS`); `_t_recall_relevance` is still at `:398`.
 
 **Re-anchored `92fda580` -> `1d10d8f6` on 2026-10-08 (L-0712, crew 1.2.5: a gone pin falls back across families).** L-0712 changes, among the paths this map cites: `plugin/crew/hooks/scripts/crew_state.py` (resolve_role's fallback, `:1502-1720`), `plugin/crew/hooks/scripts/crew_status.py` (`_review_lines` and the same-family share, `:172-252`), `plugin/crew/CONFIG.md` (a subsection at `:884-900`), `plugin/crew/README.md`, `plugin/crew/commands/model.md` and `status.md` (in place), root `README.md`'s generated What's new block, `CHANGELOG.md`, and the version lines (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:230`, `plugin/PLUGINS.md:14`, `plugin/crew/BUDGETS.md:11`). Explicit `<path>:N` citations into those files were moved by difflib from origin/main `c25ef990` to `1d10d8f6` (4 moved); a citation inside a changed hunk was kept and re-read (version and count lines name the same line; citations past a file's end are history, not claims). No other claim was re-derived.
+
+**Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
