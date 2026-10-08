@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.1.15: after an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line (L-0670)
+### Added — crew 1.1.20: after an automatic reject, autopilot approves a successor plan only when it quotes every BLOCK and FIX line (L-0670)
 
 - **Summary.** When autopilot rejects a review round itself and plans again, it no longer approves
   a successor plan that leaves out one of the rejected round's BLOCK or FIX findings.
@@ -22,7 +22,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Unchanged.** An owner's reject, a first plan and `/crew:approve` are never checked.
 - **Not in this entry.** The sabotage mutations are harness (T-0087): L-0671.
 
-### Added — crew 1.1.15: the owner list knows hold, blocked, landing and needs-owner (L-0687)
+### Added — crew 1.1.20: the owner list knows hold, blocked, landing and needs-owner (L-0687)
 
 - **Summary.** `/crew:status` now counts held and blocked tickets on its `waiting` line
   (`1 on you (/crew:status --owner), 2 held, 1 blocked`), and `--owner` lists a hold that is due as
@@ -32,7 +32,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   not listed; `landing` is the land step's and is left out. The phase still comes from autopilot's
   `_phase`, so the list and `/crew:autopilot` agree.
 
-### Added — crew 1.1.15: `/crew:status --owner` and the `waiting` line (L-0551)
+### Added — crew 1.1.20: `/crew:status --owner` and the `waiting` line (L-0551)
 
 - **Summary.** `/crew:status` now says how many open tickets are waiting on you, and
   `/crew:status --owner` lists them, one line each with the command to type or the question to
@@ -48,7 +48,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Measured.** On a 30-ticket fixture (each awaiting approval) the default report took 0.96s with
   the line and 0.13s without, on a 4-CPU container shared with other builders.
 
-### Changed — crew 1.1.15: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
+### Changed — crew 1.1.20: every autopilot stop names the owner decision it asks for, never a mechanical step (L-0666)
 
 - **Summary.** When `/crew:autopilot` stops, it now says which decision is yours (accept the
   review, approve the plan, answer a question, look at something it could not tell, ...) and no
@@ -74,7 +74,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `test_crew_autopilot_stop_contract.py` walks every stop site and holds one case per
   site, traced to its line. The sabotage mutations are harness (T-0087): L-0668.
 
-### Added — crew 1.1.15: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
+### Added — crew 1.1.20: autopilot fixes a non-final round's review findings itself under `autopilot.reviewPolicy: fix-and-rereview` (T-0067)
 
 - **Summary.** A single-ticket `/crew:autopilot` run in a repo that set `autopilot.reviewPolicy:
   fix-and-rereview` no longer stops to ask you to fix round-1 review findings: it fixes every BLOCK
@@ -95,7 +95,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   single-ticket runs too) and prints `reviewPolicy=<value>` on its own line.
 - **Not in this entry.** The sabotage mutations are harness (T-0087): L-0668.
 
-### Added — crew 1.1.15: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
+### Added — crew 1.1.20: autopilot stops on hold, landing, needs-owner, cancelled/superseded and blocked (L-0550)
 
 - **Summary.** `/crew:autopilot` no longer drives a ticket that is on hold, landing, waiting on the
   owner, replaced by another, or waiting on a dependency: it stops and says why, and
@@ -114,7 +114,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   and `another ticket` for `blocked`, never `autopilot`. `crew_autopilot.py stops` lists the four.
 - **Not in this entry.** The sabotage mutations for these stops are harness (T-0087): L-0686.
 
-### Fixed — crew 1.1.22: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
+### Fixed — crew 1.1.20: `/crew:autopilot status` prints no policy-value warning, and `approve` names a config it could not read (T-0027)
 
 - **Summary.** `/crew:autopilot status` now reads the same whatever `autopilot.approval` and
   `autopilot.questions` hold, and autopilot's `approve` says when the config could not be read
@@ -132,7 +132,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Not in this entry.** Two sabotage mutations for these (T-0087 harness): a later tooling PR.
   T-0010 round 6's other findings are L-0542 and L-0543.
 
-### Fixed — crew 1.1.22: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
+### Fixed — crew 1.1.20: autopilot's open-questions stop sees through code fences, and stops when it cannot tell (L-0642)
 
 - **Summary.** A code block under a ticket's `## Open questions` heading no longer hides the
   questions after it from autopilot; a fence autopilot cannot read for certain now stops the run
@@ -152,7 +152,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the new parser; none newly stops.
 - **Not in this entry.** The sabotage mutations for the parser are harness (T-0087): L-0643.
 
-### Fixed — crew 1.1.22: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
+### Fixed — crew 1.1.20: autopilot's FINDINGS stop names the refresh; an accepted FINDINGS round is not called INCOMPLETE (T-0043)
 
 - **Summary.** After a FINDINGS review the autopilot stop now tells you to refresh before the next
   round, and a review you accepted that a later edit staled goes back through refresh and review
