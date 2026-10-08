@@ -822,6 +822,11 @@ _MALFORMED_MAPS = {
                               '"prod": {"rollback": "none"}}}',
     "dup-key-container-then-leaf": '{"environments": {"prod": {"deploy": "deploy-prod"}, '
                                    '"prod": 1}}',
+    # rush 1.2.1: main's L-0648 strict reading refuses a `github` entry that is
+    # not an object or a non-empty list of objects; the fallback must too.
+    "github-string": '{"environments": {"prod": {"deploy": "x", "github": "nope"}}}',
+    "github-empty-list": '{"environments": {"prod": {"deploy": "x", "GitHub": []}}}',
+    "github-list-of-number": '{"environments": {"prod": {"deploy": "x", "github": [1]}}}',
 }
 
 
@@ -850,6 +855,22 @@ def test_without_python_a_map_it_cannot_classify_blocks(flavour, case, tmp_path)
     else:
         # Refused for the MAP, not by the review step's own "no usable python".
         assert "verify.json" in err and "review-evidence" not in err, err
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize("github", [{"workflow": "deploy.yml"}, [{"workflow": "deploy.yml"}]],
+                         ids=["object", "list-of-objects"])
+def test_without_python_a_well_formed_github_entry_is_classified(github, tmp_path):
+    """Must-allow twin of the github cases above: a `github` entry python
+    accepts does not make the no-python fallback refuse the map, so a command
+    that is no deploy still runs."""
+    if shutil.which("jq") is None:
+        pytest.skip("no jq on this machine")
+    repo = Repo(tmp_path, SHA_MAP)
+    _commit_raw_map(repo, json.dumps({"environments": {"prod": {
+        "deploy": "deploy-prod", "github": github}}}))
+    code, err, _ = run_gate("sh", repo, "npm test", path=_path_without_python(tmp_path))
+    assert code == 0, err
 
 
 @_POSIX_ONLY

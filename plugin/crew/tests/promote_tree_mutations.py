@@ -379,4 +379,9 @@ PROMOTE_TREE_MUTATIONS = (
      'timeout=max((until - time.monotonic()) / 2, 0.1))',
      'timeout=5)',
      _V + "test_windows_cleanup_stays_inside_the_reap_allowance"),
+    # --- rush 1.2.1: L-0703's no-python shape check meets main's L-0648 rule --
+    ("promote-gate.sh's fallback passes a map whose github entry python refuses", SH,
+     '              elif has_ci("github") and (get_ci("github") | github_ok | not) then',
+     '              elif false then',
+     _V + "test_without_python_a_map_it_cannot_classify_blocks[sh-github-string]"),
 )

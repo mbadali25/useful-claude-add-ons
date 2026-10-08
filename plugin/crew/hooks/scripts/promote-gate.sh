@@ -175,8 +175,9 @@ if [ -z "$PY" ]; then
   # passed every command while python refused the map. $3 is "strict" for the
   # working map (python's strict=True: an environment that is not an object, a
   # `deploy` that is not a string or a list of strings, a list or object
-  # `requireHuman`) and "lenient" for the committed one, which python reads
-  # leniently but still refuses when it is not an object, has no object of
+  # `requireHuman`, a `github` that is not an object or a non-empty list of
+  # objects - main's L-0648 rule, added when rush 1.2.1 merged L-0703) and
+  # "lenient" for the committed one, which python reads leniently but still refuses when it is not an object, has no object of
   # environments, or carries a bad environment name. Keys are compared with
   # ASCII case folded; python folds Unicode, so a key holding any non-ASCII
   # character is one this fallback cannot compare and blocks.
@@ -188,6 +189,7 @@ if [ -z "$PY" ]; then
     def twins: any(.. | objects | keys_unsorted | map(ascii_downcase); length != (unique | length));
     def non_ascii: any(.. | objects | keys_unsorted[]; explode | any(. > 127));
     def deploy_ok: type == "string" or (type == "array" and all(.[]; type == "string"));
+    def github_ok: type == "object" or (type == "array" and length > 0 and all(.[]; type == "object"));
     if type != "object" then "it holds a JSON \(type), not an object"
     elif twins then "it holds two keys in one object that differ only by case"
     elif non_ascii then "a key holds a non-ASCII character, which crew cannot compare ignoring case without python"
@@ -199,6 +201,7 @@ if [ -z "$PY" ]; then
             | if type != "object" then "environment `\($n)` is not an object"
               elif has_ci("requirehuman") and (get_ci("requirehuman") | type == "array" or type == "object") then "environment `\($n)` has a `requireHuman` that is a list or an object"
               elif has_ci("deploy") and (get_ci("deploy") | deploy_ok | not) then "environment `\($n)` has a `deploy` that is not a command or a list of commands"
+              elif has_ci("github") and (get_ci("github") | github_ok | not) then "environment `\($n)` has a `github` that is not an object or a non-empty list of objects"
               else empty end), "ok")
         end
     end'
