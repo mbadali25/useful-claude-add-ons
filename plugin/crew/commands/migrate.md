@@ -4,7 +4,8 @@ argument-hint: "[--preview | --apply | --rollback <backup-dir>]"
 allowed-tools: Bash, Read
 ---
 
-Move this repo's crew data onto the 1.0 layout. Run once per repository.
+Move this repo's crew data onto the 1.0 layout, once, and only where `/crew:status` says `run /crew:migrate` (a 0.20 setup;
+an `/crew:init` repo has nothing to move). `.crew/config.json` stays the config crew reads; `crew.json` is a record of it.<!-- claim: crew-config-file:config.json -->
 
 ## Step 1 - preview (always first)
 
@@ -12,8 +13,7 @@ Move this repo's crew data onto the 1.0 layout. Run once per repository.
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --root . --preview
 ```
 
-On Git Bash without `python3`, use `python` or `py -3`. If none resolves, say
-so and stop.
+On Git Bash without `python3`, use `python` or `py -3`. If none resolves, say so and stop.
 
 Preview writes nothing. Show me its output verbatim and point out:
 
@@ -22,7 +22,7 @@ Preview writes nothing. Show me its output verbatim and point out:
   the same apply; read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/upgrade-report.md` and relay each line as it says;
 - every `unmapped` key - carried into `crew.json` under `unmapped`, never dropped;
 - every `skip` line - a file that was not imported, and why;
-- every `retireable` line - an original left in place that 1.0 no longer reads;
+- every `retireable` line - an original left in place. The PM journal is no longer read; `.crew/config.json` is, whatever the line says - never remove it;
 - every `note` line - notably `pm.authority: autonomous`, which 1.0 keeps under
   `retired.pm` and records in `crew.json` `notes`: it arms nothing, and
   `/crew:autopilot` is its successor, off until `autopilot.mode: plan`; and any
@@ -64,7 +64,7 @@ What apply does, in order:
 
 | From | To |
 |---|---|
-| `.crew/config.json` (schema up to 7) | `.crew/crew.json` (schema 1) |
+| `.crew/config.json` (schema up to 7) | copied to `.crew/crew.json` (schema 1); the original stays in use |
 | `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above |
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |
@@ -114,7 +114,7 @@ itself is kept as the record.
 
 ## After
 
-The originals marked `retireable` still exist. Removing them is a separate, explicit decision
-for the owner - never do it as part of this command.
+The originals marked `retireable` still exist. Removing the PM journal is the owner's separate, explicit decision -
+never part of this command. Never remove `.crew/config.json`.
 
 Run `/crew:status` to confirm the repo now reads as `.crew/crew.json schema 1`.

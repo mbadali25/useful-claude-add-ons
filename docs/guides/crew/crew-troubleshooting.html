@@ -121,8 +121,9 @@ or behaves like an older release.</p>
 </ul>
 <pre><code>/crew:status
 </code></pre>
-<p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names which config file it
-  read (<code>.crew/crew.json</code> for 1.0, <code>.crew/config.json</code> for 0.20); <code>codemap</code> reports <code>behind:
+<p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names the config file it
+  read: <code>.crew/config.json</code> for a repository <code>/crew:init</code> set up, ending <code>run /crew:migrate</code> only<!-- claim: crew-config-file:config.json -->
+  when that file still holds a 0.20 setup, or <code>.crew/crew.json</code> once <code>/crew:migrate</code> has run; <code>codemap</code> reports <code>behind:
   &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
 <h2 id="hook-noise">Hook Noise</h2>
 <p>Every hook crew registers, from <code>plugin/crew/hooks/hooks.json</code>, and the config key that turns its

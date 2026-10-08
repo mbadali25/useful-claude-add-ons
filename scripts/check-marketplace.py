@@ -27,6 +27,7 @@ check and a content change with no bump still cannot merge.
 from __future__ import annotations
 
 import argparse
+import ast
 import glob
 import json
 import os
@@ -882,12 +883,181 @@ def check_self_claims(entries, fail):
                             f"says {versions[name]}"
                         )
 
+                elif kind.startswith(CONSISTENCY_KINDS):
+                    check_consistency_claim(path, index, lines, kind, entries, fail)
+
                 else:
                     fail(
                         f"{path}:{index + 1}: unknown claim type '{kind}'. A marker this "
                         "checker does not implement would otherwise read as verified "
                         "while nothing checked it. Implement it or remove the marker."
                     )
+
+
+# --- L-0713: release-time consistency claims ------------------------------
+#
+# Three more marker kinds, keyed the same way as every claim above: an author
+# opts a statement in with `<!-- claim: <kind>:<arg> -->`, and an unmarked line
+# is never read. Each one compares a statement with the thing it describes:
+#
+# - `crew-config-file:<name>` - the bound line is the first at or after the
+#   marker naming `.crew/config.json` or `.crew/crew.json`, and the FIRST such
+#   name on it must be `.crew/<name>`; `<name>` must be the file crew's repo
+#   config readers open, read from the code (the default of
+#   `crew_common.repo_config_file`'s `name` parameter, by `ast`, never imported).
+# - `plugin-command-table:<plugin>` - the Markdown table starting within the
+#   window: the `/<plugin>:<command>` in each row's first cell, as a set, must
+#   equal the tracked `plugin/<plugin>/commands/**.md` files.
+# - `eval-roster:<plugin>` - the table starting within the window lists each
+#   eval case (first cell) and the agent it exercises (second cell): the cases
+#   must equal the tracked `plugin/<plugin>/evals/<case>/case.yaml` folders,
+#   and each agent must be a tracked `plugin/<plugin>/agents/<agent>.md`. With
+#   no table, a line saying "no eval cases" binds instead, and is true only
+#   when the folder holds none.
+#
+# Anything the checker cannot read (no crew_common.py, git not answering) is
+# its own UNVERIFIED failure, never a pass.
+CONSISTENCY_KINDS = ("crew-config-file:", "plugin-command-table:", "eval-roster:")
+CONFIG_FILE_RE = re.compile(r"\.crew/((?:config|crew)\.json)")
+CREW_COMMON = ("plugin", "crew", "hooks", "scripts", "crew_common.py")
+COMMAND_CELL_RE = r"/{plugin}:([a-z0-9][a-z0-9:-]*)"
+TICKED_RE = re.compile(r"`([^`]+)`")
+NO_EVALS_RE = re.compile(r"\bno eval cases\b", re.I)
+
+
+def active_repo_config_name() -> str | None:
+    """The `.crew/` file name every repo-config reader opens, from the code, or
+    None when crew_common.py cannot be read or no longer says."""
+    try:
+        tree = ast.parse(read(os.path.join(ROOT, *CREW_COMMON)))
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "repo_config_file":
+            names = [a.arg for a in node.args.args]
+            defaults = node.args.defaults
+            offset = len(names) - len(defaults)
+            for position, default in enumerate(defaults):
+                if names[offset + position] == "name" and isinstance(default, ast.Constant) \
+                        and isinstance(default.value, str):
+                    return default.value
+    return None
+
+
+def _table_rows(lines: list[str], index: int) -> list[list[str]] | None:
+    """The rows (cells) of the first Markdown table starting within the window
+    at `index`, read to its end even past the window; None when there is none."""
+    start = next((i for i in range(index, min(index + BIND_WINDOW, len(lines)))
+                  if lines[i].lstrip().startswith("|")), None)
+    if start is None:
+        return None
+    rows = []
+    for line in lines[start:]:
+        if not line.lstrip().startswith("|"):
+            break
+        cells = re.split(r"(?<!\\)\|", line.strip().strip("|"))
+        rows.append([c.strip() for c in cells])
+    return rows
+
+
+def _tracked_names(pathspec: str, pattern: str) -> set[str] | None:
+    """The first group of `pattern` over every tracked file under `pathspec`;
+    None when git could not answer (never an empty set standing in for that)."""
+    listed = _tracked_files(pathspec)
+    if listed is None:
+        return None
+    found = set()
+    for rel in listed:
+        match = re.fullmatch(pattern, rel)
+        if match:
+            found.add(match.group(1))
+    return found
+
+
+def check_consistency_claim(path, index, lines, kind, entries, fail):
+    """One `crew-config-file:`, `plugin-command-table:` or `eval-roster:` marker."""
+    where = f"{path}:{index + 1}"
+    kind, arg = kind.split(":", 1)
+    if kind == "crew-config-file":
+        truth = active_repo_config_name()
+        if truth is None:
+            fail(f"{where}: UNVERIFIED - could not read which file crew's repo config "
+                 f"readers open ({'/'.join(CREW_COMMON)}: repo_config_file's `name` default)")
+            return
+        if arg != truth:
+            fail(f"{where}: claims the active repo config is .crew/{arg}, but "
+                 f"crew_common.repo_config_file opens .crew/{truth}")
+            return
+        for line in lines[index:index + BIND_WINDOW]:
+            named = CONFIG_FILE_RE.search(CLAIM_RE.sub("", line))
+            if named:
+                if named.group(1) != arg:
+                    fail(f"{where}: the marked line names .crew/{named.group(1)} as the "
+                         f"config, but the active repo config is .crew/{arg}")
+                return
+        fail(f"{where}: claim 'crew-config-file:{arg}' binds to nothing within "
+             f"{BIND_WINDOW} lines - restore the statement or delete the marker")
+        return
+
+    plugins = {e["name"] for e in entries if e["source"].startswith("./plugin/")}
+    if arg not in plugins:
+        fail(f"{where}: claim names plugin '{arg}', which has no entry with source "
+             "./plugin/ in marketplace.json")
+        return
+    rows = _table_rows(lines, index)
+
+    if kind == "plugin-command-table":
+        if rows is None:
+            fail(f"{where}: claim 'plugin-command-table:{arg}' binds to no table within "
+                 f"{BIND_WINDOW} lines")
+            return
+        actual = _tracked_names(f"plugin/{arg}/commands/",
+                                rf"plugin/{re.escape(arg)}/commands/(.+)\.md")
+        if actual is None:
+            fail(f"{where}: UNVERIFIED - git could not list plugin/{arg}/commands/")
+            return
+        actual = {name.replace("/", ":") for name in actual}
+        cell = re.compile(COMMAND_CELL_RE.format(plugin=re.escape(arg)))
+        listed = {m.group(1) for row in rows for m in [cell.search(row[0])] if m}
+        for name in sorted(actual - listed):
+            fail(f"{where}: the command table has no row for /{arg}:{name}, which "
+                 f"plugin/{arg}/commands/ ships")
+        for name in sorted(listed - actual):
+            fail(f"{where}: the command table lists /{arg}:{name}, which has no file "
+                 f"under plugin/{arg}/commands/")
+        return
+
+    cases = _tracked_names(f"plugin/{arg}/evals/",
+                           rf"plugin/{re.escape(arg)}/evals/([^/]+)/case\.yaml")
+    agents = _tracked_names(f"plugin/{arg}/agents/",
+                            rf"plugin/{re.escape(arg)}/agents/([^/]+)\.md")
+    if cases is None or agents is None:
+        fail(f"{where}: UNVERIFIED - git could not list plugin/{arg}/evals/ or agents/")
+        return
+    if rows is None:
+        if any(NO_EVALS_RE.search(line) for line in lines[index:index + BIND_WINDOW]):
+            if cases:
+                fail(f"{where}: says there are no eval cases, but plugin/{arg}/evals/ "
+                     f"holds {', '.join(sorted(cases))}")
+            return
+        fail(f"{where}: claim 'eval-roster:{arg}' binds to no table and no 'no eval "
+             f"cases' line within {BIND_WINDOW} lines")
+        return
+    listed = {}
+    for row in rows:
+        ticked = [TICKED_RE.search(c) for c in row[:2]]
+        if len(ticked) == 2 and all(ticked):
+            listed[ticked[0].group(1)] = ticked[1].group(1)
+    for case in sorted(cases - set(listed)):
+        fail(f"{where}: the eval roster has no row for {case}, which "
+             f"plugin/{arg}/evals/ holds")
+    for case in sorted(set(listed) - cases):
+        fail(f"{where}: the eval roster lists {case}, which plugin/{arg}/evals/ "
+             "does not hold")
+    for case, agent in sorted(listed.items()):
+        if agent not in agents:
+            fail(f"{where}: eval {case} exercises agent '{agent}', but "
+                 f"plugin/{arg}/agents/{agent}.md does not exist")
 
 
 # Which marketplace entry's own JSON `description` states which counts.

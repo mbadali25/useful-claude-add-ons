@@ -1225,8 +1225,90 @@ CASES_MARKDOWN_LINES: list[tuple[str, dict, dict, int, str]] = [
 ]
 
 
+# L-0713: the release-time consistency kinds. Every fixture here carries a
+# `crew_common.py` whose `repo_config_file` default is the code's answer, and
+# eval/agent files under plugin/widget/, written through `docs`.
+COMMON = {"plugin/crew/hooks/scripts/crew_common.py":
+          'def repo_config_file(root, name="config.json"):\n    return name\n'}
+CONFIG_OK = "Setup writes `.crew/config.json`.<!-- claim: crew-config-file:config.json -->\n"
+EVALS = {"plugin/widget/evals/stays-calm/case.yaml": "name: stays-calm\n",
+         "plugin/widget/evals/stays-calm/prompt.md": "# p\n",
+         "plugin/widget/agents/calm.md": "# calm\n"}
+ROSTER_OK = ("<!-- claim: eval-roster:widget -->\n| Case | Agent |\n|---|---|\n"
+             "| `stays-calm` | `calm` |\n")
+TABLE_OK = ("<!-- claim: plugin-command-table:widget -->\n| Command | Purpose |\n|---|---|\n"
+            "| `/widget:a [x\\|y]` | a |\n| **More** | |\n| `/widget:b` | b |\n")
+
+CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
+    # --- must block ------------------------------------------------------
+    ("a marked line naming crew.json when the code reads config.json",
+     {**COMMON, "Q.md": "Setup writes `.crew/crew.json`.<!-- claim: crew-config-file:config.json -->\n"},
+     1, "names .crew/crew.json", None),
+    ("a marker claiming a file the code does not read",
+     {**COMMON, "Q.md": "Setup writes `.crew/crew.json`.<!-- claim: crew-config-file:crew.json -->\n"},
+     1, "repo_config_file opens .crew/config.json", None),
+    ("a config-file statement with crew.json named first",
+     {**COMMON, "Q.md": "Not `.crew/crew.json` but `.crew/config.json`.<!-- claim: crew-config-file:config.json -->\n"},
+     1, "names .crew/crew.json", None),
+    ("a config-file marker whose statement was edited away",
+     {**COMMON, "Q.md": "<!-- claim: crew-config-file:config.json -->\n" + "filler\n" * 20},
+     1, "binds to nothing", None),
+    ("the code's answer cannot be read: UNVERIFIED, never a pass",
+     {"Q.md": CONFIG_OK}, 1, "UNVERIFIED", None),
+    ("a command table missing a shipped command",
+     {"R.md": TABLE_OK}, 1, "no row for /widget:c", ["a", "b", "c"]),
+    ("a command table listing a command with no file",
+     {"R.md": TABLE_OK}, 1, "lists /widget:b", ["a"]),
+    ("a command-table marker with no table",
+     {"R.md": "<!-- claim: plugin-command-table:widget -->\n" + "filler\n" * 20},
+     1, "binds to no table", ["a"]),
+    ("an eval roster missing a case on disk",
+     {**EVALS, "plugin/widget/evals/stays-kind/case.yaml": "name: k\n", "R.md": ROSTER_OK},
+     1, "no row for stays-kind", None),
+    ("an eval roster listing a deleted case",
+     {"plugin/widget/agents/calm.md": "# calm\n", "R.md": ROSTER_OK},
+     1, "does not hold", None),
+    ("an eval for an agent with no agents/<x>.md",
+     {**{k: v for k, v in EVALS.items() if "agents" not in k}, "R.md": ROSTER_OK},
+     1, "agents/calm.md does not exist", None),
+    ("'no eval cases' while evals/ holds one",
+     {**EVALS, "R.md": "<!-- claim: eval-roster:widget -->\nThere are no eval cases.\n"},
+     1, "holds stays-calm", None),
+    ("a consistency claim naming an unregistered plugin",
+     {"R.md": "<!-- claim: eval-roster:ghost -->\nThere are no eval cases.\n"},
+     1, "no entry", None),
+    # --- must allow ------------------------------------------------------
+    ("a correct config-file statement", {**COMMON, "Q.md": CONFIG_OK}, 0, "", None),
+    ("config.json first, crew.json after", {**COMMON, "Q.md": (
+        "Active: `.crew/config.json`; migrate adds `.crew/crew.json`."
+        "<!-- claim: crew-config-file:config.json -->\n")}, 0, "", None),
+    ("a correct command table", {"R.md": TABLE_OK}, 0, "", ["a", "b"]),
+    ("a correct eval roster", {**EVALS, "R.md": ROSTER_OK}, 0, "", None),
+    ("'no eval cases' with an empty evals/",
+     {"R.md": "<!-- claim: eval-roster:widget -->\nThere are no eval cases.\n"}, 0, "", None),
+    ("unmarked config names, tables and eval talk are never read",
+     {"U.md": ("Run `.crew/crew.json`.\n| `/widget:zzz` | x |\n| `gone` | `ghost` |\n"
+               "There are no eval cases.\n")}, 0, "", ["a"]),
+]
+
+
 def main() -> int:
     passed = failed = 0
+    for name, docs, expected, needle, widget_commands in CASES_CONSISTENCY:
+        problems = run(docs, widget_commands=widget_commands)
+        ok = len(problems) == expected
+        if ok and needle:
+            ok = any(needle in p for p in problems)
+        if ok:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {expected} problem(s)"
+                  + (f" containing {needle!r}" if needle else ""))
+            print(f"       got {len(problems)}: {problems}")
+
     for name, docs, expected, needle in CASES:
         problems = run(docs)
         ok = len(problems) == expected

@@ -52,37 +52,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # L-0713: the runner discovers its cases; with none there is nothing to
+      # bill, so the install and run steps below are skipped with a notice
+      # rather than passing vacuously.
+      - name: Count eval cases
+        run: |
+          count=$(find plugin/crew/evals -mindepth 2 -maxdepth 2 -name case.yaml 2>/dev/null | wc -l)
+          echo "EVAL_CASES=$count" >> "$GITHUB_ENV"
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::no eval cases under plugin/crew/evals/ - the plugin eval suite had nothing to run, which is not a pass."
+          fi
+
       - name: Notice - ANTHROPIC_API_KEY not set, suite SKIPPED
-        if: env.HAS_KEY != 'true'
+        if: env.HAS_KEY != 'true' && env.EVAL_CASES != '0'
         run: echo "::notice::ANTHROPIC_API_KEY is not set as a repository secret, so the plugin eval suite (real, billed model calls) was SKIPPED, not passed. The repo owner must add it under Settings > Secrets and variables > Actions for this job to actually run."
 
       - name: Set up Node.js
-        if: env.HAS_KEY == 'true'
+        if: env.HAS_KEY == 'true' && env.EVAL_CASES != '0'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Claude Code CLI
-        if: env.HAS_KEY == 'true'
+        if: env.HAS_KEY == 'true' && env.EVAL_CASES != '0'
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Install the Bash sandbox backend (bubblewrap + socat)
-        # developer-runs-command-in-foreground grants Bash, and granting Bash
-        # needs an OS sandbox backend or claude plugin eval refuses that run
-        # outright - see plugin/crew/README.md#running-the-plugin-behavior-evals
-        # and https://code.claude.com/docs/en/sandboxing.
-        if: env.HAS_KEY == 'true'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
-
       - name: Run the crew plugin eval suite
-        if: env.HAS_KEY == 'true'
+        if: env.HAS_KEY == 'true' && env.EVAL_CASES != '0'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EVAL_OUTPUT_DIR: ${{ github.workspace }}/.work/plugin-evals
         run: bash scripts/run-plugin-evals.sh
 
       - name: Upload eval results
-        if: env.HAS_KEY == 'true' && always()
+        if: env.HAS_KEY == 'true' && env.EVAL_CASES != '0' && always()
         uses: actions/upload-artifact@v4
         with:
           name: plugin-eval-results

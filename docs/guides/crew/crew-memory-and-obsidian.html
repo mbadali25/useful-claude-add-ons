@@ -299,9 +299,11 @@ shows fewer items.</p>
 you at each lifecycle step. Crew writes the files itself, so nothing here
 needs the bridge or the <code>obsidian-vault</code> plugin; the vault needs <code>.obsidian/</code>
 and the Kanban community plugin.</p>
-<p><strong>Turning it on.</strong> In <code>.crew/crew.json</code>, set <code>tracker.kind</code> to <code>obsidian</code> and
-give <code>tracker.obsidian</code> a <code>vaultPath</code>, a <code>boardDir</code> (relative to the vault) and
-optionally <code>board</code> (default <code>Board.md</code>) and <code>columns</code> (your lane names). Give
+<p><strong>Turning it on.</strong> In <code>.crew/config.json</code>, set <code>tracker</code> to <code>"obsidian"</code> and<!-- claim: crew-config-file:config.json -->
+give the <code>obsidian</code> block a <code>vaultPath</code>, a <code>boardDir</code> (relative to the vault) and
+optionally <code>board</code> (default <code>Board.md</code>) and <code>columns</code> (your lane names). A repository
+that ran <code>/crew:migrate</code> also has <code>.crew/crew.json</code>, which holds the same settings as
+<code>tracker.kind</code> and <code>tracker.obsidian</code>; the tracker reads both and refuses when they disagree. Give
 every repository its own <code>boardDir</code>: with it unset, every repo shares one
 board at the vault root, and a card another repo owns is refused.</p>
 <table>

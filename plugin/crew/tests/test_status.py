@@ -224,6 +224,42 @@ def test_config_line_names_the_layout(tmp_path, files, expected):
     assert lines[1] == expected
 
 
+TEMPLATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "templates", "config.template.json")
+
+
+def test_fresh_init_config_is_current_and_asks_for_no_migrate(tmp_path):
+    """L-0713: `/crew:init` writes the template as `.crew/config.json`, the file
+    every gate reads. Status used to answer `run /crew:migrate` for it, sending
+    a new repo into a migration it does not need."""
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        root = make_repo(tmp_path, config=json.load(fh))
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1:3] == ["config   .crew/config.json schema 7",
+                          "roster   explorer, reviewer (1.0 roster: explorer, reviewer, security, researcher)"]
+
+
+@pytest.mark.parametrize("config,extra", [
+    ({"schema": 7, "roles": ["explorer", "dba"]}, None),
+    ({"schema": 6, "roles": ["explorer"]}, None),
+    ({"roles": ["explorer"]}, None),
+    ({"schema": 7, "roles": ["explorer"]}, ".work/tickets/T-0001.md"),
+    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-journal.md"),
+    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-standing.md"),
+])
+def test_a_0_20_setup_still_asks_for_migrate(tmp_path, config, extra):
+    root = make_repo(tmp_path, config=config)
+    if extra:
+        (root / extra).parent.mkdir(parents=True, exist_ok=True)
+        (root / extra).write_text("# legacy\n", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1].endswith(" - run /crew:migrate")
+
+
 def test_memory_reports_the_requested_root_not_the_session_project(tmp_path, monkeypatch):
     """Codex FIX: CLAUDE_PROJECT_DIR=repo A, `--root` repo B -- the context
     script was left to find repo A."""

@@ -87,9 +87,12 @@ reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
 --refresh` run the same step, `/crew:implement` checks it, and
 `/crew:status` shows it as one `gitignore` line.
 
-`/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
-repository: `--preview` first, then `--apply`, which takes a backup that
-`--rollback` restores. Every historical metric it cannot recover is written
+`/crew:init` writes the repo config to `.crew/config.json`, the file every gate, guard and<!-- claim: crew-config-file:config.json -->
+`/crew:config` reads and writes; a new repository needs nothing else. `/crew:migrate` is only for a
+repository crew 0.20 set up (`/crew:status` says `run /crew:migrate`): it moves the tickets, metrics
+and PM journal to the 1.0 layout and writes `.crew/crew.json` as a record of the old config, once
+per repository: `--preview` first, then `--apply`, which takes a backup that `--rollback` restores.
+`.crew/config.json` stays, and stays the file crew reads its settings from. Every historical metric it cannot recover is written
 `UNKNOWN`, never `0`. A config older than 0.20 (no `schema`, or 1-6) is
 upgraded by `/crew:migrate` itself in the same run; `/crew:upgrade` was removed.
 

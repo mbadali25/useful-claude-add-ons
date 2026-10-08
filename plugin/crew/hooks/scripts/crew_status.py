@@ -54,6 +54,7 @@ import crew_freshness  # noqa: E402
 import crew_graph_ignore  # noqa: E402
 import crew_migrate  # noqa: E402
 import crew_shell  # noqa: E402
+import crew_state  # noqa: E402
 import crew_tracker  # noqa: E402
 import review_ledger  # noqa: E402
 import verify_agents  # noqa: E402
@@ -117,6 +118,13 @@ def _config_lines_for(root, crew, legacy):
         return [f"config   .crew/crew.json schema {crew.get('schema', '?')}",
                 f"roster   {', '.join(agents) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], crew
+    if isinstance(legacy, dict) and not _is_0_20_setup(root, legacy):
+        # L-0713: `/crew:init` writes this file, every gate reads it, and
+        # nothing in it needs `/crew:migrate`.
+        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)]
+        return [f"config   .crew/config.json schema {legacy.get('schema')}",
+                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
+                _tracker_line(root)], legacy
     if isinstance(legacy, dict):
         roles = legacy.get("roles") if isinstance(legacy.get("roles"), list) else []
         kept = [r for r in crew_migrate.ROSTER
@@ -127,6 +135,32 @@ def _config_lines_for(root, crew, legacy):
     if crew == "corrupt" or legacy == "corrupt":
         return ["config   unreadable JSON in .crew/ - status cannot tell the setup"], {}
     return ["config   none - run /crew:init"], {}
+
+
+def _is_0_20_setup(root, legacy):
+    """True when `.crew/config.json` (with no crew.json beside it) still holds
+    something only `/crew:migrate` moves: a schema older than the current one,
+    a role the 1.0 roster does not have (`qa-reviewer` included: migrate renames
+    it), a `.work/tickets/<ID>.md` ticket file, or a PM journal. A config
+    `/crew:init` wrote has none of these. A `roles` that is not a list is
+    could-not-tell, and that keeps the migrate prompt rather than hiding it."""
+    schema = legacy.get("schema")
+    if isinstance(schema, bool) or not isinstance(schema, int) \
+            or schema < crew_state.SCHEMA_CURRENT:
+        return True
+    roles = legacy.get("roles", [])
+    if not isinstance(roles, list) or any(r not in crew_migrate.ROSTER for r in roles):
+        return True
+    if any(os.path.lexists(os.path.join(root, ".crew", name))
+           for name in crew_migrate.JOURNAL_FILES):
+        return True
+    try:
+        names = os.listdir(os.path.join(root, ".work", "tickets"))
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return any(n.endswith(".md") for n in names)
 
 
 def _ticket_lines(root):

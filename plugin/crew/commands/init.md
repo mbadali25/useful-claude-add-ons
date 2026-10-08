@@ -8,6 +8,8 @@ Run the guided setup for this repository.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/phases.md` exactly. It defines all
 nine phases, the status file format, and the rules about stopping between phases.
+Phase 1 writes the repo config to `.crew/config.json`, the one file crew reads repo<!-- claim: crew-config-file:config.json -->
+settings from. A repository set up here never needs `/crew:migrate` (that is for a crew 0.20 setup).
 
 Arguments: $ARGUMENTS
 - `--status` — print the phase table from `.crew/STATUS.md` and stop

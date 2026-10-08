@@ -26,8 +26,8 @@ summary above or below it, and do not pad it with advice.
 |---|---|---|
 | header | `git rev-parse`, `git status --porcelain` (no index refresh) | not a git repo |
 | `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (CONFIG.md §20) | `could not tell (...)` when the check failed |
-| `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
-| `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
+| `config` | `.crew/crew.json` (where `/crew:migrate` ran) or else `.crew/config.json` (what `/crew:init` writes; `- run /crew:migrate` only for a 0.20 setup) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
+| `roster` | `agents` in crew.json, or `roles` in config.json, against the 1.0 four | - |
 | `tickets` / `open` / `owner` | `.work/tickets/` (live) and `.work/tickets/Complete/` (archived, counted apart), `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | `archived: could not tell` when `Complete/` cannot be listed |
 | `waiting` | `crew_autopilot_owner.owner_items` (L-0551): how many open tickets are stopped on you, from autopilot's own phase read; `, H held` (a hold whose revisit date is ahead), `, B blocked` (a dependency open), `, C in review not read` and `, U could not tell` only when non-zero | no `.work/INDEX.md`, or autopilot's module cannot be read |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
@@ -75,7 +75,7 @@ worktree, prints `could not tell (<reason>)`; a main checkout with no INDEX adds
 
 The report is facts, not instructions. When a line points somewhere:
 
-- `run /crew:migrate` - the repo is still on the 0.20 layout.
+- `run /crew:migrate` - `.crew/config.json` still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md` files, a PM journal). A config `/crew:init` wrote shows `config   .crew/config.json schema 7`, no prompt.
 - `run /crew:init` - no crew config at all.
 - `INTERRUPTED apply` - run `/crew:migrate --rollback <dir>` before anything else.
 - `gitignore N missing` - `crew_gitignore.py apply --root .` outside a ticket, or the next `/crew:onboard`.
