@@ -793,12 +793,16 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `GHDEPLOY_MUTATIONS` (`plugin/crew/tests/ghdeploy_mutations.py`) and `PROMOTE_TREE_MUTATIONS`
   (`plugin/crew/tests/promote_tree_mutations.py`), imported by `sabotage.py` (L-0650 / C-0046);
   `test_ghdeploy_mutations_are_wired` keeps both in `MUTATIONS` by identity.
-- Held back until rush G3c-G6b land (their anchors are in that code):
-  `docs/tickets/H2b/deferred.patch` adds `CONTRACT_MUTATIONS` (`sabotage_contract.py`, L-0635),
-  `BRIDGE_MUTATIONS` (`sabotage_bridge.py`, L-0638 and C-0051's L-0637 rounds), C-0051's L-0708
-  entries in `KIMI_MUTATIONS`, and in `sabotage_autopilot.py` `GATE_MUTATIONS` (L-0686),
-  `FIX_MUTATIONS` (L-0668), `FENCE_MUTATIONS` (L-0643), `GOAL_MUTATIONS` (L-0660, C-0055) and the
-  L-0655 (j)-(s), L-0656 and L-0671 1 and 15-19 entries in `SLEEP_MUTATIONS`/`REPLAN_MUTATIONS`.
+- Added once rush G3c-G6b landed (their anchors are in that code): `CONTRACT_MUTATIONS`
+  (`sabotage_contract.py`, L-0635) and `BRIDGE_MUTATIONS` (`sabotage_bridge.py`, L-0638 and
+  C-0051's L-0637 rounds), imported by `sabotage.py`; C-0051's L-0708 entries in `KIMI_MUTATIONS`;
+  in `sabotage_autopilot.py` `GATE_MUTATIONS` (L-0686), `FIX_MUTATIONS` (L-0668), `FENCE_MUTATIONS`
+  (L-0643), `GOAL_MUTATIONS` (L-0660, C-0055) and the L-0651 (k), L-0655 (j)-(s), L-0656 and
+  L-0671 1 and 15-19 entries in `SLEEP_MUTATIONS`/`REPLAN_MUTATIONS`; L-0660 (i) in
+  `RESUME_MUTATIONS`; T-0029's "unknown dependencies read as none" back in `WAVE_MUTATIONS`.
+- `sabotage_refresh.py`'s "an edit to scope_guard.py runs no pytest rule" (C-0038): its span now
+  also drops the wave rule's listing, and `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule`
+  no longer counts a pattern that matches every module (L-1508's `plugin/**/*.py` rule).
 
 ## Entry points
 

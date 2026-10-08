@@ -63,8 +63,8 @@ _PS1_UNMAPPED = ("  if (-not $hit -and -not $crewArtifacts.Contains([string]$f))
 
 
 def _scope_guard_rule_span():
-    """verify.json from rule 27's scope_guard.py line through rule 36's entry,
-    and the same span with scope_guard.py dropped from both.
+    """verify.json from rule 27's scope_guard.py line through the wave rule's
+    entry, and the same span with scope_guard.py dropped from all three.
 
     Rule 36 (T-0087; rule 31 before T-0010's rule 28 landed, rule 32 before
     T-0088's and crew 1.0.65/1.0.67's rules, rule 35 before T-0085's) lists
@@ -77,6 +77,10 @@ def _scope_guard_rule_span():
     """
     line27 = '                "plugin/crew/hooks/scripts/scope_guard.py",\n'
     entry31 = '"plugin/crew/hooks/scripts/scope_guard.py", '
+    # H2b (C-0038): T-0029's wave rule lists scope_guard.py too (H2a mapped
+    # it there), which kept this entry green on main; the span runs on to
+    # that third listing and drops it as well.
+    wave = '"plugin/crew/tests/test_scope_guard_wave.py", "plugin/crew/hooks/scripts/scope_guard.py",'
     try:
         with open(VERIFY, encoding="utf-8", newline="") as fh:
             text = fh.read()
@@ -84,10 +88,14 @@ def _scope_guard_rule_span():
         return "", ""
     start = text.find(line27)
     end = text.find(entry31, start + len(line27)) if start >= 0 else -1
-    if end < 0:
+    last = text.find(wave, end) if end >= 0 else -1
+    if last < 0:
         return "", ""
-    span = text[start:end + len(entry31)]
-    return span, span[len(line27):-len(entry31)]
+    span = text[start:last + len(wave)]
+    middle = span[len(line27):-len(wave)]
+    if middle.count(entry31) != 1:
+        return "", ""
+    return span, middle.replace(entry31, "", 1) + '"plugin/crew/tests/test_scope_guard_wave.py",'
 
 
 _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE = _scope_guard_rule_span()

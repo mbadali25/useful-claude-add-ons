@@ -1107,10 +1107,15 @@ def test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule(name):
               encoding="utf-8") as handle:
         rules = json.load(handle)["rules"]
 
-    hits = [r for r in rules if any(_gate_matches(path, p) for p in r["paths"])
+    # H2b (C-0038): L-1508's tool-resolution rule maps every `plugin/**/*.py`
+    # and runs pytest, but none of these modules' suites; a pattern that also
+    # matches a module nobody wrote names no module, so it does not count.
+    unrelated = "plugin/crew/hooks/scripts/zz_no_such_module.py"
+    hits = [r for r in rules if any(_gate_matches(path, p) and not _gate_matches(unrelated, p)
+                                    for p in r["paths"])
             and any("pytest" in c for c in r["run"])]
 
-    assert hits, f"{path} maps to no rule that runs pytest"
+    assert hits, f"{path} maps to no rule of its own that runs pytest"
 
 
 # --- T-0035: README embeds of the diagrams -----------------------------------

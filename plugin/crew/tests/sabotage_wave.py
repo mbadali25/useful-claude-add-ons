@@ -26,9 +26,12 @@ WAVE_MUTATIONS = (
      'None)\n',
      "        clash = None\n",
      _W + "test_plan_refuses_overlapping_touch[second0]"),
-    # "WAVE: unknown dependencies read as none" is deferred to H2b: rush G3c
-    # (L-0633, <channel>:<id> dependencies) rewrites the dependency parser it
-    # anchors on, so G3c's CI would fail on a harness file it may not touch.
+    # Re-added in H2b, anchored on G3c's dependency parser (L-0633 added the
+    # cross-session tokens between the search and the id read).
+    ("WAVE: unknown dependencies read as none", WAVE,
+     "    if not found:\n        return None\n    text = found.group(1)\n",
+     "    if not found:\n        return []\n    text = found.group(1)\n",
+     _W + "test_plan_refuses_unknown_dependencies[title]"),
     # G0's port added an OPEN_STATUSES allowlist (review round 2), which refuses
     # `direction` too, so dropping the named check alone left it refused: the
     # mutation opens both.
