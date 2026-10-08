@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@067c0443
+anchor: useful-claude-add-ons@789dc230
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1739,3 +1739,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5479ac05` -> `1d10d8f6` on 2026-10-08 (L-0712, crew 1.2.5: a gone pin falls back across families).** L-0712 changes, among the paths this map cites: `plugin/crew/hooks/scripts/crew_state.py` (resolve_role's fallback, `:1502-1720`), `plugin/crew/hooks/scripts/crew_status.py` (`_review_lines` and the same-family share, `:172-256`), `plugin/crew/CONFIG.md` (a subsection at `:884-900`), `plugin/crew/README.md`, `plugin/crew/commands/model.md` and `status.md` (in place), root `README.md`'s generated What's new block, `CHANGELOG.md`, and the version lines (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:230`, `plugin/PLUGINS.md:14`, `plugin/crew/BUDGETS.md:11`). Explicit `<path>:N` citations into those files were moved by difflib from origin/main `c25ef990` to `1d10d8f6` (22 moved); a citation inside a changed hunk was kept and re-read (version and count lines name the same line; citations past a file's end are history, not claims). No other claim was re-derived.
 
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
+
+**Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.

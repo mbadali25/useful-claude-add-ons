@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@067c0443
+anchor: useful-claude-add-ons@789dc230
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -5312,3 +5312,5 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 **L-0712: the fallback is the next cross-family provider (DERIVED at `1d10d8f6`).** `crew_state.resolve_role` step 2 calls `_fall_back` (`plugin/crew/hooks/scripts/crew_state.py:1667`) when `available` says the pin is gone. `provider_for_model` (`:1508`) maps the fallback model's family to the provider that serves it through `FAMILY_PROVIDER` (`:1505`: claude, gpt->codex, kimi); `_fallback_candidates` (`:1515`) lists the fallback on that provider first, then the block's `order` (`QA_DEFAULTS["order"]` when absent) on each provider's own model and effort, minus the failed pair and `auto`. An author-family candidate is skipped (`fallbackBarred` for the fallback itself), an `order` candidate must answer `available`, and none left sets `incomplete` with no provider; `same_family_ok` runs the fallback labelled `sameFamily`. The hard-coded `out["provider"] = "claude"` is gone. `crew_status._review_lines` (`plugin/crew/hooks/scripts/crew_status.py:172`) now reads every ledger and appends `review   same-family: N of M completed rounds (P%)`; `same_family_round` (`:220`) decides a row (its bool `same_family` label, else provider or model family equal to `review_ledger.AUTHOR_FAMILY`; no provider is could-not-tell). JUDGEMENT: no production caller passes `available` yet (`crew_config.model_report` resolves without a probe), so the walk is reached through `/crew:review`'s harness half (crew 1.2.6), not through `/crew:model`.
 
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
+
+**Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
