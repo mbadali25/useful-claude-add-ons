@@ -2,6 +2,14 @@
 # Fires only on a command matching a `deploy` entry in .crew/verify.json
 # -> environments. Exit 2 blocks.
 
+# L-0703: Resolve-CrewPython below is the byte-identical copy every crew .ps1
+# carries (test_ps1_python_probe.py asserts it), and its best-effort cleanup
+# catches are empty by design (a kill or dispose that fails changes nothing the
+# probe decides). The suppression is script-wide because PSScriptAnalyzer reads
+# it only from a param block, and the copy may not be edited to carry its own.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingEmptyCatchBlock', '', Justification = 'Resolve-CrewPython copy: best-effort cleanup catches')]
+param()
+
 # Flavour guard. Both flavours are registered for every event, so on a host
 # that has BOTH interpreters both would otherwise run. Stand down only when
 # we can positively prove this is not Windows.
@@ -11,7 +19,18 @@
 # does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
 # hook stands down on the one platform it exists for. crew has already shipped
 # that bug once - the guard stood down on Windows and blocked nothing there.
+
 if ($env:OS -ne 'Windows_NT') { exit 0 }
+
+# L-0703: one deadline for the whole gate, 16s, under the 20s hook timeout
+# (hooks.json) with room for the helper's 2s reap. Measured from this
+# process's own start, so PowerShell's start-up (seconds on a cold, scanned
+# host) and Resolve-CrewPython's probe (up to 8s) both count against it. The
+# review search below gets only what is left.
+$gateDeadline = 16
+try { $gateStart = [DateTimeOffset](Get-Process -Id $PID -ErrorAction Stop).StartTime }
+catch { $gateStart = [DateTimeOffset]::Now }
+$gateDeadlineEpoch = $gateStart.ToUnixTimeSeconds() + $gateDeadline
 
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
@@ -202,6 +221,23 @@ function Resolve-CrewPython {
 # blob, which skip-worktree/assume-unchanged cannot silence, and a dirty map is
 # matched against the committed one too, so renaming the deploy command in an
 # uncommitted edit cannot make it match nothing.
+# L-0703 review r2, the twin of promote-gate.sh's block: a map that exists but
+# is neither a regular file nor a directory (a FIFO, a socket, a device) would
+# hold `git hash-object` below, and Get-Content after it, past the hook timeout
+# - which is not a block. Refuse it here, before anything opens it. This hook
+# runs for the PowerShell tool on any OS, so the check is on the item, not on
+# the OS: UnixStat (pwsh 7.4+) is $null on Windows, which has no such files in
+# the tree. A link is judged by what it points at, as the .sh's `-f` does.
+$mapItem = Get-Item -LiteralPath .crew/verify.json -Force -ErrorAction SilentlyContinue
+if ($mapItem -and $mapItem.LinkTarget) {
+  $mapTarget = try { $mapItem.ResolveLinkTarget($true) } catch { $null }
+  $mapItem = if ($mapTarget -and $mapTarget.Exists) { Get-Item -LiteralPath $mapTarget.FullName -Force -ErrorAction SilentlyContinue } else { $null }
+}
+$mapStat = if ($mapItem) { $mapItem.PSObject.Properties['UnixStat'] } else { $null }
+if ($mapStat -and $mapStat.Value -and @('File', 'Directory') -notcontains "$($mapStat.Value.ItemType)") {
+  [Console]::Error.WriteLine("PROMOTION BLOCKED: .crew/verify.json is not a regular file (it is a $($mapStat.Value.ItemType)), so crew cannot read the deployment map without hanging. This is not a pass. Replace it with the map file.")
+  exit 2
+}
 $headMap = (git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>$null)
 $mapDirty = $null
 $mapPresent = Test-Path .crew/verify.json
@@ -943,10 +979,11 @@ foreach ($m in [regex]::Matches($cmd, '(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A
   }
 }
 
-# requires: an all-pass row for THIS sha
-# The NEWEST row for the environment and sha decides (L-0665), as in the
+# requires: an all-pass row for THIS sha, written out in full (L-0703)
+# The NEWEST full-sha row for the environment decides (L-0665), as in the
 # .sh's passed(): 'pass' / 'fail' for that row all-pass or not, 'none' when
-# there is no row.
+# there is no full-sha row. A short row never decides; it is only named.
+$script:shortRows = @{}
 function Test-Promoted([string]$name, [string]$sha) {
   if (-not (Test-Path .work/PROMOTIONS.md)) { return 'none' }
   $newest = 'none'
@@ -954,7 +991,16 @@ function Test-Promoted([string]$name, [string]$sha) {
     if ($line -notmatch '\|') { continue }
     $cells = ($line.Trim().Trim('|') -split '\|') | ForEach-Object { $_.Trim() }
     if ($cells.Count -lt 6) { continue }
-    if ($cells[1] -eq $name -and $cells[2].StartsWith($sha.Substring(0, [Math]::Min(7, $sha.Length)))) {
+    if ($cells[1] -ne $name) { continue }
+    # L-0703: only the full 40-hex sha is this commit's row (case ignored).
+    # StartsWith(7 characters) admitted any commit sharing the prefix. A
+    # strict prefix of the full sha is a short row: never counted, but named.
+    $cell = $cells[2].ToLowerInvariant()
+    if ($cell.Length -ge 1 -and $cell.Length -lt $sha.Length -and $sha.StartsWith($cell, [System.StringComparison]::Ordinal)) {
+      if (-not $script:shortRows.ContainsKey($name)) { $script:shortRows[$name] = $cells[2] }
+      continue
+    }
+    if ($cell -ceq $sha) {
       $newest = if ($cells[3] -ieq 'pass' -and $cells[4] -ieq 'pass' -and $cells[5] -ieq 'pass') { 'pass' } else { 'fail' }
     }
   }
@@ -967,11 +1013,12 @@ foreach ($e in $envNames) {
   $cfg = $vm.environments.$e
   $before = $problems.Count
   foreach ($up in $cfg.requires) {
-    $upVerdict = Test-Promoted $up $sha
+    $upVerdict = Test-Promoted $up $full.ToLowerInvariant()
     if ($upVerdict -ceq 'none') {
-      $problems.Add("'$up' has no all-pass row for sha $sha in .work/PROMOTIONS.md. Run /crew:promote $up first, and let it record the result.")
+      $short = if ($script:shortRows.ContainsKey($up)) { " (.work/PROMOTIONS.md records the short sha $($script:shortRows[$up]) for '$up': a row counts only with the full 40-character sha - re-run the promotion, or rewrite the row with the full sha after checking it)" } else { "" }
+      $problems.Add("'$up' has no all-pass row for sha $full in .work/PROMOTIONS.md$short. Run /crew:promote $up first, and let it record the result.")
     } elseif ($upVerdict -cne 'pass') {
-      $problems.Add("'$up' has rows for sha $sha in .work/PROMOTIONS.md, but the newest row is not all-pass: a later failure revokes an earlier pass. Run /crew:promote $up again, and let it record the result.")
+      $problems.Add("'$up' has rows for sha $full in .work/PROMOTIONS.md, but the newest row is not all-pass: a later failure revokes an earlier pass. Run /crew:promote $up again, and let it record the result.")
     }
   }
 
@@ -1022,6 +1069,97 @@ foreach ($e in $envNames) {
   if ($envNames.Count -gt 1) {
     for ($k = $before; $k -lt $problems.Count; $k++) { $problems[$k] = "[$e] " + $problems[$k] }
   }
+}
+
+# 5. Review evidence (L-0703): the twin of step 5 in promote-gate.sh. Both
+# flavours run the SAME _promote_review.py, so they cannot decide it
+# differently. No usable python, a helper that does not finish inside what is
+# left of the gate's deadline, and a non-zero exit are all could-not-tell: a
+# block, never a pass. Its reasons join $problems, so the emergency lane
+# below records them like every other unmet precondition.
+# During an open incident a review check that could not run is an unmet
+# precondition like every other: it joins $problems, which the emergency lane
+# below records as a skip. Exiting 2 here unconditionally blocked the very
+# deploys an incident exists to let through (L-0703 Codex r1). The twin is the
+# `crew_incident_active` branch after _promote_review.py in promote-gate.sh.
+function Deny-ReviewUnknown([string]$Why) {
+  if ($incident) {
+    $problems.Add("the review-evidence check could not be evaluated: $Why This is not a pass.")
+    return
+  }
+  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName, sha $sha, tree ${tree}):")
+  [Console]::Error.WriteLine("  - the review-evidence check could not be evaluated: $Why")
+  [Console]::Error.WriteLine("    This is not a pass.")
+  exit 2
+}
+# The helper's stdout, or $null once Deny-ReviewUnknown has recorded why not.
+function Invoke-PromoteReview([string]$Python, [string]$Helper) {
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Python
+    $quoted = @($Helper, $tree, $full, "$gateDeadlineEpoch") + @($envNames) | ForEach-Object { '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }
+    $psi.Arguments = ($quoted -join ' ')
+    $psi.WorkingDirectory = (Get-Location).Path
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Close()
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    # The helper kills its own search at the deadline; this wait is the backstop
+    # for a helper that cannot even start its clock.
+    $waitMs = [int][Math]::Max(1000, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds() + 1) * 1000)
+    if (-not $proc.WaitForExit($waitMs)) {
+      # Best effort: whatever is left running, the deploy is refused below.
+      try { $proc.Kill($true) } catch {
+        # Windows PowerShell 5.1 has no Kill($true). taskkill is waited on for at
+        # most 2s, so a stalled one cannot outlive the hook timeout either.
+        try {
+          $tk = Start-Process -FilePath 'taskkill.exe' -ArgumentList '/T', '/F', '/PID', "$($proc.Id)" -NoNewWindow -PassThru -ErrorAction Stop
+          $null = $tk.WaitForExit(2000)
+        } catch { $null = $_ }
+        try { $proc.Kill() } catch { $null = $_ }
+      }
+      Deny-ReviewUnknown "_promote_review.py did not finish inside the gate's deadline and was stopped."
+      return $null
+    }
+    # Bounded too: a helper that exited while something it started still holds
+    # its stdout or stderr would otherwise leave .Result waiting past the hook
+    # timeout, and a timed-out hook is not a block.
+    if (-not $outTask.Wait(2000) -or -not $errTask.Wait(2000)) {
+      Deny-ReviewUnknown "_promote_review.py exited but its output did not close inside 2s."
+      return $null
+    }
+    if ($proc.ExitCode -ne 0) {
+      $errText = "$($errTask.Result)".Trim()
+      if ($errText) { [Console]::Error.WriteLine($errText) }
+      Deny-ReviewUnknown "_promote_review.py exited $($proc.ExitCode); its reason is above."
+      return $null
+    }
+    return "$($outTask.Result)"
+  } catch {
+    Deny-ReviewUnknown "_promote_review.py could not be run ($($_.Exception.Message))."
+    return $null
+  }
+}
+$reviewOut = $null
+$reviewPy = Resolve-CrewPython
+$helper = Join-Path $PSScriptRoot '_promote_review.py'
+if (-not $reviewPy) {
+  Deny-ReviewUnknown "no usable python was found (python 3.8+ is required to read the review ledgers)."
+} elseif (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
+  Deny-ReviewUnknown "$helper is missing."
+} else {
+  $reviewOut = Invoke-PromoteReview $reviewPy $helper
+}
+foreach ($reason in ($reviewOut -split [char]0x1e)) {
+  if ($reason) { $problems.Add($reason) }
 }
 
 if ($problems.Count -gt 0 -and $incident) {

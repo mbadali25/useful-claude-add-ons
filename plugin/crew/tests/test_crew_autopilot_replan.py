@@ -21,6 +21,7 @@ import crew_autopilot
 import crew_ticket
 import pytest
 import review_ledger
+from crew_fixtures import isolated_home_env
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -106,8 +107,12 @@ def _bytes(path):
 
 
 def _cli(root, *args):
+    """The CLI, spawned with an empty home beside `root`, so it never reads the
+    machine's real `~/.claude/crew/config.json` (L-0704)."""
+    home = os.path.join(os.path.dirname(str(root)), "isolated-home")
     return subprocess.run([sys.executable, _SCRIPT] + list(args) + ["--root", str(root)],
                           capture_output=True, text=True, check=False,
+                          env=isolated_home_env(home),
                           stdin=subprocess.DEVNULL)
 
 

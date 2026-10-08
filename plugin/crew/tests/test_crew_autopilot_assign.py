@@ -22,6 +22,7 @@ import crew_autopilot
 import crew_ticket
 import pytest
 import review_ledger
+from crew_fixtures import isolated_home_env
 from scope_fixtures import PLAN, SPEC, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -244,9 +245,16 @@ def test_assign_with_open_question_next_phase_is_open_questions(tmp_path):
     assert (step["phase"], step["stop"]) == ("open-questions", True), step["reason"]
 
 
+def _home_env(root):
+    """An empty home beside `root`: a spawned script never reads the machine's
+    real `~/.claude/crew/config.json` (L-0704)."""
+    return isolated_home_env(os.path.join(os.path.dirname(str(root)), "isolated-home"))
+
+
 def _cli(root, *args):
     return subprocess.run([sys.executable, _TICKET_SCRIPT, *args], capture_output=True,
-                          text=True, check=False, cwd=str(root), stdin=subprocess.DEVNULL)
+                          text=True, check=False, cwd=str(root), env=_home_env(root),
+                          stdin=subprocess.DEVNULL)
 
 
 def test_assign_cli_prints_ticket_and_risk(tmp_path):
@@ -281,7 +289,7 @@ def test_assign_cli_relative_direction_file_resolves_under_root(tmp_path):
     done = subprocess.run([sys.executable, _TICKET_SCRIPT, "assign", "--root", str(root),
                            "--direction-file", ".work/autopilot/assign-1.md"],
                           capture_output=True, text=True, check=False, cwd=str(elsewhere),
-                          stdin=subprocess.DEVNULL)
+                          env=_home_env(root), stdin=subprocess.DEVNULL)
 
     assert (done.returncode, done.stdout, _tickets(root)) == (
         0, f"ticket={T} risk=low\n", [T]), done.stdout + done.stderr
@@ -340,7 +348,7 @@ def test_assign_refuses_a_fifo_staging_file_without_waiting(tmp_path):
         done = subprocess.run([sys.executable, _TICKET_SCRIPT, "assign", "--root", ".",
                                "--direction-file", ".work/autopilot/assign-1.md"],
                               capture_output=True, text=True, check=False, cwd=str(root),
-                              stdin=subprocess.DEVNULL, timeout=20)
+                              env=_home_env(root), stdin=subprocess.DEVNULL, timeout=20)
     except subprocess.TimeoutExpired:
         pytest.fail("assign blocked on a FIFO staging file")
 
