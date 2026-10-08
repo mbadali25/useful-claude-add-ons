@@ -2,12 +2,12 @@
 
 ## >>> RESUME HERE ("read Cloudhead") <<<
 
-### >>> CURRENT (2026-10-08T04:40Z): crew 1.2.0 SHIPPED - the 1.2.0 rush is complete <<<
+### >>> CURRENT (2026-10-08T06:45Z): crew 1.2.1 SHIPPED (1.2.0 rush + L-0703/L-0704) <<<
 Session `session_01H49aKnVMcvefcadqBGmuMu`. Everything below this block is older history.
 
-- `main` = crew **1.2.0** (#575 H2b, `3f2c4244`); `release/1.2.0` == main. All 12 waves + H2a/H2b landed; source PRs closed (landed via port where GitHub did not mark them).
+- `main` = crew **1.2.1** (#579: L-0703 promote-gate exact-sha + review evidence, L-0704 hermetic autopilot tests; `554ed783`). Before it: crew **1.2.0** (#575 H2b, `3f2c4244`); `release/1.2.0` == main. All 12 waves + H2a/H2b landed; source PRs closed (landed via port where GitHub did not mark them).
 - The rush's full record is now ON MAIN: `cloud-handoff-rush-1.2.0.md`, `pending-tickets.md` ("Feature rush 1.2.0"), tools in `docs/handoff/cloud/rush-1.2.0/` (#514 merged).
-- Open for the next session: follow-ups C-0049..C-0064 (+C-0033/35/36/38/41/48/62; next free C-0065; one more to mint for 10 unticketed STILL-GREEN sabotage entries); #402 L-0540 (owner's seed); #479 code-map refresh (run `/crew:onboard --refresh` / `graphify update .`); #544/#545 (other session, stale 1.1.5).
+- Open for the next session: follow-ups C-0049..C-0064 (+C-0033/35/36/38/41/48/62; next free C-0065; one more to mint for 10 unticketed STILL-GREEN sabotage entries); #402 L-0540 (owner's seed); #479 code-map refresh (run `/crew:onboard --refresh` / `graphify update .`).
 - Runners: Linux self-hosted live (`CREW_RUNNER=self-hosted`, set by hand). Windows stays GitHub-hosted; `ci/windows-self-hosted` branch (closed #568) holds the switch for when winrepo2 is fixed. Owner: `RUNNER_START_TOKEN` 404.
 
 
