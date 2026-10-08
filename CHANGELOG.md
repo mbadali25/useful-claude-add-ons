@@ -25,15 +25,17 @@ Crew 1.2.2: L-0710's harness half (review plan item 1.2, Phase 1).
 - **Diff baseline.** That quiet-turn write was also the diff baseline on a default branch with no
   marker; without it merge-base stays HEAD and a commit made there is never in scope. A quiet turn
   now records `.crew/.verify-gate.base-at` (HEAD) instead, read only by the base resolution
-  (marker, then base-at, then merge-base, then HEAD) and only when it is an ancestor of HEAD,
-  moved by a zero-command turn only when nothing committed differs from the base, removed when a
-  real pass writes the marker, and never read as verified. A write that fails refuses the turn.
+  (marker, then base-at, then merge-base, then HEAD) - as is when it is an ancestor of HEAD,
+  through its merge-base with HEAD otherwise - and records the HEAD read before the changed set.
+  A zero-command turn moves it only when nothing committed differs from the base; it is removed
+  when a real pass writes the marker and never read as verified. A baseline that cannot be read
+  or names no commit, or a write that fails, refuses the turn.
 - **Chronic rules go to CI.** A rule priced over `verify.stopBudgetSeconds` on its own is still
   deferred every Stop and never blocks the turn; its notice and record reason now say `deferred to
   CI (the verify-gate check)` and that `/crew:done` needs its VERIFIED receipt (or a clean
   `/crew:verify --all`); an old record's reason is re-said that way too. A rule that runs in
   budget and fails still exits 2, whatever was deferred beside it.
-- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 20
+- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 22
   sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
 
 ## [1.2.1] - 2026-10-08

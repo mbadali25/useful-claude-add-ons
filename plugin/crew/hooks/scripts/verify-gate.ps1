@@ -674,8 +674,14 @@ function Write-CrewVerified {
 # The DIFF baseline a quiet turn leaves (L-0710) - the twin of record_base in
 # verify-gate.sh: HEAD, when the changed set was empty. Never a verified
 # claim; only the base resolution below reads it.
+# It records $scanHead, read BEFORE the changed set - the twin of SCAN_HEAD
+# in verify-gate.sh (review round 2).
 function Write-CrewBase {
-  $sha = ($null | git rev-parse HEAD 2>$null)
+  $sha = $scanHead
+  if (-not $sha) {
+    $any = ($null | git rev-list -n 1 --all 2>$null)
+    if ($LASTEXITCODE -eq 0 -and -not $any) { return }
+  }
   if ($sha) {
     try {
       if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force -ErrorAction Stop | Out-Null }
@@ -686,6 +692,9 @@ function Write-CrewBase {
       [Console]::Error.WriteLine("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
       exit 2
     }
+  } else {
+    [Console]::Error.WriteLine("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
+    exit 2
   }
 }
 
@@ -702,6 +711,8 @@ function Write-ZeroRulesLine {
 # L-0710: between the marker and the merge-base sits the diff baseline a
 # quiet turn records ($baseAt) - the twin of BASE_AT in verify-gate.sh.
 $baseAt = ".crew/.verify-gate.base-at"
+$scanHead = ($null | git rev-parse --verify -q HEAD 2>$null)
+if ($LASTEXITCODE -ne 0) { $scanHead = "" }
 $base = ""
 $baseFromMarker = $false
 if (Test-Path .crew/.verify-verified-at) {
@@ -712,16 +723,43 @@ if (Test-Path .crew/.verify-verified-at) {
     if ($LASTEXITCODE -eq 0) { $base = $cand; $baseFromMarker = $true }
   }
 }
-if (-not $base -and (Test-Path $baseAt)) {
-  $cand = (Get-Content $baseAt -TotalCount 1 -ErrorAction SilentlyContinue)
-  if ($cand) { $cand = $cand.Trim() }
+# The twin of the base-at block in verify-gate.sh: an ancestor of HEAD is
+# used as is, any other commit through its merge-base with HEAD, and one that
+# cannot be read or names no commit is refused. -All and -Ci never read it.
+# Present the way `[ -e ]` means it: a link counts only when its target
+# exists, so a dangling one is absent here and its write then fails loudly.
+# A link this PowerShell cannot resolve (5.1 has no ResolveLinkTarget)
+# counts as present, and so is refused below if it cannot be read.
+$baseAtPresent = $false
+$baseAtItem = Get-Item -LiteralPath $baseAt -Force -ErrorAction SilentlyContinue
+if ($baseAtItem) {
+  $baseAtPresent = $true
+  if ($baseAtItem.LinkType) {
+    try {
+      $resolved = $baseAtItem.ResolveLinkTarget($true)
+      $baseAtPresent = ($null -ne $resolved) -and $resolved.Exists
+    } catch { $baseAtPresent = $true }
+  }
+}
+if (-not $base -and $baseAtPresent -and -not $All -and -not $Ci) {
+  $cand = $null
+  try { $cand = (Get-Content -LiteralPath $baseAt -TotalCount 1 -ErrorAction Stop) } catch { $cand = $null }
+  if ($cand) { $cand = ([string]$cand).Trim() }
   if ($cand) {
-    # Only an ancestor of HEAD - the twin of the same check in verify-gate.sh.
     $null | git cat-file -e "$cand^{commit}" 2>$null
     if ($LASTEXITCODE -eq 0) {
       $null | git merge-base --is-ancestor $cand HEAD 2>$null
-      if ($LASTEXITCODE -eq 0) { $base = $cand }
+      if ($LASTEXITCODE -eq 0) {
+        $base = $cand
+      } else {
+        $mb = ($null | git merge-base $cand HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $mb) { $base = ([string]$mb).Trim() }
+      }
     }
+  }
+  if (-not $base) {
+    [Console]::Error.WriteLine("verify-gate: the diff baseline ($baseAt) cannot be read or names no commit shared with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file.")
+    exit 2
   }
 }
 if (-not $base) {

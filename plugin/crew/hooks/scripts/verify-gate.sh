@@ -241,10 +241,19 @@ record_verified() {
 # The DIFF baseline a quiet turn leaves (L-0710, see BASE_AT below): HEAD,
 # when the changed set was empty. Never a verified claim - only the base
 # resolution reads it.
+#
+# It records SCAN_HEAD, the HEAD read BEFORE the changed set was computed,
+# never a fresh `git rev-parse HEAD`: a commit landing mid-run would
+# otherwise become the baseline without its rules running (review round 2).
+# An empty SCAN_HEAD is a failure unless the repository has no commit at
+# all; a rev-list that cannot answer is a failure too.
 record_base() {
-  BASE_SHA=$(git rev-parse HEAD 2>/dev/null) || return 0
-  [ -n "$BASE_SHA" ] || return 0
-  mkdir -p .crew 2>/dev/null && printf '%s\n' "$BASE_SHA" > "$BASE_AT" 2>/dev/null
+  if [ -z "$SCAN_HEAD" ]; then
+    ANY_COMMIT=$(git rev-list -n 1 --all 2>/dev/null) || return 1
+    [ -z "$ANY_COMMIT" ] && return 0
+    return 1
+  fi
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$SCAN_HEAD" > "$BASE_AT" 2>/dev/null
 }
 
 # A baseline that could not be written is not a quiet success: the next
@@ -347,6 +356,7 @@ record_verified_fingerprint() {
 # the baseline) and the baseline did not already come from the marker, and
 # record_verified removes it once a real pass supersedes it.
 BASE_AT=".crew/.verify-gate.base-at"
+SCAN_HEAD=$(git rev-parse --verify -q HEAD 2>/dev/null) || SCAN_HEAD=""
 BASE=""
 BASE_FROM_MARKER=0
 if [ -f .crew/.verify-verified-at ]; then
@@ -358,14 +368,27 @@ if [ -f .crew/.verify-verified-at ]; then
     BASE_FROM_MARKER=1
   fi
 fi
-if [ -z "$BASE" ] && [ -f "$BASE_AT" ]; then
-  read -r CAND < "$BASE_AT"
-  # And only if it is an ancestor of HEAD: a baseline a quiet turn left on
-  # ANOTHER branch can diff to nothing against this one (same bytes, other
-  # history) and hide a change no rule ever checked (L-0710 review round 1).
-  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null \
-     && git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
-    BASE="$CAND"
+# A baseline that is not an ancestor of HEAD - one a quiet turn left on
+# ANOTHER branch - can diff to nothing against this one (same bytes, other
+# history) and hide a change no rule ever checked, so its merge-base with
+# HEAD is used instead: an ancestor of both, so it checks MORE (review round
+# 1). One that cannot be read or names no commit here is refused, not
+# skipped: on the default branch the fallback is merge-base = HEAD, which
+# would hide every commit since it (review round 2). --all and --ci do not
+# diff from a base, so they never read it.
+if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
+   && [ "${1:-}" != "--all" ] && [ "$CI_MODE" -eq 0 ]; then
+  CAND=$(head -n 1 "$BASE_AT" 2>/dev/null | tr -d '[:space:]') || CAND=""
+  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
+    if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
+      BASE="$CAND"
+    else
+      BASE=$(git merge-base "$CAND" HEAD 2>/dev/null) || BASE=""
+    fi
+  fi
+  if [ -z "$BASE" ]; then
+    echo "verify-gate: the diff baseline ($BASE_AT) cannot be read or names no commit shared with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file." >&2
+    exit 2
   fi
 fi
 if [ -z "$BASE" ]; then

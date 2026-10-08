@@ -25,6 +25,7 @@ The contract, each half in BOTH flavours (the .ps1 under pwsh through the
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -323,12 +324,34 @@ def test_a_baseline_that_cannot_be_written_refuses_the_turn(flavour, tmp_path):
     """MUST-BLOCK. A quiet turn whose baseline write fails would leave the
     next commit on main out of scope; it says so and exits 2."""
     root = _repo(tmp_path, [_FAILING], with_a=False)
-    (root / _BASE_AT).mkdir()
+    try:
+        os.symlink(os.path.join("no-such-dir", "base-at"), str(root / _BASE_AT))
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
 
     result = _run(flavour, root)
 
     assert result.returncode == 2, result.stderr
     assert "could not write the diff baseline" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("content", ["not-a-sha\n", ""])
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_baseline_that_names_no_commit_refuses_the_turn(flavour, content, tmp_path):
+    """MUST-BLOCK (review round 2). An unreadable or corrupt baseline is not
+    skipped: on main the fallback is merge-base = HEAD, which would hide a
+    commit made since the quiet turn."""
+    root = _repo(tmp_path, [_FAILING], with_a=False)
+    _run(flavour, root)
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "a.py")
+    _git(root, "commit", "-q", "-m", "a commit made on main")
+    (root / _BASE_AT).write_text(content, encoding="utf-8")
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 2, result.stderr
+    assert "cannot be read or names no commit" in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -362,14 +385,21 @@ def test_an_old_chronic_record_is_reported_as_deferred_to_ci(tmp_path):
 
 
 def _lines(result):
-    keep = ("0 rules ran", "deferred to CI", "NOT VERIFIED")
-    return [ln for ln in result.stderr.splitlines() if any(k in ln for k in keep)]
+    """Every stderr line (review round 2: not just the budget phrases), with
+    measured durations normalised and the one line only the .ps1 prints -
+    `bash: <path>`, which interpreter ran the rule - left out."""
+    out = []
+    for line in result.stderr.splitlines():
+        if line.startswith("bash: "):
+            continue
+        out.append(re.sub(r"(verify-gate: )\d+(\.\d+)?s ", r"\1Ns ", line))
+    return out
 
 
 @pytest.mark.skipif(_BASH is None or _PWSH is None, reason="parity needs both flavours")
 @pytest.mark.parametrize("case", ["clean", "unmapped", "chronic", "failing"])
 def test_both_flavours_agree_on_exit_and_lines(case, tmp_path):
-    """Acceptance 7: same exit, same budget lines, for checks 1-4."""
+    """Acceptance 7: same exit, same lines, for checks 1-4."""
     def build(where):
         rules = {"clean": [_SLOW], "unmapped": [_FAILING], "chronic": [_CHRONIC],
                  "failing": [_FAILING, _CHRONIC]}[case]
