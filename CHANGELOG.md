@@ -12,7 +12,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Added — crew 1.2.4: sabotage entries for the 1.0 scope reader (L-0711, harness half)
 
 - **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
-  that `/crew:done` refuses a `sed -i` write outside it: twelve new entries, each red on its test.
+  that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
 - **Entries (`sabotage_scope.py`).** The report reading the pre-1.0 `.work/tickets/<id>.md` again,
   passing a pre-1.0 ticket as no ticket, judging an unapproved Touch, and matching with the old
   fnmatch matcher instead of `crew_ticket.in_touch`, its own changed list or merged main counted
@@ -22,6 +22,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   or `TODO.md` dropped as bookkeeping again, an `INDEX.md` ticket with no folder read as "no open
   ticket", and `verify-gate.sh` exiting 2 after the scope line. Two round-1 entries re-anchored on
   `ticket_changes`'s new `kept` line, one on the pre-1.0 file check.
+- **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
+  could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
 
 ### Fixed — crew 1.2.3: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
 

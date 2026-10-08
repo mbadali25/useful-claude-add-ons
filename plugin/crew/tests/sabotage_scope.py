@@ -727,4 +727,18 @@ SCOPE_MUTATIONS = (
      ": # keep the scope report from ever deciding this script's status\n",
      "exit 2\n",
      _SR + "test_both_gates_print_the_same_scope_line[sh-outside]"),
+    # L-0711 review round 4: an unreadable INDEX, a could-not-tell merged
+    # main and a file name carrying a newline each stay visible on the line.
+    ("the scope report reads an unreadable INDEX as no open ticket", SCOPE_REPORT,
+     "    if os.path.lexists(index) and crew_state.read_text(index) is None:\n",
+     "    if False:\n",
+     _SR + "test_an_unreadable_index_is_could_not_tell"),
+    ("the scope report drops merged main's could-not-tell", SCOPE_REPORT,
+     "        suffix += merged_suffix(merged)\n",
+     "        suffix += \"\"\n",
+     _SR + "test_merged_main_could_not_tell_reaches_the_scope_line"),
+    ("the scope report prints a file name raw", SCOPE_REPORT,
+     '    sys.stderr.write(completion_audit.shown(text) + "\\n")\n',
+     '    sys.stderr.write(text + "\\n")\n',
+     _SR + "test_a_file_name_cannot_forge_a_scope_line"),
 )
