@@ -54,6 +54,7 @@ import crew_freshness  # noqa: E402
 import crew_graph_ignore  # noqa: E402
 import crew_migrate  # noqa: E402
 import crew_shell  # noqa: E402
+import crew_state  # noqa: E402
 import crew_tracker  # noqa: E402
 import review_ledger  # noqa: E402
 import verify_agents  # noqa: E402
@@ -117,6 +118,21 @@ def _config_lines_for(root, crew, legacy):
         return [f"config   .crew/crew.json schema {crew.get('schema', '?')}",
                 f"roster   {', '.join(agents) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], crew
+    legacy_setup, why = _is_0_20_setup(root, legacy) if isinstance(legacy, dict) else (None, "")
+    if isinstance(legacy, dict) and legacy_setup is False:
+        # L-0713: `/crew:init` writes this file, every gate reads it, and
+        # nothing in it needs `/crew:migrate`.
+        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)]
+        return [f"config   .crew/config.json schema {legacy.get('schema')}",
+                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
+                _tracker_line(root)], legacy
+    if isinstance(legacy, dict) and legacy_setup is None:
+        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)] \
+            if isinstance(legacy.get("roles"), list) else []
+        return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - could not tell "
+                f"whether /crew:migrate is needed ({why})",
+                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
+                _tracker_line(root)], legacy
     if isinstance(legacy, dict):
         roles = legacy.get("roles") if isinstance(legacy.get("roles"), list) else []
         kept = [r for r in crew_migrate.ROSTER
@@ -127,6 +143,48 @@ def _config_lines_for(root, crew, legacy):
     if crew == "corrupt" or legacy == "corrupt":
         return ["config   unreadable JSON in .crew/ - status cannot tell the setup"], {}
     return ["config   none - run /crew:init"], {}
+
+
+def _is_0_20_setup(root, legacy):
+    """Whether `.crew/config.json` (with no crew.json beside it) still holds
+    something only `/crew:migrate` moves, as (True | False | None, reason).
+
+    True: a schema older than the current one, a role the 1.0 roster does not
+    have (`qa-reviewer` included: migrate renames it), a `.work/tickets/<ID>.md`
+    ticket file (an id-shaped name, as `crew_migrate._ticket_candidates` reads
+    it, so a README there is not one), or a PM journal. A config `/crew:init`
+    wrote has none of these: False. None is could-not-tell - a `schema` that is
+    not an integer (migrate refuses it too), a `roles` that is not a list, or
+    a `.crew/` or `.work/tickets/` that cannot be listed - and status says so
+    rather than answering either way. `.crew/metrics.md` and
+    `.work/cache/<ID>.md` are not markers: crew 1.x writes both itself."""
+    if "schema" not in legacy:
+        return True, ""  # pre-0.20: migrate upgrades it in the same run
+    schema = legacy["schema"]
+    if isinstance(schema, bool) or not isinstance(schema, int):
+        return None, "`schema` is not an integer"
+    if schema < crew_state.SCHEMA_CURRENT:
+        return True, ""
+    roles = legacy.get("roles", [])
+    if not isinstance(roles, list):
+        return None, "`roles` is not a list"
+    if any(r not in crew_migrate.ROSTER for r in roles):
+        return True, ""
+    try:
+        crew_dir = set(os.listdir(os.path.join(root, ".crew")))
+    except OSError as exc:
+        return None, f".crew/ could not be listed: {exc.strerror or exc}"
+    if crew_dir.intersection(crew_migrate.JOURNAL_FILES):
+        return True, ""
+    folder = os.path.join(root, ".work", "tickets")
+    try:
+        names = os.listdir(folder)
+    except FileNotFoundError:
+        return False, ""
+    except OSError as exc:
+        return None, f".work/tickets/ could not be listed: {exc.strerror or exc}"
+    return any(n.endswith(".md") and crew_common.TICKET_ID.match(n[:-3])
+               and not os.path.isdir(os.path.join(folder, n)) for n in names), ""
 
 
 def _ticket_lines(root):
@@ -180,22 +238,95 @@ def _review_lines(root):
         return ["review   no ledgers"]
     names.sort(key=lambda n: os.path.getmtime(os.path.join(folder, n)), reverse=True)
     lines = []
-    for name in names[:3]:
+    # L-0712: every ledger is read for the same-family share, not only the
+    # three newest shown, so the share is repo-wide.
+    tally = {"same": 0, "cross": 0, "unknown": 0, "unreadable": 0}
+    for index, name in enumerate(names):
         path = os.path.join(folder, name)
         # The ledger's own summary, so status counts rounds exactly as the
         # budget does: refunded tool-failure rounds are not "used" (T-0087).
         summary = review_ledger.summary(*review_ledger.load(path), name[:-5], path)
         if summary["state"] == review_ledger.UNKNOWN:
-            lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
+            tally["unreadable"] += 1
+            if index < 3:
+                lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
+            continue
+        rounds = summary.get("rounds")
+        if not isinstance(rounds, list):
+            tally["unreadable"] += 1  # rounds the share cannot read: could not tell
+            rounds = []
+        marks = [same_family_round(row) for row in rounds
+                 if isinstance(row, dict) and row.get("status") == "completed"]
+        tally["same"] += marks.count(True)
+        tally["cross"] += marks.count(False)
+        tally["unknown"] += marks.count(None)
+        if index >= 3:
             continue
         used = f"{summary['rounds_spent']}/{summary['budget']} rounds used"
         line = f"review   {name[:-5]}: {summary['state']}, {used}"
         if summary["rounds_refunded"]:
             line += f", {summary['rounds_refunded']} refunded"
+        if True in marks:
+            line += ", same-family round"
+        # Absent: a ledger written before L-0712 (review_ledger.summary reads it as []);
+        # an explicit null is a malformed record and reads as unreadable.
+        line += _unreviewed_note(summary.get("unreviewed", []))
         lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")
+    lines.append(_same_family_line(tally))
     return lines
+
+
+def _unreviewed_note(unreviewed):
+    """L-0712: the ticket line's no-reviewer outcomes (INCOMPLETE, refunded,
+    no round spent). Only entries in exactly the shape `no_reviewer` writes
+    are counted; anything else is unreadable, never counted as refunded."""
+    if unreviewed == []:
+        return ""
+    if not isinstance(unreviewed, list) or not all(
+            isinstance(e, dict) and e.get("verdict") == "INCOMPLETE"
+            and e.get("refunded") is True for e in unreviewed):
+        return ", no-reviewer record unreadable"
+    return f", {len(unreviewed)} with no reviewer (INCOMPLETE, refunded)"
+
+
+def same_family_round(row):
+    """L-0712: True when a completed ledger row was reviewed by the author's
+    own family, False when by another, None when the row cannot say.
+
+    The row's own `same_family` label wins when it is a bool. Otherwise the
+    ledger's author is `review_ledger.AUTHOR_FAMILY` (crew's developer runs
+    in-session), so a `claude` provider or model family is same-family. A row
+    with no provider is could-not-tell, never cross-family: counting it as
+    independent would understate the share this line exists to show.
+    """
+    label = row.get("same_family")
+    if isinstance(label, bool):
+        return label
+    provider, fam = row.get("provider"), row.get("model_family")
+    if not isinstance(provider, str) or not provider:
+        return None
+    author = review_ledger.AUTHOR_FAMILY
+    if provider == author or (isinstance(fam, str) and fam.strip().lower() == author):
+        return True
+    return False
+
+
+def _same_family_line(tally):
+    known = tally["same"] + tally["cross"]
+    line = "review   same-family: "
+    if known:
+        line += (f"{tally['same']} of {known} completed rounds "
+                 f"({round(100 * tally['same'] / known)}%)")
+    else:
+        line += "no completed rounds"
+    unknown = [f"{tally['unknown']} round(s)" if tally["unknown"] else "",
+               f"{tally['unreadable']} ledger(s) unreadable" if tally["unreadable"] else ""]
+    unknown = [u for u in unknown if u]
+    if unknown:
+        line += f"; could not tell: {', '.join(unknown)}"
+    return line
 
 
 def _inflight_lines(root):

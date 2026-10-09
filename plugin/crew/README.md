@@ -310,7 +310,7 @@ shows where you are, and it picks up from the first incomplete phase.
 | # | Phase | Produces |
 |---|---|---|
 | 0 | Platform | OS/WSL detection, CRLF and filesystem fixes |
-| 1 | Config | `.crew/`, `.work/`, a filled-in `CLAUDE.md` |
+| 1 | Config | `.crew/config.json`, `.crew/`, `.work/`, a filled-in `CLAUDE.md` |
 | 2 | Providers | Codex and Gemini verified by a real call |
 | 3 | Smoke harness | `_verify/` created and documented; `_verify/smoke.sh` green from a clean checkout |
 | 4 | Code map | `.crew/codemap/` with anchors |
@@ -326,6 +326,14 @@ nothing after it to stop. Just one of those gates is enforced by a hook rather
 than written down. See
 [Setup phase order](../PLUGINS.md#setup-phase-order) in `PLUGINS.md` for the
 sequence diagram, every gate, and why the order is what it is.
+
+Phase 1 writes the repo config to `.crew/config.json`, from<!-- claim: crew-config-file:config.json -->
+`templates/config.template.json`. It is the one file crew reads repo settings from: every gate and
+guard, `/crew:config` and `/crew:autopilot` read it, and a new repository never needs
+`/crew:migrate`. `/crew:status` shows it as `config   .crew/config.json schema 7`. `/crew:migrate` is
+for a repository crew 0.20 set up, and status asks for it (`... - run /crew:migrate`) only when
+this file still holds one: a role 1.0 removed, a schema older than 7, `.work/tickets/<ID>.md` ticket
+files, or a PM journal.
 
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
 `blocked` are used, not rounded up to `done`. A status file that overstates
@@ -754,7 +762,7 @@ Between the refresh and the review sits the **required standards self-check** (s
 
 Codex if available, the `reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more — and that second round is the last one.
 
-The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it, leaving out every path byte-identical to the latest merged integration commit — `git merge-base HEAD <base branch>`, the base branch being `tickets.baseBranch` when set (T-0061) — (`hooks/scripts/merged_main.py`, T-0100): after a merge of main the reviewer reads this ticket's change, not the landed work main brought in. A file main changed that the ticket changes again is diffed from the merged commit's version, so main's lines read as context and only the ticket's as `+`/`-`. The manifest's `merged_main` names that commit, the paths left out and the paths diffed from it (`diffed_from_merged`), `bundle_base_tree` the tree the patch was diffed from, and the prompt prints a `merged main:` line; when the commit cannot be told (no integration ref, a configured base branch naming no commit, detached HEAD) nothing is left out and each of those says `could not tell`. `merged_main.fork` is the merge-base of the ticket start and the merged commit; when git gives no answer for it, it is `null` with a `fork_reason`, every path main also changed is diffed from the start (more shown, never less, so main's lines there may read as the ticket's), and that is said by `fork_reason`, the summary line's `diffed-from-merged=could-not-tell`, the prompt's `merged main:` line and `--check-receipt`'s `fork: could not tell` — an empty `diffed_from_merged` never passes as "main changed none of them". Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them. `.work/` (crew's scratch) and the generated `graphify-out/` are never in the bundle; the manifest's `excluded` names both and the prompt's bundle block prints them, so a reviewer knows what was left out (T-0092).
+The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it, leaving out every path byte-identical to the latest merged integration commit — `git merge-base HEAD <base branch>`, the base branch being `tickets.baseBranch` when set (T-0061) — (`hooks/scripts/merged_main.py`, T-0100): after a merge of main the reviewer reads this ticket's change, not the landed work main brought in. A file main changed that the ticket changes again is diffed from the merged commit's version, so main's lines read as context and only the ticket's as `+`/`-`. The manifest's `merged_main` names that commit, the paths left out and the paths diffed from it (`diffed_from_merged`), `bundle_base_tree` the tree the patch was diffed from, and the prompt prints a `merged main:` line; when the commit cannot be told (no integration ref, a configured base branch naming no commit, detached HEAD) nothing is left out and each of those says `could not tell`. `merged_main.fork` is the merge-base of the ticket start and the merged commit; when git gives no answer for it, it is `null` with a `fork_reason`, every path main also changed is diffed from the start (more shown, never less, so main's lines there may read as the ticket's), and that is said by `fork_reason`, the summary line's `diffed-from-merged=could-not-tell`, the prompt's `merged main:` line and `--check-receipt`'s `fork: could not tell` — an empty `diffed_from_merged` never passes as "main changed none of them". Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them. `.work/` (crew's scratch) and the generated `graphify-out/` are never in the bundle's working-state diff; the manifest's `excluded` names both and the prompt's bundle block prints them, so a reviewer knows what was left out (T-0092). One exception (L-0739), for a repository that tracks `.work/`: a COMMITTED text change under `.work/` or `.crew/metrics.md` between the base and HEAD - status A, M or D, mode 100644, not binary, and not matched by the repository's own ignore rules (`git check-ignore --no-index`, so a file force-added under crew's `.work/` ignore stays out) - is appended after the rest of the bundle, read from the two commit trees and never from the working state, so an untracked `review.json` or a metrics row appended after the round never moves the hash. The manifest lists those paths as `included_excluded` and the prompt prints them as `shown anyway`. A range with none builds exactly the bytes it did before, so older receipts stay valid. Check E (below) refuses only what the bundle cannot show.
 
 Then `review_run.py` itself appends the round's line to `.crew/metrics.md` - the main checkout's, also from a linked worktree - right after the ledger records the round: `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <BLOCK> | <FIX>`, with `INCOMPLETE` in both count cells for a round with no verdict and the family named against the author's (`same-family`, `different family` only when a dispatch record proves it, `different family unproven` when it came from config, `family unknown` when it could not be read, or `same-family: codex limit`), and the `std:` token the round was reserved under, never one recomputed afterwards. A symlinked or junctioned `.crew`, or a metrics path that is not a regular file, is refused, not followed. It used to be a prose step, and 118 of 162 rounds had no line (L-0578). A write that fails never changes the verdict; it prints the exact line to append by hand. It is bookkeeping to the review bundle, the completion audit and the verify gate (`crew_ticket.CREW_BOOKKEEPING_PATHS`), so the append never stales a receipt (T-0068), but it is not throwaway: `/crew:status` reads it to show whether any of this is catching anything. Every reader (`crew_state.py`'s health, `crew_standards.py metric`, `/crew:status`) resolves the same file through `crew_common.metrics_crew_dir`: from a linked worktree it is the main checkout's, and when git cannot name the main checkout each says `could not tell` and reads nothing rather than the worktree's own copy.
 
@@ -869,6 +877,8 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
 
+**The verify gate's `outside-scope:` line (L-0711).** Every Stop, `verify-gate.sh` / `.ps1` pipe their changed list to `scope_report.py`, which prints one `outside-scope:` line in any `scope.mode`. Since L-0711 it reads the crew 1.0 contract the audit reads: the active ticket from `crew_ticket.resolve_active`, Touch from `crew_ticket.accepted` (`.work/tickets/<id>/spec.md ## Touch`, approved), membership from `crew_ticket.in_touch`, the audit's own changed list (`completion_audit.changed_paths`: both ends of a rename, a path byte-identical to merged main not counted), and refresh artifacts through the audit's own admission, so it names the paths `/crew:done` check 3 refuses, a shell-made `sed -i` write included. Before L-0711 it read the pre-1.0 `- touch:` line in `.work/tickets/<id>.md` and reported every 1.0 ticket's file as missing. The gate's own changed list loses the merged-main-identical paths before it joins the audit's list, and bookkeeping is exactly what the audit leaves out (`.work/` and `crew_ticket.CREW_BOOKKEEPING_PATHS`), so a `TODO.md` or tracked `.crew/` write outside Touch is named too. A merged main that cannot be told (a detached HEAD) is marked on the line, as the audit marks it, and every path is printed escaped so a file name cannot add a line. A bare `outside-scope:` means checked and clean; `(could not tell - <why>)` covers no spec.md, no `## Touch`, an unapproved or stale Touch, a broken active-ticket pointer, a pre-1.0 ticket (never judged in scope: run `/crew:migrate`) an `INDEX.md` open ticket with no `.work/tickets/<id>/` folder, and an `INDEX.md` that cannot be read. The line stays report-only - the gate never exits on it; the refusal is the completion audit's.
+
 ### Autopilot: one ticket, driven until a person is needed
 
 `/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, docs, refresh artifacts, review, done and (since 1.0.349) ship, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
@@ -969,7 +979,7 @@ Both come from `crew_autopilot_owner.owner_items`, which asks autopilot's own ph
 
 **In-flight markers: one runner drives a ticket at a time (T-0049).** Before its loop the command claims the ticket with `hooks/scripts/crew_inflight.py claim --root . --ticket <id> --runner autopilot` and releases it at every stop (`release`); a `refused:` claim is a stop. The marker is `<git-common-dir>/crew/inflight/<id>.json`, shared by every worktree of one clone (two clones share nothing; that case is out of scope): the runner (`autopilot`, `lane` or `session`), a token, the holder, the worktree and branch, `since` and `heartbeat_at`. The holder is `CLAUDE_CODE_SESSION_ID` plus the long-lived Claude Code process: `CLAUDE_PID` when it is an ancestor of the claiming command that started before it (a hint that cannot be checked, for example when no process chain can be read, is never trusted: any environment, a project's settings included, can set it), else the nearest ancestor named `claude`; a Claude Code session where neither can be found records no pid, and only when neither side has a pid does the session id decide alone; a lane's script records its own shell. Each pid comes with its start time, pid namespace, boot id and host. `claim`, `release` and `clear` write their event to `events.jsonl` first and do nothing if it cannot be written; the refusal names the file to fix or move aside before retrying. `claim` publishes the marker with `os.link`, so two claimers never both win, and starts one detached heartbeat that rewrites `heartbeat_at` every 600 s (`min(600, TTL/3)`) and exits when the marker is gone, names another token, or its holder is measured gone. `crew_inflight.holds(root, ticket)` answers `free`, `mine`, `live` (another holder in this worktree), `elsewhere` (a fresh holder in another worktree), `stale` (no heartbeat for 30 minutes, the TTL, or the holder's pid measured gone, a zombie or reused) or `unknown` (anything it cannot read, parse, probe or trust, including a reader whose own git cannot name its worktree — never `free`), and writes nothing. The pid is measured only when host, boot id and pid namespace all match the reader's: `/proc` on Linux, `kill -0` plus `ps` on macOS and other POSIX systems, the process's exit code and creation time on Windows. Where it cannot be measured (a sandbox, a session with no pid), the heartbeat stops by itself once its holder has gone 30 minutes unconfirmed, so a dead holder still goes stale within 70 minutes (2 × TTL plus one heartbeat, 4200 s): **the TTL decides whenever the pid cannot**. `next --runner autopilot` stops as `in-flight` on `live`, `stale` and `unknown`, naming the runner, ticket and since, and as `handover-elsewhere` on `elsewhere`; `free` and `mine` change nothing, and without `--runner` `next` is unchanged. **Nothing clears a marker by age, and autopilot never clears one** (`clear-inflight`): a stale or unknown stop prints the owner's command, `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py" clear --root . --ticket <id> --by <you> --reason "<why>"`. It re-reads the state under the lock, accepts only `stale` or `unknown` (an unreadable marker is cleared by the owner, never by age), and logs who and why. `holds --root . --ticket <id> [--json]` prints the answer on one line. A workflow lane adopts the same CLI with `--runner lane`.
 
-**Refresh sits between implement and review, every round.** A review bundle excludes only `.work/`, generated `graphify-out/`, crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`, since T-0068) and paths byte-identical to merged main, so a codemap, diagram or `.claude/rules/` refresh written after an accepted review changes the bundle (a graph rebuild alone no longer does, since 1.0.54). The delta gate (L-0522, only where this clone's merge train is armed) keeps the receipt when the refresh moved nothing but an anchor sha; anything more reads stale and `/crew:done` refuses. Autopilot never refreshes after review on its own: it stops with the refresh command (run it, commit, rerun). A merge of main that touches no reviewed path does not stale a receipt (T-0100): the rebuilt bundle leaves out paths identical to the merged commit and `--check-receipt` says how many (and `fork: could not tell` when the merge-base of the start and the merged commit had no answer); a merge that changes a reviewed path still does, conflict or not, because that file's diff now starts from main's version. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped. A `fresh-uncommitted` answer (crew 1.0.349) is the `commit-refresh` phase, before review and after an accepted one alike: committing exactly the paths the check lists leaves the review bundle — the working state — unchanged, so it is never a reason to review again or to close over unsaved artifacts.
+**Refresh sits between implement and review, every round.** A review bundle excludes only `.work/`, generated `graphify-out/`, crew's own bookkeeping (`crew_ticket.CREW_BOOKKEEPING_PATHS`, since T-0068) and paths byte-identical to merged main, so a codemap, diagram or `.claude/rules/` refresh written after an accepted review changes the bundle (a graph rebuild alone no longer does, since 1.0.54). The delta gate (L-0522, only where this clone's merge train is armed) keeps the receipt when the refresh moved nothing but an anchor sha; anything more reads stale and `/crew:done` refuses. Check E runs first, on `.work/`, `graphify-out/` and `.crew/metrics.md` over three ranges: receipt base -> reviewed head, reviewed head -> HEAD and reviewed head -> the index. Only the two graph files may change (text, mode 100644). Since L-0739 the first range also passes a committed text change the bundle carries, but only when the receipt's bundle really carried it: a receipt minted before L-0739 reads `excluded path changed: <path> (receipt base -> reviewed head): this receipt's bundle did not carry it, so it is outside the bundle; re-review so it is included`. A binary, executable, symlink or gitlink change, an ignored force-added file or a `graphify-out/` file there reads `outside the bundle, which cannot show it (<why>); restore it in a new commit, then re-review`. After the reviewed head nothing changed: any `.work/` change committed or staged after the review is stale, as before. A review run writes `.work/tickets/<id>/review.json` and appends `.crew/metrics.md` in the checkout it runs in; in a repository that tracks those, run the review from another checkout of the same commit so the deploy tree stays clean for promote-gate (the ledger is shared through `<git-common-dir>/crew/review/`; L-0745 tracks the fix). Autopilot never refreshes after review on its own: it stops with the refresh command (run it, commit, rerun). A merge of main that touches no reviewed path does not stale a receipt (T-0100): the rebuilt bundle leaves out paths identical to the merged commit and `--check-receipt` says how many (and `fork: could not tell` when the merge-base of the start and the merged commit had no answer); a merge that changes a reviewed path still does, conflict or not, because that file's diff now starts from main's version. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped. A `fresh-uncommitted` answer (crew 1.0.349) is the `commit-refresh` phase, before review and after an accepted one alike: committing exactly the paths the check lists leaves the review bundle — the working state — unchanged, so it is never a reason to review again or to close over unsaved artifacts.
 
 **Which ticket** (`crew_autopilot.py resume [--ticket <id>]`): the id you gave; else the handoff's `resume:` line, parsed by T-0006's `crew_resume.parse_resume` and used only when the handoff's `branch:` and `head:` match this checkout and the ticket folder exists; then (L-0659) the one autopilot goal whose run state is `running` in `.work/autopilot/`, resumed at its next ticket with source `goal-file` — two running goals stop and list them (`name one: /crew:autopilot --goal <slug>`), a goal file that cannot be read stops as could-not-tell and the active ticket is not driven, and a `stopped` goal is named in a `fell through:` line with its reason and its `--goal` command, never resumed; then this worktree's active ticket; then `.work/INDEX.md`, **only when exactly one** open ticket has a folder — several open tickets and no pointer stop and list them. In a lane worktree (crew 1.0.349, T-0063) the main checkout's INDEX — the first record of `git worktree list --porcelain` — supplies the rows this checkout's lacks, and the source then reads `.work/INDEX.md (main checkout)`; the folder must still be here. `next` reads a ticket's INDEX row the same way, and `--json` names the file that answered as `index_source`; rows in both that disagree stop as `index-disagreement`, and a listing git cannot give is kept in the stop's reason, never read as "no row". A handoff that cannot be used (no line, `resume: none`, unparseable, branch or head mismatch, no folder, T-0006 not installed) falls through with its reason printed; `## Next action` prose is never guessed from. When the handoff names a different command from the one disk names, disk wins and the disagreement is printed. `resume: /crew:autopilot --goal <slug>` (L-0541) resumes that goal at its next ticket, or stops with the goal's reason. **The branch and head checks are the ticket form's (L-0658):** a goal moves across ticket branches, so a `--goal` line is judged by its goal file instead — taken only while its `run.state` is `running`; a missing, not-started or done goal falls through with its reason; a goal file that cannot be read stops as could-not-tell, and a `stopped` goal stops, named with its recorded reason and `/crew:autopilot --goal <slug>`, never resumed past it. **A ticket that is not this worktree's active one stops**, naming both — the scope guard and the completion audit judge edits by the active pointer; with no pointer set, autopilot activates the ticket it drives (`crew_ticket.py activate`). When context runs low, autopilot writes `resume: /crew:autopilot <id>` (in a goal run `resume: /crew:autopilot --goal <slug>`) into the handoff and stops.
 
@@ -1115,7 +1125,7 @@ A count this module could not measure is always the string `UNKNOWN`, never `0` 
 
 ## 11. Configuration reference
 
-Everything reads `.crew/config.json`. If it goes missing or stops parsing,
+Everything reads `.crew/config.json`. If it goes missing or stops parsing,<!-- claim: crew-config-file:config.json -->
 `platform-sync` recreates it from `templates/config.template.json` the next
 time the repo is opened — see "The config heals itself" in §3; this is the
 same shape that produces:
@@ -1994,9 +2004,11 @@ Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:re
 
 Without Codex, `/crew:review` walks `qa.order` — `["codex", "kimi", "copilot", "claude"]` by default — and takes the first provider whose probe answers — a real call for Codex (`review_run.py --probe`), not just `command -v` — announcing every one it skipped and why.
 
+**A gone pin falls back across families, never to Claude by default (L-0712).** When a pinned model is unavailable, the `qa.fallback` / `dev.fallback` model runs on the provider that serves its family (`crew_state.provider_for_model`: a `gpt-6.1-sol` fallback dispatches to Codex), and a fallback in the author's family is skipped for the next provider in `qa.order` whose family did not write the diff and which answers. If none answers, the round is INCOMPLETE and refunded, never a same-family read; a same-family review runs only on the operator's explicit choice and is labelled so. Before this, every fallback was hard-coded to `claude`. `/crew:status` prints `review   same-family: N of M completed rounds (P%)` across every ledger, and marks a ticket line `same-family round`; the target is under 5%.
+
 To check a provider by hand, `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/provider_probe.py" codex --root .` (or `copilot --root . --model <m>`) makes one real call with review's own command line (`review_run.command_for` and `launch`): `--skip-git-repo-check`, `-C <root>` and the repo root as its working directory, from whatever directory it is run in, so it never hits Codex's "Not inside a trusted directory". It prints `codex: ok (<model>)` (exit 0), `codex: FAILED - <reason>` (exit 1: a failed call, an event stream with no completed turn, or a timeout after 120 s) or `codex: not installed` (exit 2). It costs one call, reserves nothing, and no hook or `/crew:status` runs it (T-0065).
 
-When that Codex call fails on a usage limit, rate limit or quota (Codex's own messages, cited in `hooks/scripts/review_limit.py`), the round runs on the `reviewer` fallback instead, pinned or not, announced as `same-family (codex limit)` with the error quoted. A limit hit in the middle of a round is recorded beside the review ledger, so the next round goes to Claude without another call; the one after probes Codex again (T-0088).
+When that Codex call fails on a usage limit, rate limit or quota (Codex's own messages, cited in `hooks/scripts/review_limit.py`), Codex is skipped, pinned or not, with the error quoted, and `/crew:review` takes the next cross-family provider in `$ELIGIBLE`. A limit hit in the middle of a round is recorded beside the review ledger, so the next round skips Codex without another call; the one after probes Codex again (T-0088). Since L-0712 (crew 1.2.6) a Claude read after a limit is no longer automatic: when no cross-family reviewer is left, `review_ledger.py --no-reviewer --reason <why>` records the outcome INCOMPLETE and refunded in the ledger's `unreviewed` list (no round, no budget), and a Claude read of Claude's work runs only on the operator's explicit `review_run.py --same-family "<reason>"`, which labels the round, review.json and a CLEAN receipt `same_family` (never auto-accepted), announced `same-family (codex limit)`. `review_run.py --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE"` refuses any reviewer of the author's family, or of a family it cannot tell (an `unknown` source included), with exit 2 and nothing reserved; `--probe` asks it first. With no `--authors`, a Claude or unknown-family reservation is refused the same way unless `--same-family` labels it, whatever other flag (`--round` included) comes with `--reserve-only`; `review_ledger.py --reserve` asks the same guard; a labelled round's metrics row says `same-family: operator choice`. A failed probe of a codex-pinned `review` role is `resolve_role`'s `available`, so `/crew:review` dispatches the resolved fallback (`$FALLBACK`): a `gpt-6.1-sol` fallback runs on Codex. `/crew:status` marks a ticket's no-reviewer outcomes.
 
 Kimi Code (`kimi`) is the second rung of the default order since crew 1.0.85. Its family is `kimi` whatever it is pinned to, so it needs no pin to be independent of a Claude author, and every `qa.roles.<r>` and `dev.roles.<r>` slot accepts a Kimi pin. `/crew:review` launches it since L-0527 (`review_run.py --provider kimi`, step 2e): `kimi_probe.py` runs before the round is reserved and only `ok` launches; since `kimi -p` cannot be made read-only by a flag, the working tree is fingerprinted from before the probe to after the review, and a reviewer write makes the round INCOMPLETE, naming the paths (a probe that wrote exits 8, no round spent); a process the reviewer leaves running is stopped first. `graph.out`, and only while gitignored IDE state and crew's hook logs, are set aside. A Kimi round is not retried in-process (L-0514). The launch gate is unchanged: `crew_config.review_launchable()` is `review_run.LAUNCHED` plus the in-session `claude`, and a `qa.order` provider outside it is reported and skipped; `kimi` in `review_run.LAUNCHED` is what made it eligible. `kimi_probe.py` answers now whether Kimi could review: `ok`, `not-installed`, `not-authenticated`, `rate-limited` or `unknown`, and only `ok` is launchable; `providers.sh --probe-kimi` runs it. See `skills/crew-providers/SKILL.md`, "Kimi Code".
 
@@ -2155,8 +2167,8 @@ their status transitions — no sync command to remember:
 | `/crew:done` | `move --to done` | Done |
 
 `/crew:fix` makes the same calls, compressed. `resolve` reads the kind from
-1.0's `.crew/crew.json` (`tracker.kind`) and 0.20's `.crew/config.json`
-(`tracker`) alike; when both state one and they differ it says `could not tell`
+`.crew/config.json` (`tracker`) and, in a repository that ran `/crew:migrate`,<!-- claim: crew-config-file:config.json -->
+`.crew/crew.json` (`tracker.kind`) alike; when both state one and they differ it says `could not tell`
 and every write refuses — it never picks one. The same holds for the vault and
 `boardDir` each file *yields*, fallbacks included: crew.json falling back to
 `memory.vaultPath` while config.json names another vault is `could not tell`,
@@ -3226,6 +3238,16 @@ rule priced over `verify.stopBudgetSeconds` on its own runs: Stop defers such a
 rule every turn and names it `NOT VERIFIED ... deferred to CI` (L-0710), so its
 only evidence is this receipt or a local `/crew:verify --all`.
 
+`/crew:done` check 2 makes this receipt the precondition for whatever Stop did
+not check (L-0710): a rule deferred to CI (`chronic`), a `skipped` or
+`unverified` rule, a turn where `0 rules ran`, or no record at all. Check 2
+passes on `CI_RECEIPT VERIFIED` (exit 0), on `NO_GATE` (exit 4), or on a record
+with nothing outstanding (`verify   no rules recorded`: a clean pass empties it)
+together with `GATE VERIFIED` from `review_gate.gate_state` (marker at HEAD and
+the working tree's fingerprint unchanged since that pass; the marker alone
+survives an uncommitted edit). Anything else refuses the close. The workflow is
+not a required check on `main`; making it one is a branch-protection setting.
+
 The receipt's per-command list is informative only. A command reads PASS, FAIL,
 SKIP or UNKNOWN; UNKNOWN is a `COULD NOT TELL` line, or a command named failed,
 skipped or could-not-tell with no elapsed line after it (L-0673). `log_complete` is
@@ -3914,6 +3936,7 @@ CONFIG.md §17 has the table and the reasoning.
 
 ### Commands
 
+<!-- claim: plugin-command-table:crew -->
 | Command | Purpose |
 |---|---|
 | `/crew:help [command\|question\|commands\|<id>]` | **Start here.** With nothing: where you are (ticket, phase, what it waits on), the one command to type next and why, and 2-3 related ones, in at most 8 lines. With a command or a question (`how do i write the spec`): what it is for, when, its arguments and what comes next. `commands`: every command by group, core first. Read-only, and it never runs what it names - see "Contextual help: /crew:help" |
@@ -3923,10 +3946,10 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
-| `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
+| `/crew:done <id>` | Close a ticket: accepted review receipt, a verify gate settled for HEAD (every rule passed here, or the CI receipt VERIFIED), passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
-| `/crew:status [--memory \| --approvals \| --owner]` | Read-only status in at most 40 lines - config, inert settings, roster, tickets, a `waiting` line counting what is stopped on you (`--owner` lists it, one line per ticket with the command to type, L-0551), review budget, in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, gitignore, handoff; `--memory` adds the context hook's stats; `--approvals` prints only the `/crew:approve <id>` lines for tickets whose approval is missing, stale or unaccepted |
+| `/crew:status [--memory \| --approvals \| --owner]` | Read-only status in at most 40 lines - config, inert settings, roster, tickets, a `waiting` line counting what is stopped on you (`--owner` lists it, one line per ticket with the command to type, L-0551), review budget and the repo-wide same-family share (L-0712), in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, gitignore, handoff; `--memory` adds the context hook's stats; `--approvals` prints only the `/crew:approve <id>` lines for tickets whose approval is missing, stale or unaccepted |
 | **More** (see `/crew:help commands`) | |
 | `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
 | `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
@@ -3942,13 +3965,15 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
+| `/crew:debug <symptom\|id>` | Find the cause of a defect before anyone proposes a fix |
+| `/crew:split <id\|ISSUE-KEY> [--dry-run]` | Split an oversized ticket into 2-5 children, with evidence and one confirmation, in any tracker but SDP — see §10 |
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <ID> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade` | Removed - `/crew:migrate` upgrades a pre-0.20 config itself |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and every gate, guard and `/crew:config` keeps reading it (the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files); previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
@@ -4035,10 +4060,10 @@ Those four figures were measured at `61af85cb`, and each is the line that suite
 own `1404 passed, 1 skipped` (the skip is a platform case — see the table below).
 Three of the four were stale by more than a factor of two before this correction,
 because each is written by hand and nothing checks it:
-`scripts/check-marketplace.py` only verifies a number carrying a
-`<!-- claim: ... -->` marker, and it implements exactly two marker types —
-`skills-count` and `plugin-version:<name>` — neither of which can express a suite
-count. No marker is available for these, so re-run the suite rather than trusting
+`scripts/check-marketplace.py` only verifies a statement carrying a
+`<!-- claim: ... -->` marker, and none of its marker types (`check_self_claims`
+lists them: counts, versions, the active config file, the command table and the
+eval roster) can express a suite count. No marker is available for these, so re-run the suite rather than trusting
 the comment.
 
 | Suite | Proves | Cannot prove |
@@ -4142,52 +4167,37 @@ The four suites above prove structure — that a hook blocks what it should,
 that a command's frontmatter parses. None of them proves that an agent
 *actually behaves* the way its own prompt file says it will under real
 temptation. That is what `plugin/crew/evals/` is for: a
-[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals) suite —
-five cases, each a realistic prompt that tempts one specific documented rule,
-graded on the transcript rather than on prose:
+[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals) suite,
+each case a realistic prompt that tempts one documented rule, graded on the
+transcript rather than on prose.
 
-| Case | Rule under test | Catches |
+The roster, each case with the agent it exercises:
+
+<!-- claim: eval-roster:crew -->
+| Case | Agent | Rule under test |
 |---|---|---|
-| `pm-does-not-write-code` | `agents/pm.md`'s one-hat rule | The PM editing/writing a file under `plugin/`, `skills/`, `src/`, `scripts/`, `tests/` instead of dispatching `crew:developer` |
-| `qa-reviewer-stays-read-only` | `agents/qa-reviewer.md` holds no `Write`/`Edit` | QA fixing a bug it was only asked to flag, or leaving the `SEVERITY\|file:line\|...` / `CLEAN` contract |
-| `developer-defers-unrelated-bug` | `agents/developer.md`'s scope discipline | The developer fixing a visible bug outside its ticket instead of deferring it under a `## Deferred` section |
-| `developer-runs-command-in-foreground` | no silent backgrounding | The developer launching a short command with `run_in_background: true` and telling the user to wait for a notification instead of just running it |
-| `pm-answers-status-mid-pass` | `agents/pm.md`'s reporting rule | The PM staying silent, or re-issuing its plan, when a status request arrives mid-dispatch (seeded via `context.history_file`, a fabricated prior turn) |
+| `qa-reviewer-stays-read-only` | `reviewer` | Flags a one-line bug in a handed diff, never fixes it, and keeps the `SEVERITY\|file:line\|...` / `CLEAN` contract. The Agent column names the role it was written for: its prompt quotes 0.20's `agents/qa-reviewer.md` (the reviewer's earlier name) rather than invoking the shipped `agents/reviewer.md`, so it does not test that file. It is a harness path, deleted in its own PR |
 
-**All five cases exercise 0.20 roles that crew 1.0 deleted** (`pm`, `developer`,
-`qa-reviewer`). Each case's `prompt.md` carries its rules inline, so they still
-run, but they no longer test a shipped agent. Retiring or re-targeting them is
-an owner decision tracked in `TODO.md`.
+The four cases for the roles crew 1.0 deleted (`pm`, `developer`) are gone
+(L-0713), with the known-failing exemption that kept one of them from failing
+the run. Replacement cases for the 1.0 agents are L-0728.
+`scripts/check-marketplace.py` holds the table above to the folders under
+`plugin/crew/evals/` and each named agent to `plugin/crew/agents/`.
 
-Every grader here is free (`regex`, `tool_used`) — none calls a judge model —
-because each rule above has a mechanical tell: a tool that was called when it
-shouldn't have been, or text that is or isn't in the reply. Where a case
-grants `Write`/`Edit`/`Bash` beyond what the role's own `prompt.md`
+Every grader here is free (`regex`, `tool_used`) — none calls a judge model.
+Where a case grants `Write`/`Edit` beyond what the role's own `prompt.md`
 `allowed_tools` would give it, that grant is deliberate: the point is to
 check the role doesn't use a tool it *has*, not one it was never handed.
 
 Run the suite with the matched pair `scripts/run-plugin-evals.sh` /
 `scripts/run-plugin-evals.ps1` from the repo root, not `claude plugin eval`
 directly — `--case` takes one glob with no exclude or comma-list syntax, so
-the scripts invoke each case separately, and they carry two things a bare
-invocation does not:
-
-- **`developer-runs-command-in-foreground` needs a `Bash` grant**, and
-  granting `Bash` needs the OS sandbox backend (`bubblewrap`+`socat` on
-  Linux/WSL2). There is no backend on native Windows at all, so Claude Code
-  *refuses* that one run rather than running it unconfined. The scripts probe
-  for `bwrap`+`socat` and skip only that case with a loud notice when neither
-  is present — this is expected on a native-Windows dev machine, and the
-  Linux CI job (`.github/workflows/plugin-evals.yml`) runs it for real.
-- **`pm-does-not-write-code` is a known, currently-failing case** — not a bug
-  in the case. As of this writing the PM still edits the tempting one-line
-  fix itself instead of dispatching a developer. The eval case format has no
-  `expected-fail`/`xfail` field, so the scripts track it by name
-  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
-  still runs and still reports every time, it just doesn't flip the script's
-  exit code. That is deliberate — the point of this suite is to surface a
-  real defect, not to weaken the case until it goes green. Fix the plugin,
-  confirm the case passes, then drop it from that list.
+the scripts invoke each case separately. They discover the cases (every folder
+under `plugin/crew/evals/` with a `case.yaml`) and add `--scaffold` where the
+case names a `scaffold_script`. With no case at all they print `no eval cases`
+and exit 0 without calling `claude`, and the CI job
+(`.github/workflows/plugin-evals.yml`) skips its billed steps with the same
+notice — nothing ran, which is said rather than reported as a pass.
 
 ```bash
 bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on Windows
@@ -4195,14 +4205,11 @@ bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on W
 
 Both scripts default to `--threshold 1.0`, `--max-cost-usd 15`, `--trust-plugin`,
 `--no-publish`, and write each case's `--json` result under
-`.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD`,
-`EVAL_OUTPUT_DIR`, and `EVAL_EXPECTED_FAIL_CASES` (comma-separated for more
-than one case name — both scripts split on the same separator, matched on
-purpose: they used to disagree, so the same value exempted a case on one
-platform and matched nothing on the other). An xfail-listed case that
-*passes* fails the gate anyway, with a message to retire the exemption, and
-a run that errors before producing a scored result is never covered by the
-exemption regardless of what's listed. `claude plugin eval` also
+`.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD` and
+`EVAL_OUTPUT_DIR`. A case passes only with a scored result that run wrote: a
+non-zero exit, or an exit 0 with an empty or errored `cases` array, fails the
+run. `scripts/_test/plugin-evals-runner.py` checks both scripts against a stub
+`claude`. `claude plugin eval` also
 writes its own `aggregate-result.json` + `report.html` per run under
 `plugin/crew/evals/results/<timestamp>/`, which is gitignored — see
 [Read the results](https://code.claude.com/docs/en/plugin-evals#read-the-results)
@@ -4560,17 +4567,17 @@ Source: [`docs/diagrams/data-flow-crew-config-split.mmd`](../../docs/diagrams/da
 
 ### Data flow crew config two files
 
-An open question: crew_config.py reads .crew/config.json while crew_context.py reads .crew/crew.json first, so which file governs depends on which module asks.
+Which repo file is the config: .crew/config.json, which /crew:init writes and crew_config.py and every gate read (L-0713); .crew/crew.json exists only after /crew:migrate, and crew_context.py reads it first when it does.
 
 ```mermaid
 flowchart TB
 
-    subgraph TwoFiles["OPEN AUTHORITY QUESTION - two modules read two different repo files as \"the config\""]
+    subgraph TwoFiles["TWO FILES - .crew/config.json is the config; crew.json only after /crew:migrate"]
         direction TB
         CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
         CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
         MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1).<br/>Rewrites config.json only<br/>for a pre-0.20 config (upgrade stage),<br/>backed up and restored by --rollback"]
-        OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
+        OPEN["<b>L-0713:</b> config.json is the config.<br/>Only a migrated repo has both,<br/>and there these readers<br/>take crew.json first"]
         TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
         MIGRATE -.-> CTXREAD
         CFGREAD --- OPEN --- CTXREAD
@@ -4648,7 +4655,7 @@ flowchart LR
     write["<b>write</b><br/>machine and repo writers"]
     ratchet["<b>ratchet</b><br/>ratchet tables, exceptions"]
     autoclear["<b>autoclear</b><br/>autoClear read and writer"]
-    twofiles["<b>two-files</b><br/>OPEN: config.json or crew.json"]
+    twofiles["<b>two-files</b><br/>config.json is the config;<br/>crew.json only after migrate"]
     split["<b>split</b><br/>what may be set where"]
     shell["<b>shell-route</b><br/>shellRoute config"]
 
@@ -4744,8 +4751,8 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting ... gitignore,<br/>handoff :514-550"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:541),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting, review<br/>+ same-family share ... gitignore,<br/>handoff :665-704"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:695),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
         st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
 ```
@@ -4820,24 +4827,26 @@ Source: [`docs/diagrams/process-crew-lifecycle-brainstorm.mmd`](../../docs/diagr
 
 ### Process crew lifecycle done
 
-/crew:done's four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+/crew:done's five checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
 
 ```mermaid
 flowchart TB
-    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
-        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
+    subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
+        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:9-16"}
+        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-49"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:51-62"}
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:64-71"}
+        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:111-115" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn6 -- "MISSING / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:103-106"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:108-113"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :113-114"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:115-120" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 

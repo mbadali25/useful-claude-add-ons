@@ -125,6 +125,15 @@ launched. An unarmed clone never asks. The prompt also carries a `== Catch-up me
 block listing every file a catch-up merge replayed from an earlier rerere resolution, so Codex
 reviews each as a change; a merge log it cannot read is written there as `UNREADABLE`.
 
+## When a pinned Codex model is retired
+
+A pin to a model Codex no longer serves falls back to `qa.fallback`, and since L-0712 the fallback
+runs on the provider that serves its family: a `gpt-6.1-sol` fallback dispatches to Codex with that
+model, not to Claude. A fallback in the author's family (the shipped `claude-sonnet-5`, on
+Claude-written work) is skipped for the next provider in `qa.order` that did not write the diff and
+answers, such as Kimi. When none answers, the round is INCOMPLETE and refunded rather than spent on
+a same-family read. `/crew:status` prints the share of same-family rounds across every ticket.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
@@ -140,9 +149,12 @@ It prints `PROBE=<outcome>` and `PROBE_DETAIL=<the answer or the quoted error>` 
 `5` (limited), `6` (failed) or `7` (unknown: no answer within 120 s). Nothing is reserved either way.
 `limited` means the call failed and its error matched one of Codex's own limit messages (usage limit,
 out of credits, spend cap, rate limit, quota, a plan without Codex, or a retry limit on HTTP 429),
-listed with their `error.rs` lines in `hooks/scripts/review_limit.py`. On `limited` the round runs on
-the Claude reviewer - even when `qa.provider` pins `codex` - announced as `same-family (codex limit)`
-with the error quoted, because it is not an independent review.
+listed with their `error.rs` lines in `hooks/scripts/review_limit.py`. On `limited` Codex is skipped -
+even when `qa.provider` pins `codex` - with the error quoted, and the round goes to the next
+cross-family provider. When none is left, no reviewer runs: the outcome is recorded INCOMPLETE and
+refunded (`review_ledger.py --no-reviewer --reason <why>`), spending no round. A Claude read after a
+limit runs only when you ask for it (`--same-family "codex limit"`, crew 1.2.6), announced as
+`same-family (codex limit)` and labelled in the ledger, because it is not an independent review.
 
 A limit hit in the middle of a round leaves that round INCOMPLETE and prints
 `review: codex usage limit in round N: ...`. It is recorded in

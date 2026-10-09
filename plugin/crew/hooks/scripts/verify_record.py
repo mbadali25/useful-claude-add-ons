@@ -820,6 +820,181 @@ REASON_TEXT = {
 _NEVER_RAN_KINDS = ("chronic", "reach_declared", "reach_undeclared",
                     "reach_wrapper", "reach_syntax", "clean_tree_required")
 
+# L-0733. The three kinds a rule with NO `reach` is deferred as on Stop. They
+# are a missing declaration, not a check that failed or did not fit: the
+# fix is one edit to the map (`/crew:verify --stamp-reach`), so the gate says
+# so ONCE per map content (`reach_notice`) and then in one line per Stop
+# (`_undeclared_summary`), never a line per rule per turn - a map written
+# before `reach` existed (TheSelectSource: 29 of 30 rules) printed a wall on
+# every Stop. The deferral itself is unchanged.
+UNDECLARED_REACH_KINDS = ("reach_undeclared", "reach_wrapper", "reach_syntax")
+# Machine-local, `.crew/.verify-gate.*` bookkeeping (crew_ticket
+# CREW_BOOKKEEPING_PATHS) and named in verify_fingerprint._GATE_OWNED_FILES:
+# the sha256 of the `.crew/verify.json` bytes the full notice was last shown
+# for.
+REACH_NOTICE_PATH = os.path.join(".crew", ".verify-gate.reach-notice")
+_STAMP_HINT = "/crew:verify --stamp-reach"
+_SUMMARY_SHOWN = 5
+_LABEL_INDEX_RE = re.compile(r"^rules\[(\d+)\]")
+
+
+def _map_bytes(root):
+    try:
+        with open(os.path.join(root, ".crew", "verify.json"), "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _count_undeclared(data):
+    """Rules in the map with no `reach` (absent or null, as the gate reads
+    it), or None when the map does not parse."""
+    try:
+        cfg = json.loads(data.decode("utf-8"))
+    except (AttributeError, ValueError):
+        return None
+    rules = cfg.get("rules") if isinstance(cfg, dict) else None
+    if not isinstance(rules, list):
+        return None
+    return sum(1 for r in rules if isinstance(r, dict) and r.get("reach") is None)
+
+
+def reach_notice(root, items):
+    """The lines a Stop prints for this turn's undeclared-reach deferrals.
+    `items` is [(rule index, reason)], one per deferred rule.
+
+    The full notice - a header naming the count and `--stamp-reach`, then
+    each rule's own reason - once per `.crew/verify.json` content; nothing
+    after that, because the record's one summary line carries every later
+    Stop. A map that cannot be read, or a digest that cannot be recorded,
+    shows the notice again next time: the visible direction. Only a regular
+    file is read (a FIFO would hang Stop)."""
+    if not items:
+        return []
+    data = _map_bytes(root)
+    digest = hashlib.sha256(data).hexdigest() if data is not None else None
+    notice_path = os.path.join(root, REACH_NOTICE_PATH)
+    if digest is not None and os.path.isfile(notice_path):
+        try:
+            with open(notice_path, encoding="utf-8", errors="replace", newline="") as fh:
+                if fh.read(128).strip() == digest:
+                    return []
+        except (OSError, ValueError):
+            pass
+    total = _count_undeclared(data) if data is not None else None
+    in_map = f" {total} rule(s) in .crew/verify.json have no `reach`." if total else ""
+    lines = [
+        f"verify-gate: {len(items)} rule(s) matched this turn declare no `reach`, so Stop did NOT "
+        "run them - each wraps a script, uses shell syntax or names a remote verb, which Stop "
+        f"never runs unattended (it may reach a live host).{in_map} Declare it once: {_STAMP_HINT} "
+        "(a dry run: what each rule would get), then --stamp-reach --apply; "
+        "--set N=local|network|host decides a wrapper or shell rule only you can judge. Shown "
+        "once per verify.json content; later Stops say it in one line."]
+    lines.extend(f"verify-gate: rules[{ri}] {reason}" for ri, reason in items)
+    if digest is not None:
+        try:
+            os.makedirs(os.path.dirname(notice_path), exist_ok=True)
+            tmp = notice_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(digest + "\n")
+            os.replace(tmp, notice_path)
+        except OSError:
+            pass
+    return lines
+
+
+def _undeclared(info):
+    return isinstance(info, dict) and info.get("status") in UNDECLARED_REACH_KINDS
+
+
+def _label_order(label):
+    found = _LABEL_INDEX_RE.match(label)
+    return (int(found.group(1)) if found else 1 << 30, label)
+
+
+def _undeclared_summary(entries):
+    """ONE line for every undeclared-reach entry in the record, or None.
+    Each other entry keeps its own line."""
+    owed = [info for info in entries.values() if _undeclared(info)]
+    if not owed:
+        return None
+    labels = sorted((str(info.get("label", "?")).split(": ", 1)[0] for info in owed),
+                    key=_label_order)
+    names = ", ".join(labels[:_SUMMARY_SHOWN])
+    if len(labels) > _SUMMARY_SHOWN:
+        names += f" (+{len(labels) - _SUMMARY_SHOWN} more)"
+    orphans = sum(1 for info in owed if info.get("orphaned"))
+    orph = (f"; {orphans} of them from a rule since edited or removed (it no longer holds the "
+            "marker)") if orphans else ""
+    return (f"verify-gate: NOT VERIFIED ON THIS TREE - {len(owed)} rule(s) with no `reach` not "
+            f"run on Stop: {names}{orph} - declare reach with {_STAMP_HINT}; /crew:status counts "
+            "them and /crew:verify --all runs them")
+
+
+def _print_owed(entries):
+    """The standing NOT VERIFIED lines: one for every undeclared-reach entry
+    together, then one per other entry, each naming the record it is read
+    from (L-0733: the record is per checkout, so which file matters)."""
+    where = f" [record: {_record_abs()}]"
+    summary = _undeclared_summary(entries)
+    if summary:
+        print(summary + where)
+    owed = {k: v for k, v in entries.items() if not _undeclared(v)}
+    for key, info in sorted(owed.items(), key=lambda kv: kv[1].get("label", kv[0])):
+        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
+              f"{info.get('label', key)}: {_shown_reason(info)}{where}")
+
+
+def cmd_reach_notice():
+    """verify-gate.ps1's half of `reach_notice` (the .sh matcher imports it):
+    stdin is a JSON list of [index, reason] pairs; prints the lines."""
+    try:
+        payload = json.load(sys.stdin)
+    except (OSError, ValueError):
+        payload = None
+    # Shape first (PYTHON-10): a list of [int, str] pairs, nothing else.
+    items = [(pair[0], pair[1]) for pair in payload
+             if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[0], int)
+             and not isinstance(pair[0], bool) and isinstance(pair[1], str)] \
+        if isinstance(payload, list) else []
+    for line in reach_notice(os.getcwd(), items):
+        print(line)
+    return 0
+
+
+def cmd_forget_orphans():
+    """Drop every orphaned obligation from the record and say which, running
+    nothing. An orphan is an entry whose rule was edited or removed since it
+    was recorded; one that still holds the marker otherwise clears only under
+    `/crew:verify --all`, which also runs every `network`/`host` rule. This
+    is the person deciding instead, by name. A record that cannot be read is
+    left alone (exit 1): what it holds is unknown."""
+    record, state = _load_state(RECORD_PATH)
+    if state == "corrupt":
+        print(f"verify_record: the record ({RECORD_PATH}) is unreadable, so its obligations are "
+              "unknown; nothing dropped - run /crew:verify --all to rebuild it", file=sys.stderr)
+        return 1
+    entries = record.get("rules")
+    if not isinstance(entries, dict):
+        entries = {}
+    dropped = sorted(((k, v) for k, v in entries.items() if isinstance(v, dict) and v.get("orphaned")),
+                     key=lambda kv: _label_order(str(kv[1].get("label", kv[0]))))
+    if not dropped:
+        print("verify_record: no orphaned obligation in the record - nothing dropped")
+        return 0
+    for key, _ in dropped:
+        del entries[key]
+    record["rules"] = entries
+    err = _save(RECORD_PATH, record)
+    if err:
+        print(f"verify_record: could not write the record ({err}); nothing dropped", file=sys.stderr)
+        return 1
+    for key, info in dropped:
+        print(f"verify_record: dropped {info.get('label', key)} ({info.get('status', '?')}) - its "
+              "rule was edited or removed, and it was never verified")
+    print(f"verify_record: {len(dropped)} orphaned obligation(s) dropped; no rule was run")
+    return 0
+
 
 def cmd_sync():
     """Read a JSON payload from stdin:
@@ -882,12 +1057,23 @@ def cmd_sync():
     return _sync(sha, matched, cmd_log, all_run)
 
 
-def _current_rule_keys():
-    """The set of rule_key() values verify.json currently declares, or None
-    if the map could not be read at all. None (not an empty set) is the
-    unknown case: an unreadable map must not be read as "no rules exist",
-    which would prune every standing obligation on a transient read error.
-    Only a SUCCESSFULLY read map may prune anything."""
+def paths_key(paths):
+    """A digest of a rule's `paths` alone, order-insensitive for a list of
+    strings. Two rules with the same paths_key watch the same files; an edit
+    that keeps `paths` (adding `reach` or `seconds`, changing `run`) keeps it
+    while rule_key changes."""
+    if isinstance(paths, list) and all(isinstance(p, str) for p in paths):
+        paths = sorted(set(paths))
+    blob = json.dumps(paths, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def _current_rules():
+    """{rule_key: (index, paths_key)} for every rule verify.json currently
+    declares, or None if the map could not be read at all. None (not an
+    empty dict) is the unknown case: an unreadable map must not be read as
+    "no rules exist", which would prune every standing obligation on a
+    transient read error. Only a SUCCESSFULLY read map may prune anything."""
     try:
         with open(os.path.join(".crew", "verify.json"), encoding="utf-8") as fh:
             cfg = json.load(fh)
@@ -896,7 +1082,52 @@ def _current_rule_keys():
     rules = cfg.get("rules") if isinstance(cfg, dict) else None
     if not isinstance(rules, list):
         return None
-    return {rule_key(r) for r in rules if isinstance(r, dict)}
+    current = {}
+    for i, r in enumerate(rules):
+        if isinstance(r, dict):
+            current.setdefault(rule_key(r), (i, paths_key(r.get("paths"))))
+    return current
+
+
+def _current_rule_keys():
+    """The set of rule_key() values verify.json currently declares, or None
+    if the map could not be read (see _current_rules)."""
+    current = _current_rules()
+    return None if current is None else set(current)
+
+
+def _stamp_paths(entries, current):
+    """L-0733: give every entry whose rule is still in the map its rule's
+    paths_key and the keys of the OTHER current rules with the same paths
+    (its peers). Refreshed on every sync while the rule exists, frozen once
+    it is orphaned - which is what lets _replacements tell "this rule was
+    edited" (a new key with its paths) from "this rule was removed and a
+    sibling that already watched the same paths remains" (a peer)."""
+    by_paths = {}
+    for k, (_, pk) in current.items():
+        by_paths.setdefault(pk, []).append(k)
+    for k, info in entries.items():
+        if k in current and isinstance(info, dict):
+            pk = current[k][1]
+            info["pathsKey"] = pk
+            info["peers"] = sorted(x for x in by_paths.get(pk, ()) if x != k)
+
+
+def _replacements(info, current):
+    """The current rules that replace an orphaned entry: same paths_key, and
+    not one of the peers that already sat beside it. [] when the entry
+    predates pathsKey (written before L-0733) - which rule replaced it is
+    then unknown, and unknown keeps the orphan."""
+    pk = info.get("pathsKey")
+    peers = info.get("peers")
+    if not isinstance(pk, str) or not isinstance(peers, list):
+        return []
+    return sorted((current[k][0], k) for k in current
+                  if current[k][1] == pk and k not in peers)
+
+
+def _record_abs():
+    return os.path.abspath(RECORD_PATH)
 
 
 def _sync(sha, matched, cmd_log, all_run=False):
@@ -1025,10 +1256,12 @@ def _sync(sha, matched, cmd_log, all_run=False):
     # THIS turn's `matched_rules`. Only prune when the current map was
     # actually readable (see _current_rule_keys) - an unreadable map must
     # not be read as "no rules exist" and silently clear every obligation.
-    valid_keys = _current_rule_keys()
+    current = _current_rules()
     orphaned = 0
-    if valid_keys is not None:
-        for stale_key in [k for k in entries if k not in valid_keys]:
+    superseded = []
+    if current is not None:
+        _stamp_paths(entries, current)
+        for stale_key in [k for k in entries if k not in current]:
             info = entries[stale_key]
             # Round 8 (verify_record.py:558): an entry whose rule was edited
             # (its content hash changed) or removed is NOT thereby verified.
@@ -1042,13 +1275,30 @@ def _sync(sha, matched, cmd_log, all_run=False):
             # key is orphaned, not resolved, unless this is an --all run.
             if all_run or not isinstance(info, dict):
                 del entries[stale_key]
+                continue
+            # L-0733: SUPERSEDED. The map now has a rule on the same paths
+            # that did not sit beside this one - its edited form (adding
+            # `reach`, `seconds`, a new `run`). That rule is what owes these
+            # paths now, and it runs or is recorded under its own key, so the
+            # old key is dropped instead of holding the marker until --all.
+            # An orphan nothing replaced (removed, or its paths edited) stays.
+            replaced_by = _replacements(info, current)
+            if replaced_by:
+                del entries[stale_key]
+                superseded.append((info, replaced_by))
             else:
                 if not info.get("orphaned"):
                     info["orphaned"] = True
                     info["reason"] = (info.get("reason", "") +
                                       " [rule edited or removed since - still unverified; "
                                       "run /crew:verify --all]")
-                orphaned += 1
+                # L-0733: an undeclared-reach orphan is kept and counted in
+                # the summary line, but does not hold the marker. Its live
+                # form never did (it is not in DEFERRED_COUNT), so the same
+                # obligation re-keyed by an edit - `--stamp-reach` in another
+                # checkout is one - must not freeze it for good.
+                if not _undeclared(info):
+                    orphaned += 1
 
     record["rules"] = entries
     record_err = _save(RECORD_PATH, record)
@@ -1064,16 +1314,25 @@ def _sync(sha, matched, cmd_log, all_run=False):
         print(f"verify-gate: could not persist the record ({failure}); "
               f"NOT advancing the marker")
 
-    for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
-        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {_shown_reason(info)}")
+    for info, replaced_by in superseded:
+        by = ", ".join(f"rules[{i}]" for i, _ in replaced_by)
+        print(f"verify-gate: dropped the obligation of {info.get('label', '?')} "
+              f"({info.get('status', '?')}) - its rule was edited, and {by} on the same paths "
+              f"replaces it [record: {_record_abs()}]")
+
+    # L-0733: the undeclared-reach entries in one line; `entries` is saved
+    # above, so from here on it is only what gets a line of its own.
+    _print_owed(entries)
     if record_lost:
         print("verify-gate: the verified record was unreadable, so the obligations it "
               "held are UNKNOWN; NOT advancing the marker - run /crew:verify --all to rebuild it")
         return False
     if orphaned:
         print(f"verify-gate: {orphaned} unverified obligation(s) belong to a rule that was "
-              "edited or removed; NOT advancing the marker - run /crew:verify --all")
+              "edited or removed and that no rule on the same paths replaced; NOT advancing the "
+              f"marker [record: {_record_abs()}] - run /crew:verify --all (it clears only this "
+              "checkout's record), or drop them by name, running nothing: python3 "
+              f"{os.path.abspath(__file__)} forget-orphans (from the repo root)")
         return False
     return failure is None
 
@@ -1105,9 +1364,7 @@ def cmd_report():
     entries = record.get("rules")
     if not isinstance(entries, dict):
         return
-    for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
-        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {_shown_reason(info)}")
+    _print_owed(entries)
 
 
 def cmd_timings_get():
@@ -1133,7 +1390,8 @@ def main(argv):
     except (AttributeError, ValueError):
         pass
     usage = ("usage: verify_record.py sync|report|timings-get|rule-key|scan-reach|"
-             "cover-plan|tree-snapshot|passes-load|passes-save|passes-clear")
+             "cover-plan|tree-snapshot|passes-load|passes-save|passes-clear|"
+             "reach-notice|forget-orphans")
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
@@ -1143,6 +1401,10 @@ def main(argv):
         # could not be persisted must not let the sha marker or fingerprint
         # advance either. See _sync's "STALE OBLIGATIONS" / failure handling.
         return 0 if cmd_sync() else 1
+    if cmd == "reach-notice":
+        return cmd_reach_notice()
+    if cmd == "forget-orphans":
+        return cmd_forget_orphans()
     if cmd == "report":
         cmd_report()
     elif cmd == "timings-get":

@@ -11,8 +11,10 @@ One interactive session owns a ticket through eight phases: brainstorm, spec,
 plan, implement, tests, docs, review, done. Every phase but the light one below
 writes a file under `.work/tickets/<id>/`, and two of them cannot be skipped
 by accident — `/crew:implement` refuses without an approved plan, and
-`/crew:done` refuses without a clean review receipt, a clean verify gate, and
-a passing completion audit.
+`/crew:done` refuses without a clean review receipt, a verify gate settled for
+HEAD, and a passing completion audit. Settled means every rule passed here, or
+the `verify-gate` CI receipt for HEAD is VERIFIED: a rule too big for the Stop
+budget is deferred to CI, and a Stop turn where 0 rules ran proves nothing.
 
 For how the scope guard decides what a ticket may touch and what a report
 looks like when it refuses a write, see

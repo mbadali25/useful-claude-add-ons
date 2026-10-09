@@ -121,8 +121,9 @@ or behaves like an older release.</p>
 </ul>
 <pre><code>/crew:status
 </code></pre>
-<p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names which config file it
-  read (<code>.crew/crew.json</code> for 1.0, <code>.crew/config.json</code> for 0.20); <code>codemap</code> reports <code>behind:
+<p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names the config file it
+  read: <code>.crew/config.json</code> for a repository <code>/crew:init</code> set up, ending <code>run /crew:migrate</code> only<!-- claim: crew-config-file:config.json -->
+  when that file still holds a 0.20 setup, or <code>.crew/crew.json</code> once <code>/crew:migrate</code> has run; <code>codemap</code> reports <code>behind:
   &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
 <h2 id="hook-noise">Hook Noise</h2>
 <p>Every hook crew registers, from <code>plugin/crew/hooks/hooks.json</code>, and the config key that turns its
@@ -342,10 +343,34 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (<code>delta gate: &lt;path&gt; ...</code>, <code>excluded path changed</code>, <code>not clean</code>, <code>no train entry binds the
   integration ref</code> - the merge train is not armed in this clone, so the gate keeps nothing yet); a
   code map, rules file or diagram may move only its anchor sha after review.
+  <code>excluded path changed: &lt;path&gt; (receipt base -&gt; reviewed head)</code> in a repository that commits
+  <code>.work/</code> notes: since L-0739 the bundle carries a committed text change there, so a receipt
+  minted by an older crew says <code>outside the bundle; re-review so it is included</code> - run
+  <code>/crew:review</code> again and the new round shows it. <code>outside the bundle, which cannot show it</code> (a
+  binary, executable, symlink or gitlink file, a force-added file the repository ignores, or a
+  <code>graphify-out/</code> file) has one remedy: restore the path in a new commit, then re-review. Run the
+  review from another checkout of the deploy commit, so its <code>review.json</code> and metrics row do not
+  dirty the tree promote-gate checks.
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
   leaves <code>crew_ticket.CREW_BOOKKEEPING_PATHS</code> out, whatever <code>.gitignore</code> says.</p>
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses at check 2 although every Stop turn exited 0.</strong> Stop never fails
+  a turn on a deferral: a rule priced over <code>verify.stopBudgetSeconds</code> on its own is <code>chronic</code>,
+  deferred to CI, and a turn where <code>0 rules ran</code> writes no verified marker (L-0710). Check 2 needs
+  evidence for HEAD itself.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_status.py&quot; --root .
+python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
+</code></pre>
+<p><strong>Fix:</strong> commit and push the branch so the <code>verify-gate</code> workflow runs the whole map, then rerun
+  <code>/crew:done</code> once <code>CI_RECEIPT VERIFIED</code> names HEAD; or run <code>/crew:verify --all</code> here, which empties
+  the record (<code>verify   no rules recorded</code>) and leaves the gate's <code>GATE VERIFIED</code> answer for this
+  tree. An uncommitted edit after that pass turns it back to <code>GATE UNVERIFIED</code>: commit, then re-run. <code>UNKNOWN</code> (exit 3) is <code>gh</code>, the
+  network or the artifact, never a pass; a branch that changes the gate or the workflow itself
+  never gets a VERIFIED receipt, so it needs the local run.</p>
 <ul>
 <li>
 <p><strong>Symptom: a receipt accepted under an older crew reads stale after the upgrade.</strong> The upgrade
@@ -508,6 +533,18 @@ contract itself. This section is what goes wrong with the approval and the audit
 <p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
   <strong>Fix:</strong> amend <code>spec.md</code>'s <code>## Touch</code> (widen it), then approve again. There is no partial-approve;
   amending scope is edit-then-approve, same as any other spec change.</p>
+</li>
+<li>
+<p><strong>Symptom: the Stop prints <code>outside-scope: (could not tell - ...)</code>.</strong>
+  The verify gate's scope line (<code>scope_report.py</code>) reads the active ticket's approved
+  <code>.work/tickets/&lt;id&gt;/spec.md ## Touch</code>, as the completion audit does. The reason names the gap:
+  no readable <code>spec.md</code>, no <code>## Touch</code> paths, a Touch that is not approved (approve it, or approve
+  it again after a spec edit), a broken active-ticket pointer, a pre-1.0
+  <code>.work/tickets/&lt;id&gt;.md</code> ticket (run <code>/crew:migrate</code>), or an <code>INDEX.md</code> open ticket whose
+  <code>.work/tickets/&lt;id&gt;/</code> folder does not exist (fix the INDEX row or restore the folder), or an
+  <code>INDEX.md</code> that cannot be read. A clean line can also carry <code>(merged main: could not tell - ...)</code>,
+  for example on a detached HEAD: nothing was left out as main's, the same as the audit. Before L-0711 the line said every 1.0
+  ticket's file was missing. It is report-only: the refusal is <code>/crew:done</code> check 3.</p>
 </li>
 <li>
 <p><strong>Symptom: <code>/crew:done</code> refuses on "out of scope" for a file the edit guard never saw.</strong>
@@ -1095,6 +1132,38 @@ still resumes from the last written handoff rather than from nothing.</p>
   &lt;id&gt;</code> prints <code>applies= ok= missing=</code> and the reason, and writes nothing.</li>
 <li><strong>Fix:</strong> quote the missing lines in the plan, or approve it yourself with <code>/crew:approve &lt;id&gt;</code>,
   which this check never blocks.</li>
+</ul>
+<h2 id="verify-gate-says-rules-declare-no-reach">Verify Gate Says Rules Declare No <code>Reach</code></h2>
+<ul>
+<li><strong>Symptom:</strong> on Stop, <code>verify-gate: N rule(s) matched this turn declare no</code>reach<code>, so Stop did NOT
+  run them</code> once, then on every later Stop one line: <code>NOT VERIFIED ON THIS TREE - N rule(s) with no</code>reach<code>not run on Stop: rules[...]</code> (L-0733; before it, a line per rule per turn).</li>
+<li><strong>Cause:</strong> <code>.crew/verify.json</code> predates <code>reach</code>. A rule with none that wraps a script, uses shell
+  syntax or names a remote verb is never run unattended on Stop - it may reach a live host. The
+  notice is shown once per map content; <code>.crew/.verify-gate.reach-notice</code> remembers which.</li>
+<li><strong>Fix:</strong> <code>/crew:verify --stamp-reach</code> shows what each rule would get; <code>--apply</code> writes the <code>local</code>
+  and <code>network</code> proposals, and <code>--set N=local|network|host</code> decides a wrapper or shell rule. Review
+  the diff and commit it on its own. <code>/crew:verify --all</code> runs every rule meanwhile.</li>
+<li><strong>Symptom:</strong> <code>N unverified obligation(s) belong to a rule that was edited or removed and that no
+  rule on the same paths replaced; NOT advancing the marker [record: &lt;path&gt;]</code>. <strong>Cause:</strong> a rule was
+  removed, or its <code>paths</code> changed, after its entry was recorded. A rule edited in place (same paths)
+  supersedes its old entry instead, which is dropped with a <code>dropped the obligation of rules[N]</code>
+  line. An undeclared-reach orphan no longer holds the marker (it is counted in the summary line);
+  any other kind does. Entries recorded before L-0733 are never superseded. <strong>Fix:</strong>
+  <code>/crew:verify --all</code> in the checkout the <code>[record: ...]</code> path names (it clears only that
+  checkout's record, and <code>--ci</code> never prunes it), or, when that would reach <code>network</code>/<code>host</code>
+  targets, run the <code>verify_record.py forget-orphans</code> command the line names, from the repo root: it
+  drops the orphans by name and runs nothing.</li>
+</ul>
+<h2 id="a-stop-that-should-have-blocked-said-the-hook-script-was-missing">A Stop That Should Have Blocked Said the Hook Script Was Missing</h2>
+<ul>
+<li><strong>Symptom:</strong> a rule failed, but Claude Code said <code>Hook script appears to be missing ... Treating as
+  non-blocking. Run /plugin to reinstall</code> and the turn ended anyway.</li>
+<li><strong>Cause:</strong> Claude Code reads a Stop hook that exits 2 with empty stdout and a stderr containing
+  <code>No such file</code> or <code>can't open</code> as a missing script. A rule like <code>bash _verify/check.sh</code> whose
+  script is gone fails with exactly that stderr.</li>
+<li><strong>Fix:</strong> since L-0733 crew writes <code>VERIFY GATE: BLOCKED (exit 2)</code> to stdout on every exit 2, in both
+  flavours, so the block holds. On an older crew, update the plugin; fix or remove the rule either
+  way.</li>
 </ul>
 <h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
 <p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an

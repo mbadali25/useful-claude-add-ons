@@ -39,6 +39,15 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 | repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
+**The repo file is `.crew/config.json`** (L-0713). `/crew:init` writes it from<!-- claim: crew-config-file:config.json -->
+`templates/config.template.json`, `/crew:config` and `crew_config.py --repo` edit it, and every
+gate, guard and setting reader opens it (the Python ones through `crew_common.repo_config_file`,
+whose default name is `config.json`). A new repository needs no `/crew:migrate`. `.crew/crew.json` exists only where
+`/crew:migrate` ran on a crew 0.20 setup: a schema-1 record of the old config, with
+`.crew/config.json` left in place and still read. Where it exists, `crew_context`, `crew_resume`,
+`crew_refresh_check`, `crew_diagrams` and `/crew:status` read it before `config.json`, and
+`crew_tracker` reads both and refuses when they disagree; no gate or guard reads it.
+
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
 or non-object global file returns `{}` and is indistinguishable from no file at
 all. That contract is load-bearing — `resolve_config` is reached from a
@@ -880,6 +889,27 @@ hand-edited JSON file and an unguarded comparison against a string is a
 crew enumerating role names. A role pin **wins over** the provider block for
 that role — `/crew:review` resolves `review`'s model that way
 (`skills/crew-review/SKILL.md`, the `qm()` helper).
+
+### `qa.fallback` / `dev.fallback` run on their own family's provider (L-0712)
+
+When a pinned model is gone, `crew_state.resolve_role` falls back to the
+`fallback` model **on the provider that serves its family**
+(`crew_state.provider_for_model`: `gpt-*` on codex, `kimi-*` and `k3` on kimi,
+`claude-*` on claude; Copilot hosts several families, so no fallback is sent
+there). Until L-0712 every fallback was dispatched to `claude`, so a
+`gpt-6.1-sol` fallback became a Claude read. A fallback in the author's family is
+skipped for the next provider in `qa.order` (`dev.order`, else the shipped QA
+order, for the dev kind) that is not the author's family and answers its probe,
+on that provider's own model and effort. When none does, the result is
+`incomplete`: the round is recorded INCOMPLETE and refunded rather than spent on
+a same-family read. Only an explicit operator choice (`same_family_ok`) runs the
+fallback same-family, and the result says `sameFamily`. A fallback model whose
+family no provider serves (`gemini-*`) walks the order directly. `/crew:status`
+prints the repo-wide share of same-family rounds. `/crew:review` carries this
+out (crew 1.2.6): an INCOMPLETE with no reviewer is
+`review_ledger.py --no-reviewer --reason <why>` (an `unreviewed` entry, no
+round or budget spent), and `review_run.py --authors "$AUTHORS"` refuses an
+author-family reviewer unless `--same-family "<reason>"` labels the round.
 
 ---
 
@@ -3009,6 +3039,45 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   checkout that ran it. The caches are machine-local and gitignored, so
   another checkout or worktree that pulls the stamped map prices those
   rules afresh: run `/crew:verify --all` once there.
+- **What Stop says about undeclared rules (L-0733).** A map written before
+  `reach` existed used to print a `rules[N] wrapper or inline shell ...` line
+  per matched rule and a `NOT VERIFIED ON THIS TREE - rules[N]` line per
+  record entry on every Stop. Now the first Stop that defers an undeclared
+  rule prints ONE notice: how many rules matched and how many in the map have
+  no `reach`, `/crew:verify --stamp-reach` (dry run, then `--apply`, and
+  `--set N=local|network|host` for a wrapper or shell rule), then each
+  deferred rule's reason once. It is shown once per `.crew/verify.json`
+  content (`.crew/.verify-gate.reach-notice` holds the map's sha256,
+  machine-local bookkeeping); after that every Stop, quiet turns included,
+  says it in one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]`. The deferral is unchanged, `--ci`
+  keeps a line per rule, and `/crew:status` still counts the entries by kind.
+- **An orphan** is a record entry whose rule was edited or removed since it
+  was recorded (its `rule_key` changed). When the map has a new rule on the
+  same `paths` (the same rule edited: `reach` or `seconds` added, `run`
+  changed), the orphan is **superseded** and dropped, with a
+  `dropped the obligation of rules[N] ... rules[M] on the same paths
+  replaces it` line (L-0733); a rule that already sat beside it on those
+  paths is not its replacement. Each entry carries `pathsKey` and `peers` for
+  this; one recorded before L-0733 has neither, so it is never superseded.
+  An orphan nothing replaced stays in the record, marked
+  `orphaned`, because an edit does not verify anything. An undeclared-reach
+  orphan does not hold the verified marker (L-0733): its live form never
+  did, and `--stamp-reach` in another checkout would otherwise freeze that
+  checkout's marker for good; it is counted in the one-line summary. Any
+  other orphan holds the marker until `/crew:verify --all` runs, or until
+  `python3 hooks/scripts/verify_record.py forget-orphans`, run from the repo
+  root, drops it by name and runs nothing — for a map whose `--all` would
+  reach `network`/`host` targets. The Stop line names that command.
+  The record is per checkout (`.crew/.verify-gate.record.json`): `--all`
+  clears only the record of the checkout it runs in, `--ci` never prunes it,
+  and every orphan and `NOT VERIFIED` line ends `[record: <absolute path>]`.
+- **Every exit 2 writes a line to stdout** (L-0733), `VERIFY GATE: BLOCKED
+  (exit 2) ...`, in both flavours. Claude Code treats a Stop hook that exits 2
+  with empty stdout and a stderr matching `no such file` or `can't open` as a
+  missing hook script and lets the turn through ("Hook script appears to be
+  missing ... Treating as non-blocking"), so a rule failing with
+  `No such file or directory` used to be waved past.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a
@@ -3030,6 +3099,19 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
   not recorded as verified either.
+
+**Who settles what Stop did not check (L-0710).** A `chronic` rule (deferred
+to CI), a `skipped` one, and a Stop turn where `0 rules ran` all leave HEAD
+without a clean pass, and none of them fails the turn. `/crew:done` check 2
+settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
+(the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
+on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
+nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
+pass empties it) together with `review_gate.gate_state` answering `VERIFIED`
+(the marker names HEAD and the working tree still has the fingerprint that
+pass wrote; a marker at HEAD alone survives an uncommitted edit). Anything
+else refuses the close. No config key
+changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
 operator command, never something a hook runs.** `.crew/verify.json` is

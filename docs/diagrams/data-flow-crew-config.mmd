@@ -1,6 +1,18 @@
-%% Generated from useful-claude-add-ons@e2d2f9f0 on 2026-10-04. Verify before trusting.
+%% Generated from useful-claude-add-ons@a7fb104b on 2026-10-04, re-anchored 2026-10-09 (L-0733 follow-up refresh; see the notes below the Purpose line). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Purpose: How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
+%% Re-anchored f91bb36a -> a7fb104b (L-0733 follow-up refresh, 2026-10-09): of the Anchors paths only CONFIG.md changed,
+%%    by one sentence in place (L-0712 harness, 812a046c: /crew:review's no-reviewer and same-family handling) and
+%%    no heading. CONFIG.md is cited here by section only. No node or edge changed.
+%% Re-anchored f9ed7ddd -> f91bb36a (L-0733 follow-up refresh, 2026-10-09): of the Anchors paths only CONFIG.md changed,
+%%    by 39 added lines and no heading: L-0733's undeclared-reach notice, superseded orphans, the per-checkout
+%%    record and the exit-2 stdout line, all inside the verify-gate record paragraphs. CONFIG.md is cited here by
+%%    section only and no section number moved. No node or edge changed.
+%% Re-anchored 1d10d8f6 -> f9ed7ddd (L-0713 follow-up refresh, 2026-10-09): of the Anchors paths only CONFIG.md changed,
+%%    by three bold paragraphs and no heading: L-0713's "The repo file is .crew/config.json" (:42-50, drawn by the
+%%    two-files box), L-0703's review evidence in section 16 and L-0710's "Who settles what Stop did not check".
+%%    CONFIG.md is cited here by section only and no section number moved. The L-0712 note: crew_state.py changed
+%%    only in resolve_role's fallback (:1502-1720). No node or edge changed.
 %% Other links (not drawn; exact edges and wording in the block below): write -> menu (both writers go through the file layer's update_json), read -> menu (machine rows), read -> ratchet (both files feed layer_state; the resolved config -> the thirteen exceptions), autoclear -> write (the same atomic writer). The drawn menu -> write arrow also stands for the menu's probes, and write -> ratchet also for resolve_ratcheted / resolve_guard.
 %% How one config value reaches a run, and what may set it where.
 %% WHAT CREW 1.0 CHANGED IN THIS FLOW, in the order the sections below draw it:
@@ -563,7 +575,7 @@ flowchart LR
     write["<b>write</b><br/>machine and repo writers"]
     ratchet["<b>ratchet</b><br/>ratchet tables, exceptions"]
     autoclear["<b>autoclear</b><br/>autoClear read and writer"]
-    twofiles["<b>two-files</b><br/>OPEN: config.json or crew.json"]
+    twofiles["<b>two-files</b><br/>config.json is the config;<br/>crew.json only after migrate"]
     split["<b>split</b><br/>what may be set where"]
     shell["<b>shell-route</b><br/>shellRoute config"]
 

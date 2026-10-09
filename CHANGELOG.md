@@ -9,13 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-## [1.2.2] - 2026-10-08
+### Changed — crew 1.2.18: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
 
-Crew 1.2.2: L-0710's harness half (review plan item 1.2, Phase 1).
-
-### Changed — crew 1.2.2: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
-
-- **Summary.** A Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+- **Summary.** `crew` 1.2.18 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
   records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
   deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
 - **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
@@ -38,6 +34,259 @@ Crew 1.2.2: L-0710's harness half (review plan item 1.2, Phase 1).
   budget and fails still exits 2, whatever was deferred beside it.
 - **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 24
   sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
+
+### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
+
+- **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
+  gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code
+  graph with `graphify update .`. No behaviour changed.
+
+### Fixed — crew 1.2.16: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
+
+- **Summary.** In a repository that commits `.work/` notes, a release whose reviewed range changed
+  one can now be reviewed and promoted: the review bundle shows the committed text change, and the
+  receipt check refuses only what the bundle cannot show.
+- **Bundle (`review_patch.py`).** Committed text changes under `.work/` and `.crew/metrics.md` from
+  the base to HEAD - status A, M or D, mode 100644, not binary, not matched by the repository's own
+  ignore rules - are appended after the rest of the bundle, read from the commit trees only, so an
+  untracked `review.json` or a metrics row never moves the hash. The manifest lists them as
+  `included_excluded`; the prompt prints them as `shown anyway`. A range with none builds the same
+  bytes as before, so existing receipts stay valid.
+- **Check E (`review_delta.py`).** The receipt base -> reviewed head range passes those changes only
+  when the receipt's bundle carried them; an older receipt says `outside the bundle; re-review so it
+  is included`. A binary, executable, symlink or gitlink file, a force-added ignored file or a
+  `graphify-out/` file there says `outside the bundle, which cannot show it (<why>); restore it in a
+  new commit, then re-review`. Reviewed head -> HEAD and -> index are unchanged: any excluded-path
+  change after the review is still stale. The delta gate's rebuild and interdiff carry the same
+  section.
+- **Tests.** Must-block and must-allow cases in `test_review_delta.py`, `test_review_patch.py` and
+  promote-gate's review suite (sh and ps1); eight new sabotage entries in `sabotage_review.py` and
+  three check E entries re-anchored, each seen red.
+
+### Changed — crew 1.2.15: no reviewer is INCOMPLETE and refunded; a same-family review is opt-in (L-0712, harness half)
+
+- **Summary.** When no reviewer from another model family can run, `/crew:review` now records the
+  round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a
+  same-family review runs only when you ask for one, labelled as such.
+- **Ledger (`review_ledger.py`).** `--no-reviewer --reason <why>` (`no_reviewer`) appends an
+  INCOMPLETE, refunded entry to the ticket's `unreviewed` list and changes nothing else: no round,
+  no budget, no state, no receipt. `reserve(..., same_family=<reason>)` labels the row
+  `same_family`; a CLEAN round's receipt, or an owner's `--accept` of its FINDINGS, carries the label, and a labelled round is never
+  auto-accepted. An unreadable ledger, or an `unreviewed` that is not a list, refuses.
+- **Review run (`review_run.py`).** `--authors "$AUTHORS"` refuses, with exit 2 and nothing
+  reserved, a reviewer of the author's family or of a family it cannot tell (an empty `--authors`
+  is could-not-tell). `--same-family "<reason>"` is the operator's explicit choice: the round runs
+  and is labelled in the ledger and review.json. `--author-source unknown` is could-not-tell too;
+  `--probe` asks the guard first; without `--authors` a Claude or unknown-family reservation is
+  refused unless `--same-family` labels it (`--round` beside `--reserve-only` exempts nothing), and
+  any other reviewer runs with stderr saying the guard was not applied. `review_ledger.py --reserve`
+  asks the same guard (`--authors`, `--author-source`, `--same-family`; a bad reason is a handled
+  refusal, never a traceback). A Codex limit marker is spent by a no-reviewer outcome recorded after it,
+  so the next probe calls Codex live instead of answering limited forever. A same-family round's
+  metrics row says `same-family: operator choice`. A null `unreviewed` record reads as unreadable on
+  `/crew:status`.
+  A Codex usage limit now names the next cross-family provider, not the Claude reviewer.
+- **`/crew:review`.** A failed Codex probe on a codex-pinned `review` role is `resolve_role`'s
+  `available`: `$FALLBACK` names the fallback on its family's provider (a `gpt-6.1-sol` fallback
+  runs on Codex), else the next cross-family `qa.order` provider, else `INCOMPLETE`, and sets
+  `QA_MODEL` / `QA_KIMI_MODEL` from it; step 2a launches `$RUN_PROVIDER` / `$RUN_MODEL` (codex on a
+  probe ok, the fallback's provider, else empty, which the runner refuses), never Codex regardless. A limit (5) or no answer (7) takes all of Codex out, its
+  gpt fallback too; only a failed call (6) is that model alone; any other exit falls back to nothing. An empty
+  `$ELIGIBLE`, or a Codex limit with nothing cross-family left, is `--no-reviewer`; step 2c on the author's family runs only on `SAME_FAMILY`. The owner's
+  2026-09-28 "codex limit -> Claude" practice becomes that explicit choice.
+- **`/crew:status`** (declared seam). A ticket line with no-reviewer outcomes says
+  `N with no reviewer (INCOMPLETE, refunded)`.
+- **Sabotage.** Thirty-one L-0712 entries in `sabotage_review.py`, each red on its named test: the
+  feature half's four (fallback to claude, the author skip, an unasked same-family walk, the status
+  share's model family) and twenty-seven here (the guard, the limit marker spent by a no-reviewer outcome (two), the ledger CLI's single module, a Claude reservation with no `--authors`, `--round` exempting one, the ledger CLI's guard and label, the metrics label, an empty `--authors`, an unknown author
+  source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter,
+  its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
+  receipt labels, the auto-accept bar, the status count, a malformed status record and a null one).
+
+### Added — crew 1.2.14: sabotage entries for the 1.0 scope reader (L-0711, harness half)
+
+- **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
+  that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
+- **Entries (`sabotage_scope.py`).** The report reading the pre-1.0 `.work/tickets/<id>.md` again,
+  passing a pre-1.0 ticket as no ticket, judging an unapproved Touch, and matching with the old
+  fnmatch matcher instead of `crew_ticket.in_touch`, its own changed list or merged main counted
+  instead of the audit's list; and `completion_audit.py --check` exiting 0
+  on a refusal (the `|| true` shape on `/crew:done`'s refusal path).
+- **Review round 3 entries.** The gate's list keeping main's changes after a merge, all of `.crew/`
+  or `TODO.md` dropped as bookkeeping again, an `INDEX.md` ticket with no folder read as "no open
+  ticket", and `verify-gate.sh` exiting 2 after the scope line. Two round-1 entries re-anchored on
+  `ticket_changes`'s new `kept` line, one on the pre-1.0 file check.
+- **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
+  could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
+
+### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+
+
+- **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
+  redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
+  file is missing.
+- **Reader.** `scope_report.py` takes the active ticket from `crew_ticket.resolve_active`, Touch
+  from `crew_ticket.accepted` (`.work/tickets/<id>/spec.md ## Touch`), membership from
+  `crew_ticket.in_touch`, the changed list from `completion_audit.changed_paths` (both rename
+  ends; merged-main-identical paths not counted) and refresh artifacts through the completion
+  audit's own admission, so it names what `/crew:done` check 3 refuses. The gate's own list loses
+  the merged-main-identical paths too before it joins the ticket-wide one; when merged main is
+  could-not-tell (a detached HEAD, no integration ref) the line says so, as the audit does; and
+  every path is printed escaped, so a file name cannot add a line. It read the pre-1.0 `- touch:` line in
+  `.work/tickets/<id>.md` / `.work/cache/<id>.md` before.
+- **Could not tell.** No spec.md, no `## Touch`, an unapproved or stale Touch, a broken
+  active-ticket pointer, a pre-1.0 ticket, an `INDEX.md` open ticket with no
+  `.work/tickets/<id>/` folder, an `INDEX.md` that exists but cannot be read, and a non-repository
+  each print
+  `outside-scope: (could not tell - <why>)`; a pre-1.0 ticket is never judged in scope.
+- **Unchanged.** The line stays report-only (the gates' exit status is untouched). `/crew:done`
+  check 3 already refused a `sed -i` write outside Touch on a 1.0 ticket; L-0711 adds the test
+  that proves it (`test_check_refuses_a_sed_i_write_outside_touch`).
+- **Changed: bookkeeping.** The line leaves out only what the audit leaves out (`.work/` and
+  `crew_ticket.CREW_BOOKKEEPING_PATHS`), so a `TODO.md` or tracked `.crew/` write outside Touch
+  is named, as `/crew:done` check 3 refuses it. It used to drop all of `.crew/` and `TODO.md`
+  (owner ruling 2026-10-08: report/audit agreement wins over the spec's frozen exclusion).
+- **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
+  (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
+
+## [1.2.12] - 2026-10-09
+
+Crew 1.2.12: L-0749, the documentation half of L-0733 (crew 1.2.11). Version is a placeholder; the
+lead reassigns it at merge.
+
+### Changed — crew 1.2.12: /crew:verify says the record is per checkout (L-0749)
+
+- **Summary.** `/crew:verify` now says that the verify record belongs to one checkout: `--all`
+  clears only the record of the checkout it runs in, and `--ci` never prunes it.
+- **Docs.** `commands/verify.md`, in "The per-rule record replaces the single marker": every orphan
+  and `NOT VERIFIED` line names its record by absolute path, an orphan an edited rule replaced is
+  dropped (L-0733), and `verify_record.py forget-orphans` drops the rest by name without running
+  anything. Split from PR #587 by the tooling-PR rule (T-0087).
+
+
+## [1.2.11] - 2026-10-08
+
+Crew 1.2.11: L-0733 (the Stop gate's undeclared-reach wall, and the record's orphans). Version is a
+placeholder; the lead reassigns it at merge.
+
+### Fixed — crew 1.2.11: the Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks (L-0733)
+
+- **Summary.** A repo whose verify map predates `reach` gets one notice naming
+  `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in
+  place no longer leaves an orphan that freezes the verified marker; and a rule that fails with
+  `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
+- **Once per map, then one line.** The first Stop that defers a rule with no `reach` prints one
+  notice: how many rules matched, how many in `.crew/verify.json` have no `reach`, and
+  `/crew:verify --stamp-reach` (dry run, `--apply`, `--set N=local|network|host`), then each
+  rule's reason. It is shown once per map content (`.crew/.verify-gate.reach-notice`); every
+  later Stop, quiet turns included, prints `NOT VERIFIED ON THIS TREE - N rule(s) with no `reach`
+  not run on Stop: rules[...]`. `--ci` keeps its per-rule lines. The deferral is unchanged.
+- **Superseded orphans.** Obligations are keyed by a content hash, so adding `reach` or `seconds`
+  re-keyed every rule (TSS PR #1143 left 17 orphans). An entry whose rule was edited in place - a
+  new rule on the same `paths` that did not sit beside it - is now dropped as superseded, with a
+  `dropped the obligation of rules[N]` line. One nothing replaced (removed, or `paths` changed)
+  stays: an undeclared-reach orphan is counted but no longer holds `.crew/.verify-verified-at`; any
+  other still does, and its line names `verify_record.py forget-orphans`, which drops orphans by
+  name and runs nothing. Entries now carry `pathsKey` and `peers`; ones recorded earlier are never
+  superseded.
+- **Every exit 2 writes stdout.** Claude Code 2.1.293 reads a Stop hook that exits 2 with empty
+  stdout and a `no such file`/`can't open` stderr as a missing script and does not block (TSS rule
+  32, rc 127). Both flavours now print `VERIFY GATE: BLOCKED (exit 2)` on every exit 2.
+- **Which record.** Orphan and `NOT VERIFIED` lines end `[record: <absolute path>]`: the record is
+  per checkout, `--all` clears only its own checkout's, and `--ci` never prunes it.
+- Reported from TheSelectSource on crew 1.2.1 and 1.2.5. Harness-only PR (T-0087);
+  `commands/verify.md` gets the per-checkout note in a separate feature PR.
+
+
+### Changed — crew 1.2.10: the diagrams L-0713 left stale re-drawn against the code (L-0713 follow-up)
+
+- **Summary.** `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713:
+  the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2
+  needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA
+  diagrams are re-cited and re-anchored. No behaviour changed.
+- **The QA page.** `docs/qa/` and the three `process-qa-*` diagrams were regenerated with `qa_doc.py --write`
+  (94 verify rules now, 3 audit GAPs). The code graph was rebuilt with `graphify update .`.
+
+## [1.2.9] - 2026-10-08
+
+### Fixed — crew 1.2.9: one true quickstart (L-0713)
+
+- **Summary.** A new repository set up with `/crew:init` no longer gets told to run
+  `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the
+  repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
+  /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
+  that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `schema`
+  that is not an integer, a `roles` that is not a list, or a `.crew/` or `.work/tickets/` it
+  cannot list, prints `could not tell whether /crew:migrate is needed (<why>)` instead of either
+  answer.
+  `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
+  the status comes back clean.
+- **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin
+  README, `CONFIG.md` §1, `/crew:init`, `/crew:migrate` and `/crew:status` agree: init writes
+  `.crew/config.json`; migrate writes `.crew/crew.json` as a record and leaves `config.json` in use
+  (its preview's `retireable` label on that file is wrong, and the docs say to keep it). The
+  config-file diagram's "open authority question" now records the answer.
+- **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
+  `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
+  discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` or a case folder they cannot
+  list, exits 2); the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
+  `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
+- **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
+  `crew-config-file:<name>` (a marked statement must name only the file
+  `crew_common.repo_config_file` opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
+  shipped) and `eval-roster:<plugin>` (a marked eval roster must match `evals/` and name agents
+  that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
+  `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.
+
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
+## [1.2.5] - 2026-10-08
+
+### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
+
+- **Summary.** When a pinned reviewer model is gone, crew now falls back to a reviewer from another
+  model family instead of always handing the review to Claude, and `/crew:status` shows how many
+  review rounds were same-family.
+- **Resolution (`crew_state.resolve_role`).** The hard-coded `provider = "claude"` is gone. The
+  `fallback` model runs on the provider that serves its family (`provider_for_model`: a
+  `gpt-6.1-sol` fallback dispatches to Codex, the 2026-10-08 fleet-swap case). A fallback in the
+  author's family is skipped for the next provider in `qa.order` (`dev.order`, else the shipped
+  order, for the dev kind) that is not the author's family and answers, on its own model and effort.
+  None left is `incomplete` (the round is recorded INCOMPLETE and refunded, by the harness half);
+  `same_family_ok` is the operator's explicit choice, labelled `sameFamily`. New result keys:
+  `fallbackVia`, `incomplete`, `sameFamily`.
+- **`/crew:status`.** One `review   same-family: N of M completed rounds (P%)` line over every
+  ledger, and `same-family round` on a ticket's line. A round with no provider is could-not-tell,
+  never counted independent. The target is under 5%.
+- **Docs.** README, CONFIG.md, `/crew:model`, `/crew:status`, crew-providers, the Codex guide and
+  the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
+  `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
+  harness half (crew 1.2.6), per the tooling-PR rule.
 
 ## [1.2.1] - 2026-10-08
 

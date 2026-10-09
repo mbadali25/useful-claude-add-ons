@@ -108,7 +108,7 @@ KEY_META = {
     "qa.order": _row("The reviewers `auto` tries, in order. A list is one leaf, replaced "
                      "wholesale.", "tuple", crew_state.QA_PROVIDERS, "0.14.6",
                      type_="list of"),
-    "qa.fallback": _unv("Claude model used when no other reviewer is available.",
+    "qa.fallback": _unv("Model a gone pin falls back to, on its family's provider (L-0712).",
                         "0.16.6", "commands/review.md", "model id"),
     "qa.codex.model": _unv("Codex model for review; null passes no flag.", "0.14.6",
                            "commands/review.md", "string or null"),
@@ -127,7 +127,7 @@ KEY_META = {
                      since="0.16.6", source=_S + "crew_config.py",
                      type_="object of role pins; each pin's provider is checked"),
     "dev.provider": _row("Who implements.", "tuple", crew_state.DEV_PROVIDERS, "0.14.6"),
-    "dev.fallback": _unv("Claude model used when the dev provider is unavailable.",
+    "dev.fallback": _unv("Model a gone dev pin falls back to, on its family's provider.",
                          "0.16.6", "skills/crew-providers/SKILL.md", "model id"),
     "dev.codex.model": _unv("Codex model for implementation.", "0.14.6",
                             "skills/crew-providers/SKILL.md", "string or null"),
