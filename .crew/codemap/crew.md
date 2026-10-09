@@ -122,9 +122,9 @@ still carries PM-specific logic and a docstring that names removed roles:
   missed; the code does not say which, and this note does not guess. **A
   decision for scribe to record, not this note to file**, since it is a
   judgement about intent this note cannot settle by reading further.
-- `plugin/crew/evals/` carries the same signal at the directory-name level:
-  `pm-answers-status-mid-pass/`, `pm-does-not-write-code/` and
-  `qa-reviewer-stays-read-only/` are eval fixtures named after roles this
+- `plugin/crew/evals/` carried the same signal at the directory-name level.
+  L-0713 deleted the `pm-*` and `developer-*` cases; `qa-reviewer-stays-read-only/`
+  (a HARNESS path) is deleted in its own PR. The fixtures were named after roles this
   release does not ship (`pm`, `qa-reviewer` — `reviewer` is the 1.0 name).
   Confirmed present with `case.yaml`/`prompt.md`/`graders/` each, **not read
   for content**; whether they were updated to target `reviewer` internally
@@ -145,7 +145,7 @@ draws it:
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result. Since T-0024 (crew 1.0.42) several ids, a range `T-0010..T-0012` or the one plain-text form `approve T-1 through T-3` record nothing on that prompt: the hook blocks it with a PENDING list bound to each ticket's hashes, and only the user's own one-line `/crew:approve --confirm` (same session, within `PENDING_TTL`) records one receipt per ticket, or none (`plugin/crew/hooks/scripts/approval_hook.py:361`, `:433`; relay at `approve.md:27-43`). Since 1.0.44 only the prompt's own top-level command counts (a command tag nested in another is refused, and the expanded form carries nothing outside its tags, for a single id too since 1.0.45), commas go only between ids, and the closed-row check matches the id whole and in any case (`crew_ticket.py` `precheck` `:859`; the row's id cell is its first id-shaped cell) | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
-| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:55-66`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale`, `unknown` or (T-0063) `fresh-uncommitted` line **without refreshing** - a write there would stale check 1's receipt (`:61-64`). After check 4, a report that is not a check (`:68-79`, T-0066): `crew_trailers.py --check` lists commits carrying a `git.forbiddenTrailers` token and never refuses or rewrites | new in 1.0 |
+| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 2 (`:18-34`, L-0710) passes only on `ci_receipt.py check` VERIFIED or NO_GATE for HEAD, or nothing outstanding in the record (`verify   no rules recorded`, since a clean pass empties it) with `review_gate.gate_state` VERIFIED (marker at HEAD plus the working-tree fingerprint); a `chronic` rule (deferred to CI) or a `0 rules ran` turn does not settle it. Check 4 (`:55-66`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale`, `unknown` or (T-0063) `fresh-uncommitted` line **without refreshing** - a write there would stale check 1's receipt (`:61-64`). After check 4, a report that is not a check (`:68-79`, T-0066): `crew_trailers.py --check` lists commits carrying a `git.forbiddenTrailers` token and never refuses or rewrites | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
 (`plugin/crew/commands/ticket.md`, `plugin/crew/commands/work.md`, each a
@@ -585,6 +585,17 @@ print(len(s.CONFIG_MENU_MUTATIONS))"`; registered in `sabotage.py:79`, appended 
 them plus the three modules.
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
+
+**DERIVED (L-0713, 2026-10-08, without moving the anchor): the docs now answer it.**
+`.crew/config.json` is the repo config: `/crew:init` writes it from
+`plugin/crew/templates/config.template.json` (`plugin/crew/skills/crew-setup/phases.md:139-143`),
+and `crew_common.repo_config_file`'s default name is `config.json`
+(`plugin/crew/hooks/scripts/crew_common.py:294`). `crew.json` is migrate's record. The code split
+below is unchanged; what changed is `crew_status._is_0_20_setup`
+(`plugin/crew/hooks/scripts/crew_status.py`), so status no longer prints `run /crew:migrate` for a
+config init wrote, and `scripts/check-marketplace.py`'s `crew-config-file:` claim holds every
+marked doc statement to that default. Making init or the five crew.json-first readers change is
+not done (L-0713 excluded behaviour changes to init and migrate).
 
 **DERIVED, and this is the open TODO the task description names.** Two
 different modules read two different files as "the repo's crew config", and
@@ -3094,9 +3105,8 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 - The 11 `.ps1` hooks' bodies past their `Resolve-CrewPython` definitions
   were not read; whether any PowerShell-side equivalent of the bash parity
   test exists is unknown.
-- `plugin/crew/evals/pm-*`, `developer-*` and `qa-reviewer-stays-read-only`
-  fixture contents were not read; whether they were internally updated to
-  target the 1.0 roster is unverified.
+- `plugin/crew/evals/qa-reviewer-stays-read-only` (the one case left after L-0713's
+  feature PR) was read: its prompt quotes 0.20's `agents/qa-reviewer.md` inline.
 - The previous anchor's wide count-disagreement sweep (README.md,
   plugin/README.md, INSTALLATION.md, both install scripts, against the
   4/35/29 inventory above) was **not repeated** this pass — only
@@ -5314,3 +5324,5 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
 
 **Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
+
+**L-0710 citation, 2026-10-08 (L-0710-feature at `295568aa`, from origin/main `554ed783`); anchor NOT moved.** The `/crew:done` row gained check 2's precondition (`plugin/crew/commands/done.md:18-34`): CI receipt VERIFIED or NO_GATE for HEAD, or nothing outstanding in the record with `review_gate.gate_state` VERIFIED; `plugin/crew/tests/test_done_check2_gate.py` runs that command. DERIVED from that file at `295568aa`; no other claim in this map was re-read.

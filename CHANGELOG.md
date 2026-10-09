@@ -9,6 +9,64 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-10-08
+
+### Fixed — crew 1.2.9: one true quickstart (L-0713)
+
+- **Summary.** A new repository set up with `/crew:init` no longer gets told to run
+  `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the
+  repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
+  /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
+  that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `schema`
+  that is not an integer, a `roles` that is not a list, or a `.crew/` or `.work/tickets/` it
+  cannot list, prints `could not tell whether /crew:migrate is needed (<why>)` instead of either
+  answer.
+  `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
+  the status comes back clean.
+- **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin
+  README, `CONFIG.md` §1, `/crew:init`, `/crew:migrate` and `/crew:status` agree: init writes
+  `.crew/config.json`; migrate writes `.crew/crew.json` as a record and leaves `config.json` in use
+  (its preview's `retireable` label on that file is wrong, and the docs say to keep it). The
+  config-file diagram's "open authority question" now records the answer.
+- **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
+  `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
+  discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` or a case folder they cannot
+  list, exits 2); the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
+  `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
+- **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
+  `crew-config-file:<name>` (a marked statement must name only the file
+  `crew_common.repo_config_file` opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
+  shipped) and `eval-roster:<plugin>` (a marked eval roster must match `evals/` and name agents
+  that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
+  `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.
+
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
 ## [1.2.5] - 2026-10-08
 
 ### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)

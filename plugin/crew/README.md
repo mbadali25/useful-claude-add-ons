@@ -310,7 +310,7 @@ shows where you are, and it picks up from the first incomplete phase.
 | # | Phase | Produces |
 |---|---|---|
 | 0 | Platform | OS/WSL detection, CRLF and filesystem fixes |
-| 1 | Config | `.crew/`, `.work/`, a filled-in `CLAUDE.md` |
+| 1 | Config | `.crew/config.json`, `.crew/`, `.work/`, a filled-in `CLAUDE.md` |
 | 2 | Providers | Codex and Gemini verified by a real call |
 | 3 | Smoke harness | `_verify/` created and documented; `_verify/smoke.sh` green from a clean checkout |
 | 4 | Code map | `.crew/codemap/` with anchors |
@@ -326,6 +326,14 @@ nothing after it to stop. Just one of those gates is enforced by a hook rather
 than written down. See
 [Setup phase order](../PLUGINS.md#setup-phase-order) in `PLUGINS.md` for the
 sequence diagram, every gate, and why the order is what it is.
+
+Phase 1 writes the repo config to `.crew/config.json`, from<!-- claim: crew-config-file:config.json -->
+`templates/config.template.json`. It is the one file crew reads repo settings from: every gate and
+guard, `/crew:config` and `/crew:autopilot` read it, and a new repository never needs
+`/crew:migrate`. `/crew:status` shows it as `config   .crew/config.json schema 7`. `/crew:migrate` is
+for a repository crew 0.20 set up, and status asks for it (`... - run /crew:migrate`) only when
+this file still holds one: a role 1.0 removed, a schema older than 7, `.work/tickets/<ID>.md` ticket
+files, or a PM journal.
 
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
 `blocked` are used, not rounded up to `done`. A status file that overstates
@@ -1115,7 +1123,7 @@ A count this module could not measure is always the string `UNKNOWN`, never `0` 
 
 ## 11. Configuration reference
 
-Everything reads `.crew/config.json`. If it goes missing or stops parsing,
+Everything reads `.crew/config.json`. If it goes missing or stops parsing,<!-- claim: crew-config-file:config.json -->
 `platform-sync` recreates it from `templates/config.template.json` the next
 time the repo is opened — see "The config heals itself" in §3; this is the
 same shape that produces:
@@ -2157,8 +2165,8 @@ their status transitions — no sync command to remember:
 | `/crew:done` | `move --to done` | Done |
 
 `/crew:fix` makes the same calls, compressed. `resolve` reads the kind from
-1.0's `.crew/crew.json` (`tracker.kind`) and 0.20's `.crew/config.json`
-(`tracker`) alike; when both state one and they differ it says `could not tell`
+`.crew/config.json` (`tracker`) and, in a repository that ran `/crew:migrate`,<!-- claim: crew-config-file:config.json -->
+`.crew/crew.json` (`tracker.kind`) alike; when both state one and they differ it says `could not tell`
 and every write refuses — it never picks one. The same holds for the vault and
 `boardDir` each file *yields*, fallbacks included: crew.json falling back to
 `memory.vaultPath` while config.json names another vault is `could not tell`,
@@ -3225,6 +3233,16 @@ a VERIFIED receipt where the local gate is UNVERIFIED or UNKNOWN; any other
 receipt answer leaves the local verdict standing. The Stop hook does not consult
 it: that would put network calls in a hook that runs every turn.
 
+`/crew:done` check 2 makes this receipt the precondition for whatever Stop did
+not check (L-0710): a rule deferred to CI (`chronic`), a `skipped` or
+`unverified` rule, a turn where `0 rules ran`, or no record at all. Check 2
+passes on `CI_RECEIPT VERIFIED` (exit 0), on `NO_GATE` (exit 4), or on a record
+with nothing outstanding (`verify   no rules recorded`: a clean pass empties it)
+together with `GATE VERIFIED` from `review_gate.gate_state` (marker at HEAD and
+the working tree's fingerprint unchanged since that pass; the marker alone
+survives an uncommitted edit). Anything else refuses the close. The workflow is
+not a required check on `main`; making it one is a branch-protection setting.
+
 The receipt's per-command list is informative only. A command reads PASS, FAIL,
 SKIP or UNKNOWN; UNKNOWN is a `COULD NOT TELL` line, or a command named failed,
 skipped or could-not-tell with no elapsed line after it (L-0673). `log_complete` is
@@ -3913,6 +3931,7 @@ CONFIG.md §17 has the table and the reasoning.
 
 ### Commands
 
+<!-- claim: plugin-command-table:crew -->
 | Command | Purpose |
 |---|---|
 | `/crew:help [command\|question\|commands\|<id>]` | **Start here.** With nothing: where you are (ticket, phase, what it waits on), the one command to type next and why, and 2-3 related ones, in at most 8 lines. With a command or a question (`how do i write the spec`): what it is for, when, its arguments and what comes next. `commands`: every command by group, core first. Read-only, and it never runs what it names - see "Contextual help: /crew:help" |
@@ -3922,7 +3941,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
-| `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
+| `/crew:done <id>` | Close a ticket: accepted review receipt, a verify gate settled for HEAD (every rule passed here, or the CI receipt VERIFIED), passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run\|focus\|wave] [<id>\|off\|--set <slug>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `focus <id>` / `focus off`: an explicit scope lock on one ticket (T-0020); the active ticket alone is not focus. `wave`: run an approved set as parallel isolated lanes (T-0029). `goal "<goal>"` (T-0012): propose, print the `/goal` line, approve the split. `assign` arrives with L-0611 (`crew_ticket.py assign` works from the command line since 1.0.302); `--goal` resume with L-0541 — see "Autopilot" |
 | `/crew:status [--memory \| --approvals \| --owner]` | Read-only status in at most 40 lines - config, inert settings, roster, tickets, a `waiting` line counting what is stopped on you (`--owner` lists it, one line per ticket with the command to type, L-0551), review budget and the repo-wide same-family share (L-0712), in-flight markers (T-0049: one `in-flight:` line per ticket with its state, runner, since and, for stale or unknown, the owner's `clear` command; at most 5), gate, the agents `.crew/verify.json` names that are not installed here (`verify_agents.py`), codemap, gitignore, handoff; `--memory` adds the context hook's stats; `--approvals` prints only the `/crew:approve <id>` lines for tickets whose approval is missing, stale or unaccepted |
@@ -3941,13 +3960,15 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
+| `/crew:debug <symptom\|id>` | Find the cause of a defect before anyone proposes a fix |
+| `/crew:split <id\|ISSUE-KEY> [--dry-run]` | Split an oversized ticket into 2-5 children, with evidence and one confirmation, in any tracker but SDP — see §10 |
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <ID> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade` | Removed - `/crew:migrate` upgrades a pre-0.20 config itself |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and every gate, guard and `/crew:config` keeps reading it (the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files); previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
@@ -4034,10 +4055,10 @@ Those four figures were measured at `61af85cb`, and each is the line that suite
 own `1404 passed, 1 skipped` (the skip is a platform case — see the table below).
 Three of the four were stale by more than a factor of two before this correction,
 because each is written by hand and nothing checks it:
-`scripts/check-marketplace.py` only verifies a number carrying a
-`<!-- claim: ... -->` marker, and it implements exactly two marker types —
-`skills-count` and `plugin-version:<name>` — neither of which can express a suite
-count. No marker is available for these, so re-run the suite rather than trusting
+`scripts/check-marketplace.py` only verifies a statement carrying a
+`<!-- claim: ... -->` marker, and none of its marker types (`check_self_claims`
+lists them: counts, versions, the active config file, the command table and the
+eval roster) can express a suite count. No marker is available for these, so re-run the suite rather than trusting
 the comment.
 
 | Suite | Proves | Cannot prove |
@@ -4141,52 +4162,37 @@ The four suites above prove structure — that a hook blocks what it should,
 that a command's frontmatter parses. None of them proves that an agent
 *actually behaves* the way its own prompt file says it will under real
 temptation. That is what `plugin/crew/evals/` is for: a
-[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals) suite —
-five cases, each a realistic prompt that tempts one specific documented rule,
-graded on the transcript rather than on prose:
+[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals) suite,
+each case a realistic prompt that tempts one documented rule, graded on the
+transcript rather than on prose.
 
-| Case | Rule under test | Catches |
+The roster, each case with the agent it exercises:
+
+<!-- claim: eval-roster:crew -->
+| Case | Agent | Rule under test |
 |---|---|---|
-| `pm-does-not-write-code` | `agents/pm.md`'s one-hat rule | The PM editing/writing a file under `plugin/`, `skills/`, `src/`, `scripts/`, `tests/` instead of dispatching `crew:developer` |
-| `qa-reviewer-stays-read-only` | `agents/qa-reviewer.md` holds no `Write`/`Edit` | QA fixing a bug it was only asked to flag, or leaving the `SEVERITY\|file:line\|...` / `CLEAN` contract |
-| `developer-defers-unrelated-bug` | `agents/developer.md`'s scope discipline | The developer fixing a visible bug outside its ticket instead of deferring it under a `## Deferred` section |
-| `developer-runs-command-in-foreground` | no silent backgrounding | The developer launching a short command with `run_in_background: true` and telling the user to wait for a notification instead of just running it |
-| `pm-answers-status-mid-pass` | `agents/pm.md`'s reporting rule | The PM staying silent, or re-issuing its plan, when a status request arrives mid-dispatch (seeded via `context.history_file`, a fabricated prior turn) |
+| `qa-reviewer-stays-read-only` | `reviewer` | Flags a one-line bug in a handed diff, never fixes it, and keeps the `SEVERITY\|file:line\|...` / `CLEAN` contract. The Agent column names the role it was written for: its prompt quotes 0.20's `agents/qa-reviewer.md` (the reviewer's earlier name) rather than invoking the shipped `agents/reviewer.md`, so it does not test that file. It is a harness path, deleted in its own PR |
 
-**All five cases exercise 0.20 roles that crew 1.0 deleted** (`pm`, `developer`,
-`qa-reviewer`). Each case's `prompt.md` carries its rules inline, so they still
-run, but they no longer test a shipped agent. Retiring or re-targeting them is
-an owner decision tracked in `TODO.md`.
+The four cases for the roles crew 1.0 deleted (`pm`, `developer`) are gone
+(L-0713), with the known-failing exemption that kept one of them from failing
+the run. Replacement cases for the 1.0 agents are L-0728.
+`scripts/check-marketplace.py` holds the table above to the folders under
+`plugin/crew/evals/` and each named agent to `plugin/crew/agents/`.
 
-Every grader here is free (`regex`, `tool_used`) — none calls a judge model —
-because each rule above has a mechanical tell: a tool that was called when it
-shouldn't have been, or text that is or isn't in the reply. Where a case
-grants `Write`/`Edit`/`Bash` beyond what the role's own `prompt.md`
+Every grader here is free (`regex`, `tool_used`) — none calls a judge model.
+Where a case grants `Write`/`Edit` beyond what the role's own `prompt.md`
 `allowed_tools` would give it, that grant is deliberate: the point is to
 check the role doesn't use a tool it *has*, not one it was never handed.
 
 Run the suite with the matched pair `scripts/run-plugin-evals.sh` /
 `scripts/run-plugin-evals.ps1` from the repo root, not `claude plugin eval`
 directly — `--case` takes one glob with no exclude or comma-list syntax, so
-the scripts invoke each case separately, and they carry two things a bare
-invocation does not:
-
-- **`developer-runs-command-in-foreground` needs a `Bash` grant**, and
-  granting `Bash` needs the OS sandbox backend (`bubblewrap`+`socat` on
-  Linux/WSL2). There is no backend on native Windows at all, so Claude Code
-  *refuses* that one run rather than running it unconfined. The scripts probe
-  for `bwrap`+`socat` and skip only that case with a loud notice when neither
-  is present — this is expected on a native-Windows dev machine, and the
-  Linux CI job (`.github/workflows/plugin-evals.yml`) runs it for real.
-- **`pm-does-not-write-code` is a known, currently-failing case** — not a bug
-  in the case. As of this writing the PM still edits the tempting one-line
-  fix itself instead of dispatching a developer. The eval case format has no
-  `expected-fail`/`xfail` field, so the scripts track it by name
-  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
-  still runs and still reports every time, it just doesn't flip the script's
-  exit code. That is deliberate — the point of this suite is to surface a
-  real defect, not to weaken the case until it goes green. Fix the plugin,
-  confirm the case passes, then drop it from that list.
+the scripts invoke each case separately. They discover the cases (every folder
+under `plugin/crew/evals/` with a `case.yaml`) and add `--scaffold` where the
+case names a `scaffold_script`. With no case at all they print `no eval cases`
+and exit 0 without calling `claude`, and the CI job
+(`.github/workflows/plugin-evals.yml`) skips its billed steps with the same
+notice — nothing ran, which is said rather than reported as a pass.
 
 ```bash
 bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on Windows
@@ -4194,14 +4200,11 @@ bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on W
 
 Both scripts default to `--threshold 1.0`, `--max-cost-usd 15`, `--trust-plugin`,
 `--no-publish`, and write each case's `--json` result under
-`.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD`,
-`EVAL_OUTPUT_DIR`, and `EVAL_EXPECTED_FAIL_CASES` (comma-separated for more
-than one case name — both scripts split on the same separator, matched on
-purpose: they used to disagree, so the same value exempted a case on one
-platform and matched nothing on the other). An xfail-listed case that
-*passes* fails the gate anyway, with a message to retire the exemption, and
-a run that errors before producing a scored result is never covered by the
-exemption regardless of what's listed. `claude plugin eval` also
+`.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD` and
+`EVAL_OUTPUT_DIR`. A case passes only with a scored result that run wrote: a
+non-zero exit, or an exit 0 with an empty or errored `cases` array, fails the
+run. `scripts/_test/plugin-evals-runner.py` checks both scripts against a stub
+`claude`. `claude plugin eval` also
 writes its own `aggregate-result.json` + `report.html` per run under
 `plugin/crew/evals/results/<timestamp>/`, which is gitignored — see
 [Read the results](https://code.claude.com/docs/en/plugin-evals#read-the-results)
@@ -4559,17 +4562,17 @@ Source: [`docs/diagrams/data-flow-crew-config-split.mmd`](../../docs/diagrams/da
 
 ### Data flow crew config two files
 
-An open question: crew_config.py reads .crew/config.json while crew_context.py reads .crew/crew.json first, so which file governs depends on which module asks.
+Which repo file is the config: .crew/config.json, which /crew:init writes and crew_config.py and every gate read (L-0713); .crew/crew.json exists only after /crew:migrate, and crew_context.py reads it first when it does.
 
 ```mermaid
 flowchart TB
 
-    subgraph TwoFiles["OPEN AUTHORITY QUESTION - two modules read two different repo files as \"the config\""]
+    subgraph TwoFiles["TWO FILES - .crew/config.json is the config; crew.json only after /crew:migrate"]
         direction TB
         CFGREAD["<b>crew_config.py</b> reads ONLY<br/>.crew/config.json (schema 7)"]
         CTXREAD["<b>crew_context.load_crew_config()</b><br/>.crew/crew.json FIRST,<br/>then .crew/config.json"]
         MIGRATE["<b>crew_migrate.py --apply</b><br/>the ONLY writer of<br/>.crew/crew.json (schema 1).<br/>Rewrites config.json only<br/>for a pre-0.20 config (upgrade stage),<br/>backed up and restored by --rollback"]
-        OPEN["<b>Net effect:</b> which file governs<br/>depends on which module asked.<br/>OPEN - not resolved here"]
+        OPEN["<b>L-0713:</b> config.json is the config.<br/>Only a migrated repo has both,<br/>and there these readers<br/>take crew.json first"]
         TRKREAD["<b>crew_tracker.resolve()</b><br/>reads BOTH files; answers<br/>'could not tell' on disagreement"]
         MIGRATE -.-> CTXREAD
         CFGREAD --- OPEN --- CTXREAD
@@ -4647,7 +4650,7 @@ flowchart LR
     write["<b>write</b><br/>machine and repo writers"]
     ratchet["<b>ratchet</b><br/>ratchet tables, exceptions"]
     autoclear["<b>autoclear</b><br/>autoClear read and writer"]
-    twofiles["<b>two-files</b><br/>OPEN: config.json or crew.json"]
+    twofiles["<b>two-files</b><br/>config.json is the config;<br/>crew.json only after migrate"]
     split["<b>split</b><br/>what may be set where"]
     shell["<b>shell-route</b><br/>shellRoute config"]
 
