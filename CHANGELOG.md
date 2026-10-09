@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
+
+- **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
+  gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code
+  graph with `graphify update .`. No behaviour changed.
+
 ### Fixed — crew 1.2.16: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
 
 - **Summary.** In a repository that commits `.work/` notes, a release whose reviewed range changed
