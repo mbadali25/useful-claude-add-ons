@@ -2569,7 +2569,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
   undeclared-reach entry is kept and marked but not counted toward the refusal; `:964`
   `cmd_forget_orphans` is the named exit for the orphans that still hold the marker.
 - DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:11-15` - `_crew_gate_exit_line` under an EXIT
-  trap writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on any exit 2; `:824` the cleanup trap
+  trap writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on any exit 2; `:826-831` the cleanup trap
   that replaces it calls it too. `plugin/crew/hooks/scripts/verify-gate.ps1:88`
   `Exit-CrewGateBlocked` is the same line then `exit 2`, and every exit 2 in the file goes through
   it. Claude Code reads an exit 2 with empty stdout and a `no such file` stderr as a missing hook.

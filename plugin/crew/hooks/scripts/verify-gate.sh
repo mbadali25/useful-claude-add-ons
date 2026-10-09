@@ -821,7 +821,14 @@ _crew_gate_in_flight() {
 trap '_crew_gate_in_flight TERM; _crew_gate_run_cleanup; exit $((128 + 15))' TERM
 trap '_crew_gate_in_flight INT; _crew_gate_run_cleanup; exit $((128 + 2))' INT
 trap '_crew_gate_in_flight HUP; _crew_gate_run_cleanup; exit $((128 + 1))' HUP
-trap '_crew_gate_exit_rc=$?; _crew_gate_run_cleanup; _crew_gate_exit_line "$_crew_gate_exit_rc"' EXIT
+# The exit status first (a function's first statement still sees the trap's
+# $?), then cleanup, then the L-0733 stdout line for an exit 2.
+_crew_gate_on_exit() {
+  local _crew_gate_exit_rc=$?
+  _crew_gate_run_cleanup
+  _crew_gate_exit_line "$_crew_gate_exit_rc"
+}
+trap '_crew_gate_on_exit' EXIT
 
 if [ "$UNLOCKED" -eq 0 ]; then
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
