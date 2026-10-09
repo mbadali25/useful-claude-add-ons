@@ -360,6 +360,17 @@ contract itself. This section is what goes wrong with the approval and the audit
   **Fix:** amend `spec.md`'s `## Touch` (widen it), then approve again. There is no partial-approve;
   amending scope is edit-then-approve, same as any other spec change.
 
+- **Symptom: the Stop prints `outside-scope: (could not tell - ...)`.**
+  The verify gate's scope line (`scope_report.py`) reads the active ticket's approved
+  `.work/tickets/<id>/spec.md ## Touch`, as the completion audit does. The reason names the gap:
+  no readable `spec.md`, no `## Touch` paths, a Touch that is not approved (approve it, or approve
+  it again after a spec edit), a broken active-ticket pointer, a pre-1.0
+  `.work/tickets/<id>.md` ticket (run `/crew:migrate`), or an `INDEX.md` open ticket whose
+  `.work/tickets/<id>/` folder does not exist (fix the INDEX row or restore the folder), or an
+  `INDEX.md` that cannot be read. A clean line can also carry `(merged main: could not tell - ...)`,
+  for example on a detached HEAD: nothing was left out as main's, the same as the audit. Before L-0711 the line said every 1.0
+  ticket's file was missing. It is report-only: the refusal is `/crew:done` check 3.
+
 - **Symptom: `/crew:done` refuses on "out of scope" for a file the edit guard never saw.**
   This is the Stop-time completion audit (`completion_audit.py`), not the edit guard. The edit guard
   only sees `Write`/`Edit`/`MultiEdit`/`NotebookEdit` tool calls; a `sed -i`, a redirect, a

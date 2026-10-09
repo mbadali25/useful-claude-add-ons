@@ -2583,3 +2583,6 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Added on 2026-10-08 (L-0733), anchor NOT moved.** This section's citations were read at
 `ac633ffc7`, the L-0733 commit for the owner's 2026-10-08 additions; the note's `anchor:` is not
 moved for it because the earlier sections were not re-verified against the commits since it.
+
+**L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`); anchor NOT moved.** DERIVED: `plugin/crew/tests/test_scope_report.py` now builds crew 1.0 tickets with `scope_fixtures` (real repositories under `tmp_path`) and drives `verify-gate.sh` and, as `slow`, `verify-gate.ps1` end to end for the scope line; `plugin/crew/tests/test_completion_audit.py:322` / `:333` run a real `sed -i` against `completion_audit.py --check`. `test_scope_base.py`'s `_ticketed` writes the 1.0 layout; its four scope_report test names, which `sabotage.py` targets, are unchanged. The sabotage entries for the new reader land in the harness PR (`sabotage_scope.py`).
+
