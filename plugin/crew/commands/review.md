@@ -333,8 +333,9 @@ case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hoo
 # manifest, split into parts (never truncated) and hashed. L-0739: committed TEXT changes
 # under `.work/` or `.crew/metrics.md` in $BASE..HEAD that the repo does not ignore are
 # appended last, from the commit trees only (`included_excluded`); check E refuses only
-# what the bundle cannot show (binary, mode, symlink, gitlink, ignored, graphify-out/). `git diff "$BASE"...HEAD` gave
-# 0 bytes on a dirty tree (Codex, `docs/review/03-codex-review.md`). Real index unwritten.
+# what the bundle cannot show (binary, mode, symlink, gitlink, ignored, graphify-out/).
+# `git diff "$BASE"...HEAD` gave 0 bytes on a dirty tree (Codex,
+# `docs/review/03-codex-review.md`). Real index unwritten.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
