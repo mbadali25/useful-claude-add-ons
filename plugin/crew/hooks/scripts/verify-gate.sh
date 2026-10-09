@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
+# hook that exits 2 with empty stdout and a stderr matching "no such file" or
+# "can't open" as a missing hook script and lets the turn through as
+# non-blocking - so a rule whose own failure said "No such file" (rc 127) was
+# silently waved past. An EXIT trap, not a line at each site: it covers every
+# exit-2 path, the early ones included. The trap installed with the gate's
+# cleanup below calls this too, since a second `trap ... EXIT` replaces this one.
+_crew_gate_exit_line() {
+  [ "${1:-0}" -eq 2 ] || return 0
+  echo "VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete."
+}
+trap '_crew_gate_exit_line $?' EXIT
 # The plugin root, resolved HERE: a relative BASH_SOURCE stops resolving once
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
@@ -809,7 +821,7 @@ _crew_gate_in_flight() {
 trap '_crew_gate_in_flight TERM; _crew_gate_run_cleanup; exit $((128 + 15))' TERM
 trap '_crew_gate_in_flight INT; _crew_gate_run_cleanup; exit $((128 + 2))' INT
 trap '_crew_gate_in_flight HUP; _crew_gate_run_cleanup; exit $((128 + 1))' HUP
-trap '_crew_gate_run_cleanup' EXIT
+trap '_crew_gate_exit_rc=$?; _crew_gate_run_cleanup; _crew_gate_exit_line "$_crew_gate_exit_rc"' EXIT
 
 if [ "$UNLOCKED" -eq 0 ]; then
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and

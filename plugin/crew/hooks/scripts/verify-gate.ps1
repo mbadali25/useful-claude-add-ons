@@ -68,6 +68,18 @@ param(
   [switch]$PriceForce
 )
 
+# L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
+# hook that exits 2 with empty stdout and a stderr matching "no such file" or
+# "can't open" as a missing hook script and lets the turn through as
+# non-blocking - so a rule whose own failure said "No such file" was silently
+# waved past. Every `exit 2` in this file goes through here (the twin of
+# verify-gate.sh's EXIT trap); `exit` in a function ends the script.
+function Exit-CrewGateBlocked {
+  [Console]::Out.WriteLine("VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete.")
+  [Console]::Out.Flush()
+  exit 2
+}
+
 # Flavour guard. Both flavours are registered for every event, so on a host
 # that has BOTH interpreters both would otherwise run. Stand down only when
 # we can positively prove this is not Windows.
@@ -399,14 +411,14 @@ function Write-CrewPythonTrail {
 if ($args.Count -gt 0 -or ($PSBoundParameters.ContainsKey('PriceTarget') -and -not $Price)) {
   $crewBad = if ($args.Count -gt 0) { [string]$args[0] } else { [string]$PriceTarget }
   [Console]::Error.WriteLine("verify-gate: unknown argument '$crewBad' - the gate accepts -All, -Ci, or -Price [-PriceTarget path] [-PriceForce]. Nothing was verified.")
-  exit 2
+  Exit-CrewGateBlocked
 }
 
 # -Ci is a gate run and -Price is not one, so the pair is refused before
 # either starts - the twin of the same check in verify-gate.sh.
 if ($Price -and $Ci) {
   [Console]::Error.WriteLine("verify-gate: -Price and -Ci cannot be combined (-Price times the map and writes it; -Ci is a gate run). Pass one of them. Nothing was verified.")
-  exit 2
+  Exit-CrewGateBlocked
 }
 
 # -Price resolves python with the same probe as everything else here, so it
@@ -450,7 +462,7 @@ if ($PrintPython) {
 # twin of the same check in verify-gate.sh. Before the stdin read below.
 if ($All -and $Ci) {
   [Console]::Error.WriteLine("verify-gate: -All and -Ci cannot be combined (-All runs every rule and records a pass; -Ci excludes network/host rules and never records one). Pass one of them. Nothing was verified.")
-  exit 2
+  Exit-CrewGateBlocked
 }
 
 # --- Emergency lane -------------------------------------------------------
@@ -608,7 +620,7 @@ if ($Ci) {
   try { Set-Location $root -ErrorAction Stop }
   catch {
     [Console]::Error.WriteLine("verify-gate --ci: cannot cd into $root - nothing was checked")
-    exit 2
+    Exit-CrewGateBlocked
   }
 } else {
   Set-Location $root
@@ -633,7 +645,7 @@ if (Test-Path -LiteralPath $repoConfig) {
     # must not report green (the twin of verify-gate.sh).
     if ($Ci) {
       [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job.")
-      exit 2
+      Exit-CrewGateBlocked
     }
     exit 0
   }
@@ -739,7 +751,7 @@ if (-not $changed) {
   # twin of verify-gate.sh.
   if ($Ci) {
     [Console]::Error.WriteLine("verify-gate --ci: no tracked files found in $((Get-Location).Path) (not a git work tree, git failed - e.g. refused a dubious-ownership checkout - or nothing is tracked) - nothing was checked")
-    exit 2
+    Exit-CrewGateBlocked
   }
   # A turn that changed nothing still owes a reminder for any rule this
   # tree has never actually been checked against - the twin of the same
@@ -796,7 +808,7 @@ $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 function Exit-CrewLockBackOff([string]$Why) {
   if ($Ci) {
     [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")
-    exit 2
+    Exit-CrewGateBlocked
   }
   exit 0
 }
@@ -1061,18 +1073,18 @@ if (-not (Test-Path .crew/verify.json)) {
       # candidate and hang on.
       [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
       [Console]::Error.WriteLine("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim")
-      exit 2
+      Exit-CrewGateBlocked
     }
     $out = $null | & $bashExe $smoke 2>&1
     if ($LASTEXITCODE -ne 0) {
       [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
       [Console]::Error.WriteLine("bash: $bashExe")
       $out | Select-String -Pattern '^(FAIL|SMOKE:)' | ForEach-Object { [Console]::Error.WriteLine($_) }
-      exit 2
+      Exit-CrewGateBlocked
     }
   } elseif ($Ci) {
     [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no _verify/smoke.sh - nothing to verify, so nothing was checked")
-    exit 2
+    Exit-CrewGateBlocked
   }
   exit 0
 }
@@ -1094,7 +1106,7 @@ try {
 } catch {
   [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete.")
   [Console]::Error.WriteLine($_.Exception.Message)
-  exit 2
+  Exit-CrewGateBlocked
 }
 
 # A command is ONE LINE, and a command that is not is REJECTED. The matched
@@ -1144,7 +1156,7 @@ if ($null -eq $bad) { $bad = Get-CrewUnrepresentable $vm.default "default" }
 if ($null -ne $bad) {
   [Console]::Error.WriteLine($bad)
   [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json names a command crew cannot represent (see the PARSE_ERROR above for which one and why). Verification did NOT run. Work is not complete.")
-  exit 2
+  Exit-CrewGateBlocked
 }
 
 $cmds = [System.Collections.ArrayList]@()
@@ -1830,7 +1842,7 @@ if ($Ci) {
       $ciNothing += " ($($fallbackNotices.Count) ``always``/``default`` command(s) excluded for reach)"
     }
     [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - nothing was checked")
-    exit 2
+    Exit-CrewGateBlocked
   }
 }
 
@@ -2645,7 +2657,7 @@ if ($Ci) {
     $failed = $true
   }
 }
-if ($failed) { exit 2 }
+if ($failed) { Exit-CrewGateBlocked }
 
 # -Ci never advances either marker, pass or not - the twin of verify-gate.sh,
 # including which reason the line gives.

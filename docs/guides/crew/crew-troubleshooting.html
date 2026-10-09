@@ -1108,12 +1108,27 @@ still resumes from the last written handoff rather than from nothing.</p>
 <li><strong>Fix:</strong> <code>/crew:verify --stamp-reach</code> shows what each rule would get; <code>--apply</code> writes the <code>local</code>
   and <code>network</code> proposals, and <code>--set N=local|network|host</code> decides a wrapper or shell rule. Review
   the diff and commit it on its own. <code>/crew:verify --all</code> runs every rule meanwhile.</li>
-<li><strong>Symptom:</strong> <code>N unverified obligation(s) belong to a rule that was edited or removed; NOT advancing
-  the marker</code>. <strong>Cause:</strong> a rule changed after its entry was recorded. An undeclared-reach entry no
-  longer holds the marker (it is counted in the summary line); any other kind does. <strong>Fix:</strong>
-  <code>/crew:verify --all</code>, or, when that would reach <code>network</code>/<code>host</code> targets, run the
-  <code>verify_record.py forget-orphans</code> command the line names, from the repo root: it drops the orphans
-  by name and runs nothing.</li>
+<li><strong>Symptom:</strong> <code>N unverified obligation(s) belong to a rule that was edited or removed and that no
+  rule on the same paths replaced; NOT advancing the marker [record: &lt;path&gt;]</code>. <strong>Cause:</strong> a rule was
+  removed, or its <code>paths</code> changed, after its entry was recorded. A rule edited in place (same paths)
+  supersedes its old entry instead, which is dropped with a <code>dropped the obligation of rules[N]</code>
+  line. An undeclared-reach orphan no longer holds the marker (it is counted in the summary line);
+  any other kind does. Entries recorded before L-0733 are never superseded. <strong>Fix:</strong>
+  <code>/crew:verify --all</code> in the checkout the <code>[record: ...]</code> path names (it clears only that
+  checkout's record, and <code>--ci</code> never prunes it), or, when that would reach <code>network</code>/<code>host</code>
+  targets, run the <code>verify_record.py forget-orphans</code> command the line names, from the repo root: it
+  drops the orphans by name and runs nothing.</li>
+</ul>
+<h2 id="a-stop-that-should-have-blocked-said-the-hook-script-was-missing">A Stop That Should Have Blocked Said the Hook Script Was Missing</h2>
+<ul>
+<li><strong>Symptom:</strong> a rule failed, but Claude Code said <code>Hook script appears to be missing ... Treating as
+  non-blocking. Run /plugin to reinstall</code> and the turn ended anyway.</li>
+<li><strong>Cause:</strong> Claude Code reads a Stop hook that exits 2 with empty stdout and a stderr containing
+  <code>No such file</code> or <code>can't open</code> as a missing script. A rule like <code>bash _verify/check.sh</code> whose
+  script is gone fails with exactly that stderr.</li>
+<li><strong>Fix:</strong> since L-0733 crew writes <code>VERIFY GATE: BLOCKED (exit 2)</code> to stdout on every exit 2, in both
+  flavours, so the block holds. On an older crew, update the plugin; fix or remove the rule either
+  way.</li>
 </ul>
 <h2 id="an-agent-named-in-verifyjson-is-not-installed">An Agent Named in verify.json Is Not Installed</h2>
 <p><code>.crew/verify.json</code> travels with the repo; the agents its rules name do not. A rule asking for an

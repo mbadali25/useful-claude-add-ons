@@ -933,7 +933,7 @@ if shutil.which("pwsh"):
             "--ci (ps1): a disabled gate passes",
             GATE_PS1,
             ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
-             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n      exit 2\n'),
+             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n      Exit-CrewGateBlocked\n'),
             ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
              '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'),
             _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[ps1]",
@@ -942,7 +942,7 @@ if shutil.which("pwsh"):
             "--ci (ps1): nothing to verify passes",
             GATE_PS1,
             ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
-             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n    exit 2\n'),
+             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n    Exit-CrewGateBlocked\n'),
             ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
              '_verify/smoke.sh - nothing to verify, so nothing was checked")\n'),
             _CI + "test_no_map_and_no_smoke_fails_in_ci[ps1]",
@@ -951,7 +951,7 @@ if shutil.which("pwsh"):
             "--ci (ps1): zero commands to run passes",
             GATE_PS1,
             ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
-             'nothing was checked")\n    exit 2\n'),
+             'nothing was checked")\n    Exit-CrewGateBlocked\n'),
             ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
              'nothing was checked")\n'),
             _CI + "test_every_matched_rule_reach_excluded_fails[ps1]",
@@ -959,7 +959,7 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): no tracked files passes",
             GATE_PS1,
-            ('or nothing is tracked) - nothing was checked")\n    exit 2\n'),
+            ('or nothing is tracked) - nothing was checked")\n    Exit-CrewGateBlocked\n'),
             ('or nothing is tracked) - nothing was checked")\n'),
             _CI + "test_no_tracked_files_fails[ps1]",
         ),
@@ -1001,7 +1001,7 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): a lock back-off passes",
             GATE_PS1,
-            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n    exit 2\n',
+            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n    Exit-CrewGateBlocked\n',
             '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n',
             _CI + "test_a_held_lock_fails_rather_than_backing_off_green[ps1]",
         ),

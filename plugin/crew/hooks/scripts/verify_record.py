@@ -930,6 +930,20 @@ def _undeclared_summary(entries):
             "them and /crew:verify --all runs them")
 
 
+def _print_owed(entries):
+    """The standing NOT VERIFIED lines: one for every undeclared-reach entry
+    together, then one per other entry, each naming the record it is read
+    from (L-0733: the record is per checkout, so which file matters)."""
+    where = f" [record: {_record_abs()}]"
+    summary = _undeclared_summary(entries)
+    if summary:
+        print(summary + where)
+    owed = {k: v for k, v in entries.items() if not _undeclared(v)}
+    for key, info in sorted(owed.items(), key=lambda kv: kv[1].get("label", kv[0])):
+        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
+              f"{info.get('label', key)}: {info.get('reason', '')}{where}")
+
+
 def cmd_reach_notice():
     """verify-gate.ps1's half of `reach_notice` (the .sh matcher imports it):
     stdin is a JSON list of [index, reason] pairs; prints the lines."""
@@ -1042,12 +1056,23 @@ def cmd_sync():
     return _sync(sha, matched, cmd_log, all_run)
 
 
-def _current_rule_keys():
-    """The set of rule_key() values verify.json currently declares, or None
-    if the map could not be read at all. None (not an empty set) is the
-    unknown case: an unreadable map must not be read as "no rules exist",
-    which would prune every standing obligation on a transient read error.
-    Only a SUCCESSFULLY read map may prune anything."""
+def paths_key(paths):
+    """A digest of a rule's `paths` alone, order-insensitive for a list of
+    strings. Two rules with the same paths_key watch the same files; an edit
+    that keeps `paths` (adding `reach` or `seconds`, changing `run`) keeps it
+    while rule_key changes."""
+    if isinstance(paths, list) and all(isinstance(p, str) for p in paths):
+        paths = sorted(set(paths))
+    blob = json.dumps(paths, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def _current_rules():
+    """{rule_key: (index, paths_key)} for every rule verify.json currently
+    declares, or None if the map could not be read at all. None (not an
+    empty dict) is the unknown case: an unreadable map must not be read as
+    "no rules exist", which would prune every standing obligation on a
+    transient read error. Only a SUCCESSFULLY read map may prune anything."""
     try:
         with open(os.path.join(".crew", "verify.json"), encoding="utf-8") as fh:
             cfg = json.load(fh)
@@ -1056,7 +1081,52 @@ def _current_rule_keys():
     rules = cfg.get("rules") if isinstance(cfg, dict) else None
     if not isinstance(rules, list):
         return None
-    return {rule_key(r) for r in rules if isinstance(r, dict)}
+    current = {}
+    for i, r in enumerate(rules):
+        if isinstance(r, dict):
+            current.setdefault(rule_key(r), (i, paths_key(r.get("paths"))))
+    return current
+
+
+def _current_rule_keys():
+    """The set of rule_key() values verify.json currently declares, or None
+    if the map could not be read (see _current_rules)."""
+    current = _current_rules()
+    return None if current is None else set(current)
+
+
+def _stamp_paths(entries, current):
+    """L-0733: give every entry whose rule is still in the map its rule's
+    paths_key and the keys of the OTHER current rules with the same paths
+    (its peers). Refreshed on every sync while the rule exists, frozen once
+    it is orphaned - which is what lets _replacements tell "this rule was
+    edited" (a new key with its paths) from "this rule was removed and a
+    sibling that already watched the same paths remains" (a peer)."""
+    by_paths = {}
+    for k, (_, pk) in current.items():
+        by_paths.setdefault(pk, []).append(k)
+    for k, info in entries.items():
+        if k in current and isinstance(info, dict):
+            pk = current[k][1]
+            info["pathsKey"] = pk
+            info["peers"] = sorted(x for x in by_paths.get(pk, ()) if x != k)
+
+
+def _replacements(info, current):
+    """The current rules that replace an orphaned entry: same paths_key, and
+    not one of the peers that already sat beside it. [] when the entry
+    predates pathsKey (written before L-0733) - which rule replaced it is
+    then unknown, and unknown keeps the orphan."""
+    pk = info.get("pathsKey")
+    peers = info.get("peers")
+    if not isinstance(pk, str) or not isinstance(peers, list):
+        return []
+    return sorted((current[k][0], k) for k in current
+                  if current[k][1] == pk and k not in peers)
+
+
+def _record_abs():
+    return os.path.abspath(RECORD_PATH)
 
 
 def _sync(sha, matched, cmd_log, all_run=False):
@@ -1185,10 +1255,12 @@ def _sync(sha, matched, cmd_log, all_run=False):
     # THIS turn's `matched_rules`. Only prune when the current map was
     # actually readable (see _current_rule_keys) - an unreadable map must
     # not be read as "no rules exist" and silently clear every obligation.
-    valid_keys = _current_rule_keys()
+    current = _current_rules()
     orphaned = 0
-    if valid_keys is not None:
-        for stale_key in [k for k in entries if k not in valid_keys]:
+    superseded = []
+    if current is not None:
+        _stamp_paths(entries, current)
+        for stale_key in [k for k in entries if k not in current]:
             info = entries[stale_key]
             # Round 8 (verify_record.py:558): an entry whose rule was edited
             # (its content hash changed) or removed is NOT thereby verified.
@@ -1202,6 +1274,17 @@ def _sync(sha, matched, cmd_log, all_run=False):
             # key is orphaned, not resolved, unless this is an --all run.
             if all_run or not isinstance(info, dict):
                 del entries[stale_key]
+                continue
+            # L-0733: SUPERSEDED. The map now has a rule on the same paths
+            # that did not sit beside this one - its edited form (adding
+            # `reach`, `seconds`, a new `run`). That rule is what owes these
+            # paths now, and it runs or is recorded under its own key, so the
+            # old key is dropped instead of holding the marker until --all.
+            # An orphan nothing replaced (removed, or its paths edited) stays.
+            replaced_by = _replacements(info, current)
+            if replaced_by:
+                del entries[stale_key]
+                superseded.append((info, replaced_by))
             else:
                 if not info.get("orphaned"):
                     info["orphaned"] = True
@@ -1230,23 +1313,24 @@ def _sync(sha, matched, cmd_log, all_run=False):
         print(f"verify-gate: could not persist the record ({failure}); "
               f"NOT advancing the marker")
 
+    for info, replaced_by in superseded:
+        by = ", ".join(f"rules[{i}]" for i, _ in replaced_by)
+        print(f"verify-gate: dropped the obligation of {info.get('label', '?')} "
+              f"({info.get('status', '?')}) - its rule was edited, and {by} on the same paths "
+              f"replaces it [record: {_record_abs()}]")
+
     # L-0733: the undeclared-reach entries in one line; `entries` is saved
     # above, so from here on it is only what gets a line of its own.
-    summary = _undeclared_summary(entries)
-    if summary:
-        print(summary)
-    entries = {k: v for k, v in entries.items() if not _undeclared(v)}
-    for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
-        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {info.get('reason', '')}")
+    _print_owed(entries)
     if record_lost:
         print("verify-gate: the verified record was unreadable, so the obligations it "
               "held are UNKNOWN; NOT advancing the marker - run /crew:verify --all to rebuild it")
         return False
     if orphaned:
         print(f"verify-gate: {orphaned} unverified obligation(s) belong to a rule that was "
-              "edited or removed; NOT advancing the marker - run /crew:verify --all, or drop "
-              "them by name, running nothing: python3 "
+              "edited or removed and that no rule on the same paths replaced; NOT advancing the "
+              f"marker [record: {_record_abs()}] - run /crew:verify --all (it clears only this "
+              "checkout's record), or drop them by name, running nothing: python3 "
               f"{os.path.abspath(__file__)} forget-orphans (from the repo root)")
         return False
     return failure is None
@@ -1260,13 +1344,7 @@ def cmd_report():
     entries = record.get("rules")
     if not isinstance(entries, dict):
         return
-    summary = _undeclared_summary(entries)
-    if summary:
-        print(summary)
-    entries = {k: v for k, v in entries.items() if not _undeclared(v)}
-    for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
-        print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {info.get('reason', '')}")
+    _print_owed(entries)
 
 
 def cmd_timings_get():

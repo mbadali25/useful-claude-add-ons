@@ -3033,7 +3033,14 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `reach` not run on Stop: rules[...]`. The deferral is unchanged, `--ci`
   keeps a line per rule, and `/crew:status` still counts the entries by kind.
 - **An orphan** is a record entry whose rule was edited or removed since it
-  was recorded (its `rule_key` changed). It stays in the record, marked
+  was recorded (its `rule_key` changed). When the map has a new rule on the
+  same `paths` (the same rule edited: `reach` or `seconds` added, `run`
+  changed), the orphan is **superseded** and dropped, with a
+  `dropped the obligation of rules[N] ... rules[M] on the same paths
+  replaces it` line (L-0733); a rule that already sat beside it on those
+  paths is not its replacement. Each entry carries `pathsKey` and `peers` for
+  this; one recorded before L-0733 has neither, so it is never superseded.
+  An orphan nothing replaced stays in the record, marked
   `orphaned`, because an edit does not verify anything. An undeclared-reach
   orphan does not hold the verified marker (L-0733): its live form never
   did, and `--stamp-reach` in another checkout would otherwise freeze that
@@ -3042,6 +3049,15 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `python3 hooks/scripts/verify_record.py forget-orphans`, run from the repo
   root, drops it by name and runs nothing — for a map whose `--all` would
   reach `network`/`host` targets. The Stop line names that command.
+  The record is per checkout (`.crew/.verify-gate.record.json`): `--all`
+  clears only the record of the checkout it runs in, `--ci` never prunes it,
+  and every orphan and `NOT VERIFIED` line ends `[record: <absolute path>]`.
+- **Every exit 2 writes a line to stdout** (L-0733), `VERIFY GATE: BLOCKED
+  (exit 2) ...`, in both flavours. Claude Code treats a Stop hook that exits 2
+  with empty stdout and a stderr matching `no such file` or `can't open` as a
+  missing hook script and lets the turn through ("Hook script appears to be
+  missing ... Treating as non-blocking"), so a rule failing with
+  `No such file or directory` used to be waved past.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a

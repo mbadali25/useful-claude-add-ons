@@ -14,6 +14,14 @@ deferral itself is unchanged; an undeclared-reach orphan no longer holds the
 marker; and an orphan that still does names `verify_record.py forget-orphans`,
 which runs nothing.
 
+Folded in by owner decision (2026-10-08), from TSS PR #1143, which re-keyed
+every rule by adding `reach`/`seconds` and left 17 orphans: an orphan whose
+rule was EDITED (a new rule on the same paths, not a sibling that already sat
+beside it) is superseded and dropped; one that nothing replaced stays. And
+every exit 2 leaves a line on stdout, because Claude Code downgrades a Stop
+hook that exits 2 with empty stdout and a "No such file" stderr to
+non-blocking ("Hook script appears to be missing").
+
 Both flavours: `verify-gate.ps1` runs under pwsh with OS=Windows_NT, as
 `test_verify_gate_bookkeeping.py` runs it, and is skipped BY NAME when pwsh
 does not resolve - a skip is not a pass.
@@ -206,20 +214,25 @@ def test_an_undeclared_wrapper_runs_under_all(flavour, tmp_path):
     assert (full.returncode, sentinel.exists()) == (0, True), full.stderr
 
 
+def _remove_first_rule(root, rules):
+    """An undeclared rule REMOVED: its two siblings on the same paths sat
+    beside it when it was recorded, so neither replaces it."""
+    _write(root, ".crew/verify.json", json.dumps(
+        {"version": 1, "rules": rules[1:], "always": [], "default": [], "unmapped": "ignore"}))
+    _commit(root, "remove a rule")
+    _change(root, 3)
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_an_edited_undeclared_rule_does_not_pin_the_marker(flavour, tmp_path):
-    """The TSS case: entries recorded, then the map edited (53f579d4f), so
-    the old keys are orphaned. They stay in the record, marked, and the
-    marker still advances on a clean Stop."""
+    """The TSS case: entries recorded, then a rule removed, so its key is
+    orphaned with nothing to replace it. It stays in the record, marked,
+    and the marker still advances on a clean Stop."""
     rules = _legacy_rules()
     root = _repo(tmp_path, rules)
     _change(root, 2)
     _run(flavour, root)
-    rules[0]["run"] = ["bash _verify/smoke.sh b"]
-    _write(root, ".crew/verify.json", json.dumps(
-        {"version": 1, "rules": rules, "always": [], "default": [], "unmapped": "ignore"}))
-    _commit(root, "edit a rule")
-    _change(root, 3)
+    _remove_first_rule(root, rules)
 
     stop = _run(flavour, root)
 
@@ -235,11 +248,7 @@ def test_an_undeclared_orphan_is_counted_in_the_one_line(flavour, tmp_path):
     root = _repo(tmp_path, rules)
     _change(root, 2)
     _run(flavour, root)
-    rules[0]["run"] = ["bash _verify/smoke.sh b"]
-    _write(root, ".crew/verify.json", json.dumps(
-        {"version": 1, "rules": rules, "always": [], "default": [], "unmapped": "ignore"}))
-    _commit(root, "edit a rule")
-    _change(root, 3)
+    _remove_first_rule(root, rules)
 
     stop = _run(flavour, root)
 
@@ -329,6 +338,158 @@ def test_ci_keeps_its_per_rule_lines_after_the_notice_was_shown(flavour, tmp_pat
     ci = _run(flavour, root, "--ci")
 
     assert len(_per_rule_lines(ci.stderr)) == 2, ci.stderr
+
+
+def _stamp_first_rule(root, rules):
+    """TSS PR #1143: the same rule, now declaring `reach` - a new key on the
+    same paths."""
+    rules[0]["reach"] = "local"
+    _write(root, ".crew/verify.json", json.dumps(
+        {"version": 1, "rules": rules, "always": [], "default": [], "unmapped": "ignore"}))
+    _commit(root, "stamp reach")
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_an_edited_rule_supersedes_its_orphan(flavour, tmp_path):
+    rules = _legacy_rules()
+    root = _repo(tmp_path, rules)
+    _change(root, 2)
+    _run(flavour, root)
+    old = {k for k, v in _record(root)["rules"].items() if v.get("status") == "reach_wrapper"}
+    _stamp_first_rule(root, rules)
+
+    stop = _run(flavour, root)
+
+    record = _record(root)["rules"]
+    assert (stop.returncode, old & set(record), [v for v in record.values() if v.get("orphaned")]
+            ) == (0, set(), []), stop.stderr
+    assert "dropped the obligation of rules[0]" in stop.stderr and "rules[0] on the same paths" \
+        in stop.stderr, stop.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_superseded_chronic_orphan_frees_the_marker(flavour, tmp_path):
+    """The blocking kind: a chronic entry whose rule's `run` was edited, paths
+    kept. Before, it held the marker until --all."""
+    vmap = {"version": 1, "default": [], "unmapped": "ignore",
+            "rules": [{"paths": ["a.txt"], "seconds": 999, "reach": "local", "run": ["echo huge"]}]}
+    root = tmp_path / "c"
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    _write(root, ".gitignore", ".crew/.verify*\n.crew/.scope-base\n")
+    _write(root, ".crew/verify.json", json.dumps(vmap))
+    _commit(root, "fixture")
+    _write(root, "a.txt", "x")
+    _run(flavour, root)
+    _commit(root, "a.txt")
+    _run(flavour, root)
+    vmap["rules"][0]["run"] = ["echo huger"]
+    _write(root, ".crew/verify.json", json.dumps(vmap))
+    _commit(root, "edit the run")
+
+    stop = _run(flavour, root)
+
+    marker = (root / ".crew" / ".verify-verified-at").read_text(encoding="utf-8").strip()
+    assert (marker, "NOT advancing the marker" in stop.stderr) == (
+        _git(root, "rev-parse", "HEAD"), False), stop.stderr
+
+
+def test_a_pre_l0733_orphan_is_kept(tmp_path, monkeypatch):
+    """An entry written before pathsKey existed: which rule replaced it is
+    unknown, and unknown keeps the orphan (and its hold)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    rule = {"paths": ["a.txt"], "reach": "local", "run": ["echo new"]}
+    (tmp_path / ".crew" / "verify.json").write_text(json.dumps({"rules": [rule]}), encoding="utf-8")
+    (tmp_path / ".crew" / ".verify-gate.record.json").write_text(json.dumps({"rules": {
+        "0123456789abcdef": {"status": "chronic", "reason": "r", "label": "rules[0]: echo old",
+                             "sha": "x"}}}), encoding="utf-8")
+
+    ok = verify_record._sync("x", [], [])  # pylint: disable=protected-access
+
+    assert (ok, _record(tmp_path)["rules"]["0123456789abcdef"].get("orphaned")) == (False, True)
+
+
+def test_a_removed_rule_beside_a_peer_is_not_superseded(tmp_path, monkeypatch):
+    """Rules A and B watch the same paths; A is removed. B sat beside A when
+    A was recorded, so B is a peer, not A's replacement."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    a = {"paths": ["a.txt"], "seconds": 999, "reach": "local", "run": ["echo a"]}
+    b = {"paths": ["a.txt"], "reach": "local", "run": ["echo b"]}
+    mp = tmp_path / ".crew" / "verify.json"
+    mp.write_text(json.dumps({"rules": [a, b]}), encoding="utf-8")
+    key = verify_record.rule_key(a)
+    verify_record._sync("x", [{"key": key, "label": "rules[0]: echo a", "kind": "chronic"}], [])  # pylint: disable=protected-access
+    mp.write_text(json.dumps({"rules": [b]}), encoding="utf-8")
+
+    ok = verify_record._sync("y", [], [])  # pylint: disable=protected-access
+
+    assert (ok, _record(tmp_path)["rules"][key].get("orphaned")) == (False, True)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_owed_lines_name_the_absolute_record(flavour, tmp_path):
+    root = _repo(tmp_path, _legacy_rules())
+    _change(root, 2)
+
+    stop = _run(flavour, root)
+
+    owed = [line for line in stop.stderr.splitlines() if "NOT VERIFIED ON THIS TREE" in line]
+    record = os.path.abspath(str(root / ".crew" / ".verify-gate.record.json"))
+    assert owed and all(f"[record: {record}]" in line for line in owed), stop.stderr
+
+
+def _blocking_repo(tmp_path, rule_run, map_text=None):
+    root = tmp_path / "b"
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    _write(root, ".gitignore", ".crew/.verify*\n.crew/.scope-base\n")
+    _write(root, ".crew/verify.json", map_text or json.dumps(
+        {"version": 1, "default": [], "unmapped": "ignore",
+         "rules": [{"paths": ["src/**"], "seconds": 1, "reach": "local", "run": [rule_run]}]}))
+    _write(root, "src/a.py", "x = 1\n")
+    _commit(root, "fixture")
+    _change(root, 2)
+    return root
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_no_such_file_failure_blocks_with_stdout(flavour, tmp_path):
+    """TSS rule 32: `bash _verify/check-mo-matches-po.sh` with the script
+    gone, rc 127, stderr "No such file or directory". With stdout empty,
+    Claude Code 2.1.293 reads that as a missing hook and does not block."""
+    root = _blocking_repo(tmp_path, "bash _verify/check-mo-matches-po.sh")
+
+    stop = _run(flavour, root)
+
+    assert (stop.returncode, "no such file" in stop.stderr.lower(), bool(stop.stdout.strip())
+            ) == (2, True, True), (stop.stdout, stop.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_an_early_exit_2_writes_stdout_too(flavour, tmp_path):
+    root = _blocking_repo(tmp_path, "true", map_text="{ not json")
+
+    stop = _run(flavour, root)
+
+    assert (stop.returncode, "BLOCKED (exit 2)" in stop.stdout) == (2, True), (
+        stop.stdout, stop.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_usage_error_writes_stdout_too(flavour, tmp_path):
+    """Refused before the gate installs its own cleanup trap (sh)."""
+    root = _blocking_repo(tmp_path, "true")
+
+    stop = _run(flavour, root, "--bogus")
+
+    assert (stop.returncode, "BLOCKED (exit 2)" in stop.stdout) == (2, True), (
+        stop.stdout, stop.stderr)
 
 
 def test_the_notice_file_is_gate_owned():
