@@ -1,54 +1,53 @@
-%% Generated from useful-claude-add-ons@69de978c on 2026-10-04. Verify before trusting.
-%% Anchors: plugin/crew/commands/done.md, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_train.py
-%% Purpose: /crew:done's four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
-%% Re-drawn for T-0066 (crew 1.0.328, merging origin/main c9263465, then edb2b8ff, 155fe6d8 and e9364a70, all leaving done.md unchanged): the trailer
-%%    report (done.md:68-76) folded into dn4, which it precedes (a separate node crossed dn1 -> dnx); done.md cites re-read on this tree.
+%% Generated from useful-claude-add-ons@f9ed7ddd on 2026-10-09. Verify before trusting.
+%% Anchors: plugin/crew/commands/done.md, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_docs_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_train.py
+%% Purpose: /crew:done's five checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+%% Re-drawn 69de978c -> f9ed7ddd (L-0713 follow-up refresh, 2026-10-09): done.md went from four checks to five
+%%    (check 5, crew_docs_check.py, from main), check 2 now needs the gate settled for HEAD (L-0710: a local
+%%    VERIFIED marker with an empty record, a CI receipt, or NO_GATE), step 4 (notify) was dropped, and the
+%%    landing paragraph gained the catch-up order. Every done.md citation below re-taken with grep -n at f9ed7ddd.
+%% Re-drawn for T-0066 (crew 1.0.328): the trailer report folded into dn4, which it precedes.
 %% One part of the crew lifecycle; process-crew-lifecycle.mmd is the overview and keeps the re-anchor history.
 %% Arrow-shaped nodes ("next:" / "back:" / "again:") stand for a node drawn in the named part.
 %% --
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
-%%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
-%%     review receipt (--check-receipt); :21-38 check 2 verify gate via
-%%     crew_status.py (:27); :40-43 check 3 completion audit (:48-53: a refresh artifact
-%%     not admitted is listed with its reason); :55-66 check 4
-%%     crew_refresh_check.py (:58), read-only, refuses on stale/unknown/fresh-uncommitted (T-0063) and never
-%%     refreshes; :68-76 the forbidden-trailer report (never refuses); :78-84 all
-%%     pass -> spec.md `status: done`, keeping the approval (:80-81), then
-%%     crew_tracker.py move --to done (:82); :89 crew_metrics record;
-%%     :96-98 the report, ending with **Not verified:** (T-0041).
-%%   Re-read at 69de978c (T-0041): every done.md citation in this file re-derived
-%%     with grep -n; the f808e5f0 positions below check 2 were already behind the
-%%     file before T-0041, which added step 5 (:86-89) and moved the train by four.
-%%   Batch 6 merge with main (T-0066's trailer report at done.md:68-76): every
-%%     done.md citation above and in the nodes re-taken by grep -n on the merged tree,
-%%     after step 5 and the landing paragraph were re-wrapped to keep done.md at 120 lines.
-%%   Batch 7 merge of T-0063 (#368): check 4 refuses `fresh-uncommitted` too (dn5 relabelled, its
-%%     refusal edge too); done.md re-wrapped back to 120 lines, so every cite above is unchanged.
+%%   plugin/crew/commands/done.md:7 all five checks must pass; :9-16 check 1
+%%     review receipt (--check-receipt); :18-34 check 2 verify gate settled for HEAD:
+%%     crew_status.py's verify line plus review_gate.gate_state, or ci_receipt.py check
+%%     (exit 0 VERIFIED, exit 4 NO_GATE); :36-49 check 3 completion audit (a refresh
+%%     artifact not admitted is listed with its reason); :51-62 check 4
+%%     crew_refresh_check.py, read-only, refuses on stale/unknown/fresh-uncommitted and never
+%%     refreshes; :64-71 check 5 crew_docs_check.py, read-only, refuses on MISSING or unknown;
+%%     :73-81 the forbidden-trailer report (never refuses); :83-101 all pass -> sliced-plan
+%%     branch or spec.md `status: done` keeping the approval, then crew_tracker.py move --to done,
+%%     crew_metrics record, and the report ending with **Not verified:**.
+%%   :103-120 landing through the merge train (only when crew_train.py status prints armed: yes).
 %% --
 %% Note dn3: (refresh artifacts: re-anchor or regeneration the change reaches)
-%% Note dn4: first a report, never a check (T-0066, done.md:68-76): crew_trailers.py --check lists
-%%    git.forbiddenTrailers over the ticket's own commits (git log --first-parent) as clean / FINDING /
-%%    unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md
+%% Note dn4: first a report, never a check (done.md:73-81): crew_trailers.py --check lists
+%%    git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown,
+%%    copied to the close note and PR body; never refuses, never rewrites. Then spec.md
 %%    'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record,
-%%    then the report with its Not verified list (T-0041, done.md:96-98)
+%%    then the report with its Not verified list (done.md:99-101)
 %% Note ln1: crew_train.py check-land: holds the train, merge-tree clean, base unmoved in
 %%    Touch, receipt + gate
 %% Note ln2: --merge --match-head-commit sha
 flowchart TB
-    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
-        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
+    subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
+        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:9-16"}
+        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-49"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:51-62"}
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:64-71"}
+        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:111-115" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn6 -- "MISSING / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:103-106"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:108-113"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :113-114"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:115-120" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end

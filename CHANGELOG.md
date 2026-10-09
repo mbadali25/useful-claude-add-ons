@@ -38,6 +38,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
   (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
 
+### Changed — crew 1.2.10: the diagrams L-0713 left stale re-drawn against the code (L-0713 follow-up)
+
+- **Summary.** `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713:
+  the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2
+  needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA
+  diagrams are re-cited and re-anchored. No behaviour changed.
+- **The QA page.** `docs/qa/` and the three `process-qa-*` diagrams were regenerated with `qa_doc.py --write`
+  (94 verify rules now, 3 audit GAPs). The code graph was rebuilt with `graphify update .`.
+
 ## [1.2.9] - 2026-10-08
 
 ### Fixed — crew 1.2.9: one true quickstart (L-0713)

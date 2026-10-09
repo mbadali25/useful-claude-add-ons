@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@789dc230
+anchor: useful-claude-add-ons@5307a80e
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -25,7 +25,7 @@ claims to state, everywhere this pass checked.
 
 **DERIVED.** The root `.claude-plugin/marketplace.json` is the only
 marketplace file in this repo — stated as policy at `CLAUDE.md:5` and `:59`,
-enforced at `scripts/check-marketplace.py:104-131` (`check_registration`,
+enforced at `scripts/check-marketplace.py:105-132` (`check_registration`,
 unmoved from the previous anchor), which walks every on-disk entry directory
 and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 
@@ -34,7 +34,7 @@ and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 **DERIVED**, by the same method the previous anchor used — partition
 `marketplace.json`'s flat `plugins` array by `source` prefix
 (`./skills/` vs `./plugin/`) — and independently confirmed by running the
-gate. `scripts/check-marketplace.py:1705-1706` still derives `plugins` as
+gate. `scripts/check-marketplace.py:1876-1877` still derives `plugins` as
 `len(entries) - skills`, so an entry matching neither prefix would silently
 count as a plugin; the "neither" set is empty at this anchor, same as at
 `5d1fc5fd`.
@@ -88,7 +88,7 @@ none). An unreadable truth is UNVERIFIED, never a pass; `scripts/_test/self-clai
 holds must-block, must-allow and unmarked-silence cases for each.
 
 **DERIVED, re-read at this anchor.** `check_self_claims`
-(`scripts/check-marketplace.py:673-903`, moved +24 lines from `5d1fc5fd`'s
+(`scripts/check-marketplace.py:674-1074`, moved +24 lines from `5d1fc5fd`'s
 `:649` because `count_crew_markdown_lines` — new, `:564-586` — was inserted
 ahead of it) still recognises `skills-count` (marketplace-wide total),
 `plugin-version:<name>`, and `plugin-skills:<name>` (counting
@@ -138,11 +138,11 @@ Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1
 safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
-(`scripts/check-marketplace.py:301-327`) compares that ordering, not merely
+(`scripts/check-marketplace.py:302-328`) compares that ordering, not merely
 set membership.
 
 **What the checker never opens.** `check_docs`
-(`scripts/check-marketplace.py:413-428`) still reads exactly three files —
+(`scripts/check-marketplace.py:414-429`) still reads exactly three files —
 `skills/README.md`, `plugin/README.md`, root `README.md` — for the literal
 substring `` [`name`](link) ``, and never opens `plugin/PLUGINS.md`: the
 string `PLUGINS.md` appears nowhere in `scripts/check-marketplace.py` or
@@ -236,14 +236,14 @@ against synthetic fixtures and never reads this repo's own docs.
 
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct
   against disk on every measured count.
-- `scripts/check-marketplace.py:1679` — `main()`, seventeen checks in the same
+- `scripts/check-marketplace.py:1850` — `main()`, seventeen checks in the same
   order as `verification-harness.md` records.
-- `scripts/check-marketplace.py:104` — `check_registration`.
-- `scripts/check-marketplace.py:301`, `:329`, `:383` — `check_catalogs`,
+- `scripts/check-marketplace.py:105` — `check_registration`.
+- `scripts/check-marketplace.py:302`, `:329`, `:383` — `check_catalogs`,
   `check_menu_parity`, `check_group_parity`.
-- `scripts/check-marketplace.py:413` — `check_docs`, the three-file,
+- `scripts/check-marketplace.py:414` — `check_docs`, the three-file,
   link-substring-only check.
-- `scripts/check-marketplace.py:673`, `:904`, `:918`, `:1026`, `:1081` —
+- `scripts/check-marketplace.py:674`, `:904`, `:918`, `:1026`, `:1081` —
   `check_self_claims`, `DESCRIPTION_CLAIMS`, `check_description_claims`,
   `CATALOG_CLAIMS`, `check_catalog_claims`.
 - `scripts/install-prerequisites.sh:1298`, `:1383`, `:1422`, `:1448` —
@@ -1550,3 +1550,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
 
 **Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
+
+**Re-anchored `789dc230` -> `5307a80e` on 2026-10-09 (L-0713 follow-up refresh).** Since `789dc230` main took #578 (L-0712), #585 (L-0730), #586 (rush notes moved to `docs/handoff/cloud/rush-1.2.0/`), #583 (L-0710 feature: `/crew:done` check 2 settled for HEAD) and #580 (L-0713: one quickstart, `crew_status._is_0_20_setup`), and this branch refreshed the diagrams, CHANGELOG and graph. L-0710 and L-0713 edited these maps themselves at the new positions. Every other body citation into a file changed since `789dc230` was mapped by difflib from `789dc230` to `5307a80e`, each onto a line with the same text: 10 moved in this note. Citations inside the dated provenance sections and notes are as of their own commits and were left alone. The version cites (`plugin.json:3`, `PLUGINS.md:14`) keep their line and changed text in place, and `docs/diagrams/data-flow-crew-config.mmd:1-2` is that diagram's re-anchored header.

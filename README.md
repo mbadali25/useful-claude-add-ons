@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.3**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
-- **crew 1.2.9**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **crew 1.2.10**: The diagrams L-0713 left stale re-drawn against the code. `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713: the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2 needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA diagrams are re-cited and re-anchored. No behaviour changed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
