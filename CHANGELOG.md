@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.17: every crew test runs under a home of its own (L-0709)
+### Changed — crew 1.2.18: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** The crew test suite no longer reads your real `~/.claude/crew/config.json`: every
   test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
@@ -42,6 +42,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   fails the test. Quarantined (L-0737 fixes them):
   `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
   2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
+
+### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
+
+- **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
+  gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code
+  graph with `graphify update .`. No behaviour changed.
 
 ### Fixed — crew 1.2.16: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
 
