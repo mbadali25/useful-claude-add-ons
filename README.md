@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.10**: The Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks. A repo whose verify map predates `reach` gets one notice naming `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in place no longer leaves an orphan that freezes the verified marker; and a rule that fails with `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
 - **crew 1.2.9**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
