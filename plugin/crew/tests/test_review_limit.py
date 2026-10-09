@@ -316,6 +316,38 @@ def test_recorded_limit_applies_to_the_next_round_only(lane):
     assert (probe.returncode, len(_calls(bin_dir))) == (0, before + 1)
 
 
+def test_a_no_reviewer_outcome_after_a_limit_spends_the_marker(lane):
+    """L-0712 round 6 FIX: --no-reviewer decides the round without reserving
+    one, so rounds_used never moves; the marker must not apply forever."""
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+    _review(repo, scratch, bin_dir, "limit")
+    review_ledger.no_reviewer(str(repo), "T1", "codex limit, no cross-family reviewer")
+    before = len(_calls(bin_dir))
+
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert (probe.returncode, len(_calls(bin_dir))) == (0, before + 1), probe.stdout
+
+
+def test_a_no_reviewer_outcome_before_the_limit_leaves_the_marker(lane):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+    review_ledger.no_reviewer(str(repo), "T1", "an earlier no-reviewer outcome")
+    data_path = review_ledger.ledger_path(str(repo), "T1")
+    with open(data_path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    data["unreviewed"][0]["at"] = "2000-01-01T00:00:00+00:00"
+    with open(data_path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data))
+    _review(repo, scratch, bin_dir, "limit")
+    before = len(_calls(bin_dir))
+
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert (probe.returncode, len(_calls(bin_dir))) == (5, before), probe.stdout
+
+
 def test_non_limit_failure_mid_round_records_nothing(lane):
     repo, scratch, bin_dir = lane
     _bundle(repo, scratch)

@@ -1377,6 +1377,10 @@ def main(argv):
         if args.reserve:
             # L-0712 round 5: this is a reserving path too, so it asks review_run's
             # one family guard (never a second copy that could disagree with it).
+            # Run as a script this module is `__main__`; review_run imports
+            # `review_ledger`, which would be a second copy whose LedgerError the
+            # except below cannot catch (round 6 FIX). One module, one class.
+            sys.modules.setdefault("review_ledger", sys.modules[__name__])
             import review_run  # pylint: disable=import-outside-toplevel
             refusal, label = review_run.family_guard(argparse.Namespace(
                 provider=args.provider, model=args.model, authors=args.authors,

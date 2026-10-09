@@ -28,7 +28,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `--probe` asks the guard first; without `--authors` a Claude or unknown-family reservation is
   refused unless `--same-family` labels it (`--round` beside `--reserve-only` exempts nothing), and
   any other reviewer runs with stderr saying the guard was not applied. `review_ledger.py --reserve`
-  asks the same guard (`--authors`, `--author-source`, `--same-family`). A same-family round's
+  asks the same guard (`--authors`, `--author-source`, `--same-family`; a bad reason is a handled
+  refusal, never a traceback). A Codex limit marker is spent by a no-reviewer outcome recorded after it,
+  so the next probe calls Codex live instead of answering limited forever. A same-family round's
   metrics row says `same-family: operator choice`. A null `unreviewed` record reads as unreadable on
   `/crew:status`.
   A Codex usage limit now names the next cross-family provider, not the Claude reviewer.
@@ -42,9 +44,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   2026-09-28 "codex limit -> Claude" practice becomes that explicit choice.
 - **`/crew:status`** (declared seam). A ticket line with no-reviewer outcomes says
   `N with no reviewer (INCOMPLETE, refunded)`.
-- **Sabotage.** Twenty-eight L-0712 entries in `sabotage_review.py`, each red on its named test: the
+- **Sabotage.** Thirty-one L-0712 entries in `sabotage_review.py`, each red on its named test: the
   feature half's four (fallback to claude, the author skip, an unasked same-family walk, the status
-  share's model family) and twenty-four here (the guard, a Claude reservation with no `--authors`, `--round` exempting one, the ledger CLI's guard and label, the metrics label, an empty `--authors`, an unknown author
+  share's model family) and twenty-seven here (the guard, the limit marker spent by a no-reviewer outcome (two), the ledger CLI's single module, a Claude reservation with no `--authors`, `--round` exempting one, the ledger CLI's guard and label, the metrics label, an empty `--authors`, an unknown author
   source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter,
   its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
   receipt labels, the auto-accept bar, the status count, a malformed status record and a null one).

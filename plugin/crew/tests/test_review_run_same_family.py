@@ -195,6 +195,15 @@ def test_the_ledger_cli_reserves_a_cross_family_or_labelled_round(setup, args, l
     assert (result.returncode, row.get("same_family") is True) == (0, labelled), result.stderr
 
 
+@pytest.mark.parametrize("reason", ["", " ", "two\nlines"])
+def test_a_bad_same_family_reason_on_the_ledger_cli_is_a_handled_refusal(setup, reason):
+    result = _ledger_cli(setup, "--reserve", "--same-family", reason)
+
+    assert (result.returncode, "Traceback" in result.stderr,
+            result.stderr.startswith("review-ledger:"),
+            rl.status(str(setup[0]), "T1")["rounds_used"]) == (1, False, True, 0), result.stderr
+
+
 def test_the_ledger_cli_takes_family_flags_only_with_reserve(setup):
     result = _ledger_cli(setup, "--status", "--authors", "gpt")
 

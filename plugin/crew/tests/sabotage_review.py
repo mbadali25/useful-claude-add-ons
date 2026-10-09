@@ -15,6 +15,7 @@ REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 MERGED_MAIN = os.path.join(CREW, "hooks", "scripts", "merged_main.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
+REVIEW_LIMIT = os.path.join(CREW, "hooks", "scripts", "review_limit.py")
 CREW_TICKET = os.path.join(CREW, "hooks", "scripts", "crew_ticket.py")
 REVIEW_DELTA = os.path.join(CREW, "hooks", "scripts", "review_delta.py")
 CREW_AUTOPILOT = os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py")
@@ -1894,6 +1895,18 @@ REVIEW_FIX_MUTATIONS = (
      '            ok, number, message = reserve(root, args.ticket, args.provider, args.model,\n'
      '                                          same_family=None)\n',
      _SF + "test_the_ledger_cli_reserves_a_cross_family_or_labelled_round"),
+    ("L-0712: a no-reviewer outcome never spends a Codex limit marker", REVIEW_LIMIT,
+     '    if consumed_by_no_reviewer(mark, ledger.get("unreviewed")):\n        return None\n',
+     '',
+     "tests/test_review_limit.py::test_a_no_reviewer_outcome_after_a_limit_spends_the_marker"),
+    ("L-0712: an older no-reviewer outcome spends a newer limit marker", REVIEW_LIMIT,
+     'or when >= at:\n',
+     'or when < at:\n',
+     "tests/test_review_limit.py::test_a_no_reviewer_outcome_before_the_limit_leaves_the_marker"),
+    ("L-0712: review_ledger.py --reserve loads a second review_ledger module", REVIEW_LEDGER,
+     '            sys.modules.setdefault("review_ledger", sys.modules[__name__])\n',
+     '',
+     _SF + "test_a_bad_same_family_reason_on_the_ledger_cli_is_a_handled_refusal"),
     ("L-0712: the metrics row ignores the same-family label", REVIEW_METRICS,
      '                              same_family=review.get("same_family") is True),\n',
      '                              same_family=False),\n',
