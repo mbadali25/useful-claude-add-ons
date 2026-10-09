@@ -1003,7 +1003,16 @@ harness path, so they land in their own lane.
 `review_ledger.py:894`) before EITHER success return: `.work`, `graphify-out` and
 `.crew/metrics.md` diffed over receipt base -> reviewed head, reviewed head -> HEAD and reviewed
 head -> the index (`index_tree` `review_delta.py:179`), only `EXCLUDED_EXCEPTIONS` (`:77`, the two
-graph files, status M, mode 100644, not binary) allowed. On a hash mismatch `review_delta.judge`
+graph files, status M, mode 100644, not binary) allowed. L-0739, DERIVED: the bundle appends the
+committed text changes under `review_patch.INCLUDABLE` (`.work`, `.crew/metrics.md`,
+`plugin/crew/hooks/scripts/review_patch.py:168`) from base -> HEAD's commit trees
+(`included_patch` `:384`, appended at `:563`; `included_entries` `:375` drops what
+`why_not_included` `:356` names - binary, non-100644, ignored per `git check-ignore --no-index`);
+the first range of check E (`_excluded_problem` `review_delta.py:234`) passes those, then
+`_bundle_carried` (`:263`) requires the receipt's hash to be the reviewed head's rebuilt bundle or
+today's; `reviewed_bundle` (`:202`) and `delta` (`:370`) carry the same section. JUDGEMENT: an
+empty section leaves the bundle bytes unchanged, so pre-L-0739 receipts stay valid. On a hash
+mismatch `review_delta.judge`
 (`:684`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
 bundle through T-0100's rule (`reviewed_bundle` `:189`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:272`, `merged_main.resolve(..., head)`), is

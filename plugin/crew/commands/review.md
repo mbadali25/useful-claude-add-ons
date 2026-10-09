@@ -330,9 +330,9 @@ case "$PROBE_STATUS" in 5|6|7) FALLBACK=$(python3 -c 'import sys; sys.path.inser
 #
 # review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and untracked
 # changes, never `.work/`, generated `graphify-out/` (`excluded`) or a path identical to
-# merged main (`merged_main`), with renames, modes, binaries and submodules in the
-# manifest, split into parts (never truncated) and hashed. `git diff "$BASE"...HEAD` gave
-# 0 bytes on a dirty tree (Codex, `docs/review/03-codex-review.md`). Real index unwritten.
+# merged main (`merged_main`), with renames, modes, binaries and submodules in the manifest,
+# split into parts (never truncated) and hashed; committed text changes under `.work/` or `.crew/metrics.md` in $BASE..HEAD are appended (L-0739, `included_excluded`).
+# `git diff "$BASE"...HEAD` gave 0 bytes on a dirty tree (Codex, `docs/review/03-codex-review.md`). Real index unwritten.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"

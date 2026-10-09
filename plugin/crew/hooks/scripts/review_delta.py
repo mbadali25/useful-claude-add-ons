@@ -12,12 +12,23 @@ stale reason of its own and never a keep (root CLAUDE.md, Lessons).
 
 CHECK E (`excluded_check`), run by `check_receipt` before EITHER success
 return. The bundle leaves `.work/`, `graphify-out/` and `.crew/metrics.md` out
-(`review_patch.EXCLUDED`), so a change there is invisible to its hash. Three
-ranges are diffed on those paths alone: receipt base -> reviewed head (what
-the reviewer was never shown), reviewed head -> HEAD (what lands) and reviewed
-head -> the index (what the next commit lands; untracked files never do, and
-crew writes some there itself, so not the `add -A` working state). Every entry must be
-one of `EXCLUDED_EXCEPTIONS`, status M, mode 100644 both sides, not binary.
+of its working-state diff (`review_patch.EXCLUDED`), so a change there is
+invisible to that part of its hash. Three ranges are diffed on those paths
+alone: receipt base -> reviewed head (what the reviewer was shown, or not),
+reviewed head -> HEAD (what lands) and reviewed head -> the index (what the
+next commit lands; untracked files never do, and crew writes some there
+itself, so not the `add -A` working state). Every entry must be one of
+`EXCLUDED_EXCEPTIONS`, status M, mode 100644 both sides, not binary. In the
+FIRST range only (L-0739) an entry may also be one the bundle carries -- a
+committed text change under `.work/` or `.crew/metrics.md` that the
+repository's ignore rules do not match (`review_patch.included_entries`) --
+and then only when the receipt's bundle really carried it: its hash is the
+reviewed head's bundle rebuilt with that section (`reviewed_bundle`) or the
+bundle rebuilt now (a review of uncommitted bytes; range 2 has already proven
+the excluded paths unchanged since). A receipt minted before L-0739 never
+carried it: "outside the bundle; re-review so it is included". Anything the
+bundle can never show (binary, a mode change, symlink, gitlink, an ignored
+path, generated `graphify-out/`) is refused with why and the remedy.
 
 THE DELTA GATE (`judge`), in order:
  1. The reviewed head `H_r` is the latest round row's `head`: a full sha and a
@@ -74,7 +85,7 @@ EXEMPT_PROSE = ("CHANGELOG.md", "TODO.md", "plugin/PLUGINS.md", "plugin/*/BUDGET
 EXEMPT_MANIFEST = (".claude-plugin/marketplace.json", "plugin/*/.claude-plugin/plugin.json",
                    "skills/*/.claude-plugin/plugin.json")
 MARKETPLACE = ".claude-plugin/marketplace.json"
-EXCLUDED_PATHS = (".work", "graphify-out", ".crew/metrics.md")
+EXCLUDED_PATHS = review_patch.EXCLUDED_ROOTS
 EXCLUDED_EXCEPTIONS = ("graphify-out/graph.json", "graphify-out/GRAPH_REPORT.md")
 
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -194,18 +205,20 @@ def reviewed_bundle(root, base, head):
     a review written after a catch-up (paths identical to merged main left
     out, paths main also changed diffed from the merged commit) is rebuilt as
     that round read it. `review_patch._ticket_base_tree` with `head` in place
-    of HEAD, then the same diff flags, exclusions and part split, with no
-    working state."""
+    of HEAD, then the same diff flags, exclusions, appended section of
+    committed excluded-path changes (L-0739) and part split, with no working
+    state."""
     head_tree = _tree(root, head)
     tmp_dir = tempfile.mkdtemp(prefix="review-delta-")
     try:
         tree = review_patch._ticket_base_tree(root, base, head_tree, tmp_dir,  # pylint: disable=protected-access
                                               head=head)[0]
+        only = ["--", "."] + review_patch._EXCLUDE_SPEC  # pylint: disable=protected-access
+        patch = review_patch._run_raw(root, ["diff"] + review_patch._DIFF_FLAGS  # pylint: disable=protected-access
+                                      + [tree, head_tree] + only)
+        patch += review_patch.included_patch(root, _tree(root, base), head_tree, tmp_dir)[0]
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-    only = ["--", "."] + review_patch._EXCLUDE_SPEC  # pylint: disable=protected-access
-    patch = review_patch._run_raw(root, ["diff"] + review_patch._DIFF_FLAGS  # pylint: disable=protected-access
-                                  + [tree, head_tree] + only)
     parts = review_patch.split_parts(patch, review_patch.DEFAULT_MAX_PART_BYTES)
     return (review_patch.bundle_sha256(parts) if parts else None), tree
 
@@ -213,38 +226,50 @@ def reviewed_bundle(root, base, head):
 # --------------------------------------------------------------------------
 # check E: the excluded paths
 
-def _numstat(raw):
-    """`git diff --numstat -z --no-renames` -> {path: (added, deleted)}."""
-    rows = {}
-    for rec in raw.decode("utf-8", errors="surrogateescape").split("\0"):
-        if not rec:
-            continue
-        added, deleted, path = rec.split("\t", 2)
-        if path in rows:
-            raise RuntimeError(f"numstat lists {path!r} twice")
-        rows[path] = (added, deleted)
-    return rows
+OUTSIDE_BUNDLE = "outside the bundle"
+REREVIEW = f"{OUTSIDE_BUNDLE}; re-review so it is included"
+_FIRST_RANGE = "receipt base -> reviewed head"
 
 
-def _excluded_problem(root, a, b, label):
-    """Why the excluded paths changed unacceptably between trees `a` and `b`,
-    or None."""
-    spec = ["--"] + list(EXCLUDED_PATHS)
-    flags = ["--no-renames", "--no-ext-diff", "--no-textconv", "--no-abbrev", "-z"]
-    raw = review_patch._run_raw(root, ["diff", "--raw"] + flags + [a, b] + spec)  # pylint: disable=protected-access
-    stat = review_patch._run_raw(root, ["diff", "--numstat"] + flags + [a, b] + spec)  # pylint: disable=protected-access
-    entries = review_patch._parse_raw(raw)  # pylint: disable=protected-access
-    rows = _numstat(stat)
-    if {e["path"] for e in entries} != set(rows):
-        return f"{COULD_NOT_TELL}: raw and numstat disagree on the excluded paths ({label})"
+def _excluded_problem(root, a, b, label, shown=False):
+    """(why the excluded paths changed unacceptably between trees `a` and
+    `b` or None, the paths the bundle carries). `shown` (the first range
+    only): a change the bundle carries is not a problem here; it is returned
+    for `excluded_check` to prove the receipt's bundle carried it."""
+    try:
+        entries = review_patch.excluded_entries(root, a, b)
+    except RuntimeError as exc:
+        return f"{COULD_NOT_TELL}: {exc} ({label})", []
+    ignored = set()
+    if shown:
+        ignored = review_patch.ignored(root, [e["path"] for e in entries
+                                              if review_patch.why_not_included(e) is None])
+    carried = []
     for entry in entries:
         path = entry["path"]
-        added, deleted = rows[path]
-        binary = (added, deleted) == ("-", "-")
-        if (path not in EXCLUDED_EXCEPTIONS or entry["status"] != "M"
-                or entry["old_mode"] != "100644" or entry["new_mode"] != "100644" or binary):
-            return f"excluded path changed: {path} ({label})"
-    return None
+        if (path in EXCLUDED_EXCEPTIONS and entry["status"] == "M" and not entry["binary"]
+                and entry["old_mode"] == "100644" and entry["new_mode"] == "100644"):
+            continue
+        if not shown:
+            return f"excluded path changed: {path} ({label})", []
+        why = review_patch.why_not_included(entry, ignored)
+        if why:
+            return (f"excluded path changed: {path} ({label}): {OUTSIDE_BUNDLE}, which cannot "
+                    f"show it ({why}); restore it in a new commit, then re-review"), []
+        carried.append(path)
+    return None, carried
+
+
+def _bundle_carried(root, receipt, base, head):
+    """True when the receipt's bundle hash is one that carries the committed
+    excluded-path section: the reviewed head's bundle rebuilt, or the bundle
+    rebuilt now (a review of uncommitted bytes)."""
+    want = (receipt or {}).get("bundle_sha256")
+    if not want:
+        return False
+    if reviewed_bundle(root, base, head)[0] == want:
+        return True
+    return review_patch.compute(root, base)[0]["bundle_sha256"] == want
 
 
 def excluded_check(root, receipt, row):
@@ -253,13 +278,18 @@ def excluded_check(root, receipt, row):
         head = _commit(root, (row or {}).get("head"), "reviewed head")
         base = _commit(root, (receipt or {}).get("base"), "receipt base")
         head_tree = _tree(root, head)
-        ranges = ((_tree(root, base), head_tree, "receipt base -> reviewed head"),
+        ranges = ((_tree(root, base), head_tree, _FIRST_RANGE),
                   (head_tree, _tree(root, "HEAD"), "reviewed head -> HEAD"),
                   (head_tree, index_tree(root), "reviewed head -> index"))
+        carried = []
         for a, b, label in ranges:
-            problem = _excluded_problem(root, a, b, label)
+            problem, shown = _excluded_problem(root, a, b, label, shown=label == _FIRST_RANGE)
             if problem:
                 return False, problem
+            carried += shown
+        if carried and not _bundle_carried(root, receipt, base, head):
+            return False, (f"excluded path changed: {carried[0]} ({_FIRST_RANGE}): this receipt's "
+                           f"bundle did not carry it, so it is {REREVIEW}")
     except Stale as exc:
         return False, f"{COULD_NOT_TELL}: no reviewed head to check excluded paths against: {exc}"
     except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -338,9 +368,12 @@ def checkout_problem(root, trees):
 # steps 6 and 8
 
 def delta(root, a, b):
-    """{path: entry} for `a -> b` with review_patch's flags and exclusions."""
+    """{path: entry} for `a -> b` with review_patch's flags and exclusions,
+    plus the committed excluded-path changes the bundle carries (L-0739)."""
     out = {}
-    for entry in review_patch._entries(root, a, b):  # pylint: disable=protected-access
+    carried = [dict(e, mode_changed=False, submodule=False)
+               for e in review_patch.included_entries(root, a, b)]
+    for entry in review_patch._entries(root, a, b) + carried:  # pylint: disable=protected-access
         if entry["path"] in out:
             raise RuntimeError(f"the diff lists {entry['path']!r} twice")
         out[entry["path"]] = entry
