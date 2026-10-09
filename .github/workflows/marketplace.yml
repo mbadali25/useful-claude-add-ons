@@ -85,6 +85,11 @@ jobs:
       # a deleted marker, an unreadable source; must-pass: a never-embedded README.
       - name: Diagram embed suite
         run: python3 scripts/_test/check-diagram-embeds.py
+      # L-0713: run-plugin-evals.{sh,ps1} discover their cases; this suite runs
+      # both against a stub claude (no model call): an empty evals/ says "no
+      # eval cases", a non-zero exit or an unscored result fails the run.
+      - name: Plugin eval runner suite
+        run: python3 scripts/_test/plugin-evals-runner.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs

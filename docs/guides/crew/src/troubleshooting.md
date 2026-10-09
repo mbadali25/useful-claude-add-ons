@@ -53,8 +53,9 @@ or behaves like an older release.
   /crew:status
   ```
 
-  Read-only, at most 40 lines, dispatches nothing. Its `config` line names which config file it
-  read (`.crew/crew.json` for 1.0, `.crew/config.json` for 0.20); `codemap` reports `behind:
+  Read-only, at most 40 lines, dispatches nothing. Its `config` line names the config file it
+  read: `.crew/config.json` for a repository `/crew:init` set up, ending `run /crew:migrate` only<!-- claim: crew-config-file:config.json -->
+  when that file still holds a 0.20 setup, or `.crew/crew.json` once `/crew:migrate` has run; `codemap` reports `behind:
   <subsystem>` when a map's anchor and the path diff both say it is stale.
 
 ## Hook noise

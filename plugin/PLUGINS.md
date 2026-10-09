@@ -131,8 +131,9 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 37, all explicit
+### Commands — all 38 commands, explicit<!-- claim: plugin-commands:crew -->
 
+<!-- claim: plugin-command-table:crew -->
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
@@ -143,6 +144,7 @@ to CI or to branch protection.
 | `/crew:config-setup` | Set up crew config from a menu - machine or repo layer, dry run then apply, or delete the repo config |
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
+| `/crew:graph [--status \| --refresh \| --query "<question>"]` | The code graph - one-line status, the repo's sanctioned refresh with the pair check, and queries |
 | `/crew:docs [--audit]` | Update the documents this change should touch — and only those |
 | `/crew:done <ticket id>` | Close a ticket - needs an accepted review receipt, a verify gate settled for HEAD (every rule passed here, or the CI receipt VERIFIED), a passing completion audit, current artifacts |
 | `/crew:emergency <what is broken> \| status \| extend [minutes] \| end` | Declare an incident - stand the gates down, spin up parallel investigation lanes, and record what was skipped |
@@ -153,7 +155,7 @@ to CI or to branch protection.
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
-| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback; a pre-0.20 config is upgraded first, in the same run |
+| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback; a pre-0.20 config is upgraded first, in the same run; `.crew/config.json` stays the config crew reads, and a repo `/crew:init` set up never needs it |<!-- claim: crew-config-file:config.json -->
 | `/crew:model` | Show or change which model backs each crew role, and probe that it actually answers |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync a ticket between an Obsidian Kanban board and the local cache |
 | `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
