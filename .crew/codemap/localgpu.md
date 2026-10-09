@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@789dc230
+anchor: useful-claude-add-ons@5307a80e
 verified: 2026-10-01
 
 # localgpu
@@ -27,10 +27,10 @@ was confirmed on their own machine (`plugin/localgpu/mcp/_version.py:10-13`).
 convention checked by `scripts/check-marketplace.py`" — that is false, caught
 by QA, and worth recording exactly how.** `grep -rn pyproject scripts/` is
 empty: nothing under `scripts/` reads `pyproject.toml` at all.
-`check_plugin_manifests` (`scripts/check-marketplace.py:160-170`) does check a
+`check_plugin_manifests` (`scripts/check-marketplace.py:161-171`) does check a
 `plugin.json` version, but against `marketplace.json`'s declared version for
 that entry (`declared != entry["version"]` at
-`scripts/check-marketplace.py:169`), not against `pyproject.toml`. So
+`scripts/check-marketplace.py:170`), not against `pyproject.toml`. So
 `plugin/localgpu/.claude-plugin/plugin.json:3` agreeing with
 `plugin/localgpu/pyproject.toml:7` specifically is checked by **nothing** —
 not by `localgpu`'s own code (see above) and not by this repo's marketplace
@@ -761,7 +761,7 @@ never matches and has to be counted on its own):
   `plugin/crew/hooks/scripts/crew_config.py:128-129`,
   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
   in full rather than one of them in shorthand,
-  `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
+  `scripts/check-marketplace.py:161-171` and `scripts/check-marketplace.py:170`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
   earlier miscount); the QA round after that said 12 and described the
   `crew_state.py` citation above as falling outside the `plugin/` regex used
@@ -891,7 +891,7 @@ sentence around it staying correct.
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
-   `scripts/check-marketplace.py:169` was described as "cited in shorthand"
+   `scripts/check-marketplace.py:170` was described as "cited in shorthand"
    when it is written out in full. Replaced the two-regex-plus-manual-add-on
    method with one regex that matches any repo-relative citation regardless
    of top-level directory, so the count is whatever running that one command
@@ -1882,3 +1882,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
 
 **Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
+
+**Re-anchored `789dc230` -> `5307a80e` on 2026-10-09 (L-0713 follow-up refresh).** Since `789dc230` main took #578 (L-0712), #585 (L-0730), #586 (rush notes moved to `docs/handoff/cloud/rush-1.2.0/`), #583 (L-0710 feature: `/crew:done` check 2 settled for HEAD) and #580 (L-0713: one quickstart, `crew_status._is_0_20_setup`), and this branch refreshed the diagrams, CHANGELOG and graph. L-0710 and L-0713 edited these maps themselves at the new positions. Every other body citation into a file changed since `789dc230` was mapped by difflib from `789dc230` to `5307a80e`, each onto a line with the same text: 5 moved in this note. Citations inside the dated provenance sections and notes are as of their own commits and were left alone. The version cites (`plugin.json:3`, `PLUGINS.md:14`) keep their line and changed text in place, and `docs/diagrams/data-flow-crew-config.mmd:1-2` is that diagram's re-anchored header.
