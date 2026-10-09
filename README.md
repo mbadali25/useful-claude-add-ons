@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.18**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
 - **crew 1.2.14**: Sabotage entries for the 1.0 scope reader. Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
-- **crew 1.2.13**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

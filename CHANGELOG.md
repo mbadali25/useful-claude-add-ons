@@ -9,6 +9,28 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.18: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
+
+- **Summary.** In a repository that commits `.work/` notes, a release whose reviewed range changed
+  one can now be reviewed and promoted: the review bundle shows the committed text change, and the
+  receipt check refuses only what the bundle cannot show.
+- **Bundle (`review_patch.py`).** Committed text changes under `.work/` and `.crew/metrics.md` from
+  the base to HEAD - status A, M or D, mode 100644, not binary, not matched by the repository's own
+  ignore rules - are appended after the rest of the bundle, read from the commit trees only, so an
+  untracked `review.json` or a metrics row never moves the hash. The manifest lists them as
+  `included_excluded`; the prompt prints them as `shown anyway`. A range with none builds the same
+  bytes as before, so existing receipts stay valid.
+- **Check E (`review_delta.py`).** The receipt base -> reviewed head range passes those changes only
+  when the receipt's bundle carried them; an older receipt says `outside the bundle; re-review so it
+  is included`. A binary, executable, symlink or gitlink file, a force-added ignored file or a
+  `graphify-out/` file there says `outside the bundle, which cannot show it (<why>); restore it in a
+  new commit, then re-review`. Reviewed head -> HEAD and -> index are unchanged: any excluded-path
+  change after the review is still stale. The delta gate's rebuild and interdiff carry the same
+  section.
+- **Tests.** Must-block and must-allow cases in `test_review_delta.py`, `test_review_patch.py` and
+  promote-gate's review suite (sh and ps1); eight new sabotage entries in `sabotage_review.py` and
+  three check E entries re-anchored, each seen red.
+
 ### Added — crew 1.2.14: sabotage entries for the 1.0 scope reader (L-0711, harness half)
 
 - **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
