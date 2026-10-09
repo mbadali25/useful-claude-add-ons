@@ -268,11 +268,27 @@ def _review_lines(root):
             line += f", {summary['rounds_refunded']} refunded"
         if True in marks:
             line += ", same-family round"
+        # Absent: a ledger written before L-0712 (review_ledger.summary reads it as []);
+        # an explicit null is a malformed record and reads as unreadable.
+        line += _unreviewed_note(summary.get("unreviewed", []))
         lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")
     lines.append(_same_family_line(tally))
     return lines
+
+
+def _unreviewed_note(unreviewed):
+    """L-0712: the ticket line's no-reviewer outcomes (INCOMPLETE, refunded,
+    no round spent). Only entries in exactly the shape `no_reviewer` writes
+    are counted; anything else is unreadable, never counted as refunded."""
+    if unreviewed == []:
+        return ""
+    if not isinstance(unreviewed, list) or not all(
+            isinstance(e, dict) and e.get("verdict") == "INCOMPLETE"
+            and e.get("refunded") is True for e in unreviewed):
+        return ", no-reviewer record unreadable"
+    return f", {len(unreviewed)} with no reviewer (INCOMPLETE, refunded)"
 
 
 def same_family_round(row):

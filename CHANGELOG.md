@@ -9,6 +9,46 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.15: no reviewer is INCOMPLETE and refunded; a same-family review is opt-in (L-0712, harness half)
+
+- **Summary.** When no reviewer from another model family can run, `/crew:review` now records the
+  round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a
+  same-family review runs only when you ask for one, labelled as such.
+- **Ledger (`review_ledger.py`).** `--no-reviewer --reason <why>` (`no_reviewer`) appends an
+  INCOMPLETE, refunded entry to the ticket's `unreviewed` list and changes nothing else: no round,
+  no budget, no state, no receipt. `reserve(..., same_family=<reason>)` labels the row
+  `same_family`; a CLEAN round's receipt, or an owner's `--accept` of its FINDINGS, carries the label, and a labelled round is never
+  auto-accepted. An unreadable ledger, or an `unreviewed` that is not a list, refuses.
+- **Review run (`review_run.py`).** `--authors "$AUTHORS"` refuses, with exit 2 and nothing
+  reserved, a reviewer of the author's family or of a family it cannot tell (an empty `--authors`
+  is could-not-tell). `--same-family "<reason>"` is the operator's explicit choice: the round runs
+  and is labelled in the ledger and review.json. `--author-source unknown` is could-not-tell too;
+  `--probe` asks the guard first; without `--authors` a Claude or unknown-family reservation is
+  refused unless `--same-family` labels it (`--round` beside `--reserve-only` exempts nothing), and
+  any other reviewer runs with stderr saying the guard was not applied. `review_ledger.py --reserve`
+  asks the same guard (`--authors`, `--author-source`, `--same-family`; a bad reason is a handled
+  refusal, never a traceback). A Codex limit marker is spent by a no-reviewer outcome recorded after it,
+  so the next probe calls Codex live instead of answering limited forever. A same-family round's
+  metrics row says `same-family: operator choice`. A null `unreviewed` record reads as unreadable on
+  `/crew:status`.
+  A Codex usage limit now names the next cross-family provider, not the Claude reviewer.
+- **`/crew:review`.** A failed Codex probe on a codex-pinned `review` role is `resolve_role`'s
+  `available`: `$FALLBACK` names the fallback on its family's provider (a `gpt-6.1-sol` fallback
+  runs on Codex), else the next cross-family `qa.order` provider, else `INCOMPLETE`, and sets
+  `QA_MODEL` / `QA_KIMI_MODEL` from it; step 2a launches `$RUN_PROVIDER` / `$RUN_MODEL` (codex on a
+  probe ok, the fallback's provider, else empty, which the runner refuses), never Codex regardless. A limit (5) or no answer (7) takes all of Codex out, its
+  gpt fallback too; only a failed call (6) is that model alone; any other exit falls back to nothing. An empty
+  `$ELIGIBLE`, or a Codex limit with nothing cross-family left, is `--no-reviewer`; step 2c on the author's family runs only on `SAME_FAMILY`. The owner's
+  2026-09-28 "codex limit -> Claude" practice becomes that explicit choice.
+- **`/crew:status`** (declared seam). A ticket line with no-reviewer outcomes says
+  `N with no reviewer (INCOMPLETE, refunded)`.
+- **Sabotage.** Thirty-one L-0712 entries in `sabotage_review.py`, each red on its named test: the
+  feature half's four (fallback to claude, the author skip, an unasked same-family walk, the status
+  share's model family) and twenty-seven here (the guard, the limit marker spent by a no-reviewer outcome (two), the ledger CLI's single module, a Claude reservation with no `--authors`, `--round` exempting one, the ledger CLI's guard and label, the metrics label, an empty `--authors`, an unknown author
+  source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter,
+  its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
+  receipt labels, the auto-accept bar, the status count, a malformed status record and a null one).
+
 ### Added — crew 1.2.14: sabotage entries for the 1.0 scope reader (L-0711, harness half)
 
 - **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and

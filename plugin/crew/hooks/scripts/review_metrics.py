@@ -33,7 +33,8 @@ same process carries it in memory, and the claude provider's second call reads
 it from `<scratch>/reserved-std.json` for this ticket and round. Without that
 record the token is `std:unknown` (on neither side of `crew_standards.metric`)
 - never a recomputation, which would describe a self-check or standards set the
-round was not reserved under. `<family>` is `same-family: codex limit` for a
+round was not reserved under. `<family>` is `same-family: operator choice`
+for a round reserved with `--same-family` (L-0712), else `same-family: codex limit` for a
 Claude round run because Codex hit a limit - `review_limit`'s marker records
 one in round N-1, or the caller passes `--note codex-probe=5`, the probe's exit
 (a limit the probe found live records no marker) - else the reviewer family
@@ -82,6 +83,7 @@ import review_ledger
 import review_limit
 
 CODEX_LIMIT = "same-family: codex limit"
+SAME_FAMILY_CHOSEN = "same-family: operator choice"
 # What /crew:review step 2c passes as --note when the probe answered limited (exit 5).
 PROBE_LIMITED_NOTE = "codex-probe=5"
 
@@ -211,8 +213,14 @@ def config_unreadable(root):
     return not isinstance(parsed, dict)
 
 
-def family_tag(root, ticket, number, provider, reviewer_family, note=""):
-    """The family part of the reviewer cell - see THE ROW. May raise."""
+def family_tag(root, ticket, number, provider, reviewer_family, note="",  # pylint: disable=too-many-arguments,too-many-positional-arguments
+               same_family=False):
+    """The family part of the reviewer cell - see THE ROW. May raise.
+
+    `same_family` (L-0712) is the reservation's label: the operator chose a
+    same-family read, which the row names whatever the family lookup says."""
+    if same_family is True:
+        return SAME_FAMILY_CHOSEN
     limit = codex_limit_before(root, ticket, number) if provider == "claude" else False
     if provider == "claude" and (PROBE_LIMITED_NOTE in (note or "").split() or limit is True):
         return CODEX_LIMIT
@@ -361,7 +369,8 @@ def record(root, ticket, number, review, std, note=""):
         line = row(date, ticket, review.get("provider"), review.get("model"), number,
                    std if isinstance(std, str) and _STD_RE.match(std) else "std:unknown",
                    family_tag(root, ticket, number, review.get("provider"),
-                              review.get("model_family"), note),
+                              review.get("model_family"), note,
+                              same_family=review.get("same_family") is True),
                    review.get("verdict"), review.get("counts") or {},
                    review.get("refunded") is True)
     except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001 - keep the verdict

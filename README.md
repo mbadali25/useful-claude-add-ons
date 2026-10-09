@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.15**: No reviewer is INCOMPLETE and refunded; a same-family review is opt-in. When no reviewer from another model family can run, `/crew:review` now records the round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a same-family review runs only when you ask for one, labelled as such.
 - **crew 1.2.14**: Sabotage entries for the 1.0 scope reader. Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
-- **crew 1.2.13**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

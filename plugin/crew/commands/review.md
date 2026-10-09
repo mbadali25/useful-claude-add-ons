@@ -191,8 +191,8 @@ stale record and trusting config is the one direction that can under-bar: if
 codex wrote the commits and the config has since been changed to `claude`,
 discarding the record clears codex to review its own work. Over-barring costs a
 rung; under-barring costs the entire point of the guard. If striking both leaves
-no candidate, that is the same state as striking one and leaving none — step 2c
-runs and the verdict says same-family.
+no candidate, that is the same state as striking one and leaving none — no
+reviewer runs, and the round is recorded INCOMPLETE and refunded (below).
 
 **This test proves stale, and never proves fresh. Say so.** The dispatch record
 is one file per checkout with a single `dev` slot, and the record carries no
@@ -219,11 +219,11 @@ failure this command exists to catch. Apply the strike at review time. Do not
 rely on `qa.order` having been edited to match; the two keys are set at different
 times by different people, and the ordering is a preference while this is a rule.
 
-If striking the author's family leaves **no** candidate, fall back to step 2c and
-say **in the verdict itself** that this review is same-family and does not count as
-independent. Do not refuse to review: a repo with neither Codex nor Copilot still
-benefits from the weaker pass, and `README.md` documents `reviewer` as the
-fallback — a step 1 that stopped instead would contradict it.
+If striking the author's family leaves **no** candidate, no reviewer runs (L-0712): say
+`NO INDEPENDENT REVIEWER` in the verdict and record it INCOMPLETE and refunded — no round, no budget:
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --no-reviewer --reason "<why>"`.
+Step 2c on the author's family runs only when I ask for that same-family read, with
+`SAME_FAMILY="<my reason>"`; its round, review.json and a CLEAN receipt are labelled `same_family`.
 
 What is forbidden is letting a same-family review be *recorded* as an independent
 one. Announce it, and never write it to `.crew/metrics.md` as though a different
@@ -231,15 +231,15 @@ family had looked.
 
 Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
-not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
+not a cue to fall back (except a `review` role pinned to codex: it runs `$FALLBACK`, L-0712). If `qa.provider` is `auto`, walk `qa.order` and take the
 first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed), 7 (unknown, timed out) or 5 (limited): skip Codex with `PROBE_DETAIL` quoted verbatim. A `review` role pinned to codex runs what `$FALLBACK` names (L-0712: the fallback on its family's provider, else the next cross-family `qa.order` provider; `INCOMPLETE` is `--no-reviewer`); otherwise take the next provider in `$ELIGIBLE`, none left being the no-candidate case above (`--no-reviewer`). A Claude read after a limit (the owner's 2026-09-28 practice) is now my explicit choice (L-0712): step 2c with `SAME_FAMILY="codex limit"`, announced `same-family (codex limit)`, not independent. The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
 | `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does. Exit 8, the probe changed the tree or it could not be checked after the probe: stop | step 2e |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
-| `claude` | always passes | step 2c |
+| `claude` | always passes (it is in `$ELIGIBLE` only when Claude is not the author) | step 2c |
 
 Announce which reviewer ran **and every provider you skipped, with the reason**. A
 skipped provider is the single most dangerous silent failure here: a QA gate that
@@ -311,9 +311,8 @@ echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 report's own answer to "who may review this", with the family guard already
 applied and `qa.order` already walked. Re-deriving the choice from `qa.provider`
 here would be a second implementation of the rule that can disagree with the one
-`/crew:model` prints. An empty `$ELIGIBLE` is step 2c: run the `reviewer`
-fallback and say in the verdict that this review is same-family and does not
-count as independent.
+`/crew:model` prints. An empty `$ELIGIBLE` is step 1b's no-candidate case: `--no-reviewer`,
+INCOMPLETE and refunded, and step 2c only on my `SAME_FAMILY`.
 
 `source=stale` means the recorded dispatch could not be tied to this diff -- a
 different branch, an unrecorded branch, or a record older than the review base --
@@ -322,7 +321,9 @@ the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
 
 ```bash
-case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
+case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
+# L-0712: the probe is resolve_role's `available` (a limit or no answer is all of codex, its gpt fallback too; a failure, that model): a failed codex pin falls back (stderr says how); run the provider FALLBACK names (`<provider> <model>`; its model is set in QA_MODEL / QA_KIMI_MODEL); INCOMPLETE = --no-reviewer. RUN_PROVIDER / RUN_MODEL are what step 2a launches: codex on a probe ok, the fallback's provider, else empty (step 2c, --no-reviewer, or a walk).
+case "$PROBE_STATUS" in 5|6|7) FALLBACK=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_config as c, crew_state as s; gone = ("codex", sys.argv[2] or None); whole = sys.argv[4] in ("5", "7"); cfg = c.resolve_config("."); qa = cfg.setdefault("qa", {}); qa.update(fallback=None) if whole and s.provider_for_model(qa.get("fallback")) == "codex" else None; r = s.resolve_role(cfg, "qa", "review", author=sys.argv[3].split(), available=lambda p, m: p != "codex" if whole else (p, m or None) != gone); sys.stderr.write("".join(a + "\n" for a in r["announce"])); print("INCOMPLETE" if r["incomplete"] else r["provider"] + " " + (r["model"] or "") if r["fellBack"] else "")' "${CLAUDE_PLUGIN_ROOT}/hooks/scripts" "$QA_MODEL" "$AUTHORS" "$PROBE_STATUS"); echo "fallback: ${FALLBACK:-none - no codex pin fell back}"; case "$FALLBACK" in "codex "*) QA_MODEL=${FALLBACK#codex }; RUN_PROVIDER=codex; RUN_MODEL=$QA_MODEL;; "kimi "*) QA_KIMI_MODEL=${FALLBACK#kimi }; RUN_PROVIDER=kimi; RUN_MODEL=$QA_KIMI_MODEL;; "copilot "*) RUN_PROVIDER=copilot; RUN_MODEL=${FALLBACK#copilot };; *) RUN_PROVIDER=; RUN_MODEL=;; esac;; 0) FALLBACK=; RUN_PROVIDER=codex; RUN_MODEL=$QA_MODEL;; *) FALLBACK=; RUN_PROVIDER=; RUN_MODEL=;; esac
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
@@ -433,10 +434,10 @@ Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invari
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
-  --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
-# or: --provider copilot --model "$QA_COPILOT_MODEL"
-# or: --provider kimi --model "$QA_KIMI_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 9 gate red, 10 train wait, 2 not run, 8 kimi probe changed the tree (or could not check it)
+  --scratch "$SCRATCH" --provider "$RUN_PROVIDER" --model "$RUN_MODEL" --effort "$QA_EFFORT" --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE"
+# RUN_PROVIDER/RUN_MODEL come from Step 2's probe line (L-0712: a fallback on Kimi launches Kimi, never Codex); empty refuses (exit 2)
+# walking $ELIGIBLE instead: --provider copilot --model "$QA_COPILOT_MODEL", or --provider kimi --model "$QA_KIMI_MODEL"
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 9 gate red, 10 train wait, 2 not run (incl. `same-family:`, L-0712), 8 kimi probe changed the tree (or could not check it)
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
@@ -445,12 +446,12 @@ denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
 to the next eligible provider), or `review-run: self-check: ...` - the standards
 self-check is missing or stale for this bundle (every provider): answer
-`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. `the ledger changed since the gate decision` or `... gate could not run: ...` (L-0518) is exit 2 too: run again, or repair what it names. Exit 9 (`$REVIEW_STATUS`; 5 is only ever the probe's limit, L-0528), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. Exit 10 (`$REVIEW_STATUS`; 6 is only ever the probe's), only once the clone's merge train is armed (L-0526, `crew_train.py arm`): an overlapping ticket holds the train or queued first, the base moved in this ticket's Touch and must be merged first (`crew_train.py catch-up`), or the train could not be read - no round spent; stderr names the blocker and the colliding paths, `crew_train.py status` shows the queue, and the round runs once this ticket holds it. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else (a receipt the delta gate kept across a catch-up does so only once the verify gate is VERIFIED or NO_GATE on that tree); an unverified gate is refused with exit 9, then the merge train with exit 10, before the pre-review checks run; a pre-review refusal (exit 9) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips the train and both of those: the reservation refuses it (exit 4) and the train is never taken. A holder refused after taking the train (exit 9 or 2) keeps holding it: fix it and review again (the hold is re-confirmed), or free it with `crew_train.py release --ticket "$TICKET"`. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. `the ledger changed since the gate decision` or `... gate could not run: ...` (L-0518) is exit 2 too: run again, or repair what it names. Exit 9 (`$REVIEW_STATUS`; 5 is only ever the probe's limit, L-0528), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. Exit 10 (`$REVIEW_STATUS`; 6 is only ever the probe's), only once the clone's merge train is armed (L-0526, `crew_train.py arm`): an overlapping ticket holds the train or queued first, the base moved in this ticket's Touch and must be merged first (`crew_train.py catch-up`), or the train could not be read - no round spent; stderr names the blocker and the colliding paths, `crew_train.py status` shows the queue, and the round runs once this ticket holds it. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else (a receipt the delta gate kept across a catch-up does so only once the verify gate is VERIFIED or NO_GATE on that tree); an unverified gate is refused with exit 9, then the merge train with exit 10, before the pre-review checks run; a pre-review refusal (exit 9) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips the train and both of those: the reservation refuses it (exit 4) and the train is never taken. A holder refused after taking the train (exit 9 or 2) keeps holding it: fix it and review again (the hold is re-confirmed), or free it with `crew_train.py release --ticket "$TICKET"`. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round takes the next `$ELIGIBLE` provider (else `--no-reviewer`); the round after it probes Codex live again. `review-run: same-family: ...` (exit 2, nothing reserved) is the L-0712 family guard: the reviewer is the author's family, or its family or the authors could not be told; walk on, or `--no-reviewer`. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 Exit 2 from `--provider kimi` can also be a kimi probe state other than `ok`, which the message names (`kimi probe: rate-limited - ...`): no round spent; announce it and walk to the next provider, unless `qa.provider` pins `kimi`, which hard-fails instead.
 Exit 8 means the Kimi probe changed the working tree; stop and report the named paths, do not walk to the next provider. A tree that cannot be fingerprinted after the probe, or a probe process that could not be stopped, exits 8 too (it may have changed, or still change): stop and report the reason. No round was spent, but the tree is no longer the one the bundle was built from.
 
-**Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
+**Step 2c — Claude reviewer** (cross-family, or same-family only on my `SAME_FAMILY`). Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
 byte-identical instructions, per this file's own invariant — plus the concrete
 paths `$SCRATCH/diff.txt` and `$SCRATCH/manifest.json`. Tell it to review that
@@ -464,7 +465,7 @@ then hand its output to the same verdict parser:
 
 ```bash
 ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
-  --scratch "$SCRATCH" --provider claude --reserve-only | sed -n 's/^ROUND=//p')
+  --scratch "$SCRATCH" --provider claude --reserve-only --authors "$AUTHORS" --author-source "$AUTHOR_SOURCE" ${SAME_FAMILY:+--same-family "$SAME_FAMILY"} | sed -n 's/^ROUND=//p')
 # ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --round "$ROUND" \
