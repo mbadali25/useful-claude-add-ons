@@ -3,8 +3,9 @@
 Owner, 2026-09-28: "if we hit a codex limit please use claude ads the
 reviewer". `/crew:review` makes one minimal real Codex call before it reserves
 a round (`review_run.py --probe`); when that call, or a round's own call,
-fails on a limit, the round runs on the Claude reviewer, announced as
-same-family and not independent.
+fails on a limit, the round walks to the next cross-family provider, else no
+reviewer is recorded (INCOMPLETE, refunded); since L-0712 a Claude read runs
+only on the operator's explicit `--same-family`, labelled and not independent.
 
 THE PATTERNS are Codex's own messages, read from `openai/codex` at
 `44fe510ce3ee61c8ef623adcbf89b901c73ddd61`, `codex-rs/protocol/src/error.rs`,
@@ -35,8 +36,9 @@ a `<ticket>.limit.json` beside them was both a phantom ticket in that listing
 and, since a ticket id may contain dots, ticket `<ticket>.limit`'s ledger
 path. It applies to the NEXT round only: while
 its `round` equals the ledger's `rounds_used` (no round reserved since), the
-next probe answers limited without a call. Once that round is reserved, it no
-longer applies and Codex is probed live again. A missing, unreadable or
+next probe answers limited without a call. Once that round is reserved, or a
+no-reviewer outcome (`review_ledger.py --no-reviewer`) is recorded at or after
+it (L-0712), it no longer applies and Codex is probed live again. A missing, unreadable or
 corrupt marker (not a dict, `round` not an int, `error` not a non-empty
 string), or a ledger that cannot be read, is None: the live probe decides, so
 the answer is still a real call and never a guess.
@@ -117,7 +119,8 @@ def recorded(root, ticket):
             mark = json.load(handle)
         if not isinstance(mark, dict):
             return None
-        used = review_ledger.status(root, ticket).get("rounds_used")
+        ledger = review_ledger.status(root, ticket)
+        used = ledger.get("rounds_used")
     except (OSError, ValueError, review_ledger.LedgerError):
         return None
     number, error = mark.get("round"), mark.get("error")
@@ -127,4 +130,27 @@ def recorded(root, ticket):
         return None
     if mark.get("round") != used:
         return None
+    if consumed_by_no_reviewer(mark, ledger.get("unreviewed")):
+        return None
     return mark
+
+
+def consumed_by_no_reviewer(mark, unreviewed):
+    """L-0712 round 6: a no-reviewer outcome recorded at or after the marker
+    decided the round the marker was for, without reserving one, so
+    rounds_used never moves past it. It is spent: the next probe calls Codex
+    live, as it does once a round is reserved. Both stamps are
+    `review_ledger._now()`'s UTC ISO seconds, so they compare as strings; a
+    stamp that is not that shape, or an `unreviewed` that is not a list of
+    objects, is could-not-tell and also spends it - the live probe then
+    decides, which is a real call and never a guess."""
+    at = mark.get("at")
+    if unreviewed in (None, []):
+        return False
+    if not isinstance(unreviewed, list) or not isinstance(at, str) or len(at) != 25:
+        return True
+    for entry in unreviewed:
+        when = entry.get("at") if isinstance(entry, dict) else None
+        if not isinstance(when, str) or len(when) != 25 or when >= at:
+            return True
+    return False

@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.19**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
-- **crew 1.2.14**: Sabotage entries for the 1.0 scope reader. Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
+- **crew 1.2.15**: No reviewer is INCOMPLETE and refunded; a same-family review is opt-in. When no reviewer from another model family can run, `/crew:review` now records the round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a same-family review runs only when you ask for one, labelled as such.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
