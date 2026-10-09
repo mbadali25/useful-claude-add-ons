@@ -13,7 +13,8 @@ writes a file under `.work/tickets/<id>/`, and two of them cannot be skipped
 by accident — `/crew:implement` refuses without an approved plan, and
 `/crew:done` refuses without a clean review receipt, a verify gate settled for
 HEAD, and a passing completion audit. Settled means every rule passed here, or
-the `verify-gate` CI receipt for HEAD is VERIFIED: a rule too big for the Stop
+the `verify-gate` CI receipt for HEAD is VERIFIED (for a merge on main, the PR
+head's receipt when its tree is exactly the merge's): a rule too big for the Stop
 budget is deferred to CI, and a Stop turn where 0 rules ran proves nothing.
 
 For how the scope guard decides what a ticket may touch and what a report

@@ -207,7 +207,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   python3 "<crew>/hooks/scripts/ci_receipt.py" check --root .
   ```
   **Fix:** commit and push the branch so the `verify-gate` workflow runs the whole map, then rerun
-  `/crew:done` once `CI_RECEIPT VERIFIED` names HEAD; or run `/crew:verify --all` here, which empties
+  `/crew:done` once `CI_RECEIPT VERIFIED` names HEAD. After the PR merged, close from a branch at
+  `origin/main`: the merge has no run of its own, and the PR head's run counts when its tree is
+  exactly the merge's (it reads `through <sha>, which has the same tree`); if `main` moved before
+  the merge, the trees differ and the bytes were never gated. Or run `/crew:verify --all` here, which empties
   the record (`verify   no rules recorded`) and leaves the gate's `GATE VERIFIED` answer for this
   tree. An uncommitted edit after that pass turns it back to `GATE UNVERIFIED`: commit, then re-run. `UNKNOWN` (exit 3) is `gh`, the
   network or the artifact, never a pass; a branch that changes the gate or the workflow itself
