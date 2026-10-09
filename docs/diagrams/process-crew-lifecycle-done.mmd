@@ -1,6 +1,10 @@
-%% Generated from useful-claude-add-ons@f9ed7ddd on 2026-10-09. Verify before trusting.
+%% Generated from useful-claude-add-ons@d5b09c55 on 2026-10-09. Verify before trusting.
 %% Anchors: plugin/crew/commands/done.md, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_docs_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_train.py
 %% Purpose: /crew:done's five checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+%% Re-drawn f9ed7ddd -> d5b09c55 (L-0753, 2026-10-09): check 2 also takes the CI receipt of a parent with HEAD's
+%%    exact tree when HEAD has no run (a merge on main); checks 4 and 5 judge the ticket's own diff (no node
+%%    change: their pass/refuse edges are the same). done.md citations re-taken with grep -n: check 3 :36-47,
+%%    check 4 :49-61, check 5 :63-71; the rest did not move.
 %% Re-drawn 69de978c -> f9ed7ddd (L-0713 follow-up refresh, 2026-10-09): done.md went from four checks to five
 %%    (check 5, crew_docs_check.py, from main), check 2 now needs the gate settled for HEAD (L-0710: a local
 %%    VERIFIED marker with an empty record, a CI receipt, or NO_GATE), step 4 (notify) was dropped, and the
@@ -15,10 +19,10 @@
 %%   plugin/crew/commands/done.md:7 all five checks must pass; :9-16 check 1
 %%     review receipt (--check-receipt); :18-34 check 2 verify gate settled for HEAD:
 %%     crew_status.py's verify line plus review_gate.gate_state, or ci_receipt.py check
-%%     (exit 0 VERIFIED, exit 4 NO_GATE); :36-49 check 3 completion audit (a refresh
-%%     artifact not admitted is listed with its reason); :51-62 check 4
+%%     (exit 0 VERIFIED, HEAD's run or a same-tree parent's; exit 4 NO_GATE); :36-47 check 3 completion audit (a refresh
+%%     artifact not admitted is listed with its reason); :49-61 check 4
 %%     crew_refresh_check.py, read-only, refuses on stale/unknown/fresh-uncommitted and never
-%%     refreshes; :64-71 check 5 crew_docs_check.py, read-only, refuses on MISSING or unknown;
+%%     refreshes; checks 4 and 5 judge the ticket's own diff; :63-71 check 5 crew_docs_check.py, read-only, refuses on MISSING or unknown;
 %%     :73-81 the forbidden-trailer report (never refuses); :83-101 all pass -> sliced-plan
 %%     branch or spec.md `status: done` keeping the approval, then crew_tracker.py move --to done,
 %%     crew_metrics record, and the report ending with **Not verified:**.
@@ -36,10 +40,10 @@
 flowchart TB
     subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:9-16"}
-        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-49"}
-        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:51-62"}
-        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:64-71"}
+        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>or a parent with its tree<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-47"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:49-61"}
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:63-71"}
         dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
