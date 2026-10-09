@@ -2553,18 +2553,31 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 - DERIVED `plugin/crew/hooks/scripts/verify_record.py:861` - `reach_notice`: the full notice (count,
   `/crew:verify --stamp-reach`, each rule's reason) only when the sha256 of `.crew/verify.json`
   differs from `.crew/.verify-gate.reach-notice`, which it then records; `:914`
-  `_undeclared_summary` is the one line `_sync` (`:1230`) and `cmd_report` (`:1258`) print for
-  those entries instead of one each.
-- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1381-1392` and
-  `plugin/crew/hooks/scripts/verify-gate.ps1:1557-1573` - in Stop mode only, the matcher hands
+  `_undeclared_summary` is the one line for those entries, and `:933` `_print_owed` prints it and
+  every other entry's `NOT VERIFIED` line with `[record: <absolute path>]`, for `_sync` (`:1324`)
+  and `cmd_report` (`:1347`).
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1394-1399` and
+  `plugin/crew/hooks/scripts/verify-gate.ps1:1573-1585` - in Stop mode only, the matcher hands
   undeclared-reach exclusions to `reach_notice` (ps1 through `verify_record.py reach-notice`);
   `--ci` keeps a line per rule.
-- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1211` - an orphaned undeclared-reach entry is
-  kept and marked but not counted toward the refusal; `:945` `cmd_forget_orphans` is the named
-  exit for the orphans that still hold the marker.
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1059` - `paths_key`, a digest of `paths`
+  alone; `:1098` `_stamp_paths` gives every live entry its rule's `pathsKey` and `peers` (other
+  current rules on the same paths) on each sync; `:1115` `_replacements` names the current rules
+  with that `pathsKey` that are not peers, and none for an entry without the two fields.
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1284` - a stale entry with a replacement is
+  dropped as superseded and named in a `dropped the obligation of` line; `:1299` an orphaned
+  undeclared-reach entry is kept and marked but not counted toward the refusal; `:964`
+  `cmd_forget_orphans` is the named exit for the orphans that still hold the marker.
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:11-15` - `_crew_gate_exit_line` under an EXIT
+  trap writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on any exit 2; `:824` the cleanup trap
+  that replaces it calls it too. `plugin/crew/hooks/scripts/verify-gate.ps1:77`
+  `Exit-CrewGateBlocked` is the same line then `exit 2`, and every exit 2 in the file goes through
+  it. Claude Code reads an exit 2 with empty stdout and a `no such file` stderr as a missing hook.
 - DERIVED `plugin/crew/hooks/scripts/verify_fingerprint.py:183` - the notice file is gate-owned.
 - JUDGEMENT the deferral is untouched: which rules run on Stop is still `scan_reach` alone.
+- JUDGEMENT superseding drops the old obligation rather than moving it: the replacement owes the
+  paths from then on, under its own key, and runs when they next change or under `--all`.
 
 **Added on 2026-10-08 (L-0733), anchor NOT moved.** This section's citations were read at
-`254a75493`, the L-0733 code commit; the note's `anchor:` is not moved for it because the earlier
-sections were not re-verified against the commits since it.
+`ac633ffc7`, the L-0733 commit for the owner's 2026-10-08 additions; the note's `anchor:` is not
+moved for it because the earlier sections were not re-verified against the commits since it.
