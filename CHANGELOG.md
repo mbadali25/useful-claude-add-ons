@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-10-08
+
+Crew 1.2.11: L-0749, the documentation half of L-0733. Version is a placeholder; the lead reassigns
+it at merge.
+
+### Changed — crew 1.2.11: /crew:verify says the record is per checkout (L-0749)
+
+- **Summary.** `/crew:verify` now says that the verify record belongs to one checkout: `--all`
+  clears only the record of the checkout it runs in, and `--ci` never prunes it.
+- **Docs.** `commands/verify.md`, in "The per-rule record replaces the single marker": every orphan
+  and `NOT VERIFIED` line names its record by absolute path, an orphan an edited rule replaced is
+  dropped (L-0733), and `verify_record.py forget-orphans` drops the rest by name without running
+  anything. Split from PR #587 by the tooling-PR rule (T-0087).
+
 ## [1.2.9] - 2026-10-08
 
 ### Fixed — crew 1.2.9: one true quickstart (L-0713)
