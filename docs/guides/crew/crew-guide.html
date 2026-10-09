@@ -174,9 +174,12 @@ edits your own lines or untracks a file. A committed secret-shaped file is
 reported to you instead (exit 3). <code>/crew:onboard</code> and <code>/crew:onboard
 --refresh</code> run the same step, <code>/crew:implement</code> checks it, and
 <code>/crew:status</code> shows it as one <code>gitignore</code> line.</p>
-<p><code>/crew:migrate</code> moves a crew 0.20 repository to the 1.0 layout, once per
-repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that
-<code>--rollback</code> restores. Every historical metric it cannot recover is written
+<p><code>/crew:init</code> writes the repo config to <code>.crew/config.json</code>, the file every gate, guard and<!-- claim: crew-config-file:config.json -->
+<code>/crew:config</code> reads and writes; a new repository needs nothing else. <code>/crew:migrate</code> is only for a
+repository crew 0.20 set up (<code>/crew:status</code> says <code>run /crew:migrate</code>): it moves the tickets, metrics
+and PM journal to the 1.0 layout and writes <code>.crew/crew.json</code> as a record of the old config, once
+per repository: <code>--preview</code> first, then <code>--apply</code>, which takes a backup that <code>--rollback</code> restores.
+<code>.crew/config.json</code> stays, and every gate, guard and <code>/crew:config</code> keeps reading it; the context hook, resume and the diagram commands read <code>.crew/crew.json</code> first when it exists, so after a migrate a <code>memory</code>, <code>context</code> or <code>docs</code> setting is changed in both files. Every historical metric it cannot recover is written
 <code>UNKNOWN</code>, never <code>0</code>. A config older than 0.20 (no <code>schema</code>, or 1-6) is
 upgraded by <code>/crew:migrate</code> itself in the same run; <code>/crew:upgrade</code> was removed.</p>
 <p>Deeper: <a href="quickstart.md">Quickstart</a>.</p>

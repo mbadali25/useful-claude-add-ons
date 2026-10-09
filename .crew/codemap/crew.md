@@ -122,9 +122,9 @@ still carries PM-specific logic and a docstring that names removed roles:
   missed; the code does not say which, and this note does not guess. **A
   decision for scribe to record, not this note to file**, since it is a
   judgement about intent this note cannot settle by reading further.
-- `plugin/crew/evals/` carries the same signal at the directory-name level:
-  `pm-answers-status-mid-pass/`, `pm-does-not-write-code/` and
-  `qa-reviewer-stays-read-only/` are eval fixtures named after roles this
+- `plugin/crew/evals/` carried the same signal at the directory-name level.
+  L-0713 deleted the `pm-*` and `developer-*` cases; `qa-reviewer-stays-read-only/`
+  (a HARNESS path) is deleted in its own PR. The fixtures were named after roles this
   release does not ship (`pm`, `qa-reviewer` — `reviewer` is the 1.0 name).
   Confirmed present with `case.yaml`/`prompt.md`/`graders/` each, **not read
   for content**; whether they were updated to target `reviewer` internally
@@ -585,6 +585,17 @@ print(len(s.CONFIG_MENU_MUTATIONS))"`; registered in `sabotage.py:79`, appended 
 them plus the three modules.
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
+
+**DERIVED (L-0713, 2026-10-08, without moving the anchor): the docs now answer it.**
+`.crew/config.json` is the repo config: `/crew:init` writes it from
+`plugin/crew/templates/config.template.json` (`plugin/crew/skills/crew-setup/phases.md:139-143`),
+and `crew_common.repo_config_file`'s default name is `config.json`
+(`plugin/crew/hooks/scripts/crew_common.py:294`). `crew.json` is migrate's record. The code split
+below is unchanged; what changed is `crew_status._is_0_20_setup`
+(`plugin/crew/hooks/scripts/crew_status.py`), so status no longer prints `run /crew:migrate` for a
+config init wrote, and `scripts/check-marketplace.py`'s `crew-config-file:` claim holds every
+marked doc statement to that default. Making init or the five crew.json-first readers change is
+not done (L-0713 excluded behaviour changes to init and migrate).
 
 **DERIVED, and this is the open TODO the task description names.** Two
 different modules read two different files as "the repo's crew config", and
@@ -3094,9 +3105,8 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 - The 11 `.ps1` hooks' bodies past their `Resolve-CrewPython` definitions
   were not read; whether any PowerShell-side equivalent of the bash parity
   test exists is unknown.
-- `plugin/crew/evals/pm-*`, `developer-*` and `qa-reviewer-stays-read-only`
-  fixture contents were not read; whether they were internally updated to
-  target the 1.0 roster is unverified.
+- `plugin/crew/evals/qa-reviewer-stays-read-only` (the one case left after L-0713's
+  feature PR) was read: its prompt quotes 0.20's `agents/qa-reviewer.md` inline.
 - The previous anchor's wide count-disagreement sweep (README.md,
   plugin/README.md, INSTALLATION.md, both install scripts, against the
   4/35/29 inventory above) was **not repeated** this pass — only
