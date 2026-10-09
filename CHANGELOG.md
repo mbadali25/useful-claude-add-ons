@@ -9,6 +9,39 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-10-08
+
+Crew 1.2.10: L-0733 (the Stop gate's undeclared-reach wall, and the record's orphans). Version is a
+placeholder; the lead reassigns it at merge.
+
+### Fixed — crew 1.2.10: the Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks (L-0733)
+
+- **Summary.** A repo whose verify map predates `reach` gets one notice naming
+  `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in
+  place no longer leaves an orphan that freezes the verified marker; and a rule that fails with
+  `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
+- **Once per map, then one line.** The first Stop that defers a rule with no `reach` prints one
+  notice: how many rules matched, how many in `.crew/verify.json` have no `reach`, and
+  `/crew:verify --stamp-reach` (dry run, `--apply`, `--set N=local|network|host`), then each
+  rule's reason. It is shown once per map content (`.crew/.verify-gate.reach-notice`); every
+  later Stop, quiet turns included, prints `NOT VERIFIED ON THIS TREE - N rule(s) with no `reach`
+  not run on Stop: rules[...]`. `--ci` keeps its per-rule lines. The deferral is unchanged.
+- **Superseded orphans.** Obligations are keyed by a content hash, so adding `reach` or `seconds`
+  re-keyed every rule (TSS PR #1143 left 17 orphans). An entry whose rule was edited in place - a
+  new rule on the same `paths` that did not sit beside it - is now dropped as superseded, with a
+  `dropped the obligation of rules[N]` line. One nothing replaced (removed, or `paths` changed)
+  stays: an undeclared-reach orphan is counted but no longer holds `.crew/.verify-verified-at`; any
+  other still does, and its line names `verify_record.py forget-orphans`, which drops orphans by
+  name and runs nothing. Entries now carry `pathsKey` and `peers`; ones recorded earlier are never
+  superseded.
+- **Every exit 2 writes stdout.** Claude Code 2.1.293 reads a Stop hook that exits 2 with empty
+  stdout and a `no such file`/`can't open` stderr as a missing script and does not block (TSS rule
+  32, rc 127). Both flavours now print `VERIFY GATE: BLOCKED (exit 2)` on every exit 2.
+- **Which record.** Orphan and `NOT VERIFIED` lines end `[record: <absolute path>]`: the record is
+  per checkout, `--all` clears only its own checkout's, and `--ci` never prunes it.
+- Reported from TheSelectSource on crew 1.2.1 and 1.2.5. Harness-only PR (T-0087);
+  `commands/verify.md` gets the per-checkout note in a separate feature PR.
+
 ## [1.2.9] - 2026-10-08
 
 ### Fixed — crew 1.2.9: one true quickstart (L-0713)
