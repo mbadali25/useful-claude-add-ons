@@ -122,7 +122,8 @@ def _world(tmp_path, stage, entry="- `crew` 1.0.1: app counts to two",
     _git(root, "merge", "-q", "--no-ff", "-m", "Merge pull request #1 from o/T-0001-work",
          "T-0001-work")
     if stage == "later":
-        current = open(os.path.join(str(root), "CHANGELOG.md"), encoding="utf-8").read()
+        with open(os.path.join(str(root), "CHANGELOG.md"), encoding="utf-8") as handle:
+            current = handle.read()
         at = current.index("\n## [1") + 1
         _commit(root, "crew 1.0.2: another ticket", **{
             ".claude-plugin__marketplace.json": _market("1.0.2"),

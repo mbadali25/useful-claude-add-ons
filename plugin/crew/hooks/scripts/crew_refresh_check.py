@@ -1594,7 +1594,7 @@ def _receipt_head(top, ticket, base):
     or `(None, why)`. Only a receipt that names this ticket and this scope
     base, with a full sha that names a commit here, is an answer."""
     path = os.path.join(crew_ticket.ticket_dir(top, ticket), REVIEW_RECEIPT)
-    rel = f".work/tickets/{ticket}/{REVIEW_RECEIPT}"
+    rel = os.path.relpath(path, top).replace(os.sep, "/")
     try:
         with open(path, encoding="utf-8", errors="strict") as handle:
             text = handle.read()
