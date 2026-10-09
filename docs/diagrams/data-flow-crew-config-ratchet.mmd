@@ -1,6 +1,10 @@
-%% Generated from useful-claude-add-ons@1d10d8f6 on 2026-10-02, re-anchored on L-0712-cross-family-fallback 2026-10-08 (L-0712: crew_state.py changed only in resolve_role's fallback, new :1502-1720, and CONFIG.md gained a subsection at :884-900; no line this diagram cites moved, checked with grep -n). Verify before trusting.
+%% Generated from useful-claude-add-ons@5307a80e on 2026-10-02, re-anchored 2026-10-09 (L-0713 follow-up refresh; see the note below the Purpose line). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py
 %% Purpose: The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the thirteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+%% Re-anchored 1d10d8f6 -> 5307a80e (L-0713 follow-up refresh, 2026-10-09): of the Anchors paths only CONFIG.md changed,
+%%    by three bold paragraphs and no heading (L-0713 at :42-50, L-0703 in section 16, L-0710 after :3043); section 15
+%%    and 16 are still the install.policy and guard sections this diagram names, and it cites CONFIG.md by section only.
+%%    Earlier note (L-0712): crew_state.py changed only in resolve_role's fallback, new :1502-1720, and CONFIG.md gained a subsection at :884-900; no line this diagram cites moved, checked with grep -n). No node or edge changed.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %% WHAT CREW 1.0 CHANGED IN THIS FLOW, in the order the sections below draw it:
 %%  1. A FOURTH guard vocabulary, `cloudGuard` - same words as `roleWrites`
