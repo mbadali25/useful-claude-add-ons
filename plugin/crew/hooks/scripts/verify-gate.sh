@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
+# hook that exits 2 with empty stdout and a stderr matching "no such file" or
+# "can't open" as a missing hook script and lets the turn through as
+# non-blocking - so a rule whose own failure said "No such file" (rc 127) was
+# silently waved past. An EXIT trap, not a line at each site: it covers every
+# exit-2 path, the early ones included. The trap installed with the gate's
+# cleanup below calls this too, since a second `trap ... EXIT` replaces this one.
+_crew_gate_exit_line() {
+  [ "${1:-0}" -eq 2 ] || return 0
+  echo "VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete."
+}
+trap '_crew_gate_exit_line $?' EXIT
 # The plugin root, resolved HERE: a relative BASH_SOURCE stops resolving once
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
@@ -809,7 +821,14 @@ _crew_gate_in_flight() {
 trap '_crew_gate_in_flight TERM; _crew_gate_run_cleanup; exit $((128 + 15))' TERM
 trap '_crew_gate_in_flight INT; _crew_gate_run_cleanup; exit $((128 + 2))' INT
 trap '_crew_gate_in_flight HUP; _crew_gate_run_cleanup; exit $((128 + 1))' HUP
-trap '_crew_gate_run_cleanup' EXIT
+# The exit status first (a function's first statement still sees the trap's
+# $?), then cleanup, then the L-0733 stdout line for an exit 2.
+_crew_gate_on_exit() {
+  local _crew_gate_exit_rc=$?
+  _crew_gate_run_cleanup
+  _crew_gate_exit_line "$_crew_gate_exit_rc"
+}
+trap '_crew_gate_on_exit' EXIT
 
 if [ "$UNLOCKED" -eq 0 ]; then
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
@@ -1373,10 +1392,29 @@ acute_rules = []
 
 # Reach exclusions are decided at match time and do not depend on the
 # budget arithmetic below - report them unconditionally.
+# L-0733: on Stop, a rule deferred only because it declares no `reach` is
+# not named on every turn. verify_record.reach_notice prints the full notice
+# (the count, /crew:verify --stamp-reach, each rule's reason) once per map
+# content, and the record's one summary line carries every Stop after that.
+# --ci keeps a line per rule: a CI log is read once, not every turn.
+_UNDECLARED_KINDS = ("reach_undeclared", "reach_wrapper", "reach_syntax")
+_undeclared_now = []
 for _ri in rule_order:
     if _ri in stop_excluded:
         _kind, _reason = stop_excluded[_ri]
+        if STOP_MODE and _kind in _UNDECLARED_KINDS:
+            _undeclared_now.append((_ri, _reason))
+            continue
         notices.append("verify-gate: rules[%d] %s" % (_ri, _reason))
+if _undeclared_now:
+    try:
+        notices.extend(_vr.reach_notice(os.getcwd(), _undeclared_now))
+    except Exception:  # pylint: disable=broad-except
+        # No scanner module, or it failed: one line naming the fix, never
+        # silence (the deferral above still stands either way).
+        notices.append("verify-gate: %d rule(s) declare no `reach` and were NOT run on Stop (%s) - "
+                       "declare reach with /crew:verify --stamp-reach"
+                       % (len(_undeclared_now), ", ".join("rules[%d]" % r for r, _ in _undeclared_now)))
 for _fn in fallback_notices:
     notices.append("verify-gate: %s" % _fn)
 # --ci: one line that counts what the per-rule notices above name, so a PR

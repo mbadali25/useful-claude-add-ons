@@ -178,6 +178,9 @@ _GATE_OWNED_FILES = frozenset({
     # -- see the note above this set for why a blanket exclusion is wrong.
     ".crew/.verify-gate.record.json",
     ".crew/.verify-gate.timings.json",
+    # The digest of the map the undeclared-reach notice was last shown for
+    # (verify_record.REACH_NOTICE_PATH, L-0733), written by the matcher.
+    ".crew/.verify-gate.reach-notice",
     # The tree-pass cache (verify_record.PASSES_PATH), same reason again: it
     # is written after the run, and hashing it would make every run look
     # like a change to the tree the next one compares against.

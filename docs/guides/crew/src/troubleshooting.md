@@ -879,6 +879,39 @@ still resumes from the last written handoff rather than from nothing.
 - **Fix:** quote the missing lines in the plan, or approve it yourself with `/crew:approve <id>`,
   which this check never blocks.
 
+## Verify gate says rules declare no `reach`
+
+- **Symptom:** on Stop, `verify-gate: N rule(s) matched this turn declare no `reach`, so Stop did NOT
+  run them` once, then on every later Stop one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]` (L-0733; before it, a line per rule per turn).
+- **Cause:** `.crew/verify.json` predates `reach`. A rule with none that wraps a script, uses shell
+  syntax or names a remote verb is never run unattended on Stop - it may reach a live host. The
+  notice is shown once per map content; `.crew/.verify-gate.reach-notice` remembers which.
+- **Fix:** `/crew:verify --stamp-reach` shows what each rule would get; `--apply` writes the `local`
+  and `network` proposals, and `--set N=local|network|host` decides a wrapper or shell rule. Review
+  the diff and commit it on its own. `/crew:verify --all` runs every rule meanwhile.
+- **Symptom:** `N unverified obligation(s) belong to a rule that was edited or removed and that no
+  rule on the same paths replaced; NOT advancing the marker [record: <path>]`. **Cause:** a rule was
+  removed, or its `paths` changed, after its entry was recorded. A rule edited in place (same paths)
+  supersedes its old entry instead, which is dropped with a `dropped the obligation of rules[N]`
+  line. An undeclared-reach orphan no longer holds the marker (it is counted in the summary line);
+  any other kind does. Entries recorded before L-0733 are never superseded. **Fix:**
+  `/crew:verify --all` in the checkout the `[record: ...]` path names (it clears only that
+  checkout's record, and `--ci` never prunes it), or, when that would reach `network`/`host`
+  targets, run the `verify_record.py forget-orphans` command the line names, from the repo root: it
+  drops the orphans by name and runs nothing.
+
+## A Stop that should have blocked said the hook script was missing
+
+- **Symptom:** a rule failed, but Claude Code said `Hook script appears to be missing ... Treating as
+  non-blocking. Run /plugin to reinstall` and the turn ended anyway.
+- **Cause:** Claude Code reads a Stop hook that exits 2 with empty stdout and a stderr containing
+  `No such file` or `can't open` as a missing script. A rule like `bash _verify/check.sh` whose
+  script is gone fails with exactly that stderr.
+- **Fix:** since L-0733 crew writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on every exit 2, in both
+  flavours, so the block holds. On an older crew, update the plugin; fix or remove the rule either
+  way.
+
 ## An agent named in verify.json is not installed
 
 `.crew/verify.json` travels with the repo; the agents its rules name do not. A rule asking for an
