@@ -933,7 +933,8 @@ if shutil.which("pwsh"):
             "--ci (ps1): a disabled gate passes",
             GATE_PS1,
             ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
-             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n      Exit-CrewGateBlocked\n'),
+             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'
+             '      Exit-CrewGateBlocked\n'),
             ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
              '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'),
             _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[ps1]",
@@ -1001,7 +1002,8 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): a lock back-off passes",
             GATE_PS1,
-            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n    Exit-CrewGateBlocked\n',
+            ('    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n'
+             '    Exit-CrewGateBlocked\n'),
             '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n',
             _CI + "test_a_held_lock_fails_rather_than_backing_off_green[ps1]",
         ),

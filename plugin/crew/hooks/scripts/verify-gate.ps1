@@ -68,6 +68,17 @@ param(
   [switch]$PriceForce
 )
 
+# Flavour guard. Both flavours are registered for every event, so on a host
+# that has BOTH interpreters both would otherwise run. Stand down only when
+# we can positively prove this is not Windows.
+#
+# $env:OS is 'Windows_NT' on BOTH Windows PowerShell 5.1 and PowerShell 7,
+# and unset on Linux/macOS. A bare `if (-not $IsWindows)` is WRONG: $IsWindows
+# does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
+# hook stands down on the one platform it exists for. crew has already shipped
+# that bug once - the guard stood down on Windows and blocked nothing there.
+if ($env:OS -ne 'Windows_NT') { exit 0 }
+
 # L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
 # hook that exits 2 with empty stdout and a stderr matching "no such file" or
 # "can't open" as a missing hook script and lets the turn through as
@@ -79,17 +90,6 @@ function Exit-CrewGateBlocked {
   [Console]::Out.Flush()
   exit 2
 }
-
-# Flavour guard. Both flavours are registered for every event, so on a host
-# that has BOTH interpreters both would otherwise run. Stand down only when
-# we can positively prove this is not Windows.
-#
-# $env:OS is 'Windows_NT' on BOTH Windows PowerShell 5.1 and PowerShell 7,
-# and unset on Linux/macOS. A bare `if (-not $IsWindows)` is WRONG: $IsWindows
-# does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
-# hook stands down on the one platform it exists for. crew has already shipped
-# that bug once - the guard stood down on Windows and blocked nothing there.
-if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
 # `bash` on PATH normally resolves to C:\Windows\System32\bash.exe or the
