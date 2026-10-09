@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@789dc230
+anchor: useful-claude-add-ons@5307a80e
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-01
 
@@ -108,7 +108,7 @@ through their own package managers.
   twin `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2104`.
 - `scripts/_test/drift-detection.sh:21` / `:82` — unchanged (byte-identical
   since `5d1fc5fd`, closed by the per-path check, not re-read).
-- `scripts/_test/self-claims.py:1228` — `main()` (was `:1166`; file grew
+- `scripts/_test/self-claims.py:1299` — `main()` (was `:1166`; file grew
   1382 -> 1458 lines, +76, adding `run_markdown_lines` and
   `CASES_MARKDOWN_LINES`, a fixture for `check_self_claims`'s new
   `crew-markdown-lines` claim kind — that claim kind and its
@@ -1630,3 +1630,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
 
 **Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
+
+**Re-anchored `789dc230` -> `5307a80e` on 2026-10-09 (L-0713 follow-up refresh).** Since `789dc230` main took #578 (L-0712), #585 (L-0730), #586 (rush notes moved to `docs/handoff/cloud/rush-1.2.0/`), #583 (L-0710 feature: `/crew:done` check 2 settled for HEAD) and #580 (L-0713: one quickstart, `crew_status._is_0_20_setup`), and this branch refreshed the diagrams, CHANGELOG and graph. L-0710 and L-0713 edited these maps themselves at the new positions. Every other body citation into a file changed since `789dc230` was mapped by difflib from `789dc230` to `5307a80e`, each onto a line with the same text: 1 moved in this note. Citations inside the dated provenance sections and notes are as of their own commits and were left alone. The version cites (`plugin.json:3`, `PLUGINS.md:14`) keep their line and changed text in place, and `docs/diagrams/data-flow-crew-config.mmd:1-2` is that diagram's re-anchored header.

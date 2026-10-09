@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@69de978c on 2026-10-04. Verify before trusting.
+%% Generated from useful-claude-add-ons@f9ed7ddd on 2026-10-09. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json
 %% Purpose: The whole crew ticket lifecycle at a glance, one node per stage; each stage is drawn in full in its own process-crew-lifecycle-<part>.mmd file.
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
@@ -457,3 +457,7 @@ flowchart LR
 %% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375), so main's overview is
 %% taken whole and T-0063's history above kept; its rf3 node and edges went into process-crew-lifecycle-implement.mmd
 %% and its dn5 relabel and done.md re-cites into process-crew-lifecycle-done.mmd, each re-read on the merged tree.
+%% Re-anchored 69de978c -> f9ed7ddd (L-0713 follow-up refresh, 2026-10-09): of the Anchors paths done.md (five checks,
+%% check 5 documents), fix.md (tracker-aware minting), implement.md, plan.md (PR slices), review.md, spec.md (depends-on)
+%% and hooks.json (notify hook argument) changed. No stage was added or removed and this overview cites no line, so no
+%% node or edge changed; done.md's new check 5 is drawn in process-crew-lifecycle-done.mmd.
