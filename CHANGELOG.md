@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.18: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
+### Fixed — crew 1.2.19: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
 
 - **Summary.** In a repository that commits `.work/` notes, a release whose reviewed range changed
   one can now be reviewed and promoted: the review bundle shows the committed text change, and the
