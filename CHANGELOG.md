@@ -25,7 +25,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
   could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
 
-### Fixed — crew 1.2.10: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+### Fixed — crew 1.2.11: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
@@ -53,6 +53,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (owner ruling 2026-10-08: report/audit agreement wins over the spec's frozen exclusion).
 - **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
   (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
+
+### Changed — crew 1.2.10: the diagrams L-0713 left stale re-drawn against the code (L-0713 follow-up)
+
+- **Summary.** `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713:
+  the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2
+  needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA
+  diagrams are re-cited and re-anchored. No behaviour changed.
+- **The QA page.** `docs/qa/` and the three `process-qa-*` diagrams were regenerated with `qa_doc.py --write`
+  (94 verify rules now, 3 audit GAPs). The code graph was rebuilt with `graphify update .`.
 
 ## [1.2.9] - 2026-10-08
 
