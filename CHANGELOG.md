@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+### Fixed — crew 1.2.3: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
