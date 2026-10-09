@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.12: sabotage entries for the 1.0 scope reader (L-0711, harness half)
+### Added — crew 1.2.4: sabotage entries for the 1.0 scope reader (L-0711, harness half)
 
 - **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
   that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
