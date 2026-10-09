@@ -980,15 +980,15 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting ... gitignore,<br/>handoff :514-550"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:541),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting, review<br/>+ same-family share ... gitignore,<br/>handoff :665-704"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:695),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
         st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
 ```
 
 | Box | Details |
 |---|---|
-| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :67), tickets, waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers, verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate :514-550 |
+| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :267), tickets, waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers and the same-family share (L-0712), verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate :665-704 |
 
 - **Source:** `process-crew-brief-status.mmd`
 - **Drawn from:** `plugin/crew/commands/status.md`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot_owner.py`
@@ -1086,37 +1086,39 @@ flowchart TB
 
 ## Process crew lifecycle done
 
-/crew:done's four checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
+/crew:done's five checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.
 
 ```mermaid
 flowchart TB
-    subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
-        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:40-53"}
-        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:55-66"}
-        dn5 -- fresh --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:68-98"]
+    subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
+        dn1{"1 review receipt<br/>--check-receipt<br/>done.md:9-16"}
+        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-49"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:51-62"}
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:64-71"}
+        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:100-103"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:105-110"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :110-111"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:111-115" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn6 -- "MISSING / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:103-106"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:108-113"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :113-114"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:115-120" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
 | Box | Details |
 |---|---|
 | `dn3` | (refresh artifacts: re-anchor or regeneration the change reaches) |
-| `dn4` | first a report, never a check (T-0066, done.md:68-76): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits (git log --first-parent) as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record, then the report with its Not verified list (T-0041, done.md:96-98) |
+| `dn4` | first a report, never a check (done.md:73-81): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record, then the report with its Not verified list (done.md:99-101) |
 | `ln1` | crew_train.py check-land: holds the train, merge-tree clean, base unmoved in Touch, receipt + gate |
 | `ln2` | --merge --match-head-commit sha |
 
 - **Source:** `process-crew-lifecycle-done.mmd`
-- **Drawn from:** `plugin/crew/commands/done.md`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/completion_audit.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_train.py`
-- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/commands/done.md`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/completion_audit.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_docs_check.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_train.py`
+- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle implement
 
@@ -1274,12 +1276,12 @@ flowchart LR
 
 ## Process qa audit
 
-generated by crew qa_doc.py on 2026-10-04. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
 
 ```mermaid
 flowchart LR
   trig["qaAuditStale<br/>at session start"] --> run["qa_audit.py"]
-  run --> result["2 GAP, 0 UNKNOWN"]
+  run --> result["3 GAP, 0 UNKNOWN"]
   result --> act["fix one GAP<br/>through the gate<br/>open GAP: phase partial"]
   act --> stamp["qa_audit.py --stamp"]
 ```
@@ -1290,11 +1292,11 @@ flowchart LR
 
 ## Process qa gates
 
-generated by crew qa_doc.py on 2026-10-04. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
 
 ```mermaid
 flowchart TD
-  edit(["change"]) --> stop["Stop gate<br/>52 rule(s) in .crew/verify.json"]
+  edit(["change"]) --> stop["Stop gate<br/>94 rule(s) in .crew/verify.json"]
   stop -->|red| fix1["fix, then the Stop gate runs again"]
   stop -->|green| review["review<br/>(/crew:review)"]
   review --> ci["CI<br/>10 workflow file(s)"]
@@ -1310,7 +1312,7 @@ flowchart TD
 
 ## Process qa ladder
 
-generated by crew qa_doc.py on 2026-10-04. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
 
 ```mermaid
 flowchart LR

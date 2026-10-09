@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.10**: The diagrams L-0713 left stale re-drawn against the code. `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713: the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2 needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA diagrams are re-cited and re-anchored. No behaviour changed.
 - **crew 1.2.9**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
-- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
