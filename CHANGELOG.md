@@ -9,7 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.14: sabotage entries for the 1.0 scope reader (L-0711, harness half)
+
+- **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
+  that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
+- **Entries (`sabotage_scope.py`).** The report reading the pre-1.0 `.work/tickets/<id>.md` again,
+  passing a pre-1.0 ticket as no ticket, judging an unapproved Touch, and matching with the old
+  fnmatch matcher instead of `crew_ticket.in_touch`, its own changed list or merged main counted
+  instead of the audit's list; and `completion_audit.py --check` exiting 0
+  on a refusal (the `|| true` shape on `/crew:done`'s refusal path).
+- **Review round 3 entries.** The gate's list keeping main's changes after a merge, all of `.crew/`
+  or `TODO.md` dropped as bookkeeping again, an `INDEX.md` ticket with no folder read as "no open
+  ticket", and `verify-gate.sh` exiting 2 after the scope line. Two round-1 entries re-anchored on
+  `ticket_changes`'s new `kept` line, one on the pre-1.0 file check.
+- **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
+  could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
+
 ### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
