@@ -39,9 +39,9 @@ yet`, `GATE UNVERIFIED`/`UNKNOWN`) refuses: quote both lines, push for the workf
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/completion_audit.py --check --ticket "$1"
 ```
 
-Diffs the whole tree against this ticket's scope base, the same way the Stop
-hook's scope audit does, but as a pre-close confirmation rather than a
-per-turn block. A non-zero exit names the out-of-scope path, or a refresh
+Diffs the whole tree against this ticket's scope base, as the Stop audit does
+(and the gate's `outside-scope:` line reports), a shell-made `sed -i` included,
+as a pre-close confirmation rather than a per-turn block. A non-zero exit names the out-of-scope path, or a refresh
 artifact with the reason it was not admitted (`[anchor did not move]`,
 `[no changed path reaches it]`, `[bytes differ from expected_rules ...]`,
 `[could not tell: ...]`): re-anchor or regenerate it in `/crew:implement $1`

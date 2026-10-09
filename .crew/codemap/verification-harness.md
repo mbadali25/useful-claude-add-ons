@@ -2546,3 +2546,47 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
 
 **Re-anchored `789dc230` -> `5307a80e` on 2026-10-09 (L-0713 follow-up refresh).** Since `789dc230` main took #578 (L-0712), #585 (L-0730), #586 (rush notes moved to `docs/handoff/cloud/rush-1.2.0/`), #583 (L-0710 feature: `/crew:done` check 2 settled for HEAD) and #580 (L-0713: one quickstart, `crew_status._is_0_20_setup`), and this branch refreshed the diagrams, CHANGELOG and graph. L-0710 and L-0713 edited these maps themselves at the new positions. Every other body citation into a file changed since `789dc230` was mapped by difflib from `789dc230` to `5307a80e`, each onto a line with the same text: 51 moved in this note. Citations inside the dated provenance sections and notes are as of their own commits and were left alone. The version cites (`plugin.json:3`, `PLUGINS.md:14`) keep their line and changed text in place, and `docs/diagrams/data-flow-crew-config.mmd:1-2` is that diagram's re-anchored header.
+
+## Undeclared reach on Stop (L-0733)
+
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:829` - `UNDECLARED_REACH_KINDS`, the three
+  kinds a rule with no `reach` is deferred as on Stop (`reach_undeclared`, `reach_wrapper`,
+  `reach_syntax`).
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:861` - `reach_notice`: the full notice (count,
+  `/crew:verify --stamp-reach`, each rule's reason) only when the sha256 of `.crew/verify.json`
+  differs from `.crew/.verify-gate.reach-notice`, which it then records; `:914`
+  `_undeclared_summary` is the one line for those entries, and `:933` `_print_owed` prints it and
+  every other entry's `NOT VERIFIED` line with `[record: <absolute path>]`, for `_sync` (`:1324`)
+  and `cmd_report` (`:1347`).
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1394-1399` and
+  `plugin/crew/hooks/scripts/verify-gate.ps1:1573-1585` - in Stop mode only, the matcher hands
+  undeclared-reach exclusions to `reach_notice` (ps1 through `verify_record.py reach-notice`);
+  `--ci` keeps a line per rule.
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1059` - `paths_key`, a digest of `paths`
+  alone; `:1098` `_stamp_paths` gives every live entry its rule's `pathsKey` and `peers` (other
+  current rules on the same paths) on each sync; `:1115` `_replacements` names the current rules
+  with that `pathsKey` that are not peers, and none for an entry without the two fields.
+- DERIVED `plugin/crew/hooks/scripts/verify_record.py:1284` - a stale entry with a replacement is
+  dropped as superseded and named in a `dropped the obligation of` line; `:1299` an orphaned
+  undeclared-reach entry is kept and marked but not counted toward the refusal; `:964`
+  `cmd_forget_orphans` is the named exit for the orphans that still hold the marker.
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:11-15` - `_crew_gate_exit_line` under an EXIT
+  trap writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on any exit 2; `:826-831` the cleanup trap
+  that replaces it calls it too. `plugin/crew/hooks/scripts/verify-gate.ps1:88`
+  `Exit-CrewGateBlocked` is the same line then `exit 2`, and every exit 2 in the file goes through
+  it. Claude Code reads an exit 2 with empty stdout and a `no such file` stderr as a missing hook.
+- DERIVED `plugin/crew/hooks/scripts/verify_fingerprint.py:183` - the notice file is gate-owned.
+- JUDGEMENT the deferral is untouched: which rules run on Stop is still `scan_reach` alone.
+- JUDGEMENT superseding drops the old obligation rather than moving it: the replacement owes the
+  paths from then on, under its own key, and runs when they next change or under `--all`.
+
+**Added on 2026-10-08 (L-0733), anchor NOT moved.** This section's citations were read at
+`ac633ffc7`, the L-0733 commit for the owner's 2026-10-08 additions; the note's `anchor:` is not
+moved for it because the earlier sections were not re-verified against the commits since it.
+
+**L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`); anchor NOT moved.** DERIVED: `plugin/crew/tests/test_scope_report.py` now builds crew 1.0 tickets with `scope_fixtures` (real repositories under `tmp_path`) and drives `verify-gate.sh` and, as `slow`, `verify-gate.ps1` end to end for the scope line; `plugin/crew/tests/test_completion_audit.py:322` / `:333` run a real `sed -i` against `completion_audit.py --check`. `test_scope_base.py`'s `_ticketed` writes the 1.0 layout; its four scope_report test names, which `sabotage.py` targets, are unchanged. The sabotage entries for the new reader land in the harness PR (`sabotage_scope.py`).
+
+
+
+**L-0711 harness half, 2026-10-08 (L-0711-sabotage, stacked on L-0711-scope-reader); anchor NOT moved.** DERIVED: `plugin/crew/tests/sabotage_scope.py` gains `SCOPE_REPORT` and seven `SCOPE_MUTATIONS` entries at its tail (the pre-1.0 spec location, the pre-1.0 guard, an unapproved Touch judged, the fnmatch matcher back, the report's own changed list, merged main counted, and `completion_audit.py --check` returning 0 on a refusal), each red on its named test in `test_scope_report.py` or `test_completion_audit.py`. Review round 4 adds three more (fifteen in all: an unreadable INDEX read as no open ticket, merged main's could-not-tell dropped, a file name printed raw). Review round 3 added five: the gate's stdin list keeping merged-main-identical paths, `.crew/` and `TODO.md` back as bookkeeping (two entries), an INDEX ticket with no folder read as no open ticket, and `verify-gate.sh` (`VERIFY_SH`) exiting 2 after the scope call, red on `test_both_gates_print_the_same_scope_line[sh-outside]`.
+
