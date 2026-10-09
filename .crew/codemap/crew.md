@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@238bf3ac
+anchor: useful-claude-add-ons@81e42890
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -2107,7 +2107,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   and refuses on `stale`, `unknown` or (T-0063) `fresh-uncommitted` without refreshing (`:57-58`);
   a `fresh-uncommitted` goes back to implement to commit, which keeps check 1's receipt.
 - DERIVED (L-0753). Checks 4 and 5 judge one set, `own_changes`
-  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1667`): before landing the completion audit's
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1673`): before landing the completion audit's
   merged-main set; after landing the paths the landing merge (first commit on the ref's
   first-parent line holding the receipt head) brought; could-not-tell is every path since the
   base. Check 5's CHANGELOG reads that range (`plugin/crew/hooks/scripts/crew_docs_check.py:301`).
@@ -5370,4 +5370,4 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   ticket (spec.md, `crew_ticket.py activate`, a `/crew:approve` prompt through `approval_hook.py`)
   and expect the outside path named, then `could not tell` naming spec.md once it is removed.
 
-**Re-anchored `5307a80e` -> `238bf3ac` on 2026-10-09 (L-0753, /crew:done judges the ticket's own diff).** L-0753's own change since `a7fb104b` is `crew_refresh_check.py` (`own_changes`), `crew_docs_check.py`, `ci_receipt.py` (the same-tree parent receipt), their tests, `commands/done.md`, `commands/docs.md`, the crew README and the troubleshooting and daily-workflow guides with their builds. Every `path:line` citation in this note into one of those files was re-taken by script (difflib against `5307a80e`): 16 moved. Citations into files only other PRs changed since the old anchor were not re-verified here. No suite was executed for this note.
+**Re-anchored `5307a80e` -> `81e42890` on 2026-10-09 (L-0753, /crew:done judges the ticket's own diff).** L-0753's own change since `a7fb104b` is `crew_refresh_check.py` (`own_changes`), `crew_docs_check.py`, `ci_receipt.py` (the same-tree parent receipt), their tests, `commands/done.md`, `commands/docs.md`, the crew README and the troubleshooting and daily-workflow guides with their builds. Every `path:line` citation in this note into one of those files was re-taken by script (difflib against `5307a80e`): 16 moved. Citations into files only other PRs changed since the old anchor were not re-verified here. No suite was executed for this note.
