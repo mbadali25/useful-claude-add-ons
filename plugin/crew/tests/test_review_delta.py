@@ -723,6 +723,114 @@ def test_graph_file_deleted_or_made_executable_is_stale(world, change):
     _stale(world, "excluded path changed: graphify-out/graph.json")
 
 
+# ---- L-0739: committed .work/ text changes in the reviewed range are in the bundle ----
+# A repository that tracks `.work/` (TSS ignores only a few folders under it).
+# `.work/tickets/` stays ignored so the lane's spec.md is not untracked dirt.
+
+TRACKS_WORK = {".gitignore": ".work/tickets/\n"}
+FINDINGS = ".work/FINDINGS.md"
+
+
+@pytest.fixture(name="tracks")
+def _tracks(tmp_path):
+    return _make_world(tmp_path, TRACKS_WORK)
+
+
+def _current(world):
+    code, out = _check(world)
+    assert code == 0 and "receipt current" in out, out
+    return out
+
+
+def test_committed_work_text_change_reviewed_in_the_bundle_is_current(tracks):
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+
+    manifest = _review(tracks)
+
+    assert manifest["included_excluded"] == [FINDINGS]
+    _current(tracks)
+
+
+def test_committed_work_change_under_an_old_builder_receipt_is_stale(tracks, monkeypatch):
+    """A receipt minted before L-0739 hashed a bundle without the section."""
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+    with monkeypatch.context() as patch:
+        patch.setattr(review_patch, "included_patch", lambda *_a: (b"", []))
+        _review(tracks)
+
+    _stale(tracks, f"excluded path changed: {FINDINGS} (receipt base -> reviewed head)",
+           "outside the bundle; re-review so it is included")
+
+
+@pytest.mark.parametrize("kind", ["binary", "executable", "symlink"])
+def test_binary_executable_or_symlink_work_file_in_range_is_stale(tracks, kind):
+    rel = ".work/thing"
+    if kind == "binary":
+        _write(tracks.lane, rel, b"\x00\x01binary\x00")
+        git(tracks.lane, "add", rel)
+    elif kind == "executable":
+        _write(tracks.lane, rel, "echo hi\n")
+        git(tracks.lane, "add", rel)
+        git(tracks.lane, "update-index", "--chmod=+x", rel)
+    else:
+        blob = subprocess.run(["git", "-C", str(tracks.lane), "hash-object", "-w", "--stdin"],
+                              input="FINDINGS.md", capture_output=True, text=True,
+                              check=True).stdout.strip()
+        git(tracks.lane, "update-index", "--add", "--cacheinfo", f"120000,{blob},{rel}")
+    git(tracks.lane, "commit", "-qm", kind)
+    git(tracks.lane, "checkout", "--", ".")
+
+    _review(tracks)
+
+    _stale(tracks, f"excluded path changed: {rel} (receipt base -> reviewed head)",
+           "outside the bundle")
+
+
+@pytest.mark.parametrize("dirt", ["unstaged", "untracked"])
+def test_work_dirt_on_the_delta_path_is_stale(tracks, dirt):
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+    _review(tracks)
+    _main(tracks, {"lib.py": "def lib():\n    return 2\n"})
+    _catch_up(tracks)
+    if dirt == "unstaged":
+        _write(tracks.lane, FINDINGS, "- edited, never committed\n")
+    else:
+        _write(tracks.lane, ".work/notes.md", "scratch\n")
+
+    _stale(tracks, "not clean")
+
+
+def test_reviewed_work_change_is_kept_across_a_catch_up(tracks):
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+    _review(tracks)
+    _main(tracks, {"lib.py": "def lib():\n    return 2\n"})
+    _catch_up(tracks)
+
+    out = _kept(tracks)
+
+    assert "2 paths identical" in out, out
+
+
+def test_reviewed_work_change_main_also_landed_reads_gone_from_the_current_delta(tracks):
+    """The interdiff sees `.work/`: main landing the same bytes takes the path
+    out of the current delta, as it would for any reviewed file."""
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+    _review(tracks)
+    _main(tracks, {FINDINGS: "- a finding\n", "lib.py": "def lib():\n    return 2\n"})
+    _catch_up(tracks)
+
+    _stale(tracks, f"{FINDINGS} is reviewed but gone from the current delta")
+
+
+def test_graph_change_in_range_passes_and_stays_out_of_the_bundle(tracks):
+    _commit(tracks.lane, {"graphify-out/graph.json": '{"nodes": 2}\n'}, "graph")
+
+    manifest = _review(tracks)
+
+    assert manifest["included_excluded"] == []
+    _current(tracks)
+
+
 def test_binary_graph_file_change_is_stale(world):
     _review(world)
     _write(world.lane, "graphify-out/graph.json", b"\x00\x01\x02binary graph\x00")

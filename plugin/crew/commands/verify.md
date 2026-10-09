@@ -111,6 +111,17 @@ that fits alone but lost to this turn's contention (acute) still blocks the
 baseline exactly as before — genuinely unverified for THIS commit, not
 permanently unverifiable.
 
+**The record is per checkout.** Each clone or worktree has its own
+`.crew/.verify-gate.record.json`, and every orphan and `NOT VERIFIED` line
+names the one it read (`[record: <absolute path>]`). `--all` clears only the
+record of the checkout it runs in — an `--all` in one worktree leaves
+another's entries where they are — and `--ci` never prunes the record: it
+excludes `network`/`host` rules and never records a pass. An orphan, an entry
+whose rule was edited or removed, is dropped when a new rule on the same
+`paths` replaces it (L-0733); one that nothing replaced stays until `--all`
+runs in that checkout, or until `verify_record.py forget-orphans`, run from
+its root, drops it by name without running anything.
+
 ## `--price` (operator only, never from Stop)
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --price [path] [--force]

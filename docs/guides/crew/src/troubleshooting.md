@@ -184,6 +184,14 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
   integration ref` - the merge train is not armed in this clone, so the gate keeps nothing yet); a
   code map, rules file or diagram may move only its anchor sha after review.
+  `excluded path changed: <path> (receipt base -> reviewed head)` in a repository that commits
+  `.work/` notes: since L-0739 the bundle carries a committed text change there, so a receipt
+  minted by an older crew says `outside the bundle; re-review so it is included` - run
+  `/crew:review` again and the new round shows it. `outside the bundle, which cannot show it` (a
+  binary, executable, symlink or gitlink file, a force-added file the repository ignores, or a
+  `graphify-out/` file) has one remedy: restore the path in a new commit, then re-review. Run the
+  review from another checkout of the deploy commit, so its `review.json` and metrics row do not
+  dirty the tree promote-gate checks.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
@@ -359,6 +367,17 @@ contract itself. This section is what goes wrong with the approval and the audit
 - **Symptom: you need to touch one more path mid-ticket.**
   **Fix:** amend `spec.md`'s `## Touch` (widen it), then approve again. There is no partial-approve;
   amending scope is edit-then-approve, same as any other spec change.
+
+- **Symptom: the Stop prints `outside-scope: (could not tell - ...)`.**
+  The verify gate's scope line (`scope_report.py`) reads the active ticket's approved
+  `.work/tickets/<id>/spec.md ## Touch`, as the completion audit does. The reason names the gap:
+  no readable `spec.md`, no `## Touch` paths, a Touch that is not approved (approve it, or approve
+  it again after a spec edit), a broken active-ticket pointer, a pre-1.0
+  `.work/tickets/<id>.md` ticket (run `/crew:migrate`), or an `INDEX.md` open ticket whose
+  `.work/tickets/<id>/` folder does not exist (fix the INDEX row or restore the folder), or an
+  `INDEX.md` that cannot be read. A clean line can also carry `(merged main: could not tell - ...)`,
+  for example on a detached HEAD: nothing was left out as main's, the same as the audit. Before L-0711 the line said every 1.0
+  ticket's file was missing. It is report-only: the refusal is `/crew:done` check 3.
 
 - **Symptom: `/crew:done` refuses on "out of scope" for a file the edit guard never saw.**
   This is the Stop-time completion audit (`completion_audit.py`), not the edit guard. The edit guard
@@ -878,6 +897,39 @@ still resumes from the last written handoff rather than from nothing.
   <id>` prints `applies= ok= missing=` and the reason, and writes nothing.
 - **Fix:** quote the missing lines in the plan, or approve it yourself with `/crew:approve <id>`,
   which this check never blocks.
+
+## Verify gate says rules declare no `reach`
+
+- **Symptom:** on Stop, `verify-gate: N rule(s) matched this turn declare no `reach`, so Stop did NOT
+  run them` once, then on every later Stop one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]` (L-0733; before it, a line per rule per turn).
+- **Cause:** `.crew/verify.json` predates `reach`. A rule with none that wraps a script, uses shell
+  syntax or names a remote verb is never run unattended on Stop - it may reach a live host. The
+  notice is shown once per map content; `.crew/.verify-gate.reach-notice` remembers which.
+- **Fix:** `/crew:verify --stamp-reach` shows what each rule would get; `--apply` writes the `local`
+  and `network` proposals, and `--set N=local|network|host` decides a wrapper or shell rule. Review
+  the diff and commit it on its own. `/crew:verify --all` runs every rule meanwhile.
+- **Symptom:** `N unverified obligation(s) belong to a rule that was edited or removed and that no
+  rule on the same paths replaced; NOT advancing the marker [record: <path>]`. **Cause:** a rule was
+  removed, or its `paths` changed, after its entry was recorded. A rule edited in place (same paths)
+  supersedes its old entry instead, which is dropped with a `dropped the obligation of rules[N]`
+  line. An undeclared-reach orphan no longer holds the marker (it is counted in the summary line);
+  any other kind does. Entries recorded before L-0733 are never superseded. **Fix:**
+  `/crew:verify --all` in the checkout the `[record: ...]` path names (it clears only that
+  checkout's record, and `--ci` never prunes it), or, when that would reach `network`/`host`
+  targets, run the `verify_record.py forget-orphans` command the line names, from the repo root: it
+  drops the orphans by name and runs nothing.
+
+## A Stop that should have blocked said the hook script was missing
+
+- **Symptom:** a rule failed, but Claude Code said `Hook script appears to be missing ... Treating as
+  non-blocking. Run /plugin to reinstall` and the turn ended anyway.
+- **Cause:** Claude Code reads a Stop hook that exits 2 with empty stdout and a stderr containing
+  `No such file` or `can't open` as a missing script. A rule like `bash _verify/check.sh` whose
+  script is gone fails with exactly that stderr.
+- **Fix:** since L-0733 crew writes `VERIFY GATE: BLOCKED (exit 2)` to stdout on every exit 2, in both
+  flavours, so the block holds. On an older crew, update the plugin; fix or remove the rule either
+  way.
 
 ## An agent named in verify.json is not installed
 

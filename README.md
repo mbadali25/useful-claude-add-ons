@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.10**: Every crew test runs under a home of its own. The crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
-- **crew 1.2.9**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **crew 1.2.17**: Every crew test runs under a home of its own. The crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
+- **crew 1.2.16**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
