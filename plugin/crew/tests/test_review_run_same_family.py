@@ -10,6 +10,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 import review_fixtures
 import review_ledger as rl
 from review_fixtures import env_with_path, fake_reviewer_bin, init_repo
@@ -172,6 +173,21 @@ def _launch_lines():
     return lines[at - 1] + lines[at]
 
 
+_BASH = crew_fixtures.resolve_bash()
+needs_bash = pytest.mark.skipif(_BASH is None, reason="runs review.md's bash lines")
+
+
+def _python3_shim(directory):
+    """A `python3` on PATH that is this interpreter: Git Bash ships none, and a
+    bare `bash` on a Windows runner is the WSL stub (CLAUDE.md, Landmines)."""
+    directory.mkdir(parents=True, exist_ok=True)
+    shim = directory / "python3"
+    shim.write_text('#!/bin/sh\nexec "%s" "$@"\n' % sys.executable.replace("\\", "/"),
+                    encoding="utf-8", newline="\n")
+    shim.chmod(0o755)
+    return str(directory)
+
+
 def _fallback(tmp_path, qa, probe_status, authors="claude"):
     repo = init_repo(tmp_path / "fb")
     (repo / ".crew").mkdir(exist_ok=True)
@@ -188,12 +204,13 @@ def _fallback(tmp_path, qa, probe_status, authors="claude"):
         encoding="utf-8")
     script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; QA_KIMI_MODEL=; '
               f'AUTHORS="{authors}"\n' + _fallback_line()
-              + f'CLAUDE_PLUGIN_ROOT="{tmp_path / "fakeroot"}"\n' + _launch_lines()
+              + f'CLAUDE_PLUGIN_ROOT="{(tmp_path / "fakeroot").as_posix()}"\n' + _launch_lines()
               + 'printf "FALLBACK=[%s] QA_MODEL=[%s] QA_KIMI_MODEL=[%s]\\n" "$FALLBACK" '
               '"$QA_MODEL" "$QA_KIMI_MODEL"\n')
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               PATH=_python3_shim(tmp_path / "shim") + os.pathsep + os.environ.get("PATH", ""),
                CLAUDE_PLUGIN_ROOT=context._ROOT)  # pylint: disable=protected-access
-    result = subprocess.run(["bash", "-c", script], cwd=str(repo), capture_output=True,
+    result = subprocess.run([_BASH, "-c", script], cwd=str(repo), capture_output=True,
                             text=True, stdin=subprocess.DEVNULL, check=False, env=env,
                             timeout=60)
     return result.stdout.rsplit("FALLBACK=", 1)[-1].strip(), result
@@ -208,6 +225,7 @@ def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
 _ALL = ("codex", "kimi", "copilot", "claude")
 
 
+@needs_bash
 @pytest.mark.parametrize("fallback,order,probe,expected", [
     ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol] QA_MODEL=[gpt-6.1-sol] QA_KIMI_MODEL=[]"),
     ("claude-sonnet-5", _ALL, 6, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
@@ -223,6 +241,7 @@ def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, p
     assert got == expected, result.stdout + result.stderr
 
 
+@needs_bash
 @pytest.mark.parametrize("fallback,order,probe,launched", [
     ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol]"),
     ("claude-sonnet-5", _ALL, 6, "[kimi k3]"),
@@ -239,6 +258,7 @@ def test_review_md_step_2a_launches_the_resolved_provider(tmp_path, fallback, or
     assert f"LAUNCH={launched}" in result.stdout, result.stdout + result.stderr
 
 
+@needs_bash
 @pytest.mark.parametrize("probe", [0, 1, 2])
 def test_review_md_names_no_fallback_unless_the_probe_said_unavailable(tmp_path, probe):
     got, result = _fallback(tmp_path, _qa("gpt-6.1-sol"), probe)
