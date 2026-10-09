@@ -38,6 +38,41 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
   (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
 
+## [1.2.9] - 2026-10-08
+
+### Fixed — crew 1.2.9: one true quickstart (L-0713)
+
+- **Summary.** A new repository set up with `/crew:init` no longer gets told to run
+  `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the
+  repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
+  /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
+  that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `schema`
+  that is not an integer, a `roles` that is not a list, or a `.crew/` or `.work/tickets/` it
+  cannot list, prints `could not tell whether /crew:migrate is needed (<why>)` instead of either
+  answer.
+  `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
+  the status comes back clean.
+- **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin
+  README, `CONFIG.md` §1, `/crew:init`, `/crew:migrate` and `/crew:status` agree: init writes
+  `.crew/config.json`; migrate writes `.crew/crew.json` as a record and leaves `config.json` in use
+  (its preview's `retireable` label on that file is wrong, and the docs say to keep it). The
+  config-file diagram's "open authority question" now records the answer.
+- **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
+  `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
+  discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` or a case folder they cannot
+  list, exits 2); the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
+  `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
+- **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
+  `crew-config-file:<name>` (a marked statement must name only the file
+  `crew_common.repo_config_file` opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
+  shipped) and `eval-roster:<plugin>` (a marked eval roster must match `evals/` and name agents
+  that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
+  `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.
+
 ## [1.2.8] - 2026-10-08
 
 Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.

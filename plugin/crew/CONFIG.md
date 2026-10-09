@@ -39,6 +39,15 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 | repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
+**The repo file is `.crew/config.json`** (L-0713). `/crew:init` writes it from<!-- claim: crew-config-file:config.json -->
+`templates/config.template.json`, `/crew:config` and `crew_config.py --repo` edit it, and every
+gate, guard and setting reader opens it (the Python ones through `crew_common.repo_config_file`,
+whose default name is `config.json`). A new repository needs no `/crew:migrate`. `.crew/crew.json` exists only where
+`/crew:migrate` ran on a crew 0.20 setup: a schema-1 record of the old config, with
+`.crew/config.json` left in place and still read. Where it exists, `crew_context`, `crew_resume`,
+`crew_refresh_check`, `crew_diagrams` and `/crew:status` read it before `config.json`, and
+`crew_tracker` reads both and refuses when they disagree; no gate or guard reads it.
+
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
 or non-object global file returns `{}` and is indistinguishable from no file at
 all. That contract is load-bearing — `resolve_config` is reached from a

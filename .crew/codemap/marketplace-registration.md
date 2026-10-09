@@ -77,6 +77,16 @@ gate's own claim that it passed.
 
 ## `check_self_claims` — three marker types now, not two
 
+**DERIVED (L-0713, without moving the anchor).** Three more kinds route to
+`check_consistency_claim` in `scripts/check-marketplace.py`: `crew-config-file:<name>`
+(every `.crew/*.json` name on the marked statement must be `<name>`, and `<name>` must be
+`crew_common.repo_config_file`'s default, read by `ast`), `plugin-command-table:<plugin>`
+(the table's `/<plugin>:<cmd>` set equals the tracked `commands/**.md`) and
+`eval-roster:<plugin>` (the table's cases equal the tracked `evals/*/case.yaml`
+folders, each named agent a tracked `agents/<x>.md`, or a "no eval cases" line with
+none). An unreadable truth is UNVERIFIED, never a pass; `scripts/_test/self-claims.py`
+holds must-block, must-allow and unmarked-silence cases for each.
+
 **DERIVED, re-read at this anchor.** `check_self_claims`
 (`scripts/check-marketplace.py:673-903`, moved +24 lines from `5d1fc5fd`'s
 `:649` because `count_crew_markdown_lines` — new, `:564-586` — was inserted
