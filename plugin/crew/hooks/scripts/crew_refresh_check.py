@@ -1589,9 +1589,10 @@ REVIEW_RECEIPT = "review.json"
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _receipt_head(top, ticket):
+def _receipt_head(top, ticket, base):
     """`(sha, None)` -- the head the ticket's review receipt was taken at --
-    or `(None, why)`. Only a full sha that names a commit here is an answer."""
+    or `(None, why)`. Only a receipt that names this ticket and this scope
+    base, with a full sha that names a commit here, is an answer."""
     path = os.path.join(crew_ticket.ticket_dir(top, ticket), REVIEW_RECEIPT)
     rel = f".work/tickets/{ticket}/{REVIEW_RECEIPT}"
     try:
@@ -1605,7 +1606,12 @@ def _receipt_head(top, ticket):
         data = json.loads(text)
     except ValueError as exc:
         return None, f"{rel} is not JSON: {exc}"
-    head = data.get("head") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None, f"{rel} is not a JSON object"
+    if data.get("ticket") != ticket or data.get("base") != base:
+        return None, (f"{rel} names ticket {data.get('ticket')!r} and base "
+                      f"{str(data.get('base'))[:12]!r}, not {ticket} at {base[:12]}")
+    head = data.get("head")
     if not isinstance(head, str) or not _FULL_SHA.match(head):
         return None, f"{rel} names no full head sha"
     if git_out(top, "rev-parse", "--verify", "-q", head + "^{commit}") is None:
@@ -1676,8 +1682,9 @@ def own_changes(top, base, ticket):
     integration ref, that rule drops every committed path (merged_main's
     documented corner), so the ticket's landing is found instead: the first
     commit M on the ref's first-parent line containing the review receipt's
-    head. The set is the since-base paths that M changed against M^1 (main
-    just before) or that differ from HEAD now, and the range is M^1..M.
+    head (a receipt naming this ticket and this base). The set is the
+    since-base paths that M changed against M^1 (main just before) or that
+    differ from HEAD now, and the range is M^1..M.
 
     Could not tell -- merged_main cannot tell, no readable receipt head, no
     such M or M not a merge, git failing -- is the FULL since-base set with the
@@ -1694,7 +1701,7 @@ def own_changes(top, base, ticket):
                "old": merged["commit"] if merged["applies"] else base,
                "narrowed": bool(merged["applies"]), "note": merged["reason"]}
         return own
-    reviewed, why = _receipt_head(top, ticket)
+    reviewed, why = _receipt_head(top, ticket, base)
     if reviewed is None:
         return _full(top, base, f"could not tell which merge landed {ticket}: {why}")
     landed, before, why = _landing(top, merged["ref"], base, reviewed)

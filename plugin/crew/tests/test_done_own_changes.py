@@ -114,7 +114,8 @@ def _world(tmp_path, stage, entry="- `crew` 1.0.1: app counts to two",
                                        "## [Unreleased]\n", f"## [Unreleased]\n\n{entry}\n"))
     _commit(root, f"crew 1.0.1: version for {T}", **version)
     if receipt:
-        _write(root, f".work/tickets/{T}/review.json", json.dumps({"head": reviewed}))
+        _write(root, f".work/tickets/{T}/review.json",
+               json.dumps({"ticket": T, "base": base, "head": reviewed}))
     if stage == "pre-land":
         return root
     _git(root, "checkout", "-q", "main")
@@ -128,7 +129,6 @@ def _world(tmp_path, stage, entry="- `crew` 1.0.1: app counts to two",
             "CHANGELOG.md": current[:at] + "## [1.0.2] - 2026-10-10\n\n- `crew` 1.0.2: more\n\n"
                             + current[at:]})
     _git(root, "checkout", "-qb", "T-0001-done")
-    assert base
     return root
 
 
@@ -239,7 +239,25 @@ def _drop_receipt(root):
 
 
 def _foreign_receipt(root):
-    _write(root, f".work/tickets/{T}/review.json", json.dumps({"head": "1" * 40}))
+    base = scope_base.resolve(str(root), T)[0]
+    _write(root, f".work/tickets/{T}/review.json",
+           json.dumps({"ticket": T, "base": base, "head": "1" * 40}))
+
+
+def _other_tickets_receipt(root):
+    path = os.path.join(str(root), ".work", "tickets", T, "review.json")
+    with open(path, encoding="utf-8") as handle:
+        receipt = json.load(handle)
+    receipt["ticket"] = "T-0002"
+    _write(root, f".work/tickets/{T}/review.json", json.dumps(receipt))
+
+
+def _other_base_receipt(root):
+    path = os.path.join(str(root), ".work", "tickets", T, "review.json")
+    with open(path, encoding="utf-8") as handle:
+        receipt = json.load(handle)
+    receipt["base"] = _git(root, "rev-parse", "HEAD")
+    _write(root, f".work/tickets/{T}/review.json", json.dumps(receipt))
 
 
 def _garbled_receipt(root):
@@ -248,9 +266,10 @@ def _garbled_receipt(root):
 
 @pytest.mark.parametrize("stage,blind", [
     ("pre-land", _detach), ("landed", _detach), ("landed", _drop_receipt),
-    ("landed", _foreign_receipt), ("landed", _garbled_receipt),
+    ("landed", _foreign_receipt), ("landed", _garbled_receipt), ("landed", _other_tickets_receipt),
+    ("landed", _other_base_receipt),
 ], ids=["pre-land-detached", "landed-detached", "landed-no-receipt", "landed-foreign-receipt",
-        "landed-garbled-receipt"])
+        "landed-garbled-receipt", "landed-other-tickets-receipt", "landed-other-base-receipt"])
 def test_could_not_tell_judges_the_full_set(tmp_path, stage, blind):
     root = _world(tmp_path, stage)
     blind(root)
