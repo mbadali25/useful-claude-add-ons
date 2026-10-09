@@ -71,7 +71,8 @@ def test_the_smoke_lane_refuses_named_before_invoking(tmp_path):  # pylint: disa
     # would still hit '& $bashExe $smoke' on the next line with an empty
     # $bashExe.
     guard_pos = between.index("if (-not $bashExe)")
-    assert "exit" in between[guard_pos:], (
+    # `Exit-CrewGateBlocked` (L-0733) is `exit 2` after a stdout line.
+    assert "exit" in between[guard_pos:] or "Exit-CrewGateBlocked" in between[guard_pos:], (
         "the smoke lane's empty-bash guard does not exit - it would fall "
         "through to the invocation anyway. Guard body:\n" + between[guard_pos:])
 
