@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.11**: /crew:verify says the record is per checkout. `/crew:verify` now says that the verify record belongs to one checkout: `--all` clears only the record of the checkout it runs in, and `--ci` never prunes it.
 - **crew 1.2.9**: One true quickstart. A new repository set up with `/crew:init` no longer gets told to run `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **crew 1.2.8**: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt. `/crew:done` now closes only when HEAD itself passed every verify rule, here or in the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or run no rule at all.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
