@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.20**: A merged ticket closes with `/crew:done` without a refresh PR. `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4 and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
 - **crew 1.2.16**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
-- **crew 1.2.15**: No reviewer is INCOMPLETE and refunded; a same-family review is opt-in. When no reviewer from another model family can run, `/crew:review` now records the round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a same-family review runs only when you ask for one, labelled as such.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
