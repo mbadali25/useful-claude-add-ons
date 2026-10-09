@@ -242,10 +242,15 @@ def _foreign_receipt(root):
     _write(root, f".work/tickets/{T}/review.json", json.dumps({"head": "1" * 40}))
 
 
+def _garbled_receipt(root):
+    _write(root, f".work/tickets/{T}/review.json", '{"head": ')
+
+
 @pytest.mark.parametrize("stage,blind", [
     ("pre-land", _detach), ("landed", _detach), ("landed", _drop_receipt),
-    ("landed", _foreign_receipt),
-], ids=["pre-land-detached", "landed-detached", "landed-no-receipt", "landed-foreign-receipt"])
+    ("landed", _foreign_receipt), ("landed", _garbled_receipt),
+], ids=["pre-land-detached", "landed-detached", "landed-no-receipt", "landed-foreign-receipt",
+        "landed-garbled-receipt"])
 def test_could_not_tell_judges_the_full_set(tmp_path, stage, blind):
     root = _world(tmp_path, stage)
     blind(root)

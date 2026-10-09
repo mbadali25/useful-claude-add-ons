@@ -1595,12 +1595,16 @@ def _receipt_head(top, ticket):
     path = os.path.join(crew_ticket.ticket_dir(top, ticket), REVIEW_RECEIPT)
     rel = f".work/tickets/{ticket}/{REVIEW_RECEIPT}"
     try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
+        with open(path, encoding="utf-8", errors="strict") as handle:
+            text = handle.read()
     except FileNotFoundError:
         return None, f"no review receipt ({rel}) names {ticket}'s reviewed head"
-    except (OSError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         return None, f"{rel} could not be read: {exc}"
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        return None, f"{rel} is not JSON: {exc}"
     head = data.get("head") if isinstance(data, dict) else None
     if not isinstance(head, str) or not _FULL_SHA.match(head):
         return None, f"{rel} names no full head sha"
@@ -1642,7 +1646,10 @@ def _landing(top, ref, base, reviewed):
             low = mid + 1
     if found is None:
         return None, None, f"no commit on {ref} since {base[:12]} contains the reviewed head {reviewed[:12]}"
-    parents = (git_out(top, "rev-list", "--parents", "-n", "1", found) or "").split()[1:]
+    listing = git_out(top, "rev-list", "--parents", "-n", "1", found)
+    if listing is None:
+        return None, None, f"git could not list the parents of {found[:12]}"
+    parents = listing.split()[1:]
     if len(parents) < 2:
         return None, None, (f"{found[:12]}, which brought the reviewed head {reviewed[:12]} into {ref}, "
                             "is not a merge")
