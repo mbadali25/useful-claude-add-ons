@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.12**: /crew:verify says the record is per checkout. `/crew:verify` now says that the verify record belongs to one checkout: `--all` clears only the record of the checkout it runs in, and `--ci` never prunes it.
 - **crew 1.2.11**: The Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks. A repo whose verify map predates `reach` gets one notice naming `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in place no longer leaves an orphan that freezes the verified marker; and a rule that fails with `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
-- **crew 1.2.10**: The diagrams L-0713 left stale re-drawn against the code. `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713: the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2 needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA diagrams are re-cited and re-anchored. No behaviour changed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
