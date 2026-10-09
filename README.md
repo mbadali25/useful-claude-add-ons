@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.3**: The Stop's `outside-scope:` line reads the crew 1.0 Touch. The verify gate's scope line now names a file a shell command (`sed -i`, a redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's file is missing.
-- **crew 1.2.11**: The Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks. A repo whose verify map predates `reach` gets one notice naming `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in place no longer leaves an orphan that freezes the verified marker; and a rule that fails with `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
+- **crew 1.2.12**: /crew:verify says the record is per checkout. `/crew:verify` now says that the verify record belongs to one checkout: `--all` clears only the record of the checkout it runs in, and `--ci` never prunes it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
