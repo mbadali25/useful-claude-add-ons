@@ -134,6 +134,86 @@ def test_a_claude_reservation_with_no_authors_runs_labelled_on_same_family(setup
     assert (result.returncode, row.get("same_family")) == (0, True), result.stderr
 
 
+@pytest.mark.parametrize("extra", [
+    ("--reserve-only",),
+    ("--reserve-only", "--round", "1"),
+    ("--reserve-only", "--round", "7"),
+])
+def test_every_claude_reservation_with_no_authors_is_refused(setup, extra):
+    """Round 5 BLOCK: --round beside --reserve-only still reserves, so it
+    exempts nothing from the no-authors guard."""
+    result = _run(setup, "claude", *extra)
+
+    assert (result.returncode, "no --authors given" in result.stderr,
+            rl.status(str(setup[0]), "T1")["rounds_used"]) == (2, True, 0), result.stderr
+
+
+def test_the_recording_call_with_no_authors_still_records_its_round(setup):
+    repo, scratch, _, _ = setup
+    _run(setup, "claude", "--reserve-only", "--authors", "gpt")
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['path']}\n" for p in json.loads(
+            (scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]) + "CLEAN\n",
+        encoding="utf-8")
+
+    done = _run(setup, "claude", "--round", "1", "--output", str(scratch / "out.txt"),
+                "--exit-code", "0")
+
+    assert (done.returncode, rl.status(str(repo), "T1")["rounds"][0]["status"]) == (
+        0, "completed"), done.stdout + done.stderr
+
+
+def _ledger_cli(setup, *args):
+    return subprocess.run([sys.executable, os.path.join(_SCRIPTS, "review_ledger.py"),
+                           "--root", str(setup[0]), "--ticket", "T1"] + list(args),
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          check=False, timeout=60)
+
+
+@pytest.mark.parametrize("args", [
+    ("--reserve",),
+    ("--reserve", "--provider", "claude"),
+    ("--reserve", "--provider", "claude", "--authors", "claude"),
+    ("--reserve", "--provider", "codex", "--authors", "gpt"),
+    ("--reserve", "--provider", "codex", "--authors", "claude", "--author-source", "unknown"),
+])
+def test_the_ledger_cli_reservation_asks_the_same_family_guard(setup, args):
+    result = _ledger_cli(setup, *args)
+
+    assert (result.returncode, "same-family:" in result.stderr,
+            rl.status(str(setup[0]), "T1")["rounds_used"]) == (2, True, 0), result.stderr
+
+
+@pytest.mark.parametrize("args,labelled", [
+    (("--reserve", "--authors", "gpt"), False),
+    (("--reserve", "--same-family", "operator chose it"), True),
+])
+def test_the_ledger_cli_reserves_a_cross_family_or_labelled_round(setup, args, labelled):
+    result = _ledger_cli(setup, *args)
+
+    row = rl.status(str(setup[0]), "T1")["rounds"][0]
+    assert (result.returncode, row.get("same_family") is True) == (0, labelled), result.stderr
+
+
+def test_the_ledger_cli_takes_family_flags_only_with_reserve(setup):
+    result = _ledger_cli(setup, "--status", "--authors", "gpt")
+
+    assert result.returncode == 2
+
+
+def test_a_same_family_round_is_named_so_in_the_metrics_row(setup):
+    import review_metrics  # pylint: disable=import-outside-toplevel
+    repo = setup[0]
+
+    result = _run(setup, "codex", "--authors", "gpt", "--same-family", "chosen")
+
+    path, problem = review_metrics.metrics_path(str(repo))
+    with open(path, encoding="utf-8") as fh:
+        last = fh.read().splitlines()[-1]
+    assert (bool(problem), "same-family: operator choice" in last) == (False, True), (
+        result.stdout + result.stderr + last)
+
+
 def test_the_probe_asks_the_family_guard_before_calling_codex(setup):
     _, _, fakes, _ = setup
 

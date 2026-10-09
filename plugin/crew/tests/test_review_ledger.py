@@ -73,7 +73,7 @@ def test_reserve_budget_cannot_be_reset_or_raised_by_env_or_flag(repo):
 
     flag_budget = _cli(repo, "--ticket", "T1", "--reserve", "--budget", "3", env=env)
     flag_reset = _cli(repo, "--ticket", "T1", "--reserve", "--reset", env=env)
-    plain = _cli(repo, "--ticket", "T1", "--reserve", env=env)
+    plain = _cli(repo, "--ticket", "T1", "--reserve", "--authors", "gpt", env=env)
 
     assert (flag_budget.returncode, flag_reset.returncode) == (2, 2)
     assert plain.returncode == 1 and "budget exhausted" in plain.stderr

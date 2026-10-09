@@ -151,9 +151,11 @@ passes `--same-family "<reason>"`, which runs it with the ledger row labelled
 same-family read: it is ignored, and said. `--probe` asks the guard first, so
 a barred Codex costs no call. Without `--authors`, a reservation by a Claude
 (or unknown-family) reviewer is refused the same way unless `--same-family`
-labels it: crew's author is Claude unless proven otherwise. Any other
-reviewer, and the recording call (`--round`), run with the guard not applied
-(callers that predate L-0712), and stderr says so on every run.
+labels it: crew's author is Claude unless proven otherwise, and `--round`
+beside `--reserve-only` exempts nothing. Any other reviewer runs with the
+guard not applied (callers that predate L-0712), and stderr says so on every
+run. The recording call (`--round` alone) reserves nothing and never reaches
+the guard. `review_ledger.py --reserve` asks this same guard.
 
 BEFORE ANY ROUND IS RESERVED, five questions, in this order (`preflight`
 asks 1 and 2 in `_receipt_and_gate`, then 3 in `train_gate`; then
@@ -1781,10 +1783,14 @@ def family_guard(args):
         reason = review_ledger._one_line_arg(reason, "--same-family", "a same-family read")  # pylint: disable=protected-access
     if getattr(args, "authors", None) is None:
         fam = crew_state.family(args.provider, args.model or None)
-        if getattr(args, "round", None) is None and fam in (None, "claude") and reason is None:
+        if fam in (None, "claude") and reason is None:
             # Round 4 BLOCK: crew's author is Claude unless proven otherwise, so a
             # Claude (or unknown-family) reservation with no --authors is
-            # could-not-tell, never an unlabelled independent round.
+            # could-not-tell, never an unlabelled independent round. This guard
+            # runs only where a round is reserved (run, --probe, and
+            # review_ledger.py --reserve); the recording call never reaches it,
+            # so no flag here, --round included, may exempt a reservation
+            # (round 5 BLOCK: --reserve-only --round slipped past).
             return (f"review-run: same-family: no --authors given, so {args.provider} "
                     f"({fam or 'unknown'} family) may be the author's family; not an "
                     "independent review. Pass --authors \"$AUTHORS\", or --same-family "

@@ -1343,6 +1343,14 @@ def main(argv):
     parser.add_argument("--follow-up", help="with --auto-accept: the follow-up ticket id")
     parser.add_argument("--reason", help="with --correct-acceptance or --no-reviewer: why, "
                                          "one line")
+    parser.add_argument("--authors", default=None,
+                        help="with --reserve: the author families; the same family guard "
+                             "review_run.py applies (L-0712)")
+    parser.add_argument("--author-source", default=None,
+                        help="with --reserve: `unknown` is could-not-tell (L-0712)")
+    parser.add_argument("--same-family", default=None, metavar="REASON",
+                        help="with --reserve: the operator's explicit same-family read; the "
+                             "row is labelled")
     parser.add_argument("--supersede-accepted", action="store_true",
                         help="with --reject: take an ACCEPTED ticket, keeping its receipt "
                              "under superseded")
@@ -1355,6 +1363,10 @@ def main(argv):
         parser.error("--correct-acceptance takes no --follow-up")
     if args.supersede_accepted and not args.reject:
         parser.error("--supersede-accepted is used only with --reject")
+    if not args.reserve and (args.authors is not None or args.author_source is not None
+                             or args.same_family is not None):
+        parser.error("--authors, --author-source and --same-family are used only with "
+                     "--reserve")
     root = os.path.abspath(args.root)
 
     try:
@@ -1363,7 +1375,18 @@ def main(argv):
             print(json.dumps(status(root, args.ticket), indent=2, sort_keys=True))
             return 0
         if args.reserve:
-            ok, number, message = reserve(root, args.ticket, args.provider, args.model)
+            # L-0712 round 5: this is a reserving path too, so it asks review_run's
+            # one family guard (never a second copy that could disagree with it).
+            import review_run  # pylint: disable=import-outside-toplevel
+            refusal, label = review_run.family_guard(argparse.Namespace(
+                provider=args.provider, model=args.model, authors=args.authors,
+                author_source=args.author_source, same_family=args.same_family))
+            if refusal:
+                print("ROUND=")
+                sys.stderr.write(refusal.replace("review-run:", "review-ledger:", 1))
+                return 2
+            ok, number, message = reserve(root, args.ticket, args.provider, args.model,
+                                          same_family=label)
             print(f"ROUND={number}" if ok else "ROUND=")
             sys.stderr.write(f"review-ledger: {message}\n")
             return 0 if ok else 1
