@@ -184,6 +184,14 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   (`delta gate: <path> ...`, `excluded path changed`, `not clean`, `no train entry binds the
   integration ref` - the merge train is not armed in this clone, so the gate keeps nothing yet); a
   code map, rules file or diagram may move only its anchor sha after review.
+  `excluded path changed: <path> (receipt base -> reviewed head)` in a repository that commits
+  `.work/` notes: since L-0739 the bundle carries a committed text change there, so a receipt
+  minted by an older crew says `outside the bundle; re-review so it is included` - run
+  `/crew:review` again and the new round shows it. `outside the bundle, which cannot show it` (a
+  binary, executable, symlink or gitlink file, a force-added file the repository ignores, or a
+  `graphify-out/` file) has one remedy: restore the path in a new commit, then re-review. Run the
+  review from another checkout of the deploy commit, so its `review.json` and metrics row do not
+  dirty the tree promote-gate checks.
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle

@@ -765,3 +765,81 @@ def test_a_committed_crew_trust_input_is_in_the_bundle(repo, tmp_path, rel):
     assert rel in m["committed_files"]
     assert rel not in m["excluded"]
     assert rel.encode() in (tmp_path / "diff.txt").read_bytes()
+
+
+# ---- L-0739: committed .work/ text changes in base..HEAD are in the bundle ----
+
+def _tracks_work(repo):
+    """A repository that tracks `.work/` and ignores only a folder under it
+    (TSS's shape); returns the base commit."""
+    (repo / ".gitignore").write_text(".work/review/\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "track .work")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _commit_file(repo, rel, text):
+    target = repo.joinpath(*rel.split("/"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    _git(repo, "add", "-f", rel)
+    _git(repo, "commit", "-qm", f"commit {rel}")
+
+
+def test_committed_work_text_change_is_appended_to_the_bundle(repo):
+    base = _tracks_work(repo)
+    _commit_file(repo, "real.txt", "real\n")
+    _commit_file(repo, ".work/FINDINGS.md", "- finding: the deadlock\n")
+
+    manifest, patch, _ = review_patch.compute(str(repo), base)
+
+    assert manifest["included_excluded"] == [".work/FINDINGS.md"]
+    assert patch.index(b"diff --git a/real.txt") < patch.index(b"diff --git a/.work/FINDINGS.md")
+    assert b"+- finding: the deadlock" in patch
+
+
+def test_untracked_or_appended_work_files_do_not_move_the_bundle(repo):
+    """Must-allow: the review writes `.work/tickets/<id>/review.json` and appends
+    `.crew/metrics.md` after the bundle; neither is a committed change."""
+    base = _tracks_work(repo)
+    _commit_file(repo, ".work/FINDINGS.md", "- finding\n")
+    before = review_patch.compute(str(repo), base)[0]["bundle_sha256"]
+    review = repo / ".work" / "tickets" / "X" / "review.json"
+    review.parent.mkdir(parents=True)
+    review.write_text('{"verdict": "CLEAN"}\n', encoding="utf-8")
+    (repo / ".work" / "FINDINGS.md").write_text("- finding\n- unstaged edit\n", encoding="utf-8")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "metrics.md").write_text("| row |\n", encoding="utf-8")
+
+    assert review_patch.compute(str(repo), base)[0]["bundle_sha256"] == before
+
+
+@pytest.mark.parametrize("change", ["none", "ignored", "binary", "graph"])
+def test_a_range_with_nothing_includable_builds_the_old_bytes(repo, monkeypatch, change):
+    """Every receipt minted before L-0739 stays valid: with no includable change
+    the bundle is byte-identical to the builder without the section."""
+    (repo / ".gitignore").write_text(".work/\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "ignore .work")
+    base = _git(repo, "rev-parse", "HEAD")
+    _commit_file(repo, "real.txt", "real\n")
+    if change == "ignored":
+        _commit_file(repo, ".work/run.py", "print('force-added')\n")
+    elif change == "binary":
+        (repo / ".gitignore").write_text("", encoding="utf-8")
+        _git(repo, "add", "-A")
+        target = repo / ".work" / "blob.bin"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"\x00\x01binary\x00")
+        _git(repo, "add", "-f", ".work/blob.bin")
+        _git(repo, "commit", "-qm", "binary")
+    elif change == "graph":
+        _commit_file(repo, "graphify-out/graph.json", '{"nodes": 2}\n')
+
+    new = review_patch.compute(str(repo), base)
+    with monkeypatch.context() as patch:
+        patch.setattr(review_patch, "included_patch", lambda *_a: (b"", []))
+        old = review_patch.compute(str(repo), base)
+
+    assert (new[1], new[0]["bundle_sha256"], new[0]["included_excluded"]) == (
+        old[1], old[0]["bundle_sha256"], [])
