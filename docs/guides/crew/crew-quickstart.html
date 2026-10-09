@@ -112,13 +112,13 @@ can write to. Every step says how to check that it worked before you move on.</p
 <tr>
 <td>3</td>
 <td>Set up the repository with <code>/crew:init</code></td>
-<td><code>/crew:status</code> shows a <code>config</code> line</td>
+<td><code>/crew:status</code> shows <code>config   .crew/config.json schema 7</code></td>
 <td>3</td>
 </tr>
 <tr>
 <td>4</td>
-<td>Existing 0.20 or older repos: <code>/crew:migrate</code></td>
-<td><code>/crew:status</code> shows <code>crew.json schema 1</code></td>
+<td>Only a repository crew 0.20 or older set up: <code>/crew:migrate</code></td>
+<td><code>/crew:status</code> no longer says <code>run /crew:migrate</code></td>
 <td>1</td>
 </tr>
 <tr>
@@ -164,23 +164,29 @@ then <code>claude --version</code>.</p>
 <p>Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
 <code>/crew:init</code> picks up where it left off.</p>
-<p>Check: <code>/crew:status</code> now shows a <code>config</code> line naming a schema, and a
-<code>gitignore current</code> line: init added the ignore patterns for the languages it
-found, inside one <code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>,
-without touching your own lines.</p>
-<p>Today <code>/crew:init</code> still writes the 0.20 <code>.crew/config.json</code>. Run step 4
-straight after it until init writes <code>.crew/crew.json</code> itself.</p>
-<h2 id="4-existing-repositories-migrate-once">4. Existing Repositories: Migrate Once</h2>
-<p>If the repository already used crew 0.20 or earlier (an older config is upgraded in the same run), or you just ran <code>/crew:init</code>:</p>
+<p>Init writes the repository's crew config to <code>.crew/config.json</code>.<!-- claim: crew-config-file:config.json -->
+That is the one file crew reads its repo settings from: <code>/crew:config</code> edits it, every gate and
+guard reads it, and nothing needs migrating afterwards.</p>
+<p>Check: <code>/crew:status</code> now shows <code>config   .crew/config.json schema 7</code> with no
+<code>run /crew:migrate</code> after it, and a <code>gitignore current</code> line: init added the
+ignore patterns for the languages it found, inside one
+<code># crew:gitignore:managed</code> block at the top of <code>.gitignore</code>, without touching
+your own lines. A new repository skips step 4.</p>
+<h2 id="4-repositories-crew-020-set-up-migrate-once">4. Repositories Crew 0.20 Set up: Migrate Once</h2>
+<p>Only when <code>/crew:status</code> ends its <code>config</code> line with <code>run /crew:migrate</code>: the
+repository still holds a crew 0.20 (or older) setup - a role 1.0 removed, a
+schema older than 7, ticket files in <code>.work/tickets/</code>, or a PM journal. Then:</p>
 <pre><code class="language-text">/crew:migrate
 </code></pre>
 <p>It previews first and writes nothing until you agree. The preview lists:</p>
 <ul>
-<li>the files it will create (<code>.crew/crew.json</code>, <code>.crew/metrics.jsonl</code>, one
-  directory per ticket under <code>.work/tickets/</code>);</li>
+<li>the files it will create (<code>.crew/crew.json</code>, a schema-1 record of the old
+  config; <code>.crew/metrics.jsonl</code>; one directory per ticket under <code>.work/tickets/</code>);</li>
 <li>any config key it did not recognise, which is kept under <code>unmapped</code>, never
   dropped;</li>
-<li>the originals it leaves in place and you may retire later.</li>
+<li>the originals it leaves in place. Keep <code>.crew/config.json</code>
+  even though the preview calls it <code>retireable</code>: crew still reads its settings
+  from that file, and <code>crew.json</code> does not replace it.</li>
 </ul>
 <p>Say yes, and it backs up to <code>.crew/backups/migrate-&lt;time&gt;/</code>, then applies. The
 line it ends with is your undo:</p>

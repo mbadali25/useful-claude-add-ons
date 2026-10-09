@@ -224,6 +224,42 @@ def test_config_line_names_the_layout(tmp_path, files, expected):
     assert lines[1] == expected
 
 
+TEMPLATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "templates", "config.template.json")
+
+
+def test_fresh_init_config_is_current_and_asks_for_no_migrate(tmp_path):
+    """L-0713: `/crew:init` writes the template as `.crew/config.json`, the file
+    every gate reads. Status used to answer `run /crew:migrate` for it, sending
+    a new repo into a migration it does not need."""
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        root = make_repo(tmp_path, config=json.load(fh))
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1:3] == ["config   .crew/config.json schema 7",
+                          "roster   explorer, reviewer (1.0 roster: explorer, reviewer, security, researcher)"]
+
+
+@pytest.mark.parametrize("config,extra", [
+    ({"schema": 7, "roles": ["explorer", "dba"]}, None),
+    ({"schema": 6, "roles": ["explorer"]}, None),
+    ({"roles": ["explorer"]}, None),
+    ({"schema": 7, "roles": ["explorer"]}, ".work/tickets/T-0001.md"),
+    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-journal.md"),
+    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-standing.md"),
+])
+def test_a_0_20_setup_still_asks_for_migrate(tmp_path, config, extra):
+    root = make_repo(tmp_path, config=config)
+    if extra:
+        (root / extra).parent.mkdir(parents=True, exist_ok=True)
+        (root / extra).write_text("# legacy\n", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1].endswith(" - run /crew:migrate")
+
+
 def test_memory_reports_the_requested_root_not_the_session_project(tmp_path, monkeypatch):
     """Codex FIX: CLAUDE_PROJECT_DIR=repo A, `--root` repo B -- the context
     script was left to find repo A."""
@@ -1105,3 +1141,49 @@ def test_owner_view_is_read_only_with_a_next_md(tmp_path):
 
     assert (done.returncode, _stat_tree(root) == before, done.stdout.splitlines()[1].startswith(
         "T-1  revisit  revisit 2000-01-01 (due)")) == (0, True, True), done.stdout
+
+
+@pytest.mark.parametrize("extra", [".work/tickets/README.md", ".crew/metrics.md",
+                                   ".work/cache/SDP-12.md"])
+def test_a_current_config_beside_crew_1_files_asks_for_no_migrate(tmp_path, extra):
+    """A README in tickets/ is not a ticket, and crew 1.x writes the metrics
+    file and the SDP cache itself, so none of them is a 0.20 marker."""
+    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    (root / extra).parent.mkdir(parents=True, exist_ok=True)
+    (root / extra).write_text("# notes\n", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1] == "config   .crew/config.json schema 7"
+
+
+@pytest.mark.parametrize("config,why", [
+    ({"schema": 7, "roles": "explorer"}, "`roles` is not a list"),
+    ({"schema": "7", "roles": ["explorer"]}, "`schema` is not an integer"),
+    ({"schema": True, "roles": ["explorer"]}, "`schema` is not an integer"),
+])
+def test_an_unreadable_field_is_could_not_tell(tmp_path, config, why):
+    root = make_repo(tmp_path, config=config)
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1] == (f"config   .crew/config.json schema {config['schema']} - could not tell "
+                        f"whether /crew:migrate is needed ({why})")
+
+
+@pytest.mark.parametrize("folder", [".crew", os.path.join(".work", "tickets")])
+def test_an_unlistable_folder_is_could_not_tell(tmp_path, monkeypatch, folder):
+    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    (root / folder).mkdir(parents=True, exist_ok=True)
+    real = os.listdir
+    denied = os.path.join(str(root), folder)
+
+    def listdir(path="."):
+        if os.path.normpath(str(path)) == os.path.normpath(denied):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path)
+    monkeypatch.setattr(crew_status.os, "listdir", listdir)
+
+    lines = crew_status.collect(str(root))
+
+    assert "could not tell whether /crew:migrate is needed" in lines[1]
