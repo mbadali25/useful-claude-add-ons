@@ -343,6 +343,14 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (<code>delta gate: &lt;path&gt; ...</code>, <code>excluded path changed</code>, <code>not clean</code>, <code>no train entry binds the
   integration ref</code> - the merge train is not armed in this clone, so the gate keeps nothing yet); a
   code map, rules file or diagram may move only its anchor sha after review.
+  <code>excluded path changed: &lt;path&gt; (receipt base -&gt; reviewed head)</code> in a repository that commits
+  <code>.work/</code> notes: since L-0739 the bundle carries a committed text change there, so a receipt
+  minted by an older crew says <code>outside the bundle; re-review so it is included</code> - run
+  <code>/crew:review</code> again and the new round shows it. <code>outside the bundle, which cannot show it</code> (a
+  binary, executable, symlink or gitlink file, a force-added file the repository ignores, or a
+  <code>graphify-out/</code> file) has one remedy: restore the path in a new commit, then re-review. Run the
+  review from another checkout of the deploy commit, so its <code>review.json</code> and metrics row do not
+  dirty the tree promote-gate checks.
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check. crew's own bookkeeping written after acceptance
   (the verify gate's records, a metrics row, the scope base) never stales a receipt: the bundle
@@ -525,6 +533,18 @@ contract itself. This section is what goes wrong with the approval and the audit
 <p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
   <strong>Fix:</strong> amend <code>spec.md</code>'s <code>## Touch</code> (widen it), then approve again. There is no partial-approve;
   amending scope is edit-then-approve, same as any other spec change.</p>
+</li>
+<li>
+<p><strong>Symptom: the Stop prints <code>outside-scope: (could not tell - ...)</code>.</strong>
+  The verify gate's scope line (<code>scope_report.py</code>) reads the active ticket's approved
+  <code>.work/tickets/&lt;id&gt;/spec.md ## Touch</code>, as the completion audit does. The reason names the gap:
+  no readable <code>spec.md</code>, no <code>## Touch</code> paths, a Touch that is not approved (approve it, or approve
+  it again after a spec edit), a broken active-ticket pointer, a pre-1.0
+  <code>.work/tickets/&lt;id&gt;.md</code> ticket (run <code>/crew:migrate</code>), or an <code>INDEX.md</code> open ticket whose
+  <code>.work/tickets/&lt;id&gt;/</code> folder does not exist (fix the INDEX row or restore the folder), or an
+  <code>INDEX.md</code> that cannot be read. A clean line can also carry <code>(merged main: could not tell - ...)</code>,
+  for example on a detached HEAD: nothing was left out as main's, the same as the audit. Before L-0711 the line said every 1.0
+  ticket's file was missing. It is report-only: the refusal is <code>/crew:done</code> check 3.</p>
 </li>
 <li>
 <p><strong>Symptom: <code>/crew:done</code> refuses on "out of scope" for a file the edit guard never saw.</strong>

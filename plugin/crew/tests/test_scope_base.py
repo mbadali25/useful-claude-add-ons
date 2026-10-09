@@ -46,6 +46,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 
 import scope_base
+import scope_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _REPO_ROOT = os.path.dirname(os.path.dirname(_ROOT))
@@ -446,12 +447,17 @@ def test_cli_with_no_action_exits_two_with_usage(tmp_path):
 
 # --- scope_report reads it -----------------------------------------------
 
-def _ticketed(root, ticket="T-1", touch="- touch: src/"):
-    (root / ".work" / "tickets").mkdir(parents=True)
-    (root / ".work" / "INDEX.md").write_text(
-        "| " + ticket + " | in progress |", encoding="utf-8")
-    (root / ".work" / "tickets" / (ticket + ".md")).write_text(
-        "## Scope\n" + touch + "\n", encoding="utf-8")
+def _ticketed(root, ticket="T-1", touch=("src/**",)):
+    """A crew 1.0 ticket: `.work/tickets/<id>/spec.md` with `## Touch`,
+    approved from the user's prompt and active (L-0711). `.work/` and
+    `.crew/` are ignored through `.git/info/exclude`, so no ignore file is
+    itself a change the report names."""
+    (root / ".git" / "info").mkdir(exist_ok=True)
+    (root / ".git" / "info" / "exclude").write_text(".work/\n.crew/\n", encoding="utf-8")
+    scope_fixtures.make_ticket(root, ticket, touch)
+    scope_fixtures.approve_as_user(root, ticket)
+    # Approval records the scope base; each test below decides for itself.
+    (root / ".crew" / ".scope-base").unlink(missing_ok=True)
 
 
 def _report(root, changed):
@@ -498,13 +504,16 @@ def test_scope_report_marks_the_outside_scope_line_itself_on_a_fallback(repo):
     assert first.startswith("outside-scope: guide.md (fallback: no scope base recorded"), first
 
 
-def test_scope_report_says_when_the_ticket_wide_diff_was_unavailable(tmp_path):
-    """Outside a repository the gate's list still stands, and the FIRST line
-    says the list is this turn's only rather than looking whole and clean."""
-    root = tmp_path / "plain"
-    root.mkdir()
-    _ticketed(root)
-    done = _report(root, ["src/a.py"])
+def test_scope_report_says_when_the_ticket_wide_diff_was_unavailable(repo):
+    """When the ticket's base cannot be resolved (here a configured base
+    branch that names no commit, and no record) the gate's list still
+    stands, and the FIRST line says the list is this turn's only rather than
+    looking whole and clean."""
+    _ticketed(repo)
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"tickets": {"baseBranch": "no-such-branch"}}), encoding="utf-8")
+    done = _report(repo, ["src/a.py"])
     assert done.returncode == 0
     first = done.stderr.splitlines()[0]
     assert first.startswith("outside-scope: (this turn only:"), done.stderr

@@ -453,6 +453,12 @@ the paths in six lines or fewer. It never blocks the continuation it caused. cre
 bookkeeping (the scope base, the gate's records, the metrics files) is never a changed path,
 whatever <code>.gitignore</code> says, so a <code>.crew/</code> path the audit lists (say <code>.crew/verify.json</code> or a
 committed <code>.crew/incident.json</code>) is a real finding, not crew's noise.</p>
+<p>The verify gate also prints an <code>outside-scope:</code> line every Stop, in any <code>scope.mode</code>. It reads the
+same approved <code>spec.md ## Touch</code> the audit reads and leaves out only what the audit leaves out, so
+it names the same paths early, a <code>sed -i</code> write, <code>TODO.md</code> and a tracked <code>.crew/</code> file included; it
+never blocks. <code>outside-scope: (could not tell - &lt;why&gt;)</code> means it could not judge: no <code>spec.md</code>, no
+<code>## Touch</code>, a Touch not yet approved, a ticket still in the pre-1.0 layout, or an <code>INDEX.md</code> open
+ticket with no <code>.work/tickets/&lt;id&gt;/</code> folder.</p>
 <p>A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the <code>anchor:</code> or provenance sha moved forward to a commit on this branch) or a
 regeneration (<code>.claude/rules/</code> as <code>crew_instructions.py rules</code> writes them, the graph after a code

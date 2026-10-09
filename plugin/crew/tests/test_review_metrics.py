@@ -116,7 +116,7 @@ def test_claude_reserve_only_writes_no_row(repo, tmp_path):
     scratch = tmp_path / "s"
     bundle(repo, scratch)
 
-    result = _claude(repo, scratch, "--reserve-only")
+    result = _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
 
     assert (result.stdout.strip(), _rows(repo)) == ("ROUND=1", []), result.stderr
 
@@ -124,7 +124,7 @@ def test_claude_reserve_only_writes_no_row(repo, tmp_path):
 def test_claude_recorded_round_writes_exactly_one_row(repo, tmp_path):
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
     (scratch / "out.txt").write_text("BLOCK: a.py:1 broken\n", encoding="utf-8")
 
     _claude(repo, scratch, "--round", "1", "--output", str(scratch / "out.txt"),
@@ -137,7 +137,7 @@ def test_claude_recorded_round_writes_exactly_one_row(repo, tmp_path):
 def test_claude_round_after_a_codex_limit_is_labelled_same_family(repo, tmp_path):
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
     review_limit.record(str(repo), "T1", 0, "codex", "gpt-5.6-sol", "You've hit your usage limit.")
 
     _claude(repo, scratch, "--round", "1", "--output", str(scratch / "out.txt"),
@@ -150,7 +150,7 @@ def test_claude_round_with_an_older_codex_limit_is_not_labelled_codex_limit(repo
     review_limit.record(str(repo), "T1", 5, "codex", "gpt-5.6-sol", "You've hit your usage limit.")
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
 
     _claude(repo, scratch, "--round", "1", "--output", str(scratch / "out.txt"),
             "--exit-code", "0", "--work-dir", str(tmp_path / "w"))
@@ -256,7 +256,7 @@ def test_review_json_is_unchanged_by_the_row(repo, tmp_path):
 def test_claude_round_with_a_codex_limit_note_is_labelled_same_family(repo, tmp_path):
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
 
     _claude(repo, scratch, "--round", "1", "--output", str(scratch / "out.txt"),
             "--exit-code", "0", "--work-dir", str(tmp_path / "w"),
@@ -611,7 +611,7 @@ def test_the_std_token_is_the_one_checked_at_reservation(repo, tmp_path):
     _gated(repo)
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    reserved = _claude(repo, scratch, "--reserve-only")
+    reserved = _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
     token = reserved.stderr.split("(std:", 1)[1][:8]
     (repo / ".crew").mkdir(exist_ok=True)
     (repo / ".crew" / "standards.md").write_text(
@@ -637,7 +637,7 @@ def test_no_reservation_record_is_std_unknown_never_a_recomputation(repo, tmp_pa
     _gated(repo)
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
     os.remove(scratch / "reserved-std.json")
 
     _claude(repo, scratch, "--round", "1", "--output", str(scratch / "out.txt"),
@@ -650,7 +650,7 @@ def test_a_reservation_record_for_another_round_is_not_used(repo, tmp_path):
     _gated(repo)
     scratch = tmp_path / "s"
     bundle(repo, scratch)
-    _claude(repo, scratch, "--reserve-only")
+    _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
     record = json.loads((scratch / "reserved-std.json").read_text(encoding="utf-8"))
     record["round"] = 7
     (scratch / "reserved-std.json").write_text(json.dumps(record), encoding="utf-8")

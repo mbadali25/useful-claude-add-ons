@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.13**: The config data-flow diagram and the code graph re-anchored after L-0733. `crew` 1.2.13 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `f91bb36a` (CONFIG.md gained L-0733's verify-gate paragraphs, no heading moved, no node or edge changed) and rebuilds the code graph with `graphify update .`. No behaviour changed.
-- **crew 1.2.12**: /crew:verify says the record is per checkout. `/crew:verify` now says that the verify record belongs to one checkout: `--all` clears only the record of the checkout it runs in, and `--ci` never prunes it.
+- **crew 1.2.17**: The config data-flow diagram and the code graph re-anchored after L-0733. `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `f91bb36a` (CONFIG.md gained L-0733's verify-gate paragraphs, no heading moved, no node or edge changed) and rebuilds the code graph with `graphify update .`. No behaviour changed.
+- **crew 1.2.16**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

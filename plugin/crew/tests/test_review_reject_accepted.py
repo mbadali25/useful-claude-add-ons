@@ -183,7 +183,7 @@ def test_after_supersede_only_a_successor_plan_continues(repo):
     assert _cli(repo, "--accept", "--by", "the owner").returncode == 1
     assert _cli(repo, "--auto-accept", "--follow-up", "L-1").returncode == 1
     assert _bytes(repo) == before
-    assert _cli(repo, "--reserve").returncode == 1
+    assert _cli(repo, "--reserve", "--authors", "gpt").returncode == 1
     assert _supersede(repo).returncode == 1
     assert len(_data(repo)["superseded"]) == 1
 

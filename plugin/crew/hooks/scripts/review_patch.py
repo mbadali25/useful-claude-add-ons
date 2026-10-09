@@ -77,6 +77,27 @@ pathspecs are `:(exclude,top,glob)`, root-anchored, so `sub/.crew/.scope-base`
 stays in; never passed to `git add` (the note above applies unchanged). What
 crew READS -- config, verify map, standards, code map -- stays reviewable.
 
+COMMITTED EXCLUDED-PATH CHANGES (L-0739). A repository that tracks `.work/`
+(TSS commits its findings and specs there) commits changes under it inside the
+reviewed range, and check E (`review_delta.excluded_check`) used to fail every
+such receipt for good: the bundle could never show those bytes. So the bundle
+now carries one more section, appended after the patch above: the committed
+text changes under `INCLUDABLE` (`.work`, `.crew/metrics.md`) from `--base` to
+HEAD, read from the two COMMIT TREES and never from the working state, so an
+untracked `review.json` or a metrics row appended after the bundle never moves
+the hash. A change is included only when it is status A, M or D, mode 100644
+on every side it exists, not binary to git, and not ignored by the
+repository's own ignore rules (`git check-ignore --no-index`: a force-added
+file under crew's `.work/` ignore stays out). Everything else -- binary, a
+mode change, symlink or gitlink, an ignored path, generated `graphify-out/` --
+stays out, and check E refuses it as "outside the bundle". The section is
+diffed from the base tree to a synthetic tree (the base tree with only the
+included entries set to HEAD's), built in a third temporary index, so no
+pathspec of the included paths can run past Windows' command line. When
+nothing is included the section is empty and the bundle bytes are exactly
+what they were before L-0739, so existing receipts stay valid. The manifest
+records the included paths as `included_excluded`.
+
 MERGED MAIN (T-0100). `--base` is the ticket's recorded start, so after the
 ticket merges its integration branch every file main changed in between used
 to reach the bundle too: T-0092's round-2 reviewer re-read three landed
@@ -141,6 +162,15 @@ DEFAULT_MAX_PART_BYTES = 200 * 1024
 EXCLUDED = (".work/", "graphify-out/") + crew_ticket.CREW_BOOKKEEPING_PATHS
 _EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"] + crew_ticket.bookkeeping_excludes()
 
+# L-0739: the excluded paths whose COMMITTED text changes in base..HEAD the
+# bundle carries after all (module docstring). check E's own list of excluded
+# paths is `EXCLUDED_ROOTS`; `graphify-out/` is generated and stays out.
+INCLUDABLE = (".work", ".crew/metrics.md")
+EXCLUDED_ROOTS = (".work", "graphify-out", ".crew/metrics.md")
+_INCLUDE_FLAGS = ["--no-renames", "--no-ext-diff", "--no-textconv", "--no-abbrev", "-z"]
+_TEXT_MODE = "100644"
+_ABSENT_MODE = "000000"
+
 # Flags every diff here runs with, so a user's own git config cannot change
 # the bytes: no colour codes, no external diff driver, no textconv filter,
 # renames detected whatever `diff.renames` says, full blob ids.
@@ -156,7 +186,7 @@ SUBMODULE_MODE = "160000"
 MANIFEST_KEYS = ("base", "head", "branch", "dirty", "committed_files", "staged_files",
                  "unstaged_files", "untracked_files", "entries", "renames", "mode_changes",
                  "binary_files", "submodules", "excluded", "merged_main", "bundle_base_tree",
-                 "patch_bytes", "max_part_bytes",
+                 "included_excluded", "patch_bytes", "max_part_bytes",
                  "bundle_sha256", "patch_path", "parts_dir", "parts")
 OPTIONAL_MANIFEST_KEYS = ("webtest", "manifest_path")
 PART_KEYS = ("name", "path", "bytes", "sha256")
@@ -273,6 +303,101 @@ def _entries(root, base_sha, tree):
             entry["old_size"] = _blob_size(root, entry["old_id"])
             entry["new_size"] = _blob_size(root, entry["new_id"])
     return entries
+
+
+def numstat_rows(raw):
+    """`git diff --numstat -z --no-renames` -> {path: (added, deleted)};
+    RuntimeError when a path is listed twice."""
+    rows = {}
+    for rec in raw.decode("utf-8", errors="surrogateescape").split("\0"):
+        if not rec:
+            continue
+        added, deleted, path = rec.split("\t", 2)
+        if path in rows:
+            raise RuntimeError(f"numstat lists {path!r} twice")
+        rows[path] = (added, deleted)
+    return rows
+
+
+def excluded_entries(root, a, b, roots=EXCLUDED_ROOTS):
+    """`--raw` entries for trees `a -> b` on `roots`, renames off, each with
+    `binary` from numstat. RuntimeError when raw and numstat disagree."""
+    spec = ["--"] + list(roots)
+    raw = _run_raw(root, ["diff", "--raw"] + _INCLUDE_FLAGS + [a, b] + spec)
+    stat = _run_raw(root, ["diff", "--numstat"] + _INCLUDE_FLAGS + [a, b] + spec)
+    entries = _parse_raw(raw)
+    rows = numstat_rows(stat)
+    if {e["path"] for e in entries} != set(rows):
+        raise RuntimeError("raw and numstat disagree on the excluded paths")
+    for entry in entries:
+        entry["binary"] = rows[entry["path"]] == ("-", "-")
+    return entries
+
+
+def ignored(root, paths):
+    """The subset of `paths` the repository's ignore rules match, tracked or
+    not (`git check-ignore --no-index`). RuntimeError when git cannot say."""
+    if not paths:
+        return set()
+    data = "".join(p + "\0" for p in paths).encode("utf-8", errors="surrogateescape")
+    try:
+        done = subprocess.run(
+            [crew_common.require_tool("git"), "-C", root, "check-ignore", "--no-index",
+             "--stdin", "-z"], input=data, capture_output=True, timeout=GIT_TIMEOUT,
+            check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"git check-ignore could not run: {exc}") from exc
+    if done.returncode not in (0, 1):
+        err = done.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git check-ignore failed ({done.returncode}): {err}")
+    return {p for p in done.stdout.decode("utf-8", errors="surrogateescape").split("\0") if p}
+
+
+def why_not_included(entry, ignored_paths=frozenset()):
+    """None when the bundle carries this committed excluded-path change, else
+    why it cannot: the words check E's refusal uses."""
+    path = entry["path"]
+    if not any(path == r or path.startswith(r + "/") for r in INCLUDABLE):
+        return "generated graphify-out/ is never in the bundle"
+    if entry["status"] not in ("A", "M", "D"):
+        return f"status {entry['status']}"
+    modes = {entry["old_mode"], entry["new_mode"]} - {_ABSENT_MODE}
+    if modes != {_TEXT_MODE}:
+        shown = "/".join(m for m in (entry["old_mode"], entry["new_mode"]) if m != _ABSENT_MODE)
+        return f"mode {shown}: a mode change, executable, symlink or gitlink"
+    if entry["binary"]:
+        return "a binary file"
+    if path in ignored_paths:
+        return "a force-added path this repository's ignore rules match"
+    return None
+
+
+def included_entries(root, a, b):
+    """The committed excluded-path changes `a -> b` the bundle carries
+    (L-0739), sorted by path."""
+    entries = excluded_entries(root, a, b, INCLUDABLE)
+    candidates = [e for e in entries if why_not_included(e) is None]
+    skip = ignored(root, [e["path"] for e in candidates])
+    return sorted((e for e in candidates if e["path"] not in skip), key=lambda e: e["path"])
+
+
+def included_patch(root, a, b, tmp_dir):
+    """(patch bytes, entries): the bundle's appended section for trees
+    `a -> b`, empty bytes when nothing is included. The diff runs from `a` to
+    a synthetic tree -- `a` with only the included entries set to `b`'s --
+    written from its own temporary index under `tmp_dir`."""
+    entries = included_entries(root, a, b)
+    if not entries:
+        return b"", []
+    env = {"GIT_INDEX_FILE": os.path.join(tmp_dir, "index-included")}
+    _run(root, ["read-tree", a], env=env)
+    info = "".join(f"{e['new_mode']} {e['new_id']}\t{e['path']}\0" if e["new_mode"] != _ABSENT_MODE
+                   else f"0 {e['new_id']}\t{e['path']}\0" for e in entries)
+    _run_raw(root, ["update-index", "-z", "--index-info"], env=env,
+             data=info.encode("utf-8", errors="surrogateescape"))
+    shown = _run(root, ["write-tree"], env=env).strip()
+    flags = [f for f in _DIFF_FLAGS if f != "-M"] + ["--no-renames"]
+    return _run_raw(root, ["diff"] + flags + [a, shown, "--"] + list(INCLUDABLE)), entries
 
 
 def _ticket_base_tree(root, base_sha, working_tree, tmp_dir, head="HEAD"):
@@ -430,6 +555,12 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         # blob ids on the `index` line, so the bytes still change with them.
         patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)
         entries = _entries(root, tree, working_tree)
+        # L-0739: the committed excluded-path text changes, base -> HEAD,
+        # from the commit trees only; empty (no bytes) when there are none.
+        section, included = included_patch(
+            root, _run(root, ["rev-parse", base_sha + "^{tree}"]).strip(),
+            _run(root, ["rev-parse", head + "^{tree}"]).strip(), tmp_dir)
+        patch += section
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -466,6 +597,7 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         "binary_files": [e["path"] for e in entries if e["binary"]],
         "submodules": [e["path"] for e in entries if e["submodule"]],
         "excluded": list(EXCLUDED),
+        "included_excluded": [e["path"] for e in included],
         "merged_main": dict(merged, dropped=sorted(gone),
                             diffed_from_merged=[e["path"] for e in against]),
         "bundle_base_tree": tree,
