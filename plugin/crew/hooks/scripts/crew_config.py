@@ -3009,6 +3009,9 @@ _GUARD_ACTIONS = {
     "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
                       "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
     "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
+    "envGuard": "a Bash or PowerShell command that prints the whole process "
+                "environment, or a credential-named variable, into the "
+                "agent's context",
     "deployWorkflow": "a `gh workflow run` or `gh api .../dispatches` of a "
                       "workflow listed in `environments.workflows`",
 }
@@ -3150,6 +3153,32 @@ def _cloud_guard_widening_notes(name, what):
     }
 
 
+def _env_guard_widening_notes(name, what):
+    """The `! widens to` note for `guards.envGuard`, total over
+    `crew_state.ROLE_WRITE_POLICIES` -- `cloudGuard`'s vocabulary and split
+    default (`off`), for the same reason (L-0772).
+    """
+    del name
+    return {
+        "block": (
+            f"crew refuses {what}, and refuses a command it could not read "
+            "well enough to tell. This is the narrowest tier and nothing "
+            "widens into it."
+        ),
+        "report": (
+            f"crew notes {what} in `{crew_state.GUARD_LOG_PATH}` (the rule "
+            "and form, never the command or a value), but refuses nothing -- "
+            "so the record exists, and the environment still reaches the "
+            "agent's context."
+        ),
+        "off": (
+            "the environment guard does not judge any command. This is the "
+            "WIDEST tier and it is also the default -- every repo that has "
+            "never set `guards.envGuard` is already here."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -3217,6 +3246,16 @@ _RATCHETED.update({
         _cloud_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.CLOUD_GUARD_NAMES
+})
+# The environment-dump guard's switch (L-0772): the same vocabulary, its own
+# words.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.role_writes_rank,
+        crew_state.normalise_role_writes,
+        _env_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.ENV_GUARD_NAMES
 })
 
 

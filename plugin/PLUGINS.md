@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.20<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.24<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -23,13 +23,14 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Thirteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 34 hook entries. **These are why
+Fourteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew -->. **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
 |---|---|---|
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.cloudGuard`: `off`/`report`/`block`). Judges `terraform`/`tofu` apply/destroy, `aws` delete/terminate/`rm --recursive`, `az` delete/purge, SQL `DROP`/`TRUNCATE` and force push, and checks the effective AWS profile/region and Azure subscription against the pinned `cloud.*` values; an unknown identity is never allowed unattended, and it never emits an allow |
+| `env-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.envGuard`: `off`/`report`/`block`, L-0772). Refuses a command whose own text prints the whole process environment (`env`, `printenv`, bare `set`, `export -p`, `/proc/*/environ`, `ps eww`, `os.environ`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`, `cmd /c set`) or a credential-named variable (`echo "$GITHUB_TOKEN"`, `$env:API_KEY`) into the agent's context, through `bash -c`, `eval`, pipes and wrappers; a command it cannot read is refused as could-not-tell. Names a fixed label, never a value |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |

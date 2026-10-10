@@ -74,6 +74,7 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
 | `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
 | `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `env-guard.sh` | a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772) | `guards.envGuard` (`block`/`report`/`off`) | `off` |
 | `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh`, environment layer (T-0005) | a terraform apply judged by its target environment, and a destroy never applied unattended | `environments.nonProd` (repo only; globs naming non-production workspaces), `environments.prodUnattended` (both layers; true only when **both** say `true`) | `[]`, `false` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
 | `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
@@ -89,7 +90,7 @@ every pair — that is what "even counts" in the file means, not a bug.
   30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
   not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
-  `guards.cloudGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
+  `guards.cloudGuard: off`, `guards.envGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.
 - **Silence the SessionStart context specifically:** `{"memory": {"inject": false}}` stops the
@@ -656,6 +657,22 @@ it never picks among candidates.
 Do not pick the run from the Actions tab and carry on: run `crew_ghdeploy.py record`, which writes
 `could-not-tell` and a `not-run` row, and decide from there.
 
+## Environment guard refusals
+
+`env-guard.sh` / `env_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell` (L-0772). **Ships
+off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report"}}` and read
+`.crew/guard.log` before enforcing with `"block"`. A refusal names labels only, never a value.
+
+- **`env-dump:<form>`:** the command prints the whole environment. Read the one variable you need by
+  name (`printenv PATH`, `echo "$HOME"`, `$env:PATH`).
+- **`secret-read:<form>`:** it prints a credential-named variable. Use it without printing it
+  (`curl -H "Authorization: Bearer $TOKEN"`), or test that it is set (`[ -n "$TOKEN" ]`).
+- **`could-not-tell:<why>`:** it could not read the command well enough: an unbalanced quote,
+  `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8. Write the command
+  out literally. Under `report` these are logged, not refused.
+- **A `/proc/*/environ` mention** outside a `git commit -m` message, a `grep` pattern or `echo` text
+  (a `sed` script, a `find -name`) is refused too: a known false positive.
+
 ## Cloud guard false positives
 
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
@@ -1076,6 +1093,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
 | `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
+| `guards.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
 | `guards.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |

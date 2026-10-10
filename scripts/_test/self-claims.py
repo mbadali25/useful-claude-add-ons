@@ -1296,8 +1296,115 @@ CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
 ]
 
 
+def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
+    """`plugin-hooks:<name>` against a fixture whose plugin/widget/hooks/
+    hooks.json holds ``widget_hooks`` command entries (an int), unparseable
+    text (a str), or no hooks.json at all (None)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build(tmp, docs, init_git=False)
+        if widget_hooks is not None:
+            hooks_dir = os.path.join(tmp, "plugin", "widget", "hooks")
+            os.makedirs(hooks_dir, exist_ok=True)
+            if isinstance(widget_hooks, str):
+                body = widget_hooks
+            else:
+                entry = {"hooks": [{"type": "command", "command": "bash x.sh"}]}
+                body = json.dumps({"hooks": {"PreToolUse": [entry] * widget_hooks}})
+            with open(os.path.join(hooks_dir, "hooks.json"), "w", encoding="utf-8") as fh:
+                fh.write(body)
+        subprocess.run(["git", "-C", tmp, "init", "-q"], check=False, capture_output=True)
+        subprocess.run(["git", "-C", tmp, "add", "-A"], check=False, capture_output=True)
+        saved = CHECKER.ROOT
+        CHECKER.ROOT = tmp
+        try:
+            problems: list[str] = []
+            CHECKER.check_self_claims(ENTRIES, problems.append)
+            return problems
+        finally:
+            CHECKER.ROOT = saved
+
+
+# `plugin-hooks:<name>` (L-0772) -- the command entries in a plugin's own
+# hooks/hooks.json. Each case names how many entries the fixture registers.
+CASES_PLUGIN_HOOKS: list[tuple[str, dict, int, str, object]] = [
+    # --- must block ------------------------------------------------------
+    (
+        "a marked plugin-hooks count that disagrees with hooks.json",
+        {"P.md": "36 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        1,
+        "hooks.json has 34",
+        34,
+    ),
+    (
+        "a plugin-hooks claim naming a plugin with no ./plugin/ entry",
+        {"P.md": "<!-- claim: plugin-hooks:ghost -->\n5 hook entries\n"},
+        1,
+        "no entry",
+        2,
+    ),
+    (
+        "a plugin-hooks marker whose target was edited away binds to nothing",
+        {"P.md": "<!-- claim: plugin-hooks:widget -->\n" + "filler\n" * 20},
+        1,
+        "binds to nothing",
+        2,
+    ),
+    (
+        "a hooks.json that does not parse is could-not-verify, never a zero",
+        {"P.md": "0 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        1,
+        "could not verify",
+        "{ not json",
+    ),
+    # --- must allow ------------------------------------------------------
+    (
+        "a marked plugin-hooks count that matches hooks.json",
+        {"P.md": "36 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        0,
+        "",
+        36,
+    ),
+    (
+        "a marked count of zero with no hooks.json at all",
+        {"P.md": "0 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        0,
+        "",
+        None,
+    ),
+    (
+        "singular 'hook entry' still binds",
+        {"P.md": "1 hook entry<!-- claim: plugin-hooks:widget -->\n"},
+        0,
+        "",
+        1,
+    ),
+    # --- the silence, asserted ------------------------------------------
+    (
+        "an unmarked hook count is not the checker's business",
+        {"P.md": "widget registers 99 hook entries.\n"},
+        0,
+        "",
+        2,
+    ),
+]
+
+
 def main() -> int:
     passed = failed = 0
+    for name, docs, expected, needle, widget_hooks in CASES_PLUGIN_HOOKS:
+        problems = run_hooks(docs, widget_hooks)
+        ok = len(problems) == expected
+        if ok and needle:
+            ok = any(needle in p for p in problems)
+        if ok:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {expected} problem(s)"
+                  + (f" containing {needle!r}" if needle else ""))
+            print(f"       got {len(problems)}: {problems}")
     for name, docs, expected, needle, widget_commands in CASES_CONSISTENCY:
         problems = run(docs, widget_commands=widget_commands)
         ok = len(problems) == expected

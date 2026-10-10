@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**156 keys**: 88 settable in the machine-global file, 68 repo-only.
+**157 keys**: 89 settable in the machine-global file, 68 repo-only.
 
 Columns:
 
@@ -326,6 +326,7 @@ Columns:
 | `guards.prodServer` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production host crew may reach. |
 | `guards.roleWrites` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 0.19.92 | Enforce each role's write scope. Default `off`; a malformed value reads as `block`. |
 | `guards.cloudGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Whether the cloud guard judges commands at all. Default `off`; `report` logs only. |
+| `guards.envGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.2.24 | Refuse a command that prints the whole environment or a credential-named variable. Default `off`; `report` logs only. |
 
 ### `production`
 

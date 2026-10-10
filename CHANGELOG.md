@@ -9,6 +9,31 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.24: an environment-dump guard, off by default (L-0772)
+
+- **Summary.** crew can now refuse a command that would print the whole environment, or a
+  credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **`env-guard.sh` / `env-guard.ps1` -> `env_guard.py`**, a `PreToolUse` hook on Bash and PowerShell,
+  registered once per flavour (the PowerShell entry with `shell: "powershell"`; 36 hook entries).
+  It refuses `env` with nothing to run, `printenv`, bare `set`, `export -p`, `declare -p`,
+  `/proc/<pid>/environ`, `ps eww`, inline interpreter code reading `os.environ`/`process.env`/`%ENV`/
+  `ENV`/`getenv()`/`ENVIRON`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`,
+  `Get-Variable`, `cmd /c set`, and a credential-named variable in a printing form (`echo
+  "$GITHUB_TOKEN"`, `$env:API_KEY`), through `bash -c`, `eval`, `$( )`, pipes, loops and the usual
+  wrappers. What it cannot read is refused as could-not-tell. A refusal names a fixed label
+  (`env-dump:`, `secret-read:`, `could-not-tell:`) and never a value or the command, in the reason
+  and in `.crew/guard.log`.
+- **`guards.envGuard`**: `off` (default) / `report` / `block`, both layers, narrower wins; a malformed
+  value reads as `block`. Without a usable python both wrappers refuse (exit 2) only when a config file
+  arms it.
+- **BREAKING (narrowing): production reads.** `printenv` left `PROD_READ_COMMANDS`, bare `env` is a
+  write, and any remote command the env guard flags is a write, so `ssh prod printenv`, `ssh prod env`
+  and `ssh prod cat /proc/1/environ` are refused at `guards.prodServer: read`. `full` is unchanged.
+- **`plugin-hooks:<name>`**, a new self-claim marker: `check_self_claims` counts the command entries in
+  a plugin's `hooks/hooks.json`.
+- Follow-ups: L-0773 (the committed sabotage entries, a harness change) and L-0776 (keep credentials
+  out of the agent's environment, the stronger control).
+
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
 - **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4

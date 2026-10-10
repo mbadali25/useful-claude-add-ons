@@ -1467,6 +1467,7 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.deployWorkflow` | `gh workflow run` / `gh api .../dispatches` of a workflow listed in `environments.workflows`; `allow` covers nonProd only | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
+| `guards.envGuard` | whether the environment guard refuses a command that prints the environment or a credential-named variable: `off` (default) / `report` / `block` (L-0772) | `hooks/scripts/env_guard.py` |
 | `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `environments.workflows` | **repo-only** map of workflow globs to `input:<name>` or a fixed environment, naming the deploy workflows `guards.deployWorkflow` judges (default `{}`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
@@ -1487,7 +1488,10 @@ below govern something **only while `guards.cloudGuard` is `report` or
 every command aimed at a declared target; `read` permits only what crew can
 **positively classify** as read-only, so an interactive `psql`, an unrecognised
 binary over `ssh` and anything it cannot parse are refused as writes; `full`
-permits everything and logs each one. `ask` is not a value here — these answer
+permits everything and logs each one. Since L-0772 an environment dump is not a
+read either: `ssh prod printenv`, `ssh prod env`, `ssh prod cat /proc/1/environ`
+and anything else the [Environment guard](#environment-guard) recognises print
+that host's credentials, so `read` refuses them (**BREAKING**, by narrowing). `ask` is not a value here — these answer
 "how much of production may crew reach", a standing posture rather than a
 per-command question.
 
@@ -1932,6 +1936,65 @@ PID namespace: a process in another namespace sharing the same `/tmp` is
 invisible to it, so a sealed directory still in use there can be removed (its
 settings file is already loaded; the session keeps running). Azure and TFC/HCP
 are a provider seam only: any key other than `aws` refuses as not implemented.
+
+### Environment guard
+
+A `PreToolUse` hook on the **Bash and PowerShell** tools
+(`hooks/scripts/env-guard.sh` / `env-guard.ps1`, both delegating to
+`env_guard.py`; L-0772). It exists because a command that prints the process
+environment puts every credential in it into the agent's context, and from
+there into the session transcript on disk and the conversation sent to the
+model provider. **It ships off** — `guards.envGuard: "off"` — because a hook
+that can block defaults off. **Start with `report`:** every refusal it *would*
+make goes to `.crew/guard.log` and nothing is refused; read the log, then set
+`block`. A malformed value reads as `block`; the two layers ratchet, so a repo
+cannot turn off a machine-global `block`.
+
+It judges the command's own text, read the way the shell will read it —
+through `bash -c`, `eval`, `$( )`, backticks, `<( )`, pipelines, lists, loops,
+function bodies and heredocs fed to a shell or an interpreter; behind `sudo`,
+`doas`, `command`, `exec`, `nohup`, `nice`, `time`, `timeout`, `stdbuf`,
+`setsid`, `xargs`, `watch`, `env NAME=value`, `find -exec`, `ssh host`,
+`docker`/`podman exec`, `kubectl exec --` and `wsl`; and in PowerShell through
+`pwsh -Command`, `Invoke-Expression` of a literal and `& { }`.
+
+| Refused | Label |
+|---|---|
+| `env` with nothing to run (bare, `-0`, `-u NAME` only, assignments only), `printenv` with no operand, bare `set`, `export`/`export -p`, `declare`/`typeset`/`readonly` with no name (`-f`/`-F` excepted), `systemctl show-environment`, `tmux show-environment` with no name, `ps` with a BSD `e` flag (`ps eww`) | `env-dump:<form>` |
+| a `/proc/<pid>/environ` (or a task's) as an operand or a `<` source; the last segment is a glob, so `env*` counts. A `git commit -m` message, a `grep`/`rg` pattern and `echo`/`printf` text are mentions, not reads | `env-dump:proc-environ` |
+| inline interpreter code reading the whole environment: python `os.environ`, node `process.env`, `Deno.env.toObject()`, perl `%ENV`, ruby `ENV`, php `getenv()`/`$_ENV`/`$_SERVER`, awk `ENVIRON`, jq `env`/`$ENV` — each not followed by one name | `env-dump:<language>` |
+| PowerShell: the `env:` drive as a whole or by wildcard (`Get-ChildItem env:`, `gci -Path Env:\`, `Get-Item env:*`, `Set-Location env:`) under any command but the write cmdlets, `[Environment]::GetEnvironmentVariables(...)`, `.StartInfo.EnvironmentVariables`, bare `Get-Variable` and the `variable:` drive, `cmd /c set` | `env-dump:<form>` |
+| a credential-named variable in a printing form: `printenv NAME`, `declare -p NAME`, `$NAME` in `echo`/`printf` arguments, `$env:NAME` as a bare statement or a `Write-Output`/`Write-Host` argument, `Get-Item env:NAME`, `cmd /c echo %NAME%`, inline code naming one. Piping one into a login (`echo "$GITHUB_TOKEN" \| gh auth login --with-token`) counts: the guard does not try to prove where the pipe ends | `secret-read:<form>` |
+| what it could not read: an unbalanced quote or unterminated substitution or heredoc, nesting deeper than 8, `eval`/`-c`/`Invoke-Expression` code or a program name that is not fully literal (`eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, `iex $s`, `& $cmd`), an indirect `${!name}`, malformed hook input, an unreadable config, an internal error | `could-not-tell:<why>` |
+
+A credential-named variable matches a fixed, case-insensitive pattern
+(`TOKEN`, `SECRET`, `PASSWORD`, `PASSPHRASE`, `CREDENTIAL`, `API_KEY`,
+`ACCESS_KEY`, `PRIVATE_KEY`, a trailing `_KEY`, `AUTH`, `COOKIE`, `SESSION`,
+`DSN`, `CONNECTION_STRING`, `DATABASE_URL`, `WEBHOOK`, `SIGNING`, a trailing
+`_PAT`); `SSH_AUTH_SOCK`, `XAUTHORITY`, `GPG_AGENT_INFO`, `GIT_AUTHOR_*`,
+`GIT_COMMITTER_*`, `XDG_SESSION_*` and `DBUS_SESSION_BUS_ADDRESS` are exempt.
+A **use** stays allowed: `curl -H "Authorization: Bearer $GITHUB_TOKEN"`,
+`$t = $env:GITHUB_TOKEN`, `docker login --password-stdin <<< "$PW"`. So do
+`printenv PATH`, `echo $HOME`, `env FOO=bar cmd` (the wrapped command is judged
+on its own), `env -i`, `set -euo pipefail`, `export FOO=bar`, `ps aux`,
+`cat /proc/self/status` and `Remove-Item env:FOO`.
+
+A refusal is a `deny` naming the labels and nothing else — never a value, a
+variable's name or the command — and so is its `guard.log` row (time, rule,
+mode, decision, label, `-`). Without a usable python both wrappers refuse
+(exit 2) when a config file arms the guard, and stay out of the way when none
+does. `crew_guards`' production read check asks this guard too, so
+`ssh prod printenv`, `ssh prod env` and `ssh prod cat /proc/1/environ` are no
+longer reads at `guards.prodServer: read` (**BREAKING**, by narrowing).
+
+**Limits.** It is a denylist over the text it is handed, so it cannot be
+complete: a script or program the command runs (`./x.sh`, `python x.py`,
+`make`), an alias or function defined outside the command, `source` of a file,
+a renamed binary and `docker inspect` are not seen. Known false positives are
+refusals somebody notices, never silent allows: a `/proc/*/environ` mention
+outside the mention-only positions (a `sed` script, `find -name`). The
+stronger control — keeping credentials out of the agent's environment, or
+redacting tool output — is L-0776.
 
 ### §11c. `change` — change requests, added by schema 7
 
@@ -4001,8 +4064,8 @@ CONFIG.md §17 has the table and the reasoning.
 
 ### Hooks
 
-Thirteen scripts across eight events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 34 entries total. crew 1.0 removed
+Fourteen scripts across eight events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew --> total. crew 1.0 removed
 `pm-brief` and `pm-pulse`. The sentence said eight and sixteen until 0.16.7
 while the table below it already listed all ten; the prose was the half that
 went stale. Until 0.20.25 it was the table's turn: it said eleven and thirty
@@ -4012,6 +4075,7 @@ with three hooks registered and unlisted.
 |---|---|---|
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command (on either tool also a workflow dispatch of a declared deploy workflow, either spelling; T-0062, L-0664) unless the upstream environment's newest row for **this sha**, written in full, is all-pass, the rollback runbook is verified inside 90 days, `requireHuman` is approved, an accepted review receipt covers this tree (or the environment opts out with `requireReview: false` + `reviewReason`), and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
+| `env-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.envGuard`, L-0772). Refuses a command whose own text prints the whole environment or a credential-named variable into the agent's context — see [Environment guard](#environment-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
