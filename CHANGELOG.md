@@ -9,6 +9,35 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
+
+- **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4
+  and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it
+  ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
+- **One changed set for checks 4 and 5 (`crew_refresh_check.own_changes`).** Before the ticket lands,
+  this is the completion audit's own set: paths identical to merged main are main's. After it lands,
+  close from a branch at `origin/main`. The set is then what the ticket's landing merge brought to main,
+  found from the review receipt's head: the first commit on main's first-parent line that contains it.
+  When either cannot be shown (`merged_main` cannot tell, no receipt, the head is not in the history, the
+  landing is not a merge), every path since the base is judged and the top line says why. A workflow
+  another PR merged in no longer makes SECURITY.md owed, and a code map another PR made stale is no
+  longer this ticket's. The ticket's own workflow edit and its own stale artifacts still refuse.
+- **CHANGELOG (check 5).** The check reads the lines the ticket added over its own range (after
+  landing: the merge's first parent to the merge). A line counts under `## [Unreleased]` or
+  `## [<version>]` when it names the plugin at the version that range ends on. A later release does not
+  move that version. The bare `crew 1.2.20` form this file's headings use counts as well as
+  `` `crew` 1.2.20 ``.
+- **Check 2 (`ci_receipt.py`).** When HEAD's sha has no verify-gate run at all, as on a merge commit
+  (the workflow never runs on main), the newest run of a parent whose tree is exactly HEAD's is judged
+  the same way. Its receipt must bind HEAD's tree, map and gate digest. A run for HEAD itself, failed
+  or pending, is never passed over. A merge that changes a receipt-producer path is refused, because
+  that run vouched for its own producer. Could not tell (the lookup fails, or a tree cannot be read)
+  stays UNKNOWN.
+- **Tests.** `test_done_own_changes.py` covers each part before landing, after landing and after a
+  later release: must-allow, must-block, and four could-not-tell cases. The new
+  `test_ci_receipt.py` cases cover the same-tree parent. Eight mutations were each seen red by hand.
+  Their sabotage entries go to a follow-up tooling PR, because the sabotage files are review harness.
+
 ### Fixed — crew 1.2.19: the promote-gate review tests' PowerShell cases run serially (L-0759)
 
 - **Summary.** `crew` 1.2.19 runs every default-set PowerShell case in
