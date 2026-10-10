@@ -1092,10 +1092,10 @@ flowchart TB
 flowchart TB
     subgraph done["/crew:done - all five or nothing<br/>done.md:7"]
         dn1{"1 review receipt<br/>--check-receipt<br/>done.md:9-16"}
-        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-49"}
-        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:51-62"}
-        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:64-71"}
+        dn1 -- pass --> dn2{"2 verify gate settled for HEAD<br/>local VERIFIED, or a CI receipt for HEAD<br/>or a parent with its tree<br/>(ci_receipt.py check), or NO_GATE<br/>:18-34"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-47"}
+        dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:49-61"}
+        dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:63-71"}
         dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx

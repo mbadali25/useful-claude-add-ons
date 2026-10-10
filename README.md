@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.22**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.2.22 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **crew 1.2.20**: A merged ticket closes with `/crew:done` without a refresh PR. `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4 and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
 - **crew 1.2.19**: The promote-gate review tests' PowerShell cases run serially. `crew` 1.2.19 runs every default-set PowerShell case in `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16` step no longer fails them on time. The gate is unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

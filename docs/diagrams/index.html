@@ -556,10 +556,10 @@ pre { overflow-x:auto; } pre.mermaid { background:transparent; text-align:center
 <section id="process-crew-lifecycle-done"><h2>Process crew lifecycle done</h2><p>/crew:done&#x27;s five checks, all of which must pass before the ticket is marked done, and the optional landing through the merge train.</p><pre class="mermaid">flowchart TB
     subgraph done[&quot;/crew:done - all five or nothing&lt;br/&gt;done.md:7&quot;]
         dn1{&quot;1 review receipt&lt;br/&gt;--check-receipt&lt;br/&gt;done.md:9-16&quot;}
-        dn1 -- pass --&gt; dn2{&quot;2 verify gate settled for HEAD&lt;br/&gt;local VERIFIED, or a CI receipt for HEAD&lt;br/&gt;(ci_receipt.py check), or NO_GATE&lt;br/&gt;:18-34&quot;}
-        dn2 -- pass --&gt; dn3{&quot;3 completion audit&lt;br/&gt;passes?&lt;br/&gt;:36-49&quot;}
-        dn3 -- pass --&gt; dn5{&quot;4 artifacts current and committed&lt;br/&gt;crew_refresh_check.py, read-only&lt;br/&gt;:51-62&quot;}
-        dn5 -- fresh --&gt; dn6{&quot;5 documents owed&lt;br/&gt;crew_docs_check.py, read-only&lt;br/&gt;:64-71&quot;}
+        dn1 -- pass --&gt; dn2{&quot;2 verify gate settled for HEAD&lt;br/&gt;local VERIFIED, or a CI receipt for HEAD&lt;br/&gt;or a parent with its tree&lt;br/&gt;(ci_receipt.py check), or NO_GATE&lt;br/&gt;:18-34&quot;}
+        dn2 -- pass --&gt; dn3{&quot;3 completion audit&lt;br/&gt;passes?&lt;br/&gt;:36-47&quot;}
+        dn3 -- pass --&gt; dn5{&quot;4 artifacts current and committed&lt;br/&gt;crew_refresh_check.py, read-only&lt;br/&gt;:49-61&quot;}
+        dn5 -- fresh --&gt; dn6{&quot;5 documents owed&lt;br/&gt;crew_docs_check.py, read-only&lt;br/&gt;:63-71&quot;}
         dn6 -- &quot;none MISSING&quot; --&gt; dn4[&quot;trailer report, then&lt;br/&gt;&#x27;status: done&#x27;, move --to done,&lt;br/&gt;report + Not verified&lt;br/&gt;:73-101&quot;]
         dn1 -- fail --&gt; dnx([refuse done])
         dn2 -- fail --&gt; dnx

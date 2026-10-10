@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5307a80e
+anchor: useful-claude-add-ons@09e31dba
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -2067,7 +2067,7 @@ question: are the code maps, diagrams and code graph that THIS ticket's
 changed paths reach still current (module docstring, `plugin/crew/hooks/scripts/crew_refresh_check.py:1-8`)? It narrows
 `crew_freshness.py`'s per-artifact questions to the paths the ticket changed
 (`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
-`RELEASE_BOOKKEEPING`, `plugin/crew/hooks/scripts/crew_refresh_check.py:267`), so a raw anchor lag is not staleness; each
+`RELEASE_BOOKKEEPING`, `plugin/crew/hooks/scripts/crew_refresh_check.py:271`), so a raw anchor lag is not staleness; each
 artifact reads `fresh`/`fresh-uncommitted`/`stale`/`unknown` (`:235-238`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
@@ -2080,7 +2080,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - **`fresh` means current and committed (T-0063, crew 1.0.349).** DERIVED on T-0063-build at `309575c2`; its line numbers are that
   commit's, not the anchor's.
   `ticket_freshness` lists the uncommitted paths under `refresh_artifact_paths` with
-  `_uncommitted` (`plugin/crew/hooks/scripts/crew_refresh_check.py:451`, called at `:1470`):
+  `_uncommitted` (`plugin/crew/hooks/scripts/crew_refresh_check.py:455`, called at `:1470`):
   HEAD against the working tree through `_moved_in_tree` (modified or staged), plus untracked
   files `--exclude-standard` already leaves out ignored ones from, None when git cannot answer,
   which sets the top line `unknown` with the stop "git could not list uncommitted refresh
@@ -2103,10 +2103,17 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   it after `/crew:docs` and before `/crew:review` (`:94`), runs each named
   refresh, commits, and re-runs until `fresh`; `fresh-uncommitted` means commit the listed
   paths (T-0063); a `stop` ends the loop.
-- `/crew:done` Check 4 (`plugin/crew/commands/done.md:55-66`) runs it again
-  and refuses on `stale`, `unknown` or (T-0063) `fresh-uncommitted` without refreshing (`:61-64`);
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:49-62`) runs it again
+  and refuses on `stale`, `unknown` or (T-0063) `fresh-uncommitted` without refreshing (`:57-58`);
   a `fresh-uncommitted` goes back to implement to commit, which keeps check 1's receipt.
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:277-283`: the code map,
+- DERIVED (L-0753). Checks 4 and 5 judge one set, `own_changes`
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1673`): before landing the completion audit's
+  merged-main set; after landing the paths the landing merge (first commit on the ref's
+  first-parent line holding the receipt head) brought; could-not-tell is every path since the
+  base. Check 5's CHANGELOG reads that range (`plugin/crew/hooks/scripts/crew_docs_check.py:301`).
+  Check 2's `ci_receipt.check` falls back to a same-tree parent only when HEAD has no run
+  (`plugin/crew/hooks/scripts/ci_receipt.py:495`).
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:281-287`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules` and, since T-0036, `docs/reference`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:209-220`) lets a ticket write
@@ -2116,7 +2123,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1032`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1036`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
@@ -2166,7 +2173,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   could-not-tell, and `_base_text` (`:583`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
 - T-0036 adds a fourth judged kind, `reference`: `_references`
-  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1383`, called from `ticket_freshness` at `:1568`)
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:1387`, called from `ticket_freshness` at `:1568`)
   judges `docs/reference/integrations.md` only - absent is no line, a presence `_present` cannot
   tell or an unreadable doc is `unknown` and a stop, no citation or no Generated header is `unknown`
   and refreshable, otherwise `_judge` against the header's sha. The header is read by
@@ -2225,7 +2232,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 
 **The secrets-denylist gate on the graph (T-0064, crew 1.0.237).** DERIVED at `687759ce`
 (T-0064's merge of origin/main `1d43e9fe`, crew 1.0.167); line citations re-measured at the 1.2.0 port and again for L-0667. `_graph_entry`
-(`plugin/crew/hooks/scripts/crew_refresh_check.py:1409`) calls `_graph_ignore_refusal` (`:1366`,
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1413`) calls `_graph_ignore_refusal` (`:1366`,
 called at `:1416`) after its "no code changed" return and before the graphify-missing check.
 While `crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore`
 does not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
@@ -2250,7 +2257,7 @@ without the check; `/crew:status`'s line is the only warning on that path.
 **`/crew:graph` (L-0667).** DERIVED on `rush/g3d-bridge` (release/1.2.0 line). The command file is
 `plugin/crew/commands/graph.md`; the script `plugin/crew/hooks/scripts/crew_graph.py`. The graphify
 line a refresh runs has one definition, `graph_command`
-(`plugin/crew/hooks/scripts/crew_refresh_check.py:1391`, the sabotage-anchored `command = (...)`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:1395`, the sabotage-anchored `command = (...)`
 line kept byte-identical inside it); `_graph` (`:1402`) wraps `_graph_entry` and sets every graph
 artifact's `command` to `GRAPH_REFRESH` (`:1388`, `/crew:graph --refresh`) and its new `runs`
 field to that line. `crew_graph.py`: `status` (`:209`) reads freshness from
@@ -2507,7 +2514,7 @@ JUDGEMENT: nothing calls `commit_refusal` at this anchor. Its caller, the scope 
 running it ahead of `scope.mode`, touches `HARNESS` paths
 (`scripts/check-tooling-pr.py`) and lands in its own change.
 
-`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:68-76`):
+`check` (`:351`) is `/crew:done`'s report (`plugin/crew/commands/done.md:73-81`):
 `scope_base.resolve`, then `git log --first-parent <base>..HEAD` (`_log_messages`, `:329`), so
 commits merged in from main are not the ticket's (a deliberate refinement of the spec), printing
 `trailers: clean (<n> commits)`, one `trailers: FINDING <sha7> <Token>` per hit, or
@@ -2571,9 +2578,9 @@ citations taken with `grep -n` there.
   cache; `require_tool` (`:58`) raises `ToolNotFound` (`:53`), a `FileNotFoundError`, so a site's
   existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
   it.
-- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:133`
+- DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:140`
   and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
-  `plugin/crew/hooks/scripts/crew_refresh_check.py:503`, `:517`, `:548`,
+  `plugin/crew/hooks/scripts/crew_refresh_check.py:507`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py:2283`, `plugin/crew/hooks/scripts/crew_status.py:56`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
   `plugin/crew/hooks/scripts/crew_trailers.py:337` (imported lazily, as that module does),
@@ -2819,7 +2826,7 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
   [--scan-depth <n>] [--yes-widen]`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1325` — `ticket_freshness`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1329` — `ticket_freshness`,
   the library entry point; `main()` at `:1425`; `artifact_verdicts` at `:1032`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:759` — `next_phase`, read-only;
@@ -5047,7 +5054,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `bee8b203` -> `52e309cf` on 2026-10-01 (L-0510 review fix round, crew re-bumped to 1.0.94).** `git diff --name-only bee8b203 52e309cf` returns, outside refresh artifacts, `review_ledger.py` (the per-severity count check, the CLEAN receipt-kind check and `check_follow_up`'s kind allowlist, UTF-8 refusal and verbatim counted match), its tests and sabotage rows, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/review.md`, `plugin/crew/BUDGETS.md`, the troubleshooting guide and its rendered outputs, CHANGELOG.md and the version files. The body's `review_ledger.py` citations and the `done.md` ranges were moved by a line diff (the bare `:478` beside `crew_ticket` was left alone, it is not a `review_ledger.py` line), and the review-closure paragraph's version now reads 1.0.94. No suite was executed for this note.
 
-**Merged `490f4ec1` (L-0510) + `52489039` (main) on L-0510-build, 2026-10-01 (merge `58fc8da8` of origin/main `52489039`: T-0040 #290, crew 1.0.98, with rerere off), then re-anchored to `5254bbfe` (L-0510 re-bumped to crew 1.0.103).** The code paths are disjoint: main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, and L-0510 touched none of T-0040's files. The anchor and the provenance tail conflicted in every map (both sides' provenance kept, main's first); `crew.md`'s T-0087 refund paragraph keeps L-0510's `review_run.py` / `review_ledger.py` / `crew_autopilot.py` positions with main's `plugin/crew/hooks/scripts/crew_status.py:140`, and `repo-docs.md`'s runbooks-index citation was re-grepped on the merged tree (`plugin/crew/README.md:2289`). Every body `path:line` into a file either side changed was checked against the parent whose copy of the map carries that line verbatim, by a line diff of that file onto the merged tree (`/root/crew-tmp/l-0510/tools/merge_cites2.py`, machine-local): none moved. `5254bbfe` itself changes only release bookkeeping (version files, CHANGELOG, BUDGETS count). No suite was executed for this note.
+**Merged `490f4ec1` (L-0510) + `52489039` (main) on L-0510-build, 2026-10-01 (merge `58fc8da8` of origin/main `52489039`: T-0040 #290, crew 1.0.98, with rerere off), then re-anchored to `5254bbfe` (L-0510 re-bumped to crew 1.0.103).** The code paths are disjoint: main touched none of `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, and L-0510 touched none of T-0040's files. The anchor and the provenance tail conflicted in every map (both sides' provenance kept, main's first); `crew.md`'s T-0087 refund paragraph keeps L-0510's `review_run.py` / `review_ledger.py` / `crew_autopilot.py` positions with main's `plugin/crew/hooks/scripts/crew_status.py:140`, and `repo-docs.md`'s runbooks-index citation was re-grepped on the merged tree (`plugin/crew/README.md:2291`). Every body `path:line` into a file either side changed was checked against the parent whose copy of the map carries that line verbatim, by a line diff of that file onto the merged tree (`/root/crew-tmp/l-0510/tools/merge_cites2.py`, machine-local): none moved. `5254bbfe` itself changes only release bookkeeping (version files, CHANGELOG, BUDGETS count). No suite was executed for this note.
 
 **Re-anchored `5254bbfe` -> `a98be035` on 2026-10-01 (L-0510, owner decision 2026-10-01 #3: the family rule).** `git diff --name-only 5254bbfe a98be035` returns `review_ledger.py`, its two test files and `sabotage_review.py`, `commands/review.md`, README, CONFIG, PLUGINS.md, BUDGETS.md, CHANGELOG, the troubleshooting guide and its three outputs, and refresh artifacts. Line counts are unchanged in every file except `review_ledger.py` (+37, cited only in `crew.md`, re-read there), CONFIG.md (+1 at `:2510`, past every CONFIG citation in these maps) and CHANGELOG.md (+3 at `:21`; the CHANGELOG line numbers in these maps are history notes of earlier anchors, not re-cited).
 
@@ -5196,7 +5203,7 @@ After PR #368 was pushed, `f0d40c66` fixed the Windows CI failure (`_rel_inside`
 
 ## Re-anchor provenance - `c9867c59` -> `0e36a87d`, 2026-10-03 (T-0063 merges origin/main, crew 1.0.182)
 
-**Re-anchored `c9867c59` (T-0063) and main's `0620587f`/`42effe14` -> `0e36a87d` on 2026-10-03 (T-0063 merges origin/main `4f6ef540`, L-0601 #327, crew 1.0.162; crew stays 1.0.182).** Main's text was taken in every conflict and T-0063's notes re-applied after it. The only source file both sides changed is `plugin/crew/README.md`, and main's edit there is one line in place (`:768`), so no citation on either side moved; the runbooks-index citation `plugin/crew/README.md:2322` was re-read with `grep -n` on the merge. Main's other changes (`review_prompt.py`, `review.md`, `sabotage.py`, `sabotage_recurring.py`, `test_review_prompt.py`, the working-with-codex guide, `scripts/gate-runner.py`, `_verify/smoke.sh`, the marketplace workflow) touch no file T-0063 changed and were carried by main's own maps. No claim re-derived.
+**Re-anchored `c9867c59` (T-0063) and main's `0620587f`/`42effe14` -> `0e36a87d` on 2026-10-03 (T-0063 merges origin/main `4f6ef540`, L-0601 #327, crew 1.0.162; crew stays 1.0.182).** Main's text was taken in every conflict and T-0063's notes re-applied after it. The only source file both sides changed is `plugin/crew/README.md`, and main's edit there is one line in place (`:768`), so no citation on either side moved; the runbooks-index citation `plugin/crew/README.md:2324` was re-read with `grep -n` on the merge. Main's other changes (`review_prompt.py`, `review.md`, `sabotage.py`, `sabotage_recurring.py`, `test_review_prompt.py`, the working-with-codex guide, `scripts/gate-runner.py`, `_verify/smoke.sh`, the marketplace workflow) touch no file T-0063 changed and were carried by main's own maps. No claim re-derived.
 
 ## Version re-allocation - 1.0.182 -> 1.0.201, 2026-10-03 (T-0063, after the merge of main `4f6ef540`)
 
@@ -5330,9 +5337,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 
 **L-0712: the fallback is the next cross-family provider (DERIVED at `1d10d8f6`).** `crew_state.resolve_role` step 2 calls `_fall_back` (`plugin/crew/hooks/scripts/crew_state.py:1667`) when `available` says the pin is gone. `provider_for_model` (`:1508`) maps the fallback model's family to the provider that serves it through `FAMILY_PROVIDER` (`:1505`: claude, gpt->codex, kimi); `_fallback_candidates` (`:1515`) lists the fallback on that provider first, then the block's `order` (`QA_DEFAULTS["order"]` when absent) on each provider's own model and effort, minus the failed pair and `auto`. An author-family candidate is skipped (`fallbackBarred` for the fallback itself), an `order` candidate must answer `available`, and none left sets `incomplete` with no provider; `same_family_ok` runs the fallback labelled `sameFamily`. The hard-coded `out["provider"] = "claude"` is gone. `crew_status._review_lines` (`plugin/crew/hooks/scripts/crew_status.py:230`) now reads every ledger and appends `review   same-family: N of M completed rounds (P%)`; `same_family_round` (`:220`) decides a row (its bool `same_family` label, else provider or model family equal to `review_ledger.AUTHOR_FAMILY`; no provider is could-not-tell). JUDGEMENT: no production caller passes `available` yet (`crew_config.model_report` resolves without a probe), so the walk is reached through `/crew:review`'s harness half (crew 1.2.6), not through `/crew:model`.
 
-**Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4710-4711` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
+**Re-anchored `1d10d8f6` -> `067c0443` on 2026-10-08 (L-0712).** Only `plugin/crew/README.md:4716-4717` changed, the re-embedded /crew:status diagram, line-neutral; no citation here points into it.
 
-**Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4710-4711` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
+**Re-anchored `067c0443` -> `789dc230` on 2026-10-08 (L-0712).** `plugin/crew/hooks/scripts/crew_status.py` gained four lines at `:196-199` (a summary with no readable rounds is could-not-tell on the share line); the two citations into it after that point were re-read and moved (`same_family_round` `:220`, the block `:172-256`). `plugin/crew/README.md:4716-4717` is the re-embedded /crew:status diagram, line-neutral. The version lines were reverted to 1.2.0 to be re-set last.
 
 **L-0710 citation, 2026-10-08 (L-0710-feature at `295568aa`, from origin/main `554ed783`); anchor NOT moved.** The `/crew:done` row gained check 2's precondition (`plugin/crew/commands/done.md:18-34`): CI receipt VERIFIED or NO_GATE for HEAD, or nothing outstanding in the record with `review_gate.gate_state` VERIFIED; `plugin/crew/tests/test_done_check2_gate.py` runs that command. DERIVED from that file at `295568aa`; no other claim in this map was re-read.
 
@@ -5362,3 +5369,9 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 - DERIVED. `plugin/crew/hooks/scripts/_test/run-tests.sh` scope cases (a) and (b) build a 1.0
   ticket (spec.md, `crew_ticket.py activate`, a `/crew:approve` prompt through `approval_hook.py`)
   and expect the outside path named, then `could not tell` naming spec.md once it is removed.
+
+**Re-anchored `5307a80e` -> `adb3c2a7` on 2026-10-09 (L-0753, /crew:done judges the ticket's own diff).** L-0753's own change since `a7fb104b` is `crew_refresh_check.py` (`own_changes`), `crew_docs_check.py`, `ci_receipt.py` (the same-tree parent receipt), their tests, `commands/done.md`, `commands/docs.md`, the crew README and the troubleshooting and daily-workflow guides with their builds. Every `path:line` citation in this note into one of those files was re-taken by script (difflib against `5307a80e`): 16 moved. Citations into files only other PRs changed since the old anchor were not re-verified here. No suite was executed for this note.
+
+**Re-anchored `adb3c2a7` -> `926f1277` on 2026-10-10 (L-0753 landing prep).** Per-path check `git diff --name-only adb3c2a7..926f1277`: besides the code maps, rules, diagrams and graph themselves, only the crew version lines (README.md, CHANGELOG.md, marketplace.json, PLUGINS.md, plugin.json; crew 1.2.20) and main's `plugin/crew/tests/test_promote_gate_review.py` (merged from `d8de3dafb`, PR #594) changed. No claim in this map moved.
+
+**Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
