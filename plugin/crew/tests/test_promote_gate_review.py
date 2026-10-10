@@ -815,9 +815,14 @@ def test_sh_without_python_bounds_the_committed_map_read(tmp_path):
 
 
 @_POSIX_ONLY
+@pytest.mark.wallclock
 def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
     """One jq process per map: a fork per string took 20.8s on this repo's
-    own 847-string map, past the hook timeout."""
+    own 847-string map, past the hook timeout.
+
+    `wallclock`: it bounds elapsed time, and under CI's `-n 16` on a 4-vCPU
+    hosted runner the gate's own 16s deadline ran out mid-jq, so the block
+    read "jq could not read it" (run 37984138378, test (3.12))."""
     if shutil.which("jq") is None:
         pytest.skip("no jq on this machine")
     big = {"environments": {f"env{i}": {"deploy": f"deploy-number-{i}", "rollback": "none",
