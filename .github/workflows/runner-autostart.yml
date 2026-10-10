@@ -12,7 +12,9 @@ name: Runner auto-start
 #
 # Needs secret RUNNER_START_TOKEN: a fine-grained PAT scoped to
 # mbadali25/github-runner-infra only, Actions: read and write. Without it the
-# job says so and exits 0 - auto-start is optional, CI never depends on it.
+# job says so and exits 0, and a token that cannot see that repo (HTTP 401,
+# 403 or 404) is a warning and exit 0 too - auto-start is optional, CI never
+# depends on it.
 # Fork PRs get no secrets, so they never start the host.
 
 on:
@@ -40,20 +42,57 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_START_TOKEN }}
           INFRA_REPO: mbadali25/github-runner-infra
         run: |
+          set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then
             echo "::notice::RUNNER_START_TOKEN is not set, so the self-hosted runners were NOT started. CI runs on GitHub-hosted runners."
             exit 0
           fi
           # REST endpoints throughout, never `gh run list --workflow` or
-          # `gh workflow run`: both first read the workflow file through the
-          # contents API, which a token holding only Actions permission gets a
-          # 404 from ("workflow runners.yml not found on the default branch").
-          pending=$(gh api "repos/$INFRA_REPO/actions/workflows/runners.yml/runs?per_page=20" \
-                      --jq '[.workflow_runs[] | select(.status != "completed")] | length')
+          # `gh workflow run`: those resolve the workflow, and `gh workflow
+          # run` reads its YAML, before the call this job needs. A 404 from
+          # the Actions calls below is not about contents permission: GitHub
+          # answers 404, not 403, for a private repo the token cannot see,
+          # which is what a token without access to $INFRA_REPO gets.
+          #
+          # api METHOD PATH [gh args...]: sets $status (HTTP code, empty when
+          # no response came back) and $body; never exits on an HTTP error.
+          api() {
+            local method=$1 path=$2 out rc=0
+            shift 2
+            out=$(gh api -i -X "$method" "$path" "$@" 2>/dev/null) || rc=$?
+            # First line is the status line ("HTTP/2.0 404 Not Found").
+            # Parameter expansion, not `| head`: under pipefail a large body
+            # would SIGPIPE the writer and fail the job.
+            status=""
+            read -r _ status _ <<<"${out%%$'\n'*}" || true
+            body=$(printf '%s\n' "$out" | tr -d '\r' | awk 'found{print} /^$/{found=1}')
+            if [ -z "$status" ]; then
+              echo "::error::gh api $method $path got no HTTP response (gh exit $rc)."
+              exit 1
+            fi
+          }
+          # 401/403/404 = the token cannot reach the repo or its Actions.
+          # Auto-start is optional, so that is a warning, not a red check.
+          # Any other non-2xx keeps failing.
+          check() {
+            case "$status" in
+              2??) return 0 ;;
+              401|403|404)
+                echo "::warning::RUNNER_START_TOKEN cannot see $INFRA_REPO (HTTP $status on $1), so auto-start of the self-hosted runners was skipped. CI runs on GitHub-hosted runners. The token needs Actions: read and write on $INFRA_REPO."
+                exit 0 ;;
+              *)
+                echo "::error::$1 failed with HTTP $status: $body"
+                exit 1 ;;
+            esac
+          }
+          api GET "repos/$INFRA_REPO/actions/workflows/runners.yml/runs?per_page=20"
+          check "GET runners.yml/runs"
+          pending=$(printf '%s' "$body" | jq '[.workflow_runs[] | select(.status != "completed")] | length')
           if [ "$pending" -gt 0 ]; then
             echo "::notice::A Runners run is already queued or in progress in $INFRA_REPO; not starting another."
             exit 0
           fi
-          gh api -X POST "repos/$INFRA_REPO/actions/workflows/runners.yml/dispatches" \
+          api POST "repos/$INFRA_REPO/actions/workflows/runners.yml/dispatches" \
             -f ref=main -f 'inputs[action]=start'
+          check "POST runners.yml/dispatches"
           echo "::notice::Self-hosted runners were stopped; dispatched Runners > start in $INFRA_REPO."
