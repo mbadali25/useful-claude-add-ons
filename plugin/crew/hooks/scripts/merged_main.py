@@ -116,18 +116,24 @@ def pinned(root, base_sha, commit, ref=None):
     branch rule is not applied: the caller is not asking about HEAD. A commit
     that names nothing here, or an ancestry question git cannot answer, is
     could-not-tell (`commit None`, nothing dropped), as in `resolve`."""
-    full = crew_common.git_out(root, "rev-parse", "--verify", "-q", f"{commit}^{{commit}}") \
-        if isinstance(commit, str) and commit else None
+    # A name git would read as an option, or one subprocess refuses (a NUL),
+    # is no commit: could-not-tell, never a traceback (Codex L-0770 r1).
+    usable = isinstance(commit, str) and commit and not commit.startswith("-")
+    try:
+        full = crew_common.git_out(root, "rev-parse", "--verify", "-q",
+                                   f"{commit}^{{commit}}") if usable else None
+    except ValueError:
+        full = None
     if not full:
         return {"ref": ref, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: the pinned merged commit {commit!r} names no commit "
                           "here; nothing dropped"}
-    before = _is_ancestor(root, full, base_sha)
-    if before is None:
+    older = _is_ancestor(root, full, base_sha)
+    if older is None:
         return {"ref": ref, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: git merge-base --is-ancestor {full[:12]} "
                           f"{str(base_sha)[:12]} gave no answer; nothing dropped"}
-    if before:
+    if older:
         return {"ref": ref, "commit": full, "applies": False,
                 "reason": f"pinned merged commit {full[:12]} is no merge past the ticket start "
                           f"{base_sha[:12]}; nothing dropped"}

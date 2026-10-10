@@ -92,7 +92,7 @@ def test_a_review_of_a_dirty_tree_is_not_rebuilt_by_a_pin(tmp_path):
     assert rebuilt != accepted
 
 
-@pytest.mark.parametrize("commit", ["", None, "0" * 40, "no-such-ref"])
+@pytest.mark.parametrize("commit", ["", None, "0" * 40, "no-such-ref", "\x00", "--all"])
 def test_a_pin_that_names_no_commit_is_could_not_tell(tmp_path, commit):
     world = World(tmp_path, catch_up=False)
     pin = merged_main.pinned(str(world.repo), world.start, commit)

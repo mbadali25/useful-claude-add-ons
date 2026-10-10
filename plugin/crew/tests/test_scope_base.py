@@ -560,3 +560,26 @@ def test_cli_base_on_the_default_branch_with_a_record_is_the_record(repo):
     done = _cli(repo, "--base")
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == start
+
+
+@pytest.mark.parametrize("spelling", ["refs/heads/main", "main"])
+def test_cli_base_on_the_configured_base_branch_in_any_spelling_is_could_not_tell(repo, spelling):
+    """Codex L-0770 r1: `tickets.baseBranch` spelled `refs/heads/main` is the
+    checked-out `main` too."""
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"tickets": {"baseBranch": spelling}}), encoding="utf-8")
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, "on-main.py")
+    done = _cli(repo, "--base")
+    assert done.returncode == 3, done.stdout + done.stderr
+
+
+def test_cli_base_reads_a_failed_probe_as_could_not_tell(repo, monkeypatch):
+    """Codex L-0770 r1: a probe that fails after resolve() answered must not
+    hand back HEAD."""
+    _git(repo, "checkout", "-q", "main")
+    monkeypatch.setattr(scope_base, "base_branch", lambda root: (None, "probe failed"))
+    reason = scope_base._empty_range_on_the_base_branch(  # pylint: disable=protected-access
+        str(repo), _head(repo), "merge-base")
+    assert reason and reason.startswith("could not tell")
