@@ -1155,6 +1155,10 @@ _HOME_ALLOWED = ()        # normalised prefixes under a real home that may be op
 _HOME_AUDIT_INSTALLED = False
 HOME_VIOLATIONS = []
 _SPAWN_ENV_EVENTS = ("os.posix_spawn", "os.spawn", "os.exec")
+# The operator's Claude directory under each real home: never allowed through
+# an import-path prefix (`home_allowed_prefixes`).
+CLAUDE_DIR_NAME = ".claude"
+_OPEN_ORIGINALS = {}      # the open functions `install_home_audit` wrapped
 
 
 def _home_norm(path):
@@ -1202,7 +1206,8 @@ def home_allowed_prefixes(repo_root, homes=()):
     interpreter and its import path (user site included), and the system temp
     directory pytest's basetemp sits in (USERPROFILE\\AppData\\Local\\Temp on
     Windows). A prefix that is a real home, or holds one (`PYTHONPATH=$HOME`),
-    is dropped: allowing it would allow the whole home."""
+    is dropped: allowing it would allow the whole home. So is any prefix but
+    the checkout at, inside or above a real home's `.claude`."""
     import site  # pylint: disable=import-outside-toplevel
     paths = [repo_root, sys.prefix, sys.base_prefix, sys.exec_prefix, tempfile.gettempdir()]
     paths.extend(p for p in sys.path if p)
@@ -1211,11 +1216,20 @@ def home_allowed_prefixes(repo_root, homes=()):
     except AttributeError:
         pass
     home_roots = [s for h in homes for s in _home_spellings(h)]
+    claude_dirs = [s for h in homes for s in _home_spellings(os.path.join(h, CLAUDE_DIR_NAME))]
     seen = []
-    for path in paths:
+    for index, path in enumerate(paths):
         for variant in _home_spellings(path):
-            if variant not in seen and not any(_under(h, (variant,)) for h in home_roots):
-                seen.append(variant)
+            if variant in seen or any(_under(h, (variant,)) for h in home_roots):
+                continue
+            # An import path at, inside or above `<home>/.claude` (an ordinary
+            # `PYTHONPATH=~/.claude`) would exempt the operator's crew config,
+            # the file this audit exists for. The checkout (index 0) stays
+            # allowed wherever it sits (a plugin cache is under `.claude`).
+            if index and any(_under(variant, (c,)) or _under(c, (variant,))
+                             for c in claude_dirs):
+                continue
+            seen.append(variant)
     return tuple(seen)
 
 
@@ -1266,11 +1280,88 @@ def home_audit(event, payload):
         raise RuntimeError("test reached the operator's real home (L-0709): " + reason)
 
 
+def opened_file_violation(fd, path, homes, allowed):
+    """None, or a reason when the file open descriptor `fd` refers to lies under
+    a real home outside `allowed`. The audit hook checks `path` BEFORE the open,
+    so a symlink swapped between that check and the open reaches a file the
+    check never saw; this asks what was actually opened. Linux names the file
+    behind `fd` (`/proc/self/fd`); elsewhere `path` is resolved again and its
+    identity compared with the descriptor's, and a mismatch -- the path moved
+    during the open -- is could-not-tell, a violation, never a pass."""
+    try:
+        actual = os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        actual = None
+    if actual and os.path.isabs(actual):
+        return home_open_violation(actual, homes, allowed)
+    try:
+        real = os.path.realpath(os.fsdecode(path))
+        held, named = os.fstat(fd), os.stat(real)
+    except (OSError, TypeError, ValueError) as exc:
+        return f"opened {os.fsdecode(path)}, and could not tell which file it is ({exc})"
+    if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino):
+        return f"opened {os.fsdecode(path)}, and the path moved during the open"
+    return home_open_violation(real, homes, allowed)
+
+
+def _close_quietly(close):
+    try:
+        close()
+    except OSError:
+        pass
+
+
+def _verify_opened(fd, path, close):
+    """After an open the audit allowed: fail it if the file is under a real home."""
+    if _HOME_GUARD is None or isinstance(path, int) or path is None:
+        return
+    reason = opened_file_violation(fd, path, _HOME_GUARD, _HOME_ALLOWED)
+    if reason:
+        _close_quietly(close)
+        HOME_VIOLATIONS.append(reason)
+        raise RuntimeError("test reached the operator's real home (L-0709): " + reason)
+
+
+def _wrap_io_open(original):
+    def io_open(file, *args, **kwargs):
+        handle = original(file, *args, **kwargs)
+        if _HOME_GUARD is not None and not isinstance(file, int) and kwargs.get("opener") is None \
+                and len(args) < 7:
+            try:
+                fd = handle.fileno()
+            except (OSError, AttributeError, ValueError):
+                fd = None
+            if fd is not None:
+                _verify_opened(fd, file, handle.close)
+        return handle
+    io_open.__wrapped__ = original
+    return io_open
+
+
+def _wrap_os_open(original):
+    def os_open(path, *args, **kwargs):
+        fd = original(path, *args, **kwargs)
+        if _HOME_GUARD is not None and kwargs.get("dir_fd") is None:
+            _verify_opened(fd, path, lambda: os.close(fd))
+        return fd
+    os_open.__wrapped__ = original
+    return os_open
+
+
 def install_home_audit():
-    """Install the audit hook once per process; hooks cannot be removed."""
+    """Install the audit hook once per process (hooks cannot be removed), and
+    wrap `open`/`io.open`/`os.open` so a file opened through a path that moved
+    after the hook checked it is still caught (`opened_file_violation`)."""
     global _HOME_AUDIT_INSTALLED  # pylint: disable=global-statement
     if not _HOME_AUDIT_INSTALLED:
+        import builtins  # pylint: disable=import-outside-toplevel
+        import io  # pylint: disable=import-outside-toplevel
         sys.addaudithook(home_audit)
+        _OPEN_ORIGINALS.update(io=io.open, builtins=builtins.open, os=os.open)
+        wrapped = _wrap_io_open(io.open)
+        io.open = wrapped
+        builtins.open = wrapped
+        os.open = _wrap_os_open(os.open)
         _HOME_AUDIT_INSTALLED = True
 
 

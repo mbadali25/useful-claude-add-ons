@@ -180,14 +180,25 @@ def pytest_runtest_setup(item):  # pylint: disable=unused-argument
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
-    """A skip at run time (`pytest.skip("flaky ...")`) is held to the same
-    rule as a skip marker: an unreliable test is quarantined, not skipped."""
+    """A skip or xfail at run time (`pytest.skip("flaky ...")`,
+    `pytest.xfail("flaky ...")`) is held to the same rule as a skip or xfail
+    marker: an unreliable test is quarantined, not skipped. A marker whose
+    reason says so already failed collection, so only run-time calls get here."""
     report = yield
-    if report.skipped and not hasattr(report, "wasxfail"):
-        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
+    if report.skipped:
+        if hasattr(report, "wasxfail"):
+            how, reason = "xfailed", str(report.wasxfail)
+        else:
+            how = "skipped"
+            reason = (report.longrepr[2] if isinstance(report.longrepr, tuple)
+                      else str(report.longrepr))
         if _FLAKE_REASON_RE.search(reason or ""):
+            # pytest counts a failed report carrying `wasxfail` as no failure
+            # (the session exit status stayed 0), so the marker goes too.
+            if hasattr(report, "wasxfail"):
+                del report.wasxfail
             report.outcome = "failed"
-            report.longrepr = (f"crew quarantine rule (L-0709): skipped at run time with {reason!r}; "
+            report.longrepr = (f"crew quarantine rule (L-0709): {how} at run time with {reason!r}; "
                                "an unreliable test is quarantined with "
                                "@pytest.mark.quarantine(owner=..., ticket=...)")
     return report

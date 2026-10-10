@@ -24,7 +24,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   installed code rather than configuration.
 - **Audit.** `crew_fixtures.home_audit` fails a test that opens a file under the real home, or
   spawns a process handed the real HOME, naming each path; the checkout, the interpreter and the
-  temp directory are allowed. `test_hermetic_home.py` holds it, with a regression run against a
+  temp directory are allowed, and an import path is allowed only outside the real home's `.claude`
+  (`PYTHONPATH=~/.claude` no longer exempts the crew config). `open`, `io.open` and `os.open` are
+  checked again after the open, against the file the descriptor names, so a symlink swapped into the
+  home between the check and the open still fails the test. A session or module fixture is tested
+  in an inner run against a planted home: it is handed no real-home record, no
+  `CLAUDE_CONFIG_DIR`/`CLAUDE_PROJECT_DIR` and no real `GLOBAL_CONFIG_PATH`. `test_hermetic_home.py` holds it, with a regression run against a
   planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
   the sabotage-suite entries are L-0738, a tooling PR).
 - **`monkeypatch.undo()` no longer drops the isolation.** conftest's isolation fixtures shared the
@@ -38,8 +43,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
   until `-m quarantine` or its node id (`file.py::test`) names it, so a sabotage entry targeting
   one still runs it; a quarantine missing either, or a skip marker whose reason
-  says flaky/timing/intermittent, fails collection, and a `pytest.skip()` saying so at run time
-  fails the test. Quarantined (L-0737 fixes them):
+  says flaky/timing/intermittent, fails collection, and a `pytest.skip()` or `pytest.xfail()`
+  saying so at run time fails the test. Quarantined (L-0737 fixes them):
   `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
   2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
 

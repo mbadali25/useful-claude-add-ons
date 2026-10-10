@@ -233,10 +233,6 @@ def test_an_import_path_that_holds_the_home_is_not_allowed(monkeypatch, prefix):
         os.path.join(HOME, ".claude", "crew", "config.json"), HOMES, allowed) is not None
 
 
-def test_the_real_home_record_is_not_handed_to_a_test():
-    assert crew_fixtures.REAL_HOME_VAR not in os.environ
-
-
 @pytest.mark.skipif(not hasattr(os, "posix_spawn"), reason="no os.posix_spawn here - NOT run")
 def test_a_posix_spawn_handed_the_real_home_is_refused():
     real = crew_fixtures.guarded_homes()[0]
@@ -250,32 +246,131 @@ def test_a_posix_spawn_handed_the_real_home_is_refused():
     assert len(found) == 1, found
 
 
-def test_claude_dirs_are_unset_for_the_session_too():
-    code = "import os; print(os.environ.get('CLAUDE_CONFIG_DIR'), os.environ.get('CLAUDE_PROJECT_DIR'))"
+@pytest.mark.parametrize("prefix", [
+    os.path.join(HOME, ".claude"),
+    os.path.join(HOME, ".claude", "crew"),
+], ids=["claude-dir", "inside-it"])
+def test_an_import_path_at_or_inside_the_claude_dir_is_not_allowed(monkeypatch, prefix):
+    """Round 4 BLOCK: `PYTHONPATH=~/.claude` is an ordinary setup, not an
+    attack, and it used to exempt the crew config the audit exists for."""
+    monkeypatch.setattr(sys, "path", [prefix] + sys.path)
 
-    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,
-                          stdin=subprocess.DEVNULL, timeout=60)
+    allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
 
-    assert done.stdout.split() == ["None", "None"]
+    assert crew_fixtures.home_open_violation(
+        os.path.join(HOME, ".claude", "crew", "config.json"), HOMES, allowed) is not None
 
+
+def test_an_import_path_elsewhere_in_the_home_stays_allowed(monkeypatch):
+    """The must-allow side: a user site-packages under the home still imports."""
+    site_dir = os.path.join(HOME, ".local", "lib", "python3", "site-packages")
+    monkeypatch.setattr(sys, "path", [site_dir] + sys.path)
+
+    allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
+
+    assert crew_fixtures.home_open_violation(
+        os.path.join(site_dir, "pkg", "__init__.py"), HOMES, allowed) is None
+
+
+def test_a_checkout_inside_the_claude_dir_stays_allowed():
+    """A plugin cache checkout lives under `~/.claude`; its own files open."""
+    repo = os.path.join(HOME, ".claude", "plugins", "cache", "crew")
+
+    allowed = crew_fixtures.home_allowed_prefixes(repo, (HOME,))
+
+    assert crew_fixtures.home_open_violation(
+        os.path.join(repo, "tests", "conftest.py"), HOMES, allowed) is None
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
+                    reason="symlinks need privileges on Windows - the symlink case was NOT run")
+def test_a_file_opened_under_the_home_is_a_violation_whatever_path_was_checked(tmp_path):
+    """The post-open half, pure: the descriptor names a file under the home
+    although the path given looked safe when it was checked."""
+    home = tmp_path / "operator-home"
+    secret = home / ".claude" / "crew" / "config.json"
+    secret.parent.mkdir(parents=True)
+    secret.write_text("{}", encoding="utf-8")
+    homes = (os.path.normcase(str(home)),)
+    fd = os.open(str(secret), os.O_RDONLY)
+    try:
+        reason = crew_fixtures.opened_file_violation(fd, str(tmp_path / "safe"), homes, ())
+    finally:
+        os.close(fd)
+
+    assert reason is not None
+
+
+# --- the session and module fixtures: what they are handed --------------------
+
+_FIXTURE_LEAK_PROBE = '''
+import json, os, subprocess, sys
+
+import pytest
+
+import crew_config
+import crew_state
+
+NAMES = (os.environ["PROBE_REAL_HOME_VAR"], "CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR")
+CHILD = "import json, os, sys; json.dump({n: os.environ.get(n) for n in sys.argv[1:]}, sys.stdout)"
+
+
+def _seen():
+    done = subprocess.run([sys.executable, "-c", CHILD, *NAMES], capture_output=True, text=True,
+                          check=True, stdin=subprocess.DEVNULL, timeout=60)
+    return {"child": json.loads(done.stdout),
+            "config": [crew_state.GLOBAL_CONFIG_PATH, crew_config.GLOBAL_CONFIG_PATH]}
+
+
+@pytest.fixture(scope="session")
+def in_session():
+    return _seen()
 
 
 @pytest.fixture(scope="module")
-def _module_config_paths():
-    """Set up before any function-scoped fixture, so before
-    `_no_real_global_config` moves the path for the test."""
-    import crew_config  # pylint: disable=import-outside-toplevel
-    import crew_state  # pylint: disable=import-outside-toplevel
-    return crew_state.GLOBAL_CONFIG_PATH, crew_config.GLOBAL_CONFIG_PATH
+def in_module():
+    return _seen()
 
 
-def test_a_module_fixture_sees_no_real_machine_config_path(_module_config_paths):
-    homes = [os.path.normcase(os.path.join(h, "")) for h in crew_fixtures.real_homes()]
+def _under_real_home(path):
+    real = os.path.normcase(os.path.join(os.environ["PROBE_REAL_HOME"], ""))
+    return os.path.normcase(os.path.abspath(path)).startswith(real)
 
-    reached = [p for p in _module_config_paths
-               if any(os.path.normcase(p).startswith(h) for h in homes)]
 
-    assert not reached, (reached, homes)
+def test_record(in_session, in_module):
+    assert [s["child"][NAMES[0]] for s in (in_session, in_module)] == [None, None]
+
+
+def test_claude_dirs(in_session, in_module):
+    assert [s["child"][n] for s in (in_session, in_module) for n in NAMES[1:]] == [None] * 4
+
+
+def test_config_path(in_session, in_module):
+    reached = [p for s in (in_session, in_module) for p in s["config"] if _under_real_home(p)]
+    assert reached == []
+'''
+
+
+@pytest.mark.parametrize("case", ["test_record", "test_claude_dirs", "test_config_path"],
+                         ids=["real-home-record", "claude-dirs", "global-config-path"])
+def test_session_and_module_fixtures_are_handed_no_real_home(tmp_path, case):
+    """Round 4 FIXes: these were checked from inside a test, after the
+    per-test fixture had already cleaned up, so a session or module fixture
+    could leak and they still passed. Here an inner run whose real home is a
+    planted one, with CLAUDE_CONFIG_DIR and CLAUDE_PROJECT_DIR set into it,
+    has a session and a module fixture each spawn a child and read
+    `GLOBAL_CONFIG_PATH`; the planted home is HOME, so this holds on Windows,
+    where `real_homes` has no password database to fall back on."""
+    home = _operator_home(tmp_path)
+    probe = _probe(tmp_path, "test_fixture_leak_probe.py", _FIXTURE_LEAK_PROBE)
+
+    done = _pytest(tmp_path, ["-p", "conftest", f"{probe}::{case}"], _conftest_env(
+        home, PROBE_REAL_HOME=str(home), PROBE_REAL_HOME_VAR=crew_fixtures.REAL_HOME_VAR,
+        CLAUDE_CONFIG_DIR=str(home / ".claude"), CLAUDE_PROJECT_DIR=str(home / "project")))
+
+    assert (done.returncode, f"PASSED test_fixture_leak_probe.py::{case}" in done.stdout) == \
+        (0, True), done.stdout + done.stderr
+
 
 # --- the audit: end to end ----------------------------------------------------
 
@@ -339,6 +434,65 @@ def test_the_audit_fails_a_test_that_reaches_the_real_home(tmp_path):
             "ERROR test_audit_probe.py::test_uses_a_module_fixture_that_reads_the_real_home" in out,
             "PASSED test_audit_probe.py::test_stays_in_its_own_home" in out) == \
         (1, True, True, True, True, True), out + done.stderr
+
+
+_RACE_PROBE = '''
+import os, sys
+
+import pytest
+
+REAL = os.environ["PROBE_REAL_HOME"]
+SECRET = os.path.join(REAL, ".claude", "crew", "config.json")
+SWAP = {}
+
+
+def _swap_after_the_check(event, args):
+    """Installed after crew's audit hook, so it runs after the check and
+    before the open: the link is retargeted into the real home in between."""
+    if event == "open" and SWAP and os.fspath(args[0]) == SWAP["link"]:
+        link = SWAP.pop("link")
+        os.remove(link)
+        os.symlink(SECRET, link)
+
+
+sys.addaudithook(_swap_after_the_check)
+
+
+@pytest.mark.parametrize("how", ["open", "os.open"])
+def test_reads_through_a_swapped_link(tmp_path, how):
+    safe = tmp_path / "safe.json"
+    safe.write_text("{}", encoding="utf-8")
+    link = tmp_path / "link.json"
+    link.symlink_to(safe)
+    SWAP["link"] = str(link)
+    try:
+        if how == "open":
+            open(str(link), encoding="utf-8").close()
+        else:
+            os.close(os.open(str(link), os.O_RDONLY))
+    except Exception:  # swallowed on purpose: the teardown must still fail it
+        pass
+'''
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
+                    reason="symlinks need privileges on Windows - the swap case was NOT run")
+def test_a_link_swapped_into_the_home_after_the_check_is_caught(tmp_path):
+    """Round 4 FIX: the audit hook checks the path before the open, so a link
+    retargeted between that check and the open reached the real home. The
+    probe's own audit hook swaps it in exactly that window."""
+    home = _operator_home(tmp_path)
+    probe = _probe(tmp_path, "test_race_probe.py", _RACE_PROBE)
+
+    done = _pytest(tmp_path, ["-p", "conftest", str(probe)],
+                   _conftest_env(home, PROBE_REAL_HOME=str(home)))
+
+    out = done.stdout
+    assert (done.returncode,
+            "ERROR test_race_probe.py::test_reads_through_a_swapped_link[open]" in out,
+            "ERROR test_race_probe.py::test_reads_through_a_swapped_link[os.open]" in out,
+            os.path.join(str(home), ".claude", "crew", "config.json") in out) == \
+        (1, True, True, True), out + done.stderr
 
 
 # --- the quarantine rule ------------------------------------------------------
@@ -414,13 +568,23 @@ def test_an_ownerless_quarantine_fails_collection(tmp_path, marker, complaint):
         (4, True, True), done.stdout + done.stderr
 
 
-def test_a_run_time_flaky_skip_fails_the_test(tmp_path):
+@pytest.mark.parametrize("call", ["skip", "xfail"])
+def test_a_run_time_flaky_skip_fails_the_test(tmp_path, call):
     probe = _probe(tmp_path, "test_rt.py",
-                   'import pytest\n\n\ndef test_x():\n    pytest.skip("flaky under load")\n')
+                   f'import pytest\n\n\ndef test_x():\n    pytest.{call}("flaky under load")\n')
 
     done = _pytest(tmp_path, ["-p", "conftest", str(probe)], _conftest_env(tmp_path / "h"))
 
     assert (done.returncode, "crew quarantine rule" in done.stdout) == (1, True), done.stdout
+
+
+def test_a_run_time_xfail_for_another_reason_is_not_a_quarantine(tmp_path):
+    probe = _probe(tmp_path, "test_rt_ok.py",
+                   'import pytest\n\n\ndef test_x():\n    pytest.xfail("known bug, L-0001")\n')
+
+    done = _pytest(tmp_path, ["-p", "conftest", str(probe)], _conftest_env(tmp_path / "h"))
+
+    assert (done.returncode, "1 xfailed" in done.stdout) == (0, True), done.stdout + done.stderr
 
 
 def test_a_skip_for_another_reason_is_not_a_quarantine(tmp_path):
