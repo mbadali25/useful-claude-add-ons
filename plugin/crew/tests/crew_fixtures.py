@@ -1362,6 +1362,14 @@ def install_home_audit():
         io.open = wrapped
         builtins.open = wrapped
         os.open = _wrap_os_open(os.open)
+        # Code under test asks `os.open in os.supports_dir_fd` before passing
+        # dir_fd (crew_tracker's handle pin, review_metrics' open): the
+        # wrapper passes every argument through, so it is listed wherever the
+        # original was, or that code falls back to a path-based open.
+        for listed in (os.supports_dir_fd, os.supports_fd, os.supports_follow_symlinks,
+                       os.supports_effective_ids):
+            if _OPEN_ORIGINALS["os"] in listed:
+                listed.add(os.open)
         _HOME_AUDIT_INSTALLED = True
 
 

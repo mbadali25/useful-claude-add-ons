@@ -301,6 +301,17 @@ def test_a_file_opened_under_the_home_is_a_violation_whatever_path_was_checked(t
     assert reason is not None
 
 
+def test_the_wrapped_os_open_keeps_its_dir_fd_support():
+    """Code under test asks `os.open in os.supports_dir_fd` before passing
+    dir_fd; the post-open wrapper must not turn that answer into a no and
+    send it down a path-based fallback (48 crew_tracker/review_metrics cases
+    went red that way)."""
+    original = crew_fixtures._OPEN_ORIGINALS["os"]  # pylint: disable=protected-access
+
+    assert (os.open is not original, (os.open in os.supports_dir_fd)
+            == (original in os.supports_dir_fd)) == (True, True)
+
+
 # --- the session and module fixtures: what they are handed --------------------
 
 _FIXTURE_LEAK_PROBE = '''
