@@ -254,6 +254,37 @@ def test_the_github_sha_rule_comes_from_the_deployed_map(flavour, repo):
     assert "carries no `-f sha=<sha>`" in err, err
 
 
+def _replace_map(repo, doc):
+    """A `refs/replace/` entry swapping the worktree HEAD's map blob for
+    `doc`: nothing committed, sha, tree and `git status` unchanged."""
+    old = _git(repo.wt, "rev-parse", "HEAD:.crew/verify.json")
+    new = subprocess.run((_GIT, "hash-object", "-w", "--stdin"), cwd=repo.wt, check=True,
+                         capture_output=True, text=True,
+                         input=json.dumps(doc, indent=2) + "\n").stdout.strip()
+    _git(repo.wt, "replace", old, new)
+    assert _git(repo.wt, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_replace_ref_cannot_waive_review(flavour, repo):
+    """MUST BLOCK (L-0768 security review): the map is read with
+    --no-replace-objects, so a replace ref cannot swap in a waiver."""
+    _replace_map(repo, _map(dev=_WAIVER))
+    code, err = run_gate(flavour, repo, "deploy-dev", repo.wt)
+    assert code == 2, err
+    assert "requires an accepted review" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_replace_ref_cannot_drop_requires(flavour, repo):
+    """MUST BLOCK: the same for the VERDICT step's requirements."""
+    repo.commit(repo.wt, _map(dev=_WAIVER, qa=_WAIVER))
+    _replace_map(repo, _map(dev=_WAIVER, qa=_WAIVER, requires=False))
+    code, err = run_gate(flavour, repo, "deploy-qa", repo.wt)
+    assert code == 2, err
+    assert "'development' has no all-pass row" in err, err
+
+
 # --- a sha carrying no map: the project dir's map, as before ---------------
 
 def _drop_map_on_branch(repo):

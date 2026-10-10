@@ -723,7 +723,9 @@ FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 # below. A dirty map in an unrelated project dir is matched (above, working
 # and committed) but never read as policy, so it no longer blocks.
 # A listing that FAILS is could-not-tell, never "the sha has no map".
-TREE_MAP=$(git -C "$TREE" ls-tree --full-tree "$FULL" -- .crew/verify.json 2>/dev/null) \
+# --no-replace-objects on every read of the sha's map: a refs/replace/ entry
+# would swap its bytes with nothing committed (L-0768 security review).
+TREE_MAP=$(git --no-replace-objects -C "$TREE" ls-tree --full-tree "$FULL" -- .crew/verify.json 2>/dev/null) \
   || block "could not list .crew/verify.json in the deployed sha $FULL of '$TREE', so the gate cannot tell which deployment map is policy. This is not a pass."
 if [ -n "$MAP_DIRTY" ] && [ "$TREE" = "$PROJECT_TOP" ]; then
   block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
@@ -816,14 +818,16 @@ def no_case_twins(pairs):
 
 # L-0768: the map committed in the deployed sha - its blob, listed by the
 # shell above - or, when the sha carries none, the project dir's map, which
-# the guard above has held to the project dir's HEAD. _promote_review.py's
+# the guard above found clean (a check, then this read: two moments, as
+# before L-0768; _promote_review.py's fallback hashes the bytes it reads). _promote_review.py's
 # policy_map_text reads the same map for requireReview. Could-not-tell prints
 # its reason and exits 5; the shell blocks on any non-zero status and shows
 # what was printed.
 source = "sha" if blob else "project"
 try:
     if blob:
-        shown = subprocess.run([shutil.which("git") or "git", "-C", tree, "cat-file", "blob", blob],
+        shown = subprocess.run([shutil.which("git") or "git", "--no-replace-objects", "-C", tree,
+                                "cat-file", "blob", blob],
                                capture_output=True, check=False,
                                timeout=max(deadline - time.time(), 0.5),
                                stdin=subprocess.DEVNULL)

@@ -22,7 +22,10 @@ ignored) is the project dir's map the policy, read as before: the working
 file held to the project dir's HEAD (`project_map_text`). That fallback is
 why this still runs with the project dir as cwd: a worktree's untracked or
 ignored copy is never read. A listing that fails is could-not-tell, never
-"no map". promote-gate.sh's VERDICT step imports `policy_map_text`, and
+"no map". Every read of the sha's map passes `--no-replace-objects`: a
+`refs/replace/` entry would otherwise swap the map's bytes (or the commit's
+tree) with nothing committed and the sha and tree hashes unchanged.
+promote-gate.sh's VERDICT step imports `policy_map_text`, and
 promote-gate.ps1 makes the same two git calls (`ls-tree --full-tree`, then
 `cat-file blob`), so requires / rollback / requireHuman come from the same
 map as requireReview. stdout carries only the unmet preconditions, joined by U+001E
@@ -385,8 +388,8 @@ def _sha_map_blob(tree, sha, deadline):
     when that commit carries no map. Could-not-tell raises."""
     try:
         found = subprocess.run(
-            [crew_common.require_tool("git"), "-C", tree, "ls-tree", "--full-tree", sha, "--",
-             ".crew/verify.json"],
+            [crew_common.require_tool("git"), "--no-replace-objects", "-C", tree, "ls-tree",
+             "--full-tree", sha, "--", ".crew/verify.json"],
             capture_output=True, check=False, timeout=_left(deadline), stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be listed: {exc}") \
@@ -411,8 +414,8 @@ def policy_map_text(tree, sha, deadline):
         return project_map_text(deadline), "project"
     try:
         # Bounded by what is left of the gate's deadline, like every probe.
-        shown = subprocess.run([crew_common.require_tool("git"), "-C", tree, "cat-file", "blob",
-                                blob], capture_output=True, check=False,
+        shown = subprocess.run([crew_common.require_tool("git"), "--no-replace-objects", "-C",
+                                tree, "cat-file", "blob", blob], capture_output=True, check=False,
                                stdin=subprocess.DEVNULL, timeout=_left(deadline))
     except (OSError, subprocess.SubprocessError) as exc:
         raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read: {exc}") \

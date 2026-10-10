@@ -439,6 +439,18 @@ PROMOTE_TREE_MUTATIONS = (
      ' --envs $envName --tree $tree --deadline "$gateDeadlineEpoch" -)',
      ' --envs $envName -)',
      _P + "test_the_github_sha_rule_comes_from_the_deployed_map[ps1]"),
+    ("_promote_review.py follows a replace ref when it reads the deployed map", REVIEW,
+     '"--no-replace-objects", "-C",\n                                tree, "cat-file"',
+     '"-C",\n                                tree, "cat-file"',
+     _P + "test_a_replace_ref_cannot_waive_review[sh]"),
+    ("promote-gate.sh's VERDICT follows a replace ref when it reads the deployed map", SH,
+     '"--no-replace-objects", "-C", tree,\n                                "cat-file", "blob", blob]',
+     '"-C", tree,\n                                "cat-file", "blob", blob]',
+     _P + "test_a_replace_ref_cannot_drop_requires[sh]"),
+    ("promote-gate.ps1 follows a replace ref when it reads the deployed map", PS1,
+     '$policyBlob = @(git --no-replace-objects -C $tree cat-file blob',
+     '$policyBlob = @(git -C $tree cat-file blob',
+     _P + "test_a_replace_ref_cannot_drop_requires[ps1]"),
     ("promote-gate.ps1 reads requires from the project dir's map again", PS1,
      '  $cfg = $policy.environments.$e\n',
      '  $cfg = $vm.environments.$e\n',
@@ -460,9 +472,9 @@ PROMOTE_TREE_MUTATIONS = (
      "  if ($false -and -not (",
      _P + "test_an_environment_the_deployed_map_does_not_declare_blocks[ps1]"),
     ("promote-gate.ps1 reads a failed listing of the deployed map as no map", PS1,
-     "$treeMap = @(git -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
+     "$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
      "if ($LASTEXITCODE -ne 0) {\n",
-     "$treeMap = @(git -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
+     "$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
      "if ($false) {\n",
      _P + "test_a_failed_listing_of_the_deployed_map_blocks[ps1]"),
 )

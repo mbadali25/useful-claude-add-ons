@@ -27,7 +27,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   is a deploy is still matched against the project dir's map; PROMOTIONS.md, approval markers and
   the in-flight marker stay in the project dir. The uncommitted-map guard now judges the map that is
   policy: the deploying tree's own copy (its clean-tree check), or the project dir's when the deploy
-  runs there or falls back to it.
+  runs there or falls back to it. Every read of the sha's map passes `--no-replace-objects`, so a
+  `refs/replace/` entry cannot swap in a weaker map with nothing committed.
 - **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze.
 - **Tests.** `test_promote_gate_tree_policy.py` (must-block and must-allow, sh and ps1, ps1 cases
   `wallclock`), new sabotage entries in `promote_tree_mutations.py` for each new branch; cases that asserted the old

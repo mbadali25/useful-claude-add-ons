@@ -915,8 +915,9 @@ if (-not $sha) { Stop-Promotion "'$tree' has no commit at HEAD - cannot establis
 # requires, rollback, requireHuman (here) and requireReview (_promote_review.py,
 # which reads the same blob); the project dir's map only when the sha carries
 # none. The uncommitted-map guard judges the map that is policy. A listing that
-# FAILS is could-not-tell, never "the sha has no map".
-$treeMap = @(git -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)
+# FAILS is could-not-tell, never "the sha has no map". --no-replace-objects: a
+# refs/replace/ entry would swap the map's bytes with nothing committed.
+$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)
 if ($LASTEXITCODE -ne 0) {
   Stop-Promotion "could not list .crew/verify.json in the deployed sha $full of '$tree', so the gate cannot tell which deployment map is policy. This is not a pass."
 }
@@ -934,9 +935,18 @@ if ($treeMap.Count -gt 0) {
   if ($treeMap.Count -ne 1 -or $entry.Count -lt 4 -or $entry[1] -cne 'blob' -or $entry[2] -cnotmatch '^[0-9a-f]{40}$') {
     Stop-Promotion ".crew/verify.json in the deployed sha $full is not a file, so it cannot be read as the deployment map. This is not a pass."
   }
-  $policyBlob = @(git -C $tree cat-file blob $entry[2] 2>$null)
-  if ($LASTEXITCODE -ne 0) {
-    Stop-Promotion "the deployed sha's committed .crew/verify.json could not be read (git cat-file exited $LASTEXITCODE). This is not a pass."
+  # UTF-8, as the python readers decode it: the console's OEM code page would
+  # turn a non-ASCII value (a runbook path) into another string here.
+  $prevConsoleEncoding = [Console]::OutputEncoding
+  try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $policyBlob = @(git --no-replace-objects -C $tree cat-file blob $entry[2] 2>$null)
+    $policyExit = $LASTEXITCODE
+  } finally {
+    [Console]::OutputEncoding = $prevConsoleEncoding
+  }
+  if ($policyExit -ne 0) {
+    Stop-Promotion "the deployed sha's committed .crew/verify.json could not be read (git cat-file exited $policyExit). This is not a pass."
   }
   $policyText = ($policyBlob -join "`n").TrimStart([char]0xFEFF)
   $policy = $null

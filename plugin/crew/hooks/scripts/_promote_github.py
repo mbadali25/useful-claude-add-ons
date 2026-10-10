@@ -236,7 +236,10 @@ def _policy_doc(tree, full, deadline):
         with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
             return json.load(fh)
     import _promote_review  # pylint: disable=import-outside-toplevel
-    text, _ = _promote_review.policy_map_text(tree, full.lower(), deadline)
+    try:
+        text, _ = _promote_review.policy_map_text(tree, full.lower(), deadline)
+    except _promote_review.CouldNotTell as exc:
+        raise ValueError(str(exc)) from exc
     return json.loads(text)
 
 
@@ -274,6 +277,12 @@ def main(argv):
     except Malformed as why:
         print(why, file=sys.stderr)
         return 4
+    except ValueError as why:
+        # Could not tell: a policy map that does not parse (L-0768). Non-zero,
+        # so both gates block; never read as "no github entry".
+        print(f"_promote_github.py: the deployment map that is policy for this sha does not "
+              f"parse: {why}", file=sys.stderr)
+        return 3
     if records:
         print("\n".join(records))
     return 0
