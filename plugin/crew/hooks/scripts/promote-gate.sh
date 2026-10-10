@@ -30,9 +30,18 @@
 # dirt, named a sha that was not being deployed, and let a clean main checkout
 # wave a dirty or wrong-sha worktree through.
 #
-# Policy and state stay in the project dir, deliberately: .crew/verify.json,
-# .work/PROMOTIONS.md, .crew/.approved-<env>-<sha>, the rollback runbook, the
-# incident files and .crew/.deploy-in-flight. `.work/` and `.crew/*` are
+# POLICY is the map committed in the sha being deployed (L-0768): requires,
+# rollback, requireHuman and requireReview come from `git -C <tree> ls-tree
+# <sha> -- .crew/verify.json`'s blob, which is what a checkout of that sha
+# reads, so a worktree can do nothing a checkout of the same sha could not.
+# Only a sha carrying no map falls back to the project dir's map. WHICH
+# command deploys, and to which environment, is still matched against the
+# project dir's map (working and committed): that runs before the tree is
+# known, and matching more only blocks more.
+#
+# State stays in the project dir, deliberately: .work/PROMOTIONS.md,
+# .crew/.approved-<env>-<sha>, the rollback runbook file, the incident files
+# and .crew/.deploy-in-flight. `.work/` and `.crew/*` are
 # per-checkout, gitignored state: a fresh worktree has none of it (reading it
 # there would refuse every worktree deploy for a missing PASS row) and a
 # throwaway worktree can hold a forged copy (reading it there would launder a
@@ -592,10 +601,6 @@ $ENVNAMES
 ENVS
 ENVNAME=$(IFS=,; printf '%s' "${ENVLIST[*]}")
 
-if [ -n "$MAP_DIRTY" ]; then
-  block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
-fi
-
 PROJECT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -z "$PROJECT_TOP" ] && block "not a git repository - cannot establish what is being deployed."
 
@@ -706,13 +711,46 @@ SHA=$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)
 FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 [ -z "$SHA" ] && block "'$TREE' has no commit at HEAD - cannot establish what is being deployed."
 
+# L-0768: WHICH MAP IS POLICY. The map committed in the sha being deployed
+# (read by the VERDICT step below, and by _promote_review.py's
+# policy_map_text for requireReview): exactly what a deploy from a checkout of that sha reads, so
+# a waiver committed on the deployed branch is seen and the main checkout's
+# map no longer decides a worktree deploy. The project dir's map is policy
+# only when the sha carries no map at all. So the uncommitted-map guard judges
+# the map that is policy: the project dir's when the deploy runs from the
+# project dir (its own working copy) or when it is the fallback. A linked
+# worktree's own dirt, its map included, is refused by the clean-tree check
+# below. A dirty map in an unrelated project dir is matched (above, working
+# and committed) but never read as policy, so it no longer blocks.
+# A listing that FAILS is could-not-tell, never "the sha has no map".
+TREE_MAP=$(git -C "$TREE" ls-tree --full-tree "$FULL" -- .crew/verify.json 2>/dev/null) \
+  || block "could not list .crew/verify.json in the deployed sha $FULL of '$TREE', so the gate cannot tell which deployment map is policy. This is not a pass."
+if [ -n "$MAP_DIRTY" ] && [ "$TREE" = "$PROJECT_TOP" ]; then
+  block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
+fi
+POLICY_BLOB=""
+if [ -n "$TREE_MAP" ]; then
+  read -r TM_MODE TM_TYPE TM_OID TM_REST <<TREEMAP
+$TREE_MAP
+TREEMAP
+  case "$TM_OID" in
+    *[!0-9a-f]*|"") TM_TYPE=bad ;;
+  esac
+  [ "$TM_TYPE" = blob ] && [ "${#TM_OID}" -eq 40 ] && [ -n "$TM_REST" ] \
+    || block ".crew/verify.json in the deployed sha $FULL is not a file, so it cannot be read as the deployment map. This is not a pass."
+  POLICY_BLOB=$TM_OID
+fi
+if [ -n "$MAP_DIRTY" ] && [ -z "$TREE_MAP" ]; then
+  block "the deployed sha $FULL carries no committed .crew/verify.json, so the project dir's map is policy, and .crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. Commit the change (it is then reviewed like any other) or revert it."
+fi
+
 # L-0648: a matched environment's `github` entry with a `shaInput` - the
 # command must give that input exactly once, as 40 lowercase hex, equal to
 # the full HEAD of the tree judged here. `_promote_github.py` decides it for
 # both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
 GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
   "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
-  --envs "$ENVNAME" -) \
+  --envs "$ENVNAME" --tree "$TREE" --deadline "$GATE_DEADLINE" -) \
   || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
 GH_RULE=$(crew_strip_cr "$GH_RULE")
 while IFS=$'\t' read -r kind tok; do
@@ -753,9 +791,11 @@ for H in ${HEXES[@]+"${HEXES[@]}"}; do
 done
 
 # 1-3, read from the map
-VERDICT=$("$PY" - "$SHA" "$FULL" "${ENVLIST[@]}" <<'PY' 2>/dev/null
-import json, sys, os, re, datetime
-sha, full, envs = sys.argv[1], sys.argv[2].lower(), sys.argv[3:]
+VERDICT=$("$PY" - "$TREE" "$POLICY_BLOB" "$GATE_DEADLINE" "$SHA" "$FULL" "${ENVLIST[@]}" \
+  <<'PY' 2>/dev/null
+import json, sys, os, re, datetime, shutil, subprocess, time
+tree, blob, deadline = sys.argv[1], sys.argv[2], float(sys.argv[3])
+sha, full, envs = sys.argv[4], sys.argv[5].lower(), sys.argv[6:]
 
 
 # Keys read ignoring case, case twins refused: the matcher's rule above (and
@@ -774,8 +814,35 @@ def no_case_twins(pairs):
     return {fold(k): v for k, v in pairs}
 
 
-with open(".crew/verify.json", encoding="utf-8-sig") as fh:
-    doc = json.load(fh, object_pairs_hook=no_case_twins)
+# L-0768: the map committed in the deployed sha - its blob, listed by the
+# shell above - or, when the sha carries none, the project dir's map, which
+# the guard above has held to the project dir's HEAD. _promote_review.py's
+# policy_map_text reads the same map for requireReview. Could-not-tell prints
+# its reason and exits 5; the shell blocks on any non-zero status and shows
+# what was printed.
+source = "sha" if blob else "project"
+try:
+    if blob:
+        shown = subprocess.run([shutil.which("git") or "git", "-C", tree, "cat-file", "blob", blob],
+                               capture_output=True, check=False,
+                               timeout=max(deadline - time.time(), 0.5),
+                               stdin=subprocess.DEVNULL)
+        if shown.returncode != 0:
+            raise OSError(f"git cat-file exited {shown.returncode}")
+        text = shown.stdout.decode("utf-8-sig", errors="replace")
+    else:
+        with open(".crew/verify.json", encoding="utf-8-sig") as fh:
+            text = fh.read()
+except (OSError, subprocess.SubprocessError) as exc:
+    print(f"the deployment map that is policy for this sha could not be read: {exc}")
+    sys.exit(5)
+try:
+    doc = json.loads(text, object_pairs_hook=no_case_twins)
+except ValueError as exc:
+    where = "the deployed sha's committed .crew/verify.json" if source == "sha" \
+        else ".crew/verify.json"
+    print(f"{where} does not parse as a deployment map: {exc}")
+    sys.exit(5)
 out = []
 
 rows = ""
@@ -825,7 +892,18 @@ def passed(name, full):
 # terms (its upstreams, its runbook, its approval marker). With several, each
 # reason names the environment it comes from.
 for env in envs:
-    cfg = doc.get("ENVIRONMENTS", {}).get(fold(env), {})
+    declared = doc.get("ENVIRONMENTS", {})
+    if source == "sha" and fold(env) not in declared:
+        # Matched by the project dir's map, absent from the map that is
+        # policy: its requirements cannot be told, so they are not "none".
+        out.append(f"'{env}' is a deploy by the project dir's .crew/verify.json, but the map "
+                   f"committed in the deployed sha {full} does not declare it, so its "
+                   "requirements cannot be told. Deploy a sha whose committed map declares "
+                   f"'{env}'.")
+        if len(envs) > 1:
+            out[-1] = f"[{env}] {out[-1]}"
+        continue
+    cfg = declared.get(fold(env), {})
     before = len(out)
     for upstream in cfg.get("REQUIRES", []):
         verdict = passed(upstream, full)
@@ -910,6 +988,7 @@ VERDICT_STATUS=$?
 if [ "$VERDICT_STATUS" -ne 0 ]; then
   echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
   echo "  - the pre-deploy check could not be evaluated (exit $VERDICT_STATUS)." >&2
+  [ -n "$VERDICT" ] && printf '    %s\n' "$VERDICT" >&2
   echo "    This is not a pass. Something in .crew/verify.json or a rollback" >&2
   echo "    runbook could not be read - a malformed 'last verified' date does" >&2
   echo "    exactly this. Fix the input and re-run; the traceback is above." >&2

@@ -617,7 +617,14 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
   under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
 - **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
-  an uncommitted map is not policy.
+  an uncommitted map is not policy. Since crew L-0768 this fires only when the project dir's map is
+  the policy: the deploy runs from the project dir, or the deployed sha carries no map ("carries no
+  committed .crew/verify.json"). A worktree deploy reads the map committed in its own sha.
+- **"the map committed in the deployed sha ... does not declare it"** (L-0768): the project dir's
+  map matched the command to an environment the deployed sha's own map lacks. Deploy a sha whose
+  committed map declares it.
+- **A waiver on the release branch is ignored** (crew before L-0768): older gates read the main
+  checkout's map for a worktree deploy. Update crew; the waiver must be committed in the sha deployed.
 - **"records the short sha X"** (L-0703): a `requires` row counts only with the full 40-character
   sha. Re-run the upstream promotion, or rewrite the row with `git rev-parse HEAD` of the tree that
   passed, after checking it is that commit.

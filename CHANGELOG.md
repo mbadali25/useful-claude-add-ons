@@ -9,6 +9,30 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.22: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
+
+- **Summary.** `crew` 1.2.22 reads every promote-gate requirement (`requires`, `rollback`,
+  `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json`
+  committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on
+  its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **Why.** Reported by the TSS-win session (crew 1.2.17, deploying from a worktree on Windows): both
+  flavours `cd` to the project dir and read its map, the review helper ran there and ignored its tree
+  argument, and the uncommitted-map guard judged the project dir. A waiver committed on the release
+  branch was never seen; `_promote_review.py` run by hand in the worktree exited 0 while the hook's
+  call blocked.
+- **The rule.** `git -C <tree> ls-tree <sha> -- .crew/verify.json`'s blob is the policy: what a
+  checkout of that sha reads, so a worktree can do nothing a checkout of the same sha could not. A
+  matched environment that map does not declare, a map there that cannot be listed or parsed, block.
+  A sha carrying no map falls back to the project dir's map, which must then be clean. Which command
+  is a deploy is still matched against the project dir's map; PROMOTIONS.md, approval markers and
+  the in-flight marker stay in the project dir. The uncommitted-map guard now judges the map that is
+  policy: the deploying tree's own copy (its clean-tree check), or the project dir's when the deploy
+  runs there or falls back to it.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze.
+- **Tests.** `test_promote_gate_tree_policy.py` (must-block and must-allow, sh and ps1, ps1 cases
+  `wallclock`), new sabotage entries in `promote_tree_mutations.py` for each new branch; cases that asserted the old
+  project-dir guard from a worktree are retargeted to the requirement that now applies.
+
 ### Fixed — crew 1.2.19: the promote-gate review tests' PowerShell cases run serially (L-0759)
 
 - **Summary.** `crew` 1.2.19 runs every default-set PowerShell case in

@@ -6,8 +6,14 @@ Both promote-gate flavours run this, after the environment match and once the
 tree the deploy runs from is known, so the two cannot drift apart:
 
     python3 _promote_github.py --shell <bash|powershell> --full <sha40> \
-        --envs <name>[,<name>...] -          (the command on stdin; cwd: the
+        --envs <name>[,<name>...] [--tree <dir> --deadline <unix time>] -
+                                             (the command on stdin; cwd: the
                                               project dir)
+
+With `--tree` the `github` entries are read from the map that is policy for
+the deployed sha (L-0768: the one committed in it, else the project dir's),
+the map every other requirement comes from; a map that cannot be read is a
+crash, which both gates block on.
 
 For every matched environment that declares `github` entries, each entry
 whose canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`,
@@ -221,9 +227,21 @@ def _scope_problem(scope, name, flag, full):
     return None
 
 
-def decide(command, shell, full, names):
-    with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
-        doc = json.load(fh)
+def _policy_doc(tree, full, deadline):
+    """The map that is policy for deploying `full` from `tree` (L-0768): the
+    one committed in that sha, else the project dir's - `_promote_review`'s
+    reading, so the github rule and every other requirement come from the same
+    map. Without `--tree` (a direct call), the project dir's working map."""
+    if tree is None:
+        with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
+            return json.load(fh)
+    import _promote_review  # pylint: disable=import-outside-toplevel
+    text, _ = _promote_review.policy_map_text(tree, full.lower(), deadline)
+    return json.loads(text)
+
+
+def decide(command, shell, full, names, tree=None, deadline=None):
+    doc = _policy_doc(tree, full, deadline)
     envs = get_ci(doc, "environments", {}) if isinstance(doc, dict) else {}
     picked, where, out = [], [], []
     for env in names:
@@ -251,7 +269,8 @@ def main(argv):
     command = sys.stdin.read().replace("\r", "").rstrip("\n")
     names = [n for n in args.get("--envs", "").split(",") if n]
     try:
-        records = decide(command, shell, args["--full"], names)
+        records = decide(command, shell, args["--full"], names, args.get("--tree"),
+                         args.get("--deadline"))
     except Malformed as why:
         print(why, file=sys.stderr)
         return 4

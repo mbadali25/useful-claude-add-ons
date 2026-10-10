@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.22**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.2.22 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
 - **crew 1.2.19**: The promote-gate review tests' PowerShell cases run serially. `crew` 1.2.19 runs every default-set PowerShell case in `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16` step no longer fails them on time. The gate is unchanged.
-- **crew 1.2.17**: The config data-flow diagram and the code graph re-anchored after L-0733. `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code graph with `graphify update .`. No behaviour changed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

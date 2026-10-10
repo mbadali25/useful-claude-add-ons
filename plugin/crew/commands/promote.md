@@ -43,6 +43,11 @@ with the error text verbatim.
   any `git -C <dir>` - not the session's main checkout. To deploy from a clean
   worktree while the main checkout is dirty, run the declared command there
   (`cd <worktree> && <deploy>`, or with the session already in the worktree).
+- The policy - `requires`, `rollback`, `requireHuman`, a `github` entry's
+  `shaInput` and `requireReview` - is the `.crew/verify.json` **committed in
+  the sha you are deploying** (L-0768): a waiver committed on the branch you
+  deploy from a worktree is honoured, and the main checkout's map does not
+  decide it. Only a sha that carries no map falls back to the project dir's.
 - `rollback` must be set: either a runbook that exists with a `last verified`
   date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An
   absent key is a stop, not a pass - the fix is to add one of the two, in
@@ -338,13 +343,23 @@ process runs. A command that changes directory after it starts (a later `cd`,
 `bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
 or puts `git` in a form the gate cannot read with certainty (an unlisted global
 option, quoted text) is refused rather than guessed at. Skip-worktree and
-assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
-markers and `.crew/.deploy-in-flight` are read from the session's project
-directory on purpose: they are gitignored per-checkout state, so a fresh
-worktree has none of it and a throwaway one could hold a forged copy. For the
-same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
-a deletion, an untracked map, compared with HEAD's copy rather than with
-`git status` - blocks any command the working or the committed map declares.
+assume-unchanged entries, and a `git status` that fails, are refused too.
+The POLICY is the `.crew/verify.json` committed in the deployed sha (L-0768,
+`git -C <tree> ls-tree <sha>`): exactly what a checkout of that sha reads, so a
+worktree can do nothing a checkout of the same sha could not. A matched
+environment that map does not declare, and a map there that cannot be listed or
+parsed, block. Only a sha carrying no map at all falls back to the project
+dir's map. WHICH command deploys is still matched against the project dir's map
+(working and committed), before the tree is known. `.work/PROMOTIONS.md`, the
+approval markers and `.crew/.deploy-in-flight` are read from the session's
+project directory on purpose: they are gitignored per-checkout state, so a fresh
+worktree has none of it and a throwaway one could hold a forged copy. An
+uncommitted change to `.crew/verify.json` - an edit, a deletion, an untracked
+map, compared with HEAD's copy rather than with `git status` - blocks when that
+map is the policy: in the deploying tree itself (its clean-tree check), or in
+the project dir when the deploy runs there or falls back to it. A dirty map in
+an unrelated main checkout no longer blocks a worktree deploy, because it is
+never read as policy.
 What it cannot see: a deploy script that changes directory itself, and what a
 workflow does with a branch-name ref (`ref=development`).
 
