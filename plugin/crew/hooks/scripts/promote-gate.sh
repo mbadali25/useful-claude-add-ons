@@ -752,7 +752,7 @@ fi
 # both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
 GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
   "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
-  --envs "$ENVNAME" --tree "$TREE" --deadline "$GATE_DEADLINE" -) \
+  --envs "$ENVNAME" --tree "$TREE" ${POLICY_BLOB:+--policy-blob "$POLICY_BLOB"} -) \
   || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
 GH_RULE=$(crew_strip_cr "$GH_RULE")
 while IFS=$'\t' read -r kind tok; do
@@ -833,11 +833,11 @@ try:
                                stdin=subprocess.DEVNULL)
         if shown.returncode != 0:
             raise OSError(f"git cat-file exited {shown.returncode}")
-        text = shown.stdout.decode("utf-8-sig", errors="replace")
+        text = shown.stdout.decode("utf-8-sig")
     else:
         with open(".crew/verify.json", encoding="utf-8-sig") as fh:
             text = fh.read()
-except (OSError, subprocess.SubprocessError) as exc:
+except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as exc:
     print(f"the deployment map that is policy for this sha could not be read: {exc}")
     sys.exit(5)
 try:

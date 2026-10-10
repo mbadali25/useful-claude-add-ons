@@ -958,6 +958,8 @@ if ($treeMap.Count -gt 0) {
   }
   $policySource = 'sha'
 }
+# _promote_github.py reads the same blob; without it, the project dir's map.
+$policyArgs = if ($policySource -ceq 'sha') { @('--tree', $tree, '--policy-blob', $entry[2]) } else { @() }
 
 # L-0648, the twin of promote-gate.sh's: a matched environment's `github`
 # entry with a `shaInput` must get that input exactly once, as 40 lowercase
@@ -982,7 +984,7 @@ if ($ghMatched.Count -gt 0) {
     $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $env:PYTHONIOENCODING = 'utf-8'
     $global:LASTEXITCODE = $null
-    $ghRule = @($cmd | & $ghPy (Join-Path $scriptDir '_promote_github.py') --shell powershell --full "$full" --envs $envName --tree $tree --deadline "$gateDeadlineEpoch" -)
+    $ghRule = @($cmd | & $ghPy (Join-Path $scriptDir '_promote_github.py') --shell powershell --full "$full" --envs $envName @policyArgs -)
     $ghExit = $LASTEXITCODE
   } catch {
     $ghExit = $null

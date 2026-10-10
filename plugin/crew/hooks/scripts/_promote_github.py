@@ -6,14 +6,15 @@ Both promote-gate flavours run this, after the environment match and once the
 tree the deploy runs from is known, so the two cannot drift apart:
 
     python3 _promote_github.py --shell <bash|powershell> --full <sha40> \
-        --envs <name>[,<name>...] [--tree <dir> --deadline <unix time>] -
+        --envs <name>[,<name>...] [--tree <dir> --policy-blob <oid>] -
                                              (the command on stdin; cwd: the
                                               project dir)
 
-With `--tree` the `github` entries are read from the map that is policy for
-the deployed sha (L-0768: the one committed in it, else the project dir's),
-the map every other requirement comes from; a map that cannot be read is a
-crash, which both gates block on.
+With `--tree` and `--policy-blob` the `github` entries are read from the map
+committed in the deployed sha (L-0768), the blob the gate listed and every
+other requirement comes from; without them, from the project dir's map (the
+gate's fallback when the sha carries none). A map that cannot be read or
+parsed exits 3, which both gates block on.
 
 For every matched environment that declares `github` entries, each entry
 whose canonical prefix (`gh workflow run <workflow> --ref <ref> -f k=v ...`,
@@ -43,6 +44,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
 
 import crew_dispatch
@@ -227,24 +230,35 @@ def _scope_problem(scope, name, flag, full):
     return None
 
 
-def _policy_doc(tree, full, deadline):
-    """The map that is policy for deploying `full` from `tree` (L-0768): the
-    one committed in that sha, else the project dir's - `_promote_review`'s
-    reading, so the github rule and every other requirement come from the same
-    map. Without `--tree` (a direct call), the project dir's working map."""
-    if tree is None:
+def _policy_doc(tree, blob):
+    """The map that is policy (L-0768): with `--tree` and `--policy-blob`, the
+    blob of the map committed in the deployed sha, which the gate listed;
+    without them, the project dir's map (the fallback, which the gate found
+    clean, or a direct call). Read here, not through _promote_review, so a
+    missing review helper stays the review check's could-not-tell."""
+    if not blob:
         with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
             return json.load(fh)
-    import _promote_review  # pylint: disable=import-outside-toplevel
+    if not tree or not _HEX40.fullmatch(blob):
+        raise ValueError(f"--policy-blob {blob!r} needs --tree and a 40-hex blob id")
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("git is not on PATH, so the deployed sha's map cannot be read")
     try:
-        text, _ = _promote_review.policy_map_text(tree, full.lower(), deadline)
-    except _promote_review.CouldNotTell as exc:
-        raise ValueError(str(exc)) from exc
-    return json.loads(text)
+        # --no-replace-objects: a refs/replace/ entry must not swap the bytes.
+        shown = subprocess.run([git, "--no-replace-objects", "-C", tree, "cat-file", "blob", blob],
+                               capture_output=True, check=False, timeout=10,
+                               stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(f"the deployed sha's map could not be read: {exc}") from exc
+    if shown.returncode != 0:
+        raise ValueError(f"the deployed sha's map could not be read (git cat-file exited "
+                         f"{shown.returncode})")
+    return json.loads(shown.stdout.decode("utf-8-sig"))
 
 
-def decide(command, shell, full, names, tree=None, deadline=None):
-    doc = _policy_doc(tree, full, deadline)
+def decide(command, shell, full, names, tree=None, blob=None):
+    doc = _policy_doc(tree, blob)
     envs = get_ci(doc, "environments", {}) if isinstance(doc, dict) else {}
     picked, where, out = [], [], []
     for env in names:
@@ -273,7 +287,7 @@ def main(argv):
     names = [n for n in args.get("--envs", "").split(",") if n]
     try:
         records = decide(command, shell, args["--full"], names, args.get("--tree"),
-                         args.get("--deadline"))
+                         args.get("--policy-blob"))
     except Malformed as why:
         print(why, file=sys.stderr)
         return 4

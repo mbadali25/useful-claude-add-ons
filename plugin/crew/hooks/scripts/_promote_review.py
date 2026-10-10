@@ -423,7 +423,10 @@ def policy_map_text(tree, sha, deadline):
     if shown.returncode != 0:
         raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read (git "
                            f"cat-file exited {shown.returncode})")
-    return shown.stdout.decode("utf-8-sig", errors="replace"), "sha"
+    try:
+        return shown.stdout.decode("utf-8-sig"), "sha"
+    except UnicodeDecodeError as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json is not UTF-8: {exc}") from exc
 
 
 def main(argv):
