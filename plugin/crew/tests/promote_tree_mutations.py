@@ -22,6 +22,7 @@ PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
 TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
 DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 REVIEW = os.path.join(_SCRIPTS, "_promote_review.py")
+GITHUB = os.path.join(_SCRIPTS, "_promote_github.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
 _D = "tests/test_promote_gate_dispatch.py::"
 _R = "tests/test_promote_gate_rows.py::test_the_newest_row_decides"
@@ -432,7 +433,8 @@ PROMOTE_TREE_MUTATIONS = (
      '    blob = None\n',
      _P + "test_a_main_checkout_only_waiver_does_not_admit_a_worktree_deploy[sh]"),
     ("promote-gate.sh reads the github sha rule from the project dir's map again", SH,
-     '  --envs "$ENVNAME" --tree "$TREE" ${POLICY_BLOB:+--policy-blob "$POLICY_BLOB"} -) \\\n',
+     '  --envs "$ENVNAME" --tree "$TREE" --deadline "$GATE_DEADLINE" \\\n'
+     '  ${POLICY_BLOB:+--policy-blob "$POLICY_BLOB"} -) \\\n',
      '  --envs "$ENVNAME" -) \\\n',
      _P + "test_the_github_sha_rule_comes_from_the_deployed_map[sh]"),
     ("promote-gate.ps1 reads the github sha rule from the project dir's map again", PS1,
@@ -448,9 +450,23 @@ PROMOTE_TREE_MUTATIONS = (
      '"-C", tree,\n                                "cat-file", "blob", blob]',
      _P + "test_a_replace_ref_cannot_drop_requires[sh]"),
     ("promote-gate.ps1 follows a replace ref when it reads the deployed map", PS1,
-     '$policyBlob = @(git --no-replace-objects -C $tree cat-file blob',
-     '$policyBlob = @(git -C $tree cat-file blob',
+     "  $psi.Arguments = (@('--no-replace-objects') + $GitArgs |",
+     "  $psi.Arguments = ($GitArgs |",
      _P + "test_a_replace_ref_cannot_drop_requires[ps1]"),
+    ("_promote_github.py matches the environment by exact case again", GITHUB,
+     '        cfg = get_ci(envs, env, None) if isinstance(envs, dict) else None\n',
+     '        cfg = envs.get(env) if isinstance(envs, dict) else None\n',
+     _P + "test_the_github_rule_matches_the_environment_ignoring_case[sh]"),
+    ("promote-gate.sh lists the deployed map with no deadline", SH,
+     '  timeout "$left" git --no-replace-objects -C "$TREE" ls-tree',
+     '  git --no-replace-objects -C "$TREE" ls-tree',
+     _P + "test_a_stalled_map_read_blocks_inside_the_hook_timeout[sh-ls-tree --full-tree]"),
+    ("promote-gate.ps1 reads the deployed map with no deadline", PS1,
+     "    if (-not $proc.WaitForExit($waitMs) -or -not $outTask.Wait(2000)) {\n"
+     "      try { $proc.Kill($true) }",
+     "    $proc.WaitForExit()\n    if ($false) {\n"
+     "      try { $proc.Kill($true) }",
+     _P + "test_a_stalled_map_read_blocks_inside_the_hook_timeout[ps1-cat-file blob]"),
     ("promote-gate.ps1 reads requires from the project dir's map again", PS1,
      '  $cfg = $policy.environments.$e\n',
      '  $cfg = $vm.environments.$e\n',
@@ -472,9 +488,7 @@ PROMOTE_TREE_MUTATIONS = (
      "  if ($false -and -not (",
      _P + "test_an_environment_the_deployed_map_does_not_declare_blocks[ps1]"),
     ("promote-gate.ps1 reads a failed listing of the deployed map as no map", PS1,
-     "$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
-     "if ($LASTEXITCODE -ne 0) {\n",
-     "$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)\n"
+     "if ($listed[0] -ne 0) {\n",
      "if ($false) {\n",
      _P + "test_a_failed_listing_of_the_deployed_map_blocks[ps1]"),
 )

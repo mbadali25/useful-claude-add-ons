@@ -917,11 +917,44 @@ if (-not $sha) { Stop-Promotion "'$tree' has no commit at HEAD - cannot establis
 # none. The uncommitted-map guard judges the map that is policy. A listing that
 # FAILS is could-not-tell, never "the sha has no map". --no-replace-objects: a
 # refs/replace/ entry would swap the map's bytes with nothing committed.
-$treeMap = @(git --no-replace-objects -C $tree ls-tree --full-tree $full -- .crew/verify.json 2>$null)
-if ($LASTEXITCODE -ne 0) {
-  Stop-Promotion "could not list .crew/verify.json in the deployed sha $full of '$tree', so the gate cannot tell which deployment map is policy. This is not a pass."
+# Each read is bounded by what is left of the gate's deadline (Codex L-0768
+# r1): a git that stalls would otherwise outlive the hook timeout, which is
+# not a block. stdout is decoded as UTF-8, as the python readers decode it.
+# Returns @(exit code, stdout); exit $null when it did not finish in time.
+function Invoke-PolicyGit([string[]]$GitArgs) {
+  $gitApp = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $gitApp) { return @($null, '') }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $gitApp.Source
+  $psi.Arguments = (@('--no-replace-objects') + $GitArgs | ForEach-Object { '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }) -join ' '
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+  try {
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Close()
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $null = $proc.StandardError.ReadToEndAsync()
+    $waitMs = [int][Math]::Max(500, ($gateDeadlineEpoch - [DateTimeOffset]::Now.ToUnixTimeSeconds()) * 1000)
+    if (-not $proc.WaitForExit($waitMs) -or -not $outTask.Wait(2000)) {
+      try { $proc.Kill($true) } catch { try { $proc.Kill() } catch { $null = $_ } }
+      return @($null, '')
+    }
+    return @($proc.ExitCode, "$($outTask.Result)")
+  } catch {
+    return @($null, '')
+  }
 }
-$treeMap = @($treeMap | Where-Object { "$_".Trim() })
+# --no-replace-objects (added by Invoke-PolicyGit): a refs/replace/ entry would
+# swap the map's bytes with nothing committed.
+$listed = Invoke-PolicyGit @('-C', $tree, 'ls-tree', '--full-tree', $full, '--', '.crew/verify.json')
+if ($listed[0] -ne 0) {
+  Stop-Promotion "could not list .crew/verify.json in the deployed sha $full of '$tree' inside the gate's deadline, so the gate cannot tell which deployment map is policy. This is not a pass."
+}
+$treeMap = @("$($listed[1])".Replace("`r", "").Split("`n") | Where-Object { "$_".Trim() })
 if ($mapDirty -and $tree -eq $projectTop) {
   Stop-Promotion ".crew/verify.json in the project dir ($((Get-Location).ProviderPath)) has uncommitted changes: it $mapDirty. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
 }
@@ -935,20 +968,11 @@ if ($treeMap.Count -gt 0) {
   if ($treeMap.Count -ne 1 -or $entry.Count -lt 4 -or $entry[1] -cne 'blob' -or $entry[2] -cnotmatch '^[0-9a-f]{40}$') {
     Stop-Promotion ".crew/verify.json in the deployed sha $full is not a file, so it cannot be read as the deployment map. This is not a pass."
   }
-  # UTF-8, as the python readers decode it: the console's OEM code page would
-  # turn a non-ASCII value (a runbook path) into another string here.
-  $prevConsoleEncoding = [Console]::OutputEncoding
-  try {
-    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    $policyBlob = @(git --no-replace-objects -C $tree cat-file blob $entry[2] 2>$null)
-    $policyExit = $LASTEXITCODE
-  } finally {
-    [Console]::OutputEncoding = $prevConsoleEncoding
+  $shown = Invoke-PolicyGit @('-C', $tree, 'cat-file', 'blob', $entry[2])
+  if ($shown[0] -ne 0) {
+    Stop-Promotion "the deployed sha's committed .crew/verify.json could not be read inside the gate's deadline (git cat-file exit $($shown[0])). This is not a pass."
   }
-  if ($policyExit -ne 0) {
-    Stop-Promotion "the deployed sha's committed .crew/verify.json could not be read (git cat-file exited $policyExit). This is not a pass."
-  }
-  $policyText = ($policyBlob -join "`n").TrimStart([char]0xFEFF)
+  $policyText = "$($shown[1])".TrimStart([char]0xFEFF)
   $policy = $null
   try { $policy = $policyText | ConvertFrom-Json -ErrorAction Stop } catch { $policy = $null }
   $policyDup = if ($policy) { Find-DuplicateJsonKey $policyText } else { $null }
@@ -959,7 +983,7 @@ if ($treeMap.Count -gt 0) {
   $policySource = 'sha'
 }
 # _promote_github.py reads the same blob; without it, the project dir's map.
-$policyArgs = if ($policySource -ceq 'sha') { @('--tree', $tree, '--policy-blob', $entry[2]) } else { @() }
+$policyArgs = if ($policySource -ceq 'sha') { @('--tree', $tree, '--deadline', "$gateDeadlineEpoch", '--policy-blob', $entry[2]) } else { @() }
 
 # L-0648, the twin of promote-gate.sh's: a matched environment's `github`
 # entry with a `shaInput` must get that input exactly once, as 40 lowercase

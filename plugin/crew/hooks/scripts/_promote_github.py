@@ -6,7 +6,7 @@ Both promote-gate flavours run this, after the environment match and once the
 tree the deploy runs from is known, so the two cannot drift apart:
 
     python3 _promote_github.py --shell <bash|powershell> --full <sha40> \
-        --envs <name>[,<name>...] [--tree <dir> --policy-blob <oid>] -
+        --envs <name>[,<name>...] [--tree <dir> --deadline <t> --policy-blob <oid>] -
                                              (the command on stdin; cwd: the
                                               project dir)
 
@@ -47,6 +47,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import crew_dispatch
 
@@ -230,7 +231,7 @@ def _scope_problem(scope, name, flag, full):
     return None
 
 
-def _policy_doc(tree, blob):
+def _policy_doc(tree, blob, deadline=None):
     """The map that is policy (L-0768): with `--tree` and `--policy-blob`, the
     blob of the map committed in the deployed sha, which the gate listed;
     without them, the project dir's map (the fallback, which the gate found
@@ -247,8 +248,8 @@ def _policy_doc(tree, blob):
     try:
         # --no-replace-objects: a refs/replace/ entry must not swap the bytes.
         shown = subprocess.run([git, "--no-replace-objects", "-C", tree, "cat-file", "blob", blob],
-                               capture_output=True, check=False, timeout=10,
-                               stdin=subprocess.DEVNULL)
+                               capture_output=True, check=False, stdin=subprocess.DEVNULL,
+                               timeout=_seconds_left(deadline))
     except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError(f"the deployed sha's map could not be read: {exc}") from exc
     if shown.returncode != 0:
@@ -257,12 +258,25 @@ def _policy_doc(tree, blob):
     return json.loads(shown.stdout.decode("utf-8-sig"))
 
 
-def decide(command, shell, full, names, tree=None, blob=None):
-    doc = _policy_doc(tree, blob)
+def _seconds_left(deadline):
+    """What is left of the gate's deadline (a Unix time), at least 0.5s; 10s
+    when no deadline was passed (a direct call)."""
+    if deadline is None:
+        return 10
+    try:
+        return max(float(deadline) - time.time(), 0.5)
+    except ValueError as exc:
+        raise ValueError(f"--deadline {deadline!r} is not a number") from exc
+
+
+def decide(command, shell, full, names, tree=None, blob=None, deadline=None):
+    doc = _policy_doc(tree, blob, deadline)
     envs = get_ci(doc, "environments", {}) if isinstance(doc, dict) else {}
     picked, where, out = [], [], []
     for env in names:
-        cfg = envs.get(env) if isinstance(envs, dict) else None
+        # Ignoring case, as the gates read every key (Codex L-0768 r1): the
+        # deployed map may spell the environment the matcher named differently.
+        cfg = get_ci(envs, env, None) if isinstance(envs, dict) else None
         found = entries(cfg, env)
         if not found:
             continue
@@ -287,7 +301,7 @@ def main(argv):
     names = [n for n in args.get("--envs", "").split(",") if n]
     try:
         records = decide(command, shell, args["--full"], names, args.get("--tree"),
-                         args.get("--policy-blob"))
+                         args.get("--policy-blob"), args.get("--deadline"))
     except Malformed as why:
         print(why, file=sys.stderr)
         return 4

@@ -725,8 +725,19 @@ FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 # A listing that FAILS is could-not-tell, never "the sha has no map".
 # --no-replace-objects on every read of the sha's map: a refs/replace/ entry
 # would swap its bytes with nothing committed (L-0768 security review).
-TREE_MAP=$(git --no-replace-objects -C "$TREE" ls-tree --full-tree "$FULL" -- .crew/verify.json 2>/dev/null) \
-  || block "could not list .crew/verify.json in the deployed sha $FULL of '$TREE', so the gate cannot tell which deployment map is policy. This is not a pass."
+# Bounded by what is left of GATE_DEADLINE (Codex L-0768 r1): a stalled git
+# would outlive the hook timeout, which is not a block. `timeout`, not one
+# more python start: on a host where every interpreter start costs seconds,
+# an eighth start spent the review search's share of the deadline. No time
+# left, no `timeout` command, or a timeout all exit non-zero, so each blocks
+# like a failed listing.
+list_policy_map() {
+  local left=$(( GATE_DEADLINE - $(date +%s) ))
+  [ "$left" -ge 1 ] && command -v timeout >/dev/null 2>&1 || return 124
+  timeout "$left" git --no-replace-objects -C "$TREE" ls-tree --full-tree "$FULL" -- .crew/verify.json 2>/dev/null
+}
+TREE_MAP=$(list_policy_map) \
+  || block "could not list .crew/verify.json in the deployed sha $FULL of '$TREE' inside the gate's deadline, so the gate cannot tell which deployment map is policy. This is not a pass."
 if [ -n "$MAP_DIRTY" ] && [ "$TREE" = "$PROJECT_TOP" ]; then
   block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
 fi
@@ -752,7 +763,8 @@ fi
 # both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
 GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
   "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
-  --envs "$ENVNAME" --tree "$TREE" ${POLICY_BLOB:+--policy-blob "$POLICY_BLOB"} -) \
+  --envs "$ENVNAME" --tree "$TREE" --deadline "$GATE_DEADLINE" \
+  ${POLICY_BLOB:+--policy-blob "$POLICY_BLOB"} -) \
   || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
 GH_RULE=$(crew_strip_cr "$GH_RULE")
 while IFS=$'\t' read -r kind tok; do

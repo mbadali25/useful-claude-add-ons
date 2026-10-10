@@ -285,6 +285,46 @@ def test_a_replace_ref_cannot_drop_requires(flavour, repo):
     assert "'development' has no all-pass row" in err, err
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_the_github_rule_matches_the_environment_ignoring_case(flavour, repo):
+    """MUST BLOCK (Codex L-0768 r1): the deployed map spells the environment
+    `Development`; its shaInput still applies to the matched `development`."""
+    repo.commit(repo.main, _gh_map(sha_input=False))
+    doc = _gh_map(sha_input=True)
+    doc["environments"]["Development"] = doc["environments"].pop("development")
+    repo.commit(repo.wt, doc)
+    code, err = run_gate(flavour, repo, _DISPATCH, repo.wt)
+    assert code == 2, err
+    assert "carries no `-f sha=<sha>`" in err, err
+
+
+def _stalling_git(tmp_path, pattern):
+    shim_dir = tmp_path / "gitstall"
+    shim_dir.mkdir()
+    shim = shim_dir / "git"
+    shim.write_text(f'#!/bin/sh\ncase "$*" in *"{pattern}"*) exec sleep 60 ;; esac\n'
+                    f'exec "{_GIT}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return f"{shim_dir}{os.pathsep}{os.environ['PATH']}"
+
+
+@_POSIX_ONLY
+@pytest.mark.wallclock
+@pytest.mark.parametrize("pattern", ["ls-tree --full-tree", "cat-file blob"])
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_stalled_map_read_blocks_inside_the_hook_timeout(flavour, pattern, repo, tmp_path):
+    """MUST BLOCK (Codex L-0768 r1): every read of the deployed map is bounded
+    by the gate's deadline; a hook that outlives its 20s timeout is not a
+    block. `wallclock`: it times the deadline."""
+    repo.commit(repo.wt, _map(dev=_WAIVER))
+    start = time.monotonic()
+    code, err = run_gate(flavour, repo, "deploy-dev", repo.wt,
+                         path=_stalling_git(tmp_path, pattern))
+    took = time.monotonic() - start
+    assert code == 2, err
+    assert took < 20, took
+
+
 # --- a sha carrying no map: the project dir's map, as before ---------------
 
 def _drop_map_on_branch(repo):
