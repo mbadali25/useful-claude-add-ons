@@ -413,12 +413,18 @@ def _lines(result, flavour):
     measured durations normalised and the one line only the .ps1 prints -
     `bash: <path>`, which interpreter ran the rule - left out. Only from the
     .ps1, and only when it names a file that exists (review round 3): any
-    other `bash: ...` line, an error included, is compared."""
+    other `bash: ...` line, an error included, is compared. The repo prefix
+    of a `[record: ...]` path is masked (each flavour runs its own repo)."""
     out = []
     for line in result.stderr.splitlines():
         if flavour == "ps1" and line.startswith("bash: ") and os.path.isfile(line[6:]):
             continue
-        out.append(re.sub(r"(verify-gate: )\d+(\.\d+)?s ", r"\1Ns ", line))
+        line = re.sub(r"(verify-gate: )\d+(\.\d+)?s ", r"\1Ns ", line)
+        # L-0733's `[record: <abs path>]` names each flavour's own fixture repo;
+        # mask that repo prefix only, so a different record FILE still differs.
+        line = re.sub(r"\[record: [^\]]*?([\\/]\.crew[\\/][^\]]+)\]",
+                      lambda m: "[record: <repo>" + m.group(1).replace("\\", "/") + "]", line)
+        out.append(line)
     return out
 
 
