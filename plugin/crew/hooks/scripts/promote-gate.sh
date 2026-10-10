@@ -730,7 +730,7 @@ if [ -n "$MAP_DIRTY" ] && [ "$TREE" = "$PROJECT_TOP" ]; then
 fi
 POLICY_BLOB=""
 if [ -n "$TREE_MAP" ]; then
-  read -r TM_MODE TM_TYPE TM_OID TM_REST <<TREEMAP
+  read -r _ TM_TYPE TM_OID TM_REST <<TREEMAP
 $TREE_MAP
 TREEMAP
   case "$TM_OID" in
