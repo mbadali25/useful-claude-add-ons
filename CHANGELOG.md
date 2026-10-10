@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.18: every crew test runs under a home of its own (L-0709)
+### Changed — crew 1.2.21: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** The crew test suite no longer reads your real `~/.claude/crew/config.json`: every
   test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
