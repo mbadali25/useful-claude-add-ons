@@ -409,7 +409,7 @@ the checks are declared, not remembered.
 | `rollback` | Path to the runbook, or the literal `"none"` plus a `rollbackReason`. Required - an absent key blocks the deploy |
 | `rollbackReason` | Required alongside `rollback: "none"`. Why this environment does not need a rollback plan |
 | `requireHuman` | Stop and get explicit approval before deploying |
-| `requireReview` | Default `true`, and absent means `true`: the deploy needs an accepted review receipt whose reviewed head has the deployed commit's tree (L-0703). `false` opts out only with a `reviewReason`; any other value blocks. `requireHuman` does not waive it |
+| `requireReview` | Default `true`, and absent means `true`: the deploy needs an accepted review receipt whose reviewed head has the deployed commit's tree (L-0703). `false` opts out only with a `reviewReason`; any other value blocks. `requireHuman` does not waive it. Read, like every requirement, from the map committed in the sha being deployed (L-0768) |
 | `reviewReason` | Required alongside `requireReview: false`. A non-empty string: why this environment may take a build nobody reviewed |
 
 **Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`

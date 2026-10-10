@@ -243,7 +243,9 @@ passed for this exact sha (a promotion row carries the full sha), that a
 rollback is declared, that a person approved it when `requireHuman` is set, that
 an accepted review covers the exact tree being deployed (unless the
 environment opts out with `requireReview: false` and a reason), and that the
-tree is clean. The review evidence proves only that the tracked tree deployed
+tree is clean. Those requirements are read from the `.crew/verify.json`
+committed in the sha being deployed, so a deploy from a worktree follows its
+own branch's committed map, not the main checkout's. The review evidence proves only that the tracked tree deployed
 is one a reviewer was shown under a standing receipt: it does not prove that
 paths the review bundle left out (identical to merged main, or under
 `.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a

@@ -367,18 +367,17 @@ def test_an_unresolvable_directory_blocks(flavour, repo):
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_uncommitted_edits_to_the_deploy_map_block(flavour, repo):
     """The neighbour case the fix opens: the main checkout's dirt no longer
-    blocks a worktree deploy, and the deploy map is read from the main
-    checkout -- so an uncommitted edit to it must not become policy."""
+    blocks a worktree deploy -- so an uncommitted edit to the main checkout's
+    map must not become policy. Since L-0768 the policy is the map committed
+    in the deployed sha, so the worktree's `requires` still applies and the
+    edit that dropped it in the main checkout changes nothing."""
     path = repo.main / ".crew" / "verify.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
     del doc["environments"]["qa"]["requires"]
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
     assert code == 2, err
-    # The dirty-map block's own sentence, not the word "uncommitted": this
-    # test's tmp path carries it, and since L-0703 the review helper refuses an
-    # uncommitted map too, so a bare substring held with the block removed.
-    assert "verify.json in the project dir" in err and "has uncommitted changes" in err, err
+    assert "'development' has no all-pass row" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -468,20 +467,35 @@ def test_a_quoted_command_substitution_is_still_read(flavour, repo):
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_an_uncommitted_rename_of_the_deploy_command_still_blocks(flavour, repo):
     """Codex r1: renaming the declared command in an uncommitted edit made the
-    working map match nothing, so the gate exited 0 before any check."""
+    working map match nothing, so the gate exited 0 before any check. Since
+    L-0768 the edit no longer blocks a worktree deploy by itself (the policy is
+    the worktree's committed map), so the proof that the command is still
+    matched is that the worktree's `requires` is enforced."""
     path = repo.main / ".crew" / "verify.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
-    doc["environments"]["development"]["deploy"] = "renamed-away"
+    doc["environments"]["qa"]["deploy"] = "renamed-away"
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
     assert code == 2, err
-    assert "uncommitted" in err, err
+    assert "'development' has no all-pass row" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_an_uncommitted_deletion_of_the_map_is_not_an_opt_out(flavour, repo):
+    """The deletion is matched against the committed map, so the deploy is
+    still gated: the worktree's committed `requires` applies (L-0768)."""
     _git(repo.main, "rm", "-q", ".crew/verify.json")
-    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
+    assert code == 2, err
+    assert "'development' has no all-pass row" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_uncommitted_deletion_of_the_map_blocks_a_main_checkout_deploy(flavour, repo):
+    """From the project dir itself the deleted map is the deployed tree's own
+    dirt, and the guard still names it."""
+    _git(repo.main, "rm", "-q", ".crew/verify.json")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.main)
     assert code == 2, err
     assert "deleted" in err, err
 
@@ -496,14 +510,17 @@ def test_a_deleted_map_does_not_gate_commands_it_never_declared(flavour, repo):
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_skip_worktree_does_not_hide_an_uncommitted_map_edit(flavour, repo):
+    """A rename hidden by skip-worktree is still seen as dirt, so the
+    committed map is matched too and the deploy stays gated (L-0768: by the
+    worktree's committed `requires`)."""
     path = repo.main / ".crew" / "verify.json"
     _git(repo.main, "update-index", "--skip-worktree", ".crew/verify.json")
     doc = json.loads(path.read_text(encoding="utf-8"))
-    del doc["environments"]["qa"]["requires"]
+    doc["environments"]["qa"]["deploy"] = "renamed-away"
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
     assert code == 2, err
-    assert "uncommitted" in err, err
+    assert "'development' has no all-pass row" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)

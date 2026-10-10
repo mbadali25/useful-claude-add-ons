@@ -2063,8 +2063,10 @@ key, not a config key, and committed like the rest of the map. Unattended
 production therefore deploys only reviewed trees. `.crew/verify.json` stays promote-gate's list of environments
 (and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether
 or not `environments.workflows` is set, T-0062),
-read from the session's project directory even when the deploy runs from a
-linked worktree (whose HEAD and cleanliness are what the gate then checks);
+matched from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks),
+while each matched environment's requirements, `requireReview` included, come
+from the map committed in the deployed sha (L-0768);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 

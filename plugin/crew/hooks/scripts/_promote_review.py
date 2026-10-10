@@ -6,9 +6,29 @@ by an accepted review?
 `<deadline>` is the gate's own deadline as a Unix time in seconds, so the
 time this interpreter takes to start counts against it too.
 
-Run by BOTH promote-gate.sh and promote-gate.ps1 from the project dir (the
-map is `.crew/verify.json` there), so the two flavours cannot decide this
-differently. stdout carries only the unmet preconditions, joined by U+001E
+Run by BOTH promote-gate.sh and promote-gate.ps1 from the project dir, so
+the two flavours cannot decide this differently.
+
+WHICH MAP (L-0768). The policy is the map COMMITTED IN THE SHA BEING DEPLOYED:
+`git -C <tree> ls-tree --full-tree <sha> -- .crew/verify.json`, then that
+blob (`policy_map_text`). The sha is the tree's HEAD (T-0505), so this is
+exactly what a deploy from a checkout of that sha reads: a worktree can do
+nothing a checkout of the same sha could not, and a waiver committed on the
+branch being deployed is seen. Read from the project dir instead, a
+worktree deploy was judged by the main checkout's map - its waiver admitted
+a branch that required review, and the branch's own waiver was never read.
+Only when the sha carries no map at all (an old sha, a repo whose map is
+ignored) is the project dir's map the policy, read as before: the working
+file held to the project dir's HEAD (`project_map_text`). That fallback is
+why this still runs with the project dir as cwd: a worktree's untracked or
+ignored copy is never read. A listing that fails is could-not-tell, never
+"no map". Every read of the sha's map passes `--no-replace-objects`: a
+`refs/replace/` entry would otherwise swap the map's bytes (or the commit's
+tree) with nothing committed and the sha and tree hashes unchanged.
+promote-gate.sh's VERDICT step imports `policy_map_text`, and
+promote-gate.ps1 makes the same two git calls (`ls-tree --full-tree`, then
+`cat-file blob`), so requires / rollback / requireHuman come from the same
+map as requireReview. stdout carries only the unmet preconditions, joined by U+001E
 (the gates' separator), and is empty when every environment is satisfied.
 Exit 0 means "decided". Any other status is could-not-tell, and both gates
 block on it ("the pre-deploy check could not be evaluated"); a traceback is a
@@ -316,10 +336,11 @@ def search(tree, sha, seconds):
                        f"{tail[0]})")
 
 
-def committed_map_text(deadline):
-    """`.crew/verify.json`'s text, read ONCE, and - when HEAD carries a map -
-    only when those bytes are the map committed at HEAD. The gate refused an uncommitted map before it
-    ran this, but that check and this read are two moments: an opt-out
+def project_map_text(deadline):
+    """The PROJECT DIR's `.crew/verify.json` text (the cwd), read ONCE, and -
+    when HEAD carries a map - only when those bytes are the map committed at
+    HEAD. Used only when the deployed sha carries no map (policy_map_text).
+    The gate refused an uncommitted map before it ran this, but that check and this read are two moments: an opt-out
     written in between would otherwise waive review for a deploy (L-0703
     review r1). git hash-object compares the bytes read, not the file now."""
     # Every git call here is bounded by what is left of the gate's deadline
@@ -362,6 +383,52 @@ def committed_map_text(deadline):
     return raw.decode("utf-8-sig")
 
 
+def _sha_map_blob(tree, sha, deadline):
+    """The blob id of `.crew/verify.json` in commit `sha` of `tree`, or None
+    when that commit carries no map. Could-not-tell raises."""
+    try:
+        found = subprocess.run(
+            [crew_common.require_tool("git"), "--no-replace-objects", "-C", tree, "ls-tree",
+             "--full-tree", sha, "--", ".crew/verify.json"],
+            capture_output=True, check=False, timeout=_left(deadline), stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be listed: {exc}") \
+            from exc
+    if found.returncode != 0:
+        raise CouldNotTell(f"git could not list .crew/verify.json in the deployed sha {sha} of "
+                           f"{tree}, so which map is policy cannot be told")
+    entry = found.stdout.decode("utf-8", errors="replace").split()
+    if not entry:
+        return None
+    if len(entry) < 4 or entry[1] != "blob" or not _FULL_SHA.fullmatch(entry[2]):
+        raise CouldNotTell(f".crew/verify.json in the deployed sha {sha} is not a file "
+                           f"({' '.join(entry[:2])}), so it cannot be read as the map")
+    return entry[2]
+
+
+def policy_map_text(tree, sha, deadline):
+    """(text, source) of the map that is policy for deploying `sha` from
+    `tree` (module docstring, WHICH MAP). `source` is "sha" or "project"."""
+    blob = _sha_map_blob(tree, sha, deadline)
+    if blob is None:
+        return project_map_text(deadline), "project"
+    try:
+        # Bounded by what is left of the gate's deadline, like every probe.
+        shown = subprocess.run([crew_common.require_tool("git"), "--no-replace-objects", "-C",
+                                tree, "cat-file", "blob", blob], capture_output=True, check=False,
+                               stdin=subprocess.DEVNULL, timeout=_left(deadline))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read: {exc}") \
+            from exc
+    if shown.returncode != 0:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read (git "
+                           f"cat-file exited {shown.returncode})")
+    try:
+        return shown.stdout.decode("utf-8-sig"), "sha"
+    except UnicodeDecodeError as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json is not UTF-8: {exc}") from exc
+
+
 def main(argv):
     if argv[:1] == ["--cover"] and len(argv) == 3:
         return child_main(argv[1], argv[2])
@@ -374,7 +441,10 @@ def main(argv):
         print(f"_promote_review.py: not a full sha: {sha!r}", file=sys.stderr)
         return 2
     try:
-        doc = json.loads(committed_map_text(deadline), object_pairs_hook=no_case_twins)
+        doc = json.loads(policy_map_text(tree, sha, deadline)[0], object_pairs_hook=no_case_twins)
+    except ValueError as exc:
+        print(f"_promote_review.py: the deployment map does not parse: {exc}", file=sys.stderr)
+        return 3
     except CouldNotTell as exc:
         print(f"_promote_review.py: {exc}", file=sys.stderr)
         return 3

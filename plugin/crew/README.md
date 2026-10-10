@@ -3631,6 +3631,16 @@ literal sha in the command must be its HEAD):
   environment; any other `requireReview` value blocks. Breaking change: a map
   that deploys unreviewed builds (a development environment fed from feature
   branches, say) must opt out explicitly.
+- **which map** (L-0768): every requirement above - and a `github` entry's
+  `shaInput` - is read from the `.crew/verify.json` **committed in the sha
+  being deployed** (`git -C <tree> ls-tree <sha>`), what a checkout of that sha
+  reads. A waiver committed on the branch a worktree deploys is honoured; the
+  main checkout's waiver or uncommitted edit does not decide a worktree deploy,
+  and its dirty map no longer blocks one. A matched environment the deployed
+  map does not declare blocks. A sha carrying no map falls back to the project
+  dir's map, which must then be clean. Which command is a deploy is still
+  matched against the project dir's map; PROMOTIONS.md, approval markers and
+  the in-flight marker stay in the project dir.
 
 What the review evidence proves is narrow, on purpose. It proves the
 deployed commit's tracked tree is byte-identical to a tree a reviewer was
