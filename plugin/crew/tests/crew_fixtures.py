@@ -1287,7 +1287,9 @@ def opened_file_violation(fd, path, homes, allowed):
     check never saw; this asks what was actually opened. Linux names the file
     behind `fd` (`/proc/self/fd`); elsewhere `path` is resolved again and its
     identity compared with the descriptor's, and a mismatch -- the path moved
-    during the open -- is could-not-tell, a violation, never a pass."""
+    during the open -- is could-not-tell, a violation, never a pass. This
+    DETECTS a swap after the open happened (a write-mode open has already
+    truncated what it reached); it fails the test, it cannot undo the call."""
     try:
         actual = os.readlink(f"/proc/self/fd/{fd}")
     except OSError:
