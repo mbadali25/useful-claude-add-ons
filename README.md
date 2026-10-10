@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.21**: Every crew test runs under a home of its own. `crew` 1.2.21: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
-- **crew 1.2.17**: The config data-flow diagram and the code graph re-anchored after L-0733. `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code graph with `graphify update .`. No behaviour changed.
+- **crew 1.2.19**: The promote-gate review tests' PowerShell cases run serially. `crew` 1.2.19 runs every default-set PowerShell case in `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16` step no longer fails them on time. The gate is unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
