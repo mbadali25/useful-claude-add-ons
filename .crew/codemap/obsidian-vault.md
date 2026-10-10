@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@adb3c2a7
+anchor: useful-claude-add-ons@926f1277
 verified: 2026-10-04
 
 ## Does
@@ -1358,3 +1358,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `789dc230` -> `5307a80e` on 2026-10-09 (L-0713 follow-up refresh).** Since `789dc230` main took #578 (L-0712), #585 (L-0730), #586 (rush notes moved to `docs/handoff/cloud/rush-1.2.0/`), #583 (L-0710 feature: `/crew:done` check 2 settled for HEAD) and #580 (L-0713: one quickstart, `crew_status._is_0_20_setup`), and this branch refreshed the diagrams, CHANGELOG and graph. L-0710 and L-0713 edited these maps themselves at the new positions. Every other body citation into a file changed since `789dc230` was mapped by difflib from `789dc230` to `5307a80e`, each onto a line with the same text: 0 moved in this note. Citations inside the dated provenance sections and notes are as of their own commits and were left alone. The version cites (`plugin.json:3`, `PLUGINS.md:14`) keep their line and changed text in place, and `docs/diagrams/data-flow-crew-config.mmd:1-2` is that diagram's re-anchored header.
 
 **Re-anchored `5307a80e` -> `adb3c2a7` on 2026-10-09 (L-0753, /crew:done judges the ticket's own diff).** L-0753's own change since `a7fb104b` is `crew_refresh_check.py` (`own_changes`), `crew_docs_check.py`, `ci_receipt.py` (the same-tree parent receipt), their tests, `commands/done.md`, `commands/docs.md`, the crew README and the troubleshooting and daily-workflow guides with their builds. Every `path:line` citation in this note into one of those files was re-taken by script (difflib against `5307a80e`): 5 moved. Citations into files only other PRs changed since the old anchor were not re-verified here. No suite was executed for this note.
+
+**Re-anchored `adb3c2a7` -> `926f1277` on 2026-10-10 (L-0753 landing prep).** Per-path check `git diff --name-only adb3c2a7..926f1277`: besides the code maps, rules, diagrams and graph themselves, only the crew version lines (README.md, CHANGELOG.md, marketplace.json, PLUGINS.md, plugin.json; crew 1.2.20) and main's `plugin/crew/tests/test_promote_gate_review.py` (merged from `d8de3dafb`, PR #594) changed. No claim in this map moved.
