@@ -55,7 +55,16 @@ FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")),
     pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.slow]),
 ]
-FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=_NEEDS_PWSH)]
+# Every default-set ps1 case is `wallclock`, and so are the two ps1-only tests
+# below (test_ps1_refuses_a_map_that_is_not_a_regular_file,
+# test_ps1_without_python_blocks_a_declared_deploy): promote-gate.ps1 holds a
+# 16s deadline from process start (it has to fit the 20s hook timeout, L-0703),
+# and under CI's `-n 16` on a 4-vCPU hosted runner PowerShell start-up alone
+# spent it, so admit cases read "the gate's deadline passed" (run 38033960181,
+# test (3.11) and test (3.13)). They run in the serial wallclock step instead.
+# FLAVOURS' ps1 is `slow`, which `-m wallclock` never selects (conftest), so
+# it stays in the slow job.
+FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.wallclock])]
 _POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="PATH shims are POSIX scripts")
 
 _ROLLBACK = {"rollback": "none", "rollbackReason": "fixture"}
@@ -754,6 +763,7 @@ def test_sh_refuses_a_map_that_is_not_a_regular_file(with_python, tmp_path):
 
 @_POSIX_ONLY
 @_NEEDS_PWSH
+@pytest.mark.wallclock
 @pytest.mark.parametrize("kind", ["fifo", "link-to-fifo"])
 def test_ps1_refuses_a_map_that_is_not_a_regular_file(kind, tmp_path):
     """The .ps1 runs for the PowerShell tool on any OS; a FIFO map held it past
@@ -988,6 +998,7 @@ def test_sh_without_python_passes_an_unrelated_command_on_a_valid_map(case, tmp_
 
 @_POSIX_ONLY
 @_NEEDS_PWSH
+@pytest.mark.wallclock
 def test_ps1_without_python_blocks_a_declared_deploy(tmp_path):
     repo = Repo(tmp_path, REVIEW_MAP)
     code, err, _ = run_gate("ps1", repo, "deploy-dev", path=_path_without_python(tmp_path))
