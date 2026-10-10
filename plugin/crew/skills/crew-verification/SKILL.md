@@ -297,7 +297,10 @@ runner, wall-clock tests kept serial, a linter with an explicit job count
 
 Read `credentials-and-playwright.md` when a check needs a secret or a
 browser. It carries the secret-store order, the test-database
-password rules, and the Playwright setup and policy.
+password rules, and the Playwright setup and policy. Never print a secret to
+check that it loaded: test for it (`[ -n "$X" ]`) instead. With
+`guards.envGuard` on, `env`, `printenv`, `echo "$SOME_TOKEN"` and the like are
+refused (README "Environment guard").
 
 ## 4. Promotion: development -> qa -> production
 

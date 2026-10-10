@@ -188,18 +188,37 @@ ROLE_WRITE_DEFAULT = "off"
 # than growing a second copy of it.
 CLOUD_GUARD_NAMES = ("cloudGuard",)
 
+# The environment-dump guard's switch (L-0772): whether the PreToolUse
+# Bash/PowerShell hook `env_guard.py` refuses a command whose own text prints
+# the whole process environment, or a credential-named variable, into the
+# agent's context. Unlike `cloudGuard` it is the policy as well as the switch:
+# there are no per-rule keys behind it.
+#
+# `cloudGuard`'s vocabulary, order and split default, for the same CLAUDE.md
+# reason: a hook that can block ships disabled.
+#
+#   off     the hook reads nothing but this key and lets every command through
+#   report  every refusal the hook WOULD make goes to `.crew/guard.log` (rule,
+#           form and decision, never the command text), and nothing is refused
+#   block   the refusals are made
+#
+# Absent means `off`; a malformed value means `block`, the floor.
+ENV_GUARD_NAMES = ("envGuard",)
+
 # Every guard, in declaration order: the seven policy guards, the two
-# production ones, the role-write guard, then the cloud guard's switch.
+# production ones, the role-write guard, the cloud guard's switch, then the
+# environment-dump guard's.
 # `GUARD_DEFAULTS` is keyed off this, so a name that exists in none of the
 # four tuples cannot reach the config block at all.
 ALL_GUARD_NAMES = (GUARD_NAMES + PROD_GUARD_NAMES + ROLE_WRITE_GUARD_NAMES
-                   + CLOUD_GUARD_NAMES)
+                   + CLOUD_GUARD_NAMES + ENV_GUARD_NAMES)
 
 GUARD_DEFAULTS = dict(
     [(name, GUARD_POLICY_DEFAULT) for name in GUARD_NAMES]
     + [(name, PROD_LEVEL_DEFAULT) for name in PROD_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES]
-    + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES])
+    + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES]
+    + [(name, ROLE_WRITE_DEFAULT) for name in ENV_GUARD_NAMES])
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
@@ -508,7 +527,8 @@ def guard_tiers(name):
     """
     if name in PROD_GUARD_NAMES:
         return (PROD_LEVELS, normalise_prod_level, prod_level_rank)
-    if name in ROLE_WRITE_GUARD_NAMES or name in CLOUD_GUARD_NAMES:
+    if name in ROLE_WRITE_GUARD_NAMES or name in CLOUD_GUARD_NAMES \
+            or name in ENV_GUARD_NAMES:
         return (ROLE_WRITE_POLICIES, normalise_role_writes, role_writes_rank)
     return (GUARD_POLICIES, normalise_guard_policy, guard_policy_rank)
 
@@ -772,16 +792,22 @@ PROD_READ_COMMANDS = frozenset((
     "grep", "egrep", "fgrep", "zgrep", "wc", "sort", "uniq", "cut", "awk",
     "sed", "df", "du", "free", "uptime", "uname", "hostname", "whoami", "id",
     "date", "ps", "top", "netstat", "ss", "journalctl", "dmesg", "echo",
-    "true", "which", "printenv",
+    "true", "which",
 ))
 
 # `env` is NOT on that list, and its absence is the point. It is a WRAPPER:
 # `env touch /tmp/x` runs `touch`, so a classifier that stopped at the
 # executable name cleared every write on the machine behind four characters.
-# It is handled in `_classify_segment` instead -- bare `env` prints the
-# environment and is a read, `env FOO=bar <cmd>` is whatever `<cmd>` is, and
-# `env` carrying an option is unclassifiable (`-i`, `-u`, `-S`, `--chdir` each
-# change what runs or where).
+# It is handled in `_classify_segment` instead -- `env FOO=bar <cmd>` is
+# whatever `<cmd>` is, and `env` carrying an option is unclassifiable (`-i`,
+# `-u`, `-S`, `--chdir` each change what runs or where).
+#
+# Bare `env`, and `printenv` (dropped from the list above), are NOT reads
+# (L-0772, BREAKING by narrowing): a production host's environment holds that
+# host's credentials, and printing it into an agent's context is not what
+# `prodServer: read` was meant to clear. `_classify_shell` also asks
+# `env_guard.findings` first, so any environment dump the env guard recognises
+# -- `cat /proc/1/environ`, `ps eww`, `echo $SOME_TOKEN` -- is a write here.
 #
 # A frozenset rather than a special case in the function, because the shape
 # recurs: `nohup`, `nice`, `timeout`, `stdbuf`, `xargs` and `sudo` are all
@@ -954,7 +980,7 @@ def _unwrap(tokens):
 
     None means the wrapper cannot be read, which the caller turns into a
     write. `[]` means the wrapper ran nothing -- bare `env`, which prints the
-    environment -- and the caller turns THAT into a read.
+    environment -- and the caller turns that into a write too (L-0772).
 
     Assignments are stripped with the wrapper (`env FOO=bar cmd` runs `cmd`).
     An OPTION is not stripped, it refuses: `env -i` clears the environment,
@@ -984,8 +1010,9 @@ def _classify_segment(segment):
         return "write"
     if not tokens:
         # Every wrapper stripped and nothing left to run: `env` on its own,
-        # which prints the environment.
-        return "read"
+        # which prints the host's environment, credentials included. Not a
+        # read (L-0772).
+        return "write"
     head = _head_name(tokens[0])
     if any(flag in PROD_WRITE_FLAGS for flag in tokens[1:]):
         return "write"
@@ -1006,8 +1033,12 @@ def _classify_segment(segment):
 
 
 def _classify_shell(text):
-    """A remote shell command line. EVERY segment must be a read."""
+    """A remote shell command line. EVERY segment must be a read, and no
+    environment dump the env guard recognises may appear (L-0772)."""
     if any(token in text for token in _PROD_REDIRECTS):
+        return "write"
+    import env_guard  # pylint: disable=import-outside-toplevel
+    if env_guard.findings(text, "bash"):
         return "write"
     remaining = [text]
     for sep in _PROD_SPLIT:

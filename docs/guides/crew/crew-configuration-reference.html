@@ -158,7 +158,7 @@ the plugin.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>156 keys</strong>: 88 settable in the machine-global file, 68 repo-only.</p>
+<p><strong>157 keys</strong>: 89 settable in the machine-global file, 68 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1423,6 +1423,14 @@ the plugin.</p>
 <td><code>block</code> | <code>report</code> | <code>off</code> (ratchet: narrower layer wins; listed narrowest first)</td>
 <td>1.0.25</td>
 <td>Whether the cloud guard judges commands at all. Default <code>off</code>; <code>report</code> logs only.</td>
+</tr>
+<tr>
+<td><code>guards.envGuard</code></td>
+<td>both, ratchet</td>
+<td><code>"off"</code></td>
+<td><code>block</code> | <code>report</code> | <code>off</code> (ratchet: narrower layer wins; listed narrowest first)</td>
+<td>1.2.24</td>
+<td>Refuse a command that prints the whole environment or a credential-named variable. Default <code>off</code>; <code>report</code> logs only.</td>
 </tr>
 </tbody>
 </table>

@@ -45,7 +45,7 @@ needs_pwsh = pytest.mark.skipif(
 # notify.ps1 left this list with T-0051: it is a thin wrapper around crew_notify.py,
 # which reads the resolved repo config through crew_config.resolve_config (no
 # PowerShell resolver; test_crew_notify_hooks.py pins that it reads no config).
-PS_COPIES = ("cloud-guard", "promote-gate", "auto-clear",
+PS_COPIES = ("cloud-guard", "env-guard", "promote-gate", "auto-clear",
              "handoff-read", "handoff-write", "context-watch",  # L-0680: these three
              "verify-gate", "scope-guard", "completion-audit")  # L-0681: these three
 HANDOFF_PATH_COPIES = ("handoff-read", "handoff-write", "context-watch")  # L-0680 review B1

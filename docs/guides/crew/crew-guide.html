@@ -268,13 +268,15 @@ anything itself: a write after review would stale the receipt.</p>
 <h2 id="the-guards">The Guards</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/scope_guard.py</code>,
 <code>plugin/crew/hooks/scripts/completion_audit.py</code>,
-<code>plugin/crew/hooks/scripts/cloud_guard.py</code> and
+<code>plugin/crew/hooks/scripts/cloud_guard.py</code>,
+<code>plugin/crew/hooks/scripts/env_guard.py</code> and
 <code>plugin/crew/hooks/scripts/promote-gate.sh</code>.</p>
 <p>What is on by default, and what is not:</p>
 <ul>
 <li><strong>Off until you arm it:</strong> the scope guard (<code>scope.mode</code> is <code>off</code> unless
-  <code>/crew:init</code> set it), the cloud guard's hook (<code>guards.cloudGuard: off</code>) and
-  the role-write guard (<code>guards.roleWrites: off</code>).</li>
+  <code>/crew:init</code> set it), the cloud guard's hook (<code>guards.cloudGuard: off</code>),
+  the environment guard (<code>guards.envGuard: off</code>) and the role-write guard
+  (<code>guards.roleWrites: off</code>).</li>
 <li><strong><code>block</code> by default:</strong> the six policy guards (<code>guards.terraformApply</code>,
   <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>,
   <code>sqlDestructive</code>) and the two production guards (<code>prodDatabase</code>,
@@ -302,6 +304,15 @@ production database or host. Each rule has its own <code>guards.*</code> setting
 command hidden in an interpreter (a Python script that calls the cloud SDK),
 a variable or an encoded string. The credentials boundary that would close
 that is T-0044.</p>
+<p><strong>The environment guard</strong> (<code>guards.envGuard</code>, default <code>off</code>; L-0772) refuses a
+Bash or PowerShell command whose own text prints the whole process environment
+(<code>env</code>, <code>printenv</code>, bare <code>set</code>, <code>export -p</code>, <code>cat /proc/self/environ</code>,
+<code>Get-ChildItem env:</code>) or a credential-named variable (<code>echo "$GITHUB_TOKEN"</code>,
+<code>$env:API_KEY</code>) into the agent's context, where it would land in the
+transcript. A command it cannot read is refused as could-not-tell. Set
+<code>report</code> first. <em>What it cannot see:</em> a script or program the command runs, an
+alias defined outside the command, or a renamed binary; keeping credentials out
+of the agent's environment is the stronger control (L-0776).</p>
 <p><strong>The promote gate</strong> runs on a deploy command declared in
 <code>.crew/verify.json</code>. Before the deploy it checks that the upstream environment
 passed for this exact sha (a promotion row carries the full sha), that a
