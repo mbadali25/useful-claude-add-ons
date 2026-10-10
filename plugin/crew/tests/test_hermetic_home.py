@@ -282,34 +282,46 @@ def test_a_checkout_inside_the_claude_dir_stays_allowed():
         os.path.join(repo, "tests", "conftest.py"), HOMES, allowed) is None
 
 
-@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
-                    reason="symlinks need privileges on Windows - the symlink case was NOT run")
-def test_a_file_opened_under_the_home_is_a_violation_whatever_path_was_checked(tmp_path):
-    """The post-open half, pure: the descriptor names a file under the home
-    although the path given looked safe when it was checked."""
-    home = tmp_path / "operator-home"
-    secret = home / ".claude" / "crew" / "config.json"
-    secret.parent.mkdir(parents=True)
-    secret.write_text("{}", encoding="utf-8")
-    homes = (os.path.normcase(str(home)),)
-    fd = os.open(str(secret), os.O_RDONLY)
-    try:
-        reason = crew_fixtures.opened_file_violation(fd, str(tmp_path / "safe"), homes, ())
-    finally:
-        os.close(fd)
+@pytest.mark.parametrize("inside", [
+    os.path.join("venv", "lib", "python3", "site-packages", "pkg", "__init__.py"),
+    os.path.join("venv", "lib", "python3", "os.py"),
+], ids=["site-packages", "stdlib"])
+def test_an_interpreter_inside_the_claude_dir_still_imports(monkeypatch, inside):
+    """Round 5 FIX: a venv at ~/.claude/venv runs pytest; its own prefix and
+    site-packages are allowed although they sit inside `.claude`."""
+    venv = os.path.join(HOME, ".claude", "venv")
+    for name in ("prefix", "exec_prefix"):
+        monkeypatch.setattr(sys, name, venv)
+    monkeypatch.setattr(sys, "path", [os.path.join(venv, "lib", "python3", "site-packages")]
+                        + sys.path)
 
-    assert reason is not None
+    allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
+
+    assert crew_fixtures.home_open_violation(
+        os.path.join(HOME, ".claude", inside), HOMES, allowed) is None
 
 
-def test_the_wrapped_os_open_keeps_its_dir_fd_support():
-    """Code under test asks `os.open in os.supports_dir_fd` before passing
-    dir_fd; the post-open wrapper must not turn that answer into a no and
-    send it down a path-based fallback (48 crew_tracker/review_metrics cases
-    went red that way)."""
-    original = crew_fixtures._OPEN_ORIGINALS["os"]  # pylint: disable=protected-access
+def test_an_interpreter_inside_the_claude_dir_does_not_exempt_the_crew_config(monkeypatch):
+    venv = os.path.join(HOME, ".claude", "venv")
+    for name in ("prefix", "exec_prefix"):
+        monkeypatch.setattr(sys, name, venv)
 
-    assert (os.open is not original, (os.open in os.supports_dir_fd)
-            == (original in os.supports_dir_fd)) == (True, True)
+    allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
+
+    assert crew_fixtures.home_open_violation(
+        os.path.join(HOME, ".claude", "crew", "config.json"), HOMES, allowed) is not None
+
+
+@pytest.mark.parametrize("prefix", [os.path.join(HOME, ".claude"), HOME],
+                         ids=["at-the-claude-dir", "the-home"])
+def test_an_interpreter_at_or_above_the_claude_dir_exempts_nothing(monkeypatch, prefix):
+    for name in ("prefix", "exec_prefix"):
+        monkeypatch.setattr(sys, name, prefix)
+
+    allowed = crew_fixtures.home_allowed_prefixes(REPO, (HOME,))
+
+    assert crew_fixtures.home_open_violation(
+        os.path.join(HOME, ".claude", "crew", "config.json"), HOMES, allowed) is not None
 
 
 # --- the session and module fixtures: what they are handed --------------------
@@ -445,65 +457,6 @@ def test_the_audit_fails_a_test_that_reaches_the_real_home(tmp_path):
             "ERROR test_audit_probe.py::test_uses_a_module_fixture_that_reads_the_real_home" in out,
             "PASSED test_audit_probe.py::test_stays_in_its_own_home" in out) == \
         (1, True, True, True, True, True), out + done.stderr
-
-
-_RACE_PROBE = '''
-import os, sys
-
-import pytest
-
-REAL = os.environ["PROBE_REAL_HOME"]
-SECRET = os.path.join(REAL, ".claude", "crew", "config.json")
-SWAP = {}
-
-
-def _swap_after_the_check(event, args):
-    """Installed after crew's audit hook, so it runs after the check and
-    before the open: the link is retargeted into the real home in between."""
-    if event == "open" and SWAP and os.fspath(args[0]) == SWAP["link"]:
-        link = SWAP.pop("link")
-        os.remove(link)
-        os.symlink(SECRET, link)
-
-
-sys.addaudithook(_swap_after_the_check)
-
-
-@pytest.mark.parametrize("how", ["open", "os.open"])
-def test_reads_through_a_swapped_link(tmp_path, how):
-    safe = tmp_path / "safe.json"
-    safe.write_text("{}", encoding="utf-8")
-    link = tmp_path / "link.json"
-    link.symlink_to(safe)
-    SWAP["link"] = str(link)
-    try:
-        if how == "open":
-            open(str(link), encoding="utf-8").close()
-        else:
-            os.close(os.open(str(link), os.O_RDONLY))
-    except Exception:  # swallowed on purpose: the teardown must still fail it
-        pass
-'''
-
-
-@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
-                    reason="symlinks need privileges on Windows - the swap case was NOT run")
-def test_a_link_swapped_into_the_home_after_the_check_is_caught(tmp_path):
-    """Round 4 FIX: the audit hook checks the path before the open, so a link
-    retargeted between that check and the open reached the real home. The
-    probe's own audit hook swaps it in exactly that window."""
-    home = _operator_home(tmp_path)
-    probe = _probe(tmp_path, "test_race_probe.py", _RACE_PROBE)
-
-    done = _pytest(tmp_path, ["-p", "conftest", str(probe)],
-                   _conftest_env(home, PROBE_REAL_HOME=str(home)))
-
-    out = done.stdout
-    assert (done.returncode,
-            "ERROR test_race_probe.py::test_reads_through_a_swapped_link[open]" in out,
-            "ERROR test_race_probe.py::test_reads_through_a_swapped_link[os.open]" in out,
-            os.path.join(str(home), ".claude", "crew", "config.json") in out) == \
-        (1, True, True, True), out + done.stderr
 
 
 # --- the quarantine rule ------------------------------------------------------

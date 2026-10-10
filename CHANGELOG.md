@@ -25,9 +25,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Audit.** `crew_fixtures.home_audit` fails a test that opens a file under the real home, or
   spawns a process handed the real HOME, naming each path; the checkout, the interpreter and the
   temp directory are allowed, and an import path is allowed only outside the real home's `.claude`
-  (`PYTHONPATH=~/.claude` no longer exempts the crew config). `open`, `io.open` and `os.open` are
-  checked again after the open, against the file the descriptor names, so a symlink swapped into the
-  home between the check and the open still fails the test. A session or module fixture is tested
+  (`PYTHONPATH=~/.claude` no longer exempts the crew config) unless it is the running
+  interpreter's own prefix (a venv at `~/.claude/venv` still imports). The guard is pre-open only:
+  a symlink swapped in between the check and the open, an `os.open` relative to a `dir_fd`, and an
+  open alias captured before the audit installed are a declared known limit (L-0761). A session or module fixture is tested
   in an inner run against a planted home: it is handed no real-home record, no
   `CLAUDE_CONFIG_DIR`/`CLAUDE_PROJECT_DIR` and no real `GLOBAL_CONFIG_PATH`. `test_hermetic_home.py` holds it, with a regression run against a
   planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;

@@ -4088,9 +4088,10 @@ throwaway directory per test, so a crew script a test spawns reads an empty
 `autopilot.*` keys failed `test_status_mode_line_reads_off_by_default` and the
 `crew-context.sh` inject-off cases on the owner's machine while CI, which has
 no user layer, stayed green. An audit hook fails any test that opens a file
-under the real home (checked again after the open, so a swapped symlink is
-caught; an import path inside `~/.claude` exempts nothing) or spawns a process
-with the real HOME, naming the path;
+under the real home (checked before the open; an import path inside
+`~/.claude` other than the interpreter's own exempts nothing; a symlink swapped
+in after the check is a known limit, L-0761) or spawns a process with the real
+HOME, naming the path;
 `tests/test_hermetic_home.py` holds it, with a regression run against a planted
 home that carries those keys. A test that is a known timing flake is not
 skipped: it carries `@pytest.mark.quarantine(owner=..., ticket=...)`, which
