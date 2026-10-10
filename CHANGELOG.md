@@ -9,6 +9,32 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.18: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
+
+- **Summary.** `crew` 1.2.18 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+  records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
+  deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
+- **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
+  write `.crew/.verify-verified-at` = HEAD - a verified claim about a tree nothing checked. Both
+  flavours now print `verify-gate: 0 rules ran ...` and write neither the marker nor the
+  fingerprint. `review_gate` therefore answers UNVERIFIED for a checkout that ran nothing.
+- **Diff baseline.** That quiet-turn write was also the diff baseline on a default branch with no
+  marker; without it merge-base stays HEAD and a commit made there is never in scope. A quiet turn
+  now records `.crew/.verify-gate.base-at` (HEAD) instead, read only by the base resolution
+  (marker, then base-at, then merge-base, then HEAD) - as is when it is an ancestor of HEAD,
+  through its merge-base with HEAD otherwise - and records the HEAD read before the changed set.
+  A zero-command turn moves it only when nothing committed differs from the base; it is removed
+  when a real pass writes the marker and never read as verified. A baseline that cannot be read,
+  is not a regular file (a FIFO would hang Stop) or names no commit, or a write that fails,
+  refuses the turn.
+- **Chronic rules go to CI.** A rule priced over `verify.stopBudgetSeconds` on its own is still
+  deferred every Stop and never blocks the turn; its notice and record reason now say `deferred to
+  CI (the verify-gate check)` and that `/crew:done` needs its VERIFIED receipt (or a clean
+  `/crew:verify --all`); an old record's reason is re-said that way too. A rule that runs in
+  budget and fails still exits 2, whatever was deferred beside it.
+- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 24
+  sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
+
 ### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
 
 - **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md

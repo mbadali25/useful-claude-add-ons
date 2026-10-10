@@ -140,7 +140,7 @@ overlapping lane to merge the base now.
 | When | Hook | Does |
 |---|---|---|
 | Every write | plan-approval + scope guard (`PreToolUse`) | refuses an edit with no approval receipt, or outside the spec's Touch |
-| End of turn | verify gate (`Stop`) | refuses to end the turn on a red check |
+| End of turn | verify gate (`Stop`) | runs the rules for what changed that fit `verify.stopBudgetSeconds`; refuses to end the turn on a red check, never on a deferral (a rule too big for the budget goes to CI) |
 | End of turn | completion scope audit (`Stop`) | diffs the whole tree against the scope base, catches shell-made writes too |
 | Session start | context | brief on branch, open ticket, gate state, codemap freshness |
 

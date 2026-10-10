@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.18**: The Stop gate says when it checked nothing, and names CI for rules too big for its budget. `crew` 1.2.18 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED, deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
 - **crew 1.2.17**: The config data-flow diagram and the code graph re-anchored after L-0733. `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code graph with `graphify update .`. No behaviour changed.
-- **crew 1.2.16**: A committed `.work/` note no longer makes a review receipt permanently stale. In a repository that commits `.work/` notes, a release whose reviewed range changed one can now be reviewed and promoted: the review bundle shows the committed text change, and the receipt check refuses only what the bundle cannot show.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
