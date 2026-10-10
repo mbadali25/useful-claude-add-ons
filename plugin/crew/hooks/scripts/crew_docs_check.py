@@ -21,9 +21,11 @@ usage. It never writes: git is asked through plumbing only (`diff-index`,
 
 ## The changed set
 
-`scope_base.resolve` then `completion_audit.changed_paths` -- the base against
-the working tree plus untracked files, the set `/crew:done`'s completion audit
-judges and T-0008's refresh check reads -- minus `.work/**` and minus T-0008's
+`scope_base.resolve` then `crew_refresh_check.own_changes` (L-0753) -- the
+ticket's OWN changes, the one set check 4 judges too: before it lands, the
+completion audit's set (paths identical to merged main left out); after it
+lands, the paths its landing merge brought to main; on could-not-tell, every
+path since the base, said on the top line -- minus `.work/**` and minus T-0008's
 `crew_refresh_check.RELEASE_BOOKKEEPING` (a version bump, a CHANGELOG or TODO
 line, PLUGINS.md, the manifests, BUDGETS.md), imported, not restated. No scope
 base, or one T-0008's check would not trust (a fallback equal to HEAD; any
@@ -34,9 +36,13 @@ here is confirmed, and `unknown` refuses like MISSING.
 ## CHANGELOG.md -- mechanical, never waived
 
 For each `.claude-plugin/marketplace.json` entry whose `source` directory
-holds a changed path, the lines this ticket ADDED to CHANGELOG.md (the base
-blob against the working tree, in Python) inside `## [Unreleased]` must name
-`` `<name>` `` and the entry's current `version`. Else MISSING, whatever
+holds a changed path, a line this ticket ADDED to CHANGELOG.md -- over its own
+range (`own_changes`' old..new: merged main or the base to the working tree;
+after landing, the landing merge's first parent to the merge), in Python --
+inside `## [Unreleased]` or `## [<version>]` must name the entry at
+`<version>`: `` `<name>` `` with the version anywhere on the line, or the bare
+name directly before it (`crew 1.2.16`). `<version>` is the entry's at the
+range's end, so a later release never moves it (L-0753). Else MISSING, whatever
 docs.json says: a reason cannot waive it. No entry changed: `not needed`. No
 marketplace.json: the repo is one unit and CHANGELOG is judgement -- edited,
 or a recorded reason, or MISSING. No CHANGELOG.md: `not applicable`.
@@ -74,7 +80,6 @@ import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
-import completion_audit
 import crew_common
 import crew_refresh_check
 import crew_ticket
@@ -200,18 +205,6 @@ def added_lines(old, new):
             if tag in ("insert", "replace") for j in range(j1, j2)]
 
 
-def unreleased_range(text):
-    """`(start, end)` line indexes of the `## [Unreleased]` section's body, or None."""
-    lines = (text or "").splitlines()
-    start = next((i for i, line in enumerate(lines)
-                  if line.strip().lower().startswith(UNRELEASED.lower())), None)
-    if start is None:
-        return None
-    end = next((i for i in range(start + 1, len(lines))
-                if re.match(r"^##\s", lines[i])), len(lines))
-    return start + 1, end
-
-
 def _entries(text):
     """`[{"name", "source", "version"}]` from marketplace.json text, or None."""
     try:
@@ -254,13 +247,58 @@ def _judged(doc, changed_raw, reasons, why_triggered):
     return _row(doc, MISSING, f"{why_triggered}; no edit and no docs.json reason")
 
 
+_VERSION_END = r"(?![.+_-]?[0-9A-Za-z])"
+
+
 def _names_version(line, name, version):
-    return (f"`{name}`" in line and bool(version)
-            and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + r"(?![.+_-]?[0-9A-Za-z])",
-                          line) is not None)
+    """The line names plugin `name` at `version`: `` `name` `` anywhere with
+    the version, or the bare word directly before it (`crew 1.2.16`, the form
+    this repo's entry headings use)."""
+    if not version:
+        return False
+    if f"`{name}`" in line and re.search(r"(?<![0-9A-Za-z.])" + re.escape(version) + _VERSION_END,
+                                          line) is not None:
+        return True
+    return re.search(r"(?<![0-9A-Za-z_./`-])" + re.escape(name) + r"\s+v?" + re.escape(version)
+                     + _VERSION_END, line) is not None
 
 
-def _changelog_rows(top, base, changed, changed_raw, entries, reasons):
+def _section(lines, index):
+    """The `## ` heading line the line at `index` sits under, or None."""
+    for at in range(index, -1, -1):
+        if re.match(r"^##\s", lines[at]):
+            return lines[at].strip()
+    return None
+
+
+def _entry_section(heading, version):
+    """True for `## [Unreleased]` and for `## [<version>]` (a date may follow)."""
+    if not heading:
+        return False
+    if heading.lower().startswith(UNRELEASED.lower()):
+        return True
+    return re.match(r"^##\s+\[v?" + re.escape(version) + r"\](?:\s|$)", heading) is not None
+
+
+def _range_text(top, rev, rel):
+    """`rel` at `rev`, or on disk when `rev` is None (the working tree)."""
+    return _disk_text(top, rel) if rev is None else _base_text(top, rev, rel)
+
+
+def _range_entries(top, own, entries):
+    """The marketplace entries at the end of the ticket's own range: disk
+    before it lands, the landing merge's marketplace.json after, so a later
+    release never moves the version it owes. Raises GitFailed."""
+    if own["new"] is None:
+        return entries
+    text = _base_text(top, own["new"], MARKETPLACE)
+    found = _entries(text) if text is not None else None
+    if found is None:
+        raise GitFailed(f"{MARKETPLACE} at {own['new'][:12]} is absent or does not parse")
+    return found
+
+
+def _changelog_rows(top, own, changed, changed_raw, entries, reasons):
     now = _disk_text(top, CHANGELOG)
     if now is None:
         return [_row(CHANGELOG, NOT_APPLICABLE, "no CHANGELOG.md in this repo")]
@@ -273,24 +311,29 @@ def _changelog_rows(top, base, changed, changed_raw, entries, reasons):
     touched = [e for e in entries if any(_under(p, e["source"]) for p in changed)]
     if not touched:
         return [_row(CHANGELOG, NOT_NEEDED, "no marketplace entry's source changed")]
-    span = unreleased_range(now)
     try:
-        old = _base_text(top, base, CHANGELOG)
+        versions = {e["name"]: e["version"] for e in _range_entries(top, own, entries)}
+        old = _base_text(top, own["old"], CHANGELOG)
+        new = _range_text(top, own["new"], CHANGELOG) or ""
     except GitFailed as exc:
         return [_unknown_row(f"{CHANGELOG} ({e['name']} {e['version']})", exc) for e in touched]
-    added = [line for index, line in added_lines(old, now)
-             if span and span[0] <= index < span[1]]
+    lines = new.splitlines()
+    added = [(_section(lines, index), line) for index, line in added_lines(old, new)]
     rows = []
     for entry in touched:
-        doc = f"{CHANGELOG} ({entry['name']} {entry['version']})"
-        if any(_names_version(line, entry["name"], entry["version"]) for line in added):
-            rows.append(_row(doc, UPDATED, f"an added [Unreleased] line names "
-                             f"`{entry['name']}` {entry['version']}"))
+        version = versions.get(entry["name"], "")
+        doc = f"{CHANGELOG} ({entry['name']} {version or '(no version)'})"
+        hit = next((heading for heading, line in added
+                    if _entry_section(heading, version)
+                    and _names_version(line, entry["name"], version)), None)
+        if hit:
+            rows.append(_row(doc, UPDATED, f"a line this ticket added under {hit} names "
+                             f"`{entry['name']}` {version}"))
         else:
             # Never waived by docs.json: a changed plugin owes its entry.
-            rows.append(_row(doc, MISSING, f"{entry['source']}/ changed and no line added "
-                             f"under {UNRELEASED} names `{entry['name']}` "
-                             f"{entry['version'] or '(no version)'}"))
+            rows.append(_row(doc, MISSING, f"{entry['source']}/ changed and no line this ticket "
+                             f"added under {UNRELEASED} or ## [{version or '?'}] names "
+                             f"`{entry['name']}` {version or '(no version)'}"))
     return rows
 
 
@@ -447,23 +490,24 @@ def ticket_docs(root, ticket):
     if record is None:
         return _result(UNKNOWN, problem, [], source)
     try:
-        every = completion_audit.changed_paths(top, base)
+        own = crew_refresh_check.own_changes(top, base, ticket)
     except RuntimeError as exc:
         return _result(UNKNOWN, f"could not list {ticket}'s changes: {exc}", [], source)
-    changed_raw = {p for p in every if not _under(p, ".work")}
+    changed_raw = {p for p in own["paths"] if not _under(p, ".work")}
     changed = {p for p in changed_raw if not _matches(p, RELEASE_PATHS)}
     market = _disk_text(top, MARKETPLACE)
     entries = _entries(market) if market is not None else None
     if market is not None and entries is None:
         return _result(UNKNOWN, f"{MARKETPLACE} could not be parsed", [], source)
     reasons = record["reasons"]
-    documents = (_changelog_rows(top, base, changed, changed_raw, entries, reasons)
+    documents = (_changelog_rows(top, own, changed, changed_raw, entries, reasons)
                  + _readme_rows(top, base, changed, changed_raw, entries, reasons)
                  + _security_rows(top, changed, changed_raw, reasons)
                  + _todo_rows(top, base, record["deferred"]))
     verdicts = {d["verdict"] for d in documents}
     status = (UNKNOWN if UNKNOWN in verdicts else MISSING_STATUS if MISSING in verdicts else OK)
-    return _result(status, f"scope base {base[:12]} ({why})", documents, source)
+    return _result(status, f"scope base {base[:12]} ({why}); changed set: {own['note']}",
+                   documents, source)
 
 
 def missing_documents(result):
@@ -486,10 +530,10 @@ def render(ticket, result):
 
 def explain():
     return "\n".join([
-        "changed set: scope base vs working tree + untracked, minus .work/** and "
+        "changed set: the ticket's own (crew_refresh_check.own_changes), minus .work/** and "
         "RELEASE_PATHS: " + ", ".join(RELEASE_PATHS),
-        "CHANGELOG: each marketplace entry whose source changed needs an added "
-        f"{UNRELEASED} line naming `<name>` and its version (never waived)",
+        "CHANGELOG: each marketplace entry whose source changed needs a line the ticket "
+        f"added under {UNRELEASED} or ## [<version>] naming `<name>` <version> (never waived)",
         "README triggers (under an entry's source): " + ", ".join(README_TRIGGERS)
         + "; root README.md when the entry names differ from the base's",
         "SECURITY_PATHS: " + ", ".join(SECURITY_PATHS),

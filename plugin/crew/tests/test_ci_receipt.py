@@ -680,6 +680,121 @@ def test_check_with_a_fake_fetcher_never_runs_gh(tmp_path, monkeypatch):
     assert _check(root, api)[0] == cr.VERIFIED
 
 
+# --- L-0753: a merge on main, gated as its PR head on the same tree ---------------------
+
+def _landed(tmp_path, main_moves=False, pr_path="feature.txt"):
+    """main gets the PR branch through a --no-ff merge and origin/main is
+    that merge, as `gh pr merge --merge` leaves it. Returns (root, PR head)."""
+    root = _repo(tmp_path)
+    git(root, "checkout", "-qb", "L-1-work")
+    target = root / pr_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("the ticket's change\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "L-1: the change")
+    pr_head = git(root, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "main")
+    if main_moves:
+        (root / "other.txt").write_text("another PR landed first\n", encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "another PR")
+    git(root, "merge", "-q", "--no-ff", "-m", "Merge pull request #1 from o/L-1-work", "L-1-work")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return root, pr_head
+
+
+def _runs_path(sha):
+    return f"repos/{SLUG}/actions/workflows/{cr.WORKFLOW_FILE}/runs?head_sha={sha}&per_page=100"
+
+
+def _landed_api(root, pr_head, head_runs=None, receipt=None):
+    """No run for HEAD (verify-gate.yml never runs on main); one passing run
+    for the PR head, whose receipt binds HEAD's tree."""
+    api = _api(root, runs=[], artifacts=[_artifact(pr_head)],
+               receipt=receipt if receipt is not None else _receipt(root, head=pr_head))
+    api[_runs_path(git(root, "rev-parse", "HEAD"))] = json.dumps(
+        {"workflow_runs": head_runs or []}).encode()
+    api[_runs_path(pr_head)] = json.dumps({"workflow_runs": [_run(pr_head)]}).encode()
+    return api
+
+
+def test_check_accepts_the_pr_heads_run_when_the_merge_has_its_tree(tmp_path):
+    root, pr_head = _landed(tmp_path)
+
+    state, reason, head = _check(root, _landed_api(root, pr_head))
+
+    assert (state, head) == (cr.VERIFIED, git(root, "rev-parse", "HEAD")), reason
+    assert f"through {pr_head[:12]}, which has the same tree" in reason
+
+
+def test_check_refuses_a_merge_whose_tree_no_gated_parent_has(tmp_path):
+    """main moved before the merge, so no parent has HEAD's tree. The PR
+    head's receipt even claims HEAD's tree: only git's own tree answer counts."""
+    root, pr_head = _landed(tmp_path, main_moves=True)
+
+    state, reason, _ = _check(root, _landed_api(root, pr_head))
+
+    assert state == cr.UNVERIFIED
+    assert "nor for a parent with HEAD's tree" in reason
+
+
+def test_check_refuses_a_parent_receipt_bound_to_another_tree(tmp_path):
+    root, pr_head = _landed(tmp_path)
+    other = git(root, "rev-parse", "HEAD^1^{tree}")
+
+    state, reason, _ = _check(root, _landed_api(root, pr_head,
+                                                receipt=_receipt(root, head=pr_head, tree=other)))
+
+    assert state == cr.UNVERIFIED
+    assert "receipt tree is" in reason
+
+
+def test_check_refuses_a_merge_that_changes_the_receipt_producer(tmp_path):
+    root, pr_head = _landed(tmp_path, pr_path=cr.GATE_IMPL[1])
+
+    state, reason, _ = _check(root, _landed_api(root, pr_head))
+
+    assert state == cr.UNVERIFIED
+    assert "vouched for its own producer" in reason
+
+
+def test_check_never_passes_over_heads_own_failed_run_for_a_parent(tmp_path):
+    root, pr_head = _landed(tmp_path)
+    head = git(root, "rev-parse", "HEAD")
+    api = _landed_api(root, pr_head, head_runs=[_run(head, id=99, conclusion="failure")])
+
+    state, reason, _ = _check(root, api)
+
+    assert state == cr.UNVERIFIED
+    assert "the newest for HEAD) concluded failure" in reason
+
+
+def test_check_could_not_tell_when_the_parents_run_cannot_be_looked_up(tmp_path):
+    root, pr_head = _landed(tmp_path)
+    api = _landed_api(root, pr_head)
+    del api[_runs_path(pr_head)]
+
+    state, _, _ = _check(root, api)
+
+    assert state == cr.UNKNOWN
+
+
+def test_check_could_not_tell_when_a_parents_tree_cannot_be_read(tmp_path, monkeypatch):
+    root, pr_head = _landed(tmp_path)
+    real = cr._git  # pylint: disable=protected-access
+
+    def blind(where, *args):
+        if args[:1] == ("rev-parse",) and args[-1] == f"{pr_head}^{{tree}}":
+            raise cr.Unreadable("fake: the tree cannot be read")
+        return real(where, *args)
+
+    monkeypatch.setattr(cr, "_git", blind)
+
+    state, _, _ = _check(root, _landed_api(root, pr_head))
+
+    assert state == cr.UNKNOWN
+
+
 def test_gh_fetch_without_gh_on_path_is_unreadable(monkeypatch):
     monkeypatch.setattr(cr.shutil, "which", lambda _name: None)
 

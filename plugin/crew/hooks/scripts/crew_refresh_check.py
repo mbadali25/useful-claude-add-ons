@@ -62,9 +62,12 @@ README embeds of the diagrams and the integrations reference:
            and `flows/` are not judged (their own follow-ups). Refresh:
            `/crew:reference --integrations`.
 
-"The ticket changed" is `scope_base.resolve` then
-`completion_audit.changed_paths`: the base against the WORKING TREE plus
-untracked files -- the same set `/crew:done`'s completion audit judges --
+"The ticket changed" is `scope_base.resolve` then `own_changes` (L-0753):
+the base against the WORKING TREE plus untracked files, less what is main's --
+before the ticket lands, the completion audit's own set (`merged_main`:
+paths identical to merged main left out); after it lands, the paths its
+landing merge (found from the review receipt's head) brought to main; on
+could-not-tell, every path since the base, said on the top line --
 minus RELEASE_BOOKKEEPING (CHANGELOG.md, TODO.md, PLUGINS.md, the
 marketplace and plugin manifests, BUDGETS.md), which every release -- or, for
 TODO.md, every ticket filing its findings -- moves without invalidating a
@@ -243,6 +246,7 @@ import crew_diagrams
 import crew_reference
 import crew_graph_ignore
 import crew_ticket
+import merged_main
 import scope_base
 import crew_common
 from crew_common import GIT_TIMEOUT, dict_or_empty, git_out, read_text
@@ -1579,6 +1583,139 @@ def _unmeasured(reason, stop, source):
             "artifacts": [], "documents": NOT_MEASURED, "uncommitted": []}
 
 
+# --- the ticket's own changes (L-0753) --------------------------------------------
+
+REVIEW_RECEIPT = "review.json"
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _receipt_head(top, ticket, base):
+    """`(sha, None)` -- the head the ticket's review receipt was taken at --
+    or `(None, why)`. Only a receipt that names this ticket and this scope
+    base, with a full sha that names a commit here, is an answer."""
+    path = os.path.join(crew_ticket.ticket_dir(top, ticket), REVIEW_RECEIPT)
+    rel = os.path.relpath(path, top).replace(os.sep, "/")
+    try:
+        with open(path, encoding="utf-8", errors="strict") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return None, f"no review receipt ({rel}) names {ticket}'s reviewed head"
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"{rel} could not be read: {exc}"
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        return None, f"{rel} is not JSON: {exc}"
+    if not isinstance(data, dict):
+        return None, f"{rel} is not a JSON object"
+    if data.get("ticket") != ticket or data.get("base") != base:
+        return None, (f"{rel} names ticket {data.get('ticket')!r} and base "
+                      f"{str(data.get('base'))[:12]!r}, not {ticket} at {base[:12]}")
+    head = data.get("head")
+    if not isinstance(head, str) or not _FULL_SHA.match(head):
+        return None, f"{rel} names no full head sha"
+    if git_out(top, "rev-parse", "--verify", "-q", head + "^{commit}") is None:
+        return None, f"the reviewed head {head[:12]} in {rel} is not a commit here"
+    return head, None
+
+
+def _contains(top, older, newer):
+    """True, False, or None when git could not answer."""
+    try:
+        done = subprocess.run(
+            [crew_common.require_tool("git"), "merge-base", "--is-ancestor", older, newer],
+            cwd=top, capture_output=True, timeout=GIT_TIMEOUT, check=False,
+            stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(done.returncode)
+
+
+def _landing(top, ref, base, reviewed):
+    """`(merge, first parent, None)`: the first commit on `ref`'s first-parent
+    line after `base` that contains `reviewed`, which must be a merge whose
+    first parent does not -- or `(None, None, why)`. Containment only grows
+    along that line, so it is a binary search."""
+    listing = git_out(top, "rev-list", "--first-parent", ref, "^" + base)
+    if listing is None:
+        return None, None, f"git could not list {ref}'s first-parent line since {base[:12]}"
+    line = listing.split()[::-1]
+    low, high, found = 0, len(line), None
+    while low < high:
+        mid = (low + high) // 2
+        holds = _contains(top, reviewed, line[mid])
+        if holds is None:
+            return None, None, f"git could not tell whether {line[mid][:12]} contains {reviewed[:12]}"
+        if holds:
+            found, high = line[mid], mid
+        else:
+            low = mid + 1
+    if found is None:
+        return None, None, f"no commit on {ref} since {base[:12]} contains the reviewed head {reviewed[:12]}"
+    listing = git_out(top, "rev-list", "--parents", "-n", "1", found)
+    if listing is None:
+        return None, None, f"git could not list the parents of {found[:12]}"
+    parents = listing.split()[1:]
+    if len(parents) < 2:
+        return None, None, (f"{found[:12]}, which brought the reviewed head {reviewed[:12]} into {ref}, "
+                            "is not a merge")
+    if _contains(top, reviewed, parents[0]) is not False:
+        return None, None, f"could not show that {parents[0][:12]} predates the reviewed head"
+    return found, parents[0], None
+
+
+def _full(top, base, why):
+    paths = completion_audit.changed_paths(top, base)
+    return {"paths": paths, "old": base, "new": None, "narrowed": False,
+            "note": f"every path since the base is judged - {why}"}
+
+
+def own_changes(top, base, ticket):
+    """The ONE changed set `/crew:done` checks 4 and 5 judge (L-0753):
+    `{"paths", "old", "new", "narrowed", "note"}`. `old`..`new` is the
+    ticket's own range (`new` None is the working tree), which check 5 reads
+    the CHANGELOG over.
+
+    Before the ticket lands it is the completion audit's own set:
+    `merged_main.resolve`, then `completion_audit.changed_paths` with it, so
+    a path identical to merged main is main's. Once HEAD is itself inside the
+    integration ref, that rule drops every committed path (merged_main's
+    documented corner), so the ticket's landing is found instead: the first
+    commit M on the ref's first-parent line containing the review receipt's
+    head (a receipt naming this ticket and this base). The set is the
+    since-base paths that M changed against M^1 (main just before) or that
+    differ from HEAD now, and the range is M^1..M.
+
+    Could not tell -- merged_main cannot tell, no readable receipt head, no
+    such M or M not a merge, git failing -- is the FULL since-base set with the
+    reason in `note`: an unknown never narrows what is judged. Raises
+    RuntimeError when git cannot list the changes at all."""
+    merged = merged_main.resolve(top, base)
+    if merged["commit"] is None:
+        return _full(top, base, merged["reason"])
+    head = _git_head(top)
+    if head is None:
+        return _full(top, base, "could not tell: git could not read HEAD")
+    if not (merged["applies"] and merged["commit"] == head):
+        own = {"paths": completion_audit.changed_paths(top, base, merged), "new": None,
+               "old": merged["commit"] if merged["applies"] else base,
+               "narrowed": bool(merged["applies"]), "note": merged["reason"]}
+        return own
+    reviewed, why = _receipt_head(top, ticket, base)
+    if reviewed is None:
+        return _full(top, base, f"could not tell which merge landed {ticket}: {why}")
+    landed, before, why = _landing(top, merged["ref"], base, reviewed)
+    if landed is None:
+        return _full(top, base, f"could not tell which merge landed {ticket}: {why}")
+    brought = {p for p in completion_audit._git_fields(  # pylint: disable=protected-access
+        top, ["diff-tree", "-r", "-z", "--name-only", "--no-renames", before, landed]) if p}
+    since_head = set(completion_audit.changed_paths(top, "HEAD"))
+    paths = sorted(set(completion_audit.changed_paths(top, base)) & (brought | since_head))
+    return {"paths": paths, "old": before, "new": landed, "narrowed": True,
+            "note": (f"{ticket} landed in {merged['ref']} at {landed[:12]}; paths identical to "
+                     f"{before[:12]}, main before it, are main's")}
+
+
 def ticket_freshness(root, ticket, which=shutil.which):
     """`{"status", "reason", "stop", "base_source", "artifacts": [{"kind",
     "name", "status", "reason", "command", "refreshable"}], "documents": "not
@@ -1600,10 +1737,11 @@ def ticket_freshness(root, ticket, which=shutil.which):
     if not top or not base:
         return _unmeasured(f"no scope base for {ticket} ({why})", "no scope base", source)
     try:
-        every = set(completion_audit.changed_paths(top, base))
+        mine = own_changes(top, base, ticket)
     except RuntimeError as exc:
         return _unmeasured(f"could not list {ticket}'s changes: {exc}",
                            f"git could not list {ticket}'s changes", source)
+    every = set(mine["paths"])
     try:
         # NUL-separated, decoded as `changed_paths` decodes: a newline-split
         # listing C-quotes a name holding `"`, `\\`, a tab or a newline even
@@ -1647,6 +1785,7 @@ def ticket_freshness(root, ticket, which=shutil.which):
     result = {"status": overall, "reason": f"scope base {base[:12]} ({why})", "stop": None,
               "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED,
               "uncommitted": dirty or []}
+    result["reason"] += f"; changed set: {mine['note']}"
     if dirty is None:
         result.update(status=UNKNOWN, stop="git could not list uncommitted refresh artifacts",
                       reason=f"git could not list uncommitted refresh artifacts ({why})")

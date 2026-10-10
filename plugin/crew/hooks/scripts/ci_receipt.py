@@ -34,11 +34,18 @@ WHAT `check` ACCEPTS (local side). VERIFIED needs ALL of:
     receipt's producer (GATE_IMPL) against origin/main: a push runs the
     workflow AT the pushed sha, so such a branch would vouch for itself;
   * the NEWEST run of verify-gate.yml for HEAD's sha in this repository,
-    from a push or workflow_dispatch, completed with conclusion success;
+    from a push or workflow_dispatch, completed with conclusion success --
+    or, ONLY when HEAD's sha has no run at all, the newest run for a parent
+    of HEAD whose tree IS HEAD's tree (L-0753: verify-gate.yml never runs on
+    main, so the merge a PR lands has no run, while its PR head ran on the
+    same bytes). A merge whose first parent to HEAD changes a producer path
+    is refused: that run vouched for its own producer. A run for HEAD itself,
+    failed or pending, is never passed over for a parent's;
   * its `crew-verify-receipt-<attempt>` artifact (exactly one, unexpired, naming
-    that run and HEAD), holding a receipt of this
-    schema whose head, tree, verify.json blob, gate_impl digest, run id,
-    attempt and repository all equal what git and the API say, with `pass` true, gate
+    that run and the sha it ran at), holding a receipt of this
+    schema whose head (that sha), tree, verify.json blob, gate_impl digest, run id,
+    attempt and repository all equal what git and the API say -- tree, map and
+    digest HEAD's own --, with `pass` true, gate
     state VERIFIED, gate rc 0, nothing outstanding and a clean tree;
   * the newest run, and the local HEAD, tree, map and working tree, all
     unchanged from the start of the check to its end.
@@ -476,6 +483,42 @@ def _local(root):
             _gate_switch(root)[0])
 
 
+def _same_tree_parents(root, head, tree):
+    """HEAD's parents whose tree IS `tree`, second and later parents first
+    (a merge's PR head), then the first (L-0753). Unreadable when git cannot
+    list them or read a parent's tree: never an empty answer."""
+    parents = _git(root, "rev-list", "--parents", "-n", "1", head).split()[1:]
+    ordered = parents[1:] + parents[:1]
+    return [p for p in ordered if _git(root, "rev-parse", f"{p}^{{tree}}") == tree], parents
+
+
+def _subject_run(root, fetch, slug, head, tree):
+    """`(sha, run, why)`: the commit whose verify-gate run vouches for HEAD.
+    A run for HEAD itself is always the one judged, failed or pending
+    included. Only when HEAD has none is a parent with HEAD's exact tree
+    asked -- the PR head a merge landed, gated before the merge on the same
+    bytes (verify-gate.yml never runs on main). A merge whose first parent to
+    HEAD changes the receipt producer is refused: that run vouched for its
+    own producer. `why` is set, and `run` None, when nothing may vouch."""
+    run = _newest_run(fetch, slug, head)
+    if run is not None:
+        return head, run, None
+    same, parents = _same_tree_parents(root, head, tree)
+    for parent in same:
+        run = _newest_run(fetch, slug, parent)
+        if run is None:
+            continue
+        if len(parents) > 1:
+            landed = _git(root, "diff", "--name-only", parents[0], head, "--", *PRODUCER_PATHS)
+            if landed:
+                return parent, None, (f"HEAD merges {parent[:12]}, which changes the receipt "
+                                      f"producer ({', '.join(landed.split())}); its run vouched "
+                                      "for its own producer - gate locally")
+        return parent, run, None
+    return head, None, (f"no {WORKFLOW_FILE} run for HEAD, nor for a parent with HEAD's tree "
+                        f"{tree[:12]} (not pushed, CREW_RUNNER unset, or the run not started)")
+
+
 def check(root, fetch=None):
     """(state, reason, head) for the checkout at `root`. The newest eligible
     run is chosen BEFORE its status is looked at, so a newer pending or failed
@@ -515,17 +558,17 @@ def check(root, fetch=None):
                                 f"({', '.join(producer.split())}); a receipt it produced "
                                 "cannot vouch for itself - gate locally"), head
         slug = repo_slug(root)
-        run = _newest_run(fetch, slug, head)
+        subject, run, why = _subject_run(root, fetch, slug, head, tree)
         if run is None:
-            return UNVERIFIED, (f"no {WORKFLOW_FILE} run for HEAD in {slug} (not pushed, "
-                                "CREW_RUNNER unset, or the run not started)"), head
+            return UNVERIFIED, f"{why} in {slug}", head
+        whose = "HEAD" if subject == head else f"{subject[:12]}, HEAD's parent with its tree"
         run_id = str(run.get("id"))
         if run.get("status") != "completed":
             return UNVERIFIED, f"{WORKFLOW_FILE} run {run_id} is {run.get('status')}, not completed", head
         if run.get("conclusion") != "success":
-            return UNVERIFIED, (f"{WORKFLOW_FILE} run {run_id} (the newest for HEAD) concluded "
+            return UNVERIFIED, (f"{WORKFLOW_FILE} run {run_id} (the newest for {whose}) concluded "
                                 f"{run.get('conclusion')}"), head
-        raw = _receipt_bytes(fetch, slug, run, head)
+        raw = _receipt_bytes(fetch, slug, run, subject)
         try:
             receipt = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
@@ -533,18 +576,21 @@ def check(root, fetch=None):
         if not isinstance(receipt, dict) or receipt.get("schema") != SCHEMA:
             raise Unreadable(f"run {run_id}'s {RECEIPT_NAME} is not a {SCHEMA} receipt")
         wrong = _mismatch(receipt, (
-            ("head", head), ("tree", tree), ("verify_json", blob), ("gate_impl", impl),
+            ("head", subject), ("tree", tree), ("verify_json", blob), ("gate_impl", impl),
             ("run.id", run_id), ("run.attempt", str(run.get("run_attempt"))),
             ("run.repository", slug), ("pass", True), ("gate.state", VERIFIED),
             ("gate.rc", 0), ("outstanding", []), ("clean", True)))
         if wrong:
             return UNVERIFIED, f"run {run_id}: {wrong}", head
-        again = _newest_run(fetch, slug, head)
+        again = _newest_run(fetch, slug, subject)
         if again is None or (str(again.get("id")), again.get("run_attempt"),
                              again.get("status"), again.get("conclusion")) != (
                                  run_id, run.get("run_attempt"), "completed", "success"):
-            raise Unreadable(f"the newest {WORKFLOW_FILE} run for HEAD changed while the "
+            raise Unreadable(f"the newest {WORKFLOW_FILE} run for {whose} changed while the "
                              "receipt was being checked")
+        if subject != head and _newest_run(fetch, slug, head) is not None:
+            raise Unreadable(f"a {WORKFLOW_FILE} run for HEAD appeared while the receipt was "
+                             "being checked")
         if _local(root) != first:
             raise Unreadable("HEAD, its tree, .crew/verify.json, the working tree or the "
                              "gate's stand-down changed while the receipt was being checked")
@@ -552,8 +598,9 @@ def check(root, fetch=None):
         return UNKNOWN, str(exc), head
     except Exception as exc:  # pylint: disable=broad-except
         return UNKNOWN, f"the CI receipt could not be checked: {type(exc).__name__}: {exc}", head
+    via = "" if subject == head else f" through {subject[:12]}, which has the same tree"
     return VERIFIED, (f"CI receipt from {WORKFLOW_FILE} run {run_id} attempt "
-                      f"{run.get('run_attempt')} covers HEAD {head[:12]}, tree {tree[:12]}, "
+                      f"{run.get('run_attempt')} covers HEAD {head[:12]}{via}, tree {tree[:12]}, "
                       f"verify.json {blob[:12]}"), head
 
 
