@@ -21,6 +21,9 @@ REVIEW_DELTA = os.path.join(CREW, "hooks", "scripts", "review_delta.py")
 CREW_AUTOPILOT = os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py")
 CREW_STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 CREW_STATUS = os.path.join(CREW, "hooks", "scripts", "crew_status.py")
+SCOPE_BASE = os.path.join(CREW, "hooks", "scripts", "scope_base.py")
+_PIN = "tests/test_review_delta_pinned.py::"
+_SB = "tests/test_scope_base.py::"
 _D = "tests/test_review_delta.py::"
 _AP = "tests/test_crew_autopilot.py::"
 _PT = "tests/test_provider_table.py::"
@@ -1683,7 +1686,7 @@ REVIEW_FIX_MUTATIONS = (
      REVIEW_DELTA,
      "        tree = review_patch._ticket_base_tree(root, base, head_tree, tmp_dir,  "
      "# pylint: disable=protected-access\n"
-     "                                              head=head)[0]\n",
+     "                                              head=head, merged=merged)[0]\n",
      "        tree = _tree(root, base)\n",
      _D + "test_receipt_on_a_merged_main_bundle_survives_a_bump_and_anchor_refresh"),
     ("delta gate: a rewritten history is not caught", REVIEW_DELTA,
@@ -1982,4 +1985,41 @@ REVIEW_FIX_MUTATIONS = (
      '            and e.get("refunded") is True for e in unreviewed):\n',
      '            isinstance(e, (dict, str)) for e in unreviewed):\n',
      _SF + "test_status_never_counts_a_malformed_no_reviewer_record_as_refunded"),
+    # --- L-0770: the pinned merged-main rebuild and scope_base --base ------
+    ("L-0770: _ticket_base_tree ignores a pinned merged commit", REVIEW_PATCH,
+     '    if merged is None:\n        merged = merged_main.resolve(root, base_sha, head)\n',
+     '    merged = merged_main.resolve(root, base_sha, head)\n',
+     _PIN + "test_a_pinned_rebuild_after_landing_is_the_reviewed_bundle[caught-up]"),
+    ("L-0770: reviewed_bundle drops its merged pin", REVIEW_DELTA,
+     '                                              head=head, merged=merged)[0]\n',
+     '                                              head=head)[0]\n',
+     _PIN + "test_a_pinned_rebuild_after_landing_is_the_reviewed_bundle[caught-up]"),
+    ("L-0770: a pin at or before the start still drops", MERGED_MAIN,
+     '    if older:\n        return {"ref": ref, "commit": full, "applies": False,\n',
+     '    if False:\n        return {"ref": ref, "commit": full, "applies": False,\n',
+     _PIN + "test_a_pin_before_the_start_drops_nothing"),
+    ("L-0770: a pin that names no commit is used anyway", MERGED_MAIN,
+     '    if not full:\n        return {"ref": ref, "commit": None, "applies": False,\n',
+     '    if False:\n        return {"ref": ref, "commit": None, "applies": False,\n',
+     _PIN + "test_a_pin_that_names_no_commit_is_could_not_tell[0000000000000000000000000000000000000000]"),
+    ("L-0770: scope_base --base hands back HEAD on the base branch again", SCOPE_BASE,
+     '        if empty:\n            sys.stderr.write(f"scope-base: {empty}\\n")\n',
+     '        if False:\n            sys.stderr.write(f"scope-base: {empty}\\n")\n',
+     _SB + "test_cli_base_on_the_default_branch_with_no_record_is_could_not_tell"),
+    ("L-0770: scope_base --base refuses a ticket branch at its fork point", SCOPE_BASE,
+     '    if branch and _branch_name(branch) != _branch_name(ref):\n        return None\n',
+     '',
+     _SB + "test_cli_base_on_a_ticket_branch_at_its_fork_point_is_still_head"),
+    ("L-0770: scope_base reads refs/heads/<base> as another branch", SCOPE_BASE,
+     '    for prefix in ("refs/heads/", "refs/remotes/"):\n        ref = ref.removeprefix(prefix)\n',
+     '',
+     _SB + "test_cli_base_on_the_configured_base_branch_in_any_spelling_is_could_not_tell[main]"),
+    ("L-0770: scope_base reads a failed probe as not the base-branch case", SCOPE_BASE,
+     '    if not head or problem or not ref:\n',
+     '    if not head or problem or not ref:\n        return None\n',
+     _SB + "test_cli_base_reads_a_failed_probe_as_could_not_tell"),
+    ("L-0770: pinned lets a NUL name raise out of git_out", MERGED_MAIN,
+     '    except ValueError:\n        full = None\n',
+     '    except ImportError:\n        full = None\n',
+     _PIN + "test_a_pin_that_names_no_commit_is_could_not_tell[\\x00]"),
 )

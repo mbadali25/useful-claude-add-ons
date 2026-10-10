@@ -420,6 +420,45 @@ def changed(root, base):
                    if line.strip()})
 
 
+def _branch_name(ref):
+    """`main` for `main`, `origin/main`, `refs/heads/main` or
+    `refs/remotes/origin/main`: the base branch may be configured in any of
+    those spellings (Codex L-0770 r1: `refs/heads/main` read as another
+    branch). Only `origin` is stripped, as merged_main.resolve does."""
+    for prefix in ("refs/heads/", "refs/remotes/"):
+        ref = ref.removeprefix(prefix)
+    return ref.removeprefix("origin/")
+
+
+def _empty_range_on_the_base_branch(root, base, source):
+    """L-0770 (L-0765's report): with no usable record, on the base branch
+    itself or a detached HEAD in its history, the merge-base fallback IS HEAD.
+    `--base` then handed `/crew:review` an empty range, which it reported as
+    "nothing to review" - an unknown start read as an empty change. The
+    reason, or None when the fallback is not that case. A named ticket branch
+    at its fork point keeps HEAD: there the empty range is the truth."""
+    if source != "merge-base":
+        return None
+    head = crew_common.git_out(root, "rev-parse", "HEAD")
+    ref, problem = base_branch(root)
+    if not head or problem or not ref:
+        # A probe that fails after resolve() answered is could-not-tell,
+        # never "not this case" (Codex L-0770 r1).
+        return (f"could not tell: the merge-base fallback {str(base)[:12]} could not be "
+                "checked against HEAD and the base branch (git gave no answer)")
+    if head != base:
+        return None
+    branch = crew_common.git_out(root, "symbolic-ref", "--quiet", "HEAD")
+    if branch and _branch_name(branch) != _branch_name(ref):
+        return None
+    where = f"on {_branch_name(branch)}" if branch else "on a detached HEAD"
+    return (f"could not tell: no start is recorded and HEAD is {where}, inside {ref}'s own "
+            f"history, so the merge-base fallback is HEAD itself and which commits are the "
+            f"ticket's cannot be told. Record the ticket's start on its branch (scope_base.py "
+            f"--record), check that branch out, or - for a release of {ref}'s tip - let "
+            f"promote-gate's release mode read the member receipts.")
+
+
 def _usage():
     return ("usage: scope_base.py --root <repo> (--record | --base | --changed) "
             "<ticket>\n")
@@ -504,6 +543,11 @@ def main(argv):
         # from, rather than an empty string that diffs against nothing.
         sys.stdout.write("HEAD\n" if action == "--base" else "")
         return 0
+    if action == "--base":
+        empty = _empty_range_on_the_base_branch(root, base, source)
+        if empty:
+            sys.stderr.write(f"scope-base: {empty}\n")
+            return 3
     sys.stderr.write(f"scope-base: {base[:12]} ({reason})\n")
     if action == "--base":
         sys.stdout.write(base + "\n")
