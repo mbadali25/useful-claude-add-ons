@@ -10,8 +10,10 @@ scratch file; `monkeypatch` allows a later `setattr` to win within the same
 test and undoes everything at teardown regardless of ordering.
 """
 import os
+import pathlib
 import re
 import shutil
+import site
 import tempfile
 
 import pytest
@@ -27,8 +29,23 @@ from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-i
 from crew_fixtures import fixture_git_env
 
 
+@pytest.fixture
+def _crew_isolation_patch():
+    """The MonkeyPatch every isolation fixture below writes through: a private
+    one, NOT the test's `monkeypatch`. A test calling `monkeypatch.undo()` to
+    drop its own patches used to drop these too -- `GLOBAL_CONFIG_PATH` went
+    back to the real `~/.claude/crew/config.json`, which the L-0709 home audit
+    caught on a runner whose user layer exists (test_crew_split.py's
+    `test_orphan_without_index_row_not_adopted`). Sixteen tests call it."""
+    patch = pytest.MonkeyPatch()
+    try:
+        yield patch
+    finally:
+        patch.undo()
+
+
 @pytest.fixture(autouse=True)
-def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
+def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     """Point every reader of the machine-global config at a path that does not
     exist, so no test can read or write the developer's real
     `~/.claude/crew/config.json`.
@@ -44,6 +61,9 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     A monkeypatched attribute is per-name, not per-value: rebinding one module
     attribute does nothing to another module's binding of the same object.
     """
+    # The private patch (see `_crew_isolation_patch`), under the name the
+    # sabotage suite's anchors on this fixture read.
+    monkeypatch = _crew_isolation_patch
     unused = str(tmp_path / "unused-global-config.json")
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
@@ -120,7 +140,87 @@ def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_tmpdir(tmp_path_factory, monkeypatch):
+def _isolated_home(tmp_path_factory, _crew_isolation_patch):
+    """Sixth channel (L-0709): the home directory itself. Every test, and every
+    subprocess that inherits `os.environ`, gets a home of its own as HOME,
+    USERPROFILE and the XDG config/data/state directories.
+
+    `_no_real_global_config` moves one path in this process. A spawned crew
+    script recomputes `~/.claude/crew/config.json` from HOME, so it still read
+    the operator's file: `crew_autopilot.py status` said `mode: plan` (L-0704)
+    and crew-context.sh announced the operator's inert `autopilot.*` keys into
+    a test that expects silence (L-0729). Green in CI, which has no user layer;
+    red on the machine whose Stop hook runs the suite.
+
+    `crew_fixtures.home_audit` is on from the start of the test's setup to
+    the end of its teardown (`pytest_runtest_setup` / `_teardown` below), so a
+    module or session fixture set up for it is audited too: an open under a
+    real home, or a spawn handed a real HOME or a directory inside one, is
+    refused and recorded, and the teardown fails the test naming each path.
+    `CREW_TEST_REAL_HOME` is removed for the test, so nothing it spawns is
+    handed the real home's path. A test that wants another home sets HOME
+    afterwards, and that still wins.
+
+    Made by `tmp_path_factory.mktemp`, BESIDE tmp_path, for the reason the XDG
+    cache above is: tests assert exactly what their tmp_path holds."""
+    home = tmp_path_factory.mktemp("home")
+    for name, value in crew_fixtures.home_env(home).items():
+        _crew_isolation_patch.setenv(name, value)
+    _crew_isolation_patch.delenv(crew_fixtures.REAL_HOME_VAR, raising=False)
+    return home
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):  # pylint: disable=unused-argument
+    """Turn the home audit on before any fixture of this test is set up."""
+    del crew_fixtures.HOME_VIOLATIONS[:]
+    crew_fixtures.set_home_guard(_REAL_HOMES, _HOME_ALLOWED)
+    return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """A skip or xfail at run time (`pytest.skip("flaky ...")`,
+    `pytest.xfail("flaky ...")`) is held to the same rule as a skip or xfail
+    marker: an unreliable test is quarantined, not skipped. A marker whose
+    reason says so already failed collection, so only run-time calls get here."""
+    report = yield
+    if report.skipped:
+        if hasattr(report, "wasxfail"):
+            how, reason = "xfailed", str(report.wasxfail)
+        else:
+            how = "skipped"
+            reason = (report.longrepr[2] if isinstance(report.longrepr, tuple)
+                      else str(report.longrepr))
+        if _FLAKE_REASON_RE.search(reason or ""):
+            # pytest counts a failed report carrying `wasxfail` as no failure
+            # (the session exit status stayed 0), so the marker goes too.
+            if hasattr(report, "wasxfail"):
+                del report.wasxfail
+            report.outcome = "failed"
+            report.longrepr = (f"crew quarantine rule (L-0709): {how} at run time with {reason!r}; "
+                               "an unreliable test is quarantined with "
+                               "@pytest.mark.quarantine(owner=..., ticket=...)")
+    return report
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
+    """Turn it off after the last teardown, and fail the test with every path
+    it recorded -- including those the code under test swallowed."""
+    try:
+        return (yield)
+    finally:
+        crew_fixtures.set_home_guard(None)
+        found = list(crew_fixtures.HOME_VIOLATIONS)
+        del crew_fixtures.HOME_VIOLATIONS[:]
+        if found:
+            pytest.fail("this test reached the operator's real home (L-0709):\n  "
+                        + "\n  ".join(dict.fromkeys(found)), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_tmpdir(tmp_path_factory, _crew_isolation_patch):
     """Fifth channel (T-0065, item 7): the temp directory. Every test, and
     every subprocess that inherits `os.environ`, gets its own directory as
     `TMPDIR`/`TEMP`/`TMP` and as `tempfile`'s own cached directory.
@@ -143,8 +243,8 @@ def _isolated_tmpdir(tmp_path_factory, monkeypatch):
     own `TMPDIR` afterwards (or passes an explicit `env=`) and that wins."""
     tmp = tmp_path_factory.mktemp("tmpdir")
     for name in ("TMPDIR", "TEMP", "TMP"):
-        monkeypatch.setenv(name, str(tmp))
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp))
+        _crew_isolation_patch.setenv(name, str(tmp))
+    _crew_isolation_patch.setattr(tempfile, "tempdir", str(tmp))
 
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------
@@ -170,6 +270,93 @@ def pytest_addoption(parser):
 
 
 _XDG_PREVIOUS = "unset"
+# Every variable the session home (below) sets, with the value it replaced
+# (None = unset), restored at unconfigure.
+_HOME_PREVIOUS = {}
+# Each module's `GLOBAL_CONFIG_PATH` before the session moved it, restored at
+# unconfigure.
+_CONFIG_PATH_PREVIOUS = {}
+_HOME_SESSION = None
+_HOME_ALLOWED = ()
+_REAL_HOMES = ()
+# The checkout this conftest sits in. A CI checkout lives under the runner's
+# home (/home/runner/work/...), so the home audit must allow it.
+_REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
+
+
+def _isolate_home():
+    """Session half of the home isolation (L-0709): a session-wide home for
+    spawns outside any test (collection, module fixtures), the record of the
+    real homes for the audit and for xdist workers, then the audit hook. The
+    autouse fixture narrows the home to each test.
+
+    Two tool locations derive from HOME and are carried over, because they
+    hold installed code rather than configuration: the Python user base (a
+    `pip install --user` pytest must still import in a spawned interpreter or
+    an xdist worker) and pwsh's CurrentUser module directory (the
+    PSScriptAnalyzer the review-check tests run)."""
+    global _HOME_SESSION, _HOME_ALLOWED, _REAL_HOMES  # pylint: disable=global-statement
+    homes = _REAL_HOMES = crew_fixtures.real_homes()
+    carry = {crew_fixtures.REAL_HOME_VAR: os.pathsep.join(homes)}
+    if not os.environ.get("PYTHONUSERBASE"):
+        carry["PYTHONUSERBASE"] = site.getuserbase()
+    modules = [os.path.join(h, ".local", "share", "powershell", "Modules") for h in homes]
+    modules = [m for m in modules if os.path.isdir(m)]
+    if modules and os.name != "nt":
+        current = os.environ.get("PSModulePath")
+        carry["PSModulePath"] = os.pathsep.join(modules + ([current] if current else []))
+    _HOME_ALLOWED = crew_fixtures.home_allowed_prefixes(_REPO_ROOT, homes)
+    _HOME_SESSION = tempfile.mkdtemp(prefix="crew-home-")
+    carry.update(crew_fixtures.home_env(_HOME_SESSION))
+    for name, value in carry.items():
+        _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
+        os.environ[name] = value
+    # Unset for the session too, not only per test: a module or session
+    # fixture spawning before the per-test fixture runs must not inherit an
+    # ambient CLAUDE_CONFIG_DIR naming the operator's real `.claude`.
+    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR"):
+        _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
+        os.environ.pop(name, None)
+    # The in-process half: `GLOBAL_CONFIG_PATH` was computed from the real
+    # HOME when this conftest imported `crew_state`. `_no_real_global_config`
+    # moves it per test, but a module or session fixture is set up BEFORE any
+    # function-scoped fixture, so it read the operator's file
+    # (test_crew_autopilot_stop_contract.py's module-scoped `built`, caught by
+    # the audit). Moved for the session to a path under the session home,
+    # which does not exist; the per-test fixture still narrows it.
+    unused = os.path.join(_HOME_SESSION, ".claude", "crew", "config.json")
+    for module in (crew_state, crew_config):
+        _CONFIG_PATH_PREVIOUS.setdefault(module, module.GLOBAL_CONFIG_PATH)
+        module.GLOBAL_CONFIG_PATH = unused
+    crew_fixtures.install_home_audit()
+
+
+def _drop_real_home_record(config):
+    """The real homes are already in `_REAL_HOMES`. Keep the record in the
+    environment only in an xdist controller, whose environment its workers
+    inherit and which runs no fixture itself; anywhere that runs tests, drop
+    it, so no fixture's child is handed the real home's path."""
+    controller = (not hasattr(config, "workerinput")
+                  and bool(getattr(config.option, "numprocesses", None)))
+    if not controller:
+        os.environ.pop(crew_fixtures.REAL_HOME_VAR, None)
+
+
+def _restore_home():
+    global _HOME_SESSION  # pylint: disable=global-statement
+    crew_fixtures.set_home_guard(None)
+    for name, value in _HOME_PREVIOUS.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    _HOME_PREVIOUS.clear()
+    for module, value in _CONFIG_PATH_PREVIOUS.items():
+        module.GLOBAL_CONFIG_PATH = value
+    _CONFIG_PATH_PREVIOUS.clear()
+    if _HOME_SESSION:
+        shutil.rmtree(_HOME_SESSION, ignore_errors=True)
+    _HOME_SESSION = None
 
 
 def _isolate_pwsh_cache():
@@ -185,6 +372,7 @@ def _isolate_pwsh_cache():
 
 
 def pytest_unconfigure(config):  # pylint: disable=unused-argument
+    _restore_home()
     session = crew_fixtures.pwsh_cache_session_dir()
     crew_fixtures.set_pwsh_cache_session(None)
     if _XDG_PREVIOUS is None:
@@ -197,6 +385,8 @@ def pytest_unconfigure(config):  # pylint: disable=unused-argument
 
 def pytest_configure(config):
     _isolate_pwsh_cache()
+    _isolate_home()
+    _drop_real_home_record(config)
     config.addinivalue_line(
         "markers",
         "slow: the full bash/pwsh driver matrix for a hook; deselected by "
@@ -213,6 +403,85 @@ def pytest_configure(config):
         "markers",
         "wallclock: asserts elapsed time against a real bound; run serially, "
         "never under -n (pytest-xdist)")
+    config.addinivalue_line(
+        "markers",
+        "quarantine(owner, ticket, reason): a known timing flake, deselected by "
+        "default until its ticket fixes it; owner and ticket are required. Run "
+        "with -m quarantine")
+
+
+_QUARANTINE_TOKEN_RE = re.compile(r"(?<!\w)quarantine(?!\w)")
+_TICKET_RE = re.compile(r"^[A-Z]-\d{4}$")
+# A skip whose reason says the test is unreliable is a quarantine without an
+# owner. Matched on the marker's reason only; a test that skips at run time
+# with pytest.skip() is not visible at collection.
+_FLAKE_REASON_RE = re.compile(r"flak|timing|intermittent", re.IGNORECASE)
+
+
+def _quarantine_problem(item):
+    """None, or why `item`'s markers break the quarantine rule (L-0709)."""
+    for mark in item.iter_markers("quarantine"):
+        owner, ticket = mark.kwargs.get("owner"), mark.kwargs.get("ticket")
+        if not (isinstance(owner, str) and owner.strip()):
+            return "quarantine marker without an owner= naming who fixes it"
+        if not (isinstance(ticket, str) and _TICKET_RE.match(ticket)):
+            return f"quarantine marker without a ticket= id like L-0001 (got {ticket!r})"
+    for name in ("skip", "skipif", "xfail"):
+        for mark in item.iter_markers(name):
+            reason = mark.kwargs.get("reason") or (
+                mark.args[0] if name == "skip" and mark.args else "")
+            if isinstance(reason, str) and _FLAKE_REASON_RE.search(reason):
+                return (f"{name} with reason {reason!r}: an unreliable test is "
+                        "quarantined with @pytest.mark.quarantine(owner=..., ticket=...), "
+                        "never also skipped")
+    return None
+
+
+def _named_tests(config):
+    """The tests the command line names by node id (`file.py::test`), as
+    (absolute file, the id after the first `::`) pairs. A file or directory
+    argument names no test."""
+    base = pathlib.Path(config.invocation_params.dir)
+    named = []
+    for arg in config.args:
+        path, sep, rest = str(arg).partition("::")
+        if sep and rest:
+            named.append((os.path.normcase(str((base / path).resolve())), rest))
+    return named
+
+
+def _is_named(item, named):
+    """True when `item` is one a command-line node id names: the same file,
+    and the same test, or one parametrized case of it."""
+    if not named:
+        return False
+    here = os.path.normcase(str(pathlib.Path(str(item.path)).resolve()))
+    tail = item.nodeid.partition("::")[2]
+    return any(here == path and (tail == rest or tail.startswith(rest + "["))
+               for path, rest in named)
+
+
+def _deselect_quarantined(config, items):
+    """Validate every quarantine marker, refuse an ownerless flake skip, and
+    deselect quarantined tests unless a `-m` expression names `quarantine` or
+    the command line names the test by node id. The second exemption is the
+    sabotage suite's: each of its entries runs one test by node id, and a
+    quarantined target collecting nothing reads as a mutation it cannot
+    prove caught (`a clean linter's leftover survives (S5a)`)."""
+    problems = [f"{item.nodeid}: {why}" for item in items
+                for why in [_quarantine_problem(item)] if why]
+    if problems:
+        raise pytest.UsageError("crew quarantine rule (L-0709):\n  " + "\n  ".join(problems))
+    if _QUARANTINE_TOKEN_RE.search(config.option.markexpr or ""):
+        return
+    named = _named_tests(config)
+    keep, drop = [], []
+    for item in items:
+        quarantined = item.get_closest_marker("quarantine") and not _is_named(item, named)
+        (drop if quarantined else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
 
 
 _SLOW_TOKEN_RE = re.compile(r"(?<!\w)slow(?!\w)")
@@ -228,7 +497,11 @@ def pytest_collection_modifyitems(config, items):
     -- a marker that has nothing to do with this one -- read as "slow was
     named" and returned early, collecting the full set (including the
     deselected-by-default matrix) instead of applying the expression the
-    caller actually asked for."""
+    caller actually asked for.
+
+    Quarantined timing flakes (L-0709) are handled first, by
+    `_deselect_quarantined`."""
+    _deselect_quarantined(config, items)
     if config.getoption("--run-slow") or _SLOW_TOKEN_RE.search(config.option.markexpr or ""):
         return
     keep, drop = [], []

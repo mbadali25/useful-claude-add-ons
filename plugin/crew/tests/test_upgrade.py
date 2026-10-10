@@ -1337,7 +1337,7 @@ def test_the_global_config_path_has_exactly_one_definition():
             in pathlib.Path(crew_config.__file__).read_text(encoding="utf-8"))
 
 
-def test_the_suite_cannot_reach_the_real_machine_global_config():
+def test_the_suite_cannot_reach_the_real_machine_global_config(tmp_path):
     """conftest's isolation, asserted directly rather than trusted.
 
     The path is canonical in `crew_state` and re-exported by `crew_config`, so
@@ -1348,7 +1348,13 @@ def test_the_suite_cannot_reach_the_real_machine_global_config():
 
     That failure is invisible on most machines: if your own global config
     happens not to set a theme, every test still passes. So it is asserted on
-    the PATH rather than on any behaviour derived from it."""
+    the PATH rather than on any behaviour derived from it.
+
+    Both names are held to THIS test's path, not merely to "not the real
+    one": since L-0709 the session also moves both names off the real file
+    (for module fixtures), so a per-test patch of one name alone would still
+    pass a "not the real path" check while the other name carried the
+    session-wide value."""
     import crew_config  # pylint: disable=import-outside-toplevel
 
     real = pathlib.Path.home() / ".claude" / "crew" / "config.json"
@@ -1356,6 +1362,7 @@ def test_the_suite_cannot_reach_the_real_machine_global_config():
         seen = pathlib.Path(mod.GLOBAL_CONFIG_PATH)
         assert seen != real, mod.__name__
         assert not seen.exists(), mod.__name__
+        assert seen.parent == tmp_path, (mod.__name__, str(seen))
 
 
 def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(

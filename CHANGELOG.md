@@ -9,6 +9,46 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.21: every crew test runs under a home of its own (L-0709)
+
+- **Summary.** `crew` 1.2.21: the crew test suite no longer reads your real
+  `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
+  failing on settings you chose.
+- **Isolation.** `plugin/crew/tests/conftest.py`'s autouse `_isolated_home` points HOME,
+  USERPROFILE and `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_STATE_HOME` at a per-test directory
+  beside `tmp_path`, and a session-wide one covers collection. `GLOBAL_CONFIG_PATH` was patched
+  in-process only, so a spawned script still read the real file: with `autopilot.*` keys in the
+  machine layer, `test_status_mode_line_reads_off_by_default` (L-0704) and both
+  `test_bash_flavour_emits_and_logs_nothing_when_inject_is_false` cases (L-0729) failed locally and
+  passed in CI. The Python user base and pwsh's CurrentUser module directory are carried over, as
+  installed code rather than configuration.
+- **Audit.** `crew_fixtures.home_audit` fails a test that opens a file under the real home, or
+  spawns a process handed the real HOME, naming each path; the checkout, the interpreter and the
+  temp directory are allowed, and an import path is allowed only outside the real home's `.claude`
+  (`PYTHONPATH=~/.claude` no longer exempts the crew config) unless it is the running
+  interpreter's own prefix (a venv at `~/.claude/venv` still imports). The guard is pre-open only:
+  a symlink swapped in between the check and the open, an `os.open` relative to a `dir_fd`, and an
+  open alias captured before the audit installed are a declared known limit (L-0761). A session or module fixture is tested
+  in an inner run against a planted home: it is handed no real-home record, no
+  `CLAUDE_CONFIG_DIR`/`CLAUDE_PROJECT_DIR` and no real `GLOBAL_CONFIG_PATH`. `test_hermetic_home.py` holds it, with a regression run against a
+  planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
+  the sabotage-suite entries are L-0738, a tooling PR).
+- **`monkeypatch.undo()` no longer drops the isolation.** conftest's isolation fixtures shared the
+  test's `monkeypatch`, so the 16 tests that call `monkeypatch.undo()` to drop their own patches
+  also put `GLOBAL_CONFIG_PATH` back on the real `~/.claude/crew/config.json`; the new audit caught
+  `test_crew_split.py::test_orphan_without_index_row_not_adopted` opening it on a runner with a
+  user layer. The fixtures now write through a private `MonkeyPatch`. A module or session
+  fixture, set up before any per-test patch, read it too
+  (`test_crew_autopilot_stop_contract.py`'s `built`): the session now moves `GLOBAL_CONFIG_PATH`
+  under its own home as well.
+- **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
+  until `-m quarantine` or its node id (`file.py::test`) names it, so a sabotage entry targeting
+  one still runs it; a quarantine missing either, or a skip marker whose reason
+  says flaky/timing/intermittent, fails collection, and a `pytest.skip()` or `pytest.xfail()`
+  saying so at run time fails the test. Quarantined (L-0737 fixes them):
+  `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
+  2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
+
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
 - **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4

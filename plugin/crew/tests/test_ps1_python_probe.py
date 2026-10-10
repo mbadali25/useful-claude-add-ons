@@ -673,6 +673,9 @@ def _hang_forever(directory, names=("python3",)):
         _stub(directory, name, "sleep 60")
 
 
+# Red serially on main's run 37718549059 (ps1=10.43s against the 10s bound).
+@pytest.mark.quarantine(owner="mbadali25", ticket="L-0737",
+                        reason="timing flake: ps1 overruns the 10s hook bound on a loaded runner")
 @needs_pwsh
 @needs_bash
 @pytest.mark.wallclock

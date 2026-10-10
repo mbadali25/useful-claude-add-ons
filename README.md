@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.21**: Every crew test runs under a home of its own. `crew` 1.2.21: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
 - **crew 1.2.20**: A merged ticket closes with `/crew:done` without a refresh PR. `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4 and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
-- **crew 1.2.19**: The promote-gate review tests' PowerShell cases run serially. `crew` 1.2.19 runs every default-set PowerShell case in `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16` step no longer fails them on time. The gate is unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
