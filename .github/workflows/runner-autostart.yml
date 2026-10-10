@@ -70,6 +70,14 @@ jobs:
               echo "::error::gh api $method $path got no HTTP response (gh exit $rc)."
               exit 1
             fi
+            # A 2xx status line from a gh that still failed (a body it could
+            # not read, a CLI error after the response) is not a success.
+            case "$status" in
+              2??) if [ "$rc" -ne 0 ]; then
+                     echo "::error::gh api $method $path got HTTP $status but gh exited $rc."
+                     exit 1
+                   fi ;;
+            esac
           }
           # 401/403/404 = the token cannot reach the repo or its Actions.
           # Auto-start is optional, so that is a warning, not a red check.
