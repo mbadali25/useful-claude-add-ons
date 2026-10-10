@@ -37,6 +37,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   later release: must-allow, must-block, and four could-not-tell cases. The new
   `test_ci_receipt.py` cases cover the same-tree parent. Eight mutations were each seen red by hand.
   Their sabotage entries go to a follow-up tooling PR, because the sabotage files are review harness.
+
+### Fixed — crew 1.2.19: the promote-gate review tests' PowerShell cases run serially (L-0759)
+
+- **Summary.** `crew` 1.2.19 runs every default-set PowerShell case in
+  `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16`
+  step no longer fails them on time. The gate is unchanged.
+- **Why.** `promote-gate.ps1` keeps a 16s deadline counted from process start, so it fits the 20s
+  hook timeout (L-0703). With 16 workers on a 4-vCPU hosted runner, PowerShell start-up used most of
+  that budget, and `test (3.11)` and `test (3.13)` failed in run 38033960181 with "the gate's
+  deadline passed before the review check could finish". The deadline is not raised.
+- **What moved.** The ps1 param of `FLAVOURS_DEFAULT` and the two ps1-only tests
+  (`test_ps1_refuses_a_map_that_is_not_a_regular_file`, `test_ps1_without_python_blocks_a_declared_deploy`)
+  are marked `wallclock`: 40 cases, about 51s serially on a local run. The `slow` ps1 param of
+  `FLAVOURS` stays in the slow job, because `-m wallclock` never selects `slow` tests.
+
 ### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
 
 - **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
