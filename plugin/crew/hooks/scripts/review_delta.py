@@ -199,7 +199,7 @@ def index_tree(root):
     return _ok(root, ["write-tree"]).strip()
 
 
-def reviewed_bundle(root, base, head):
+def reviewed_bundle(root, base, head, merged=None):
     """(bundle sha256, the tree it diffs from) that `review_patch.compute`
     would give for commit `head` started at `base`: T-0100's rule included, so
     a review written after a catch-up (paths identical to merged main left
@@ -207,12 +207,14 @@ def reviewed_bundle(root, base, head):
     that round read it. `review_patch._ticket_base_tree` with `head` in place
     of HEAD, then the same diff flags, exclusions, appended section of
     committed excluded-path changes (L-0739) and part split, with no working
-    state."""
+    state. `merged` (a `merged_main.pinned` answer, L-0770) names the merged
+    commit instead of asking `merged_main.resolve`, for a head that has since
+    merged into the integration branch."""
     head_tree = _tree(root, head)
     tmp_dir = tempfile.mkdtemp(prefix="review-delta-")
     try:
         tree = review_patch._ticket_base_tree(root, base, head_tree, tmp_dir,  # pylint: disable=protected-access
-                                              head=head)[0]
+                                              head=head, merged=merged)[0]
         only = ["--", "."] + review_patch._EXCLUDE_SPEC  # pylint: disable=protected-access
         patch = review_patch._run_raw(root, ["diff"] + review_patch._DIFF_FLAGS  # pylint: disable=protected-access
                                       + [tree, head_tree] + only)

@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.23: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+
+- **Summary.** `crew` 1.2.23 lets the review harness rebuild a round's bundle after its reviewed head
+  has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
+  `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
+  itself, so `/crew:review` stops rather than reporting "nothing to review".
+- **Why.** The harness half of L-0765 (TSS-win report: a main-tip release can never pass promote-gate).
+  Once a reviewed head is in main, `merge-base <head> main` is the head, so the rebuild dropped every
+  path and no accepted round could be checked again; release mode (L-0765) needs that check. And on the
+  base branch with no record, the merge-base fallback is HEAD itself: an unknown start read as an empty
+  change.
+- **Unchanged.** Every existing caller of `reviewed_bundle` and `_ticket_base_tree` (no `merged`), and
+  `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
+  its fork point still gets HEAD.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
 - **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4

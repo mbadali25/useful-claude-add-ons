@@ -420,6 +420,32 @@ def changed(root, base):
                    if line.strip()})
 
 
+def _empty_range_on_the_base_branch(root, base, source):
+    """L-0770 (L-0765's report): with no usable record, on the base branch
+    itself or a detached HEAD in its history, the merge-base fallback IS HEAD.
+    `--base` then handed `/crew:review` an empty range, which it reported as
+    "nothing to review" - an unknown start read as an empty change. The
+    reason, or None when the fallback is not that case. A named ticket branch
+    at its fork point keeps HEAD: there the empty range is the truth."""
+    if source != "merge-base":
+        return None
+    head = crew_common.git_out(root, "rev-parse", "HEAD")
+    if not head or head != base:
+        return None
+    ref, problem = base_branch(root)
+    if problem or not ref:
+        return None
+    branch = crew_common.git_out(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if branch and branch not in (ref, ref.removeprefix("origin/")):
+        return None
+    where = f"on {branch}" if branch else "on a detached HEAD"
+    return (f"could not tell: no start is recorded and HEAD is {where}, inside {ref}'s own "
+            f"history, so the merge-base fallback is HEAD itself and which commits are the "
+            f"ticket's cannot be told. Record the ticket's start on its branch (scope_base.py "
+            f"--record), check that branch out, or - for a release of {ref}'s tip - let "
+            f"promote-gate's release mode read the member receipts.")
+
+
 def _usage():
     return ("usage: scope_base.py --root <repo> (--record | --base | --changed) "
             "<ticket>\n")
@@ -504,6 +530,11 @@ def main(argv):
         # from, rather than an empty string that diffs against nothing.
         sys.stdout.write("HEAD\n" if action == "--base" else "")
         return 0
+    if action == "--base":
+        empty = _empty_range_on_the_base_branch(root, base, source)
+        if empty:
+            sys.stderr.write(f"scope-base: {empty}\n")
+            return 3
     sys.stderr.write(f"scope-base: {base[:12]} ({reason})\n")
     if action == "--base":
         sys.stdout.write(base + "\n")

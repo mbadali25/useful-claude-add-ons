@@ -518,3 +518,45 @@ def test_scope_report_says_when_the_ticket_wide_diff_was_unavailable(repo):
     first = done.stderr.splitlines()[0]
     assert first.startswith("outside-scope: (this turn only:"), done.stderr
     assert "ticket-wide diff unavailable" in done.stderr
+
+
+# --- L-0770: `--base` on the base branch with no record ---------------------
+
+def test_cli_base_on_the_default_branch_with_no_record_is_could_not_tell(repo):
+    """MUST REFUSE (L-0765's report): the merge-base fallback is HEAD itself,
+    and an empty range read by /crew:review as "nothing to review" hid every
+    commit on the branch. Exit 3, nothing on stdout."""
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, "on-main.py")
+    done = _cli(repo, "--base")
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert done.stdout == ""
+    assert "could not tell" in done.stderr and "merge-base fallback is HEAD itself" in done.stderr
+
+
+def test_cli_base_detached_inside_the_default_branch_is_could_not_tell(repo):
+    """The deploy-worktree shape: detached at a commit of main's history."""
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "checkout", "-q", "--detach", "HEAD")
+    done = _cli(repo, "--base")
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert "on a detached HEAD" in done.stderr
+
+
+def test_cli_base_on_a_ticket_branch_at_its_fork_point_is_still_head(repo):
+    """MUST ALLOW: a named ticket branch with no commits yet - the empty
+    range is the truth there, so HEAD stays the answer."""
+    done = _cli(repo, "--base")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == _head(repo)
+
+
+def test_cli_base_on_the_default_branch_with_a_record_is_the_record(repo):
+    """MUST ALLOW: a recorded start on main is used as before."""
+    _git(repo, "checkout", "-q", "main")
+    start = _head(repo)
+    assert _cli(repo, "--record").returncode == 0
+    _commit(repo, "on-main.py")
+    done = _cli(repo, "--base")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == start
