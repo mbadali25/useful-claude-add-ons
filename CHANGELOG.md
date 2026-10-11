@@ -71,6 +71,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
   plugin's `ruff.toml` extends the root config instead of replacing it.
 
+### Fixed — crew 1.2.29: the environment guard's review fixes (L-0772)
+
+- **Summary.** The environment guard no longer misses attached code (`bash -c'env'`, `node -pe`), a
+  globbed program name, or an armed config when python is missing; an explicit `null` arms it.
+- **Attached code.** `-cCODE`, `-eCODE` and `-neCODE` are scanned, and a run of code letters
+  (`node -pe 'process.env'`) is read every way it could split. A globbed or brace-expanded program
+  name (`/usr/bin/en?`, `e{n,}v`) and a non-literal name in inline code (`os.environ[name]`) are
+  could-not-tell. `env --help`, `env --version` and `printenv --help` are allowed.
+- **No-python fallbacks.** `env-guard.ps1` and `env_guard.py`'s emergency reader parse the layer;
+  `env-guard.sh` reads every `envGuard`, not the first. A layer that is unreadable, a directory, not
+  a JSON object, has a non-object `guards`, or (shell) holds a `\u` escape arms the guard.
+- **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off`
+  (`crew_guards.NULL_IS_MALFORMED`). `roleWrites` and `cloudGuard` are unchanged.
+- **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
+- **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
+  could-not-verify, never a zero or a crash.
+
 ### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
 
 - **Summary.** crew can now refuse a command that would print the whole environment, or a
