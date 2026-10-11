@@ -157,8 +157,13 @@ class ClientSettings:
 
     @property
     def uri(self) -> str:
-        host = f"[{self.host}]" if ":" in self.host else self.host
-        return f"ws://{host}:{self.port}"
+        return ws_uri(self.host, self.port)
+
+
+def ws_uri(host: str, port: int) -> str:
+    """The Bridge's WebSocket URI; an IPv6 literal is bracketed."""
+    host = f"[{host}]" if ":" in host else host
+    return f"ws://{host}:{port}"
 
 
 def client_settings(config: dict) -> ClientSettings:

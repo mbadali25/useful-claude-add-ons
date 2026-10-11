@@ -148,14 +148,14 @@ def test_symlink_inside_project_allowed(project, client):
 
 def test_oversize_file_refused(project, client):
     big = project / "big.txt"
-    big.write_bytes(b"a" * (256 * 1024 + 1))
+    big.write_bytes(b"a" * (tools.DEFAULT_MAX_FILE_BYTES + 1))
     out = _send("big.txt")
     assert out.startswith("❌") and "too large" in out
     assert client.sent == []
 
 
 def test_file_at_size_cap_allowed(project, client):
-    (project / "cap.txt").write_bytes(b"a" * (256 * 1024))
+    (project / "cap.txt").write_bytes(b"a" * tools.DEFAULT_MAX_FILE_BYTES)
     out = _send("cap.txt")
     assert not out.startswith("❌"), out
 
@@ -451,3 +451,28 @@ def test_bridge_client_peek_then_drop():
     bc._message_queue.append({"n": 3})  # pylint: disable=protected-access
     bc.drop_messages(2)
     assert bc.peek_messages() == [{"n": 3}]
+
+
+# --- a message too large for the Bridge is refused here, not silently there --
+
+
+@pytest.mark.parametrize("tool", ["send", "context"])
+def test_message_over_the_bridge_limit_is_reported_not_sent(project, client, tool):
+    from bridge_client import MessageTooLarge  # pylint: disable=import-outside-toplevel,import-error
+
+    async def too_large(to, content, context=None):
+        raise MessageTooLarge(70_000, 65_536)
+
+    client.send_message = too_large
+    (project / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    if tool == "send":
+        out = _send("src/a.py")
+    else:
+        out = asyncio.run(tools.peer_context("src/a.py", None, None))
+    assert out.startswith("❌")
+    assert "70000" in out and "65536" in out and "lines" in out
+
+
+def test_default_file_cap_fits_the_default_message_limit():
+    from config_loader import DEFAULT_MAX_MESSAGE_BYTES  # pylint: disable=import-outside-toplevel
+    assert tools.DEFAULT_MAX_FILE_BYTES < DEFAULT_MAX_MESSAGE_BYTES

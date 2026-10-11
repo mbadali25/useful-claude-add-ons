@@ -4,11 +4,14 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from http import HTTPStatus
 
 import websockets
 from websockets import ClientConnection
+
+from config_loader import DEFAULT_MAX_MESSAGE_BYTES, ws_uri
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,30 @@ REQUEST_TIMEOUT_SECONDS = 5.0
 PING_INTERVAL_SECONDS = 25
 # Sender of the client's own notices in the message queue, like the Bridge's
 NOTICE_SENDER = "Bridge"
+# The inbound queue, emptied by peer_read. An authenticated peer can send
+# faster than this session reads; past either cap newer messages are not
+# queued (the Bridge keeps them in its history) and one notice says so
+MAX_QUEUED_MESSAGES = 500
+MAX_QUEUED_BYTES = 8 * 1024 * 1024
+QUEUE_FULL_NOTICE = (
+    "This session's message queue is full, so newer messages are not queued until peer_read "
+    "empties it. The Bridge keeps every message in its history: read the missed ones with peer_history."
+)
+REFUSED_NOTICE = "The Bridge refused something this session sent ({code}): {error}"
+
+
+class MessageTooLarge(ValueError):
+    """A message whose frame is over the Bridge's server.max_message_bytes; it is not sent."""
+
+    def __init__(self, size: int, limit: int):
+        super().__init__(f"message frame of {size} bytes is over the Bridge's limit of {limit}")
+        self.size = size
+        self.limit = limit
+
+
+def max_message_bytes() -> int:
+    """The Bridge's frame limit as this client knows it: AI_CONNECT_MAX_MESSAGE_BYTES or the default."""
+    return int(os.environ.get("AI_CONNECT_MAX_MESSAGE_BYTES") or DEFAULT_MAX_MESSAGE_BYTES)
 
 
 class BridgeClient:
@@ -47,8 +74,15 @@ class BridgeClient:
         self._state: tuple[str, str] | None = None
         self._status = ""
         self._message_queue: list[dict] = []
+        # JSON size of the queue, against MAX_QUEUED_BYTES
+        self._queued_bytes = 0
+        # Set at the first message the full queue refused, until it is read
+        self._overflowing = False
+        self._dropped = 0
         # Answers to requests, keyed by the response type ("peer_list", "history")
         self._pending: dict[str, asyncio.Future] = {}
+        # One request per response type at a time: an answer carries no request id
+        self._request_locks: dict[str, asyncio.Lock] = {}
         self._receive_task: asyncio.Task | None = None
         self._ping_task: asyncio.Task | None = None
         self._reconnect_task: asyncio.Task | None = None
@@ -74,7 +108,7 @@ class BridgeClient:
 
         On standby the Bridge registers the client only once the name is free.
         """
-        uri = f"ws://{self.host}:{self.port}"
+        uri = ws_uri(self.host, self.port)
         try:
             self._ws = await websockets.connect(
                 uri,
@@ -127,15 +161,19 @@ class BridgeClient:
             self._reconnect_task = asyncio.create_task(self._reconnect())
 
     async def send_message(self, to: str, content: str, context: dict | None = None) -> bool:
-        """Send a message to a peer (or '*' for every online peer)."""
+        """Send a message to a peer (or '*' for every online peer).
+
+        Raises MessageTooLarge, before sending, when the frame is over the
+        Bridge's limit: the Bridge would refuse it after this returned True.
+        """
         if not self._connected:
             return False
-        return await self._send({
-            "type": "message",
-            "to": to,
-            "content": content,
-            "context": context
-        })
+        data = {"type": "message", "to": to, "content": content, "context": context}
+        size, limit = len(json.dumps(data).encode()), max_message_bytes()
+        if size > limit:
+            logger.warning(f"Message to {to} not sent: frame of {size} bytes is over the Bridge's limit of {limit}")
+            raise MessageTooLarge(size, limit)
+        return await self._send(data)
 
     async def list_peers(self) -> list[dict]:
         """Ask the Bridge for the peers that are online."""
@@ -172,7 +210,7 @@ class BridgeClient:
     def pop_messages(self) -> list[dict]:
         """Return and clear the received messages."""
         messages = self._message_queue.copy()
-        self._message_queue.clear()
+        self.drop_messages(len(messages))
         return messages
 
     def peek_messages(self) -> list[dict]:
@@ -180,31 +218,60 @@ class BridgeClient:
         return self._message_queue.copy()
 
     def drop_messages(self, count: int) -> None:
-        """Clear the first count messages, once they were shown."""
+        """Clear the first count messages, once they were shown; the queue takes messages again."""
         del self._message_queue[:count]
+        self._queued_bytes = sum(len(json.dumps(m)) for m in self._message_queue)
+        if self._overflowing:
+            logger.warning(f"Inbound queue was full: {self._dropped} messages not queued (they are in the history)")
+            self._overflowing, self._dropped = False, 0
+
+    def _enqueue(self, message: object) -> None:
+        """Queue one message unless the queue is full; the first refusal of a run queues a notice."""
+        size = len(json.dumps(message))
+        if len(self._message_queue) < MAX_QUEUED_MESSAGES and self._queued_bytes + size <= MAX_QUEUED_BYTES:
+            self._message_queue.append(message)  # type: ignore[arg-type]
+            self._queued_bytes += size
+            return
+        self._dropped += 1
+        if not self._overflowing:
+            self._overflowing = True
+            # Past the caps on purpose: one notice per run of refusals
+            self._message_queue.append(self._notice(QUEUE_FULL_NOTICE))
 
     async def _request(self, data: dict, response_type: str) -> dict:
         """Send a request and wait for the Bridge's answer of response_type."""
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-        self._pending[response_type] = future
-        try:
-            if not await self._send(data):
-                raise ConnectionError("Not connected to the Bridge")
-            return await asyncio.wait_for(future, timeout=REQUEST_TIMEOUT_SECONDS)
-        finally:
-            self._pending.pop(response_type, None)
+        async with self._request_locks.setdefault(response_type, asyncio.Lock()):
+            future: asyncio.Future = asyncio.get_running_loop().create_future()
+            self._pending[response_type] = future
+            try:
+                if not await self._send(data):
+                    raise ConnectionError("Not connected to the Bridge")
+                return await asyncio.wait_for(future, timeout=REQUEST_TIMEOUT_SECONDS)
+            finally:
+                self._pending.pop(response_type, None)
 
     async def _register(self) -> bool:
         return await self._send({"type": "register", "name": self.peer_name, "standby": self._standby})
 
-    def _queue_notice(self, content: str) -> None:
-        """Put a notice of this client into the message queue, read by peer_read."""
-        self._message_queue.append({
+    def _notice(self, content: str) -> dict:
+        return {
             "from": NOTICE_SENDER,
             "to": self.peer_name,
             "content": content,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+
+    def _queue_notice(self, content: str) -> None:
+        """Put a notice of this client into the message queue, read by peer_read.
+
+        The same notice twice in a row is queued once (a rate-limit flood).
+        Notices carry no id, which tells them from the Bridge's own messages.
+        """
+        last = self._message_queue[-1] if self._message_queue else None
+        if isinstance(last, dict) and "id" not in last and last.get("from") == NOTICE_SENDER \
+                and last.get("content") == content:
+            return
+        self._enqueue(self._notice(content))
 
     async def _send(self, data: dict) -> bool:
         """Send JSON over the WebSocket; a lost connection starts a reconnect."""
@@ -248,11 +315,12 @@ class BridgeClient:
         msg_type = data.get("type")
 
         if msg_type == "message":
-            self._message_queue.append(data)
+            self._enqueue(data)
 
         elif msg_type == "unread":
             messages = data.get("messages", [])
-            self._message_queue.extend(messages)
+            for message in messages if isinstance(messages, list) else [messages]:
+                self._enqueue(message)
 
         elif msg_type in self._pending:
             future = self._pending[msg_type]
@@ -286,6 +354,9 @@ class BridgeClient:
 
         elif msg_type == "error":
             logger.error(f"Bridge reported an error ({data.get('code')}): {data.get('error')}")
+            if data.get("code"):
+                # A send the Bridge refused was reported as sent: say so where the model reads
+                self._queue_notice(REFUSED_NOTICE.format(code=data.get("code"), error=data.get("error")))
 
     async def _on_name_taken(self) -> None:
         """Another live session holds the name: wait on standby once, never take it over."""

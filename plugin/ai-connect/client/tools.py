@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bridge_client import get_client  # pylint: disable=import-error
+from bridge_client import MessageTooLarge, get_client  # pylint: disable=import-error
 from bridge_time import parse_bridge_timestamp
 from peer_name import record_seen, session_pid
 from untrusted import frame_lines, frame_message, sanitize  # pylint: disable=import-error
@@ -20,8 +20,11 @@ log = logging.getLogger(__name__)
 # client.project_dir names one
 START_CWD = os.getcwd()
 _configured_project_dir = ""
-# Largest file peer_send / peer_context share, unless AI_CONNECT_MAX_FILE_BYTES says otherwise
-DEFAULT_MAX_FILE_BYTES = 256 * 1024
+# Largest file peer_send / peer_context share, unless AI_CONNECT_MAX_FILE_BYTES says otherwise.
+# Below the Bridge's default message limit (64 KiB): a bigger file could never be sent.
+# JSON escaping can still push a smaller one over; send_message checks the frame itself
+DEFAULT_MAX_FILE_BYTES = 48 * 1024
+TOO_LARGE = "❌ Not sent: {error}. Share fewer lines (lines=\"10-80\") or a smaller file."
 
 NOT_CONNECTED = "❌ Not connected to the Bridge Server (peer_status shows why)."
 
@@ -266,8 +269,11 @@ async def peer_send(to: str, message: str, file: str | None, lines: str | None) 
         context = _build_context(file, lines)
     except (OSError, ValueError) as e:
         return f"❌ Cannot read {file}: {e}"
-    if not await client.send_message(to, message, context):
-        return "❌ Sending failed, connection to the Bridge lost."
+    try:
+        if not await client.send_message(to, message, context):
+            return "❌ Sending failed, connection to the Bridge lost."
+    except MessageTooLarge as e:
+        return TOO_LARGE.format(error=e)
     attached = f" (+ {file}{' lines ' + lines if lines else ''})" if file else ""
     return f"📤 [{_format_time(datetime.now(timezone.utc))}] [{client.peer_name} → {to}]: {message}{attached}"
 
@@ -325,8 +331,11 @@ async def peer_context(file: str, lines: str | None, message: str | None) -> str
     except (OSError, ValueError) as e:
         return f"❌ Cannot read {file}: {e}"
     content = message or f"Shared {file}" + (f" (lines {lines})" if lines else "")
-    if not await client.send_message("*", content, context):
-        return "❌ Sharing failed, connection to the Bridge lost."
+    try:
+        if not await client.send_message("*", content, context):
+            return "❌ Sharing failed, connection to the Bridge lost."
+    except MessageTooLarge as e:
+        return TOO_LARGE.format(error=e)
     return f"📤 [{_format_time(datetime.now(timezone.utc))}] Shared with all online peers: {file}" + (f" lines {lines}" if lines else "")
 
 
