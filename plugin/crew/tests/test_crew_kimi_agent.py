@@ -91,6 +91,8 @@ def _kimi(tmp_path, monkeypatch):
     home = kimi_home(tmp_path / "kimi-home")
     monkeypatch.setenv("PATH", os.pathsep.join([str(fakes), _git_only_path()]))
     monkeypatch.setenv("KIMI_CODE_HOME", str(home))
+    # The settle is real in the detached-descendant case, short everywhere else.
+    monkeypatch.setattr(cka, "SETTLE_S", 0.05)
     for name in [k for k in os.environ if k.startswith("FAKE_KIMI_")]:
         monkeypatch.delenv(name)
 
@@ -117,6 +119,7 @@ def _parser_args(argv):
     parser.add_argument("--role")
     parser.add_argument("--root")
     parser.add_argument("--authors", action="append", default=[])
+    parser.add_argument("--diff-base", default=None)
     parser.add_argument("--timeout", type=int, default=cka.DEFAULT_TIMEOUT)
     parser.add_argument("--agents-dir")
     return parser.parse_args(argv)
@@ -590,3 +593,138 @@ def test_the_security_dispatcher_never_assumes_an_author():
 
     assert "include `claude`" not in text
     assert "never a\nfamily you assume" in text
+
+
+# --- review round 2 (Codex) -------------------------------------------------
+
+
+def _security_md():
+    with open(os.path.join(_REAL_AGENTS, "security.md"), encoding="utf-8") as fh:
+        return fh.read().split(cka.MARKER, 1)[0]
+
+
+def test_the_security_dispatch_has_no_bare_placeholder_in_shell():
+    import re  # pylint: disable=import-outside-toplevel
+    blocks = re.findall(r"```bash\n(.*?)```", _security_md(), re.S)
+
+    assert blocks
+    for block in blocks:
+        shell = re.sub(r"<<'(CREW_KIMI_TASK_<tag>_EOF)'.*?\n\1\n", "", block, flags=re.S)
+        assert not re.search(r"(?<!')<[a-z]+>", shell), shell
+    assert "--diff-base '<base>'" in _security_md()
+
+
+def _dirty(repo):
+    (repo / "seed.txt").write_text("unstaged edit\n", encoding="utf-8")
+    (repo / "staged.txt").write_text("staged file\n", encoding="utf-8")
+    git(repo, "add", "staged.txt")
+    (repo / "untracked.txt").write_text("untracked file\n", encoding="utf-8")
+
+
+def test_the_bundle_carries_staged_unstaged_and_untracked_changes(repo):
+    base = git(repo, "rev-parse", "HEAD")
+    _dirty(repo)
+
+    text = cka.diff_bundle(str(repo), base)
+
+    assert "unstaged edit" in text and "staged file" in text and "untracked file" in text
+
+
+def test_the_security_dispatch_sends_the_bundle_to_kimi(repo, tmp_path, kimi, capsys):
+    dump = tmp_path / "dump.jsonl"
+    kimi(FAKE_KIMI_DUMP=str(dump))
+    _configure(repo, ALL_PINNED)
+    base = git(repo, "rev-parse", "HEAD")
+    _dirty(repo)
+
+    code, out = _call(repo, tmp_path, role="security",
+                      args=("--authors", "claude", "--diff-base", base), capsys=capsys)
+
+    argv = json.loads(dump.read_text(encoding="utf-8").splitlines()[-1])["argv"]
+    prompt = argv[argv.index("-p") + 1]
+    assert code == cka.EXIT_OK, out
+    assert "unstaged edit" in prompt and "staged file" in prompt and "untracked file" in prompt
+
+
+@pytest.mark.parametrize("base, why", [
+    ("-p", "is not a plain commit or ref"),
+    ("main;touch x", "is not a plain commit or ref"),
+    ("a b", "is not a plain commit or ref"),
+    ("no-such-ref", "the bundle could not be built"),
+])
+def test_a_diff_base_that_is_not_a_plain_ref_is_a_usage_error(repo, tmp_path, kimi, capsys,
+                                                               base, why):
+    kimi()
+
+    code, out = _call(repo, tmp_path, role="security",
+                      args=("--authors", "claude", f"--diff-base={base}"), capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and out.startswith("crew-kimi-agent: --diff-base")
+    assert why in out
+
+
+@pytest.mark.parametrize("name", ["Kimi", "KIMI", "kimi-k3", "k3", "moonshot/Kimi-for-coding"])
+def test_an_author_name_is_normalised_before_the_guard(repo, tmp_path, kimi, capsys, name):
+    kimi()
+
+    code, out = _call(repo, tmp_path, role="security", args=("--authors", name),
+                      capsys=capsys)
+
+    assert code == cka.EXIT_UNAVAILABLE and out.startswith("KIMI UNAVAILABLE: barred")
+
+
+@pytest.mark.parametrize("name", ["123", "--", "?"])
+def test_an_author_name_that_names_no_family_is_a_usage_error(repo, tmp_path, kimi, capsys,
+                                                                name):
+    kimi()
+
+    code, out = _call(repo, tmp_path, role="security", args=(f"--authors={name}",),
+                      capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and "names no model family" in out
+
+
+def test_a_detached_descendant_that_writes_within_the_settle_is_exit_8(
+        repo, tmp_path, kimi, capsys, monkeypatch):
+    kimi(FAKE_KIMI_DETACHED=str(repo / "seed.txt"), FAKE_KIMI_DETACHED_S="0.3")
+    monkeypatch.setattr(cka, "SETTLE_S", 3.0)
+
+    code, out = _call(repo, tmp_path, capsys=capsys)
+
+    assert code == cka.EXIT_TREE and out.startswith("KIMI CHANGED THE TREE:")
+    assert "KIMI OK" not in out
+
+
+@pytest.mark.parametrize("role", ["security", "reviewer"])
+def test_an_unpinned_reviewing_role_is_not_routed_before_any_author_check(
+        repo, tmp_path, kimi, capsys, monkeypatch, role):
+    kimi()
+    monkeypatch.setattr(crew_state, "author_families",
+                        lambda root, cfg, stale=False: (frozenset(), "config"))
+
+    code, out = _call(repo, tmp_path, role=role, cfg={}, capsys=capsys)
+
+    assert code == cka.EXIT_UNAVAILABLE and out.startswith("KIMI UNAVAILABLE: not-routed")
+
+
+def test_a_pin_of_the_wrong_type_is_a_usage_error(repo, tmp_path, kimi, capsys):
+    kimi()
+
+    code, out = _call(repo, tmp_path, cfg={"dev": {"roles": {"explorer": {"provider": []}}}},
+                      capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and out.startswith("crew-kimi-agent: the crew config could not")
+
+
+def test_an_oversized_stdin_is_too_large_without_reading_it_all(repo, tmp_path):
+    big = b"x" * (cka.STDIN_LIMIT + 10)
+
+    done = subprocess.run(
+        [sys.executable, _SCRIPT, "--role", "explorer", "--root", str(repo),
+         "--agents-dir", str(_agents(tmp_path))],
+        input=big, capture_output=True, env=dict(os.environ, HOME=str(tmp_path / "home")),
+        check=False, timeout=120)
+
+    assert done.returncode == cka.EXIT_UNAVAILABLE
+    assert done.stdout.decode("utf-8").startswith(
+        f"KIMI UNAVAILABLE: too-large - the task on stdin is over {cka.STDIN_LIMIT} bytes")

@@ -43,6 +43,9 @@ import textwrap
 #   FAKE_KIMI_LATE / FAKE_KIMI_PROBE_LATE  an absolute path that a process the
 #                    review (or probe) call leaves running in its own process
 #                    group appends to LATE_WRITE_S after the call has answered
+#   FAKE_KIMI_DETACHED an absolute path that a process the review call starts in
+#                    a NEW session (out of its process group) appends to after
+#                    FAKE_KIMI_DETACHED_S seconds (default 0.5)
 #   FAKE_KIMI_ANSWER when set, a review call's assistant text, in place of the
 #                    READ lines and verdict
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
@@ -82,6 +85,19 @@ def late(path):
             [sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[2])); "
              "open(sys.argv[1], 'a').write('late fix')", path, "LATE_WRITE_S"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def detached(path):
+    # Leaves the call's process group and session, so stopping the group
+    # cannot reach it: what crew_kimi_agent.SETTLE_S exists to catch.
+    if path:
+        import subprocess
+        extra = ({"creationflags": 0x00000008 | 0x00000200} if os.name == "nt"
+                 else {"start_new_session": True})
+        subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[2])); "
+             "open(sys.argv[1], 'a').write('detached fix')", path,
+             os.environ.get("FAKE_KIMI_DETACHED_S", "0.5")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **extra)
 if prompt == "Reply with exactly: PROBE_OK":
     late(os.environ.get("FAKE_KIMI_PROBE_LATE"))
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
@@ -121,6 +137,7 @@ if prompt == "Reply with exactly: PROBE_OK":
     sys.exit(0)
 mode = os.environ.get("FAKE_KIMI_MODE", "clean")
 late(os.environ.get("FAKE_KIMI_LATE"))
+detached(os.environ.get("FAKE_KIMI_DETACHED"))
 if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)

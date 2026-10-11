@@ -4080,22 +4080,28 @@ answer, secrets redacted, and the dispatcher relays it verbatim. `KIMI UNAVAILAB
 Kimi ran changed the tree; the dispatcher does the task itself and opens with `ran on claude (kimi:
 <state>)`. `KIMI CHANGED THE TREE: <paths>` or `KIMI TREE UNKNOWN: <reason>` (exit 8) means the tree is not,
 or may not be, what the caller handed over: the dispatcher stops and reports, and never falls back over it.
-A line starting `crew-kimi-agent:` (exit 2: no task, an unreadable crew config layer, a role file without
-its marker) stops the dispatcher too: a broken config could be hiding the pin or the author that should
+A line starting `crew-kimi-agent:` (exit 2: no task, an unreadable crew config layer or a pin of the wrong
+type, an `--authors` or `--diff-base` value it cannot use, a role file without its marker) stops the dispatcher too: a broken config could be hiding the pin or the author that should
 have barred the run. Every contract line is one line; a newline in a reason or a path is folded to ` / `.
 
 **Read-only is two controls, not a flag.** `kimi -p` forces permission mode `auto`. As in `/crew:review`
 step 2e, and with the same code: a per-role Kimi agent file allowing only reads (explorer, security,
 reviewer `Read, Grep, Glob`; researcher `Read, Glob, WebSearch, FetchURL`) and disallowing `Write`, `Edit`
 and `Bash`, an empty `--skills-dir`, and the working tree fingerprinted before the probe, after it and after
-the run, with anything the call left running stopped first. A write outside the repository is caught by
-neither. No role gets Bash on Kimi.
+the run, with anything the call left running stopped first and a 2-second settle (`SETTLE_S`) before the
+last fingerprint, so a process that left Kimi's process group and writes within it is caught. A write outside
+the repository is caught by neither, and a detached process that writes after the settle is not caught
+either; `/crew:review`'s own Kimi round shares that limit (L-0785). No role gets Bash on Kimi.
 
 **The family guard covers `security` now.** `crew_state.REVIEWING_DEV_ROLES` puts `security` under
 `resolve_role`'s family guard, so a Kimi security pin on a diff Kimi wrote answers `KIMI UNAVAILABLE:
 barred`, and `/crew:model` shows the row barred. The author set is `--authors` united with the dispatch
 record or config (`author_families`); none known, or a dispatch record whose family cannot be told, is
-`author-unknown`, never "no conflict". The security dispatcher passes only the families its caller names. **Once your
+`author-unknown`, never "no conflict". `--authors` names are normalised the way the guard compares them
+(`Kimi`, `kimi-k3` and `k3` are all `kimi`), and a name that names no family is exit 2. A role that is not
+pinned to Kimi answers `not-routed` before any author check. The security dispatcher passes only the
+families its caller names, and hands Kimi the change with `--diff-base '<base>'`: the bundle `/crew:review`
+builds (committed, staged, unstaged and untracked), appended to the task. **Once your
 developer runs on Kimi, `security` and the reviewer are the same family as the author**: cross-family
 review of that work needs Codex or Claude. The Claude fallback is not guarded, and says so.
 

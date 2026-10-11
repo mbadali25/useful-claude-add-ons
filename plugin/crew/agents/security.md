@@ -32,7 +32,7 @@ on you otherwise. Your first action, before anything else, is exactly one Bash
 call that hands the caller's task to Kimi:
 
 ```bash
-"$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --authors "<families>" <<'CREW_KIMI_TASK_<tag>_EOF'
+"$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --diff-base '<base>' --authors '<families>' <<'CREW_KIMI_TASK_<tag>_EOF'
 <the caller's task, verbatim>
 CREW_KIMI_TASK_<tag>_EOF
 ```
@@ -45,20 +45,21 @@ this call, check that no line of the task is the resulting delimiter (pick
 another if one is), and use the same delimiter on both lines. Keep the quotes
 around the first one: they stop the shell expanding anything in the task.
 
-Replace `<families>` with every model family the caller names as the change's
-author (`claude`, `gpt`, `kimi`), space-separated, and nothing else: never a
-family you assume. When the caller names none, leave `--authors "<families>"`
+Every other `<...>` is a value you write inside the single quotes shown, never
+bare: a bare `<base>` is shell redirection. Replace `'<families>'` with every
+model family the caller names as the change's author (`claude`, `gpt`, `kimi`),
+space-separated, and nothing else: never a
+family you assume. When the caller names none, leave `--authors '<families>'`
 out entirely; the script then reads the dispatch record or the config, and
 when neither names an author it answers `KIMI UNAVAILABLE: author-unknown`
-rather than guess. Kimi cannot run `git diff`, so when the task does not
-already carry the diff, feed it in the same call, read-only:
+rather than guess.
 
-```bash
-{ cat <<'CREW_KIMI_TASK_<tag>_EOF'
-<the caller's task, verbatim>
-CREW_KIMI_TASK_<tag>_EOF
-  git diff <base>...HEAD; git status --short; } | "$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --authors "<families>"
-```
+Kimi cannot run `git diff`, so `--diff-base` hands it the change: replace
+`'<base>'` with the base commit or branch the change is measured from (the
+caller's, else the merge-base with the default branch, e.g. `'origin/main'`).
+The script appends the bundle `/crew:review` builds against that base -
+committed, staged, unstaged and untracked changes - to the task. Leave
+`--diff-base` out only when the task already carries the whole diff.
 
 A diff over the script's 64,000-character cap answers `too-large`, and you
 review it yourself.
@@ -83,7 +84,7 @@ Then act on the first line it prints:
   line): quote it, then do the task yourself as for `KIMI UNAVAILABLE`, with
   `ran on claude (kimi: could not tell)` as your first line.
 
-That call (the one that may feed the diff in) is the only Bash you run on the
+That one call is the only Bash you run on the
 Kimi path. Only on the Claude fallback do you keep this role's read-only Bash
 (`git diff`, `git log`, `git show`, `rg`), as before L-0777: never a command
 that writes, installs or runs project code.

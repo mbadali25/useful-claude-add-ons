@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.28: explorer, researcher and security can run on Kimi K3 (L-0777)
+### Added — crew 1.2.27: explorer, researcher and security can run on Kimi K3 (L-0777)
 
 - **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
   "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
@@ -34,6 +34,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   security passes only the author families its caller names, and a dispatch record of unknown family is
   `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
   a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
+- **Review round 2 (Codex), under a successor plan (owner 3-round cap).** The security dispatcher hands
+  Kimi the change with `--diff-base '<base>'`, the same committed, staged, unstaged and untracked bundle
+  `/crew:review` builds, and quotes every value; `--authors` names are normalised (`Kimi` is `kimi`) and a
+  non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
+  group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
+  wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
 
 ### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
 
