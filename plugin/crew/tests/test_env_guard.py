@@ -757,6 +757,21 @@ def test_bash_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
     assert code == (2 if armed else 0), out
 
 
+@needs_bash
+def test_bash_wrapper_without_python_a_directory_is_armed(tmp_path):
+    (_fixture(tmp_path) / ".crew" / "config.json").mkdir()
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
+    assert code == 2, out
+
+
+@needs_pwsh
+def test_pwsh_wrapper_without_python_a_directory_is_armed(tmp_path):
+    (_fixture(tmp_path) / ".crew" / "config.json").mkdir()
+    _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                               extra=_NO_PYTHON)
+    assert code == 2, out
+
+
 @needs_pwsh
 @pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
                          ids=[c[0] for c in _FALLBACK_LAYERS])
