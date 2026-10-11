@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.21**: Every crew test runs under a home of its own. `crew` 1.2.21: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
+- **crew 1.2.28**: Every crew test runs under a home of its own. `crew` 1.2.28: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
 - **ai-connect 0.1.4**: Codex QA fixes. `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it writes private from the first byte.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
