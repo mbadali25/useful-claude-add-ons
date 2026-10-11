@@ -4,6 +4,13 @@
 # TOOL that ran it. Off unless `guards.envGuard` is `report` or `block`.
 # Nothing here prints the command or the environment.
 
+# Resolve-CrewPython below is the byte-identical copy every crew .ps1 carries
+# (test_ps1_python_probe.py asserts it), and its best-effort cleanup catches
+# are empty by design. The suppression is script-wide because PSScriptAnalyzer
+# reads it only from a param block, as promote-gate.ps1 does (L-0703).
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingEmptyCatchBlock', '', Justification = 'Resolve-CrewPython copy: best-effort cleanup catches')]
+param()
+
 # Flavour guard. Both flavours are registered for the event, so on a host that
 # has BOTH interpreters both would otherwise run. Stand down only when we can
 # positively prove this is not Windows. `$env:OS` is 'Windows_NT' on BOTH

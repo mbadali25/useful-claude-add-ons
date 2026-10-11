@@ -1881,7 +1881,7 @@ def findings(text, shell="bash"):
             _ps_text(text, 0, ctx)
         else:
             _bash_text(text, 0, ctx)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         ctx.add(f"could-not-tell:internal-error:{type(exc).__name__}")
     return list(ctx.found)
 
@@ -1911,7 +1911,7 @@ def _crude_armed(root):
     try:
         import crew_common  # pylint: disable=import-outside-toplevel
         crew_dir, source, _ = crew_common.repo_config_dir(root)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
         return True
     if source == crew_common.SOURCE_UNKNOWN:
         return True
@@ -2020,7 +2020,7 @@ def main():
     root = root if isinstance(root, str) else "."
     try:
         mode, note = resolve_mode(root)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         if not _crude_armed(root):
             sys.stderr.write(f"env-guard: could not read guards.envGuard "
                              f"({type(exc).__name__}); no config arms it, "
