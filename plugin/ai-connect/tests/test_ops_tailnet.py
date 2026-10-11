@@ -468,8 +468,22 @@ def test_a_release_the_apt_repository_lacks_falls_back_to_the_install_script(box
     ran = installer_calls(first)
     assert ran[0][2] == "https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg"
     assert [c[0] for c in ran[1:]] == ["curl", "sh"] and ran[1][2] == "https://tailscale.com/install.sh"
-    assert "if that fails, with Tailscale's install script" in first.out
+    assert "if the apt repository does not carry this release, with Tailscale's install script" in first.out
+    assert "Tailscale's apt repository does not carry ubuntu resolute" in first.out
     assert box.state()["ts_backend"] == "Running"
+
+
+@pytest.mark.parametrize("state", [{"apt_rc": 100}, {"curl_rc": 6}], ids=["dpkg-lock", "no-network"])
+def test_an_apt_failure_that_is_not_a_missing_release_stops_without_the_install_script(box, state):
+    """A held dpkg lock or no network is not fixed by piping a script from the internet into a root shell."""
+    env = missing(box, "linux", "linux", **state)
+    ubuntu(box)
+    run = Phase(box, "bridge", "--name", "hub", "--port", "9", extra_env=env)
+    assert run.res.returncode == 1, run.text
+    ran = installer_calls(run)
+    assert not any(c[0] == "sh" or "https://tailscale.com/install.sh" in c for c in ran), ran
+    assert "does not fall back to Tailscale's install script" in run.text
+    assert box.state()["ts_backend"] == "NoState"
 
 
 def test_accept_dns_is_off_unless_asked_for(box, tmp_path):
@@ -517,7 +531,7 @@ def test_a_failed_install_stops_the_deploy(box):
     env = missing(box, "linux", "linux", install_rc=7)
     run = Phase(box, "bridge", "--name", "hub", extra_env=env)
     assert run.res.returncode == 1
-    assert "install script failed (exit 7)" in run.res.stderr
+    assert "install script failed at `sh " in run.res.stderr and "(exit 7)" in run.res.stderr
     assert not box.config_file.exists()
 
 

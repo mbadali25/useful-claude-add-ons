@@ -117,6 +117,9 @@ def curl(args, state):
     if state.get("curl_404") and any(state["curl_404"] in arg for arg in args):
         print("curl: (22) The requested URL returned error: 404", file=sys.stderr)
         return 22
+    if state.get("curl_rc"):  # e.g. 6, could not resolve the host: no network
+        print(f"curl: ({state['curl_rc']}) Could not resolve host", file=sys.stderr)
+        return int(state["curl_rc"])
     Path(args[args.index("-o") + 1]).write_text("# fake download\n", encoding="utf-8")
     return 0
 
@@ -128,6 +131,9 @@ def install(_args, _state):
 def apt_get(args, state):
     if args[:1] == ["update"]:
         return 0
+    if state.get("apt_rc"):  # e.g. 100, another apt or dpkg holds the lock
+        print("E: Could not get lock /var/lib/dpkg/lock-frontend", file=sys.stderr)
+        return int(state["apt_rc"])
     return install_tailscale(state) if args[:3] == ["install", "-y", "tailscale"] else 64
 
 

@@ -33,7 +33,8 @@ sequenceDiagram
 Tailscale itself does not have to be installed: `tailnet-setup`, `bridge` and `peer`
 install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repository
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
-repository does not carry, Tailscale's install script. Every command is printed before
+repository does not carry, Tailscale's install script; any other apt failure (a held
+dpkg lock, no network) stops instead of falling back. Every command is printed before
 it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
