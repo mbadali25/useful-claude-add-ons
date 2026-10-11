@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from http import HTTPStatus
 
@@ -27,7 +28,8 @@ MAX_QUEUED_MESSAGES = 500
 MAX_QUEUED_BYTES = 8 * 1024 * 1024
 QUEUE_FULL_NOTICE = (
     "This session's message queue is full, so newer messages are not queued until peer_read "
-    "empties it. The Bridge keeps every message in its history: read the missed ones with peer_history."
+    "empties it. Direct messages stay in the Bridge's history: read a missed conversation with "
+    "peer_history. Broadcasts missed meanwhile are not in it."
 )
 REFUSED_NOTICE = "The Bridge refused something this session sent ({code}): {error}"
 
@@ -81,8 +83,9 @@ class BridgeClient:
         self._dropped = 0
         # Answers to requests, keyed by the response type ("peer_list", "history")
         self._pending: dict[str, asyncio.Future] = {}
-        # One request per response type at a time: an answer carries no request id
+        # One request per response type at a time, and the request_id each waits for
         self._request_locks: dict[str, asyncio.Lock] = {}
+        self._pending_ids: dict[str, str] = {}
         self._receive_task: asyncio.Task | None = None
         self._ping_task: asyncio.Task | None = None
         self._reconnect_task: asyncio.Task | None = None
@@ -242,13 +245,18 @@ class BridgeClient:
         """Send a request and wait for the Bridge's answer of response_type."""
         async with self._request_locks.setdefault(response_type, asyncio.Lock()):
             future: asyncio.Future = asyncio.get_running_loop().create_future()
+            # The Bridge echoes it: a late answer to a request that timed out
+            # is told apart from the answer to this one
+            request_id = uuid.uuid4().hex
             self._pending[response_type] = future
+            self._pending_ids[response_type] = request_id
             try:
-                if not await self._send(data):
+                if not await self._send({**data, "request_id": request_id}):
                     raise ConnectionError("Not connected to the Bridge")
                 return await asyncio.wait_for(future, timeout=REQUEST_TIMEOUT_SECONDS)
             finally:
                 self._pending.pop(response_type, None)
+                self._pending_ids.pop(response_type, None)
 
     async def _register(self) -> bool:
         return await self._send({"type": "register", "name": self.peer_name, "standby": self._standby})
@@ -324,7 +332,11 @@ class BridgeClient:
 
         elif msg_type in self._pending:
             future = self._pending[msg_type]
-            if not future.done():
+            answered = data.get("request_id")
+            # No request_id: a Bridge from before it was echoed, matched by type alone
+            if answered is not None and answered != self._pending_ids.get(msg_type):
+                logger.info(f"Dropped a late '{msg_type}' answer to an abandoned request")
+            elif not future.done():
                 future.set_result(data)
 
         elif msg_type == "peer_joined":

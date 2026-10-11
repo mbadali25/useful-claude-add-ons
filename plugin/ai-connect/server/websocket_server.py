@@ -11,6 +11,7 @@ from http import HTTPStatus
 import websockets
 from websockets.asyncio.server import Server, ServerConnection
 from websockets.http11 import Request, Response
+from websockets.protocol import State
 
 from .limits import Limits, TokenBucket
 from .message_store import DEFAULT_DB_PATH, MessageStore
@@ -56,6 +57,12 @@ NAME_TAKEN_ERROR = (
 def log_refusal(reason: str, **fields: object) -> None:
     """One structured line per refusal: why, and who, never a token or a message body."""
     logger.warning(json.dumps({"event": "refused", "reason": reason, **fields}, sort_keys=True))
+
+
+def _request_id(message: dict) -> dict:
+    """The request's request_id, echoed in its answer so a client can tell a late answer apart."""
+    request_id = message.get("request_id")
+    return {"request_id": request_id} if isinstance(request_id, str) and len(request_id) <= 64 else {}
 
 
 def _unread_chunks(messages: list[dict]) -> list[list[dict]]:
@@ -116,6 +123,8 @@ class BridgeServer:
         # Who wants to hear when a peer is done: peer name -> subscriber
         # names; each subscription fires once
         self._idle_subscribers: dict[str, set[str]] = {}
+        # Ids of direct messages being sent live right now (stored unread until sent)
+        self._in_flight: set[str] = set()
 
         self.registry.on_join(self._announce_joined)
         self.registry.on_leave(self._handle_left)
@@ -281,7 +290,9 @@ class BridgeServer:
                         await websocket.send(json.dumps({**missed, "type": "message"}))
 
                 elif msg_type == "list_peers":
-                    await websocket.send(json.dumps({"type": "peer_list", "peers": self._peer_list()}))
+                    await websocket.send(json.dumps(
+                        {"type": "peer_list", "peers": self._peer_list(), **_request_id(message)}
+                    ))
 
                 elif msg_type == "observe":
                     self.observers.add(websocket)
@@ -371,7 +382,8 @@ class BridgeServer:
                     await websocket.send(json.dumps({
                         "type": "history",
                         "peer": message.get("peer", ""),
-                        "messages": history
+                        "messages": history,
+                        **_request_id(message),
                     }))
 
         except websockets.exceptions.ConnectionClosed:
@@ -454,7 +466,10 @@ class BridgeServer:
 
         # A direct message to a registered peer is stored unread and marked
         # delivered only once its send returns: a holder whose socket closed
-        # before the heartbeat noticed gets it as unread on its next register
+        # before the heartbeat noticed gets it as unread on its next register.
+        # A holder whose socket is already closed counts as offline (queue caps apply)
+        if to_peer != "*" and recipients and getattr(recipients[0].websocket, "state", None) is not State.OPEN:
+            recipients = []
         direct = to_peer != "*" and bool(recipients)
         delivered = to_peer == "*" or is_user_name(to_peer)
         if not delivered and not direct and await self._queue_full(to_peer, from_peer, message):
@@ -467,9 +482,15 @@ class BridgeServer:
             delivered=delivered
         )
         payload = json.dumps({**outgoing, "type": "message"})
-        for peer in recipients:
-            if await self._send_to(peer, payload) and direct:
-                await self.store.mark_delivered([outgoing["id"]])
+        if direct:
+            # In flight: a registration replay running meanwhile must not send it as unread too
+            self._in_flight.add(outgoing["id"])
+        try:
+            for peer in recipients:
+                if await self._send_to(peer, payload) and direct:
+                    await self.store.mark_delivered([outgoing["id"]])
+        finally:
+            self._in_flight.discard(outgoing["id"])
         await self._notify_watchers(to_peer, from_peer, payload)
         return outgoing, bool(recipients)
 
@@ -491,7 +512,8 @@ class BridgeServer:
 
         A send that fails leaves the rest unread for the next registration.
         """
-        for chunk in _unread_chunks(await self.store.get_unread(name)):
+        waiting = [m for m in await self.store.get_unread(name) if m["id"] not in self._in_flight]
+        for chunk in _unread_chunks(waiting):
             await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
             await self.store.mark_delivered([m["id"] for m in chunk])
 

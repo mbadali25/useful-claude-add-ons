@@ -6,13 +6,17 @@ Fixes from a Codex QA pass over the whole fork (W-0121).
 
 ### Fixed
 - Untrusted framing: the warning in front of a peer's message is constant. The sender's name is peer-controlled, so it appears only inside the block (its start marker), in `peer_read`, `peer_history` and the watcher's wake notice
-- Client inbound queue: capped at 500 messages and 8 MiB. Past either cap newer messages are not queued, and one notice says to read them with `peer_history` (the Bridge keeps them)
+- Client inbound queue: capped at 500 messages and 8 MiB. Past either cap newer messages are not queued, and one notice points at `peer_history` for missed direct messages
 - Refused sends: a coded error frame from the Bridge (`recipient_queue_full`, `message_too_large`, `rate_limited`, ...) is queued as a notice for `peer_read` instead of only logged. `peer_send`/`peer_context` refuse a frame over the Bridge's limit (`AI_CONNECT_MAX_MESSAGE_BYTES`, default 64 KiB) before sending it, and the default file cap drops from 256 KiB, which could never be sent, to 48 KiB
 - IPv6: the MCP client brackets an IPv6 `bridge_url` host (`ws://[::1]:9999`) like the watcher does
-- Concurrent `peer_history`/`peer_list` requests of one type run one at a time, so answers cannot be swapped
-- Bridge: a direct message to a registered peer is marked delivered only once its send returns; a holder whose socket had closed gets it as unread on its next register
-- Bridge: `notify_when_idle` takes a string peer only, a peer may hold at most 32 subscriptions (`too_many_subscriptions`), and they end when the subscriber leaves
-- Installer: `config.yaml`, `observer.token` and `user.token` are written to a 0600 temp file and moved into place, in a 0700 directory, so a secret is never readable by others, even briefly
+- Concurrent `peer_history`/`peer_list` requests of one type run one at a time, and each carries a `request_id` the Bridge echoes, so neither a concurrent nor a late answer to a timed-out request reaches the wrong caller (an answer without one, from an older Bridge, is still matched by type)
+- Bridge: a direct message to a registered peer is marked delivered only once its send returns; a holder whose socket had closed gets it as unread on its next register. A holder whose socket is already closed counts as offline, so the unread caps apply, and a registration replay skips a message that is being sent live, so it arrives once
+- Bridge: `notify_when_idle` takes a string peer only, a peer may hold at most 32 subscriptions (`too_many_subscriptions`), and they end when the subscriber's name leaves the registry (a same-credential reconnect that replaces a dead holder keeps them)
+- Installer, POSIX: `config.yaml`, `observer.token` and `user.token` are written to a 0600 temp file and moved into place, in a 0700 directory, so a secret is never readable by others, even briefly. On Windows the files inherit the config directory's ACL, as before
+
+### Known limitations
+- A send is reported as sent once the Bridge has the frame. A later refusal (`recipient_queue_full`, `rate_limited`) reaches the model as a notice in the next `peer_read`, not as the tool's result, and that notice is itself dropped while the inbound queue is full
+- `peer_history` reads one conversation, so a broadcast missed while the inbound queue was full is not in it
 - `vpn/` `mint-key --out` on Windows fails closed, writing nothing, when `icacls` cannot restrict the key file or `USERNAME` is unset
 
 ## [0.1.1] - 2026-10-11

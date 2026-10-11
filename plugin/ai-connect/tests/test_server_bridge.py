@@ -534,3 +534,69 @@ def test_notify_when_idle_with_a_non_string_peer_is_refused(tmp_path):
     error, pong = run(go())
     assert "notify_when_idle" in error["error"]
     assert pong["type"] == "pong"  # the connection survived
+
+
+def test_message_routed_during_a_registration_replay_is_not_replayed(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.BOB_TOKEN) as bob, connect(server, h.ALICE_TOKEN) as alice:
+                await register(bob, h.BOB)
+                await register(alice, h.ALICE)
+                bob_conn = server.registry.get(h.BOB).websocket
+                real_send_to = server._send_to  # pylint: disable=protected-access
+
+                async def replay_first(peer, payload):
+                    await server._deliver_unread(bob_conn, h.BOB)  # pylint: disable=protected-access
+                    return await real_send_to(peer, payload)
+
+                server._send_to = replay_first  # pylint: disable=protected-access
+                await send(alice, type="message", to=h.BOB, content="once")
+                got = []
+                try:
+                    while True:
+                        got.append(await h.recv(bob, timeout=0.5))
+                except asyncio.TimeoutError:
+                    pass
+                return got
+
+    got = run(go())
+    copies = [m for f in got for m in ([f] if f["type"] == "message" else f.get("messages", []))
+              if m.get("content") == "once"]
+    assert len(copies) == 1
+
+
+def test_messages_to_a_registered_dead_socket_respect_the_queue_cap(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(max_unread_per_peer=2, **FAST)) as server:
+            await server.registry.register(h.BOB, "127.0.0.1", _DeadSocket(), "bob-credential")
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                for i in range(2):
+                    await send(alice, type="message", to=h.BOB, content=f"m{i}")
+                await send(alice, type="message", to=h.BOB, content="over")
+                refused = await recv_type(alice, "error")
+            return refused, await server.store.get_unread(h.BOB)
+
+    refused, unread = run(go())
+    assert refused["code"] == "recipient_queue_full"
+    assert [m["content"] for m in unread] == ["m0", "m1"]
+
+
+@pytest.mark.parametrize("request_type, answer_type, extra", [
+    ("history", "history", {"peer": h.BOB, "limit": 5}),
+    ("list_peers", "peer_list", {}),
+])
+def test_requests_echo_their_request_id(tmp_path, request_type, answer_type, extra):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                await send(alice, type=request_type, request_id="r-42", **extra)
+                with_id = await recv_type(alice, answer_type)
+                await send(alice, type=request_type, **extra)
+                without_id = await recv_type(alice, answer_type)
+                return with_id, without_id
+
+    with_id, without_id = run(go())
+    assert with_id["request_id"] == "r-42"
+    assert "request_id" not in without_id

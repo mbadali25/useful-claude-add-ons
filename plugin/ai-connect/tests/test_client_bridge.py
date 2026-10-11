@@ -149,3 +149,47 @@ def test_queue_bytes_are_counted_as_json():
     assert client._queued_bytes == len(json.dumps(message))  # pylint: disable=protected-access
     client.drop_messages(1)
     assert client._queued_bytes == 0  # pylint: disable=protected-access
+
+
+def test_a_late_answer_to_an_abandoned_request_is_not_given_to_the_next(monkeypatch):
+    monkeypatch.setattr(bridge_client, "REQUEST_TIMEOUT_SECONDS", 0.05)
+
+    async def go():
+        client = _client()
+        sent = []
+
+        async def fake_send(data):
+            sent.append(data)
+            return True
+
+        client._send = fake_send  # pylint: disable=protected-access
+        with pytest.raises(asyncio.TimeoutError):
+            await client.get_history("A:B", 1)
+        second = asyncio.create_task(client.get_history("C:D", 1))
+        await asyncio.sleep(0.01)
+        first_id, second_id = sent[0]["request_id"], sent[1]["request_id"]
+        assert first_id != second_id
+        # A's answer arrives late, then Z's own
+        await client._handle({"type": "history", "request_id": first_id, "messages": ["for A:B"]})  # pylint: disable=protected-access
+        await asyncio.sleep(0.01)
+        assert not second.done()
+        await client._handle({"type": "history", "request_id": second_id, "messages": ["for C:D"]})  # pylint: disable=protected-access
+        return await second
+
+    assert asyncio.run(go()) == ["for C:D"]
+
+
+def test_an_answer_without_request_id_is_accepted_from_an_older_bridge():
+    async def go():
+        client = _client()
+
+        async def fake_send(_data):
+            return True
+
+        client._send = fake_send  # pylint: disable=protected-access
+        task = asyncio.create_task(client.list_peers())
+        await asyncio.sleep(0.01)
+        await client._handle({"type": "peer_list", "peers": [{"name": "X:Y"}]})  # pylint: disable=protected-access
+        return await task
+
+    assert asyncio.run(go()) == [{"name": "X:Y"}]
