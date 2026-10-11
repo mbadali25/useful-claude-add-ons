@@ -600,3 +600,52 @@ def test_requests_echo_their_request_id(tmp_path, request_type, answer_type, ext
     with_id, without_id = run(go())
     assert with_id["request_id"] == "r-42"
     assert "request_id" not in without_id
+
+
+def test_message_in_flight_to_a_holder_replaced_mid_send_reaches_the_new_holder_once(tmp_path):
+    """The old holder's send fails after Bob reconnected (his replay skipped the in-flight row)."""
+    from websockets.protocol import State  # pylint: disable=import-outside-toplevel
+
+    class _DiesDuringSend:
+        state = State.OPEN
+
+        def __init__(self, on_send):
+            self.on_send = on_send
+
+        async def send(self, payload):
+            if json.loads(payload).get("type") != "message":
+                return  # peer_joined and the like go through; the message is what dies
+            self.state = State.CLOSED
+            await self.on_send()
+            raise ConnectionClosed(None, None)
+
+        async def close(self):
+            return None
+
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.BOB_TOKEN) as bob, connect(server, h.ALICE_TOKEN) as alice:
+                credential = server.roles.identity_for(f"Bearer {h.BOB_TOKEN}").credential
+                async def bob_reconnects_and_replays():
+                    await register(bob, h.BOB)
+                    await asyncio.sleep(0.3)  # Bob's replay runs to its end (and skips the in-flight row)
+
+                await server.registry.register(h.BOB, "127.0.0.1", _DiesDuringSend(bob_reconnects_and_replays),
+                                               credential)
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to=h.BOB, content="across the reconnect")
+                await send(alice, type="ping")
+                await recv_type(alice, "pong", timeout=5)
+                got = []
+                try:
+                    while True:
+                        got.append(await h.recv(bob, timeout=0.5))
+                except asyncio.TimeoutError:
+                    pass
+                return got, await server.store.get_unread(h.BOB)
+
+    got, unread = run(go())
+    copies = [m for f in got for m in ([f] if f["type"] == "message" else f.get("messages", []))
+              if m.get("content") == "across the reconnect"]
+    assert len(copies) == 1
+    assert unread == []

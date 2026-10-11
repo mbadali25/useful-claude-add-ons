@@ -487,7 +487,15 @@ class BridgeServer:
             self._in_flight.add(outgoing["id"])
         try:
             for peer in recipients:
-                if await self._send_to(peer, payload) and direct:
+                sent = await self._send_to(peer, payload)
+                if not sent and direct:
+                    # The holder may have been replaced while the send was pending; the new
+                    # one's replay skipped this in-flight row, so it gets it now, once
+                    current = self.registry.get(to_peer)
+                    if current is not None and current is not peer \
+                            and getattr(current.websocket, "state", None) is State.OPEN:
+                        sent = await self._send_to(current, payload)
+                if sent and direct:
                     await self.store.mark_delivered([outgoing["id"]])
         finally:
             self._in_flight.discard(outgoing["id"])
