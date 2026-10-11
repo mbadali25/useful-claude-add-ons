@@ -243,6 +243,28 @@ run_check "$f"
 check "global exemption applies anywhere"      zero "$(blocked)"
 check "and the checker reports it clean"       yes  "$(says "$CLEAN")"
 
+echo "4b. MUST BLOCK: the Windows Firewall names outside ai-connect's installer"
+# Under the scrub: NetSecurity resolves on any Windows box, so unscrubbed this would be vacuous.
+f="$(fixture 'plugin/somewhere/open-port.ps1' \
+  'New-NetFirewallRule -DisplayName "x" -Direction Inbound -LocalPort 1 -Protocol TCP -Action Allow')"
+run_check_nomodule "$f"
+check "out-of-scope New-NetFirewallRule exits non-zero" nonzero "$(blocked)"
+check "and the message names New-NetFirewallRule"       yes     "$(says "calls 'New-NetFirewallRule'")"
+
+echo "4c. MUST ALLOW: the firewall and scheduled-task names in ai-connect's installer"
+f="$(fixture 'plugin/ai-connect/install.ps1' \
+  '$r = Get-NetFirewallRule -DisplayName "x" -ErrorAction SilentlyContinue' \
+  '$a = $r | Get-NetFirewallAddressFilter' \
+  'Remove-NetFirewallRule -DisplayName "x"' \
+  'New-NetFirewallRule -DisplayName "x" -Direction Inbound -LocalPort 1 -Protocol TCP -Action Allow' \
+  '$c = Get-NetTCPConnection -LocalPort 1 -ErrorAction SilentlyContinue' \
+  'Stop-ScheduledTask -TaskName "x"' \
+  'Unregister-ScheduledTask -TaskName "x" -Confirm:$false' \
+  'Write-Host $a $c')"
+run_check_nomodule "$f"
+check "ai-connect install.ps1 names exit 0"    zero "$(blocked)"
+check "and the checker reports it clean"       yes  "$(says "$CLEAN")"
+
 echo "5. MUST ALLOW: an ordinary script calling an ordinary cmdlet"
 f="$(fixture 'scripts/list-things.ps1' \
   'function Show-Things { Get-ChildItem -Path $PSScriptRoot | ForEach-Object { $_.Name } }' \

@@ -78,3 +78,13 @@ def test_ps1_shim_passes_exit_code_through(tmp_path):
                          capture_output=True, text=True, env=env, check=False)
     assert res.returncode == 3, res.stdout + res.stderr
     assert "not installed" in res.stderr
+
+
+@pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
+@pytest.mark.parametrize("name", NAMES)
+def test_ps1_shim_passes_the_repo_powershell_static_check(name):
+    """scripts/check-powershell.ps1 cannot follow a dot-source, so each shim carries its own helper."""
+    checker = VPN.parents[2] / "scripts" / "check-powershell.ps1"
+    res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(checker),
+                          "-Path", str(VPN / f"{name}.ps1")], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stdout + res.stderr

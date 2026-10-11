@@ -325,7 +325,7 @@ def test_file_swapped_for_symlink_after_check_refused(project, client, tmp_path,
 def _dir_link_or_skip(link: Path, target: Path):
     """A junction on Windows (no privilege needed), a directory symlink elsewhere."""
     if sys.platform == "win32":
-        import _winapi  # pylint: disable=import-outside-toplevel
+        import _winapi  # pylint: disable=import-outside-toplevel,import-error  # Windows-only module
         _winapi.CreateJunction(str(target), str(link))
     else:
         _symlink_or_skip(link, target, is_dir=True)

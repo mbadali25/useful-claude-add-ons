@@ -1,10 +1,12 @@
 # Changelog
 
-## [0.1.2] - 2026-10-11
+## [0.1.3] - 2026-10-11
 
-Fixes from a Codex QA pass over the whole fork (W-0121).
+Fixes from a Codex QA pass over the whole fork (W-0121). 0.1.2 was set on the branch and never released: the PR's CI found the two items at the end of this list after it.
 
 ### Fixed
+- `vpn/` `.ps1` shims are self-contained instead of dot-sourcing `_common.ps1` (removed), which the repo's PowerShell static check cannot follow; each shim's test runs that check
+- `install.ps1`'s firewall and scheduled-task cmdlets (NetSecurity, NetTCPIP, ScheduledTasks) are exempted in `scripts/check-powershell.ps1`, the firewall names scoped to this one file
 - Untrusted framing: the warning in front of a peer's message is constant. The sender's name is peer-controlled, so it appears only inside the block (its start marker), in `peer_read`, `peer_history` and the watcher's wake notice
 - Client inbound queue: capped at 500 messages and 8 MiB. Past either cap newer messages are not queued, and one notice points at `peer_history` for missed direct messages
 - Refused sends: a coded error frame from the Bridge (`recipient_queue_full`, `message_too_large`, `rate_limited`, ...) is queued as a notice for `peer_read` instead of only logged. `peer_send`/`peer_context` refuse a frame over the Bridge's limit (`AI_CONNECT_MAX_MESSAGE_BYTES`, default 64 KiB) before sending it, and the default file cap drops from 256 KiB, which could never be sent, to 48 KiB
