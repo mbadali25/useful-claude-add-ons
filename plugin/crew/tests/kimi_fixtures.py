@@ -43,6 +43,8 @@ import textwrap
 #   FAKE_KIMI_LATE / FAKE_KIMI_PROBE_LATE  an absolute path that a process the
 #                    review (or probe) call leaves running in its own process
 #                    group appends to LATE_WRITE_S after the call has answered
+#   FAKE_KIMI_ANSWER when set, a review call's assistant text, in place of the
+#                    READ lines and verdict
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
 #                    agent_file, skills} as one JSON line to this file --
 #                    `agent_file` is the text --agent-file named AT CALL TIME,
@@ -154,6 +156,7 @@ if prompt.startswith("Your complete instructions are in the file "):
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", text)))
 body = "\n".join("READ|" + p for p in parts)
 body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"
+body = os.environ.get("FAKE_KIMI_ANSWER") or body
 if mode == "turnfail":
     say({"role": "assistant", "content": body},
         {"role": "meta", "type": "turn.failed",

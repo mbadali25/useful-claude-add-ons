@@ -112,9 +112,10 @@ def role_instructions(role, agents_dir=AGENTS_DIR):
     is unreadable, carries the marker other than exactly once, or has
     nothing after it."""
     try:
-        with open(os.path.join(agents_dir, f"{role}.md"), encoding="utf-8") as fh:
+        with open(os.path.join(agents_dir, f"{role}.md"), encoding="utf-8",
+                  errors="strict", newline="") as fh:
             text = fh.read()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if text.count(MARKER) != 1:
         return None
@@ -258,7 +259,16 @@ def main(argv=None):
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     parser.add_argument("--agents-dir", default=AGENTS_DIR, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    task = sys.stdin.read() if not sys.stdin.isatty() else ""
+    # Kimi's answer is relayed as UTF-8 whatever the console's code page; a
+    # cp1252 stdout on Windows would otherwise raise mid-answer.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    try:
+        raw = b"" if sys.stdin.isatty() else sys.stdin.buffer.read()
+        task = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        _say(f"crew-kimi-agent: the task on stdin is not UTF-8: {exc.reason} at byte {exc.start}")
+        return EXIT_USAGE
     if not task.strip():
         _say("crew-kimi-agent: no task on stdin")
         return EXIT_USAGE

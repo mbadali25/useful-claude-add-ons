@@ -469,3 +469,28 @@ def test_the_cli_refuses_an_empty_task(repo, tmp_path):
         env=dict(os.environ, HOME=str(tmp_path / "home")))
 
     assert done.returncode == cka.EXIT_USAGE and "no task" in done.stdout
+
+
+def test_the_cli_refuses_a_task_that_is_not_utf8(repo, tmp_path):
+    done = subprocess.run(
+        [sys.executable, _SCRIPT, "--role", "explorer", "--root", str(repo),
+         "--agents-dir", str(_agents(tmp_path))],
+        input=b"caf\xe9 where?", capture_output=True, env=dict(os.environ), check=False,
+        timeout=120)
+
+    assert done.returncode == cka.EXIT_USAGE
+    assert done.stdout.decode("utf-8").startswith("crew-kimi-agent: the task on stdin is not UTF-8")
+
+
+def test_a_non_ascii_answer_reaches_a_cp1252_stdout_intact(repo, tmp_path, kimi):
+    kimi(FAKE_KIMI_ANSWER="résumé → seed.txt")
+    _configure(repo, ALL_PINNED)
+    env = dict(os.environ, HOME=str(tmp_path / "home"), PYTHONIOENCODING="cp1252")
+
+    done = subprocess.run(
+        [sys.executable, _SCRIPT, "--role", "explorer", "--root", str(repo),
+         "--agents-dir", str(_agents(tmp_path))],
+        input=TASK.encode("utf-8"), capture_output=True, env=env, check=False, timeout=120)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "résumé → seed.txt" in done.stdout.decode("utf-8")
