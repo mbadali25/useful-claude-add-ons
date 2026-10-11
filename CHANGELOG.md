@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.28: every crew test runs under a home of its own (L-0709)
+### Changed — crew 1.2.32: every crew test runs under a home of its own (L-0709)
 
-- **Summary.** `crew` 1.2.28: the crew test suite no longer reads your real
+- **Summary.** `crew` 1.2.32: the crew test suite no longer reads your real
   `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
   failing on settings you chose.
 - **Isolation.** `plugin/crew/tests/conftest.py`'s autouse `_isolated_home` points HOME,
