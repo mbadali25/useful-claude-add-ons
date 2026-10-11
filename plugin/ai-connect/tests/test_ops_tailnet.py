@@ -512,7 +512,9 @@ def test_no_install_tailscale_keeps_exit_3(box):
     run = Phase(box, "bridge", "--name", "hub", "--no-install-tailscale", extra_env=env)
     assert run.res.returncode == 3, run.text
     assert "tailscale is not installed" in run.res.stderr and "install.sh" in run.res.stderr
-    assert run.changed_nothing() and installer_calls(run) == []
+    # The durable copy of this checkout's files does not wait on Tailscale: it still runs and writes to
+    # APP, so files_changed is expected here. No tool is run and no state (service, firewall) changes.
+    assert run.mutations == [] and not run.state_changed and installer_calls(run) == []
 
 
 def test_a_missing_installer_tool_is_exit_3_with_the_hint(box, tmp_path):

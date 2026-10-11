@@ -40,8 +40,8 @@ from pathlib import Path
 import smoke_test  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
-from deploy_core import (CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED, EXIT_OK,  # pylint: disable=import-error
-                         EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must,
+from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED,  # pylint: disable=import-error
+                         EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must,
                          no_tools, out,
                          privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
 
@@ -84,6 +84,54 @@ def inspect_config() -> dict | None:
     return config_tool("inspect")
 
 
+# Not installed: venvs, tests, caches, and what a checkout may hold that is not the plugin's (logs, databases)
+APP_SKIP_DIRS = {"venv", ".venv", "ENV", "tests", "__pycache__", ".pytest_cache", ".ruff_cache", ".git", ".idea",
+                 ".vscode"}
+APP_SKIP_SUFFIXES = {".pyc", ".pyo", ".db", ".log", ".token"}
+
+
+def app_files(root: Path) -> dict[str, Path]:
+    """The plugin's files deploy installs, by their path relative to root."""
+    files = {}
+    for here, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in APP_SKIP_DIRS]
+        for name in names:
+            path = Path(here) / name
+            if path.suffix not in APP_SKIP_SUFFIXES and name != "config.yaml":
+                files[path.relative_to(root).as_posix()] = path
+    return files
+
+
+def step_app(r: Run, restart_on_change: bool) -> None:
+    """Bring the copy at APP up to this checkout's files; the service and the MCP server run from it."""
+    if PLUGIN.resolve() == APP.resolve():
+        r.already(f"deploy runs from {APP} itself")
+        return
+    want = app_files(PLUGIN)
+    have = app_files(APP) if APP.is_dir() else {}
+    changed = sorted(rel for rel, path in want.items()
+                     if rel not in have or have[rel].read_bytes() != path.read_bytes())
+    stale = sorted(set(have) - set(want))
+    if not changed and not stale:
+        r.already(f"{APP} matches this checkout")
+        return
+
+    def sync() -> None:
+        for rel in changed:
+            dest = APP / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # Replaced, not rewritten in place: the running Bridge may have the old file open
+            part = dest.with_name(dest.name + ".deploy-part")
+            shutil.copy2(want[rel], part)
+            os.replace(part, dest)
+        for rel in stale:
+            (APP / rel).unlink(missing_ok=True)
+    what = f"{len(changed)} changed, {len(stale)} removed" if have else f"{len(changed)} files"
+    r.change(f"install this checkout's files to {APP} ({what})", sync)
+    if have and restart_on_change:
+        owe_restart(r)  # a running Bridge still has the old code loaded
+
+
 def step_deps(r: Run) -> None:
     r.step("Python venv and dependencies")
     python = venv_python()
@@ -92,7 +140,7 @@ def step_deps(r: Run) -> None:
         return
     if python is None:
         r.change(f"create venv {VENV}", lambda: must(run([sys.executable, "-m", "venv", str(VENV)]), "python -m venv"))
-    requirements = PLUGIN / "requirements.txt"
+    requirements = PLUGIN / "requirements.txt"  # the same file the copy at APP has
 
     def install() -> None:
         must(run([str(venv_python()), "-m", "pip", "install", "-q", "-r", str(requirements)], timeout=900),
@@ -107,7 +155,7 @@ def step_deps(r: Run) -> None:
 def unit_text(python: str) -> str:
     # The unit install.sh writes, so either installer can update the other's
     return (f"[Unit]\nDescription=AI-Connect Bridge Server\nAfter=network.target \n\n"
-            f"[Service]\nType=simple\nUser={getpass.getuser()}\nWorkingDirectory={PLUGIN}\n"
+            f"[Service]\nType=simple\nUser={getpass.getuser()}\nWorkingDirectory={APP}\n"
             f"ExecStart={python} -m server.main\nRestart=always\nRestartSec=5\n"
             f"Environment=PYTHONUNBUFFERED=1\n\n[Install]\nWantedBy=multi-user.target\n")
 
@@ -128,16 +176,29 @@ def task_xml(pythonw: str) -> str:
     <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
   </Settings>
   <Actions Context="Author"><Exec><Command>{pythonw}</Command><Arguments>-m server.main</Arguments>
-    <WorkingDirectory>{PLUGIN}</WorkingDirectory></Exec></Actions>
+    <WorkingDirectory>{APP}</WorkingDirectory></Exec></Actions>
 </Task>
 """
 
 
 # The state as a number (4 is Running): schtasks prints it as a word in the display language,
 # "Wird ausgeführt" on a German Windows. A query that fails ends PowerShell with an error, not with "absent".
+# Then the program and the working directory the task runs, one line each.
 TASK_STATE = ("$ErrorActionPreference = 'Stop'; "
               f"$t = Get-ScheduledTask | Where-Object {{ $_.TaskName -eq '{TASK}' }} | Select-Object -First 1; "
-              "if ($null -eq $t) { 'absent' } else { [int]$t.State }")
+              "if ($null -eq $t) { 'absent' } else { [int]$t.State; $t.Actions[0].Execute; "
+              "$t.Actions[0].WorkingDirectory }")
+
+
+def task_info() -> tuple[str, str, str]:
+    """The scheduled task's state ('running', 'stopped' or 'absent'), program and working directory."""
+    res = run([tool("powershell"), "-NoProfile", "-NonInteractive", "-Command", TASK_STATE], timeout=60)
+    lines = [line.strip() for line in res.stdout.strip().splitlines()] or [""]
+    word = lines[0]
+    if res.returncode != 0 or not (word == "absent" or word.isdigit()):
+        raise Failure(f"could not read the state of scheduled task '{TASK}' (powershell exit {res.returncode})")
+    state = "absent" if word == "absent" else "running" if word == "4" else "stopped"
+    return state, *(lines[1:3] + ["", ""])[:2]
 
 
 def service_state() -> str:
@@ -147,11 +208,7 @@ def service_state() -> str:
             return "absent"
         res = run([tool("systemctl"), "is-active", UNIT], timeout=30)
         return "running" if res.stdout.strip() == "active" else "stopped"
-    res = run([tool("powershell"), "-NoProfile", "-NonInteractive", "-Command", TASK_STATE], timeout=60)
-    word = res.stdout.strip()
-    if res.returncode != 0 or not (word == "absent" or word.isdigit()):
-        raise Failure(f"could not read the state of scheduled task '{TASK}' (powershell exit {res.returncode})")
-    return "absent" if word == "absent" else "running" if word == "4" else "stopped"
+    return task_info()[0]
 
 
 def owe_restart(r: Run) -> None:
@@ -175,6 +232,7 @@ def stop_task() -> None:
 
 def step_service(r: Run) -> None:
     r.step("Bridge service")
+    step_app(r, restart_on_change=True)
     what = f"{UNIT}.service" if TARGET == "linux" else f"scheduled task '{TASK}'"
     if r.dry_run:  # asks no tool what is running
         r.change(f"install or update {what} and (re)start it, unless it already runs with this config", lambda: None)
@@ -182,8 +240,8 @@ def step_service(r: Run) -> None:
     if RESTART_PENDING.exists():
         r.config_changed = True
     python = venv_python() or (VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
-    state = service_state()
     if TARGET == "linux":
+        state = service_state()
         unit = SYSTEMD_DIR / f"{UNIT}.service"
         want = unit_text(str(python))
         current = unit.read_text(encoding="utf-8") if unit.is_file() else None
@@ -204,17 +262,25 @@ def step_service(r: Run) -> None:
             RESTART_PENDING.unlink(missing_ok=True)
         r.change(f"(re)start {UNIT}.service", restart_unit)
         return
-    if state == "running" and not r.config_changed:
+    state, command, workdir = task_info()
+    pythonw = python.with_name("pythonw.exe")
+    # A task an older deploy or install.ps1 registered may run another copy (one inside a worktree)
+    same = state != "absent" and [os.path.normcase(p) for p in (command, workdir)] == \
+        [os.path.normcase(str(p)) for p in (pythonw, APP)]
+    if same and state == "running" and not r.config_changed:
         r.already(f"scheduled task '{TASK}' installed and running")
         return
-    if state == "absent":
+    if not same:
         def create() -> None:
-            pythonw = python.with_name("pythonw.exe")
+            if state == "running":
+                stop_task()
             with tempfile.TemporaryDirectory() as tmp:
                 xml = Path(tmp) / "task.xml"
                 xml.write_text(task_xml(str(pythonw)), encoding="utf-16")
                 must(run([tool("schtasks"), "/Create", "/TN", TASK, "/XML", str(xml), "/F"]), "schtasks /Create")
-        r.change(f"register scheduled task '{TASK}'", create)
+        r.change(f"register scheduled task '{TASK}'" if state == "absent" else
+                 f"register scheduled task '{TASK}' again to run {pythonw} in {APP} (it ran {command} in {workdir})",
+                 create)
 
     def restart() -> None:
         stop_task()
@@ -416,7 +482,7 @@ def plugin_installed(claude: str) -> bool:
 
 
 def mcp_server_file() -> Path:
-    return PLUGIN / "client" / "server.py"
+    return APP / "client" / "server.py"
 
 
 def mcp_registered(claude: str) -> bool:
@@ -456,6 +522,7 @@ def step_claude(r: Run, args) -> None:
     where = ("scope user: every project of this user" if args.scope == "user"
              else f"scope project: sessions started in {Path.cwd()}, through its .mcp.json")
     out(MCP_WARNING.format(where=where))
+    step_app(r, restart_on_change=False)
     python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
     if r.dry_run:
@@ -722,6 +789,7 @@ def cmd_peer(args) -> int:
 def cmd_status(args) -> int:
     out("=== AI-Connect deploy: status ===")
     python = venv_python()
+    out(f"  installed files: {APP if (APP / 'server' / 'main.py').is_file() else 'missing'}")
     out(f"  venv: {('ok' if deps_ok(python) else 'dependencies missing') if python else 'missing'} ({VENV})")
     try:
         state = backend_state() or "unknown"
@@ -781,14 +849,25 @@ def cmd_uninstall(args) -> int:
     remove_service(r)
     remove_firewall(r, args.vpn_subnet, args.port)
     remove_claude(r)
-    r.step("Configuration")
+    r.step("Configuration and installed files")
+    # Only what deploy made there: an AI_CONNECT_HOME pointed at a busier directory keeps everything else
+    installed = [p for p in (APP, APP_HOME / "venv") if p.exists()]
     if not args.purge:
-        out(f"  kept: {CONFIG_DIR} (pass --purge to delete it with its tokens)")
-    elif CONFIG_DIR.exists():
-        r.change(f"delete {CONFIG_DIR}", lambda: shutil.rmtree(CONFIG_DIR))
+        out(f"  kept: {CONFIG_DIR} and {APP_HOME} (pass --purge to delete them, the tokens with them)")
     else:
-        r.already(f"{CONFIG_DIR} not there")
-    out("The venv and the tailnet membership stay; leave the tailnet with vpn/vpn-down.sh --logout.")
+        for path in (CONFIG_DIR, APP_HOME):
+            if path == APP_HOME and installed:
+                def purge_app() -> None:
+                    for each in installed:
+                        shutil.rmtree(each)
+                    if not any(APP_HOME.iterdir()):
+                        APP_HOME.rmdir()
+                r.change(f"delete {' and '.join(map(str, installed))}", purge_app)
+            elif path == CONFIG_DIR and path.exists():
+                r.change(f"delete {CONFIG_DIR}", lambda: shutil.rmtree(CONFIG_DIR))
+            else:
+                r.already(f"{path} not there" if path == CONFIG_DIR else f"no installed files in {APP_HOME}")
+    out("The tailnet membership stays; leave the tailnet with vpn/vpn-down.sh --logout.")
     return EXIT_OK
 
 

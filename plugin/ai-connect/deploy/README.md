@@ -126,6 +126,13 @@ deploy/deploy.sh bridge
 
 It prints this machine's Tailscale IPv4: the `100.x.y.z` every peer needs.
 
+What keeps running is installed outside the checkout: a copy of the plugin in
+`~/.local/share/ai-connect/app` (Windows: `%LOCALAPPDATA%\ai-connect\app`) and its venv
+in `.../ai-connect/venv`. The service and the MCP server run from there, so the checkout
+you ran deploy from can be deleted. To update, run the same command from a newer
+checkout: it copies what changed and restarts the Bridge. A Bridge an older deploy set
+up from inside a worktree is moved the same way: its scheduled task is registered again.
+
 ## Adding the peer: no long-lived secret crosses machines
 
 **Machine 2** makes its own token and prints only its hash:
@@ -205,7 +212,7 @@ token in the Bridge's log.
 deploy/deploy.sh status                    # either machine: what is deployed here
 deploy/deploy.sh add-peer --name desk --token-sha256 ...   # machine 1: another peer, then mint its key
 vpn/revoke.sh --name laptop                # machine 1: remove a peer's node from the tailnet
-deploy/deploy.sh uninstall --yes           # either machine; --purge also deletes config and tokens
+deploy/deploy.sh uninstall --yes           # either machine; --purge also deletes config, tokens and the installed copy
 ```
 
 `deploy test` is one short Python process: it opens two WebSocket connections and

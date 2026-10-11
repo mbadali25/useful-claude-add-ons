@@ -265,6 +265,10 @@ def powershell(args, state):
     name = re.search(r"-eq '([^']+)'", args[-1]).group(1)
     tasks = state.get("tasks", {})
     print((4 if tasks[name] == "Running" else 3) if name in tasks else "absent")
+    if name in tasks:  # then its action: the program and the working directory, one line each
+        for tag in ("Command", "WorkingDirectory"):
+            found = re.search(f"<{tag}>([^<]*)</{tag}>", state.get("task_xml", ""))
+            print(found.group(1) if found else "")
     return 0
 
 

@@ -23,7 +23,13 @@ EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 DEFAULT_PORT = 9999
 CONFIG_DIR = Path.home() / ".config" / "ai-connect"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
-VENV = Path(os.environ.get("AI_CONNECT_VENV") or PLUGIN / "venv")
+# What keeps running after deploy (the Bridge service, the MCP server) runs from a copy of this plugin and
+# a venv beside it, both outside the checkout deploy runs from: a worktree or a clone can then be deleted,
+# and a checkout's own venv is never picked up. AI_CONNECT_HOME moves both
+APP_HOME = Path(os.environ.get("AI_CONNECT_HOME") or Path.home().joinpath(
+    *(("AppData", "Local") if os.name == "nt" else (".local", "share")), "ai-connect"))
+APP = APP_HOME / "app"
+VENV = Path(os.environ.get("AI_CONNECT_VENV") or APP_HOME / "venv")
 # Root needs no sudo, and a machine that runs as root may not have it. The variable is a test seam
 IS_ROOT = os.environ.get("AI_CONNECT_DEPLOY_ROOT") == "1" or getattr(os, "geteuid", lambda: 1000)() == 0
 

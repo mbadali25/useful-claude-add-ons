@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,6 +43,8 @@ def bridge(request, tmp_path_factory, venv):
         run.dry = Phase(box, *args, "--dry-run")
         run.dry_left_config = box.config_file.exists()
         run.first = Phase(box, *args)
+        run.app_installed = (box.app / "server" / "main.py").is_file()
+        run.app_has_tests = (box.app / "tests").exists() or (box.app / "venv").exists()
         run.config = box.config()
         run.state = box.state()
         run.unit = box.systemd / "ai-connect.service"
@@ -60,6 +63,7 @@ def bridge(request, tmp_path_factory, venv):
         run.state_after_uninstall = box.state()
         run.config_after_uninstall = box.config_file.exists()
         run.unit_after_uninstall = run.unit.exists()
+        run.app_after_uninstall = box.app.parent.exists()
         run.uninstall_again = Phase(box, "uninstall", "--yes", "--purge", *port)
     finally:
         server.close()
@@ -78,14 +82,20 @@ def test_bridge_happy_path(bridge):
     assert hashlib.sha256(bridge.laptop_token.encode()).hexdigest() == config["auth"]["peers"]["laptop"]
     assert "accepted this machine's token" in first.out
     state = bridge.state
+    # The service runs from a copy outside this checkout, so a worktree or a clone can go afterwards
+    app = bridge.box.app
+    assert bridge.app_installed and not bridge.app_has_tests
     if bridge.target == "linux":
-        assert "-m server.main" in bridge.unit_text and f"WorkingDirectory={PLUGIN}" in bridge.unit_text
+        assert "-m server.main" in bridge.unit_text and f"WorkingDirectory={app}\n" in bridge.unit_text
+        assert str(PLUGIN) not in bridge.unit_text
         assert state["units"]["ai-connect"] == {"active": True, "enabled": True}
         assert any(SUBNET in line and str(bridge.port) in line for line in state["ufw"])
     else:
         assert state["tasks"]["AI-Connect Bridge"] == "Running"
         assert state["rules"]["AI-Connect Bridge"] == SUBNET
         assert "pythonw.exe" in state["task_xml"] and "LeastPrivilege" in state["task_xml"]
+        assert f"<WorkingDirectory>{app}</WorkingDirectory>" in state["task_xml"]
+        assert str(PLUGIN) not in state["task_xml"]
         added = [c for c in first.calls if c[:5] == ["netsh", "advfirewall", "firewall", "add", "rule"]]
         assert len(added) == 1 and "profile=private" in added[0] and f"remoteip={SUBNET}" in added[0]
 
@@ -95,9 +105,10 @@ def test_bridge_rerun_is_idempotent(bridge):
     assert second.res.returncode == 0, second.text
     assert second.mutations == []
     assert not second.files_changed and not second.state_changed
-    # deps, Tailscale installed, on the tailnet, its settings pinned, config, peer, service, firewall;
-    # the health check always runs
-    assert len(already(second.res)) == 8, second.out
+    # installed files, deps, Tailscale installed, on the tailnet, its settings pinned, config, peer, service,
+    # firewall; the health check always runs
+    assert len(already(second.res)) == 9, second.out
+    assert "matches this checkout" in second.out
     assert "would:" not in second.out and "  done: write" not in second.out
 
 
@@ -153,6 +164,7 @@ def test_uninstall_removes_everything_and_reruns_clean(bridge):
     assert bridge.uninstall.res.returncode == 0, bridge.uninstall.text
     state = bridge.state_after_uninstall
     assert not bridge.config_after_uninstall and not bridge.unit_after_uninstall
+    assert not bridge.app_after_uninstall  # --purge: the installed copy and its venv go too
     if bridge.target == "linux":
         assert state["ufw"] == [] and not state["units"]["ai-connect"]["active"]
     else:
@@ -160,7 +172,56 @@ def test_uninstall_removes_everything_and_reruns_clean(bridge):
     again = bridge.uninstall_again
     assert again.res.returncode == 0, again.text
     assert again.changed_nothing(), again.mutations
-    assert len(already(again.res)) == 5, again.out
+    assert len(already(again.res)) == 6, again.out
+
+
+def test_default_install_dir_and_venv_are_outside_the_checkout(tmp_path):
+    """crew's blocker: a venv and a service inside a worktree die with it, and a stray venv in a checkout
+    was picked up by the suites. Nothing deploy installs may default to a path inside the checkout."""
+    env = {k: v for k, v in os.environ.items() if k not in ("AI_CONNECT_HOME", "AI_CONNECT_VENV")}
+    env.update(HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    probe = "import deploy_core as d, json; print(json.dumps([str(d.APP), str(d.VENV), str(d.PLUGIN)]))"
+    res = subprocess.run([sys.executable, "-c", probe], cwd=DEPLOY_DIR, env=env,
+                         capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
+    app, venv_dir, plugin = (Path(p) for p in json.loads(res.stdout))
+    for path in (app, venv_dir):
+        assert plugin not in path.parents and path != plugin, path
+        assert tmp_path in path.parents, path
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+def test_bridge_restarts_after_the_installed_files_change(tmp_path, venv, target):
+    """A newer checkout: the copy is brought up to date and the running Bridge restarted to load it."""
+    box = Box(tmp_path, venv, target)
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        (box.app / "server" / "main.py").write_text("# an older version\n", encoding="utf-8")
+        (box.app / "server" / "left_over.py").write_text("", encoding="utf-8")
+        again = Phase(box, *own.args)
+    assert again.res.returncode == 0, again.text
+    assert (box.app / "server" / "main.py").read_bytes() == (PLUGIN / "server" / "main.py").read_bytes()
+    assert not (box.app / "server" / "left_over.py").exists()
+    assert "1 changed, 1 removed" in again.out
+    restart = ["schtasks", "/Run"] if box.target == "windows" else ["systemctl", "restart", "ai-connect"]
+    assert any(restart in (c[:len(restart)], c[1:1 + len(restart)]) for c in again.calls), again.calls  # or sudo
+
+
+def test_windows_task_that_runs_another_copy_is_registered_again(tmp_path, venv):
+    """The desktop's task from 0.1.5 runs a venv inside a worktree: a rerun must move it, not say 'already'."""
+    box = Box(tmp_path, venv, "windows")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        old = box.state()
+        old["task_xml"] = old["task_xml"].replace(str(box.app), r"C:\repos\gone-worktree\plugin\ai-connect")
+        box.set(task_xml=old["task_xml"])
+        again = Phase(box, *own.args)
+        third = Phase(box, *own.args)
+    assert again.res.returncode == 0, again.text
+    assert any(c[:2] == ["schtasks", "/Create"] for c in again.calls), again.calls
+    assert f"<WorkingDirectory>{box.app}</WorkingDirectory>" in box.state()["task_xml"]
+    assert any(c[:2] == ["schtasks", "/Run"] for c in again.calls)
+    assert third.mutations == [], third.mutations
 
 
 def test_bridge_without_tailscale_ip_fails(box):
@@ -600,6 +661,7 @@ def test_peer_rerun_is_idempotent(peer):
     assert second.res.returncode == 0, second.text
     assert second.changed_nothing(), second.mutations
     assert len(already(second.res)) == 4, second.out  # deps, VPN, its settings, config
+    assert not peer.box.app.exists()  # nothing to run from a copy: no MCP server unless asked
 
 
 def test_peer_dry_run_changes_nothing(peer):
@@ -639,7 +701,7 @@ def test_peer_registers_the_mcp_server_in_this_project_only_when_asked(box, tmp_
     run = peer_on_tailnet(box, tmp_path, "--register-mcp")
     assert run.res.returncode == 0, run.text
     (add,) = [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
-    assert add[3:6] == ["-s", "project", "ai-connect"] and add[-1] == str(PLUGIN / "client" / "server.py")
+    assert add[3:6] == ["-s", "project", "ai-connect"] and add[-1] == str(box.app / "client" / "server.py")
     assert "WARNING: --register-mcp" in run.out and "bypass-permissions" in run.out
     assert box.state().get("plugins", []) == []  # the MCP server, not the hooks
 

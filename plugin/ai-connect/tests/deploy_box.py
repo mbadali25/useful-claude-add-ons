@@ -131,9 +131,12 @@ class Box:
                         PYTHONPATH=str(FAKE_KEYRING), FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_API_BASE", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT"):
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME"):
             self.env.pop(name, None)
         self.target = target
+        # Where deploy installs the copy of the plugin the service and the MCP server run from
+        self.app = self.home.joinpath(*(("AppData", "Local") if os.name == "nt" else (".local", "share")),
+                                      "ai-connect", "app")
 
     @staticmethod
     def shim(name: str) -> str:
