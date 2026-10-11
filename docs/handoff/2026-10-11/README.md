@@ -22,10 +22,12 @@ Where something sensitive was removed, the text reads `[redacted: <class>]`. The
 
 | Title | Link | File here |
 |---|---|---|
-| Overnight Crew Watch | https://claude.ai/artifact/FYTbbxmfqZxyXG7e59QMcw | `artifacts/overnight-status.html` |
-| Crew Fix Board | https://claude.ai/artifact/Q5qtJpXQoXKs14Vn7DLcjJ | `artifacts/crew-fix-board.html` |
-| Crew 1.2.0 Review | https://claude.ai/artifact/S29qC753t7WBaPN6WBQpTD | `artifacts/crew-review.html` |
-| QA Pipeline Speed-ups | https://claude.ai/artifact/E7Qk9G3Goknjz1X2YQ47mz | `artifacts/qa-pipeline-report.html` |
+| Overnight Crew Watch | https://claude.ai/artifact/HexV4k9h9Q7YND9ihSnZJf | `artifacts/overnight-status.html` |
+| Crew Fix Board | https://claude.ai/artifact/W2Vks2tModJxDjckcDNqza | `artifacts/crew-fix-board.html` |
+| Crew 1.2.0 Review | https://claude.ai/artifact/GkuHMyUbttAXHNNQJ7A1Fg | `artifacts/crew-review.html` |
+| QA Pipeline Speed-ups | https://claude.ai/artifact/47kSfXtdJYo9FmqEaENiAK | `artifacts/qa-pipeline-report.html` |
+
+Republished Sun Oct 11 04:01:38 PM CDT 2026 after the earlier links stopped resolving; the old links are dead.
 
 Only the owner's claude.ai account can open these links. The status pages were last published at 14:10 CDT
 (Update 11), before #605 merged. The copies here are redacted, so they differ from the published pages where a
