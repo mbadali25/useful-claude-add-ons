@@ -565,6 +565,7 @@ CODE_SPAN_RE = re.compile(r"`[^`]*`")
 SKILLS_RE = re.compile(r"(\d+)(?:\s+of\s+(\d+))?\s+skills\b")
 PLUGIN_SKILLS_RE = re.compile(r"(\d+)\s+(?:bundled\s+)?skills?\b")
 PLUGIN_COMMANDS_RE = re.compile(r"(\d+)\s+(?:slash\s+)?commands?\b")
+PLUGIN_HOOKS_RE = re.compile(r"(\d+)\s+hook\s+entr(?:y|ies)\b")
 VERSION_ROW_RE = re.compile(r"^\|\s*\*\*Version\*\*\s*\|\s*([0-9][0-9.]*)")
 MARKDOWN_LINES_RE = re.compile(r"([\d,]+)\s+lines\b")
 BIND_WINDOW = 12
@@ -649,6 +650,23 @@ def _tracked_files(pathspec: str) -> list[str] | None:
     return [p for p in done.stdout.split("\0") if p]
 
 
+def count_plugin_hooks(name: str) -> int | None:
+    """How many command entries ``plugin/<name>/hooks/hooks.json`` registers
+    (L-0772): one per ``{"type": "command", ...}`` object, every event and
+    matcher, both flavours. No ``hooks.json`` is a real zero; one that does not
+    parse, or is not the documented shape, is None ("could not count"), never
+    a zero."""
+    path = os.path.join(ROOT, "plugin", name, "hooks", "hooks.json")
+    if not os.path.isfile(path):
+        return 0
+    try:
+        events = json.loads(read(path))["hooks"]
+        return sum(1 for entries in events.values() for entry in entries
+                   for hook in entry["hooks"] if hook.get("type") == "command")
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def count_plugin_commands(name: str) -> int | None:
     """How many slash commands ``plugin/<name>/commands/`` actually holds.
 
@@ -703,6 +721,8 @@ def check_self_claims(entries, fail):
     still means the marketplace total and nothing else. `plugin-commands:<name>`
     is the same idea for a plugin's own commands/ count, added alongside
     `plugin-skills:<name>` for symmetry.
+    `plugin-hooks:<name>` (L-0772) is the same idea for the command entries in
+    a plugin's own hooks/hooks.json.
 
     So: an unmarked number is deliberately not checked, and that silence is the
     design rather than a gap. Marking a claim is how an author opts it in.
@@ -830,6 +850,43 @@ def check_self_claims(entries, fail):
                         fail(
                             f"{path}:{index + 1}: claims {found.group(1)} commands for "
                             f"plugin '{name}', but plugin/{name}/commands/ has {actual}"
+                        )
+
+                elif kind.startswith("plugin-hooks:"):
+                    name = kind.split(":", 1)[1]
+                    plugin_names = {
+                        e["name"] for e in entries if e["source"].startswith("./plugin/")
+                    }
+                    if name not in plugin_names:
+                        fail(
+                            f"{path}:{index + 1}: claim names plugin '{name}', which has "
+                            "no entry with source ./plugin/ in marketplace.json"
+                        )
+                        continue
+                    found = next(
+                        (m for m in (PLUGIN_HOOKS_RE.search(w) for w in window) if m),
+                        None,
+                    )
+                    if not found:
+                        fail(
+                            f"{path}:{index + 1}: claim 'plugin-hooks:{name}' binds to "
+                            f"nothing within {BIND_WINDOW} lines - the number it marked is "
+                            "gone, so either restore it or delete the marker"
+                        )
+                        continue
+                    actual = count_plugin_hooks(name)
+                    if actual is None:
+                        fail(
+                            f"{path}:{index + 1}: could not verify plugin '{name}' hook "
+                            f"entries - plugin/{name}/hooks/hooks.json does not parse "
+                            "as the documented shape"
+                        )
+                        continue
+                    if int(found.group(1)) != actual:
+                        fail(
+                            f"{path}:{index + 1}: claims {found.group(1)} hook entries for "
+                            f"plugin '{name}', but plugin/{name}/hooks/hooks.json has "
+                            f"{actual}"
                         )
 
                 elif kind == "crew-markdown-lines":

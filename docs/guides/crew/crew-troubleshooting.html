@@ -192,6 +192,13 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 </tr>
 <tr>
 <td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
+<td><code>env-guard.sh</code></td>
+<td>a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772)</td>
+<td><code>guards.envGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td><code>off</code></td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
 <td><code>cloud-guard.sh</code>, environment layer (T-0005)</td>
 <td>a terraform apply judged by its target environment, and a destroy never applied unattended</td>
 <td><code>environments.nonProd</code> (repo only; globs naming non-production workspaces), <code>environments.prodUnattended</code> (both layers; true only when <strong>both</strong> say <code>true</code>)</td>
@@ -249,7 +256,7 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
   30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
   not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
 <li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.roleWrites: off</code>,
-  <code>guards.cloudGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
+  <code>guards.cloudGuard: off</code>, <code>guards.envGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.</li>
 <li><strong>Silence the SessionStart context specifically:</strong> <code>{"memory": {"inject": false}}</code> stops the
@@ -876,6 +883,21 @@ it never picks among candidates.</p>
 </ul>
 <p>Do not pick the run from the Actions tab and carry on: run <code>crew_ghdeploy.py record</code>, which writes
 <code>could-not-tell</code> and a <code>not-run</code> row, and decide from there.</p>
+<h2 id="environment-guard-refusals">Environment Guard Refusals</h2>
+<p><code>env-guard.sh</code> / <code>env_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code> (L-0772). <strong>Ships
+off</strong> (<code>guards.envGuard: off</code>); turn it on with <code>{"guards": {"envGuard": "report"}}</code> and read
+<code>.crew/guard.log</code> before enforcing with <code>"block"</code>. A refusal names labels only, never a value.</p>
+<ul>
+<li><strong><code>env-dump:&lt;form&gt;</code>:</strong> the command prints the whole environment. Read the one variable you need by
+  name (<code>printenv PATH</code>, <code>echo "$HOME"</code>, <code>$env:PATH</code>).</li>
+<li><strong><code>secret-read:&lt;form&gt;</code>:</strong> it prints a credential-named variable. Use it without printing it
+  (<code>curl -H "Authorization: Bearer $TOKEN"</code>), or test that it is set (<code>[ -n "$TOKEN" ]</code>).</li>
+<li><strong><code>could-not-tell:&lt;why&gt;</code>:</strong> it could not read the command well enough: an unbalanced quote,
+  <code>eval "$X"</code>, <code>bash -c "$CMD"</code>, <code>eval "$(ssh-agent -s)"</code>, nesting deeper than 8. Write the command
+  out literally. Under <code>report</code> these are logged, not refused.</li>
+<li><strong>A <code>/proc/*/environ</code> mention</strong> outside a <code>git commit -m</code> message, a <code>grep</code> pattern or <code>echo</code> text
+  (a <code>sed</code> script, a <code>find -name</code>) is refused too: a known false positive.</li>
+</ul>
 <h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
 <p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>
 (<code>guards.cloudGuard: off</code>); turn it on with <code>{"guards": {"cloudGuard": "report"}}</code> first to see what
@@ -1305,6 +1327,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 </tr>
 <tr>
 <td><code>guards.cloudGuard</code></td>
+<td>both layers, ratchets</td>
+<td><code>block</code>/<code>report</code>/<code>off</code></td>
+<td><code>off</code>: the hook reads this key and exits</td>
+</tr>
+<tr>
+<td><code>guards.envGuard</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>report</code>/<code>off</code></td>
 <td><code>off</code>: the hook reads this key and exits</td>
