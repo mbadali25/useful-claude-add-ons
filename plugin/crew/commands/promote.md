@@ -338,13 +338,13 @@ process runs. A command that changes directory after it starts (a later `cd`,
 `bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
 or puts `git` in a form the gate cannot read with certainty (an unlisted global
 option, quoted text) is refused rather than guessed at. Skip-worktree and
-assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
-markers and `.crew/.deploy-in-flight` are read from the session's project
-directory on purpose: they are gitignored per-checkout state, so a fresh
-worktree has none of it and a throwaway one could hold a forged copy. For the
-same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
-a deletion, an untracked map, compared with HEAD's copy rather than with
-`git status` - blocks any command the working or the committed map declares.
+assume-unchanged entries, and a `git status` that fails, are refused too. Policy - `requires`, `rollback`,
+`requireHuman`, `shaInput`, `requireReview` - is the `.crew/verify.json` committed in the deployed sha (L-0768),
+what a checkout of that sha reads: a worktree branch's committed waiver counts, the main checkout's does not; a
+matched environment that map lacks, or a map it cannot read, blocks; a sha with no map falls back to the project
+dir's. Which command deploys is matched on the project dir's map, and `.work/PROMOTIONS.md`, the approval markers
+and `.crew/.deploy-in-flight` stay there (gitignored per-checkout state a fresh worktree lacks and a throwaway one
+could forge). An uncommitted map blocks where it is policy: the deploying tree, or the project dir when it is.
 What it cannot see: a deploy script that changes directory itself, and what a
 workflow does with a branch-name ref (`ref=development`).
 
