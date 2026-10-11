@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5] - 2026-10-11
+
+A test-only fix (L-0790). Nothing the plugin installs or runs changes.
+
+### Fixed
+- `tests/test_ops_firewall.py` could run the host's real `sudo ufw allow` (or `firewall-cmd --add-rich-rule`): it put its fake tools in front of the caller's whole `PATH`, and its fake `sudo` ran whatever that `PATH` resolved. Run as root, or by a user with passwordless sudo, on a host with ufw, the suite added the bridge's allow rule to the real firewall configuration. The child now gets a `PATH` of two directories the test creates (the fakes, and wrappers for `grep` and `cat`), the fake `sudo` runs only a file inside the fake directory and refuses anything else, and each test states the euid the function sees instead of inheriting the caller's
+- New tests fail if the harness can reach a real `ufw`, `firewall-cmd` or `sudo` again, using canary tools planted on the caller's `PATH`, so they do not depend on what the host has installed
+- The module skips, with the reason, when the real euid is 0 unless `AI_CONNECT_TEST_ALLOW_ROOT=1` says the caller is sandboxed
+
+### If you ran the suite before 0.1.5
+- As root or with passwordless sudo on a Linux or WSL host with ufw or firewalld: check for a rule allowing TCP 9999 from `100.64.0.0/10` commented `AI-Connect Bridge` that you did not add (`sudo ufw status`, or `sudo firewall-cmd --permanent --list-rich-rules`), and delete it if the bridge is not meant to listen there
+
 ## [0.1.4] - 2026-10-11
 
 Fixes from a Codex QA pass over the whole fork (W-0121). 0.1.2 and 0.1.3 were set on the branch and never released: the PR's CI found the first three items after them.

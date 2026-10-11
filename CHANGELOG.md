@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — ai-connect 0.1.5: the firewall test can no longer reach the host's real firewall (L-0790)
+
+- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now runs against fake tools only.
+- **Cause.** `plugin/ai-connect/tests/test_ops_firewall.py` put its fake tools in front of the caller's
+  whole `PATH` and its fake `sudo` ran whatever that `PATH` resolved, so a test that wrote no fake
+  `ufw` found the real one. On 2026-10-11 a root run added the bridge's allow rule (TCP 9999 from
+  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules`; it was removed by hand.
+- **Fix.** The child's `PATH` is two directories the test creates, the fake `sudo` runs only a file
+  inside the fake directory, each test states the euid the function sees, and the module skips as
+  root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`. New tests plant canary `ufw`, `firewall-cmd` and
+  `sudo` on the caller's `PATH` and fail if any of them runs.
+- **If you ran the suite before 0.1.5** as root or with passwordless sudo on a host with ufw or
+  firewalld, check for that rule; `plugin/ai-connect/CHANGELOG.md` has the commands.
+- Nothing the plugin installs or runs changes. `install.sh` is untouched.
+
 ### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
 
 - **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
