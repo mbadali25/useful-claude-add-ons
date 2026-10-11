@@ -2,7 +2,7 @@
 """Tailscale self-join tooling for ai-connect: one core behind the .sh/.ps1 shims.
 
 Subcommands:
-  mint-key  ADMIN  create ONE single-use, ephemeral, pre-authorised, tagged auth key
+  mint-key  ADMIN  create ONE single-use, pre-authorised, tagged auth key (not ephemeral; --ephemeral)
   revoke    ADMIN  delete a joined node by name (revoking a key does not drop a node)
   vpn-up    AGENT  join the tailnet with a key, idempotently, and probe the Bridge
   vpn-down  AGENT  leave the tailnet (and stop a userspace tailscaled we started)
@@ -188,12 +188,15 @@ def parse_expiry(text: str) -> int:
     return seconds
 
 
-def key_request_body(name: str, tag: str, expiry_seconds: int) -> dict:
+def key_request_body(name: str, tag: str, expiry_seconds: int, ephemeral: bool = False) -> dict:
+    """Not ephemeral unless asked: every machine joined is trusted and stays, and an ephemeral node is
+    removed from the tailnet soon after it goes offline (a sleep, a reboot). --ephemeral is for
+    throwaway and CI nodes. A tagged node already has node-key expiry disabled."""
     # Tailscale allows at most 50 alphanumerics, hyphens and spaces here.
     description = re.sub(r"[^A-Za-z0-9 -]", "-", f"ai-connect peer {name}")[:50]
     return {
         "capabilities": {"devices": {"create": {
-            "reusable": False, "ephemeral": True, "preauthorized": True, "tags": [tag]}}},
+            "reusable": False, "ephemeral": ephemeral, "preauthorized": True, "tags": [tag]}}},
         "expirySeconds": expiry_seconds,
         "description": description,
     }
@@ -242,20 +245,21 @@ def cmd_mint_key(args) -> int:
     expiry = parse_expiry(args.expiry)
     token = access_token()
     status, payload = http("POST", f"{API_BASE}/tailnet/-/keys", token=token,
-                           body=key_request_body(args.name, args.tag, expiry))
+                           body=key_request_body(args.name, args.tag, expiry, args.ephemeral))
     key = payload.get("key") if status == 200 else None
     if not key:
         raise api_error("auth key creation", status, payload)
     remember_secret(key)
     expires = payload.get("expires", f"in {expiry}s")
+    kind = "ephemeral" if args.ephemeral else "not ephemeral"
     if args.out:
         write_owner_only(Path(args.out), key + "\n")
         say(f"Auth key for peer '{args.name}' written to {Path(args.out).resolve()} "
-            f"(single use, ephemeral, {args.tag}, expires {expires}).")
+            f"(single use, {kind}, {args.tag}, expires {expires}).")
         say(f"Hand that file to the peer; it runs: vpn-up --auth-key-file <file> --hostname {args.name}")
     else:
         # The one deliberate secret on stdout: the admin asked for it, shown once.
-        print(f"Auth key for peer '{args.name}' (single use, ephemeral, {args.tag}, "
+        print(f"Auth key for peer '{args.name}' (single use, {kind}, {args.tag}, "
               f"expires {expires}) -- shown once:")
         print(f"  {key}")
         say(f"The peer runs: TS_AUTHKEY=<key> vpn-up --hostname {args.name}")
@@ -659,6 +663,8 @@ def build_parser() -> argparse.ArgumentParser:
     m = sub.add_parser("mint-key", help="ADMIN: create one single-use auth key for a peer")
     m.add_argument("--name", required=True, help="peer name (becomes its tailnet hostname)")
     m.add_argument("--expiry", default="1d", help="key lifetime: 1d (default), 12h, 30m, 3600")
+    m.add_argument("--ephemeral", action="store_true",
+                   help="make the node ephemeral (removed soon after it goes offline): throwaway or CI nodes only")
     m.add_argument("--tag", default=DEFAULT_TAG)
     m.add_argument("--out", help="write the key to this file (owner-only) instead of printing it")
     m.add_argument("--peer-token", action="store_true",

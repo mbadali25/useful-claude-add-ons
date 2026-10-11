@@ -41,9 +41,8 @@ import smoke_test  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED,  # pylint: disable=import-error
-                         EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must,
-                         no_tools, out,
-                         privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
+                         EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask,
+                         must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"

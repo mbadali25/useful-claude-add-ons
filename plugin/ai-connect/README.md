@@ -105,7 +105,7 @@ It asks for the listen address: give the machine's VPN address (Tailscale, WireG
 
 #### VPN (Tailscale)
 
-[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, ephemeral, tagged auth key per peer (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's port 9999 and nothing else. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
+[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, tagged auth key per peer (not ephemeral: the machine stays; `--ephemeral` for throwaway nodes) (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's port 9999 and nothing else. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
 
 ### 2. Client (every other machine)
 

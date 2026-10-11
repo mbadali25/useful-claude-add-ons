@@ -105,7 +105,7 @@ Es fragt nach der Lauschadresse: die VPN-Adresse des Rechners (Tailscale, WireGu
 
 #### VPN (Tailscale)
 
-[`vpn/`](vpn/README.md) bringt einen Rechner ohne die Tailscale-Admin-Konsole ins Tailnet: Der Admin erzeugt mit `mint-key` pro Peer einen einmal nutzbaren, flüchtigen, getaggten Auth-Key (`--peer-token` führt zusätzlich `installer.py add-peer <Name>` mit der venv daneben aus), der Peer führt `vpn-up` mit diesem Key aus, und `revoke` / `vpn-down` nehmen ihn wieder heraus. Die mitgelieferte ACL-Vorlage lässt Knoten mit `tag:ai-peer` den Port 9999 der Bridge erreichen und sonst nichts. Einrichtung, Zugangsdaten und die ACL stehen in [vpn/README.md](vpn/README.md).
+[`vpn/`](vpn/README.md) bringt einen Rechner ohne die Tailscale-Admin-Konsole ins Tailnet: Der Admin erzeugt mit `mint-key` pro Peer einen einmal nutzbaren, getaggten Auth-Key (nicht flüchtig: der Rechner bleibt; `--ephemeral` für Wegwerf-Knoten) (`--peer-token` führt zusätzlich `installer.py add-peer <Name>` mit der venv daneben aus), der Peer führt `vpn-up` mit diesem Key aus, und `revoke` / `vpn-down` nehmen ihn wieder heraus. Die mitgelieferte ACL-Vorlage lässt Knoten mit `tag:ai-peer` den Port 9999 der Bridge erreichen und sonst nichts. Einrichtung, Zugangsdaten und die ACL stehen in [vpn/README.md](vpn/README.md).
 
 ### 2. Client (jeder weitere Rechner)
 

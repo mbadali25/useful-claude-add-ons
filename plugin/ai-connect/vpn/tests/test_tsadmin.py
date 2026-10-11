@@ -23,7 +23,8 @@ def assert_no_secret(text, allow=()):
 # ------------------------------------------------------------------ mint-key
 
 
-def test_mint_key_request_body_is_single_use_ephemeral_preauthorized_tagged(ts, api, capsys):
+def test_mint_key_request_body_is_single_use_not_ephemeral_preauthorized_tagged(ts, api, capsys):
+    """A joined machine is trusted and stays: an ephemeral node would vanish after a sleep or a reboot."""
     assert ts.main(["mint-key", "--name", "alice-laptop"]) == 0
     token_call = api.find("POST", "/oauth/token")[0]
     assert token_call["form"] == {"client_id": "kOAUTHCLIENTID", "client_secret": CLIENT_SECRET,
@@ -31,10 +32,18 @@ def test_mint_key_request_body_is_single_use_ephemeral_preauthorized_tagged(ts, 
     key_call = api.find("POST", "/tailnet/-/keys")[0]
     assert key_call["token"] == ACCESS_TOKEN
     assert key_call["body"]["capabilities"] == {"devices": {"create": {
-        "reusable": False, "ephemeral": True, "preauthorized": True, "tags": ["tag:ai-peer"]}}}
+        "reusable": False, "ephemeral": False, "preauthorized": True, "tags": ["tag:ai-peer"]}}}
+    assert "single use, not ephemeral" in capsys.readouterr().out
     assert key_call["body"]["expirySeconds"] == 86400
     assert key_call["body"]["description"] == "ai-connect peer alice-laptop"
     assert len(api.find("POST", "/tailnet/-/keys")) == 1
+
+
+def test_mint_key_ephemeral_is_opt_in_for_throwaway_nodes(ts, api, capsys):
+    assert ts.main(["mint-key", "--name", "ci-node", "--ephemeral"]) == 0
+    create = api.find("POST", "/tailnet/-/keys")[0]["body"]["capabilities"]["devices"]["create"]
+    assert create == {"reusable": False, "ephemeral": True, "preauthorized": True, "tags": ["tag:ai-peer"]}
+    assert "single use, ephemeral" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("flag,seconds", [("12h", 43200), ("30m", 1800), ("3600", 3600), ("2d", 172800)])

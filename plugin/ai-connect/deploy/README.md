@@ -152,8 +152,11 @@ deploy/deploy.sh add-peer --name laptop --token-sha256 3f1c...
 vpn/mint-key.sh --name laptop --expiry 1h --out laptop.key      # vpn\mint-key.ps1 on Windows
 ```
 
-Send `laptop.key` to machine 2. It works once, is pre-approved and ephemeral, and
-expires after an hour.
+Send `laptop.key` to machine 2. It works once, is pre-approved, and expires after an
+hour if unused. It is **not ephemeral**: every machine joined is trusted, and it stays in
+the tailnet. Tagged nodes have node-key expiry disabled, so a joined machine survives a
+sleep, a reboot and long offline periods with no new key. `--ephemeral` is opt-in, for
+throwaway or CI machines only: Tailscale removes such a node soon after it goes offline.
 
 **Machine 2** joins and connects:
 
