@@ -182,6 +182,35 @@ def test_message_to_reserved_name_refused(tmp_path):
     assert run(go())["code"] == "reserved_name"
 
 
+def test_peer_can_reply_to_user(tmp_path):
+    """The documented reply path: peer_send(to="User:<name>") reaches the observers, unrefused."""
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.OBSERVER_TOKEN) as obs, connect(server, h.ALICE_TOKEN) as alice:
+                await send(obs, type="observe")
+                await recv_type(obs, "observing")
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to="User:max", content="done")
+                observed = await recv_type(obs, "observed")
+                return observed, await h.nothing_arrives(alice)
+
+    observed, quiet = run(go())
+    assert (observed["to"], observed["content"]) == ("User:max", "done")
+    assert quiet
+
+
+@pytest.mark.parametrize("to", ["user:max", "User:", "User:a b", "BRIDGE"])
+def test_message_to_malformed_reserved_name_refused(tmp_path, to):
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.ALICE_TOKEN) as ws:
+                await register(ws, h.ALICE)
+                await send(ws, type="message", to=to, content="x")
+                return await recv_type(ws, "error")
+
+    assert run(go())["code"] == "reserved_name"
+
+
 # --- limits ----------------------------------------------------------------
 
 def test_oversize_message_refused_without_closing(tmp_path, caplog):

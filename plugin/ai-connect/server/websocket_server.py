@@ -17,7 +17,14 @@ from .message_store import DEFAULT_DB_PATH, MessageStore
 from .observers import Observers
 from .peer_registry import NameTakenError, Peer, PeerRegistry, utc_now
 from .roles import Identity, Roles
-from .user_send import BRIDGE_SENDER, is_reserved_name, is_user_name, user_sender, valid_recipients
+from .user_send import (
+    BRIDGE_SENDER,
+    is_reserved_name,
+    is_user_name,
+    is_user_recipient,
+    user_sender,
+    valid_recipients,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +299,7 @@ class BridgeServer:
                     if not isinstance(to_peer, str) or not to_peer:
                         await self._send_error(websocket, "'message' needs a 'to'")
                         continue
-                    if is_reserved_name(to_peer):
+                    if is_reserved_name(to_peer) and not is_user_recipient(to_peer):
                         await refuse("reserved_name", f"'{to_peer}' is not a peer", msg_type, name=to_peer)
                         continue
                     await self._route_message(message, peer_name)
