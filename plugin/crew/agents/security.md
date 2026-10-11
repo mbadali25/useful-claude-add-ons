@@ -57,6 +57,13 @@ rather than guess.
 Kimi cannot run `git diff`, so `--diff-base` hands it the change: replace
 `'<base>'` with the base commit or branch the change is measured from (the
 caller's, else the merge-base with the default branch, e.g. `'origin/main'`).
+Check the base before you write the command: it may hold only letters, digits
+and `/ . _ -`, and must not start with `-`. If it holds anything else - an
+apostrophe, a space, `$`, a backtick, `;` - do not dispatch: do the review
+yourself, with `ran on claude (kimi: base refused)` as your first line. Inside
+the single quotes such a character could end the quoting and run as a command
+before the script ever sees it; the script refuses the same set itself
+(exit 2), but only once the shell has already run.
 The script appends the bundle `/crew:review` builds against that base -
 committed, staged, unstaged and untracked changes - to the task. Leave
 `--diff-base` out only when the task already carries the whole diff.

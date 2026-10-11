@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.28: explorer, researcher and security can run on Kimi K3 (L-0777)
+### Added — crew 1.2.27: explorer, researcher and security can run on Kimi K3 (L-0777)
 
 - **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
   "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
@@ -40,6 +40,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
   group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
   wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
+- **Review round 3 (Codex), round 4 granted by the owner past the 3-round cap.** A `--diff-base` outside a
+  strict ref charset (letters, digits, `/ . _ -`) is refused by the dispatcher before the shell and by the
+  script before git; a failed probe settles and re-checks the tree before the fallback; `--authors` takes
+  only `claude`, `gpt`, `kimi` and `gemini`; an unsearchable config parent and an `OSError` building the
+  bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
+  `KIMI OK`.
 
 ### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
 

@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import functools
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -73,6 +74,13 @@ STDIN_LIMIT = 4 * TASK_CAP + 4
 # last fingerprint: a descendant that left the group (a new session) and writes
 # within this window is caught. A write later than it is not (README, "Limits").
 SETTLE_S = 2.0
+# The families `--authors` may name: those crew's providers speak as
+# (`crew_state.family`). Anything else is a usage error, so a misspelt `kimmi`
+# cannot read as "not kimi" and clear Kimi to review Kimi's work.
+KNOWN_FAMILIES = ("claude", "gpt", "kimi", "gemini")
+# `--diff-base`: a strict git-ref shape. The same set security.md tells the
+# dispatcher to hold a base to before the shell ever sees it.
+_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9/._-]*")
 MARKER = "<!-- crew-kimi: role instructions -->"
 
 AGENTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
@@ -146,7 +154,7 @@ def build_prompt(role, instructions, task):
             f"you can {_CAN[role]}. You cannot run commands or change files. Where the "
             "instructions above say to run a command (git diff, a test, a search tool you "
             "do not have), read the files instead and name what you could not run under "
-            "**Not verified**.\n\n## Task\n\n" + task.strip() + "\n")
+            "**Not verified**.\n\n## Task\n\n" + task.strip("\r\n") + "\n")
 
 
 def _split_authors(values):
@@ -157,9 +165,9 @@ def _split_authors(values):
     for value in values or ():
         for name in value.replace(",", " ").split():
             fam = crew_state.family(None, name)
-            if not fam or not fam.isalpha():
-                raise ValueError(f"--authors {name!r} names no model family "
-                                 "(claude, gpt, kimi, ...)")
+            if fam not in KNOWN_FAMILIES:
+                raise ValueError(f"--authors {name!r} names no known model family "
+                                 f"({', '.join(KNOWN_FAMILIES)})")
             out.add(fam)
     return frozenset(out)
 
@@ -169,12 +177,13 @@ def diff_bundle(root, base):
     staged, unstaged and untracked (`review_patch.compute`, which writes
     nothing) -- as text for the task. Raises ValueError on a base that is not
     a plain ref, or a bundle that cannot be built."""
-    if (not base or base.startswith("-") or ";" in base
-            or any(c.isspace() or ord(c) < 32 for c in base)):
-        raise ValueError(f"--diff-base {base!r} is not a plain commit or ref")
+    if (not base or not _REF.fullmatch(base) or ".." in base or "//" in base
+            or base.endswith((".", "/", ".lock"))):
+        raise ValueError(f"--diff-base {base!r} is not a plain commit or ref "
+                         "(letters, digits and / . _ - only)")
     try:
         _manifest, patch, _parts = review_patch.compute(root, base)
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         raise ValueError(f"--diff-base {base}: the bundle could not be built: {exc}") from exc
     text = patch.decode("utf-8", errors="backslashreplace")
     return (f"\n\n## The change under review\n\nThe review bundle against `{base}`: committed, "
@@ -188,6 +197,14 @@ def _config_problem(root):
     role to its default; here a broken layer is a usage error (exit 2)."""
     for path in (crew_common.repo_config_file(root, "config.json"),
                  crew_config.GLOBAL_CONFIG_PATH):
+        # `lstat` first: `_unreadable_config` asks `lexists`, which answers
+        # False when a parent cannot be searched, and that is not "absent".
+        try:
+            os.lstat(path)
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except OSError as exc:
+            return f"{path}: could not be checked ({type(exc).__name__})"
         why = crew_config._unreadable_config(path)  # pylint: disable=protected-access
         if why:
             return f"{path}: {why}"
@@ -231,6 +248,22 @@ def route(root, role, authors_arg):
         return row, authors, ("barred", f"kimi speaks as the `{row['barredBy']}` family, "
                                         "which wrote this change")
     return row, authors, None
+
+
+def _settled_problem(root, before, graph):
+    """Wait `SETTLE_S`, fingerprint again and judge: what a process the call
+    left outside its group wrote meanwhile. Every exit after the probe runs it."""
+    time.sleep(SETTLE_S)
+    return _tree_problem(before, review_run.tree_fingerprint(root), graph)
+
+
+def _remove(scratch):
+    """Remove the scratch directory; the reason it could not be, or None."""
+    try:
+        shutil.rmtree(scratch)
+    except OSError as exc:
+        return f"the scratch directory {scratch} could not be removed: {exc}"
+    return None
 
 
 def _tree_problem(before, after, graph):
@@ -286,12 +319,22 @@ def run(args, task):  # pylint: disable=too-many-return-statements,too-many-loca
         _say("KIMI TREE UNKNOWN: a process the kimi probe left running could not be stopped")
         return EXIT_TREE
     if not kimi_probe.launchable(probed["state"]):
+        tree = _settled_problem(root, before, graph)
+        if tree:
+            _say(f"{tree[0]} (after the kimi probe, which answered {probed['state']})")
+            return tree[1]
         return unavailable(probed["state"], probed["reason"])
 
     try:
         scratch = tempfile.mkdtemp(prefix="crew-kimi-agent-")
     except OSError as exc:
+        tree = _settled_problem(root, before, graph)
+        if tree:
+            _say(tree[0])
+            return tree[1]
         return unavailable("failed", f"no scratch directory: {exc}")
+    written = None
+    stdout, stderr, code, timed_out, survivor_unknown = "", "", None, False, None
     try:
         try:
             prompt = build_prompt(args.role, instructions, task)
@@ -307,21 +350,22 @@ def run(args, task):  # pylint: disable=too-many-return-statements,too-many-loca
                        body=(f"You are crew's read-only {args.role}. Follow the user's "
                              "message exactly; never modify files."))]
         except OSError as exc:
-            return unavailable("failed", f"the prompt or agent file could not be written: {exc}")
-        if argument != prompt:
-            cmd += ["--add-dir", scratch]
-        started = []
-        stdout, stderr, code, timed_out = review_run.launch(
-            cmd, root, args.timeout, env=kimi_probe.kimi_env(), started=started)
-        _killed, survivor_unknown = review_run.stop_survivors(started)
+            written = f"the prompt or agent file could not be written: {exc}"
+        if not written:
+            if argument != prompt:
+                cmd += ["--add-dir", scratch]
+            started = []
+            stdout, stderr, code, timed_out = review_run.launch(
+                cmd, root, args.timeout, env=kimi_probe.kimi_env(), started=started)
+            _killed, survivor_unknown = review_run.stop_survivors(started)
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-    time.sleep(SETTLE_S)
-    after = review_run.tree_fingerprint(root)
-    tree = _tree_problem(before, after, graph)
+        left = _remove(scratch)
+    tree = _settled_problem(root, before, graph)
     if tree:
         _say(tree[0])
         return tree[1]
+    if written:
+        return unavailable("failed", written)
     if survivor_unknown:
         _say(f"KIMI TREE UNKNOWN: {survivor_unknown}")
         return EXIT_TREE
@@ -331,6 +375,8 @@ def run(args, task):  # pylint: disable=too-many-return-statements,too-many-loca
     if code != 0 or error or not (message or "").strip():
         detail = error or (stderr or "").strip()[:200] or "no final message"
         return unavailable("failed", f"exit {code}: {detail}")
+    if left:
+        return unavailable("failed", left)
     _say(f"KIMI OK: {args.role} ran on kimi {probed['alias']}", kimi_probe.redact(message))
     return EXIT_OK
 

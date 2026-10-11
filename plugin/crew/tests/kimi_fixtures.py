@@ -46,6 +46,7 @@ import textwrap
 #   FAKE_KIMI_DETACHED an absolute path that a process the review call starts in
 #                    a NEW session (out of its process group) appends to after
 #                    FAKE_KIMI_DETACHED_S seconds (default 0.5)
+#   FAKE_KIMI_PROBE_DETACHED  the same, started by the PROBE call
 #   FAKE_KIMI_ANSWER when set, a review call's assistant text, in place of the
 #                    READ lines and verdict
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
@@ -106,6 +107,7 @@ def detached(path):
             **extra)
 if prompt == "Reply with exactly: PROBE_OK":
     late(os.environ.get("FAKE_KIMI_PROBE_LATE"))
+    detached(os.environ.get("FAKE_KIMI_PROBE_DETACHED"))
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
     if os.environ.get("FAKE_KIMI_PROBE_WRITE"):
         with open(os.environ["FAKE_KIMI_PROBE_WRITE"], "a", encoding="utf-8") as fh:

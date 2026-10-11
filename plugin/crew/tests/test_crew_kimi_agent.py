@@ -674,7 +674,7 @@ def test_an_author_name_is_normalised_before_the_guard(repo, tmp_path, kimi, cap
     assert code == cka.EXIT_UNAVAILABLE and out.startswith("KIMI UNAVAILABLE: barred")
 
 
-@pytest.mark.parametrize("name", ["123", "--", "?"])
+@pytest.mark.parametrize("name", ["123", "--", "?", "kimmi", "Kimmi", "llama"])
 def test_an_author_name_that_names_no_family_is_a_usage_error(repo, tmp_path, kimi, capsys,
                                                                 name):
     kimi()
@@ -682,7 +682,7 @@ def test_an_author_name_that_names_no_family_is_a_usage_error(repo, tmp_path, ki
     code, out = _call(repo, tmp_path, role="security", args=(f"--authors={name}",),
                       capsys=capsys)
 
-    assert code == cka.EXIT_USAGE and "names no model family" in out
+    assert code == cka.EXIT_USAGE and "names no known model family" in out
 
 
 def test_a_detached_descendant_that_writes_within_the_settle_is_exit_8(
@@ -737,3 +737,115 @@ def test_an_oversized_stdin_is_too_large_without_reading_it_all(repo, tmp_path):
     assert done.returncode == cka.EXIT_UNAVAILABLE
     assert done.stdout.decode("utf-8").startswith(
         f"KIMI UNAVAILABLE: too-large - the task on stdin is over {cka.STDIN_LIMIT} bytes")
+
+
+# --- review round 3 (Codex) -------------------------------------------------
+
+
+@pytest.mark.parametrize("base", ["x'$(touch${IFS}PWNED)'", "a..b", "-x", "main.lock", "x//y",
+                                  "main^", "HEAD~1", "a@{1}", "a\\b"])
+def test_a_base_outside_the_strict_ref_charset_is_refused_before_git(repo, tmp_path, kimi,
+                                                                      capsys, monkeypatch, base):
+    kimi()
+    monkeypatch.setattr(review_patch_mod(), "compute",
+                        lambda *a, **k: pytest.fail("git was asked about a refused base"))
+
+    code, out = _call(repo, tmp_path, role="security",
+                      args=("--authors", "claude", f"--diff-base={base}"), capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and "letters, digits and / . _ - only" in out
+
+
+@pytest.mark.parametrize("base", ["origin/main", "v1.2_rc-3", "a" * 40])
+def test_a_plain_ref_passes_the_charset(base):
+    assert cka._REF.fullmatch(base)  # pylint: disable=protected-access
+
+
+def review_patch_mod():
+    import review_patch  # pylint: disable=import-outside-toplevel
+    return review_patch
+
+
+def test_the_security_dispatcher_refuses_a_base_outside_the_charset_before_the_shell():
+    text = " ".join(_security_md().split())
+
+    assert "letters, digits and `/ . _ -`" in text and "an apostrophe" in text
+    assert "do not dispatch" in text
+
+
+def test_a_detached_writer_left_by_a_failed_probe_is_exit_8_not_a_fallback(
+        repo, tmp_path, kimi, capsys, monkeypatch):
+    kimi(FAKE_KIMI_PROBE="401", FAKE_KIMI_PROBE_DETACHED=str(repo / "seed.txt"),
+         FAKE_KIMI_DETACHED_S="0.3")
+    monkeypatch.setattr(cka, "SETTLE_S", 3.0)
+    seed = (repo / "seed.txt").read_bytes()
+
+    code, out = _call(repo, tmp_path, capsys=capsys)
+
+    if code == cka.EXIT_UNAVAILABLE:
+        time.sleep(2.0)
+        assert (repo / "seed.txt").read_bytes() == seed, out
+    else:
+        assert code == cka.EXIT_TREE and out.startswith("KIMI CHANGED THE TREE:")
+
+
+def test_a_config_path_that_cannot_be_checked_is_a_usage_error(repo, tmp_path, kimi, capsys,
+                                                                monkeypatch):
+    kimi()
+    _configure(repo, ALL_PINNED)
+    real = os.lstat
+    target = str(repo / ".crew" / "config.json")
+
+    def denied(path, *a, **k):
+        if os.path.abspath(str(path)) == os.path.abspath(target):
+            raise PermissionError(13, "Permission denied")
+        return real(path, *a, **k)
+    monkeypatch.setattr(cka.os, "lstat", denied)
+
+    code, out = _call(repo, tmp_path, capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and "could not be checked (PermissionError)" in out
+
+
+def test_an_os_error_building_the_bundle_is_a_usage_error(repo, tmp_path, kimi, capsys,
+                                                           monkeypatch):
+    kimi()
+
+    def broken(*_a, **_k):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(review_patch_mod(), "compute", broken)
+
+    code, out = _call(repo, tmp_path, role="security",
+                      args=("--authors", "claude", "--diff-base=main"), capsys=capsys)
+
+    assert code == cka.EXIT_USAGE and "the bundle could not be built" in out
+
+
+def test_the_task_keeps_its_leading_indentation(repo, tmp_path, kimi, capsys):
+    dump = tmp_path / "dump.jsonl"
+    kimi(FAKE_KIMI_DUMP=str(dump))
+
+    code, out = _call(repo, tmp_path, task="\n    indented first line\nsecond\n", capsys=capsys)
+
+    row = json.loads(dump.read_text(encoding="utf-8").splitlines()[-1])
+    prompt = row.get("prompt_file") or row["argv"][row["argv"].index("-p") + 1]
+    assert code == cka.EXIT_OK, out
+    assert "## Task\n\n    indented first line\nsecond\n" in prompt
+
+
+def test_a_scratch_dir_that_cannot_be_removed_is_never_kimi_ok(repo, tmp_path, kimi, capsys,
+                                                                monkeypatch):
+    kimi()
+    real = cka.shutil.rmtree
+
+    def stuck(path, *a, **k):
+        if "crew-kimi-agent-" in os.path.basename(str(path)):
+            real(path, *a, **k)
+            raise OSError(16, "Device or resource busy")
+        return real(path, *a, **k)
+    monkeypatch.setattr(cka.shutil, "rmtree", stuck)
+
+    code, out = _call(repo, tmp_path, capsys=capsys)
+
+    assert code == cka.EXIT_UNAVAILABLE and "could not be removed" in out
+    assert "KIMI OK" not in out

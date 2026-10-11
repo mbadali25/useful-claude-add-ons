@@ -4089,7 +4089,7 @@ step 2e, and with the same code: a per-role Kimi agent file allowing only reads 
 reviewer `Read, Grep, Glob`; researcher `Read, Glob, WebSearch, FetchURL`) and disallowing `Write`, `Edit`
 and `Bash`, an empty `--skills-dir`, and the working tree fingerprinted before the probe, after it and after
 the run, with anything the call left running stopped first and a 2-second settle (`SETTLE_S`) before the
-last fingerprint, so a process that left Kimi's process group and writes within it is caught. A write outside
+last fingerprint on every exit after the probe (a failed probe included), so a process that left Kimi's process group and writes within it is caught. A write outside
 the repository is caught by neither, and a detached process that writes after the settle is not caught
 either; `/crew:review`'s own Kimi round shares that limit (L-0785). No role gets Bash on Kimi.
 
@@ -4098,10 +4098,12 @@ either; `/crew:review`'s own Kimi round shares that limit (L-0785). No role gets
 barred`, and `/crew:model` shows the row barred. The author set is `--authors` united with the dispatch
 record or config (`author_families`); none known, or a dispatch record whose family cannot be told, is
 `author-unknown`, never "no conflict". `--authors` names are normalised the way the guard compares them
-(`Kimi`, `kimi-k3` and `k3` are all `kimi`), and a name that names no family is exit 2. A role that is not
+(`Kimi`, `kimi-k3` and `k3` are all `kimi`), and a name outside `claude`, `gpt`, `kimi` and `gemini` is exit 2. A role that is not
 pinned to Kimi answers `not-routed` before any author check. The security dispatcher passes only the
 families its caller names, and hands Kimi the change with `--diff-base '<base>'`: the bundle `/crew:review`
-builds (committed, staged, unstaged and untracked), appended to the task. **Once your
+builds (committed, staged, unstaged and untracked), appended to the task. The base may hold only letters,
+digits and `/ . _ -`: the dispatcher refuses any other base before the shell sees it (and runs on Claude),
+and the script refuses it again before git does. **Once your
 developer runs on Kimi, `security` and the reviewer are the same family as the author**: cross-family
 review of that work needs Codex or Claude. The Claude fallback is not guarded, and says so.
 

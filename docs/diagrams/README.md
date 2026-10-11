@@ -1059,9 +1059,9 @@ flowchart LR
 
 | Box | Details |
 |---|---|
-| `ROUTE` | crew_kimi_agent.route() plugin/crew/hooks/scripts/crew_kimi_agent.py:141 resolves the role through crew_state.resolve_role; security is in REVIEWING_DEV_ROLES (crew_state.py:1198), so a pin in the author's family is barred and an empty author set is author-unknown, never no conflict |
-| `FP` | review_run.tree_fingerprint before the probe, after it and after the run (crew_kimi_agent.py:193-238); a change is exit 8, a tree that cannot be read after the run is exit 8 (KIMI TREE UNKNOWN) |
-| `LAUNCH` | kimi -p with a per-role agent file (ROLE_TOOLS :73, Write/Edit/Bash disallowed), an empty skills dir, kimi_env(), stdin closed, its own process group, the timeout (DEFAULT_TIMEOUT :64) |
+| `ROUTE` | crew_kimi_agent.route() plugin/crew/hooks/scripts/crew_kimi_agent.py:214 resolves the role through crew_state.resolve_role; security is in REVIEWING_DEV_ROLES (crew_state.py:1198), so a pin in the author's family is barred and an empty author set is author-unknown, never no conflict |
+| `FP` | review_run.tree_fingerprint before the probe, after it and, after a SETTLE_S wait (_settled_problem :253), after the run or a failed probe (crew_kimi_agent.py:304-362); a change is exit 8, a tree that cannot be read after the run is exit 8 (KIMI TREE UNKNOWN) |
+| `LAUNCH` | kimi -p with a per-role agent file (ROLE_TOOLS :91, Write/Edit/Bash disallowed), an empty skills dir, kimi_env(), stdin closed, its own process group, the timeout (DEFAULT_TIMEOUT :68) |
 
 - **Source:** `process-crew-kimi-agent.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_kimi_agent.py`, `plugin/crew/agents/explorer.md`, `plugin/crew/hooks/scripts/crew_state.py`
