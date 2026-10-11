@@ -3,6 +3,7 @@
 
   deploy bridge [--name N] [--peer P ...] [--port N] [--vpn-subnet CIDR] [--dry-run]
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
+              [--register-mcp [--scope project|user]] [--install-hooks]      both off by default
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
   deploy status
@@ -14,7 +15,7 @@ Secrets never travel on the command line and are never printed: the peer
 token comes from --token-file or AI_CONNECT_PEER_TOKEN, the one-off Tailscale
 auth key from --auth-key-file or TS_AUTHKEY. Every step checks what is already
 there first and says "already done" instead of doing it again. --dry-run runs
-the read-only checks and prints what it would change, and changes nothing.
+no tool at all and needs no token or key file: it prints what it may change, and changes nothing.
 bridge and peer install Tailscale when it is missing (ts_install.py).
 
 Exit codes: 0 done, 1 a step failed, 2 bad arguments, 3 tailscale not installed.
@@ -40,7 +41,8 @@ import smoke_test  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED, EXIT_OK,  # pylint: disable=import-error
-                         EXIT_USAGE, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must, out,
+                         EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must,
+                         no_tools, out,
                          privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
@@ -173,6 +175,10 @@ def stop_task() -> None:
 
 def step_service(r: Run) -> None:
     r.step("Bridge service")
+    what = f"{UNIT}.service" if TARGET == "linux" else f"scheduled task '{TASK}'"
+    if r.dry_run:  # asks no tool what is running
+        r.change(f"install or update {what} and (re)start it, unless it already runs with this config", lambda: None)
+        return
     if RESTART_PENDING.exists():
         r.config_changed = True
     python = venv_python() or (VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
@@ -221,6 +227,10 @@ def remove_service(r: Run) -> None:
     r.step("Bridge service")
     if ts_install.PLATFORM == "darwin":
         r.already("no Bridge service on macOS (deploy does not install one there)")
+        return
+    if r.dry_run:
+        what = f"{UNIT}.service" if TARGET == "linux" else f"scheduled task '{TASK}'"
+        r.change(f"stop and remove {what}, if it is installed", lambda: None)
         return
     if service_state() == "absent":
         r.already("no Bridge service installed")
@@ -304,6 +314,10 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
         out(f"  neither ufw nor firewalld found; allow port {port} only from {subnet} yourself, e.g.")
         out(f"    sudo ufw allow from {subnet} to any port {port} proto tcp")
         return
+    if r.dry_run:  # reading ufw or firewalld needs root: a dry run asks neither
+        r.change(f"{kind}: allow port {port} from {subnet} only, and delete any other rule of ours, unless "
+                 "that is already so", lambda: None)
+        return
     if kind == "ufw":
         rules = ufw_rules()
         # Ours by its comment, for another subnet or port: left in place it would keep that one open,
@@ -354,6 +368,9 @@ def remove_firewall(r: Run, subnet: str, port: int) -> None:
         r.already("no AI-Connect firewall rule on macOS (deploy does not add one there)")
         return
     kind = firewall_kind()
+    if r.dry_run and kind is not None:
+        r.change(f"delete the {kind} rule for the Bridge port, if there is one", lambda: None)
+        return
     saved = running = False
     if kind == "firewall-cmd":
         saved, running = firewalld_has(subnet, port, permanent=True), firewalld_has(subnet, port, permanent=False)
@@ -398,31 +415,61 @@ def plugin_installed(claude: str) -> bool:
     return PLUGIN_ID in run([claude, "plugin", "list"], timeout=60).stdout
 
 
+def mcp_server_file() -> Path:
+    return PLUGIN / "client" / "server.py"
+
+
 def mcp_registered(claude: str) -> bool:
     res = run([claude, "mcp", "get", MCP_SERVER], timeout=60)
-    return res.returncode == 0 and str(PLUGIN / "client" / "server.py") in res.stdout
+    return res.returncode == 0 and str(mcp_server_file()) in res.stdout
 
 
-def step_claude(r: Run) -> None:
-    r.step("Claude Code plugin and MCP server")
+HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
+                 "here (SessionStart, Stop, the peer-state hooks). A session in bypass-permissions mode then acts on "
+                 "what another peer sends with no prompt in between. Leave it off on a shared machine.")
+MCP_WARNING = ("  WARNING: --register-mcp gives Claude Code sessions ({where}) the ai-connect tools. What other peers "
+               "send is untrusted input; in a bypass-permissions session nothing asks before the model acts on it.")
+
+
+def step_claude(r: Run, args) -> None:
+    """Nothing by default: a peer gets no hooks and no MCP server unless asked for each."""
+    r.step("Claude Code")
+    if not (args.install_hooks or args.register_mcp):
+        r.record("skipped", "no plugin hooks and no MCP server (the default)")
+        out("  skipped: no plugin hooks and no MCP server registered (the default). --register-mcp "
+            "[--scope project|user] registers the MCP server, --install-hooks installs the plugin with its hooks")
+        return
     claude = claude_bin()
     if claude is None:
         raise Failure("Claude Code (claude) not found; install it first: https://claude.com/claude-code")
-    if plugin_installed(claude):
-        r.already(f"plugin {PLUGIN_ID} installed")
-    else:
-        r.change(f"claude plugin install {PLUGIN_ID}",
-                 lambda: must(run([claude, "plugin", "install", PLUGIN_ID]), "claude plugin install"))
+    if args.install_hooks:
+        out(HOOKS_WARNING)
+        if r.dry_run:
+            r.change(f"claude plugin install {PLUGIN_ID}, unless it is installed", lambda: None)
+        elif plugin_installed(claude):
+            r.already(f"plugin {PLUGIN_ID} installed")
+        else:
+            r.change(f"claude plugin install {PLUGIN_ID}",
+                     lambda: must(run([claude, "plugin", "install", PLUGIN_ID]), "claude plugin install"))
+    if not args.register_mcp:
+        return
+    where = ("scope user: every project of this user" if args.scope == "user"
+             else f"scope project: sessions started in {Path.cwd()}, through its .mcp.json")
+    out(MCP_WARNING.format(where=where))
+    python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
+    if r.dry_run:
+        r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
+        return
     if mcp_registered(claude):
         r.already(f"MCP server '{MCP_SERVER}' registered")
         return
 
     def register() -> None:
-        python = venv_python()
-        if python is None:
-            raise Failure(f"no venv at {VENV}")
-        must(run([str(python), str(PLUGIN / "installer.py"), "claude"]), "installer.py claude")
-    r.change(f"register MCP server '{MCP_SERVER}' (installer.py claude)", register)
+        # A registration in this scope that points elsewhere (another venv, another checkout) is replaced
+        run([claude, "mcp", "remove", "-s", args.scope, MCP_SERVER], timeout=60)
+        must(run(argv, timeout=60), "claude mcp add")
+    r.change(f"register MCP server '{MCP_SERVER}' ({where})", register)
 
 
 def remove_claude(r: Run) -> None:
@@ -431,9 +478,13 @@ def remove_claude(r: Run) -> None:
     if claude is None:
         r.already("Claude Code not found, nothing registered there")
         return
+    if r.dry_run:
+        r.change(f"remove MCP server '{MCP_SERVER}' and plugin {PLUGIN_ID} from Claude Code, if registered",
+                 lambda: None)
+        return
     if run([claude, "mcp", "get", MCP_SERVER], timeout=60).returncode == 0:
         r.change(f"remove MCP server '{MCP_SERVER}'",
-                 lambda: must(run([claude, "mcp", "remove", "-s", "user", MCP_SERVER]), "claude mcp remove"))
+                 lambda: must(run([claude, "mcp", "remove", MCP_SERVER]), "claude mcp remove"))
     else:
         r.already(f"MCP server '{MCP_SERVER}' not registered")
     if plugin_installed(claude):
@@ -537,15 +588,17 @@ def cmd_bridge(args) -> int:
     return EXIT_OK
 
 
-def read_peer_token(args) -> str:
+def read_peer_token(args, required: bool = True) -> str:
     if args.token_file:
         try:
             token = Path(args.token_file).read_text(encoding="utf-8").strip()
         except OSError as err:
+            if not required:
+                return ""
             raise Failure(f"cannot read token file {args.token_file}: {err.strerror}", EXIT_USAGE) from None
     else:
         token = os.environ.get("AI_CONNECT_PEER_TOKEN", "").strip() or own_token()
-    if not token:
+    if not token and required:
         raise Failure("no peer token: run `deploy peer ... --print-enrolment` first (the token then stays on this "
                       "machine), or pass --token-file, or set AI_CONNECT_PEER_TOKEN", EXIT_USAGE)
     tsadmin.remember_secret(token)
@@ -608,15 +661,18 @@ def cmd_peer(args) -> int:
                       "and nothing leaves this machine but the hash it prints", EXIT_USAGE)
     if args.print_enrolment:
         return cmd_print_enrolment(args)
-    token = read_peer_token(args)
-    on_tailnet = ts_install.installed() is not None and backend_state() == "Running"
+    # A dry run needs neither the token nor the key, and asks no tool whether this machine is on the tailnet
+    token = read_peer_token(args, required=not args.dry_run)
+    on_tailnet = not args.dry_run and ts_install.installed() is not None and backend_state() == "Running"
     key_file = args.auth_key_file or os.environ.get("TS_AUTHKEY_FILE")
-    if not on_tailnet and not key_file and not os.environ.get("TS_AUTHKEY", "").strip():
+    if not args.dry_run and not on_tailnet and not key_file and not os.environ.get("TS_AUTHKEY", "").strip():
         raise Failure("not on the tailnet and no auth key: pass --auth-key-file or set TS_AUTHKEY")
     r = Run(args.dry_run, total=5)
     out(f"=== AI-Connect deploy: peer '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    if r.dry_run and not token:
+        out("  note: no peer token here yet. `--print-enrolment` makes one, or pass --token-file")
     step_deps(r)
-    step_claude(r)
+    step_claude(r, args)
 
     r.step("VPN (Tailscale)")
     coexistence(r, args.accept_dns)
@@ -644,13 +700,15 @@ def cmd_peer(args) -> int:
             state = backend_state()
             if state != "Running":
                 raise Failure(f"vpn-up returned, but this machine is not on the tailnet (state: {state or 'unknown'})")
-        r.change(f"join the tailnet as '{args.name}' with the one-off auth key", join)
+        r.change(f"join the tailnet as '{args.name}' with the one-off auth key"
+                 + (", unless this machine is on it already (then pin its settings)" if r.dry_run else ""), join)
 
     r.step("Client configuration")
     url = bridge_url(args.bridge, args.port)
-    facts = inspect_config()
-    if facts and facts.get("exists") and facts.get("name") == args.name and facts.get("bridge_url") == url \
-            and facts.get("token_sha256") == hashlib.sha256(token.encode()).hexdigest():
+    facts = inspect_config() or {}
+    wanted = {"exists": True, "name": args.name, "bridge_url": url,
+              "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
+    if token and all(facts.get(key) == value for key, value in wanted.items()):
         r.already(f"{CONFIG_FILE} points at {url} as '{args.name}' with this token")
     else:
         r.change(f"write {CONFIG_FILE}: client.name {args.name}, bridge {url}, token {mask(token)}",
@@ -694,16 +752,21 @@ def cmd_status(args) -> int:
     except Failure as err:
         out(f"  service: unknown ({err})")
     kind = firewall_kind()
-    try:
-        port = (facts or {}).get("port") or DEFAULT_PORT
-        present = kind is not None and firewall_present(kind, args.vpn_subnet, port)
-        found = f"rule present for {args.vpn_subnet} on port {port}" if present else "no rule"
-        out(f"  firewall: {found if kind else 'no ufw/firewalld'}")
-    except Failure as err:
-        out(f"  firewall: unknown ({err})")
-    claude = claude_bin()
-    plugin = ("installed" if plugin_installed(claude) else "not installed") if claude else "claude not found"
-    out(f"  claude plugin: {plugin}")
+    port = (facts or {}).get("port") or DEFAULT_PORT
+    if kind in ("ufw", "firewall-cmd") and not IS_ROOT:
+        # status runs nothing through sudo; reading either firewall needs root
+        how = "sudo ufw status" if kind == "ufw" else "sudo firewall-cmd --list-rich-rules"
+        out(f"  firewall: not checked ({kind} needs root, and status runs nothing through sudo: {how})")
+    else:
+        try:
+            present = kind is not None and firewall_present(kind, args.vpn_subnet, port)
+            found = f"rule present for {args.vpn_subnet} on port {port}" if present else "no rule"
+            out(f"  firewall: {found if kind else 'no ufw/firewalld'}")
+        except Failure as err:
+            out(f"  firewall: unknown ({err})")
+    # No claude command either: it may update itself or reach the network. `claude mcp get ai-connect` shows it
+    out("  claude code: not checked (status runs no claude command; `claude mcp get ai-connect` and "
+        "`claude plugin list` show what is registered)")
     if facts and facts.get("exists"):
         result = config_tool("verify")
         out(f"  bridge: {result.get('result')}{' - ' + result['detail'] if result.get('detail') else ''}")
@@ -777,6 +840,13 @@ def build_parser() -> argparse.ArgumentParser:
                                          "default: the token --print-enrolment made)")
     pe.add_argument("--print-enrolment", action="store_true",
                     help="only make this peer's own token and print {name, token_sha256} for `deploy add-peer`")
+    pe.add_argument("--register-mcp", action="store_true",
+                    help="also register the ai-connect MCP server with Claude Code (off by default)")
+    pe.add_argument("--scope", choices=("project", "user"), default="project",
+                    help="where --register-mcp registers it: this directory's .mcp.json (project, the default) or "
+                         "every project of this user (user)")
+    pe.add_argument("--install-hooks", action="store_true",
+                    help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     pe.set_defaults(func=cmd_peer)
 
     a = sub.add_parser("add-peer", help="on the Bridge: let in a peer that made its own token, by the token's hash")
@@ -818,6 +888,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"deploy: AI_CONNECT_DEPLOY_OS must be linux or windows, not {TARGET}", file=sys.stderr)
         return EXIT_USAGE
     args = build_parser().parse_args(argv)
+    if getattr(args, "dry_run", False):
+        no_tools()
     try:
         return args.func(args)
     except (Failure, tsadmin.Failure) as err:

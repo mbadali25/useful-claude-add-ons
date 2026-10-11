@@ -106,6 +106,7 @@ def test_bridge_dry_run_changes_nothing(bridge):
     assert dry.res.returncode == 0, dry.text
     assert "(dry run)" in dry.out and dry.out.count("would:") >= 6, dry.out
     assert dry.changed_nothing(), dry.mutations
+    assert dry.calls == [], dry.calls  # no tool at all: not even a read-only one
     assert not bridge.dry_left_config
 
 
@@ -122,7 +123,11 @@ def test_bridge_status(bridge):
     status = bridge.status
     assert status.res.returncode == 0, status.text
     assert "service: running" in status.out
-    assert f"firewall: rule present for {SUBNET} on port {bridge.port}" in status.out
+    if bridge.target == "linux":  # not root here, and status runs nothing through sudo
+        assert "firewall: not checked (ufw needs root" in status.out
+    else:
+        assert f"firewall: rule present for {SUBNET} on port {bridge.port}" in status.out
+    assert not any(c[0] in ("sudo", "claude") for c in status.calls), status.calls
     assert "bridge: ok" in status.out
     assert status.changed_nothing()
 
@@ -141,6 +146,7 @@ def test_uninstall_dry_run_changes_nothing(bridge):
     assert dry.res.returncode == 0, dry.text
     assert dry.out.count("would:") >= 3
     assert dry.changed_nothing(), dry.mutations
+    assert dry.calls == [], dry.calls
 
 
 def test_uninstall_removes_everything_and_reruns_clean(bridge):
@@ -324,7 +330,7 @@ def test_firewalld_rule_is_added_reloaded_and_removed(firewalld_box):
         first = Phase(box, *own.args)
         state = box.state()
         second = Phase(box, *own.args)
-        status = box.deploy("status")
+        status = box.deploy("status", extra_env={"AI_CONNECT_DEPLOY_ROOT": "1"})  # reading firewalld needs root
         uninstall = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
         again = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
     assert first.res.returncode == 0, first.text
@@ -343,7 +349,7 @@ def test_firewalld_reload_that_failed_is_done_on_the_next_run(firewalld_box):
         box.set(reload_rc=1)
         failed = Phase(box, *own.args)
         left = box.state()
-        status = box.deploy("status")
+        status = box.deploy("status", extra_env={"AI_CONNECT_DEPLOY_ROOT": "1"})
         box.set(reload_rc=0)
         again = Phase(box, *own.args)
         ready = box.state()
@@ -578,8 +584,9 @@ def test_peer_happy_path(peer):
     first = peer.first
     assert first.res.returncode == 0, first.text
     assert [s.split("]")[0] for s in steps(first.out)] == [f"[{n}/5" for n in range(1, 6)]
-    assert peer.state["plugins"] == ["ai-connect@useful-claude-add-ons"]
-    assert str(PLUGIN / "client" / "server.py") in peer.state["mcp"]["ai-connect"]
+    # No hooks and no MCP server unless asked for: a shared machine runs bypass-mode sessions
+    assert peer.state.get("plugins", []) == [] and peer.state.get("mcp", {}) == {}
+    assert not any(c[0] == "claude" for c in first.calls) and "skipped: no plugin hooks and no MCP server" in first.out
     assert peer.state["ts_backend"] == "Running"
     up = [c for c in first.calls if c[:2] == ["tailscale", "up"]]
     assert len(up) == 1 and "--hostname=laptop" in up[0]
@@ -592,14 +599,15 @@ def test_peer_rerun_is_idempotent(peer):
     second = peer.second
     assert second.res.returncode == 0, second.text
     assert second.changed_nothing(), second.mutations
-    assert len(already(second.res)) == 6, second.out  # deps, plugin, MCP server, VPN, its settings, config
+    assert len(already(second.res)) == 4, second.out  # deps, VPN, its settings, config
 
 
 def test_peer_dry_run_changes_nothing(peer):
     dry = peer.dry
     assert dry.res.returncode == 0, dry.text
-    assert dry.out.count("would:") >= 5, dry.out
+    assert dry.out.count("would:") >= 4, dry.out
     assert dry.changed_nothing(), dry.mutations
+    assert dry.calls == [], dry.calls  # no tool at all: not even a read-only one
 
 
 def test_peer_never_prints_token_or_auth_key(peer):
@@ -614,6 +622,72 @@ def test_peer_never_prints_token_or_auth_key(peer):
     assert peer.state["up_key_sha256"] == hashlib.sha256(AUTH_KEY.encode()).hexdigest()
     key_files = list((peer.box.tmp / "ts-state").glob("auth-key-*"))
     assert key_files == []
+
+
+def peer_on_tailnet(box, tmp_path, *extra, dry=False):
+    box.set(ts_backend="Running")
+    token_file = tmp_path / "laptop.token"
+    token_file.write_text(PEER_TOKEN, encoding="utf-8")
+    server = FakeBridge(lambda: {hashlib.sha256(PEER_TOKEN.encode()).hexdigest()})
+    try:
+        return Phase(box, *peer_args(server.port, token_file), *extra, *(["--dry-run"] if dry else []))
+    finally:
+        server.close()
+
+
+def test_peer_registers_the_mcp_server_in_this_project_only_when_asked(box, tmp_path):
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp")
+    assert run.res.returncode == 0, run.text
+    (add,) = [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert add[3:6] == ["-s", "project", "ai-connect"] and add[-1] == str(PLUGIN / "client" / "server.py")
+    assert "WARNING: --register-mcp" in run.out and "bypass-permissions" in run.out
+    assert box.state().get("plugins", []) == []  # the MCP server, not the hooks
+
+
+def test_peer_registers_for_every_project_with_scope_user(box, tmp_path):
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp", "--scope", "user")
+    assert run.res.returncode == 0, run.text
+    (add,) = [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert add[3:5] == ["-s", "user"] and "every project of this user" in run.out
+
+
+def test_peer_installs_the_hooks_only_when_asked_and_warns(box, tmp_path):
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks")
+    assert run.res.returncode == 0, run.text
+    assert box.state()["plugins"] == ["ai-connect@useful-claude-add-ons"] and box.state().get("mcp", {}) == {}
+    assert "WARNING: --install-hooks" in run.out and "bypass-permissions" in run.out
+
+
+def test_peer_opt_ins_in_a_dry_run_run_no_claude_command(box, tmp_path):
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", dry=True)
+    assert run.res.returncode == 0, run.text
+    assert run.calls == [] and run.changed_nothing()
+    assert "would: claude plugin install" in run.out and "would: register MCP server" in run.out
+
+
+def test_peer_dry_run_needs_no_token_and_no_key(box):
+    """A first look at a fresh machine: no token made yet, no key minted yet, Tailscale's state unknown."""
+    box.set(ts_backend="Stopped", ts_ip="")
+    run = Phase(box, "peer", "--name", "laptop", "--bridge", "100.64.0.1", "--token-file", str(box.tmp / "none"),
+                "--dry-run")
+    assert run.res.returncode == 0, run.text
+    assert run.calls == [] and run.changed_nothing()
+    assert "no peer token here yet" in run.out and "would: join the tailnet as 'laptop'" in run.out
+
+
+def test_a_dry_run_cannot_start_a_tool_even_by_mistake(monkeypatch):
+    """The backstop behind every dry-run branch: once no_tools() is on, run, interactive and tsadmin refuse."""
+    monkeypatch.syspath_prepend(str(DEPLOY_DIR))
+    import deploy_core  # pylint: disable=import-outside-toplevel,import-error
+    deploy_core.no_tools()
+    try:
+        for call in (lambda: deploy_core.run(["tailscale", "status"]),
+                     lambda: deploy_core.interactive(["sudo", "true"]),
+                     lambda: deploy_core.tsadmin.capture(["ip", "-j", "link"])):
+            with pytest.raises((deploy_core.Failure, deploy_core.tsadmin.Failure), match="a dry run runs no tool"):
+                call()
+    finally:
+        deploy_core.tsadmin.NO_EXEC[0] = False
 
 
 def test_peer_wrong_token_fails_verification(box, tmp_path):
@@ -670,6 +744,7 @@ def test_enrolment_by_hash_end_to_end(tmp_path, venv):
         joined = laptop.deploy("peer", "--name", "laptop", "--bridge", "127.0.0.1", "--port",
                                str(own_bridge.server.port))
     assert dry.res.returncode == 0 and dry.changed_nothing() and "would: enrol peer 'laptop'" in dry.out
+    assert dry.calls == [], dry.calls
     assert first.res.returncode == 0, first.text
     assert hub.config()["auth"]["peers"]["laptop"] == enrolment["token_sha256"]
     restart = ["schtasks", "/Run"] if NATIVE == "windows" else ["systemctl", "restart", "ai-connect"]

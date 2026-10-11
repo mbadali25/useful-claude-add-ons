@@ -41,9 +41,10 @@ Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN c
 that is already there keeps working: see [Running alongside other VPNs](#running-alongside-other-vpns).
 Use the Bridge's `100.x.y.z` address, not its name.
 
-**See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`;
-`tailnet-setup` without `--apply` is its dry run. Each prints every command and change
-it would make and makes none.
+**See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`:
+it runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`), needs no token or key
+file, prints every step it may change, and changes nothing. `tailnet-setup` without
+`--apply` is its preview: it asks Tailscale and its API, and changes nothing.
 
 ## Running alongside other VPNs
 
@@ -154,9 +155,12 @@ deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --auth-key-file laptop.ke
 ```
 
 It installs Tailscale if needed, joins the tailnet with the key (no browser, no Tailscale
-account), deletes the used key file, registers the plugin and the MCP server with
-Claude Code, writes the client config and checks that the Bridge accepts the token. It
-never changes the peer's firewall.
+account), deletes the used key file, writes the client config and checks that the
+Bridge accepts the token. It never changes the peer's firewall, and it registers
+nothing with Claude Code unless asked: `--register-mcp [--scope project|user]` adds the
+MCP server, `--install-hooks` the plugin's hooks for every session on the machine. Each
+prints a warning: in a bypass-permissions session, what another peer sends is acted on
+with no prompt in between.
 
 The older way still works: `deploy bridge --peer laptop` makes the token on the Bridge
 and writes `~/.config/ai-connect/peer-tokens/laptop.token`, which then has to be carried

@@ -352,9 +352,15 @@ def tailscale_bin() -> str:
     return found
 
 
+# Set by deploy for a dry run: from then on this process runs no tool at all
+NO_EXEC = [False]
+
+
 def capture(argv: list[str], timeout: float = 60.0) -> subprocess.CompletedProcess:
     """Run a tool and keep its output as text. Bytes that are not UTF-8 (a localised Windows tool
     writes its code page) become U+FFFD instead of killing the reader and leaving stdout None."""
+    if NO_EXEC[0]:
+        raise Failure(f"internal: a dry run runs no tool, and {Path(argv[0]).name} was about to run")
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               stdin=subprocess.DEVNULL, timeout=timeout, check=False)

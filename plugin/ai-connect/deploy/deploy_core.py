@@ -39,8 +39,9 @@ class Failure(Exception):
 # ---------------------------------------------------------------- output
 
 
-# Where the text for a person goes: stderr once a command prints JSON on stdout (human_to_stderr)
-_STREAM = [sys.stdout]
+# Where the text for a person goes: stderr once a command prints JSON on stdout (human_to_stderr);
+# None is whatever sys.stdout is when the line is printed
+_STREAM: list = [None]
 
 
 def human_to_stderr() -> None:
@@ -48,7 +49,7 @@ def human_to_stderr() -> None:
 
 
 def out(msg: str = "") -> None:
-    print(tsadmin.redact(msg), file=_STREAM[0], flush=True)
+    print(tsadmin.redact(msg), file=_STREAM[0] or sys.stdout, flush=True)
 
 
 def mask(secret: str) -> str:
@@ -117,8 +118,21 @@ def tool(name: str) -> str:
     return found
 
 
+def no_tools() -> None:
+    """A dry run: from here on this process runs no tool, no sudo and no CLI. Only this program's own
+    helper may still run, in its own venv, to read config.yaml (deps_ok, config_tool inspect)."""
+    tsadmin.NO_EXEC[0] = True
+
+
+def _refuse_in_dry_run(argv: list[str]) -> None:
+    own = venv_python()
+    if tsadmin.NO_EXEC[0] and not (own and Path(argv[0]) == own):
+        raise Failure(f"internal: a dry run runs no tool, and {Path(argv[0]).name} was about to run")
+
+
 def run(argv: list[str], *, stdin_text: str | None = None, env: dict | None = None,
         timeout: float = 300) -> subprocess.CompletedProcess:
+    _refuse_in_dry_run(argv)
     try:
         # A tool that writes its code page (cp1252, cp850 on a localised Windows) must not kill the reader
         # thread: that leaves stdout None and the caller fails on it
@@ -132,6 +146,7 @@ def run(argv: list[str], *, stdin_text: str | None = None, env: dict | None = No
 def interactive(argv: list[str], *, timeout: float = 1800) -> int:
     """Run a tool that may ask the person something (sudo's password, UAC, a browser login):
     it keeps this terminal, and nothing it prints passes through this process."""
+    _refuse_in_dry_run(argv)
     sys.stdout.flush()
     try:
         # Once stdout is kept for JSON, the tool's own output goes where the text for a person goes
