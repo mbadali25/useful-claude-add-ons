@@ -29,7 +29,9 @@ import textwrap
 #   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
 #                    | turnfail-secret (the failure message carries a bearer
 #                    token) | write (appends to seed.txt, then answers clean)
-#                    | fail
+#                    | fail | hang (sleeps 60 s) | empty (no assistant text)
+#   FAKE_KIMI_GIT    a JSON list of argv lists; a review call runs `git <argv>`
+#                    for each, in order, after its writes (stage, commit)
 #   FAKE_KIMI_WRITES comma-separated repo-relative paths a review call appends
 #                    to (parent dirs created) before it answers
 #   FAKE_KIMI_PUT    a JSON object {repo-relative path: text}; a review call
@@ -120,6 +122,11 @@ late(os.environ.get("FAKE_KIMI_LATE"))
 if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
+if mode == "hang":
+    time.sleep(60)
+if mode == "empty":
+    say(VERSION, RESUME)
+    sys.exit(0)
 if mode == "write":
     with open("seed.txt", "a", encoding="utf-8") as fh:
         fh.write("fixed it instead of reporting it\n")
@@ -135,6 +142,10 @@ for rel, body in json.loads(os.environ.get("FAKE_KIMI_PUT") or "{}").items():
         os.makedirs(os.path.dirname(rel), exist_ok=True)
     with open(rel, "w", encoding="utf-8") as fh:
         fh.write(body)
+for git_argv in json.loads(os.environ.get("FAKE_KIMI_GIT") or "[]"):
+    import subprocess
+    subprocess.run(["git", *git_argv], check=True, stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 text = prompt
 if prompt.startswith("Your complete instructions are in the file "):
     path = prompt[len("Your complete instructions are in the file "):].split(". Read", 1)[0]

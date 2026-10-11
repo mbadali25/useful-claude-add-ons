@@ -1193,7 +1193,8 @@ def _repo_digest(repo_root, length=6):
 # by default, so an unset role is visible as "runs on claude" rather than
 # being invisible because nobody wrote it down.
 QA_ROLE_KINDS = ("phase1", "smoke", "review", "gate")
-DEV_ROLE_KINDS = ("developer", "security")
+DEV_ROLE_KINDS = ("developer", "security", "explorer", "researcher")  # L-0777
+REVIEWING_DEV_ROLES = ("security",)  # dev roles the family guard covers (L-0777)
 
 # The crew 1.0 roster (docs/review/04-redesign.md, "Roster: 54 agents -> 4"):
 # `explorer` and `reviewer` at 0, `security` at 1, `researcher` at 2. Stack
@@ -1574,7 +1575,8 @@ def resolve_role(cfg, kind, role, author=None, available=None,  # pylint: disabl
          pointed at (`validate_providers` is what refuses it, loudly, on
          write).
       1. **The family guard.** If the resolved family is the author's, the
-         role is BARRED and the pin does not save it.
+         role is BARRED and the pin does not save it. `qa` roles, and `dev`
+         ones in `REVIEWING_DEV_ROLES` (L-0777); a writer never is.
       2. **The pin, and only then the fallback** (L-0712, `_fall_back`): the
          `fallback` model on its family's provider (a `gpt-*` one on codex),
          then `order`. An author-family candidate is skipped (`fallbackBarred`
@@ -1647,7 +1649,8 @@ def resolve_role(cfg, kind, role, author=None, available=None,  # pylint: disabl
         return out
 
     # 1. The family guard, BEFORE the pin. See the docstring.
-    if out["family"] is not None and out["family"] in authors:
+    guarded = kind == "qa" or (kind == "dev" and role in REVIEWING_DEV_ROLES)
+    if guarded and out["family"] is not None and out["family"] in authors:
         out["barred"] = True
         out["barredBy"] = out["family"]
         out["announce"].append(
