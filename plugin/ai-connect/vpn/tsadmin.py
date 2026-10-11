@@ -178,12 +178,15 @@ def write_owner_only(path: Path, text: str) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tskey-")  # mkstemp is 0600 on POSIX
     try:
         if IS_WINDOWS:
+            # Fails closed: a secret is never written where others may read it
             user = os.environ.get("USERNAME", "")
             res = subprocess.run(["icacls", tmp, "/inheritance:r", "/grant:r", f"{user}:F"],
-                                 capture_output=True, text=True, check=False)
-            if res.returncode != 0 or not user:
-                warn(f"warning: could not restrict {path} to {user or 'the current user'} "
-                     "(icacls failed); delete it as soon as it is used")
+                                 capture_output=True, text=True, check=False) if user else None
+            if res is None or res.returncode != 0:
+                why = "USERNAME is not set" if res is None else f"icacls exited {res.returncode}"
+                raise Failure(f"could not restrict {path} to the current user ({why}); nothing was "
+                              "written. The minted key was not shown and expires unused; retry with "
+                              "--out on a local NTFS path, or without --out to print it")
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         fd = -1

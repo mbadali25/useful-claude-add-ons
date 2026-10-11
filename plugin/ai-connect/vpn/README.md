@@ -121,8 +121,9 @@ the name, it refuses unless you pass `--all`.
   before it is shown.
 - **Key files.** `--out` creates the file with a temporary name and moves it into place.
   On macOS and Linux the file is mode 0600. On Windows, `icacls` removes inherited
-  entries and grants only the current user. If `icacls` fails, the script prints a
-  warning and does not stop. Move the file to the peer over a private channel. Running
+  entries and grants only the current user. If `icacls` fails, or `USERNAME` is not set,
+  the script writes nothing and exits 1; the minted key was never shown and expires
+  unused. Move the file to the peer over a private channel. Running
   `vpn-up` deletes the file.
 - `vpn-up` passes the key to `tailscale up --auth-key=...`. Other users on the same
   machine can see it in the process list for the few seconds the join takes. The key
