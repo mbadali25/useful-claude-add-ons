@@ -261,6 +261,45 @@ def test_linux_uninstall_stops_when_the_service_cannot_be_stopped(tmp_path, venv
     assert (box.systemd / "ai-connect.service").exists() and box.config_file.exists()
 
 
+def test_windows_uninstall_stops_when_the_task_cannot_be_ended(tmp_path, venv):
+    box = Box(tmp_path, venv, "windows")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        box.set(end_rc=1)
+        res = box.deploy("uninstall", "--yes", "--purge", "--port", str(own.server.port))
+    assert res.returncode == 1 and "schtasks /End failed" in res.stderr
+    assert "AI-Connect Bridge" in box.state()["tasks"] and box.config_file.exists()
+
+
+def test_linux_narrowing_the_subnet_removes_the_wider_ufw_rule(tmp_path, venv):
+    box = Box(tmp_path, venv, "linux")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        narrow = Phase(box, *own.args, "--vpn-subnet", "100.100.0.0/16")
+        same = Phase(box, *own.args, "--vpn-subnet", "100.100.0.0/16")
+        uninstall = box.deploy("uninstall", "--yes", "--port", str(own.server.port))  # default subnet: not the rule's
+    assert narrow.res.returncode == 0, narrow.text
+    assert f"delete the ufw rule for {SUBNET} on port {own.server.port}" in narrow.out
+    assert same.mutations == [] and "already done: ufw rule for 100.100.0.0/16" in same.out
+    assert uninstall.returncode == 0 and box.state()["ufw"] == [], output(uninstall)
+
+
+def test_a_restart_that_failed_is_still_owed_on_the_next_run(box):
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        knob = {"end_rc": 1} if NATIVE == "windows" else {"restart_rc": 1}
+        box.set(**knob)
+        add = ["add-peer", "--name", "laptop", "--token-sha256", "ab" * 32]
+        failed = Phase(box, *add)
+        box.set(**dict.fromkeys(knob, 0))
+        again = Phase(box, *add)
+        third = Phase(box, *add)
+    assert failed.res.returncode == 1 and box.config()["auth"]["peers"]["laptop"] == "ab" * 32
+    restart = ["schtasks", "/Run"] if NATIVE == "windows" else ["systemctl", "restart", "ai-connect"]
+    assert again.res.returncode == 0, again.text
+    assert any(restart in (c[-len(restart):], c[:len(restart)]) for c in again.calls), again.calls
+    assert third.mutations == [] and not third.files_changed
+
 def test_a_bridge_on_macos_is_refused_before_anything_changes(box):
     mac = {"AI_CONNECT_DEPLOY_PLATFORM": "darwin"}
     phase = Phase(box, "bridge", "--name", "hub", extra_env=mac)
@@ -418,6 +457,7 @@ def test_enrolment_by_hash_end_to_end(tmp_path, venv):
     ["add-peer", "--name", "laptop", "--token-sha256", "0" * 63],
     ["add-peer", "--name", "bad name!", "--token-sha256", "0" * 64],
     ["peer", "--name", "bad name!", "--bridge", "127.0.0.1", "--print-enrolment"],
+    ["peer", "--name", "laptop", "--bridge", "127.0.0.1", "--print-enrolment", "--dry-run"],
 ], ids=" ".join)
 def test_enrolment_bad_arguments(box, args):
     phase = Phase(box, *args)

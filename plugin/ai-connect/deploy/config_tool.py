@@ -41,7 +41,8 @@ SMOKE_WAIT = float(os.environ.get("AI_CONNECT_DEPLOY_SMOKE_WAIT") or 10)
 
 
 def emit(payload: dict) -> None:
-    print(json.dumps(payload))
+    # Redacted as a whole: a detail may quote what a Bridge answered, and a Bridge can echo the token
+    print(tsadmin.redact(json.dumps(payload)))
 
 
 def load() -> dict:
@@ -175,6 +176,7 @@ def cmd_verify(_args) -> dict:
     if not CONFIG_PATH.exists():
         return {"result": "unknown", "detail": f"{CONFIG_PATH} missing"}
     client = load().get("client") or {}
+    tsadmin.remember_secret(client.get("token"))
     return asyncio.run(_handshake(client.get("bridge_url", ""), client.get("token") or ""))
 
 
@@ -261,6 +263,7 @@ def cmd_smoke(args) -> dict:
     if not token:
         raise SystemExit(f"no peer token: pass --token-file, set AI_CONNECT_PEER_TOKEN, or deploy this machine "
                          f"first ({CONFIG_PATH} has no client.token)")
+    tsadmin.remember_secret(token)
     url = installer._bridge_url(args.bridge, args.port)  # pylint: disable=protected-access
     return {"checks": asyncio.run(_smoke(url, args.name, token))}
 

@@ -53,6 +53,9 @@ DEFAULT_SUBNET = "100.64.0.0/10"
 TOKEN_DIR = CONFIG_DIR / "peer-tokens"
 # A peer's own token when it made it itself (--print-enrolment): only its hash ever leaves this machine
 OWN_TOKEN = CONFIG_DIR / "own-peer.token"
+# Written when config.yaml changes and removed once the Bridge has restarted: a run that failed in
+# between leaves it, and the next run restarts a Bridge that is still serving the old config
+RESTART_PENDING = CONFIG_DIR / ".bridge-restart-pending"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$")
 # Test seams: which OS's service/firewall tools to drive, and where systemd units live
@@ -140,8 +143,24 @@ def service_state() -> str:
     return "running" if re.search(r"Status:\s*Running", res.stdout) else "stopped"
 
 
+def owe_restart(r: Run) -> None:
+    """config.yaml changed (or is about to): the running Bridge has to be restarted to read it."""
+    r.config_changed = True
+    if not r.dry_run:
+        RESTART_PENDING.parent.mkdir(parents=True, exist_ok=True)
+        RESTART_PENDING.write_text("config.yaml changed; the Bridge has not been restarted since\n", encoding="utf-8")
+
+
+def stop_task() -> None:
+    """End the scheduled task when it runs. Only a task that is not running may fail to end."""
+    if service_state() == "running":
+        must(run([tool("schtasks"), "/End", "/TN", TASK]), "schtasks /End")
+
+
 def step_service(r: Run) -> None:
     r.step("Bridge service")
+    if RESTART_PENDING.exists():
+        r.config_changed = True
     python = venv_python() or (VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
     state = service_state()
     if TARGET == "linux":
@@ -160,8 +179,10 @@ def step_service(r: Run) -> None:
         if not enabled:
             r.change(f"enable {UNIT}.service",
                      lambda: must(run(privileged("systemctl") + ["enable", UNIT]), "systemctl enable"))
-        r.change(f"(re)start {UNIT}.service",
-                 lambda: must(run(privileged("systemctl") + ["restart", UNIT]), "systemctl restart"))
+        def restart_unit() -> None:
+            must(run(privileged("systemctl") + ["restart", UNIT]), "systemctl restart")
+            RESTART_PENDING.unlink(missing_ok=True)
+        r.change(f"(re)start {UNIT}.service", restart_unit)
         return
     if state == "running" and not r.config_changed:
         r.already(f"scheduled task '{TASK}' installed and running")
@@ -176,8 +197,9 @@ def step_service(r: Run) -> None:
         r.change(f"register scheduled task '{TASK}'", create)
 
     def restart() -> None:
-        run([tool("schtasks"), "/End", "/TN", TASK])  # not running is fine
+        stop_task()
         must(run([tool("schtasks"), "/Run", "/TN", TASK]), "schtasks /Run")
+        RESTART_PENDING.unlink(missing_ok=True)
     r.change(f"(re)start scheduled task '{TASK}'", restart)
 
 
@@ -201,7 +223,8 @@ def remove_service(r: Run) -> None:
         return
 
     def unregister() -> None:
-        run([tool("schtasks"), "/End", "/TN", TASK])
+        # A Bridge that is still running must not lose its task, nor with --purge its config
+        stop_task()
         must(run([tool("schtasks"), "/Delete", "/TN", TASK, "/F"]), "schtasks /Delete")
     r.change(f"stop and remove scheduled task '{TASK}'", unregister)
 
@@ -229,6 +252,15 @@ def netsh_rule() -> str | None:
     return res.stdout if res.returncode == 0 else None
 
 
+UFW_RULE_RE = re.compile(rf"^\s*(\d+)/tcp\s+ALLOW(?:\s+IN)?\s+(\S+)\s+#\s*{re.escape(RULE)}\s*$")
+
+
+def ufw_rules() -> list[tuple[str, str]]:
+    """(port, source) of every inbound TCP allow rule that carries this deployment's comment."""
+    res = run(privileged("ufw") + ["status"], timeout=30)
+    return [(m.group(1), m.group(2)) for line in res.stdout.splitlines() if (m := UFW_RULE_RE.match(line))]
+
+
 def firewall_present(kind: str, subnet: str, port: int) -> bool:
     if kind == "netsh":
         # The rule for THIS subnet and port: netsh's field names are localised, its values are not
@@ -236,8 +268,7 @@ def firewall_present(kind: str, subnet: str, port: int) -> bool:
         return (shown is not None and subnet in shown
                 and re.search(rf"(?<![\d./]){port}(?![\d./])", shown) is not None)
     if kind == "ufw":
-        res = run(privileged("ufw") + ["status"], timeout=30)
-        return any(str(port) in line and subnet in line for line in res.stdout.splitlines())
+        return (str(port), subnet) in ufw_rules()
     return run(privileged("firewall-cmd") + ["--permanent", f"--query-rich-rule={rich_rule(subnet, port)}"],
                timeout=30).returncode == 0
 
@@ -262,8 +293,14 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
                 "protocol=TCP", f"localport={port}", f"remoteip={subnet}", "profile=private"]
         r.change(f"netsh rule '{RULE}' (private profile)", lambda: must(run(argv), "netsh add rule"))
     elif kind == "ufw":
+        for old_port, old_subnet in ufw_rules():
+            # Ours by its comment, for another subnet or port: left in place it would keep that one open
+            drop = privileged("ufw") + ["delete", "allow", "from", old_subnet, "to", "any", "port", old_port,
+                                        "proto", "tcp"]
+            r.change(f"delete the ufw rule for {old_subnet} on port {old_port}",
+                     lambda drop=drop: must(run(drop), "ufw delete"))
         argv = privileged("ufw") + ["allow", "from", subnet, "to", "any", "port", str(port), "proto", "tcp",
-                                    "comment", "AI-Connect Bridge"]
+                                    "comment", RULE]
         r.change(f"ufw allow from {subnet} to port {port}", lambda: must(run(argv), "ufw allow"))
     else:
         def add() -> None:
@@ -279,8 +316,9 @@ def remove_firewall(r: Run, subnet: str, port: int) -> None:
         r.already("no AI-Connect firewall rule on macOS (deploy does not add one there)")
         return
     kind = firewall_kind()
-    # Whatever its subnet or port: on Windows the rule is ours by name
+    # Whatever its subnet or port: on Windows the rule is ours by name, with ufw by its comment
     present = kind is not None and (netsh_rule() is not None if kind == "netsh"
+                                    else bool(ufw_rules()) if kind == "ufw"
                                     else firewall_present(kind, subnet, port))
     if not present:
         r.already("no AI-Connect firewall rule")
@@ -289,8 +327,11 @@ def remove_firewall(r: Run, subnet: str, port: int) -> None:
         argv = [tool("netsh"), "advfirewall", "firewall", "delete", "rule", f"name={RULE}"]
         r.change(f"delete netsh rule '{RULE}'", lambda: must(run(argv), "netsh delete rule"))
     elif kind == "ufw":
-        argv = privileged("ufw") + ["delete", "allow", "from", subnet, "to", "any", "port", str(port), "proto", "tcp"]
-        r.change(f"delete ufw rule for {subnet} on port {port}", lambda: must(run(argv), "ufw delete"))
+        for old_port, old_subnet in ufw_rules():
+            argv = privileged("ufw") + ["delete", "allow", "from", old_subnet, "to", "any", "port", old_port,
+                                        "proto", "tcp"]
+            r.change(f"delete ufw rule for {old_subnet} on port {old_port}",
+                     lambda argv=argv: must(run(argv), "ufw delete"))
     else:
         def remove() -> None:
             must(run(privileged("firewall-cmd") + ["--permanent", f"--remove-rich-rule={rich_rule(subnet, port)}"]),
@@ -409,9 +450,9 @@ def cmd_bridge(args) -> int:
             and facts.get("bridge_url") == bridge_url(ip, args.port):
         r.already(f"{CONFIG_FILE} listens on {ip}:{args.port}")
     else:
+        owe_restart(r)
         r.change(f"write {CONFIG_FILE} with server.host {ip}, port {args.port}",
                  lambda: config_tool("bridge", "--host", ip, "--port", str(args.port), "--name", args.name))
-        r.config_changed = True
         facts = None if r.dry_run else inspect_config()
 
     r.step("Peer tokens")
@@ -432,8 +473,8 @@ def cmd_bridge(args) -> int:
         def provision(peer=peer, target=target) -> None:
             result = config_tool("add-peer", peer, "--out", str(target))
             out(f"  peer '{peer}' token {result.get('masked', '****')} written to {target}")
+        owe_restart(r)
         r.change(f"provision peer '{peer}', token file {target}", provision)
-        r.config_changed = True
 
     step_service(r)
     step_firewall(r, args.vpn_subnet, args.port)
@@ -500,9 +541,9 @@ def cmd_add_peer(args) -> int:
         raise Failure(f"peer '{args.name}' is already provisioned with another token; to replace it: "
                       f"installer.py revoke-peer {args.name}, then run this again")
     else:
+        owe_restart(r)
         r.change(f"enrol peer '{args.name}' by its token hash ****{args.token_sha256[-4:]} in {CONFIG_FILE}",
                  lambda: config_tool("enrol", args.name, "--sha256", args.token_sha256))
-        r.config_changed = True
     step_service(r)
     return EXIT_OK
 
@@ -510,6 +551,9 @@ def cmd_add_peer(args) -> int:
 def cmd_peer(args) -> int:
     check_name(args.name, "--name")
     check_host(args.bridge)
+    if args.print_enrolment and args.dry_run:
+        raise Failure("--print-enrolment makes this peer's token and has no dry run: it changes nothing else, "
+                      "and nothing leaves this machine but the hash it prints", EXIT_USAGE)
     if args.print_enrolment:
         return cmd_print_enrolment(args)
     token = read_peer_token(args)
@@ -542,6 +586,9 @@ def cmd_peer(args) -> int:
             # 2 = joined, but vpn-up had no Bridge to probe; the last step checks the Bridge itself
             if res.returncode not in (tsadmin.EXIT_OK, tsadmin.EXIT_UNKNOWN):
                 raise Failure(f"vpn-up failed (exit {res.returncode})")
+            state = backend_state()
+            if state != "Running":
+                raise Failure(f"vpn-up returned, but this machine is not on the tailnet (state: {state or 'unknown'})")
         r.change(f"join the tailnet as '{args.name}' with the one-off auth key", join)
 
     r.step("Client configuration")

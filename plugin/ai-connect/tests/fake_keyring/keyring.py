@@ -4,7 +4,8 @@ On PYTHONPATH for every deploy run of the suites, ahead of any real keyring, so 
 test reads or writes this machine's own credential store. FAKE_KEYRING_MODE=absent
 makes the import fail the way an uninstalled package does; =broken makes every
 call raise NoKeyringError, the way a machine with no backend does; =locked makes
-every call raise KeyringLocked, the way a store that will not open does.
+every call raise KeyringLocked, the way a store that will not open does; =half
+lets the client ID be written and refuses the secret.
 """
 import json
 import os
@@ -35,7 +36,16 @@ def get_password(service: str, username: str):
     return _load().get(f"{service}/{username}")
 
 
+def delete_password(service: str, username: str) -> None:
+    store = _load()
+    del store[f"{service}/{username}"]
+    text = json.dumps(store)
+    Path(os.environ["FAKE_KEYRING_FILE"]).write_text(text, encoding="utf-8")
+
+
 def set_password(service: str, username: str, password: str) -> None:
+    if os.environ.get("FAKE_KEYRING_MODE") == "half" and username.endswith("secret"):
+        raise KeyringLocked("this item cannot be written (fake_keyring, half mode)")
     store = _load()
     store[f"{service}/{username}"] = password
     text = json.dumps(store)  # build the payload before the write truncates the file

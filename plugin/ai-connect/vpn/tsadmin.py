@@ -129,26 +129,27 @@ def oauth_file() -> Path:
 def stored_oauth_credentials(use_env: bool = True) -> tuple[str, str, str | None]:
     """(client id, secret, where from) out of the environment, the OS credential store, then the
     owner-only file; ("", "", None) when no source holds both. use_env=False asks only what is stored."""
+    # A whole pair from one place: an ID from here and a secret from there is not a client
     cid = os.environ.get("TS_OAUTH_CLIENT_ID", "") if use_env else ""
     secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "") if use_env else ""
     source = "environment" if cid and secret else None
-    if not (cid and secret):
+    if source is None:
         try:
             import keyring  # pylint: disable=import-error,import-outside-toplevel  # optional; the OS credential store
-            cid = cid or (keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or "")
-            secret = secret or (keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or "")
+            cid = keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or ""
+            secret = keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or ""
             source = "credential store" if cid and secret else None
         except Exception:  # keyring absent or its backend broken: the other sources still count
             pass
-    if not (cid and secret):
+    if source is None:
         try:
             saved = json.loads(oauth_file().read_text(encoding="utf-8"))
-            cid = cid or str(saved.get("oauth_client_id") or "")
-            secret = secret or str(saved.get("oauth_client_secret") or "")
+            cid = str(saved.get("oauth_client_id") or "")
+            secret = str(saved.get("oauth_client_secret") or "")
             source = f"file {oauth_file()}" if cid and secret else None
         except (OSError, ValueError, AttributeError):
             pass
-    if not (cid and secret):
+    if source is None:
         return "", "", None
     remember_secret(secret)
     return cid, secret, source

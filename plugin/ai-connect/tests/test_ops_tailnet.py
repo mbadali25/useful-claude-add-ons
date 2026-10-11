@@ -304,6 +304,30 @@ def test_a_client_that_cannot_be_stored_is_deleted_again(box, api, tmp_path):
     assert api.clients == {} and len(api.made("DELETE", f"/keys/{CLIENT_ID}")) == 1
     assert no_secret_in(run.text)
 
+def test_half_a_stored_client_never_leads_to_a_second_one(box, api):
+    Path(box.env["FAKE_KEYRING_FILE"]).write_text(json.dumps({"ai-connect-tailscale/oauth_client_id": "kHALF"}),
+                                                  encoding="utf-8")
+    run = setup(box, api, "--apply")
+    assert run.res.returncode == 1 and "holds only half of an OAuth client" in run.res.stderr
+    assert api.made("POST", "/keys") == []
+
+
+def test_a_half_written_store_is_emptied_and_the_file_holds_the_client(box, api):
+    run = setup(box, api, "--apply", FAKE_KEYRING_MODE="half")
+    assert run.res.returncode == 0, run.text
+    assert keyring_of(box) == {}  # not {new ID, no secret}: that would be read before the file
+    assert json.loads(oauth_file(box).read_text(encoding="utf-8"))["oauth_client_secret"] == CLIENT_SECRET
+    again = setup(box, api, "--apply", FAKE_KEYRING_MODE="half")
+    assert again.res.returncode == 0 and len(api.made("POST", "/keys")) == 1, again.text
+
+
+def test_json_stays_one_object_when_an_installer_writes_to_stdout(box, api):
+    env = missing(box, "windows", NATIVE)
+    run = setup(box, api, "--apply", "--json", **env)
+    assert run.res.returncode == 0, run.text
+    assert json.loads(run.out)["applied"] is True
+    assert "fake installer: unpacking" in run.res.stderr and "fake installer" not in run.out
+
 @pytest.mark.parametrize("args", [["--admin", "not an admin"], ["--admin", 'x@y.z", "*'], ["--tailnet", "a/b"],
                                   ["--acl", "no-such-file.hujson"], ["--apply", "--bogus"]])
 def test_tailnet_setup_bad_arguments(box, api, args):
@@ -497,6 +521,20 @@ def test_a_failed_install_stops_the_deploy(box):
     assert not box.config_file.exists()
 
 
+def test_a_join_that_did_not_join_is_not_reported_as_done(box, tmp_path):
+    box.set(ts_backend="Stopped", ts_ip="", after_up="NeedsLogin")
+    token_file = tmp_path / "laptop.token"
+    token_file.write_text(PEER_TOKEN, encoding="utf-8")
+    server = FakeBridge(lambda: {hashlib.sha256(PEER_TOKEN.encode()).hexdigest()})
+    try:
+        run = Phase(box, "peer", "--name", "laptop", "--bridge", "127.0.0.1", "--port", str(server.port),
+                    "--token-file", str(token_file), extra_env={"TS_AUTHKEY": AUTH_KEY})
+    finally:
+        server.close()
+    # The Bridge is reachable on loopback all the same: only Tailscale itself can say whether it joined
+    assert run.res.returncode == 1 and "not on the tailnet (state: NeedsLogin)" in run.res.stderr
+    assert not box.config_file.exists()
+
 # ---------------------------------------------------------------- deploy test
 
 
@@ -642,6 +680,14 @@ def test_round_trip_check_only_passes_a_message_inside_one_untrusted_block(monke
     monkeypatch.setattr(config_tool.untrusted, "frame_message",
                         lambda sender, content: content + "\n" + real(sender, "x"))
     assert "not inside the untrusted block" in check(frame, "laptop", "nonce-123")
+
+def test_the_helper_redacts_a_token_a_bridge_echoes_back(monkeypatch, capsys):
+    monkeypatch.syspath_prepend(str(PLUGIN / "deploy"))
+    import config_tool  # pylint: disable=import-outside-toplevel,import-error
+    config_tool.tsadmin.remember_secret(PEER_TOKEN)
+    config_tool.emit({"checks": [{"check": "round_trip", "ok": False, "detail": f"refused: bad token {PEER_TOKEN}"}]})
+    shown = capsys.readouterr().out
+    assert not leaks(PEER_TOKEN, shown) and json.loads(shown)["checks"][0]["detail"] == "refused: bad token <redacted>"
 
 @pytest.mark.parametrize("args", [["test"], ["test", "--bridge", "127.0.0.1"], ["test", "--name", "laptop"],
                                   ["test", "--name", "bad name!", "--bridge", "127.0.0.1"],

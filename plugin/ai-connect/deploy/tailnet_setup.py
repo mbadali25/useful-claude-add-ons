@@ -236,6 +236,13 @@ def store_oauth(cid: str, secret: str) -> str:
         tsadmin.oauth_file().unlink(missing_ok=True)
         return "the OS credential store"
     except Exception as err:  # pylint: disable=broad-exception-caught  # no keyring, or no backend: the file takes it
+        # Half a pair left in the store would be read before the file, and be wrong
+        for field in ("oauth_client_id", "oauth_client_secret"):
+            try:
+                import keyring  # pylint: disable=import-error,import-outside-toplevel
+                keyring.delete_password(tsadmin.KEYRING_SERVICE, field)
+            except Exception:  # pylint: disable=broad-exception-caught  # nothing there, or no store
+                pass
         why = ("Python keyring is not installed" if isinstance(err, ImportError)
                else f"keyring failed: {type(err).__name__}")
     target = tsadmin.oauth_file()
@@ -284,9 +291,17 @@ def store_is_readable() -> None:
     """Stop when it cannot be told whether a client is already stored: a second one must not be created."""
     try:
         import keyring  # pylint: disable=import-error,import-outside-toplevel
-        keyring.get_password(tsadmin.KEYRING_SERVICE, "oauth_client_id")
+        held = [bool(keyring.get_password(tsadmin.KEYRING_SERVICE, field))
+                for field in ("oauth_client_id", "oauth_client_secret")]
+        if any(held) and not all(held):
+            raise Failure("the OS credential store holds only half of an OAuth client (its ID or its secret), so "
+                          f"it cannot be used; delete that entry (keyring del {tsadmin.KEYRING_SERVICE} "
+                          f"oauth_client_id / oauth_client_secret), revoke the client at {OAUTH_CONSOLE}, and run "
+                          "this again")
     except ImportError:
         pass
+    except Failure:
+        raise
     except Exception as err:  # pylint: disable=broad-exception-caught
         # No backend at all (a headless machine) is an answer: nothing is stored there. Anything else is not.
         if type(err).__name__ != "NoKeyringError":

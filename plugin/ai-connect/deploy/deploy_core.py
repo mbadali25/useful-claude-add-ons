@@ -131,7 +131,9 @@ def interactive(argv: list[str], *, timeout: float = 1800) -> int:
     it keeps this terminal, and nothing it prints passes through this process."""
     sys.stdout.flush()
     try:
-        return subprocess.run(argv, check=False, timeout=timeout).returncode
+        # Once stdout is kept for JSON, the tool's own output goes where the text for a person goes
+        stdout = sys.stderr if _STREAM[0] is sys.stderr else None
+        return subprocess.run(argv, check=False, timeout=timeout, stdout=stdout).returncode
     except subprocess.TimeoutExpired:
         return 124
 

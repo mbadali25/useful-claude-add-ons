@@ -8,7 +8,8 @@ hands it is ever touched.
 
 State keys: ts_ip, ts_backend, units {name: {active, enabled}}, ufw [lines],
 tasks {name: status}, rules {name: remoteip}, plugins [ids], mcp {name: argv},
-rule_ports {name: localport}, disable_rc (exit code of systemctl disable),
+rule_ports {name: localport}, disable_rc / restart_rc (exit code of systemctl disable / restart),
+end_rc (exit code of schtasks /End), after_up (BackendState after `tailscale up`),
 ts_node_id, install_rc (exit code of an installer), shim (the launcher text an
 installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
 """
@@ -41,7 +42,7 @@ def tailscale(args, state):
                           "Self": {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}}))
         return 0
     if args and args[0] == "up":
-        state["ts_backend"] = "Running"
+        state["ts_backend"] = state.get("after_up", "Running")
         state["ts_ip"] = state.get("ts_ip") or "127.0.0.1"
         save(state)
         return 0
@@ -58,6 +59,7 @@ def install_tailscale(state) -> int:
     path.chmod(0o755)
     state["ts_backend"], state["ts_ip"] = "NeedsLogin", ""
     save(state)
+    print("fake installer: unpacking tailscale ...")  # a real one is chatty on stdout
     return 0
 
 
@@ -130,6 +132,9 @@ def systemctl(args, state):
         print("enabled" if unit["enabled"] else "disabled")
         return 0 if unit["enabled"] else 1
     if verb in ("restart", "start"):
+        if state.get("restart_rc"):
+            print("Failed to restart unit: Access denied", file=sys.stderr)
+            return int(state["restart_rc"])
         unit["active"] = True
     elif verb == "enable":
         unit["enabled"] = True
@@ -155,7 +160,7 @@ def ufw(args, state):
     delete = args[0] == "delete"
     words = args[1:] if delete else args
     subnet, port = words[words.index("from") + 1], words[words.index("port") + 1]
-    line = f"{port}/tcp                   ALLOW       {subnet}"
+    line = f"{port}/tcp                   ALLOW       {subnet}              # AI-Connect Bridge"
     if delete:
         rules.remove(line)
     else:
@@ -181,6 +186,9 @@ def schtasks(args, state):
     elif verb == "/Run":
         tasks[name] = "Running"
     elif verb == "/End":
+        if state.get("end_rc"):
+            print("ERROR: Access is denied.", file=sys.stderr)
+            return int(state["end_rc"])
         tasks[name] = "Ready"
     elif verb == "/Delete":
         del tasks[name]
