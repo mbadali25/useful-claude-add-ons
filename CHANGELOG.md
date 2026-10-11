@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.25: an environment-dump guard, off by default (L-0772)
+### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
 
 - **Summary.** crew can now refuse a command that would print the whole environment, or a
   credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.

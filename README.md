@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.25**: An environment-dump guard, off by default. crew can now refuse a command that would print the whole environment, or a credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **crew 1.2.26**: An environment-dump guard, off by default. crew can now refuse a command that would print the whole environment, or a credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
 - **crew 1.2.20**: A merged ticket closes with `/crew:done` without a refresh PR. `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4 and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
