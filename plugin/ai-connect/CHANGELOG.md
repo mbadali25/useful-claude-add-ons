@@ -2,15 +2,15 @@
 
 ## [0.1.5] - 2026-10-11
 
-A test-only fix (L-0790). Nothing the plugin installs or runs changes.
+A test-only fix (L-0790). Nothing the plugin installs or runs changes. Verified on Linux as a non-root user; not run on Windows.
 
 ### Fixed
-- `tests/test_ops_firewall.py` could run the host's real `sudo ufw allow` (or `firewall-cmd --add-rich-rule`): it put its fake tools in front of the caller's whole `PATH`, and its fake `sudo` ran whatever that `PATH` resolved. Run as root, or by a user with passwordless sudo, on a host with ufw, the suite added the bridge's allow rule to the real firewall configuration. The child now gets a `PATH` of two directories the test creates (the fakes, and wrappers for `grep` and `cat`), the fake `sudo` runs only a file inside the fake directory and refuses anything else, and each test states the euid the function sees instead of inheriting the caller's
+- `tests/test_ops_firewall.py` could run the host's real `sudo ufw allow` (or `firewall-cmd --add-rich-rule`): it put its fake tools in front of the caller's whole `PATH`, and its fake `sudo` ran whatever that `PATH` resolved. Run as root, or by a user with passwordless sudo, on a host with ufw, the suite added the bridge's allow rule to the real firewall configuration. The child now gets a `PATH` of two directories the test creates (the fakes, and wrappers for `grep` and `cat`), the fake `sudo` runs only a file inside the fake directory and refuses anything else, and the harness sets the euid the function sees (a normal user unless the test says otherwise) instead of inheriting the caller's. Every child also checks, before the code under test, that `sudo`, `ufw` and `firewall-cmd` resolve to a fake or to nothing, and stops if not
 - New tests fail if the harness can reach a real `ufw`, `firewall-cmd` or `sudo` again, using canary tools planted on the caller's `PATH`, so they do not depend on what the host has installed
-- The module skips, with the reason, when the real euid is 0 unless `AI_CONNECT_TEST_ALLOW_ROOT=1` says the caller is sandboxed
+- The module skips, with the reason, when the real euid is 0 unless `AI_CONNECT_TEST_ALLOW_ROOT=1` says the caller is sandboxed, and when `bash` is Windows' WSL launcher (`System32\bash.exe`), whose shell takes neither the test's `PATH` nor its fakes
 
 ### If you ran the suite before 0.1.5
-- As root or with passwordless sudo on a Linux or WSL host with ufw or firewalld: check for a rule allowing TCP 9999 from `100.64.0.0/10` commented `AI-Connect Bridge` that you did not add (`sudo ufw status`, or `sudo firewall-cmd --permanent --list-rich-rules`), and delete it if the bridge is not meant to listen there
+- As root or with passwordless sudo on a Linux or WSL host with ufw or firewalld: check for a rule allowing TCP 9999 from `100.64.0.0/10` that you did not add (ufw's carries the comment `AI-Connect Bridge`; firewalld's rich rule has no comment) (`sudo ufw status`, or `sudo firewall-cmd --permanent --list-rich-rules`), and delete it if the bridge is not meant to listen there
 
 ## [0.1.4] - 2026-10-11
 

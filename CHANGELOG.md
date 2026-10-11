@@ -9,17 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — ai-connect 0.1.5: the firewall test can no longer reach the host's real firewall (L-0790)
+### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
 
-- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now runs against fake tools only.
+- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
 - **Cause.** `plugin/ai-connect/tests/test_ops_firewall.py` put its fake tools in front of the caller's
   whole `PATH` and its fake `sudo` ran whatever that `PATH` resolved, so a test that wrote no fake
   `ufw` found the real one. On 2026-10-11 a root run added the bridge's allow rule (TCP 9999 from
-  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules`; it was removed by hand.
+  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules` while ufw was inactive; the entry was deleted
+  by hand.
 - **Fix.** The child's `PATH` is two directories the test creates, the fake `sudo` runs only a file
-  inside the fake directory, each test states the euid the function sees, and the module skips as
-  root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`. New tests plant canary `ufw`, `firewall-cmd` and
-  `sudo` on the caller's `PATH` and fail if any of them runs.
+  inside the fake directory, the harness sets the euid the function sees, and every child stops
+  before the code under test if `sudo`, `ufw` or `firewall-cmd` resolves to anything but a fake.
+  The module skips as root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`, and when `bash` is Windows' WSL
+  launcher. New tests plant canary `ufw`, `firewall-cmd` and `sudo` on the caller's `PATH` and
+  fail if any of them runs.
 - **If you ran the suite before 0.1.5** as root or with passwordless sudo on a host with ufw or
   firewalld, check for that rule; `plugin/ai-connect/CHANGELOG.md` has the commands.
 - Nothing the plugin installs or runs changes. `install.sh` is untouched.
