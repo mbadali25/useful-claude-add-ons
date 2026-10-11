@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **ai-connect 0.1.5**: One-command deployment over Tailscale. `ai-connect` can now be set up with one command per machine: `deploy tailnet-setup` prepares the tailnet through the Tailscale API, `deploy bridge` and `deploy peer` install and connect the machines, and `deploy test` proves the link end to end.
 - **crew 1.2.30**: The Stop gate says when it checked nothing, and names CI for rules too big for its budget. `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED, deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
-- **ai-connect 0.1.4**: Codex QA fixes. `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it writes private from the first byte.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

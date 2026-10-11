@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — ai-connect 0.1.5: one-command deployment over Tailscale (W-0129)
+
+- **Summary.** `ai-connect` can now be set up with one command per machine: `deploy tailnet-setup` prepares the
+  tailnet through the Tailscale API, `deploy bridge` and `deploy peer` install and connect the machines, and
+  `deploy test` proves the link end to end.
+- **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
+  prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
+  (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
+- **Tailnet.** `tailnet-setup` validates and diffs the policy, and with `--apply` backs it up, replaces it, tags
+  the Bridge and creates the OAuth client, stored in the OS credential store. `--yes` and `--json` make it
+  usable without a terminal.
+- **Enrolment.** A peer makes its own token and prints only its SHA-256; `deploy add-peer` lets it in by that
+  hash, so no long-lived secret crosses machines.
+- **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
+- **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
+  matches `README.md` again, and CI now runs the plugin's suites.
+- **Not verified.** Nothing in `deploy/` has run against a real tailnet; the suites use fakes throughout.
+
 ### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
 
 - **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer

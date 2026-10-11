@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.5] - 2026-10-11
+
+One-command deployment over Tailscale (W-0129).
+
+### Added
+- `deploy/deploy.sh` and `deploy/deploy.ps1`, one core (`deploy/deploy.py`): `bridge`, `peer`, `add-peer`, `status`, `uninstall`, `tailnet-setup` and `test`. Every step is idempotent, `--dry-run` prints each change and command and makes none, and no secret is printed or put on a command line. Runbook: `deploy/README.md`
+- `deploy tailnet-setup` (admin, once per tailnet), through the Tailscale API with a one-time access token: validates `vpn/acl-template.hujson`, shows a diff against the current policy, and with `--apply` backs the policy up, replaces it (`If-Match`), tags the Bridge machine `tag:bridge` and creates the OAuth client `mint-key` and `revoke` use (`POST /tailnet/-/keys`, `keyType: "client"`). The client goes to the OS credential store through `keyring`, or to an owner-only file without it; when the API refuses, the admin-console steps are printed. Never waits without a terminal: `--yes`, the token from `TS_API_TOKEN` or the credential store, `--json` for one JSON object with no secret in it
+- Enrolment by hash: `deploy peer --print-enrolment` makes the peer's own token and prints `{name, token_sha256}`; `deploy add-peer --name N --token-sha256 HEX` lets it in on the Bridge. No long-lived secret crosses machines
+- `deploy bridge`, `peer` and `tailnet-setup` install Tailscale when it is missing: Tailscale's apt repository with a `signed-by` keyring on Debian and Ubuntu, its install script elsewhere on Linux, `winget` or the MSI on Windows, Homebrew on macOS. Every command is printed first; as root nothing goes through `sudo`
+- `deploy test --bridge HOST --name N`: Tailscale up, the Bridge's port, this machine's token, a message round trip inside the untrusted frame, a wrong token refused. A PASS/FAIL table, exit code 1 on any FAIL
+- `server.max_unread_per_peer` and `server.max_unread_bytes_per_peer` in `config.yaml` (the offline queue caps)
+- A CI workflow that runs the plugin's suites; until now no workflow did
+
+### Changed
+- `tailscale up` (`vpn/vpn-up` and deploy) passes `--accept-dns=false`: Tailscale no longer takes over the machine's DNS unless `--accept-dns` is given, because MagicDNS collides with a VPN client or DNS hook that is already there. Reach the Bridge by its `100.x.y.z` address
+- `vpn/tsadmin.py` also finds the `tailscale` command in the directory a fresh install uses, before a new shell has it on `PATH`, and reads the OAuth client as a whole pair from one source: the environment, the credential store, then `~/.config/ai-connect/tailscale-oauth.json`
+
+### Fixed
+- A `history` request with a `limit` that is not a whole number from 1 to the maximum is refused (`invalid_limit`) instead of reaching the store
+- `README_DE.md` is back in step with `README.md`; a test compares their section outlines
+
+### Known limitations
+- Nothing in `deploy/` has run against a real tailnet: the suites use a fake Tailscale API, fake system tools and a fake credential store. The `winget` package ID and the Homebrew cask name are the documented ones, untested
+- A Bridge on macOS is refused (no launchd service); a peer there works
+- firewalld keeps the old rule when `--vpn-subnet` is narrowed on a rerun; ufw and Windows Firewall replace it. A Windows rule is compared by subnet and port only
+- `deploy.ps1` does not raise its own UAC prompt: `bridge` and `uninstall` need an elevated shell
+
 ## [0.1.4] - 2026-10-11
 
 Fixes from a Codex QA pass over the whole fork (W-0121). 0.1.2 and 0.1.3 were set on the branch and never released: the PR's CI found the first three items after them.
