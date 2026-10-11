@@ -31,6 +31,7 @@ neither this PATH nor these fakes.
 NOT run on Windows by the change that made it hermetic (L-0790).
 """
 
+import importlib.util
 import ntpath
 import os
 import shlex
@@ -90,14 +91,23 @@ def launcher_skip_reason(bash, os_name, environ):
     return None
 
 
-_ROOT_SKIP = root_skip_reason(os.geteuid() if hasattr(os, "geteuid") else None, os.environ)
-_LAUNCHER_SKIP = launcher_skip_reason(BASH, os.name, os.environ)
+def skip_reasons(bash, euid, os_name, environ):
+    """Every reason this module must not run for this caller; empty to run."""
+    reasons = [
+        "bash not found on PATH" if bash is None else None,
+        root_skip_reason(euid, environ),
+        launcher_skip_reason(bash, os_name, environ),
+    ]
+    return [reason for reason in reasons if reason]
 
-pytestmark = [
-    pytest.mark.skipif(BASH is None, reason="bash not found on PATH"),
-    pytest.mark.skipif(_ROOT_SKIP is not None, reason=_ROOT_SKIP or ""),
-    pytest.mark.skipif(_LAUNCHER_SKIP is not None, reason=_LAUNCHER_SKIP or ""),
-]
+
+def _real_euid():
+    return os.geteuid() if hasattr(os, "geteuid") else None
+
+
+SKIP_REASONS = skip_reasons(BASH, _real_euid(), os.name, os.environ)
+
+pytestmark = pytest.mark.skipif(bool(SKIP_REASONS), reason="; ".join(SKIP_REASONS))
 
 
 def _write_script(path: Path, body: str) -> None:
@@ -202,10 +212,13 @@ def _make_tool_dir(tool_dir: Path) -> Path:
     """
     tool_dir.mkdir(exist_ok=True)
     for name in REAL_TOOLS:
-        real = shutil.which(name)
-        if real is None:
+        found = shutil.which(name)
+        if found is None:
             pytest.skip(f"{name} not found on PATH")
-        _write_script(tool_dir / name, f'exec {shlex.quote(Path(real).as_posix())} "$@"')
+        # which() answers with a relative path for an empty or relative PATH
+        # entry; the child would resolve that against its own PATH and cwd.
+        real = Path(os.path.abspath(found))
+        _write_script(tool_dir / name, f'exec {shlex.quote(real.as_posix())} "$@"')
     return tool_dir
 
 
@@ -225,12 +238,14 @@ def hermetic_preamble(bin_dir: Path) -> str:
     """Bash that runs first in every child and stops it, before any code
     under test, unless each firewall tool resolves to the fake in bin_dir or
     to nothing. `-ef` compares the files, not the spellings of their paths; a
-    function or alias of that name is not a file and is refused too."""
+    function or alias of that name is not a file and is refused too. `-ef`
+    follows links, so a symlink is refused first: a link in bin_dir to a real
+    tool is that tool."""
     return f"""
 BIN={shlex.quote(bin_dir.as_posix())}
 for tool in {" ".join(FIREWALL_TOOLS)}; do
     found=$(command -v "$tool") || continue
-    if [[ ! "$found" -ef "$BIN/$tool" ]]; then
+    if [[ -L "$found" || -L "$BIN/$tool" || ! "$found" -ef "$BIN/$tool" ]]; then
         echo "HARNESS_NOT_HERMETIC: $tool resolves to $found, not a fake in $BIN" >&2
         exit {HARNESS_NOT_HERMETIC}
     fi
@@ -456,6 +471,65 @@ def test_wsl_launcher_bash_is_refused(bash, os_name, environ, refused):
     assert (reason is not None) is refused
 
 
+def test_skip_reasons_cover_every_guard():
+    posix = ("/usr/bin/bash", NON_ROOT_EUID, "posix", {})
+
+    assert skip_reasons(*posix) == []
+    assert skip_reasons(None, NON_ROOT_EUID, "posix", {}) == ["bash not found on PATH"]
+    assert skip_reasons("/usr/bin/bash", 0, "posix", {}) == [root_skip_reason(0, {})]
+    assert skip_reasons("/usr/bin/bash", 0, "posix", {ALLOW_ROOT_ENV: "1"}) == []
+    launcher = r"C:\Windows\System32\bash.exe"
+    assert skip_reasons(launcher, None, "nt", {}) == [launcher_skip_reason(launcher, "nt", {})]
+
+
+def _load_this_module_as(name: str):
+    spec = importlib.util.spec_from_file_location(name, __file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("allow, skipped", [(None, True), ("0", True), ("1", False)])
+def test_module_skip_marker_skips_a_root_caller(monkeypatch, allow, skipped):
+    # The marker pytest reads, not only the helpers behind it: this file is
+    # loaded again as a caller with euid 0 would load it.
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.delenv(ALLOW_ROOT_ENV, raising=False)
+    if allow is not None:
+        monkeypatch.setenv(ALLOW_ROOT_ENV, allow)
+
+    marker = _load_this_module_as("test_ops_firewall_as_root").pytestmark
+
+    assert marker.name == "skipif"
+    assert marker.args == (skipped,)
+    if skipped:
+        assert ALLOW_ROOT_ENV in marker.kwargs["reason"]
+        assert "euid is 0" in marker.kwargs["reason"]
+
+
+def test_module_skip_marker_does_not_skip_this_caller():
+    # This test is running, so the caller is one the module accepts.
+    assert SKIP_REASONS == []
+    assert pytestmark.args == (False,)
+    assert _real_euid() != 0 or os.environ.get(ALLOW_ROOT_ENV) == "1"
+
+
+@pytest.mark.parametrize("found", ["grep", "./grep", "bin/grep"])
+def test_tool_wrappers_exec_an_absolute_path(tmp_path, monkeypatch, found):
+    # shutil.which answers with a relative path for an empty or relative PATH
+    # entry; a wrapper that exec'd it as given could run itself or a stranger.
+    monkeypatch.setattr(shutil, "which", lambda name: found.replace("grep", name))
+
+    tool_dir = _make_tool_dir(tmp_path / "_tools")
+
+    for name in REAL_TOOLS:
+        words = shlex.split((tool_dir / name).read_text(encoding="utf-8").splitlines()[1])
+        assert words[0] == "exec"
+        assert os.path.isabs(words[1]), words
+        assert Path(words[1]) == Path(os.path.abspath(found.replace("grep", name)))
+        assert os.path.realpath(tmp_path) != os.path.realpath(Path(words[1]).parent)
+
+
 def test_child_path_holds_only_test_made_dirs(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -465,9 +539,9 @@ def test_child_path_holds_only_test_made_dirs(tmp_path):
 
     env = child_env(bin_dir)
 
-    entries = [Path(entry).resolve() for entry in env["PATH"].split(os.pathsep)]
+    entries = [Path(entry) for entry in env["PATH"].split(os.pathsep)]
     root = os.path.realpath(tmp_path)
-    assert entries
+    assert entries == [bin_dir, tmp_path / "_tools"]
     assert all(os.path.commonpath([root, os.path.realpath(entry)]) == root for entry in entries), entries
     names = sorted(child.name for entry in entries for child in entry.iterdir())
     assert names == sorted(FIREWALL_TOOLS + REAL_TOOLS)
@@ -570,6 +644,26 @@ def test_run_in_child_fails_closed_when_its_path_leaks(tmp_path, monkeypatch):
         run_configure_firewall(bin_dir, euid=0)
 
     assert _ran(marker) == ""
+
+
+def test_symlinked_fakes_to_real_tools_are_refused_before_the_code_under_test(tmp_path):
+    # A link in the fake dir that points at a "real" tool is that tool: the
+    # child's check must not take it for a fake because the two are one file.
+    marker = tmp_path / "canary_ran"
+    host_bin = tmp_path / "host_bin"
+    _make_canaries(host_bin, marker)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    try:
+        for name in ("sudo", "ufw"):
+            (bin_dir / name).symlink_to(host_bin / name)
+    except OSError as error:
+        pytest.skip(f"cannot create a symlink here: {error}")
+
+    with pytest.raises(pytest.fail.Exception, match="HARNESS_NOT_HERMETIC"):
+        run_configure_firewall(bin_dir, euid=0)
+
+    assert _ran(marker) == "", f"a symlinked real tool ran: {_ran(marker)!r}"
 
 
 def test_child_runs_when_every_firewall_tool_is_a_fake(tmp_path):
