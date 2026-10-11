@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — ai-connect 0.1.3: Codex QA fixes (W-0121)
+### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
 
 - **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
   reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
@@ -30,7 +30,8 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   cannot follow; that checker exempts `install.ps1`'s NetSecurity/NetTCPIP cmdlets (scoped to that file)
   and two more ScheduledTasks names, with must-block and must-allow cases in its suite. `.pylintrc`
   ignores the module name `server`, which is both localgpu's `mcp/server.py` and ai-connect's package.
-  0.1.2 was set on the branch and never released.
+  `tsadmin.py` resolves `icacls`/`taskkill` with `shutil.which`, and the shim tests give every `pwsh`
+  their own `XDG_CACHE_HOME`. 0.1.2 and 0.1.3 were set on the branch and never released.
 
 ### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
 

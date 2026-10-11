@@ -180,10 +180,12 @@ def write_owner_only(path: Path, text: str) -> None:
         if IS_WINDOWS:
             # Fails closed: a secret is never written where others may read it
             user = os.environ.get("USERNAME", "")
-            res = subprocess.run(["icacls", tmp, "/inheritance:r", "/grant:r", f"{user}:F"],
-                                 capture_output=True, text=True, check=False) if user else None
+            icacls = shutil.which("icacls")
+            res = subprocess.run([icacls, tmp, "/inheritance:r", "/grant:r", f"{user}:F"],
+                                 capture_output=True, text=True, check=False) if user and icacls else None
             if res is None or res.returncode != 0:
-                why = "USERNAME is not set" if res is None else f"icacls exited {res.returncode}"
+                why = ("USERNAME is not set" if not user else "icacls was not found" if not icacls
+                       else f"icacls exited {res.returncode}")
                 raise Failure(f"could not restrict {path} to the current user ({why}); nothing was "
                               "written. The minted key was not shown and expires unused; retry with "
                               "--out on a local NTFS path, or without --out to print it")
@@ -480,9 +482,11 @@ def cmd_vpn_down(args) -> int:
     if userspace and pid_file.exists():
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
-            if IS_WINDOWS:
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
+            taskkill = shutil.which("taskkill") if IS_WINDOWS else None
+            if taskkill:
+                subprocess.run([taskkill, "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
             else:
+                # POSIX; on Windows without taskkill, os.kill terminates the process (not its tree)
                 os.kill(pid, 15)
         except (ValueError, OSError) as err:
             warn(f"warning: could not stop userspace tailscaled: {err}")

@@ -90,19 +90,26 @@ def test_mint_key_file_acl_has_no_inherited_entries_windows(ts, api, tmp_path):
     assert os.environ["USERNAME"].lower() in acl.lower()
 
 
-@pytest.mark.parametrize("username, icacls_rc", [("alice", 5), ("", 0)])
+@pytest.mark.parametrize("username, icacls_rc, icacls_found, why", [
+    ("alice", 5, True, "icacls exited 5"),
+    ("", 0, True, "USERNAME is not set"),
+    ("alice", 0, False, "icacls was not found"),
+])
 def test_mint_key_refuses_to_write_when_acl_cannot_be_restricted(ts, api, tmp_path, monkeypatch, capsys,
-                                                                 username, icacls_rc):
-    """Windows: an auth key is never written readable by others; icacls failing (or no USERNAME) fails closed."""
+                                                                 username, icacls_rc, icacls_found, why):
+    """Windows: an auth key is never written readable by others; icacls failing, missing, or no USERNAME
+    fails closed."""
     import subprocess
     monkeypatch.setattr(ts, "IS_WINDOWS", True)
     monkeypatch.setenv("USERNAME", username)
+    monkeypatch.setattr(ts.shutil, "which", lambda name: r"C:\Windows\System32\icacls.exe"
+                        if name == "icacls" and icacls_found else None)
     monkeypatch.setattr(ts.subprocess, "run",
                         lambda *a, **k: subprocess.CompletedProcess(a, icacls_rc, "", "Access is denied."))
     out_dir = tmp_path / "keys"
     assert ts.main(["mint-key", "--name", "alice", "--out", str(out_dir / "alice.key")]) == 1
     out, err = capsys.readouterr()
-    assert "could not restrict" in err
+    assert "could not restrict" in err and why in err
     assert_no_secret(out + err)
     assert list(out_dir.iterdir()) == []  # neither the key nor its temp file
 

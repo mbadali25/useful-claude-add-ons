@@ -1,10 +1,11 @@
 # Changelog
 
-## [0.1.3] - 2026-10-11
+## [0.1.4] - 2026-10-11
 
-Fixes from a Codex QA pass over the whole fork (W-0121). 0.1.2 was set on the branch and never released: the PR's CI found the two items at the end of this list after it.
+Fixes from a Codex QA pass over the whole fork (W-0121). 0.1.2 and 0.1.3 were set on the branch and never released: the PR's CI found the first three items after them.
 
 ### Fixed
+- `vpn/tsadmin.py` resolves `icacls` and `taskkill` with `shutil.which` instead of running bare names; a missing `icacls` fails `mint-key --out` closed, and the shim tests give every `pwsh` they spawn its own `XDG_CACHE_HOME`
 - `vpn/` `.ps1` shims are self-contained instead of dot-sourcing `_common.ps1` (removed), which the repo's PowerShell static check cannot follow; each shim's test runs that check
 - `install.ps1`'s firewall and scheduled-task cmdlets (NetSecurity, NetTCPIP, ScheduledTasks) are exempted in `scripts/check-powershell.ps1`, the firewall names scoped to this one file
 - Untrusted framing: the warning in front of a peer's message is constant. The sender's name is peer-controlled, so it appears only inside the block (its start marker), in `peer_read`, `peer_history` and the watcher's wake notice

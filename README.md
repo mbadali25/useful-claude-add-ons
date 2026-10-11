@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.3**: Codex QA fixes. `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it writes private from the first byte.
+- **ai-connect 0.1.4**: Codex QA fixes. `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it writes private from the first byte.
 - **ai-connect 0.1.1**: Two review-fix rounds and Tailscale self-join tooling. `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put a machine on a Tailscale tailnet with a single-use key.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

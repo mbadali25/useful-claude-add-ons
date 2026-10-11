@@ -38,11 +38,12 @@ def test_bash_syntax(path):
 
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
 @pytest.mark.parametrize("path", PS1, ids=lambda p: p.name)
-def test_ps1_parses(path):
+def test_ps1_parses(path, tmp_path):
     script = ("$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("
               f"'{path}', [ref]$null, [ref]$e); if ($e.Count) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }}")
-    res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
-                         capture_output=True, text=True, check=False)
+    # pwsh's startup profile cache goes in this test's own dir, never the shared ~/.cache (L-0557)
+    res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+                         text=True, check=False, env=dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
 
 
@@ -54,6 +55,7 @@ def _env_without_tailscale(tmp_path):
     sysdirs = [r"C:\Windows\System32", r"C:\Windows"] if os.name == "nt" else ["/usr/bin", "/bin"]
     env["PATH"] = os.pathsep.join([pydir] + sysdirs)
     env["AI_CONNECT_TS_STATE_DIR"] = str(tmp_path / "state")
+    env["XDG_CACHE_HOME"] = str(tmp_path / "xdg-cache")  # pwsh's profile cache, per test (L-0557)
     return env
 
 
@@ -82,9 +84,10 @@ def test_ps1_shim_passes_exit_code_through(tmp_path):
 
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
 @pytest.mark.parametrize("name", NAMES)
-def test_ps1_shim_passes_the_repo_powershell_static_check(name):
+def test_ps1_shim_passes_the_repo_powershell_static_check(name, tmp_path):
     """scripts/check-powershell.ps1 cannot follow a dot-source, so each shim carries its own helper."""
     checker = VPN.parents[2] / "scripts" / "check-powershell.ps1"
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(checker),
-                          "-Path", str(VPN / f"{name}.ps1")], capture_output=True, text=True, check=False)
+                          "-Path", str(VPN / f"{name}.ps1")], capture_output=True, text=True, check=False,
+                         env=dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
