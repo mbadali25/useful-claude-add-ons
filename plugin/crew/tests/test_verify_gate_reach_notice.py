@@ -370,9 +370,14 @@ def test_an_edited_rule_supersedes_its_orphan(flavour, tmp_path):
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_superseded_chronic_orphan_frees_the_marker(flavour, tmp_path):
     """The blocking kind: a chronic entry whose rule's `run` was edited, paths
-    kept. Before, it held the marker until --all."""
+    kept. Before, it held the marker until --all. Since L-0710 a turn where
+    0 rules ran writes no marker at all, so a cheap rule on the map itself
+    runs in the final turn: the marker then advances only if the orphan
+    does not hold it."""
     vmap = {"version": 1, "default": [], "unmapped": "ignore",
-            "rules": [{"paths": ["a.txt"], "seconds": 999, "reach": "local", "run": ["echo huge"]}]}
+            "rules": [{"paths": ["a.txt"], "seconds": 999, "reach": "local", "run": ["echo huge"]},
+                      {"paths": [".crew/verify.json"], "seconds": 1, "reach": "local",
+                       "run": ["echo map"]}]}
     root = tmp_path / "c"
     (root / ".crew").mkdir(parents=True)
     _git(root, "init", "-q", "-b", "main")

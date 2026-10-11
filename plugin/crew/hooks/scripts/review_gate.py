@@ -15,9 +15,10 @@ full clean pass LEAVES BEHIND, and it is written in exactly one place
 pair, gated on nothing deferred, nothing skipped and the record synced):
 
   * `.crew/.verify-verified-at` names HEAD, and
-  * either nothing material differs from HEAD (the gate itself records that
-    case as verified and runs no rule; its own marker files never count), or `.crew/.verify-gate.fingerprint` equals the
-    digest of the tree AS IT IS NOW.
+  * either nothing material differs from HEAD (its own marker files never
+    count; since L-0710 a turn where zero rules ran writes no marker, so a
+    marker at HEAD always means rules ran and passed on it), or
+    `.crew/.verify-gate.fingerprint` equals the digest of the tree AS IT IS NOW.
 
 The digest is `verify_fingerprint.fingerprint` over the gate's own Stop-mode
 changed set. With the marker at HEAD the gate's BASE is HEAD, so that set is

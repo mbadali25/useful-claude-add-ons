@@ -784,7 +784,8 @@ def cmd_cover_plan():
 
 
 REASON_TEXT = {
-    "chronic": "permanently over budget - run /crew:verify --all",
+    "chronic": ("permanently over budget - deferred to CI (the verify-gate check); "
+                "/crew:done needs its VERIFIED receipt, or run /crew:verify --all"),
     "skipped": "SKIP (rc 77, environment absent) - not verified",
     "reach_declared": ("declared reach is not local - not run on Stop, "
                         "run /crew:verify --all"),
@@ -941,7 +942,7 @@ def _print_owed(entries):
     owed = {k: v for k, v in entries.items() if not _undeclared(v)}
     for key, info in sorted(owed.items(), key=lambda kv: kv[1].get("label", kv[0])):
         print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
-              f"{info.get('label', key)}: {info.get('reason', '')}{where}")
+              f"{info.get('label', key)}: {_shown_reason(info)}{where}")
 
 
 def cmd_reach_notice():
@@ -1334,6 +1335,25 @@ def _sync(sha, matched, cmd_log, all_run=False):
               f"{os.path.abspath(__file__)} forget-orphans (from the repo root)")
         return False
     return failure is None
+
+
+_OLD_CHRONIC_TAIL = " - run /crew:verify --all"
+_CI_TAIL = (" - deferred to CI (the verify-gate check); "
+            "/crew:done needs its VERIFIED receipt, or run /crew:verify --all")
+
+
+def _shown_reason(info):
+    """The reason as printed. A chronic entry a pre-L-0710 gate wrote still
+    carries the old "run /crew:verify --all" tail, and an unchanged turn
+    only reports the record, never rewrites it - so that tail is re-said
+    the way the current gate says it, naming CI (L-0710 review round 1)."""
+    reason = info.get("reason", "")
+    if not isinstance(reason, str):
+        return ""
+    if (info.get("status") == "chronic" and "deferred to CI" not in reason
+            and reason.endswith(_OLD_CHRONIC_TAIL)):
+        return reason[:-len(_OLD_CHRONIC_TAIL)] + _CI_TAIL
+    return reason
 
 
 def cmd_report():

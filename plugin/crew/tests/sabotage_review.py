@@ -815,7 +815,7 @@ REVIEW_FIX_MUTATIONS = (
         REVIEW_GATE,
         "        if not verify_fingerprint._material(changed):  # pylint: disable=protected-access\n",
         "        if not changed:\n",
-        "tests/test_review_gate.py::test_after_the_real_gate_passes_the_tree_is_verified[clean-tree]",
+        "tests/test_review_gate.py::test_a_marker_at_head_with_only_the_gates_own_file_differing_is_verified",
     ),
     (
         # A person's acceptance of one round's FINDINGS stands in for a
