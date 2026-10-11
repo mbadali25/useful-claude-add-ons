@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 from config_loader import DEFAULT_MAX_MESSAGE_BYTES, DEFAULT_MAX_STORED_PER_PEER, DEFAULT_RATE_PER_SECOND
 
+DEFAULT_MAX_UNREAD_PER_PEER = 500
+DEFAULT_MAX_UNREAD_BYTES_PER_PEER = 8 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class Limits:
@@ -15,6 +18,10 @@ class Limits:
     rate_burst: int = int(DEFAULT_RATE_PER_SECOND)
     # Per sender; the oldest are deleted beyond it. 0 = no cap
     max_stored_per_peer: int = DEFAULT_MAX_STORED_PER_PEER
+    # Per recipient: undelivered direct messages waiting for it to come
+    # online. A send beyond either is refused (recipient_queue_full)
+    max_unread_per_peer: int = DEFAULT_MAX_UNREAD_PER_PEER
+    max_unread_bytes_per_peer: int = DEFAULT_MAX_UNREAD_BYTES_PER_PEER
 
 
 class TokenBucket:

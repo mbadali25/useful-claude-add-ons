@@ -17,7 +17,14 @@ from .message_store import DEFAULT_DB_PATH, MessageStore
 from .observers import Observers
 from .peer_registry import NameTakenError, Peer, PeerRegistry, utc_now
 from .roles import Identity, Roles
-from .user_send import BRIDGE_SENDER, is_reserved_name, is_user_name, user_sender, valid_recipients
+from .user_send import (
+    BRIDGE_SENDER,
+    is_reserved_name,
+    is_user_name,
+    is_user_recipient,
+    user_sender,
+    valid_recipients,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +35,12 @@ HISTORY_ALL_MAX_LIMIT = 1000
 # Frames above this are closed by websockets itself (1009); between the
 # app limit and this, the Bridge answers with an error frame instead
 WEBSOCKET_MAX_SIZE_FLOOR = 1 << 20
+# Largest unread frame: the client's receive limit (websockets' default
+# max_size, 1 MiB); a bigger frame is closed with 1009 and its messages lost
+UNREAD_FRAME_MAX_BYTES = 1 << 20
+_UNREAD_ENVELOPE_BYTES = len(json.dumps({"type": "unread", "messages": []}))
 RATE_LIMITED_ERROR = "Too many messages; slow down"
+QUEUE_FULL_ERROR = "'{name}' is offline and has too many messages waiting; not sent"
 PEER_STATES = ("busy", "idle", "waiting")
 IDLE_NOTICE = "{name} is done and idle."
 WAITING_NOTICE = "{name} is waiting for approval: {detail}"
@@ -42,6 +54,27 @@ NAME_TAKEN_ERROR = (
 def log_refusal(reason: str, **fields: object) -> None:
     """One structured line per refusal: why, and who, never a token or a message body."""
     logger.warning(json.dumps({"event": "refused", "reason": reason, **fields}, sort_keys=True))
+
+
+def _unread_chunks(messages: list[dict]) -> list[list[dict]]:
+    """Split messages, in order, into lists whose unread frame fits UNREAD_FRAME_MAX_BYTES.
+
+    json.dumps escapes non-ASCII, so a character is a byte; items are joined
+    by ", ". A single message over the limit goes alone: it cannot be split.
+    """
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    size = _UNREAD_ENVELOPE_BYTES
+    for message in messages:
+        item = len(json.dumps(message)) + (2 if current else 0)
+        if current and size + item > UNREAD_FRAME_MAX_BYTES:
+            chunks.append(current)
+            current, size, item = [], _UNREAD_ENVELOPE_BYTES, item - 2
+        current.append(message)
+        size += item
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 class BridgeServer:
@@ -212,10 +245,7 @@ class BridgeServer:
                     await websocket.send(json.dumps({"type": "registered", "name": name}))
                     logger.info(f"Peer registered: {name} ({client_ip})")
 
-                    unread = await self.store.get_unread(name)
-                    if unread:
-                        await websocket.send(json.dumps({"type": "unread", "messages": unread}))
-                        await self.store.mark_delivered([m["id"] for m in unread])
+                    await self._deliver_unread(websocket, name)
 
                 elif msg_type == "ping":
                     if peer_name:
@@ -277,9 +307,16 @@ class BridgeServer:
                         continue
                     sent = []
                     for recipient in recipients:
-                        stored, online = await self._route_message(
+                        routed = await self._route_message(
                             {"to": recipient, "content": message.get("content", "")}, sender
                         )
+                        if routed is None:
+                            sent.append({
+                                "to": recipient, "id": None, "online": False,
+                                "code": "recipient_queue_full", "error": QUEUE_FULL_ERROR.format(name=recipient),
+                            })
+                            continue
+                        stored, online = routed
                         sent.append({"to": recipient, "id": stored["id"], "online": online})
                     await websocket.send(json.dumps({"type": "user_sent", "sent": sent}))
                     logger.info(f"{sender} sent to {', '.join(recipients)} ({client_ip})")
@@ -292,10 +329,14 @@ class BridgeServer:
                     if not isinstance(to_peer, str) or not to_peer:
                         await self._send_error(websocket, "'message' needs a 'to'")
                         continue
-                    if is_reserved_name(to_peer):
+                    if is_reserved_name(to_peer) and not is_user_recipient(to_peer):
                         await refuse("reserved_name", f"'{to_peer}' is not a peer", msg_type, name=to_peer)
                         continue
-                    await self._route_message(message, peer_name)
+                    if await self._route_message(message, peer_name) is None:
+                        # _route_message logged the refusal with its sizes
+                        await refuse(
+                            "recipient_queue_full", QUEUE_FULL_ERROR.format(name=to_peer), msg_type, log=False
+                        )
 
                 elif msg_type == "set_state":
                     state = message.get("state")
@@ -366,7 +407,7 @@ class BridgeServer:
             return
         self._idle_subscribers.setdefault(watched, set()).add(subscriber)
 
-    async def _route_message(self, message: dict, from_peer: str) -> tuple[dict, bool]:
+    async def _route_message(self, message: dict, from_peer: str) -> tuple[dict, bool] | None:
         """Deliver a message; direct messages to offline peers wait in the store.
 
         A broadcast ("*") reaches the peers online right now. Waiting for
@@ -375,7 +416,8 @@ class BridgeServer:
         to a user counts as delivered at once: users read along as
         observers and never register, so it must not pile up as unread.
 
-        Returns the stored message and whether a recipient was online.
+        Returns the stored message and whether a recipient was online, or
+        None (logged) when the offline recipient's queue is full.
         """
         to_peer = message["to"]
 
@@ -385,18 +427,43 @@ class BridgeServer:
             target = self.registry.get(to_peer)
             recipients = [target] if target else []
 
+        delivered = to_peer == "*" or bool(recipients) or is_user_name(to_peer)
+        if not delivered and await self._queue_full(to_peer, from_peer, message):
+            return None
         outgoing = await self.store.store(
             from_peer,
             to_peer,
             message.get("content", ""),
             message.get("context"),
-            delivered=to_peer == "*" or bool(recipients) or is_user_name(to_peer)
+            delivered=delivered
         )
         payload = json.dumps({**outgoing, "type": "message"})
         for peer in recipients:
             await self._send_to(peer, payload)
         await self._notify_watchers(to_peer, from_peer, payload)
         return outgoing, bool(recipients)
+
+    async def _queue_full(self, to_peer: str, from_peer: str, message: dict) -> bool:
+        """Whether one more message would push the offline recipient past its queue caps."""
+        context = message.get("context")
+        size = len(str(message.get("content", "")).encode()) + (len(json.dumps(context).encode()) if context else 0)
+        count, queued = await self.store.unread_size(to_peer)
+        if count + 1 <= self.limits.max_unread_per_peer and queued + size <= self.limits.max_unread_bytes_per_peer:
+            return False
+        log_refusal(
+            "recipient_queue_full", peer=from_peer, recipient=to_peer, queued=count, queued_bytes=queued,
+            bytes=size, max_count=self.limits.max_unread_per_peer, max_bytes=self.limits.max_unread_bytes_per_peer,
+        )
+        return True
+
+    async def _deliver_unread(self, websocket: ServerConnection, name: str) -> None:
+        """Send what waited for name in frames the client accepts, each marked once it is sent.
+
+        A send that fails leaves the rest unread for the next registration.
+        """
+        for chunk in _unread_chunks(await self.store.get_unread(name)):
+            await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
+            await self.store.mark_delivered([m["id"] for m in chunk])
 
     async def _notify_watchers(self, to_peer: str, from_peer: str, payload: str) -> None:
         """Tell the watchers of every recipient that a message arrived."""

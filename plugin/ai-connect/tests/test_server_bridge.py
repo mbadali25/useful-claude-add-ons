@@ -1,13 +1,15 @@
 """End-to-end: a real Bridge on a free port, real websocket clients."""
 
 import asyncio
+import json
 import logging
 
 import test_server_harness as h
 
 import pytest
-from websockets.exceptions import InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
+from server import websocket_server as ws_server
 from server.limits import Limits
 from test_server_harness import connect, recv, recv_type, register, running_bridge, send
 
@@ -180,6 +182,176 @@ def test_message_to_reserved_name_refused(tmp_path):
                 return await recv_type(ws, "error")
 
     assert run(go())["code"] == "reserved_name"
+
+
+def test_peer_can_reply_to_user(tmp_path):
+    """The documented reply path: peer_send(to="User:<name>") reaches the observers, unrefused."""
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.OBSERVER_TOKEN) as obs, connect(server, h.ALICE_TOKEN) as alice:
+                await send(obs, type="observe")
+                await recv_type(obs, "observing")
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to="User:max", content="done")
+                observed = await recv_type(obs, "observed")
+                return observed, await h.nothing_arrives(alice)
+
+    observed, quiet = run(go())
+    assert (observed["to"], observed["content"]) == ("User:max", "done")
+    assert quiet
+
+
+@pytest.mark.parametrize("to", ["user:max", "User:", "User:a b", "BRIDGE"])
+def test_message_to_malformed_reserved_name_refused(tmp_path, to):
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.ALICE_TOKEN) as ws:
+                await register(ws, h.ALICE)
+                await send(ws, type="message", to=to, content="x")
+                return await recv_type(ws, "error")
+
+    assert run(go())["code"] == "reserved_name"
+
+
+# --- offline queue -----------------------------------------------------------
+
+FAST = {"rate_per_second": 1000, "rate_burst": 1000}
+
+
+async def collect_unread(ws, count: int) -> list[dict]:
+    """The unread frames until count messages have arrived."""
+    frames, got = [], 0
+    while got < count:
+        frame = await recv_type(ws, "unread")
+        frames.append(frame)
+        got += len(frame["messages"])
+    return frames
+
+
+def test_offline_queue_capped_by_count(tmp_path, caplog):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(max_unread_per_peer=2, **FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                for i in range(2):
+                    await send(alice, type="message", to=h.BOB, content=f"m{i}")
+                assert await h.nothing_arrives(alice)
+                await send(alice, type="message", to=h.BOB, content="S3CRET-overflow")
+                refused = await recv_type(alice, "error")
+            async with connect(server, h.BOB_TOKEN) as bob:
+                await register(bob, h.BOB)
+                frames = await collect_unread(bob, 2)
+                return refused, frames, await h.nothing_arrives(bob)
+
+    with caplog.at_level(logging.WARNING):
+        refused, frames, quiet = run(go())
+    assert refused["code"] == "recipient_queue_full"
+    assert [m["content"] for f in frames for m in f["messages"]] == ["m0", "m1"]
+    assert quiet
+    assert "recipient_queue_full" in caplog.text
+    assert "S3CRET" not in caplog.text
+
+
+def test_offline_queue_capped_by_bytes(tmp_path):
+    async def go():
+        limits = Limits(max_unread_bytes_per_peer=1000, **FAST)
+        async with running_bridge(tmp_path, limits=limits) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to=h.BOB, content="x" * 600)
+                assert await h.nothing_arrives(alice)
+                await send(alice, type="message", to=h.BOB, content="y" * 600)
+                return await recv_type(alice, "error")
+
+    assert run(go())["code"] == "recipient_queue_full"
+
+
+def test_cap_does_not_apply_to_online_recipient(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(max_unread_per_peer=1, **FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice, connect(server, h.BOB_TOKEN) as bob:
+                # Bob first, so Alice hears no peer_joined
+                await register(bob, h.BOB)
+                await register(alice, h.ALICE)
+                for i in range(3):
+                    await send(alice, type="message", to=h.BOB, content=f"m{i}")
+                got = [(await recv_type(bob, "message"))["content"] for _ in range(3)]
+                return got, await h.nothing_arrives(alice)
+
+    got, quiet = run(go())
+    assert got == ["m0", "m1", "m2"]
+    assert quiet
+
+
+def test_unread_over_a_mebibyte_arrives_in_frames_the_client_accepts(tmp_path):
+    """20 x 60 KB waits for Bob; the default client (max_size 1 MiB) must get all of it."""
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                for i in range(20):
+                    await send(alice, type="message", to=h.BOB, content=f"{i:02d}" + "x" * 60_000)
+                assert await h.nothing_arrives(alice)
+            async with connect(server, h.BOB_TOKEN) as bob:
+                await register(bob, h.BOB)
+                return await collect_unread(bob, 20)
+
+    frames = run(go())
+    assert len(frames) > 1
+    assert [m["content"][:2] for f in frames for m in f["messages"]] == [f"{i:02d}" for i in range(20)]
+    assert all(len(json.dumps(f).encode()) <= 1 << 20 for f in frames)
+
+
+def test_user_send_to_full_queue_reports_per_recipient(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(max_unread_per_peer=1, **FAST)) as server:
+            async with connect(server, h.USER_TOKEN) as user:
+                answers = []
+                for _ in range(2):
+                    await send(user, type="user_send", **{"as": "max"}, to=[h.BOB], content="x")
+                    answers.append(await recv_type(user, "user_sent"))
+                return answers
+
+    first, second = run(go())
+    assert first["sent"][0]["id"] and "code" not in first["sent"][0]
+    assert second["sent"][0]["code"] == "recipient_queue_full"
+    assert second["sent"][0]["id"] is None
+
+
+def test_unread_chunks_edges():
+    assert ws_server._unread_chunks([]) == []  # pylint: disable=protected-access
+    big = {"id": "1", "content": "x" * (ws_server.UNREAD_FRAME_MAX_BYTES + 10)}
+    small = {"id": "2", "content": "y"}
+    assert ws_server._unread_chunks([small, big, small]) == [[small], [big], [small]]  # pylint: disable=protected-access
+
+
+class FailingSocket:
+    """Accepts the first send, then the connection is gone."""
+
+    def __init__(self):
+        self.sent: list[str] = []
+
+    async def send(self, payload):
+        if self.sent:
+            raise ConnectionClosed(None, None)
+        self.sent.append(payload)
+
+
+def test_unread_marked_delivered_only_once_sent(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            for i in range(3):
+                await server.store.store(h.ALICE, h.BOB, f"{i}" + "x" * 400_000, None, delivered=False)
+            ws = FailingSocket()
+            with pytest.raises(ConnectionClosed):
+                await server._deliver_unread(ws, h.BOB)  # pylint: disable=protected-access
+            first = json.loads(ws.sent[0])["messages"]
+            return first, await server.store.get_unread(h.BOB)
+
+    first, left = run(go())
+    assert first and left
+    assert {m["id"] for m in first}.isdisjoint(m["id"] for m in left)
+    assert len(first) + len(left) == 3
 
 
 # --- limits ----------------------------------------------------------------
