@@ -42,6 +42,7 @@ Expect an acknowledgement within 2 business days. If a reported issue involves a
 - Credentials are read from environment variables or the OS credential store — never hardcoded, never committed, never logged.
 - Scoped/least-privilege credentials (API tokens with narrow scopes, IAM roles with SigV4, OAuth2 client credentials) are preferred over account-wide keys wherever the vendor offers them. Each skill's `references/auth.md` documents which options exist and which is recommended.
 - Any script under `scripts/` that accepts a credential must accept it via env var or a credential-store lookup, not as a CLI argument (CLI args land in shell history and process lists).
+- An agent never prints its environment or a credential to check it: whatever reaches its context is written to the session transcript on disk and sent to the model provider. crew's `guards.envGuard` (off by default; start with `report`) refuses the commands that would (`env`, `printenv`, `set`, `/proc/*/environ`, `Get-ChildItem env:`, `echo "$SOME_TOKEN"` and their wrapped forms), naming a label and never a value. It is a denylist over the command text, so it is a backstop: keeping credentials out of an agent's environment is the stronger control. See [`plugin/crew/README.md`](plugin/crew/README.md), "Environment guard".
 
 ## Install-script trust boundary
 
@@ -51,3 +52,9 @@ Expect an acknowledgement within 2 business days. If a reported issue involves a
 - Know that it will install and run `npx`-fetched packages (`skills`, and — only if you tick them — `ctx7`, `@playwright/cli`, `skillui`), fetch and run a third-party shell installer if you tick Strix (`curl -sSL https://strix.ai/install | bash`), and add third-party Claude Code plugin marketplaces (`anthropics/claude-plugins-official`, `anthropics/claude-code`, `excalidraw-generator`) — see [`MARKETPLACE.md`](MARKETPLACE.md) section 3 for exactly what each one is and does.
 - Know that if you tick the `notify` skill and accept its setup prompt, the script writes a starter `~/.config/notify/config.json` (an existing one is left alone). That file holds a chat id and the *name* of the env var to read the Telegram bot token from — never the token itself, which stays in your environment.
 - If your environment has stricter supply-chain requirements (air-gapped, regulated), mirror/vet those packages first rather than running the script as-is.
+
+## CI runner auto-start token
+
+`.github/workflows/runner-autostart.yml` reads secret `RUNNER_START_TOKEN` to start the self-hosted runner host. It should be a fine-grained PAT scoped to `mbadali25/github-runner-infra` only, with Actions: read and write and nothing else. With that scope it can list that repo's `runners.yml` runs and dispatch `Runners > start`. It cannot read or change code in either repository, and it cannot stop, resize or tear down the host. The job uses only those two REST calls. Fork PRs get no secrets, so they never use the token.
+
+When the token is unset, the job logs a notice and exits 0. When either call returns HTTP 401, 403 or 404, which is what a token without access to that private repo gets, the job logs a `::warning::` that names the fix and exits 0. Auto-start is optional and CI never depends on it. Any other failure, including no HTTP response, still fails the job. A green job with that warning means the token's scope is wrong. Re-scope the token; do not widen what the workflow does.

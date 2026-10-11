@@ -89,7 +89,8 @@ writes a file under <code>.work/tickets/&lt;id&gt;/</code>, and two of them cann
 by accident — <code>/crew:implement</code> refuses without an approved plan, and
 <code>/crew:done</code> refuses without a clean review receipt, a verify gate settled for
 HEAD, and a passing completion audit. Settled means every rule passed here, or
-the <code>verify-gate</code> CI receipt for HEAD is VERIFIED: a rule too big for the Stop
+the <code>verify-gate</code> CI receipt for HEAD is VERIFIED (for a merge on main, the PR
+head's receipt when its tree is exactly the merge's): a rule too big for the Stop
 budget is deferred to CI, and a Stop turn where 0 rules ran proves nothing.</p>
 <p>For how the scope guard decides what a ticket may touch and what a report
 looks like when it refuses a write, see

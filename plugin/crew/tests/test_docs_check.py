@@ -134,11 +134,15 @@ def test_changelog_reason_does_not_waive(tmp_path):
     assert (got["status"], _verdict(got, "CHANGELOG.md (crew 1.0.1)")[0]) == ("missing", "MISSING")
 
 
-def test_changelog_entry_names_version_is_updated(tmp_path):
+@pytest.mark.parametrize("entry", [
+    "### Fixed - `crew` 1.0.1: app counts to two",
+    "### Fixed — crew 1.0.1: app counts to two",
+], ids=["backticked", "bare-name-before-version"])
+def test_changelog_entry_names_version_is_updated(tmp_path, entry):
     root = _repo(tmp_path)
     _write(root, "plugin/crew/hooks/scripts/app.py", "x = 2\n")
     _bump(root)
-    _changelog(root, "### Fixed - `crew` 1.0.1: app counts to two")
+    _changelog(root, entry)
 
     got = _check(root)
 
@@ -147,13 +151,14 @@ def test_changelog_entry_names_version_is_updated(tmp_path):
 
 @pytest.mark.parametrize("entry", [
     "### Fixed - `crew` 1.0.0: names the old version",
-    "### Fixed - crew 1.0.1: name not backticked",
+    "### Fixed - crew, at last 1.0.1: a bare name not right before the version",
+    "### Fixed - crewmate 1.0.1: another word that starts with the name",
     "### Fixed - `crew` 1.0.10: a longer version is not this one",
     "### Fixed - `crew` 1.0.1.1: a dotted extension is not this one",
     "### Fixed - `crew` 1.0.1-rc.1: a prerelease is not this one",
     "### Fixed - `crew` 1.0.1+build5: build metadata is not this one",
     "### Fixed - `crew` 1.0.1_2: an underscored suffix is not this one",
-], ids=["old-version", "unquoted-name", "prefix-version", "dotted-suffix", "prerelease",
+], ids=["old-version", "bare-name-apart", "bare-name-prefix", "prefix-version", "dotted-suffix", "prerelease",
         "build", "underscore"])
 def test_changelog_entry_that_does_not_name_this_version_is_missing(tmp_path, entry):
     root = _repo(tmp_path)

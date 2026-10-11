@@ -34,8 +34,8 @@ unblock. Then run the read-only check:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
 ```
 
-Act on each `MISSING` line and re-run it. A changed plugin's CHANGELOG line (`` `<name>` `` and its
-new version, under `## [Unreleased]`) has no reason that waives it. `unknown` is a stop: report it.
+Act on each `MISSING` line and re-run it. A changed plugin's CHANGELOG line (`` `<name>` `` or the bare
+name right before its new version, under `## [Unreleased]` or `## [<version>]`) has no reason that waives it. `unknown` is a stop: report it.
 
 ## `--audit`
 

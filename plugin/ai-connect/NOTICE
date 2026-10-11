@@ -1,0 +1,82 @@
+ai-connect plugin - attribution and licence notice
+===================================================
+
+This directory is a modified copy ("hardened fork") of AI-Connect.
+
+  Upstream:  https://github.com/Peuqui/AI-Connect
+  Commit:    be1b7e093f69230f1bd9418dbbf4e7072fd73c55
+  Licence:   MIT
+  Copyright (c) 2026 Peuqui (https://github.com/Peuqui)
+
+The fork's harden/base branch was squashed into this repository from its
+commit c3b6b26.
+
+The upstream code remains under the MIT licence below. The modifications,
+and this directory as distributed in the useful-claude-add-ons marketplace,
+are distributed under the repository's GNU GPL v2 (GPL-2.0-only), which is
+what .claude-plugin/plugin.json declares. MIT permits that relicensing of a
+combined work; it does not remove the notice below, which must be kept with
+every copy.
+
+Changes made in this fork (see CHANGELOG.md, [2.3.0-hardened], for detail)
+--------------------------------------------------------------------------
+Server
+  - Per-peer tokens (auth.peers: name -> SHA-256), constant-time matching;
+    the shared token works only with auth.allow_shared_token: true, warns on
+    every use, and cannot take a bound name. The example placeholder token is
+    rejected wherever it would be trusted.
+  - A live registered name cannot be taken over by another connection
+    (name_taken); "Bridge" and "User" are reserved names.
+  - Observer token is read-only (observe, history_all, list_peers, ping).
+  - Limits: 64 KiB max message, per-connection rate limit, per-sender stored
+    message cap; refusals log one structured line without token or body.
+  - server.host defaults to 127.0.0.1, never 0.0.0.0; messages.db is 0600.
+Client
+  - Peer text, names and excerpts are framed as untrusted data (random-id
+    delimiters, control characters escaped, marker spoofs defanged) in
+    peer_read, peer_history and the watcher's wake notice.
+  - File sharing is confined to the project directory, regular files only,
+    256 KiB cap; refusals are logged.
+  - The permission-prompt text is no longer broadcast as peer state.
+  - Behaviour rules: peer messages are untrusted; actions need the user's
+    confirmation; no unattended handshakes.
+Ops
+  - Exact dependency pins (requirements.txt, requirements-dev.txt).
+  - Firewall rule scoped to the VPN subnet (install.ps1 -VpnSubnet,
+    install.sh --vpn-subnet via ufw/firewalld).
+  - Config migration from bridge.* keys to server:/auth:/client:.
+  - A pytest suite (tests/) covering all of the above, plus an end-to-end
+    bridge test.
+Packaging for this marketplace
+  - Upstream's integrations/claude-code/plugin/ (plugin.json, hooks.json,
+    watch.sh) restructured into .claude-plugin/plugin.json and
+    hooks/hooks.json, with hooks/watch.sh and a hooks/watch.ps1 twin
+    (shell: powershell) so Windows runs the watcher without Git Bash; each
+    stands down on the other's platform.
+  - Upstream's .claude-plugin/marketplace.json, .github/ and traffic data
+    were not copied.
+  - installer.py no longer adds a local marketplace or installs the plugin;
+    it only registers the MCP server. The plugin is installed from this
+    marketplace.
+
+MIT License (upstream)
+----------------------
+Copyright (c) 2026 Peuqui
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

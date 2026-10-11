@@ -104,6 +104,19 @@ $externallyProvided = @{
     'New-ScheduledTaskSettingsSet'  = 'ScheduledTasks (Windows-only)'
     'Register-ScheduledTask'        = 'ScheduledTasks (Windows-only)'
     'Start-ScheduledTask'           = 'ScheduledTasks (Windows-only)'
+    # The same module; ai-connect's install.ps1 stops and removes the Bridge's task.
+    'Stop-ScheduledTask'            = 'ScheduledTasks (Windows-only)'
+    'Unregister-ScheduledTask'      = 'ScheduledTasks (Windows-only)'
+    # NetSecurity and NetTCPIP ship with Windows and do not exist on Linux - the same
+    # shape as ScheduledTasks. SCOPED, like the Defender names below: these open or
+    # remove a Windows Firewall rule, so a global exemption would let any future script
+    # call them unremarked. The one caller is ai-connect's install.ps1, which scopes an
+    # inbound rule for the Bridge port to the VPN subnet and checks the port is free.
+    'Get-NetFirewallRule'           = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'Get-NetFirewallAddressFilter'  = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'New-NetFirewallRule'           = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'Remove-NetFirewallRule'        = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'Get-NetTCPConnection'          = @{ Module = 'NetTCPIP (Windows-only)';    Paths = @('*/plugin/ai-connect/install.ps1') }
     # The Defender module ships with Windows and does not exist on Linux, so these
     # resolve for a developer running this check and not for the CI runner - the
     # same shape as the ScheduledTasks entries directly above. Listed by exact

@@ -429,7 +429,8 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `memory.recall.projects` (L-0675, G3b) on top: 152, counted by running this test
     # on rush/g6b-goals-sleep after merging release/1.2.0 (crew 1.1.20).
     assert "memory.recall.projects" in declared
-    assert len(declared) == 152
+    assert "guards.envGuard" in declared
+    assert len(declared) == 153
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():

@@ -35,6 +35,136 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 24
   sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
 
+### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
+
+- **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
+  reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
+  writes private from the first byte.
+- **Framing.** The warning in front of a peer's message is constant; the sender's peer-controlled name
+  appears only inside the untrusted block, in `peer_read`, `peer_history` and the watcher's wake notice.
+- **Client.** The inbound queue is capped (500 messages, 8 MiB) with one notice when it fills. A coded
+  refusal from the Bridge is queued as a notice for `peer_read`; a frame over the Bridge's limit is
+  refused before sending, and the default file cap drops from 256 KiB to 48 KiB. An IPv6 `bridge_url`
+  is bracketed. `peer_history`/`peer_list` requests carry a `request_id` the Bridge echoes, so a late
+  answer cannot reach the wrong caller.
+- **Bridge.** A direct message is marked delivered only after its send returns; a registration replay
+  skips a message in flight, and a send that fails across a reconnect goes to the new holder once.
+  `notify_when_idle` is capped at 32 per peer and ends when the subscriber leaves.
+- **Secrets.** The installer writes `config.yaml` and the token files 0600 from the first byte (POSIX).
+  `vpn` `mint-key --out` on Windows writes nothing when `icacls` cannot restrict the file.
+- **CI.** The `vpn/` `.ps1` shims no longer dot-source `_common.ps1`, which `scripts/check-powershell.ps1`
+  cannot follow; that checker exempts `install.ps1`'s NetSecurity/NetTCPIP cmdlets (scoped to that file)
+  and two more ScheduledTasks names, with must-block and must-allow cases in its suite. `.pylintrc`
+  ignores the module name `server`, which is both localgpu's `mcp/server.py` and ai-connect's package.
+  `tsadmin.py` resolves `icacls`/`taskkill` with `shutil.which`, and the shim tests give every `pwsh`
+  their own `XDG_CACHE_HOME`. 0.1.2 and 0.1.3 were set on the branch and never released.
+
+### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
+
+- **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
+  overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put
+  a machine on a Tailscale tailnet with a single-use key.
+- **Client round.** `peer_send`/`peer_context` open the file first and judge the handle (regular file,
+  final path inside the project, at most the cap), so a symlink or junction swapped in after the name
+  check is refused. `peer_list` puts every peer-set field in one untrusted block; `peer_read` and
+  `peer_history` put the sender and time line inside each message's block. Malformed peer fields render
+  escaped instead of raising, and `peer_read` drops messages only after they render.
+- **Server round.** `PeerRegistry.register` inserts the new holder before closing the dead one, so two
+  connections can no longer hold one name. A peer may message `User:<name>`; registering or watching one
+  stays refused. Each recipient's unread queue is capped (500 messages, 8 MiB) with the error code
+  `recipient_queue_full`, and unread messages go out in frames of at most 1 MiB, each marked delivered
+  only after its send. `observer_client.cli send` prints the Bridge's error for a refused recipient and
+  exits 1 instead of reporting it as waiting.
+- **VPN tooling.** `plugin/ai-connect/vpn/`: `mint-key`, `revoke`, `vpn-up`, `vpn-down` (one stdlib
+  `tsadmin.py` behind `.sh`/`.ps1` shims) and an ACL template allowing `tag:ai-peer` to reach
+  `tag:bridge:9999` only. `mint-key --peer-token` runs `installer.py add-peer` under the venv beside the
+  installer. `.crew/verify.json` runs `vpn/tests` as a second pytest run of the ai-connect entry.
+
+### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
+
+- **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each
+  other through a self-hosted bridge, with hooks that publish each session's state and wake an idle
+  session when a message arrives.
+- **Source.** A squashed, hardened fork of [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect)
+  at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55` (MIT; notice and upstream licence kept in
+  `plugin/ai-connect/NOTICE`): per-peer tokens, no name takeover, a read-only observer role, size and
+  rate limits, untrusted framing of peer text, project-confined file sharing, a VPN-scoped listener and
+  exact pins.
+- **Packaging.** Upstream's `integrations/claude-code/plugin/` became `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`; the watcher is registered once per flavour (`watch.sh` / `watch.ps1`, each standing
+  down on the other's platform, the PowerShell entry re-raising exit 2). `installer.py claude` now only
+  registers the MCP server. Menu row 19 (`repo-plugins`) stays off by default.
+- **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
+  plugin's `ruff.toml` extends the root config instead of replacing it.
+
+### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
+
+- **Summary.** crew can now refuse a command that would print the whole environment, or a
+  credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **`env-guard.sh` / `env-guard.ps1` -> `env_guard.py`**, a `PreToolUse` hook on Bash and PowerShell,
+  registered once per flavour (the PowerShell entry with `shell: "powershell"`; 36 hook entries).
+  It refuses `env` with nothing to run, `printenv`, bare `set`, `export -p`, `declare -p`,
+  `/proc/<pid>/environ`, `ps eww`, inline interpreter code reading `os.environ`/`process.env`/`%ENV`/
+  `ENV`/`getenv()`/`ENVIRON`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`,
+  `Get-Variable`, `cmd /c set`, and a credential-named variable in a printing form (`echo
+  "$GITHUB_TOKEN"`, `$env:API_KEY`), through `bash -c`, `eval`, `$( )`, pipes, loops and the usual
+  wrappers. What it cannot read is refused as could-not-tell. A refusal names a fixed label
+  (`env-dump:`, `secret-read:`, `could-not-tell:`) and never a value or the command, in the reason
+  and in `.crew/guard.log`.
+- **`guards.envGuard`**: `off` (default) / `report` / `block`, both layers, narrower wins; a malformed
+  value reads as `block`. Without a usable python both wrappers refuse (exit 2) only when a config file
+  arms it.
+- **BREAKING (narrowing): production reads.** `printenv` left `PROD_READ_COMMANDS`, bare `env` is a
+  write, and any remote command the env guard flags is a write, so `ssh prod printenv`, `ssh prod env`
+  and `ssh prod cat /proc/1/environ` are refused at `guards.prodServer: read`. `full` is unchanged.
+- **`plugin-hooks:<name>`**, a new self-claim marker: `check_self_claims` counts the command entries in
+  a plugin's `hooks/hooks.json`.
+- Follow-ups: L-0773 (the committed sabotage entries, a harness change) and L-0776 (keep credentials
+  out of the agent's environment, the stronger control).
+
+### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
+
+- **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4
+  and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it
+  ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
+- **One changed set for checks 4 and 5 (`crew_refresh_check.own_changes`).** Before the ticket lands,
+  this is the completion audit's own set: paths identical to merged main are main's. After it lands,
+  close from a branch at `origin/main`. The set is then what the ticket's landing merge brought to main,
+  found from the review receipt's head: the first commit on main's first-parent line that contains it.
+  When either cannot be shown (`merged_main` cannot tell, no receipt, the head is not in the history, the
+  landing is not a merge), every path since the base is judged and the top line says why. A workflow
+  another PR merged in no longer makes SECURITY.md owed, and a code map another PR made stale is no
+  longer this ticket's. The ticket's own workflow edit and its own stale artifacts still refuse.
+- **CHANGELOG (check 5).** The check reads the lines the ticket added over its own range (after
+  landing: the merge's first parent to the merge). A line counts under `## [Unreleased]` or
+  `## [<version>]` when it names the plugin at the version that range ends on. A later release does not
+  move that version. The bare `crew 1.2.20` form this file's headings use counts as well as
+  `` `crew` 1.2.20 ``.
+- **Check 2 (`ci_receipt.py`).** When HEAD's sha has no verify-gate run at all, as on a merge commit
+  (the workflow never runs on main), the newest run of a parent whose tree is exactly HEAD's is judged
+  the same way. Its receipt must bind HEAD's tree, map and gate digest. A run for HEAD itself, failed
+  or pending, is never passed over. A merge that changes a receipt-producer path is refused, because
+  that run vouched for its own producer. Could not tell (the lookup fails, or a tree cannot be read)
+  stays UNKNOWN.
+- **Tests.** `test_done_own_changes.py` covers each part before landing, after landing and after a
+  later release: must-allow, must-block, and four could-not-tell cases. The new
+  `test_ci_receipt.py` cases cover the same-tree parent. Eight mutations were each seen red by hand.
+  Their sabotage entries go to a follow-up tooling PR, because the sabotage files are review harness.
+
+### Fixed — crew 1.2.19: the promote-gate review tests' PowerShell cases run serially (L-0759)
+
+- **Summary.** `crew` 1.2.19 runs every default-set PowerShell case in
+  `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16`
+  step no longer fails them on time. The gate is unchanged.
+- **Why.** `promote-gate.ps1` keeps a 16s deadline counted from process start, so it fits the 20s
+  hook timeout (L-0703). With 16 workers on a 4-vCPU hosted runner, PowerShell start-up used most of
+  that budget, and `test (3.11)` and `test (3.13)` failed in run 38033960181 with "the gate's
+  deadline passed before the review check could finish". The deadline is not raised.
+- **What moved.** The ps1 param of `FLAVOURS_DEFAULT` and the two ps1-only tests
+  (`test_ps1_refuses_a_map_that_is_not_a_regular_file`, `test_ps1_without_python_blocks_a_declared_deploy`)
+  are marked `wallclock`: 40 cases, about 51s serially on a local run. The `slow` ps1 param of
+  `FLAVOURS` stays in the slow job, because `-m wallclock` never selects `slow` tests.
+
 ### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
 
 - **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
