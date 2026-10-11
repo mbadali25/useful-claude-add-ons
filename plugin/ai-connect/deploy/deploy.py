@@ -176,6 +176,9 @@ def step_service(r: Run) -> None:
 
 def remove_service(r: Run) -> None:
     r.step("Bridge service")
+    if ts_install.PLATFORM == "darwin":
+        r.already("no Bridge service on macOS (deploy does not install one there)")
+        return
     if service_state() == "absent":
         r.already("no Bridge service installed")
         return
@@ -183,7 +186,8 @@ def remove_service(r: Run) -> None:
         unit = SYSTEMD_DIR / f"{UNIT}.service"
 
         def remove() -> None:
-            run(privileged("systemctl") + ["disable", "--now", UNIT])
+            # A Bridge that is still running must not lose its unit, nor with --purge its config
+            must(run(privileged("systemctl") + ["disable", "--now", UNIT]), "systemctl disable --now")
             must(run(privileged("rm") + ["-f", str(unit)]), "remove unit")
             must(run(privileged("systemctl") + ["daemon-reload"]), "daemon-reload")
         r.change(f"stop, disable and remove {UNIT}.service", remove)
@@ -212,10 +216,18 @@ def rich_rule(subnet: str, port: int) -> str:
     return f'rule family="{family}" source address="{subnet}" port port="{port}" protocol="tcp" accept'
 
 
+def netsh_rule() -> str | None:
+    """What netsh shows for the rule, or None when there is none by that name."""
+    res = run([tool("netsh"), "advfirewall", "firewall", "show", "rule", f"name={RULE}"], timeout=30)
+    return res.stdout if res.returncode == 0 else None
+
+
 def firewall_present(kind: str, subnet: str, port: int) -> bool:
     if kind == "netsh":
-        show = [tool("netsh"), "advfirewall", "firewall", "show", "rule", f"name={RULE}"]
-        return run(show, timeout=30).returncode == 0
+        # The rule for THIS subnet and port: netsh's field names are localised, its values are not
+        shown = netsh_rule()
+        return (shown is not None and subnet in shown
+                and re.search(rf"(?<![\d./]){port}(?![\d./])", shown) is not None)
     if kind == "ufw":
         res = run(privileged("ufw") + ["status"], timeout=30)
         return any(str(port) in line and subnet in line for line in res.stdout.splitlines())
@@ -234,6 +246,11 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
         r.already(f"{kind} rule for {subnet} on port {port}")
         return
     if kind == "netsh":
+        if netsh_rule() is not None:
+            # Same name, another subnet or port: left in place it would keep that one open
+            drop = [tool("netsh"), "advfirewall", "firewall", "delete", "rule", f"name={RULE}"]
+            r.change(f"delete netsh rule '{RULE}', which is for another subnet or port",
+                     lambda: must(run(drop), "netsh delete rule"))
         argv = [tool("netsh"), "advfirewall", "firewall", "add", "rule", f"name={RULE}", "dir=in", "action=allow",
                 "protocol=TCP", f"localport={port}", f"remoteip={subnet}", "profile=private"]
         r.change(f"netsh rule '{RULE}' (private profile)", lambda: must(run(argv), "netsh add rule"))
@@ -251,8 +268,14 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
 
 def remove_firewall(r: Run, subnet: str, port: int) -> None:
     r.step("Firewall rule")
+    if ts_install.PLATFORM == "darwin":
+        r.already("no AI-Connect firewall rule on macOS (deploy does not add one there)")
+        return
     kind = firewall_kind()
-    if kind is None or not firewall_present(kind, subnet, port):
+    # Whatever its subnet or port: on Windows the rule is ours by name
+    present = kind is not None and (netsh_rule() is not None if kind == "netsh"
+                                    else firewall_present(kind, subnet, port))
+    if not present:
         r.already("no AI-Connect firewall rule")
         return
     if kind == "netsh":
@@ -360,6 +383,9 @@ def cmd_bridge(args) -> int:
     for peer in args.peer:
         check_name(peer, "--peer")
     check_name(args.name, "--name")
+    if ts_install.PLATFORM == "darwin":
+        raise Failure("a Bridge on macOS is not supported (deploy has no launchd service); run the Bridge on "
+                      "Linux or Windows, and `deploy peer` here", EXIT_USAGE)
     r = Run(args.dry_run, total=7)
     out(f"=== AI-Connect deploy: bridge{' (dry run)' if r.dry_run else ''} ===")
     step_deps(r)
@@ -387,8 +413,13 @@ def cmd_bridge(args) -> int:
         out("  no --peer given; add one later with: deploy bridge --peer <name>")
     for peer in args.peer:
         target = TOKEN_DIR / f"{peer}.token"
-        if peer in known:
+        if peer in known and target.is_file():
             r.already(f"peer '{peer}' provisioned (token file: {target})")
+            continue
+        if peer in known:
+            # The Bridge keeps only the hash: no file means the token cannot be handed out again
+            r.already(f"peer '{peer}' provisioned, but its token file is not on this machine. For a new token: "
+                      f"installer.py revoke-peer {peer}, then deploy bridge --peer {peer}")
             continue
 
         def provision(peer=peer, target=target) -> None:

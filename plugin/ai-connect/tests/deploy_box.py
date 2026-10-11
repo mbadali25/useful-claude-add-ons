@@ -19,6 +19,7 @@ import threading
 from http import HTTPStatus
 from pathlib import Path
 
+import pytest
 import yaml
 
 PLUGIN = Path(__file__).resolve().parent.parent
@@ -142,8 +143,11 @@ class Box:
         path.chmod(0o755)
 
     def remove_tool(self, name: str) -> None:
-        for path in self.bin.glob(f"{name}*"):
-            path.unlink()
+        """Take a fake off the PATH. Never lets its real counterpart answer instead: the test is skipped."""
+        for path in (self.bin / name, self.bin / f"{name}.cmd"):
+            path.unlink(missing_ok=True)
+        if shutil.which(name, path=self.env["PATH"]):
+            pytest.skip(f"a real {name} is on the minimal PATH; this test would reach it")
 
     def set(self, **values) -> None:
         state = self.state() if self.state_file.exists() else {}

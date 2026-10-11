@@ -28,6 +28,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import installer  # noqa: E402  pylint: disable=wrong-import-position,import-error
+sys.path.append(str(Path(__file__).resolve().parent.parent / "vpn"))
+import tsadmin  # noqa: E402  pylint: disable=wrong-import-position,import-error
 from config_loader import CONFIG_PATH  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 # client/ goes last: its server.py must not shadow the plugin's server package
@@ -42,8 +44,17 @@ def emit(payload: dict) -> None:
 
 
 def load() -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except yaml.YAMLError as err:
+        # Never the parser's own message: it quotes the file, and the file holds tokens
+        mark = getattr(err, "problem_mark", None)
+        where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark else ""
+        raise SystemExit(f"{CONFIG_PATH} is not valid YAML{where}") from None
+    if not isinstance(config, dict):
+        raise SystemExit(f"{CONFIG_PATH} is not a YAML mapping")
+    return config
 
 
 def quietly(fn, *args, **kwargs):
@@ -94,7 +105,15 @@ def cmd_bridge(args) -> dict:
 
 def cmd_add_peer(args) -> dict:
     token = installer._add_peer(args.name, CONFIG_PATH)  # pylint: disable=protected-access
-    installer._write_private(Path(args.out), token + "\n")  # pylint: disable=protected-access
+    try:
+        # Owner-only from the first byte, on Windows too (icacls), and nothing written when that fails
+        tsadmin.write_owner_only(Path(args.out), token + "\n")
+    except (OSError, tsadmin.Failure) as err:
+        # The token exists nowhere else: a peer nobody can log in as must not stay provisioned
+        quietly(installer.revoke_peer, args.name)
+        why = err.strerror if isinstance(err, OSError) else "it could not be restricted to this user"
+        raise SystemExit(f"could not write the token file {args.out} ({why}); peer '{args.name}' was not "
+                         "provisioned") from None
     return {"action": "added", "masked": "****" + token[-4:]}
 
 
@@ -256,6 +275,9 @@ def main() -> int:
             raise
         # installer.py stops with sys.exit("message"); carry the message, never a token
         emit({"error": str(err.code)})
+        return 1
+    except Exception as err:  # pylint: disable=broad-exception-caught  # a traceback could quote config.yaml
+        emit({"error": f"config_tool {args.cmd} stopped on an unexpected {type(err).__name__}"})
         return 1
     return 0
 

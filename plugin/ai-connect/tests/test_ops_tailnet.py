@@ -214,6 +214,59 @@ def test_a_custom_policy_file_and_admin(box, api, tmp_path):
     assert '"tag:bridge":  ["matthew@example.org"]' in api.policy and "admin@example.com" not in api.policy
 
 
+def test_preview_with_a_stored_client_issues_no_token(box, api):
+    assert setup(box, api, "--apply").res.returncode == 0
+    api.requests.clear()
+    preview = setup(box, api)
+    assert preview.res.returncode == 0, preview.text
+    assert api.made("POST", "/oauth/token") == [] and api.writes() == []
+    assert f"OAuth client {CLIENT_ID} is stored" in preview.out and "does not check it" in preview.out
+
+
+def test_a_policy_served_without_an_etag_is_not_replaced(box, api):
+    api.send_etag = False
+    run = setup(box, api, "--apply")
+    assert run.res.returncode == 1
+    assert "no ETag" in run.res.stderr and "nothing was applied" in run.res.stderr
+    assert api.writes() == [] and api.policy == DEFAULT_POLICY
+
+
+@pytest.mark.parametrize("body", ["<html>gateway error</html>", '{"unexpected": true}', "[]"])
+def test_a_validation_answer_that_is_neither_pass_nor_refusal_stops(box, api, body):
+    api.validate_raw = body
+    run = setup(box, api, "--apply")
+    assert run.res.returncode == 1
+    assert "neither a pass nor a refusal" in run.res.stderr
+    assert api.writes() == [] and api.policy == DEFAULT_POLICY
+
+
+def test_a_locked_credential_store_never_leads_to_a_second_client(box, api):
+    run = setup(box, api, "--apply", FAKE_KEYRING_MODE="locked")
+    assert run.res.returncode == 1
+    assert "could not be read (KeyringLocked)" in run.res.stderr
+    assert api.made("POST", "/keys") == [] and not oauth_file(box).exists()
+
+
+@pytest.mark.parametrize("content", ["{not json", '{"oauth_client_id": "kHALF"}', "[]"])
+def test_an_unreadable_oauth_file_never_leads_to_a_second_client(box, api, content):
+    oauth_file(box).parent.mkdir(parents=True)
+    oauth_file(box).write_text(content, encoding="utf-8")
+    run = setup(box, api, "--apply", FAKE_KEYRING_MODE="absent")
+    assert run.res.returncode == 1
+    assert "holds no OAuth client that can be read" in run.res.stderr
+    assert api.made("POST", "/keys") == [] and oauth_file(box).read_text(encoding="utf-8") == content
+
+
+def test_a_client_that_cannot_be_stored_is_deleted_again(box, api, tmp_path):
+    blocker = tmp_path / "a-file"
+    blocker.write_text("not a directory", encoding="utf-8")
+    run = setup(box, api, "--apply", FAKE_KEYRING_MODE="absent", AI_CONNECT_OAUTH_FILE=str(blocker / "oauth.json"))
+    assert run.res.returncode == 1
+    assert f"OAuth client {CLIENT_ID} was created but could not be stored" in run.res.stderr
+    assert "it was deleted again" in run.res.stderr
+    assert api.clients == {} and len(api.made("DELETE", f"/keys/{CLIENT_ID}")) == 1
+    assert no_secret_in(run.text)
+
 @pytest.mark.parametrize("args", [["--admin", "not an admin"], ["--admin", 'x@y.z", "*'], ["--tailnet", "a/b"],
                                   ["--acl", "no-such-file.hujson"], ["--apply", "--bogus"]])
 def test_tailnet_setup_bad_arguments(box, api, args):
@@ -307,12 +360,16 @@ def test_no_install_tailscale_keeps_exit_3(box):
     assert run.changed_nothing() and installer_calls(run) == []
 
 
-def test_a_missing_installer_tool_is_exit_3_with_the_hint(box):
+def test_a_missing_installer_tool_is_exit_3_with_the_hint(box, tmp_path):
     env = missing(box, "darwin", NATIVE)
     box.remove_tool("brew")
-    run = Phase(box, "bridge", "--name", "hub", extra_env=env)
+    token_file = tmp_path / "laptop.token"
+    token_file.write_text(PEER_TOKEN, encoding="utf-8")
+    run = Phase(box, "peer", "--name", "laptop", "--bridge", "127.0.0.1", "--token-file", str(token_file),
+                extra_env={**env, "TS_AUTHKEY": AUTH_KEY})
     assert run.res.returncode == 3, run.text
-    assert "brew not found on PATH" in run.res.stderr and run.changed_nothing()
+    assert "brew not found on PATH" in run.res.stderr and "brew install --cask tailscale" in run.res.stderr
+    assert installer_calls(run) == [] and not box.config_file.exists()
 
 
 def test_a_failed_install_stops_the_deploy(box):

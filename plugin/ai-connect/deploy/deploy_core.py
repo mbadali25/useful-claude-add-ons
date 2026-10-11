@@ -154,8 +154,8 @@ def config_tool(*args: str, env_extra: dict | None = None, timeout: float = 300)
     except ValueError:
         payload = {}
     if res.returncode != 0:
-        raise Failure(payload.get("error") or f"config_tool {args[0]} failed (exit {res.returncode}): "
-                      f"{(res.stderr or res.stdout).strip()[-300:] or 'no output'}")
+        # Only the helper's own one-line reason: its raw output could quote config.yaml, which holds tokens
+        raise Failure(str(payload.get("error") or f"config_tool {args[0]} failed (exit {res.returncode})"))
     return payload
 
 

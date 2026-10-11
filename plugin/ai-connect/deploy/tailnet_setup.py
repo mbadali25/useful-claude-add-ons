@@ -112,6 +112,9 @@ def step_validate(r: Run, token: str, tailnet: str, policy: str) -> None:
     status, _headers, text = call("POST", f"/tailnet/{tailnet}/acl/validate", token, text=policy)
     # 200 with an empty body is a pass; a body with a message is a policy the tailnet would refuse
     message = parsed(text).get("message")
+    if status == 200 and not message and text.strip() not in ("", "{}", "null"):
+        raise Failure("Tailscale answered the policy validation with something that is neither a pass nor a "
+                      "refusal; nothing was applied")
     if status != 200 or message:
         details = "; ".join(str(item.get("errors") or item) for item in parsed(text).get("data") or []
                             if isinstance(item, dict))
@@ -131,6 +134,10 @@ def step_policy(r: Run, token: str, tailnet: str, policy: str) -> None:
         r.already("the tailnet policy is this policy file")
         return
     etag = next((value for key, value in headers.items() if key.lower() == "etag"), None)
+    if not etag:
+        # Without it the write could not tell that someone else changed the policy meanwhile
+        raise Failure("Tailscale sent no ETag with the current policy, so a change by someone else could not be "
+                      "detected; nothing was applied")
     out("  the tailnet policy differs from the policy file (- now, + after):")
     for line in difflib.unified_diff(current.splitlines(), policy.splitlines(), "tailnet policy", "policy file",
                                      lineterm="", n=2):
@@ -259,9 +266,38 @@ def ask_for_client() -> tuple[str, str]:
     return cid, secret
 
 
+def store_is_readable() -> None:
+    """Stop when it cannot be told whether a client is already stored: a second one must not be created."""
+    try:
+        import keyring  # pylint: disable=import-error,import-outside-toplevel
+        keyring.get_password(tsadmin.KEYRING_SERVICE, "oauth_client_id")
+    except ImportError:
+        pass
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        # No backend at all (a headless machine) is an answer: nothing is stored there. Anything else is not.
+        if type(err).__name__ != "NoKeyringError":
+            raise Failure(f"the OS credential store could not be read ({type(err).__name__}), so it cannot be "
+                          "told whether an OAuth client is already stored; unlock it and run this again") from None
+    path = tsadmin.oauth_file()
+    if path.exists():
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            usable = isinstance(saved, dict) and saved.get("oauth_client_id") and saved.get("oauth_client_secret")
+        except (OSError, ValueError):
+            usable = False
+        if not usable:
+            raise Failure(f"{path} exists but holds no OAuth client that can be read; repair or delete it "
+                          f"(and revoke its client at {OAUTH_CONSOLE}), then run this again")
+
+
 def step_oauth(r: Run, token: str, tailnet: str) -> None:
     r.step("OAuth client for mint-key and revoke")
+    store_is_readable()
     cid, secret, source = tsadmin.stored_oauth_credentials(use_env=False)
+    if cid and r.dry_run:
+        # The check is a token exchange, and a preview issues nothing
+        out(f"  OAuth client {cid} is stored in the {source}; a preview does not check it against Tailscale")
+        return
     if cid:
         works, status = oauth_works(cid, secret)
         if not works:
@@ -290,7 +326,19 @@ def step_oauth(r: Run, token: str, tailnet: str) -> None:
             works, exchange = oauth_works(new_id, new_secret)
             if not works:
                 raise Failure(f"Tailscale refused OAuth client {new_id} (HTTP {exchange}); nothing was stored")
-        out(f"  OAuth client {new_id} stored in {store_oauth(new_id, new_secret)}")
+            out(f"  OAuth client {new_id} stored in {store_oauth(new_id, new_secret)}")
+            return
+        try:
+            where = store_oauth(new_id, new_secret)
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            # Its secret is shown once and is now lost: a client nobody can use must not stay behind
+            gone, _headers, _text = call("DELETE", f"/tailnet/{tailnet}/keys/{urllib.parse.quote(new_id, safe='')}",
+                                         token)
+            after = ("it was deleted again" if gone in (200, 204)
+                     else f"deleting it failed (HTTP {gone}): revoke {new_id} at {OAUTH_CONSOLE}")
+            raise Failure(f"OAuth client {new_id} was created but could not be stored ({type(err).__name__}); "
+                          f"{after}") from None
+        out(f"  OAuth client {new_id} stored in {where}")
     r.change(f"create an OAuth client ({', '.join(OAUTH_SCOPES)}; {tsadmin.DEFAULT_TAG}) and store it", create)
 
 

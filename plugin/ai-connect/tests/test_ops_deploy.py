@@ -179,6 +179,96 @@ def test_bridge_health_check_fails_when_bridge_refuses(box):
     assert "refused this machine's token" in res.stderr
 
 
+def test_a_malformed_config_never_shows_the_token_in_it(box):
+    secret = "c0ffee" * 10 + "feed"
+    box.config_file.parent.mkdir(parents=True)
+    # An undefined alias: PyYAML's own message for it quotes the name, here the token
+    box.config_file.write_text(f'server:\n  host: "127.0.0.1"\nclient:\n  token: *{secret}\n', encoding="utf-8")
+    status, bridge = box.deploy("status"), box.deploy("bridge", "--name", "hub")
+    assert status.returncode == 1 and bridge.returncode == 1
+    assert "is not valid YAML (line" in status.stderr and "is not valid YAML (line" in bridge.stderr
+    assert not leaks(secret, output(status) + output(bridge))
+
+
+class OwnBridge:
+    """A fake Bridge that accepts the peers in the box's own config, for a test that deploys one."""
+
+    def __init__(self, box: Box):
+        def accepted():
+            return set(box.config()["auth"]["peers"].values()) if box.config_file.exists() else set()
+        self.server = FakeBridge(accepted)
+        self.args = ["bridge", "--name", "hub", "--port", str(self.server.port)]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.server.close()
+
+
+def test_a_peer_whose_token_cannot_be_written_is_not_left_provisioned(box):
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        (box.home / ".config" / "ai-connect" / "peer-tokens").write_text("a file, not a directory", encoding="utf-8")
+        res = box.deploy(*own.args, "--peer", "laptop")
+    assert res.returncode == 1
+    assert "could not write the token file" in res.stderr and "was not provisioned" in res.stderr
+    assert set(box.config()["auth"]["peers"]) == {"hub"}
+
+
+def test_a_provisioned_peer_without_its_token_file_is_said_so(box):
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args, "--peer", "laptop").returncode == 0
+        token_file = box.home / ".config" / "ai-connect" / "peer-tokens" / "laptop.token"
+        if os.name == "nt":  # owner-only on Windows too: no inherited entry, written through icacls
+            acl = subprocess.run(["icacls", str(token_file)], capture_output=True, text=True, check=True).stdout
+            assert "(I)" not in acl, acl
+        else:
+            assert token_file.stat().st_mode & 0o077 == 0
+        token_file.unlink()
+        res = box.deploy(*own.args, "--peer", "laptop")
+    assert res.returncode == 0, output(res)
+    assert "its token file is not on this machine" in res.stdout and "revoke-peer laptop" in res.stdout
+    assert f"token file: {token_file}" not in res.stdout
+
+
+def test_windows_firewall_rule_for_another_subnet_or_port_is_replaced(tmp_path, venv):
+    box = Box(tmp_path, venv, "windows")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        assert box.state()["rules"]["AI-Connect Bridge"] == SUBNET
+        narrow = Phase(box, *own.args, "--vpn-subnet", "100.100.0.0/16")
+        same = Phase(box, *own.args, "--vpn-subnet", "100.100.0.0/16")
+        status = box.deploy("status", "--vpn-subnet", SUBNET)
+    assert narrow.res.returncode == 0, narrow.text
+    assert "which is for another subnet or port" in narrow.out
+    assert box.state()["rules"] == {"AI-Connect Bridge": "100.100.0.0/16"}
+    assert box.state()["rule_ports"] == {"AI-Connect Bridge": str(own.server.port)}
+    assert same.mutations == [] and "already done: netsh rule for 100.100.0.0/16" in same.out
+    assert "firewall: no rule" in status.stdout  # the rule that is there is not the one asked about
+
+
+def test_linux_uninstall_stops_when_the_service_cannot_be_stopped(tmp_path, venv):
+    box = Box(tmp_path, venv, "linux")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        box.set(disable_rc=1)
+        res = box.deploy("uninstall", "--yes", "--purge", "--port", str(own.server.port))
+    assert res.returncode == 1
+    assert "systemctl disable --now failed" in res.stderr
+    assert (box.systemd / "ai-connect.service").exists() and box.config_file.exists()
+
+
+def test_a_bridge_on_macos_is_refused_before_anything_changes(box):
+    mac = {"AI_CONNECT_DEPLOY_PLATFORM": "darwin"}
+    phase = Phase(box, "bridge", "--name", "hub", extra_env=mac)
+    assert phase.res.returncode == 2
+    assert "a Bridge on macOS is not supported" in phase.res.stderr
+    assert phase.calls == [] and phase.changed_nothing()
+    uninstall = Phase(box, "uninstall", "--yes", extra_env=mac)
+    assert uninstall.res.returncode == 0, uninstall.text
+    assert not any(c[0] in ("systemctl", "ufw", "netsh", "schtasks") for c in uninstall.calls)
+
 # ---------------------------------------------------------------- peer
 
 

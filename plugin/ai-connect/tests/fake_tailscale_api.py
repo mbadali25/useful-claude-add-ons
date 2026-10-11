@@ -29,6 +29,8 @@ class FakeTailscaleAPI:
         self.validate_message = None  # a string: the policy is refused with it
         self.keys_status = 200  # 403: this token may not create an OAuth client
         self.race = False  # the policy changes between the read and the write
+        self.send_etag = True  # False: the policy is served without an ETag
+        self.validate_raw = None  # a string: the validation answers 200 with exactly this body
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -40,6 +42,9 @@ class FakeTailscaleAPI:
 
             def do_POST(self):  # pylint: disable=invalid-name
                 owner.handle(self, "POST")
+
+            def do_DELETE(self):  # pylint: disable=invalid-name
+                owner.handle(self, "DELETE")
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}/api/v2"
@@ -60,7 +65,7 @@ class FakeTailscaleAPI:
 
     def writes(self) -> list[dict]:
         """Every request that changed the tailnet (validate and the token exchange change nothing)."""
-        return [r for r in self.requests if r["method"] == "POST"
+        return [r for r in self.requests if r["method"] in ("POST", "DELETE")
                 and not r["path"].endswith(("/acl/validate", "/oauth/token"))]
 
     def handle(self, req, method: str) -> None:
@@ -91,11 +96,14 @@ class FakeTailscaleAPI:
         if headers.get("Authorization") != f"Bearer {API_TOKEN}":
             return 401, {"message": "API token invalid"}, {}
         if (method, path) == ("POST", "/tailnet/-/acl/validate"):
+            if self.validate_raw is not None:
+                return 200, self.validate_raw, {"Content-Type": "text/html"}
             if self.validate_message:
                 return 200, {"message": self.validate_message, "data": [{"user": "tag:ai-peer", "errors": ["x"]}]}, {}
             return 200, "", {}
         if (method, path) == ("GET", "/tailnet/-/acl"):
-            answer = 200, self.policy, {"ETag": self.etag, "Content-Type": "application/hujson"}
+            answer = 200, self.policy, {"Content-Type": "application/hujson",
+                                        **({"ETag": self.etag} if self.send_etag else {})}
             if self.race:
                 self.version += 1
             return answer
@@ -111,6 +119,8 @@ class FakeTailscaleAPI:
                 return self.keys_status, {"message": "calling actor does not have enough permissions"}, {}
             self.clients[CLIENT_ID] = CLIENT_SECRET
             return 200, {"id": CLIENT_ID, "key": CLIENT_SECRET, "keyType": "client"}, {}
+        if method == "DELETE" and path.startswith("/tailnet/-/keys/"):
+            return (200, "", {}) if self.clients.pop(path.rsplit("/", 1)[-1], None) else (404, {"message": "no key"}, {})
         if path.startswith("/device/"):
             node, _, verb = path.removeprefix("/device/").partition("/")
             device = self.devices.get(node)

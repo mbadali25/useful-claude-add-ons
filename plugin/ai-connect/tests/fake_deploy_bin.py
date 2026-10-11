@@ -8,6 +8,7 @@ hands it is ever touched.
 
 State keys: ts_ip, ts_backend, units {name: {active, enabled}}, ufw [lines],
 tasks {name: status}, rules {name: remoteip}, plugins [ids], mcp {name: argv},
+rule_ports {name: localport}, disable_rc (exit code of systemctl disable),
 ts_node_id, install_rc (exit code of an installer), shim (the launcher text an
 installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
 """
@@ -119,6 +120,9 @@ def systemctl(args, state):
     elif verb == "enable":
         unit["enabled"] = True
     elif verb == "disable":
+        if state.get("disable_rc"):
+            print("Failed to disable unit: Access denied", file=sys.stderr)
+            return int(state["disable_rc"])
         unit["enabled"] = False
         unit["active"] = unit["active"] and "--now" not in args
     elif verb != "daemon-reload":
@@ -178,13 +182,16 @@ def netsh(args, state):
     if verb in ("show", "delete") and name not in rules:
         print("\nNo rules match the specified criteria.\n")
         return 1
+    ports = state.setdefault("rule_ports", {})
     if verb == "show":
-        print(f"Rule Name:    {name}\nRemoteIP:     {rules[name]}\nOk.")
+        print(f"Rule Name:    {name}\nEnabled:      Yes\nRemoteIP:     {rules[name]}\n"
+              f"LocalPort:    {ports.get(name, '')}\nOk.")
         return 0
     if verb == "add":
-        rules[name] = opts["remoteip"]
+        rules[name], ports[name] = opts["remoteip"], opts["localport"]
     else:
         del rules[name]
+        ports.pop(name, None)
     save(state)
     print("Ok.")
     return 0
