@@ -42,6 +42,7 @@ Expect an acknowledgement within 2 business days. If a reported issue involves a
 - Credentials are read from environment variables or the OS credential store — never hardcoded, never committed, never logged.
 - Scoped/least-privilege credentials (API tokens with narrow scopes, IAM roles with SigV4, OAuth2 client credentials) are preferred over account-wide keys wherever the vendor offers them. Each skill's `references/auth.md` documents which options exist and which is recommended.
 - Any script under `scripts/` that accepts a credential must accept it via env var or a credential-store lookup, not as a CLI argument (CLI args land in shell history and process lists).
+- An agent never prints its environment or a credential to check it: whatever reaches its context is written to the session transcript on disk and sent to the model provider. crew's `guards.envGuard` (off by default; start with `report`) refuses the commands that would (`env`, `printenv`, `set`, `/proc/*/environ`, `Get-ChildItem env:`, `echo "$SOME_TOKEN"` and their wrapped forms), naming a label and never a value. It is a denylist over the command text, so it is a backstop: keeping credentials out of an agent's environment is the stronger control. See [`plugin/crew/README.md`](plugin/crew/README.md), "Environment guard".
 
 ## Install-script trust boundary
 

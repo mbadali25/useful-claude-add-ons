@@ -199,14 +199,16 @@ anything itself: a write after review would stale the receipt.
 
 Source: `plugin/crew/hooks/scripts/scope_guard.py`,
 `plugin/crew/hooks/scripts/completion_audit.py`,
-`plugin/crew/hooks/scripts/cloud_guard.py` and
+`plugin/crew/hooks/scripts/cloud_guard.py`,
+`plugin/crew/hooks/scripts/env_guard.py` and
 `plugin/crew/hooks/scripts/promote-gate.sh`.
 
 What is on by default, and what is not:
 
 - **Off until you arm it:** the scope guard (`scope.mode` is `off` unless
-  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`) and
-  the role-write guard (`guards.roleWrites: off`).
+  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`),
+  the environment guard (`guards.envGuard: off`) and the role-write guard
+  (`guards.roleWrites: off`).
 - **`block` by default:** the six policy guards (`guards.terraformApply`,
   `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`,
   `sqlDestructive`) and the two production guards (`prodDatabase`,
@@ -236,6 +238,16 @@ production database or host. Each rule has its own `guards.*` setting. Set
 command hidden in an interpreter (a Python script that calls the cloud SDK),
 a variable or an encoded string. The credentials boundary that would close
 that is T-0044.
+
+**The environment guard** (`guards.envGuard`, default `off`; L-0772) refuses a
+Bash or PowerShell command whose own text prints the whole process environment
+(`env`, `printenv`, bare `set`, `export -p`, `cat /proc/self/environ`,
+`Get-ChildItem env:`) or a credential-named variable (`echo "$GITHUB_TOKEN"`,
+`$env:API_KEY`) into the agent's context, where it would land in the
+transcript. A command it cannot read is refused as could-not-tell. Set
+`report` first. *What it cannot see:* a script or program the command runs, an
+alias defined outside the command, or a renamed binary; keeping credentials out
+of the agent's environment is the stronger control (L-0776).
 
 **The promote gate** runs on a deploy command declared in
 `.crew/verify.json`. Before the deploy it checks that the upstream environment
