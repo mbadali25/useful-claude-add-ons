@@ -7,6 +7,7 @@
 #   ./deploy.sh uninstall --yes [--purge] [--dry-run]
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../vpn/_common.sh
 source "$here/../vpn/_common.sh"
 if ! py="$(vpn_python)"; then

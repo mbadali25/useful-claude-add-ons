@@ -34,7 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PLUGIN = HERE.parent
 sys.path.insert(0, str(PLUGIN / "vpn"))
-import tsadmin  # noqa: E402  pylint: disable=wrong-import-position
+import tsadmin  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
@@ -265,7 +265,8 @@ def step_service(r: Run) -> None:
         unit = SYSTEMD_DIR / f"{UNIT}.service"
         want = unit_text(str(python))
         current = unit.read_text(encoding="utf-8") if unit.is_file() else None
-        enabled = state != "absent" and run([tool("systemctl"), "is-enabled", UNIT], timeout=30).stdout.strip() == "enabled"
+        enabled = (state != "absent"
+                   and run([tool("systemctl"), "is-enabled", UNIT], timeout=30).stdout.strip() == "enabled")
         if current == want and enabled and state == "running" and not r.config_changed:
             r.already(f"{UNIT}.service installed, enabled and running")
             return
@@ -337,7 +338,8 @@ def rich_rule(subnet: str, port: int) -> str:
 
 def firewall_present(kind: str, subnet: str, port: int) -> bool:
     if kind == "netsh":
-        return run([tool("netsh"), "advfirewall", "firewall", "show", "rule", f"name={RULE}"], timeout=30).returncode == 0
+        show = [tool("netsh"), "advfirewall", "firewall", "show", "rule", f"name={RULE}"]
+        return run(show, timeout=30).returncode == 0
     if kind == "ufw":
         res = run(privileged("ufw") + ["status"], timeout=30)
         return any(str(port) in line and subnet in line for line in res.stdout.splitlines())
@@ -543,18 +545,19 @@ def cmd_peer(args) -> int:
     if not HOSTNAME_RE.match(args.bridge):
         raise Failure(f"--bridge '{args.bridge}' is not an IP address or host name", EXIT_USAGE)
     token = read_peer_token(args)
+    on_tailnet = backend_state() == "Running"
+    key_file = args.auth_key_file or os.environ.get("TS_AUTHKEY_FILE")
+    if not on_tailnet and not key_file and not os.environ.get("TS_AUTHKEY", "").strip():
+        raise Failure("not on the tailnet and no auth key: pass --auth-key-file or set TS_AUTHKEY")
     r = Run(args.dry_run, total=5)
     out(f"=== AI-Connect deploy: peer '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
     step_deps(r)
     step_claude(r)
 
     r.step("VPN (Tailscale)")
-    if backend_state() == "Running":
+    if on_tailnet:
         r.already("this machine is on the tailnet")
     else:
-        key_file = args.auth_key_file or os.environ.get("TS_AUTHKEY_FILE")
-        if not key_file and not os.environ.get("TS_AUTHKEY", "").strip():
-            raise Failure("not on the tailnet and no auth key: pass --auth-key-file or set TS_AUTHKEY")
         argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", args.name]
         if args.auth_key_file:
             argv += ["--auth-key-file", args.auth_key_file]
@@ -607,11 +610,13 @@ def cmd_status(args) -> int:
     try:
         port = (facts or {}).get("port") or DEFAULT_PORT
         present = kind is not None and firewall_present(kind, args.vpn_subnet, port)
-        out(f"  firewall: {(f'rule present for {args.vpn_subnet} on port {port}' if present else 'no rule') if kind else 'no ufw/firewalld'}")
+        found = f"rule present for {args.vpn_subnet} on port {port}" if present else "no rule"
+        out(f"  firewall: {found if kind else 'no ufw/firewalld'}")
     except Failure as err:
         out(f"  firewall: unknown ({err})")
     claude = claude_bin()
-    out(f"  claude plugin: {('installed' if plugin_installed(claude) else 'not installed') if claude else 'claude not found'}")
+    plugin = ("installed" if plugin_installed(claude) else "not installed") if claude else "claude not found"
+    out(f"  claude plugin: {plugin}")
     if facts and facts.get("exists"):
         result = config_tool("verify")
         out(f"  bridge: {result.get('result')}{' - ' + result['detail'] if result.get('detail') else ''}")

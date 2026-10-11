@@ -25,8 +25,8 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import installer  # noqa: E402  pylint: disable=wrong-import-position
-from config_loader import CONFIG_PATH  # noqa: E402  pylint: disable=wrong-import-position
+import installer  # noqa: E402  pylint: disable=wrong-import-position,import-error
+from config_loader import CONFIG_PATH  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 
 def emit(payload: dict) -> None:
@@ -70,7 +70,8 @@ def cmd_bridge(args) -> dict:
     url = installer._bridge_url(args.host, args.port)  # pylint: disable=protected-access
     if not CONFIG_PATH.exists():
         # installer.write_config itself: tokens, own peer, deny rules. Only the prompts are answered here.
-        installer._ask = answers({"Peer name": args.name, "listen address": args.host})  # pylint: disable=protected-access
+        ask = answers({"Peer name": args.name, "listen address": args.host})
+        installer._ask = ask  # pylint: disable=protected-access
         quietly(installer.write_config, server=True)
         action = "written"
     else:
@@ -95,13 +96,13 @@ def cmd_client(args) -> dict:
         raise SystemExit("AI_CONNECT_PEER_TOKEN is not set")
     installer._reject_placeholder(token, "Peer token")  # pylint: disable=protected-access
     if not CONFIG_PATH.exists():
-        installer._ask = answers({"Peer name": args.name, "IP or hostname": args.bridge,  # pylint: disable=protected-access
-                                  "peer token": token})
+        ask = answers({"Peer name": args.name, "IP or hostname": args.bridge, "peer token": token})
+        installer._ask = ask  # pylint: disable=protected-access
         quietly(installer.write_config, server=False)
     installer.check_config()
     config = load()
-    config["client"].update(name=args.name, token=token,
-                            bridge_url=installer._bridge_url(args.bridge, args.port))  # pylint: disable=protected-access
+    url = installer._bridge_url(args.bridge, args.port)  # pylint: disable=protected-access
+    config["client"].update(name=args.name, token=token, bridge_url=url)
     installer._save_config(config)  # pylint: disable=protected-access
     return {"action": "written"}
 

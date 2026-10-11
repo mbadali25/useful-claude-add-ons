@@ -89,7 +89,8 @@ def systemctl(args, state):
 def ufw(args, state):
     rules = state.setdefault("ufw", [])
     if args[0] == "status":
-        print("Status: active\n\nTo                         Action      From\n--                         ------      ----")
+        print("Status: active\n\nTo                         Action      From")
+        print("--                         ------      ----")
         print("\n".join(rules))
         return 0
     delete = args[0] == "delete"
