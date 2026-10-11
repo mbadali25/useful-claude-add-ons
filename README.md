@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.27**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
-- **ai-connect 0.1.4**: Codex QA fixes. `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it writes private from the first byte.
+- **crew 1.2.33**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **crew 1.2.30**: The Stop gate says when it checked nothing, and names CI for rules too big for its budget. `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED, deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
