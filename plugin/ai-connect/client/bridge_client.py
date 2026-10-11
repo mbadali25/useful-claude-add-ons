@@ -175,6 +175,14 @@ class BridgeClient:
         self._message_queue.clear()
         return messages
 
+    def peek_messages(self) -> list[dict]:
+        """The received messages, left queued until drop_messages."""
+        return self._message_queue.copy()
+
+    def drop_messages(self, count: int) -> None:
+        """Clear the first count messages, once they were shown."""
+        del self._message_queue[:count]
+
     async def _request(self, data: dict, response_type: str) -> dict:
         """Send a request and wait for the Bridge's answer of response_type."""
         future: asyncio.Future = asyncio.get_running_loop().create_future()

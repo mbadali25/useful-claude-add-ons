@@ -3,13 +3,15 @@
 
 import logging
 import os
+import stat
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from bridge_client import get_client  # pylint: disable=import-error
 from bridge_time import parse_bridge_timestamp
 from peer_name import record_seen, session_pid
-from untrusted import frame_message, sanitize  # pylint: disable=import-error
+from untrusted import frame_lines, frame_message, sanitize  # pylint: disable=import-error
 
 log = logging.getLogger(__name__)
 
@@ -86,9 +88,81 @@ def _shareable_path(file: str) -> Path:
     return real
 
 
+def _handle_path(fd: int) -> Path:
+    """The path an open handle really refers to, every link and junction resolved.
+
+    Asked of the handle, not the name, so a swap after the open cannot change it.
+    """
+    if sys.platform == "win32":
+        import ctypes  # pylint: disable=import-outside-toplevel
+        import msvcrt  # pylint: disable=import-outside-toplevel,import-error
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        final_path = ctypes.WinDLL("kernel32", use_last_error=True).GetFinalPathNameByHandleW
+        final_path.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+        final_path.restype = wintypes.DWORD
+        handle, size = msvcrt.get_osfhandle(fd), 512
+        while True:
+            buf = ctypes.create_unicode_buffer(size)
+            needed = final_path(handle, buf, size, 0)
+            if not needed:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if needed < size:
+                break
+            size = needed + 1
+        text = buf.value
+        if text.startswith("\\\\?\\UNC\\"):
+            text = "\\\\" + text[8:]
+        elif text.startswith("\\\\?\\"):
+            text = text[4:]
+        return Path(text)
+    if os.path.isdir("/proc/self/fd"):
+        return Path(os.readlink(f"/proc/self/fd/{fd}"))
+    if sys.platform == "darwin":
+        import fcntl  # pylint: disable=import-outside-toplevel,import-error
+        raw = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024)
+        return Path(raw.split(b"\0", 1)[0].decode())
+    raise OSError("this platform cannot tell which file an open handle refers to")
+
+
+_OPEN_FLAGS = os.O_RDONLY
+for _flag in ("O_BINARY", "O_NOINHERIT", "O_CLOEXEC", "O_NOFOLLOW"):
+    _OPEN_FLAGS |= getattr(os, _flag, 0)
+
+
+def _read_shareable(file: str) -> str:
+    """The text of file if it may be shared, else FileRefused.
+
+    _shareable_path checks the name; the name can then be swapped for a link
+    (the file or any directory above it) or the file can grow. So the checks
+    that decide are made again on the open handle: a regular file, its final
+    path inside the project, and no more than the cap read from it.
+    """
+    real = _shareable_path(file)
+    root, cap = project_root(), max_file_bytes()
+    try:
+        fd = os.open(real, _OPEN_FLAGS)
+    except OSError as e:
+        raise _refuse(file, f"cannot open ({e.__class__.__name__})") from None
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise _refuse(file, "not a regular file")
+        try:
+            final = _handle_path(fd)
+        except OSError as e:
+            raise _refuse(file, f"cannot verify where it lives ({e.__class__.__name__})") from None
+        if not final.is_relative_to(root):
+            raise _refuse(file, f"outside the project {root} once opened")
+        data = fh.read(cap + 1)
+    if len(data) > cap:
+        raise _refuse(file, f"too large (over {cap} bytes)")
+    # Universal newlines, as read_text gave them
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _read_excerpt(file: str, lines: str | None) -> str:
     """Read a file inside the project, or the line range "start-end" / "line" of it."""
-    text = _shareable_path(file).read_text(encoding="utf-8")
+    text = _read_shareable(file)
     if not lines:
         return text
     start_text, _, end_text = lines.partition("-")
@@ -107,13 +181,28 @@ def _build_context(file: str | None, lines: str | None) -> dict | None:
     return context
 
 
-def _format_messages(messages: list[dict], me: str) -> str:
+def _safe_bridge_time(timestamp: object) -> str:
+    """A Bridge timestamp in local time; one that does not parse is shown escaped."""
+    try:
+        return _format_bridge_time(timestamp)  # type: ignore[arg-type]
+    except (TypeError, ValueError, AttributeError):
+        return sanitize(repr(timestamp), single_line=True)
+
+
+def _message_fields(msg: object) -> tuple[object, object, object, object]:
+    """(sender, content, context, timestamp) of a message, whatever its shape."""
+    if not isinstance(msg, dict):
+        return "?", f"malformed message: {msg!r}", None, None
+    return msg.get("from", "?"), msg.get("content", ""), msg.get("context"), msg.get("timestamp")
+
+
+def _format_messages(messages: list, me: str) -> str:
     """Render received messages, each framed as untrusted peer data."""
     rendered = []
     for msg in messages:
-        sender = sanitize(msg["from"], single_line=True)
-        rendered.append(f"📥 [{_format_bridge_time(msg['timestamp'])}] [{sender} → {me}]:")
-        rendered.append(frame_message(msg["from"], msg["content"], msg.get("context")))
+        sender, content, context, timestamp = _message_fields(msg)
+        rendered.append(f"📥 [{_safe_bridge_time(timestamp)}] [{sanitize(sender, single_line=True)} → {me}]:")
+        rendered.append(frame_message(sender, content, context))
     return "\n".join(rendered)
 
 
@@ -122,18 +211,24 @@ async def peer_list() -> str:
     if not client or not client.connected:
         return NOT_CONNECTED
     peers = await client.list_peers()
-    lines = ["Online peers:"]
-    for peer in peers:
-        # Name, state detail and status are set by the peer: one line each, escaped
-        line = f"  - {sanitize(peer['name'], True)} [{sanitize(peer['ip'], True)}]"
-        if peer["state"]:
-            line += f" {sanitize(peer['state'], True)} since {_format_bridge_time(peer['state_since'])}"
-            if peer["state_detail"]:
-                line += f" ({sanitize(peer['state_detail'], True)})"
-        if peer["status"]:
-            line += f" - {sanitize(peer['status'], True)}"
-        lines.append(line)
-    return "\n".join(lines)
+    if not peers:
+        return "Online peers: none"
+    # Name, state, state detail and status are set by the peers: every line
+    # goes inside one untrusted block, escaped by frame_lines
+    return "Online peers:\n" + frame_lines("the Bridge's peer list", [_peer_line(peer) for peer in peers])
+
+
+def _peer_line(peer: object) -> str:
+    if not isinstance(peer, dict):
+        return f"- malformed peer entry: {peer!r}"
+    line = f"- {peer.get('name', '?')} [{peer.get('ip', '?')}]"
+    if peer.get("state"):
+        line += f" {peer['state']} since {_safe_bridge_time(peer.get('state_since'))}"
+        if peer.get("state_detail"):
+            line += f" ({peer['state_detail']})"
+    if peer.get("status"):
+        line += f" - {peer['status']}"
+    return line
 
 
 async def peer_set_state(state: str, detail: str) -> str:
@@ -183,14 +278,26 @@ async def peer_read() -> str:
         return "⏸️ This session is on standby: another one holds its name for now. Try again in a few seconds."
     if not client or not client.connected:
         return NOT_CONNECTED
-    messages = client.pop_messages()
+    # Read without clearing: a message that fails to render stays queued
+    messages = client.peek_messages()
     if not messages:
         return "📭 No new messages."
+    rendered = _format_messages(messages, client.peer_name)
     # The watcher started at the next turn end reports only what came later
-    from_bridge = [m["timestamp"] for m in messages if "id" in m]
+    from_bridge = [m["timestamp"] for m in messages
+                   if isinstance(m, dict) and "id" in m and _is_bridge_time(m.get("timestamp"))]
     if from_bridge:
         record_seen(session_pid(), max(from_bridge))
-    return _format_messages(messages, client.peer_name)
+    client.drop_messages(len(messages))
+    return rendered
+
+
+def _is_bridge_time(timestamp: object) -> bool:
+    try:
+        parse_bridge_timestamp(timestamp)  # type: ignore[arg-type]
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
 
 
 async def peer_history(peer: str, limit: int) -> str:
@@ -202,9 +309,10 @@ async def peer_history(peer: str, limit: int) -> str:
         return f"No conversation with '{peer}'."
     lines = [f"Conversation with {sanitize(peer, True)}:"]
     for msg in messages:
-        direction = "📤" if msg["from"] == client.peer_name else "📥"
-        lines.append(f"{direction} [{_format_bridge_time(msg['timestamp'])}] {sanitize(msg['from'], True)}:")
-        lines.append(frame_message(msg["from"], msg["content"], msg.get("context")))
+        sender, content, context, timestamp = _message_fields(msg)
+        direction = "📤" if sender == client.peer_name else "📥"
+        lines.append(f"{direction} [{_safe_bridge_time(timestamp)}] {sanitize(sender, True)}:")
+        lines.append(frame_message(sender, content, context))
     return "\n".join(lines)
 
 
