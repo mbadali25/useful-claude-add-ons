@@ -1471,8 +1471,49 @@ def _h_alias(words, cmd, depth, ctx):
     return True
 
 
+_STDIN_FILES = frozenset(("/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"))
+
+
+def _script_is_a_stream(word):
+    """The script operand is not a file this reader could ever be shown:
+    a process substitution (`bash <(echo env)`) or stdin by name."""
+    return word.has("sub") or word.literal in _STDIN_FILES
+
+
 def _h_source(words, cmd, depth, ctx):
-    del words, cmd, depth, ctx
+    del cmd, depth
+    if len(words) > 1 and _script_is_a_stream(words[1]):
+        ctx.add("could-not-tell:stdin-code")
+    return True
+
+
+def _h_trap(words, cmd, depth, ctx):
+    """`trap CODE SIGNAL...`: the code runs later, in this shell."""
+    del cmd
+    i = _skip_options(words, ())
+    if i >= len(words) - 1:
+        return True
+    # Variables are written back as `${NAME}` (`trap "rm -f $tmp" EXIT`):
+    # the shell that runs the trap expands them, as ssh's remote one does.
+    code = words[i].dollar
+    if code not in ("", "-") and _deeper(depth, ctx):
+        _bash_text(code, depth + 1, ctx)
+    return True
+
+
+def _h_su(words, cmd, depth, ctx):
+    """`su [user] -c CODE`: the code runs in the target user's shell."""
+    del cmd
+    for i, word in enumerate(words[1:], start=1):
+        if word.literal in ("-c", "--command"):
+            code = words[i + 1].literal if i + 1 < len(words) else None
+            if code is None:
+                ctx.add("could-not-tell:code")
+            elif _deeper(depth, ctx):
+                _bash_text(code, depth + 1, ctx)
+        elif (word.literal or "").startswith("--command="):
+            if _deeper(depth, ctx):
+                _bash_text(word.literal.split("=", 1)[1], depth + 1, ctx)
     return True
 
 
@@ -1515,6 +1556,8 @@ def _shell(words, cmd, depth, ctx):
         break
     if code_mode:
         if operand is None or operand >= len(words):
+            # `xargs bash -c`: the code is appended by whoever runs this.
+            ctx.add("could-not-tell:code")
             return True
         code = words[operand].literal
         if code is None:
@@ -1534,6 +1577,15 @@ def _shell(words, cmd, depth, ctx):
             # handed runs whatever its stdin carries: `echo env | bash`,
             # `bash < f`, and the same shell nested in `bash -c bash`, a
             # `( )` group or a loop, where no pipe is in sight.
+            ctx.add("could-not-tell:stdin-code")
+    elif operand < len(words) and _script_is_a_stream(words[operand]):
+        bodies = _stdin_bodies(cmd) if not words[operand].has("sub") else []
+        for body in bodies:
+            if body is None:
+                ctx.add("could-not-tell:code")
+            elif _deeper(depth, ctx):
+                _bash_text(body, depth + 1, ctx)
+        if not bodies:
             ctx.add("could-not-tell:stdin-code")
     return True
 
@@ -1632,6 +1684,9 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
                 # `echo 'print(os.environ)' | python3`, `python3 < f`: the
                 # code is whatever stdin carries, wherever the pipe is.
                 ctx.add("could-not-tell:stdin-code")
+        elif not program_operand and operand is not None \
+                and _script_is_a_stream(words[operand]):
+            ctx.add("could-not-tell:stdin-code")
         for code in codes:
             if code is None:
                 ctx.add("could-not-tell:code")
@@ -1879,6 +1934,8 @@ _HANDLERS = {
     "printf": _h_printer,
     "print": _h_printer,
     "eval": _h_eval,
+    "trap": _h_trap,
+    "su": _h_su,
     "alias": _h_alias,
     "source": _h_source,
     ".": _h_source,

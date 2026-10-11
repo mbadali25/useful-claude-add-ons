@@ -84,6 +84,9 @@ BLOCK_BASH = [
     # review round 2: a credential handed on under another name
     "env -i T=\"$FAKE_TOKEN\" printenv T", "env T=\"$FAKE_TOKEN\" printenv T",
     "T=$FAKE_GITHUB_TOKEN; echo $T",
+    # pre-round-3 self-review: code that runs later or as another user
+    "trap env EXIT", "su -c env", "su - bob -c 'printenv'",
+    "bash /dev/stdin <<< env",
     "T=\"$FAKE_TOKEN\" python3 -c 'import os; print(os.environ[\"T\"])'",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
@@ -181,6 +184,8 @@ ALLOW_BASH = [
     "powershell -NoProfile -Command Get-Date", "\"$PY\" -W ignore script.py",
     # review round 2: a name assigned from a non-credential, or reassigned
     "T=$HOME; echo $T", "T=$FAKE_TOKEN; T=x; echo $T", "env T=1 printenv T",
+    "trap \"rm -f $tmp\" EXIT", "trap - EXIT", "trap 'echo done' INT TERM",
+    "su -c ls bob", "source ./x.sh", "bash script.sh",
 ]
 
 ALLOW_PS = [
@@ -210,6 +215,9 @@ CNT_BASH = [
     # review round 2: the same shell with no pipe in sight of it
     "echo env | bash -c bash", "echo env | ( bash )", "echo env | { :; bash; }",
     "bash < f.sh", "python3 < f.py", "echo env | sudo bash",
+    # pre-round-3 self-review: a script that is a stream, a `-c` with no code
+    "bash <(echo env)", "source <(echo env)", ". <(echo env)",
+    "python3 /dev/stdin", "echo env | xargs bash -c",
     "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
     "python3 -" + "c" * 4000 + " 0",
 ]
@@ -779,6 +787,7 @@ _FALLBACK_LAYERS = [
      '{"guards": {"EnvGuard": "off", "envGuard": "block"}}', True),
     ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
     ("malformed-object-without-the-key", '{"guards":{bad}}', True),
+    ("value-with-a-comma", '{"guards": {"envGuard": "off,block"}}', True),
     ("bare-word-value", '{"x": nope, "guards": {"envGuard": "off"}}', True),
     ("trailing-comma", '{"guards": {"envGuard": "off"},}', True),
     ("comment", '{"guards": {"envGuard": "off"} /* x */}', True),

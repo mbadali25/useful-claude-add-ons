@@ -121,7 +121,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Review round 2.** A name assigned from a credential is a credential for the rest of the command
   (`env T="$TOKEN" printenv T`, `T=$TOKEN; echo $T`). `env-guard.sh` checks the layer is one strict
   JSON object with awk, so `{"guards":{bad}}` arms it; all three fallbacks and `plugin-hooks:` treat
-  a path they were refused a look at as could-not-tell, not absent.
+  a path they were refused a look at as could-not-tell, not absent. `trap CODE` and `su -c CODE` are
+  read; a script that is a stream (`bash <(...)`, `source /dev/stdin`) and a `-c` with no code are
+  could-not-tell.
 - **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
 - **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
   could-not-verify, never a zero or a crash.

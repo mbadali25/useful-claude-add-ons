@@ -154,12 +154,14 @@ _env_guard_armed() {
     printf '%s' "$flat" \
       | grep -Eq '"guards"[[:space:]]*:[[:space:]]*[^{[:space:]]' 2>/dev/null \
       && return 0
+    # The value is the whole JSON string (`"off,block"` is not `off`), or
+    # the bare token up to the next `,` or `}`; only exactly "off" is off.
     values=$(printf '%s' "$flat" \
-             | grep -o '"envGuard"[[:space:]]*:[[:space:]]*[^,}]*' 2>/dev/null \
-             | sed -E 's/^"envGuard"[[:space:]]*:[[:space:]]*//' | tr -d '"\t ')
+             | grep -oE '"envGuard"[[:space:]]*:[[:space:]]*("[^"]*"|[^,}]*)' 2>/dev/null \
+             | sed -E 's/^"envGuard"[[:space:]]*:[[:space:]]*//; s/[[:space:]]+$//')
     printf '%s' "$flat" | grep -q '"envGuard"' 2>/dev/null || continue
     printf '%s\n' "$values" | while IFS= read -r value; do
-      [ "$value" = "off" ] || exit 1
+      [ "$value" = '"off"' ] || exit 1
     done || return 0
   done
   return 1
