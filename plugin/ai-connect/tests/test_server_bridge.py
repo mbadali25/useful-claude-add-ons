@@ -291,7 +291,10 @@ def test_unread_over_a_mebibyte_arrives_in_frames_the_client_accepts(tmp_path):
                 await register(alice, h.ALICE)
                 for i in range(20):
                     await send(alice, type="message", to=h.BOB, content=f"{i:02d}" + "x" * 60_000)
-                assert await h.nothing_arrives(alice)
+                # A connection's frames are handled in order: the pong means all 20 are stored,
+                # so none can arrive live as a "message" once Bob registers
+                await send(alice, type="ping")
+                await recv_type(alice, "pong", timeout=10)
             async with connect(server, h.BOB_TOKEN) as bob:
                 await register(bob, h.BOB)
                 return await collect_unread(bob, 20)
