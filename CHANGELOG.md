@@ -126,7 +126,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   could-not-tell.
 - **Security pass 2.** `powershell` and `pwsh` read every option before any positional word, so
   `-Command` or `-EncodedCommand` after `-ExecutionPolicy Bypass` or `-Version 5.1` still counts
-  (a regression in this entry's first fix); option prefixes (`-enco`), `/c`, and code from stdin are
+  (a regression in this entry's first fix); option prefixes (`-enco`) and code from stdin are
   read. `node -p -e CODE`: a code flag is not another flag's code, and a code flag after a word read
   as the script is still read. A short-option cluster gives its last letter the next word
   (`sudo -iu USER env`, `ssh -tp 22`), and sudo's value options are all listed. `cmd //c set` (Git

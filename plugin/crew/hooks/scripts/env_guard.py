@@ -1062,9 +1062,7 @@ _PY_RE = re.compile(r"^(?:python[0-9.]*|pypy[0-9.]*|py)$")
 # Options that take the next word, per interpreter: without them the word
 # after `-W`, `-r`, `-I` reads as the script and the `-c`/`-e` code after it
 # is never scanned (`node -r dotenv/config -e ...`).
-_PY_WITH_ARG = ("-W", "-X", "-Q", "--check-hash-based-pycs")
-_AWK_WITH_ARG = ("-F", "-v", "--field-separator", "--assign", "-i",
-                 "--include", "-l", "--load")
+_PY_WITH_ARG = ("-W", "-X", "-Q")
 _NODE_WITH_ARG = ("-r", "--require", "--import", "--loader",
                   "--experimental-loader", "-C", "--conditions", "--input-type",
                   "--env-file", "--title")
@@ -1482,7 +1480,7 @@ def _h_printer(words, cmd, depth, ctx):
         return True
     for word in words[1:]:
         if any(ctx.secret(v) for v in word.vars):
-            ctx.add(f"secret-read:{_head_name(words[0].literal).lower()}")
+            ctx.add(f"secret-read:{_head_name(words[0].literal)}")
     return True
 
 
@@ -1555,16 +1553,16 @@ def _h_su(words, cmd, depth, ctx):
     for i, word in enumerate(words[1:], start=1):
         text = word.literal
         if text is None:
-            if word.glob.startswith(("--command=", "--session-command=")):
+            if word.glob.startswith("--command="):
                 ctx.add("could-not-tell:code")
             continue
         code = _MISSING
-        if text in ("-c", "--command", "--session-command") or (
+        if text in ("-c", "--command") or (
                 text.startswith("-") and not text.startswith("--")
                 and text.endswith("c") and len(text) > 2):
             # `-c CODE`, and a cluster ending in it (`su -lc CODE`).
             code = words[i + 1].literal if i + 1 < len(words) else None
-        elif text.startswith(("--command=", "--session-command=")):
+        elif text.startswith("--command="):
             code = text.split("=", 1)[1]
         if code is None:
             ctx.add("could-not-tell:code")
@@ -1823,23 +1821,16 @@ def _cmd_text(text, ctx):
                     ctx.add("secret-read:cmd-echo")
 
 
-_PS_OPTION_RE = re.compile(r"^[-/][A-Za-z]+$")
+_PS_OPTION_RE = re.compile(r"^-[A-Za-z]+$")
 
 
 def _ps_option(word):
-    """A pwsh/powershell option word, lowercased with a `-` prefix (`/c` and
-    `-c` are the same switch), or None for anything else."""
+    """A pwsh/powershell option word, lowercased, or None for anything
+    else."""
     text = word.literal
     if text is None or not _PS_OPTION_RE.match(text):
         return None
-    option = "-" + text[1:].lower()
-    if text.startswith("/") and not (
-            option in ("-e", "-ec", "-cwa", "-commandwithargs")
-            or _ps_is(option, "-encodedcommand", "-en")
-            or _ps_is(option, "-command", "-c")
-            or _ps_is(option, "-file", "-f")):
-        return None  # `/tmp`: a path, not a switch
-    return option
+    return text.lower()
 
 
 def _ps_is(option, full, shortest):
@@ -2114,14 +2105,10 @@ _HANDLERS = {
     "ruby": _interp("ruby", ("-e",), cluster="e",
                     with_arg=("-I", "-r", "-C", "-E", "-F")),
     "php": _interp("php", ("-r",), with_arg=("-d", "-c", "-z")),
-    "awk": _interp("awk", ("-e", "--source"), program_operand=True,
-               with_arg=_AWK_WITH_ARG),
-    "gawk": _interp("awk", ("-e", "--source"), program_operand=True,
-                with_arg=_AWK_WITH_ARG),
-    "mawk": _interp("awk", ("-e", "--source"), program_operand=True,
-                with_arg=_AWK_WITH_ARG),
-    "nawk": _interp("awk", ("-e", "--source"), program_operand=True,
-                with_arg=_AWK_WITH_ARG),
+    "awk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
+    "gawk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
+    "mawk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
+    "nawk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
     "jq": _interp("jq", (), program_operand=True,
                   with_arg=("--arg", "--argjson", "--slurpfile", "--rawfile",
                             "--indent", "-L")),

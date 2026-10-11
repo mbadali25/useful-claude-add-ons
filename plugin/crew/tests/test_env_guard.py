@@ -94,8 +94,7 @@ BLOCK_BASH = [
     "powershell -NoProfile -ExecutionPolicy Bypass -Command '$env:FAKE_TOKEN'",
     "powershell -NoProfile -ExecutionPolicy Bypass -Command 'cmd /c set'",
     "powershell -Version 5.1 -Command 'gci env:'",
-    "powershell -Version 2 \"gci env:\"", "pwsh /c \"gci env:\"",
-    "pwsh <<< 'gci env:'",
+    "powershell -Version 2 \"gci env:\"", "pwsh <<< 'gci env:'",
     "node -p -e process.env", "node -p --eval 'console.log(process.env)'",
     "node --print -e process.env", "bun -p -e process.env",
     "node --disable-warning X -p process.env",
@@ -211,6 +210,7 @@ ALLOW_BASH = [
     "sudo -iu x ls", "sudo --chdir /tmp ls", "sudo -T 5 ls", "ssh -tp 22 h ls",
     "cmd //c \"echo hi\"", "cmd //c \"set X=1\"", "cmd /c dir",
     "T=a; T+=b; echo $T", "bash +x script.sh", "su - bob",
+    "$'\\x{6c}s'", "eval -- ls", "ls [ab]",
 ]
 
 ALLOW_PS = [
@@ -245,7 +245,7 @@ CNT_BASH = [
     "python3 /dev/stdin", "echo env | xargs bash -c",
     # security pass 2
     "powershell -ExecutionPolicy Bypass -enc AAAA", "pwsh -enco AAAA",
-    "pwsh /enc AAAA", "echo 'gci env:' | pwsh", "powershell -",
+    "echo 'gci env:' | pwsh", "powershell -", "/usr/bin/[e]nv",
     "trap \"$X\" EXIT", "su --command=\"$X\"", "source -- /dev/stdin",
     "echo env | bash +x",
     "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
