@@ -198,10 +198,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **88**
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **89**
 leaves, 4 of them the machine-only `unattendedCloud`. `leaf_paths(default_config())`
-yields **148**, so **64** are repo-only.
-For all 148, `filter_global` and `is_global_path` (which `plan_global_write`
+yields **153**, and the union of the two is **157**, so **68** are repo-only.
+(Measured with `leaf_paths` on L-0772's branch, base main c972653a: its
+`guards.envGuard`, in both layers, moves the global count from 88 to 89 and the
+union from 156 to 157. The figures below are older measurements, kept as history.)
+For all of them, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
 on rush/g4-deploy after merging release/1.2.0 (eaeb2f4d), with T-0009's
 `guards.deployWorkflow` (both layers) and repo-only `environments.workflows`;
@@ -771,7 +774,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-88 of 156 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
+89 of 157 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -848,6 +851,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `guards.prodServer` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
 | `guards.roleWrites` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
 | `guards.cloudGuard` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
+| `guards.envGuard` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
 | `environments.prodUnattended` | both, ratchet | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | `false` |
 | `change.requester` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
 | `change.implementor` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
@@ -924,7 +928,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-68 of 156 keys are repo-only (generated; 88 are global-settable, section 10).
+68 of 157 keys are repo-only (generated; 89 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -1679,6 +1683,7 @@ earn its own section: see §18, not the tables immediately below.
 | `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.deployWorkflow` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on); `allow` covers nonProd only |
 | `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
+| `guards.envGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/env-guard.sh`, `.ps1` -> `env_guard.py` (L-0772) |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
@@ -1691,6 +1696,15 @@ earn its own section: see §18, not the tables immediately below.
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
 flavours call exactly that CLI — see "one resolver, two flavours" below.
+
+### `envGuard` — the environment-dump guard's switch (L-0772)
+
+`off` *(default)* judges nothing; `report` writes the refusal it would make to
+`.crew/guard.log` (rule, mode, decision and a fixed label, never the command or
+a value) and refuses nothing; `block` refuses. A malformed value is `block`;
+the narrower layer wins. There are no per-rule keys behind it, and the
+credential-name pattern is fixed in `env_guard.py`. What it refuses and why:
+README "Environment guard".
 
 ### What each value does
 
@@ -1708,7 +1722,7 @@ ratchet.
 | Value | What crew does |
 |---|---|
 | `none` *(default)* | Refuses every command aimed at a declared production target. |
-| `read` | Permits what the guard can **positively classify** as read-only. Everything else — including everything it cannot classify — is refused. |
+| `read` | Permits what the guard can **positively classify** as read-only. Everything else — including everything it cannot classify — is refused. Since L-0772 an environment dump is never read-only: `printenv` left `PROD_READ_COMMANDS`, bare `env` classifies as a write, and any remote command `env_guard.findings` flags (`cat /proc/1/environ`, `ps eww`, `echo $SOME_TOKEN`) is a write (**BREAKING**, by narrowing). |
 | `full` | Permits anything, and appends a row to `.crew/guard.log` for each one. |
 
 **`ask` is not a value here, and its absence is a decision.** The other four
