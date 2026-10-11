@@ -172,7 +172,7 @@ event, per CLAUDE.md's Windows rule), re-derived by parsing the JSON:
 |---|---|---|---|
 | `SessionStart` | 6 | `plugin/crew/hooks/hooks.json:3` | `handoff-read`, `platform-sync`, `crew-context` |
 | `UserPromptSubmit` | 4 | `:11` | `crew-context`, `approval-hook` |
-| `PreToolUse` | 8 | `:17` | `promote-gate` (`Bash`/`PowerShell`), `role-write-guard` (`Write\|Edit`), `cloud-guard` (`Bash\|PowerShell`), `scope-guard` (`Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) |
+| `PreToolUse` | 10 | `:17` | `promote-gate` (`Bash`/`PowerShell`), `role-write-guard` (`Write\|Edit`), `cloud-guard` (`Bash\|PowerShell`), `env-guard` (`Bash\|PowerShell`, L-0772), `scope-guard` (`Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) |
 | `PostToolUse` | 4 | `:35` | `crew-context` (`Read\|Edit\|Write\|MultiEdit`, and again on an `mcp__.*(obsidian\|vault\|basic[-_]memory).*` matcher) |
 | `SubagentStart` | 2 | `:45` | `crew-context` |
 | `PreCompact` | 2 | `:49` | `handoff-write` |
@@ -346,6 +346,7 @@ one ratchet table.** `plugin/crew/hooks/scripts/crew_guards.py`:
 | `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:440`) | `:127` |
 | `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:476`) | `:150` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:189` |
+| `ENV_GUARD_NAMES` | `envGuard` (1) — L-0772 | same vocabulary and functions as `roleWrites` (`guard_tiers` `:518`); switches `env_guard.py` | `:206` |
 
 `ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`) is the
 concatenation of all four — **ten** guard names in total.
@@ -5403,3 +5404,5 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 **Re-anchored `adb3c2a7` -> `926f1277` on 2026-10-10 (L-0753 landing prep).** Per-path check `git diff --name-only adb3c2a7..926f1277`: besides the code maps, rules, diagrams and graph themselves, only the crew version lines (README.md, CHANGELOG.md, marketplace.json, PLUGINS.md, plugin.json; crew 1.2.20) and main's `plugin/crew/tests/test_promote_gate_review.py` (merged from `d8de3dafb`, PR #594) changed. No claim in this map moved.
 
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
+
+**L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse now 10 entries, 36 in all). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.

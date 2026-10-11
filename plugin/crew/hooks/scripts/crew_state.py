@@ -72,6 +72,7 @@ from crew_guards import (
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
     CLOUD_DEFAULTS,  # noqa: F401
     CLOUD_GUARD_NAMES,  # noqa: F401
+    ENV_GUARD_NAMES,  # noqa: F401
     ENVIRONMENTS_DEFAULTS,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
@@ -1649,16 +1650,19 @@ def resolve_role(cfg, kind, role, author=None, available=None,  # pylint: disabl
         return out
 
     # 1. The family guard, BEFORE the pin. See the docstring.
+    # `qa` roles and the dev roles in `REVIEWING_DEV_ROLES` review code; a
+    # writer (`dev.roles.developer`) is never barred by its author.
     guarded = kind == "qa" or (kind == "dev" and role in REVIEWING_DEV_ROLES)
-    if guarded and out["family"] is not None and out["family"] in authors:
-        out["barred"] = True
-        out["barredBy"] = out["family"]
-        out["announce"].append(
-            f"{kind}.{role}: BARRED -- {provider} speaks as the "
-            f"`{out['family']}` family, which wrote this diff, so it may not "
-            "review it"
-        )
-        return out
+    if out["family"] is not None and out["family"] in authors:
+        if guarded:
+            out["barred"] = True
+            out["barredBy"] = out["family"]
+            out["announce"].append(
+                f"{kind}.{role}: BARRED -- {provider} speaks as the "
+                f"`{out['family']}` family, which wrote this diff, so it may "
+                "not review it"
+            )
+            return out
 
     # 2. The pin, and only then the fallback.
     if model and available is not None and not available(provider, model):

@@ -232,10 +232,15 @@ def write_agent_file(directory, tools=READ_ONLY_TOOLS, disallowed=DISALLOWED_TOO
     and Bash."""
     os.makedirs(os.path.join(directory, NO_SKILLS), exist_ok=True)
     path = os.path.join(directory, filename)
+    tools_line = f"tools: [{', '.join(tools)}]\n"
+    if tuple(tools) == READ_ONLY_TOOLS:
+        # The review round's line, kept literal: sabotage_kimi.py anchors on it.
+        tools_line = (
+            "tools: [Read, Grep, Glob]\n")
     text = ("---\n"
             f"name: {name}\n"
             f"description: {description}\n"
-            f"tools: [{', '.join(tools)}]\n"
+            f"{tools_line}"
             f"disallowedTools: [{', '.join(disallowed)}]\n"
             "---\n"
             f"{body}\n")

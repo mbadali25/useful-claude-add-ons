@@ -14,6 +14,7 @@ Three tables, matching the spec's acceptance checks:
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -68,13 +69,26 @@ def _configure(repo, cfg):
     git(repo, "commit", "-qm", "config")
 
 
+def _git_only_path():
+    """The directory `git` resolves from, alone: the fixture repo needs git, and
+    a hardcoded `/usr/bin` holds no git on Windows (WinError 2 in CI). A real
+    `kimi` installed next to git would leak in, so that case is skipped rather
+    than run against the real CLI."""
+    found = shutil.which("git")
+    assert found, "git is not on PATH"
+    directory = os.path.dirname(found)
+    if shutil.which("kimi", path=directory):
+        pytest.skip(f"a real kimi sits next to git in {directory}")
+    return directory
+
+
 @pytest.fixture(name="kimi")
 def _kimi(tmp_path, monkeypatch):
     """Fake kimi on a PATH that cannot reach a real install; returns a setter
     for the FAKE_KIMI_* knobs."""
     fakes = fake_kimi_bin(tmp_path / "bin")
     home = kimi_home(tmp_path / "kimi-home")
-    monkeypatch.setenv("PATH", os.pathsep.join([str(fakes), "/usr/bin", "/bin"]))
+    monkeypatch.setenv("PATH", os.pathsep.join([str(fakes), _git_only_path()]))
     monkeypatch.setenv("KIMI_CODE_HOME", str(home))
     for name in [k for k in os.environ if k.startswith("FAKE_KIMI_")]:
         monkeypatch.delenv(name)
@@ -260,7 +274,7 @@ def test_a_probe_that_is_not_ok_is_unavailable(repo, tmp_path, kimi, capsys, pro
 
 def test_no_kimi_on_path_is_not_installed(repo, tmp_path, kimi, capsys, monkeypatch):
     kimi()
-    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
+    monkeypatch.setenv("PATH", _git_only_path())
 
     code, out = _call(repo, tmp_path, capsys=capsys)
 

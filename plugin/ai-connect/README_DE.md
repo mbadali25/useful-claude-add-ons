@@ -1,0 +1,311 @@
+# AI-Connect
+
+KI-Coding-Assistenten schicken einander Nachrichten — über Rechner, Personen und Konten hinweg. Eine kleine, selbst betriebene Bridge im eigenen Netz; kein Cloud-Dienst und kein gemeinsames Abo nötig.
+
+AI-Connect ist ein MCP-Server: Assistenten schicken einander Nachrichten, teilen Code-Kontext und klären Fragen gemeinsam, wobei sie selbst entscheiden, wann sie sich melden. Es funktioniert mit jedem MCP-fähigen Client (Claude Code, Claude Desktop, Cursor, VS Code, Codex CLI, …). Im Alltag eingesetzt und getestet bisher mit Claude Code; dafür ergänzt [integrations/claude-code/](integrations/claude-code/) einen Nachrichten-Wächter, Zustands-Hooks und Verhaltensregeln.
+
+[English Version](README.md)
+
+> **Hinweis:** AI-Connect funktioniert, ist aber ein pragmatisches Werkzeug mit Grenzen, die sich aus der Arbeitsweise heutiger Assistenten ergeben — siehe [Einschränkungen](#einschränkungen).
+
+## Features
+
+- **Nachrichten zwischen Assistenten** über Rechnergrenzen, an einen Peer oder an alle (`*`)
+- **Jedes Konto, jede Person**: Peers müssen nur die Bridge erreichen — eigene Sitzungen, die Sitzung eines Kollegen mit seinem eigenen Abo oder jeder andere MCP-Client
+- **Selbst betrieben**: Die Bridge läuft im eigenen LAN oder VPN; Nachrichten laufen über keinen fremden Dienst
+- **Code-Kontext**: eine Datei oder einige ihrer Zeilen reisen mit einer Frage mit und sind auf dem anderen Rechner lesbar
+- **Offline-Zustellung**: Direktnachrichten warten in der Bridge, bis der Empfänger online ist
+- **Ein Peer pro Claude-Code-Sitzung**, benannt als `Host:Projekt` (z.B. `Mini:AIfred-Intelligence`)
+- **Zwei Zugänge**: ein STDIO-Client pro Sitzung (Claude Code) oder ein gemeinsamer HTTP/SSE-Server für jeden anderen MCP-Client
+- **Nachrichten-Wächter**, der eine Claude-Code-Sitzung bei einer neuen Nachricht weckt — startet von selbst über die Hooks des Plugins, von der Bridge angestoßen, ohne Polling, ohne Tokens beim Warten
+- **Status und Zustand**: Jede Sitzung zeigt eine Statuszeile und ob sie arbeitet, fertig ist oder auf eine Freigabe wartet; „sag mir, wenn die Sitzung fertig ist“ funktioniert über Rechnergrenzen
+- **Installer für Linux und Windows**, Client und Server; Downloads auf der Seite [Releases](https://github.com/Peuqui/AI-Connect/releases)
+- **Handshake-Protokoll** (`[LGTM]` / `[CONTINUE]`), damit beide Seiten wissen, wann eine Diskussion abgeschlossen ist
+- **Mitlesen**: Mit einem Beobachter-Token den ganzen Verkehr verfolgen, live und rückwirkend, nach Gesprächen geordnet (`observer_client`, mit Terminalprogramm)
+
+## Warum es das gibt
+
+Multi-Agent-Frameworks legen ihre Agenten im Code fest, Orchestrierungswerkzeuge verteilen Aufgaben von einer zentralen Steuerung aus. AI-Connect macht beides nicht: Es verbindet ganz normale interaktive Sitzungen, jede mit ihrer eigenen Aufgabe auf ihrem eigenen Rechner, und lässt sie einander direkt erreichen, wenn sie es brauchen.
+
+### Anwendungsfälle
+
+- **Code-Review**: Eine Sitzung implementiert, eine andere prüft kritisch
+- **Festgefahren**: eine andere Sitzung um einen frischen Blick bitten
+- **Client-Server-Aufbauten**: Die Sitzung auf dem Server und die auf dem Client stimmen Configs, Ports und Versionen ab, ohne Kopieren zwischen Fenstern
+- **Geteilte Ressourcen**: Sitzungen in verschiedenen Projekten klären, wer gerade eine GPU, einen Testrechner oder ein Deployment belegt
+- **Zusammenarbeit mit anderen**: Die eigene Sitzung und die eines Kollegen stimmen eine Schnittstelle ab, jede mit ihrem eigenen Konto
+
+## AI-Connect und Claude Codes eingebaute Kommunikation
+
+Seit v2.1.224 kann Claude Code selbst Nachrichten an die eigenen anderen Sitzungen schicken (`ListAgents` / `SendMessage`, siehe [Doku](https://code.claude.com/docs/en/cross-session-messaging)). Laufen alle Sitzungen unter einem claude.ai-Konto, ist das die einfachste Wahl; auf einem Rechner braucht es überhaupt keine Einrichtung. AI-Connect deckt ab, was es nicht kann:
+
+| | Claude Code eingebaut | AI-Connect |
+|---|---|---|
+| Wer kann reden | Sitzungen eines claude.ai-Kontos | Alle, die die Bridge erreichen: andere Personen, andere Konten und Abos, andere MCP-Clients |
+| Über Rechnergrenzen | Per Remote Control über Anthropics Server; braucht eine claude.ai-Anmeldung (nicht mit API-Key, Bedrock, Vertex oder Foundry) | Über die eigene Bridge im LAN oder VPN |
+| Verlauf | Keiner zum späteren Nachlesen | `peer_history`, in SQLite auf der Bridge |
+| Empfänger offline | Wartet nur, solange die Remote-Control-Verbindung eines Rechners unterbrochen ist | Auf der Bridge gespeichert, zugestellt, sobald der Peer wieder da ist |
+| Empfänger | Eine Sitzung pro Nachricht | Ein Peer oder alle (`*`) |
+| Inhalt | Reiner Text | Text plus Dateiausschnitte |
+| Wecken einer ruhenden Sitzung | Eingebaut | Über den [Wächter](#auf-nachrichten-warten) |
+| Einrichtung | Keine | Bridge plus MCP-Client |
+
+Beides lässt sich parallel nutzen. (Stand: Claude Code 2.1.289, Oktober 2026.)
+
+## Funktionsweise
+
+```
+                 ┌──────────────────────────────┐
+                 │  Bridge-Rechner (24/7)       │
+                 │  Bridge Server, Port 9999    │
+                 │  leitet weiter + speichert   │
+                 └──────▲───────────────▲───────┘
+                        │ WebSocket     │ WebSocket
+          ┌─────────────┴──────┐  ┌─────┴──────────────────┐
+          │  Rechner A         │  │  Rechner B             │
+          │                    │  │                        │
+          │  Claude-Code-      │  │  VS Code / Cursor / …  │
+          │  Sitzung ─ STDIO-  │  │      │ HTTP/SSE        │
+          │  Client je Sitzung │  │  MCP-Server, Port 9998 │
+          │  (client.name)     │  │  (client.name)         │
+          └────────────────────┘  └────────────────────────┘
+```
+
+- **Bridge Server** läuft auf einem Rechner und leitet Nachrichten zwischen allen Peers weiter. Er hält den Verlauf in SQLite und bewahrt Nachrichten für Peers auf, die offline sind.
+- **STDIO-Client** (`client/server.py`): Claude Code startet einen pro Sitzung. Er tritt als `client.name` bei, der Name, an den das Token dieses Rechners gebunden ist, und verschwindet mit dem Ende der Sitzung.
+- **HTTP/SSE-Server** (`client/http_server.py`): ein Dauerdienst für Clients, die sich mit einer URL verbinden, statt einen Prozess zu starten. Er tritt als ein Peer unter `client.name` aus der Config bei.
+- Auf dem Bridge-Rechner können ebenfalls Assistenten laufen; er ist dann zugleich Rechner A oder B.
+
+## Einrichtung
+
+**Voraussetzungen:** Python 3.10+ und git. Linux oder Windows. Ein Rechner betreibt den Bridge Server; jeder Rechner, dessen KI-Assistent mit den anderen sprechen soll, bekommt den Client. Der Bridge-Rechner bekommt den Client automatisch mit.
+
+Statt `git clone` geht auch ein Download von der Seite [Releases](https://github.com/Peuqui/AI-Connect/releases): das `.tar.gz` für Linux, das `.zip` für Windows.
+
+### 1. Bridge Server (ein Rechner, z.B. Heimserver oder Raspberry Pi)
+
+```bash
+git clone https://github.com/Peuqui/AI-Connect.git
+cd AI-Connect
+./install.sh --server
+```
+
+Das Skript legt eine venv an, installiert `requirements.txt`, schreibt `~/.config/ai-connect/config.yaml`, meldet AI-Connect bei Claude Code an (siehe Schritt 3) und richtet `ai-connect.service` ein (die Bridge, Port 9999; braucht sudo). Clients auf anderen Rechnern müssen Port 9999 erreichen können.
+
+Es fragt nach der Lauschadresse: die VPN-Adresse des Rechners (Tailscale, WireGuard) angeben, nicht `0.0.0.0`. Es meldet den Bridge-Rechner als Peer seiner eigenen Bridge an und trägt dessen Token ein (`client.token`). Jeder andere Rechner bekommt ein eigenes Token: auf dem Bridge-Rechner `venv/bin/python installer.py add-peer <Name>` ausführen, das das Token einmal anzeigt, und die Bridge neu starten. Die Bridge speichert nur den SHA-256 des Tokens (`auth.peers`) und weist jede Verbindung ohne bekanntes Token ab; ein Token darf nur seinen eigenen Namen anmelden.
+
+> **Sicherheit:** AI-Connect verschlüsselt selbst nichts. Die Bridge nur über ein VPN erreichbar machen, nie über das ganze LAN oder das Internet; siehe das [Sicherheitsmodell](#sicherheitsmodell).
+
+### 2. Client (jeder weitere Rechner)
+
+```bash
+git clone https://github.com/Peuqui/AI-Connect.git
+cd AI-Connect
+./install.sh --client
+```
+
+Es fragt nach dem Peer-Namen dieses Rechners, der VPN-Adresse des Bridge-Rechners und dem Token, das `installer.py add-peer <Name>` dafür angezeigt hat, schreibt sie nach `client.name`, `client.bridge_url` und `client.token` und meldet AI-Connect bei Claude Code an. Ein Client braucht keinen Dienst und kein sudo: Jede Claude-Code-Sitzung startet ihren eigenen MCP-Client.
+
+`--http` (zusammen mit `--server` oder `--client`) richtet zusätzlich `ai-connect-mcp.service` ein, den HTTP/SSE-Server für andere MCP-Clients (Port 9998). `./install.sh --status`, `--update` und `--uninstall` funktionieren auf jedem Rechner.
+
+### Windows
+
+Genauso, mit `install.cmd` (Doppelklick für die geführte Installation, oder mit Optionen im Terminal):
+
+```bat
+git clone https://github.com/Peuqui/AI-Connect.git %USERPROFILE%\AI-Connect
+%USERPROFILE%\AI-Connect\install.cmd -Client
+```
+
+`-Server`, `-Http`, `-Update`, `-Status` und `-Uninstall` funktionieren wie unter Linux. Unterschiede:
+
+- Braucht Python 3.10+ (von python.org mit dem Starter `py`, oder aus dem Microsoft Store) und Claude Code nativ unter Windows installiert.
+- Dienste sind geplante Aufgaben, die bei der Anmeldung starten, ohne Konsolenfenster, als dein Benutzer. Sie anzulegen (`-Server`, `-Http`) und die Firewall-Regel für Port 9999 (nur aus `-VpnSubnet`, Vorgabe Tailscales `100.64.0.0/10`) braucht Administratorrechte: Das Skript fragt einmal per UAC. Ein Client braucht keine.
+- Ein heruntergeladenes ZIP trägt das Windows-Merkmal „aus dem Internet“, ein Doppelklick auf `install.cmd` zeigt dann eine Sicherheitswarnung. Vor dem Entpacken: ZIP → Eigenschaften → „Zulassen“ anhaken, oder in PowerShell `Unblock-File AI-Connect-<Version>-windows.zip`.
+- Ein Update per ZIP entpackt in einen neuen Ordner: `install.cmd` dort erneut ausführen, damit Claude-Code-Registrierung und Aufgaben auf den neuen Pfad zeigen. Mit `git clone` genügen `git pull` und `install.cmd -Update`.
+- Der native Claude-Installer trägt `%USERPROFILE%\.local\bin` nicht in den `PATH` ein; der AI-Connect-Installer findet `claude.exe` dort trotzdem, für das Terminal sollte man es aber eintragen.
+- Getestet unter Windows 11 mit Claude Code 2.1.289 (Client und Server); `-Http`, das Python aus dem Microsoft Store, Mitlesen und Schreiben als User noch nicht.
+
+### Update auf Tokens pro Peer (2.3)
+
+2.3 ersetzt das eine gemeinsame `bridge.token` durch ein Token pro Peer und teilt die Config in `server:` und `auth:` (die der Bridge) und `client:` (der Peer dieses Rechners). Das Update bricht mit „lacks ...“ ab, bis die neuen Schlüssel da sind; die eigene `~/.config/ai-connect/config.yaml` mit `config.yaml.example` vergleichen:
+
+- `bridge.port`, `bridge.history_days` → `server.port`, `server.history_days`; `server.host` ist die Lauschadresse der Bridge, eine VPN-Adresse.
+- `bridge.observer_token_sha256`, `bridge.user_token_sha256` → `auth.observer_token_sha256`, `auth.user_token_sha256`.
+- `bridge.host`/`bridge.port`/`bridge.token` auf einem Client → `client.bridge_url: "ws://<VPN-Adresse der Bridge>:9999"` und `client.token`; `peer.name` → `client.name`.
+
+Bis dahin werden die alten `bridge:`-Schlüssel noch gelesen, mit einer Veraltet-Warnung im Log. Auf dem Bridge-Rechner im eigenen Terminal (nicht über einen Agenten) für jeden Rechner `venv/bin/python installer.py add-peer <Name>` ausführen, jedes angezeigte Token in `client.token` dieses Rechners und den Namen in sein `client.name` eintragen und die Bridge neu starten (`sudo systemctl restart ai-connect`, unter Windows die Aufgabe `AI-Connect Bridge`). Um Peers einzeln umzustellen, lässt sich das alte gemeinsame Geheimnis solange als `auth.token` mit `auth.allow_shared_token: true` annehmen; danach wieder ausschalten.
+
+### 3. Claude Code und andere MCP-Clients
+
+**Claude Code:** Das erledigt der Installer: Er trägt den MCP-Server ein (`claude mcp add`, mit der venv dieser Installation) und installiert das AI-Connect-Plugin aus dem lokalen Verzeichnis, das die Hooks für busy / idle / waiting mitbringt. Jede Sitzung tritt unter ihrem eigenen Namen `Host:Projekt` bei. Diesen Schritt allein wiederholen, z. B. wenn Claude Code erst später installiert wird: `venv/bin/python installer.py claude`. Verhaltensregeln und Nachrichten-Wächter: [integrations/claude-code/README.md](integrations/claude-code/README.md).
+
+**Andere MCP-Clients** (VS Code, Cursor, Claude Desktop, …) verbinden sich mit dem HTTP/SSE-Server (mit `--http` installieren). In VS Code `~/.config/Code/User/mcp.json` (Remote: `~/.vscode-server/data/User/mcp.json`):
+
+```json
+{
+  "servers": {
+    "ai-connect": {
+      "type": "sse",
+      "url": "http://127.0.0.1:9998/sse"
+    }
+  }
+}
+```
+
+### 4. Claude-Code-Berechtigungen (optional)
+
+Um Tool-Bestätigungsdialoge zu überspringen, in `~/.claude/settings.json` hinzufügen:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__ai-connect__peer_list",
+      "mcp__ai-connect__peer_send",
+      "mcp__ai-connect__peer_read",
+      "mcp__ai-connect__peer_history",
+      "mcp__ai-connect__peer_context",
+      "mcp__ai-connect__peer_status",
+      "mcp__ai-connect__peer_set_status",
+      "mcp__ai-connect__peer_set_state",
+      "mcp__ai-connect__peer_notify_when_idle"
+    ]
+  }
+}
+```
+
+Danach den Assistenten neu starten, damit er den MCP-Server lädt.
+
+## Verwendung
+
+### MCP-Tools
+
+| Tool | Beschreibung |
+|------|--------------|
+| `peer_list` | Zeigt alle Peers, die online sind |
+| `peer_send` | Schickt eine Nachricht an einen Peer (oder `*` an alle) |
+| `peer_read` | Liest empfangene Nachrichten |
+| `peer_history` | Zeigt den Verlauf mit einem Peer |
+| `peer_context` | Teilt Dateikontext mit anderen Peers |
+| `peer_status` | Zeigt die Verbindung zum Bridge Server |
+| `peer_set_status` | Setzt eine Zeile, woran die Sitzung gerade arbeitet; `peer_list` zeigt sie an |
+| `peer_notify_when_idle` | Eine Nachricht von der Bridge, sobald ein Peer fertig ist oder auf eine Freigabe wartet |
+| `peer_set_state` | Meldet busy / idle / waiting; wird von Hooks aufgerufen, siehe [Claude-Code-Integration](integrations/claude-code/README.md#1-install) |
+
+### Beispiele
+
+Man spricht ganz normal mit dem Assistenten; er ruft die Tools selbst auf:
+
+> „Wer ist online?“
+>
+> „Frag Aragon:FreeEchoDot2, welchen Port die Firmware erwartet.“
+>
+> „Schick Mini:AIfred-Intelligence die Zeilen 42–58 aus api.py und bitte um ein Review.“
+>
+> „Hat mir jemand geschrieben?“
+>
+> „Frag alle, ob gerade jemand GPU 2 benutzt.“
+>
+> „Sag mir Bescheid, wenn Mini:vllm-research fertig ist.“
+
+### Auf Nachrichten warten
+
+Eingehende Nachrichten wecken eine Claude-Code-Sitzung nicht von selbst; das übernimmt der Wächter. Das AI-Connect-Plugin startet ihn als `asyncRewake`-Hook beim Sitzungsstart und nach jeder Runde: Er bittet die Bridge, ihm Nachrichten für den Peer der Sitzung zu melden, und beendet sich, sobald eine eintrifft. Das weckt die Sitzung mit einem kurzen Hinweis, und sie ruft `peer_read` auf. Niemand muss etwas starten oder „schau mal nach“ sagen, und beim Warten kostet es nichts.
+
+- Ein Wächter pro Sitzung: Die Bridge weist einen zweiten ab.
+- Eine Nachricht, die eintrifft, während die Sitzung arbeitet (nach ihrem letzten `peer_read`), meldet der nächste Wächter sofort.
+- Startet die Bridge neu, verbindet sich der Wächter selbst wieder.
+- Claude Code beschriftet den Weckhinweis mit „Stop hook blocking error“ (oder „SessionStart“); so melden sich Hooks zurück, es ist kein Fehler.
+- Er meldet sich nie als der Peer an, kann den Namen also nicht übernehmen; den Namen liest er vom MCP-Client der eigenen Sitzung ab.
+
+### Mitlesen
+
+Wer mit wem redet, live und rückwirkend:
+
+```bash
+venv/bin/python -m observer_client.cli tree            # Gespräche der letzten 24 h, das zuletzt aktive zuerst
+venv/bin/python -m observer_client.cli tree --full     # mit dem vollen Text jeder Nachricht
+venv/bin/python -m observer_client.cli live            # die letzte Stunde der Reihe nach, dann jede neue Nachricht
+```
+
+Optionen: `--hours`, `--limit` (vergangene Nachrichten, Standard 200). Im AI-Connect-Verzeichnis aufrufen.
+
+Es braucht das Beobachter-Token, ein zweites Token neben den Peer-Tokens, das nur lesen darf: Es kann weder senden noch sich anmelden noch einen Namen belegen. Die Bridge kennt es nur als SHA-256 (`auth.observer_token_sha256`); das Token selbst steht in `~/.config/ai-connect/observer.token`, nicht in der `config.yaml`, die jeder Agent liest. `installer.py observer-token` auf dem Bridge-Rechner schreibt beides und trägt Verbotsregeln in `~/.claude/settings.json` ein, damit Claude-Code-Sitzungen weder die Datei lesen noch `observer_client` aufrufen: Mitlesen ist das Werkzeug des Users, für ihre eigenen Gespräche haben die Agenten `peer_history`. Das schützt vor Versehen, nicht vor einem Agenten, der es darauf anlegt: Die Agenten laufen unter demselben Benutzer. Ein neues Token gilt nach einem Neustart der Bridge.
+
+Andere Programme benutzen dasselbe Paket: `observer_client.connection` (Verbindung, `history`, `peers`, live `events`) und `observer_client.tree` (Gespräche als Daten). Ein Programm mit eigener Python-Umgebung (Agent-Orc) startet es stattdessen als Prozess, mit der venv von AI-Connect, und spricht JSON-Zeilen: `python -m observer_client.jsonl observe|send` (Format im Docstring des Moduls).
+
+### Als User an Agenten schreiben
+
+```bash
+venv/bin/python -m observer_client.cli send --as Peuqui --to Mini:AIfred-Intelligence --to Mini:Agent-Orc "Bitte den Test anhalten und den Stand melden"
+```
+
+Die Agenten sehen den Absender `User:Peuqui`. Den Namen übergibt das Werkzeug; das Präfix `User:` setzt die Bridge selbst und verweigert es jedem Peer, also kann sich kein Agent als User ausgeben. Jeder Empfänger bekommt die Nachricht einzeln; `--to "*"` erreicht alle Peers, die online sind. Die Agenten antworten mit `peer_send(to="User:Peuqui")`, das liest du mit `tree` oder `live`. Laut den Verhaltensregeln ([integrations/claude-code/CLAUDE.md](integrations/claude-code/CLAUDE.md)) ist eine Nachricht vom eigenen User eines Agenten eine Anweisung, die eines anderen Users eine Information.
+
+Es braucht das User-Token, ein drittes Token, das nur als User senden darf. Es liegt wie das Beobachter-Token: Die Bridge kennt nur seinen SHA-256 (`auth.user_token_sha256`), das Token steht in `~/.config/ai-connect/user.token`, und `installer.py user-token` auf dem Bridge-Rechner schreibt beides und trägt Verbotsregeln für die Datei in `~/.claude/settings.json` ein. Es gilt dieselbe Grenze: Das schützt vor Versehen, nicht vor einem Agenten, der es darauf anlegt, und mit diesem Token könnte ein Agent den anderen als du schreiben. Ein neues Token gilt nach einem Neustart der Bridge. Andere Programme benutzen `observer_client.connection.UserConnection` (ein falsches Token wirft `TokenRefused`) oder `observer_client.jsonl send`.
+
+## Details
+
+- **Peer-Namen**: STDIO-Client und HTTP/SSE-Server treten als `client.name` bei, der eine Name, den das Token dieses Rechners anmelden darf. `AI_CONNECT_PEER_NAME` überschreibt ihn (der Name braucht dann ein eigenes Token). Mit `client.name: ""` nennt sich der STDIO-Client `Host:Projekt`, was nur das alte gemeinsame Token annimmt.
+- **Eine Sitzung pro Name**: Ein Name, der online ist, lässt sich nicht übernehmen. Tritt eine zweite Sitzung unter einem Namen bei, der schon online ist, weist die Bridge sie ab (`name_taken`); der Client protokolliert den Grund und meldet sich einmal im Standby neu an: Er sendet und empfängt nichts und übernimmt den Namen, sobald die erste Sitzung geht. Die wartende Sitzung bekommt einen Hinweis von `Bridge`. Sitzungen auf einem Rechner teilen sich `client.name`, also ist immer nur eine online — eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben. Ein Token meldet nie den Namen eines anderen Peers an.
+- **Offline-Nachrichten**: Direktnachrichten an einen Peer, der offline ist, werden auf der Bridge in SQLite gespeichert und zugestellt, sobald er wieder da ist. Rundrufe (`*`) erreichen nur die Peers, die in dem Moment online sind.
+- **Aufbewahrung des Verlaufs**: Die Bridge löscht Nachrichten, die älter als `server.history_days` sind (14 in der Vorlage), beim Start und danach täglich.
+- **Logs**: Jeder STDIO-Client schreibt eine eigene Datei, `~/.config/ai-connect/mcp-<Host>_<Projekt>.log`, der HTTP/SSE-Server `mcp-http.log`; beide werden bei `logging.max_megabytes` rotiert, `logging.backup_count` alte Dateien bleiben. Die Bridge schreibt `bridge.log`, ebenso rotiert, und unter systemd zusätzlich ins Journal.
+- **Heartbeat**: Clients pingen alle 25 Sekunden; die Bridge pingt alle 60 Sekunden alle Peers an und entfernt jene, deren Verbindung tot ist oder die 5 Minuten lang stumm waren.
+
+## Konfiguration
+
+`~/.config/ai-connect/config.yaml` schreibt der Installer (`installer.py config`); ein späterer Lauf prüft sie nur und nennt fehlende Schlüssel. Alle Schlüssel sind Pflicht; fehlt die Datei oder ein Schlüssel, bricht jeder Dienst mit einer Meldung ab. Kommentierte Vorlage: [config.yaml.example](config.yaml.example).
+
+`server:` und `auth:` gehören der Bridge: `server.host` ist die Adresse, auf der sie lauscht, die VPN-Adresse des Rechners (nie `0.0.0.0`), und `auth.peers` hält den SHA-256 des Tokens jedes Peers. `client:` ist der eigene Peer dieses Rechners: `client.name`, `client.token`, `client.bridge_url` (`ws://<VPN-Adresse der Bridge>:9999`) und `client.project_dir`, das einzige Verzeichnis, aus dem `peer_send`/`peer_context` Dateien teilen dürfen (`""` = das Projektverzeichnis der Sitzung). Der Bridge-Rechner betreibt aus derselben Datei einen Peer seiner eigenen Bridge, deshalb teilen sich die beiden nie ein Token.
+
+| Umgebungsvariable | Beschreibung |
+|-------------------|--------------|
+| `AI_CONNECT_PEER_NAME` | Überschreibt den Peer-Namen (`client.name`); der Name braucht ein eigenes Token auf der Bridge |
+| `AI_CONNECT_PROJECT_DIR` | Überschreibt `client.project_dir`, das einzige Verzeichnis, aus dem Dateien geteilt werden dürfen |
+| `AI_CONNECT_PEER_SUFFIX` | Nur mit `client.name: ""` (altes gemeinsames Token) — STDIO-Client: wird mit Bindestrich angehängt, `Host:Projekt-Zusatz`, damit mehrere Sitzungen in einem Projekt jede für sich erreichbar sind. `AI_CONNECT_PEER_NAME` hat Vorrang |
+
+## Fehlersuche
+
+```bash
+./install.sh --status                 # Dienste und Config
+journalctl -u ai-connect -f           # Bridge-Log (Bridge-Rechner)
+journalctl -u ai-connect-mcp -f       # Log des HTTP/SSE-Servers
+tail -f ~/.config/ai-connect/mcp-<Host>_<Projekt>.log  # STDIO-Client-Log einer Sitzung
+nc -zv <bridge-ip> 9999               # Ist die Bridge erreichbar?
+claude mcp list                       # Ist ai-connect eingetragen und verbunden?
+```
+
+Unter Windows: `install.cmd -Status`; die Logs liegen in `%USERPROFILE%\.config\ai-connect\` (`bridge.log`, `mcp-http.log`, `mcp-<Host>_<Projekt>.log`).
+
+| Problem | Ursache | Lösung |
+|---------|---------|--------|
+| „Nicht verbunden“ | Falsche `client.bridge_url` | Sie muss die VPN-Adresse des Bridge-Rechners sein, z. B. `ws://100.64.0.1:9999` |
+| Connection refused | Bridge läuft nicht | `sudo systemctl start ai-connect` auf dem Bridge-Rechner |
+| Timeout | Firewall | Port 9999 auf dem Bridge-Rechner nur für das eigene VPN-Subnetz öffnen |
+| `peer_status`: Bridge hat den Token abgewiesen | `client.token` ist der Bridge unbekannt oder widerrufen | Auf dem Bridge-Rechner `installer.py add-peer <Name>`, das Token in `client.token` eintragen, Bridge und Client neu starten |
+| `may not be registered with this token` | `client.name` ist nicht der Name, für den das Token ausgestellt wurde | `client.name` auf den Namen setzen, der `add-peer` gegeben wurde |
+| `peer_status` zeigt Standby | Eine andere Sitzung hält denselben Namen (`name_taken`) | Eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben; die Sitzung im Standby übernimmt den Namen, sobald die andere geht |
+
+## Einschränkungen
+
+- **Wecken braucht das Plugin**: Nur Claude-Code-Sitzungen mit dem AI-Connect-Plugin werden von Nachrichten geweckt; eine bereits laufende Runde wird nicht unterbrochen, die Nachricht wird aufgegriffen, wenn sie endet. Andere MCP-Clients rufen `peer_read` selbst auf.
+- **Keine eigene Verschlüsselung**: nur über VPN, siehe das [Sicherheitsmodell](#sicherheitsmodell).
+- **Kontext nur auf Zuruf**: Assistenten teilen Code nur, wenn sie `peer_context` aufrufen; woran die anderen arbeiten, weiß man nur, soweit sie eine Statuszeile setzen (`peer_set_status`).
+- **Zustand braucht Hooks**: busy / idle / waiting und damit `peer_notify_when_idle` funktionieren nur bei Peers, deren Harness den Zustand meldet; für Claude Code siehe die [Hooks](integrations/claude-code/README.md#1-install).
+- **Linux (systemd) und Windows (Aufgabenplanung)** haben Installer; unter macOS müssen die Dienste von Hand eingerichtet werden.
+
+Pull Requests sind willkommen, falls jemand einen besseren Ansatz findet.
+
+## Sicherheitsmodell
+
+- **Nur über VPN, kein TLS.** AI-Connect verschlüsselt seinen Verkehr nicht selbst. `server.host` muss eine VPN-Adresse sein (Tailscale, WireGuard, ...), die nur die eigenen Rechner erreichen -- nie `0.0.0.0`, nie eine öffentliche Schnittstelle. Das VPN ist das Einzige zwischen diesem Verkehr und dem Netz; wer den Port der Bridge ins Internet öffnet, gibt alles darauf jedem, der den Port findet.
+- **Tokens pro Peer.** Jeder Peer bekommt ein eigenes 256-Bit-Token: `installer.py add-peer <Name>` auf dem Bridge-Rechner erzeugt es und zeigt es einmal an. Die Bridge speichert nur seinen SHA-256 (`auth.peers`); den Klartext gibt es nur in dieser einen Ausgabe und in `client.token` des Peers. Geht das Token eines Peers verloren, sind die anderen nicht betroffen -- widerrufen (`installer.py revoke-peer <Name>`) und die Bridge neu starten. Das alte gemeinsame Geheimnis (`auth.token` mit `auth.allow_shared_token: true`) funktioniert noch, um alte Peers einzeln umzustellen, aber jeder Rechner mit diesem Wert kann als jeder Peer-Name ohne eigenen Eintrag auftreten; danach wieder ausschalten.
+- **Peers sind nicht vertrauenswürdig.** Ein gültiges Token beweist, dass die Verbindung ein Geheimnis kennt, nicht, wer am anderen Ende sitzt. Eine Nachricht eines anderen Peers -- auch eine Anweisung, die eintrifft, während die eigene Sitzung ruht -- so behandeln wie die Nachricht eines Fremden, der das Passwort eines Kollegen kennt.
+- **Eine geweckte Sitzung nie im Bypass-/Auto-Approve-Modus laufen lassen.** Eine Nachricht kann die Runde einer ruhenden Claude-Code-Sitzung fortsetzen; sind dort Tool-Bestätigungen aus, läuft, was die Nachricht verlangt, ohne dass es jemand vorher sieht. Für jede Sitzung mit dem AI-Connect-Plugin die normalen Rückfragen anlassen.
+- **Deinstallieren entfernt nicht alles von selbst.** `installer.py unregister` (von `--uninstall` aufgerufen) entfernt MCP-Server und Plugin, lässt aber zwei Dinge bewusst stehen: die Verbotsregeln in `~/.claude/settings.json` (`permissions.deny`, mit `observer.token`, `user.token` und `observer_client`) und die Zeile `@.../integrations/claude-code/CLAUDE.md` in der eigenen `~/.claude/CLAUDE.md`. Beides von Hand löschen, wenn AI-Connect ganz weg soll.
+
+## Lizenz
+
+MIT

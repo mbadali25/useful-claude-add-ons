@@ -31,6 +31,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew brief platform sync](#process-crew-brief-platform-sync) | PASS |
 | [Process crew brief status](#process-crew-brief-status) | PASS |
 | [Process crew brief](#process-crew-brief) | PASS |
+| [Process crew kimi agent](#process-crew-kimi-agent) | PASS |
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
@@ -187,7 +188,7 @@ flowchart TB
 
 ## Data flow crew config no python
 
-What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
+What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
 
 ```mermaid
 flowchart LR
@@ -207,6 +208,14 @@ flowchart LR
         CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
         CG1 --> CG2 --> CG3
     end
+
+    subgraph EnvNoPython["env-guard's fallback - the same shape (L-0772)"]
+        direction TB
+        EG1["no usable python,<br/>or env_guard.py failed"]
+        EG2["<b>_env_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        EG3["unknown, or envGuard<br/>not off: REFUSED (exit 2)"]
+        EG1 --> EG2 --> EG3
+    end
 ```
 
 | Box | Details |
@@ -217,22 +226,25 @@ flowchart LR
 | `CG1` | crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or cloud_guard.py exits non-zero (cloud-guard.sh:55-78) |
 | `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir. |
 | `CG3` | source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
+| `EG1` | crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76). |
+| `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twins: Test-EnvGuardArmed in env-guard.ps1, and env_guard._crude_armed in python when crew's own config readers raise. |
+| `EG3` | source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
-- **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/cloud-guard.sh`
-- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/cloud-guard.sh`, `plugin/crew/hooks/scripts/env-guard.sh`
+- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config ratchet
 
-The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the thirteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
 
 ```mermaid
 flowchart TB
 
-    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
+    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 16 write-side, 15 read-side"]
         direction TB
-        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>13 keys"]
-        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>14 keys: the thirteen + pm.authority"]
+        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>15 keys"]
+        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>16 keys: the fifteen + pm.authority"]
         RSHAPE["Confirmed by import + diff + type():<br/>tuple field order differs, so<br/>not one table as written"]
         RG --- RC --- RSHAPE
     end
@@ -243,13 +255,13 @@ flowchart TB
         LS --> FORCE
     end
     FORCE -.->|"overrides the resolved value"| Ratchet
-    subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
+    subgraph Except["Fifteen keys do NOT follow the precedence above (read-side ratchet)"]
         direction TB
-        E1["<b>13 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
+        E1["<b>15 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
         E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :564"]
         E3["Why: crew reads config<br/>out of CLONED repositories"]
-        E4["Absent = the narrowest tier<br/>for ELEVEN of the thirteen"]
-        E5["<b>guards.roleWrites, guards.cloudGuard</b><br/>the two exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E4["Absent = the narrowest tier<br/>for TWELVE of the fifteen"]
+        E5["<b>guards.roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
         E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
         E1 --- E2 --- E3 --- E4 --- E5 --- E6
     end
@@ -265,8 +277,8 @@ flowchart TB
 | `E1` | Every key in crew_guards.RATCHETED_KEYS :522-549 -- install.policy, change.requireForProduction, environments.prodUnattended and all TEN guards.* -- resolves by the LOWER rank, not by repo-beats-global. CONFIG.md section 15 covers install.policy, section 16 the guards, section 18 guards.roleWrites; environments.* is a subsection of section 16. |
 | `E2` | The effective value at each key is the lower-ranked of the two layers - crew_guards.effective_ratcheted :564, reached through crew_config.resolve_ratcheted :831. |
 | `E3` | Why: crew reads config out of CLONED repositories. A repo shipping install.policy: auto, or guards.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off. |
-| `E4` | Absent counts as the narrowest tier on either side for ELEVEN of the thirteen, so the WIDEST grant requires BOTH layers to agree. |
-| `E5` | guards.roleWrites and guards.cloudGuard are the two exceptions to E4, and the only keys here whose DEFAULT is not their FLOOR. ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is off, the WIDEST tier, for both names - cloudGuard reuses roleWrites' own normalise/rank functions rather than growing a second copy (crew_guards.py:450-487, guard_tiers() :490-504). |
+| `E4` | Absent counts as the narrowest tier on either side for TWELVE of the fifteen, so the WIDEST grant requires BOTH layers to agree. |
+| `E5` | guards.roleWrites, guards.cloudGuard and guards.envGuard (L-0772) are the three exceptions to E4, and the only keys here whose DEFAULT is not their FLOOR. ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is off, the WIDEST tier, for all three names - cloudGuard and envGuard reuse roleWrites' own normalise/rank functions rather than growing a second copy (crew_guards.py:450-487, guard_tiers() :490-504). |
 | `E6` | install.policy: auto is safe only because no repo-controlled string can become a command - crew_guards.INSTALLABLE maps a name to a literal argv tuple, consulted BEFORE the policy. Asserted in tests/test_install_policy.py. |
 
 - **Source:** `data-flow-crew-config-ratchet.mmd`
@@ -1017,6 +1029,43 @@ flowchart TB
 - **Source:** `process-crew-brief.mmd`
 - **Drawn from:** `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/handoff-read.sh`, `plugin/crew/hooks/scripts/platform-sync.sh`, `plugin/crew/hooks/scripts/crew-context.sh`
 - **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
+
+## Process crew kimi agent
+
+L-0777: how a crew explorer, researcher or security dispatch runs on Kimi K3 read-only, and the three outcomes the dispatcher agent acts on (relay, fall back to Claude, stop).
+
+```mermaid
+flowchart LR
+    AGENT["<b>crew:explorer / researcher / security</b><br/>Claude dispatcher, one Bash call"]
+    ROUTE{"<b>route()</b><br/>role pinned to kimi,<br/>family not the author's?"}
+    PROBE{"<b>kimi_probe.probe</b><br/>tree unchanged<br/>and state ok?"}
+    LAUNCH["<b>kimi -p</b> read-only<br/>per-role allowlist,<br/>no Bash, Write or Edit"]
+    FP{"tree fingerprint<br/>after the run"}
+    OK(["<b>exit 0</b> KIMI OK<br/>answer relayed, redacted"])
+    UNAV(["<b>exit 3</b> KIMI UNAVAILABLE<br/>agent runs on Claude,<br/>says so on line 1"])
+    TREE(["<b>exit 8</b> KIMI CHANGED THE TREE<br/>or TREE UNKNOWN: agent stops"])
+
+    AGENT --> ROUTE
+    ROUTE -->|not-routed, barred,<br/>author-unknown| UNAV
+    ROUTE -->|routed| PROBE
+    PROBE -->|not ok| UNAV
+    PROBE -->|ok| LAUNCH
+    LAUNCH --> FP
+    FP -->|timed out, failed,<br/>no final message| UNAV
+    FP -->|clean| OK
+    FP -->|changed or unreadable| TREE
+    PROBE -->|probe wrote| TREE
+```
+
+| Box | Details |
+|---|---|
+| `ROUTE` | crew_kimi_agent.route() plugin/crew/hooks/scripts/crew_kimi_agent.py:141 resolves the role through crew_state.resolve_role; security is in REVIEWING_DEV_ROLES (crew_state.py:1198), so a pin in the author's family is barred and an empty author set is author-unknown, never no conflict |
+| `FP` | review_run.tree_fingerprint before the probe, after it and after the run (crew_kimi_agent.py:193-238); a change is exit 8, a tree that cannot be read after the run is exit 8 (KIMI TREE UNKNOWN) |
+| `LAUNCH` | kimi -p with a per-role agent file (ROLE_TOOLS :73, Write/Edit/Bash disallowed), an empty skills dir, kimi_env(), stdin closed, its own process group, the timeout (DEFAULT_TIMEOUT :64) |
+
+- **Source:** `process-crew-kimi-agent.mmd`
+- **Drawn from:** `plugin/crew/hooks/scripts/crew_kimi_agent.py`, `plugin/crew/agents/explorer.md`, `plugin/crew/hooks/scripts/crew_state.py`
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle approve
 
