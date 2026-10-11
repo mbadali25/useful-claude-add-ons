@@ -228,7 +228,14 @@ def step_prefs(r: Run, accept_dns: bool = False) -> None:
 
 
 def step_login(r: Run, accept_dns: bool = False) -> bool:
-    """Log this machine in to the tailnet as its user: a browser login. False in a dry run that would."""
+    """Log this machine in to the tailnet as its user: a browser login. False in a dry run that would, and
+    in a dry run of bridge or peer, which asks no tool whether this machine is on the tailnet already
+    (tailnet-setup's preview does ask)."""
+    if tsadmin.NO_EXEC[0]:
+        out(f"    $ {shown(up_argv(accept_dns))}")
+        r.change("log this machine in to the tailnet (browser login), unless it is on it already; then make "
+                 f"its settings `{' '.join(pinned(accept_dns))}` with tailscale set if they differ", lambda: None)
+        return False
     if backend_state() == "Running":
         r.already("this machine is on the tailnet")
         step_prefs(r, accept_dns)
