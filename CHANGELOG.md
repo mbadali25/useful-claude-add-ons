@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.22: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
+### Fixed — crew 1.2.27: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
 
-- **Summary.** `crew` 1.2.22 reads every promote-gate requirement (`requires`, `rollback`,
+- **Summary.** `crew` 1.2.27 reads every promote-gate requirement (`requires`, `rollback`,
   `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json`
   committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on
   its own branch and is no longer blocked by the main checkout's uncommitted map.
