@@ -4080,6 +4080,9 @@ answer, secrets redacted, and the dispatcher relays it verbatim. `KIMI UNAVAILAB
 Kimi ran changed the tree; the dispatcher does the task itself and opens with `ran on claude (kimi:
 <state>)`. `KIMI CHANGED THE TREE: <paths>` or `KIMI TREE UNKNOWN: <reason>` (exit 8) means the tree is not,
 or may not be, what the caller handed over: the dispatcher stops and reports, and never falls back over it.
+A line starting `crew-kimi-agent:` (exit 2: no task, an unreadable crew config layer, a role file without
+its marker) stops the dispatcher too: a broken config could be hiding the pin or the author that should
+have barred the run. Every contract line is one line; a newline in a reason or a path is folded to ` / `.
 
 **Read-only is two controls, not a flag.** `kimi -p` forces permission mode `auto`. As in `/crew:review`
 step 2e, and with the same code: a per-role Kimi agent file allowing only reads (explorer, security,
@@ -4091,12 +4094,14 @@ neither. No role gets Bash on Kimi.
 **The family guard covers `security` now.** `crew_state.REVIEWING_DEV_ROLES` puts `security` under
 `resolve_role`'s family guard, so a Kimi security pin on a diff Kimi wrote answers `KIMI UNAVAILABLE:
 barred`, and `/crew:model` shows the row barred. The author set is `--authors` united with the dispatch
-record or config (`author_families`); none known is `author-unknown`, never "no conflict". **Once your
+record or config (`author_families`); none known, or a dispatch record whose family cannot be told, is
+`author-unknown`, never "no conflict". The security dispatcher passes only the families its caller names. **Once your
 developer runs on Kimi, `security` and the reviewer are the same family as the author**: cross-family
 review of that work needs Codex or Claude. The Claude fallback is not guarded, and says so.
 
 **Limits.** The dispatchers' Bash is confined to the one command by instruction, not enforcement (plugin
-agents ignore `hooks` and `permissionMode`). Kimi has no MCP servers configured, so explorer's localgpu
+agents ignore `hooks` and `permissionMode`). The task travels in a quoted heredoc whose delimiter the
+dispatcher makes up fresh for each call, so a line of the task cannot end it. Kimi has no MCP servers configured, so explorer's localgpu
 search and researcher's Context7 exist only on the Claude path. Kimi cannot run `git diff`, so the
 security dispatcher feeds the diff in on stdin.
 

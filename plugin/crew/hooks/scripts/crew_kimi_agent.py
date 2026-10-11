@@ -51,6 +51,7 @@ import shutil
 import sys
 import tempfile
 
+import crew_common
 import crew_config
 import crew_state
 import kimi_probe
@@ -95,8 +96,15 @@ _CAN = {
 }
 
 
+def _one_line(text):
+    """`text` with every line break folded to ` / `: the first line is the
+    contract, so a reason or a path name carrying a newline must not be able
+    to print a second, forged contract line."""
+    return " / ".join(part for part in str(text).splitlines() if part) or ""
+
+
 def _say(line, body=None):
-    sys.stdout.write(line.rstrip("\n") + "\n")
+    sys.stdout.write(_one_line(line) + "\n")
     if body:
         sys.stdout.write(body.rstrip("\n") + "\n")
     sys.stdout.flush()
@@ -139,14 +147,35 @@ def _split_authors(values):
     return frozenset(out)
 
 
+def _config_problem(root):
+    """Why a crew config layer exists and cannot be read, or None.
+    `resolve_config` reads a broken file as absent, which would route every
+    role to its default; here a broken layer is a usage error (exit 2)."""
+    for path in (crew_common.repo_config_file(root, "config.json"),
+                 crew_config.GLOBAL_CONFIG_PATH):
+        why = crew_config._unreadable_config(path)  # pylint: disable=protected-access
+        if why:
+            return f"{path}: {why}"
+    return None
+
+
 def route(root, role, authors_arg):
     """(row, authors, problem). `problem` is (state, reason) when Kimi must
-    not run; `row` is `resolve_role`'s dict."""
+    not run; `row` is `resolve_role`'s dict. Raises ValueError when a config
+    layer is unreadable."""
+    broken = _config_problem(root)
+    if broken:
+        raise ValueError(broken)
     cfg = crew_config.resolve_config(root)
     kind, name = ROLE_PINS[role]
     authors = frozenset()
     if role in REVIEWING:
-        found, _source = crew_state.author_families(root, cfg)
+        found, source = crew_state.author_families(root, cfg)
+        if source == "unknown":
+            return None, authors, ("author-unknown",
+                                   "a dispatch on this branch has a family that cannot be "
+                                   "determined, or a record in .work/ would not parse, so "
+                                   "whether Kimi wrote this change cannot be told")
         authors = _split_authors(authors_arg) | frozenset(found or ())
         if not authors:
             return None, authors, ("author-unknown",
@@ -193,8 +222,9 @@ def run(args, task):  # pylint: disable=too-many-return-statements,too-many-loca
     problems = []
     before = review_run.tree_fingerprint(root, problems)
     if before is None:
-        return unavailable("unknown", "the working tree could not be fingerprinted before "
-                                      f"launch: {'; '.join(problems) or 'no reason given'}")
+        _say("KIMI TREE UNKNOWN: the working tree could not be fingerprinted before "
+             f"launch: {'; '.join(problems) or 'no reason given'}")
+        return EXIT_TREE
     unstopped = []
     probed = kimi_probe.probe(row["model"] or None, runner=functools.partial(
         review_run._probe_runner, unstopped=unstopped))  # pylint: disable=protected-access
@@ -210,20 +240,26 @@ def run(args, task):  # pylint: disable=too-many-return-statements,too-many-loca
     if not kimi_probe.launchable(probed["state"]):
         return unavailable(probed["state"], probed["reason"])
 
-    scratch = tempfile.mkdtemp(prefix="crew-kimi-agent-")
     try:
-        prompt = build_prompt(args.role, instructions, task)
-        prompt_path = os.path.join(scratch, "prompt.txt")
-        review_run._write_atomic(prompt_path, prompt)  # pylint: disable=protected-access
-        argument = review_run.prompt_argument(prompt_path, probed["exe"])
-        cmd = [probed["exe"], "-p", argument, "-m", probed["alias"],
-               "--output-format", "stream-json",
-               *kimi_probe.read_only_flags(
-                   scratch, tools=ROLE_TOOLS[args.role], disallowed=DISALLOWED,
-                   name=f"crew-{args.role}", filename=f"kimi-{args.role}.md",
-                   description=f"crew's read-only {args.role} role.",
-                   body=(f"You are crew's read-only {args.role}. Follow the user's message "
-                         "exactly; never modify files."))]
+        scratch = tempfile.mkdtemp(prefix="crew-kimi-agent-")
+    except OSError as exc:
+        return unavailable("failed", f"no scratch directory: {exc}")
+    try:
+        try:
+            prompt = build_prompt(args.role, instructions, task)
+            prompt_path = os.path.join(scratch, "prompt.txt")
+            review_run._write_atomic(prompt_path, prompt)  # pylint: disable=protected-access
+            argument = review_run.prompt_argument(prompt_path, probed["exe"])
+            cmd = [probed["exe"], "-p", argument, "-m", probed["alias"],
+                   "--output-format", "stream-json",
+                   *kimi_probe.read_only_flags(
+                       scratch, tools=ROLE_TOOLS[args.role], disallowed=DISALLOWED,
+                       name=f"crew-{args.role}", filename=f"kimi-{args.role}.md",
+                       description=f"crew's read-only {args.role} role.",
+                       body=(f"You are crew's read-only {args.role}. Follow the user's "
+                             "message exactly; never modify files."))]
+        except OSError as exc:
+            return unavailable("failed", f"the prompt or agent file could not be written: {exc}")
         if argument != prompt:
             cmd += ["--add-dir", scratch]
         started = []

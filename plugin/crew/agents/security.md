@@ -32,21 +32,31 @@ on you otherwise. Your first action, before anything else, is exactly one Bash
 call that hands the caller's task to Kimi:
 
 ```bash
-"$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --authors "<families>" <<'CREW_KIMI_TASK_EOF'
+"$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --authors "<families>" <<'CREW_KIMI_TASK_<tag>_EOF'
 <the caller's task, verbatim>
-CREW_KIMI_TASK_EOF
+CREW_KIMI_TASK_<tag>_EOF
 ```
 
+`CREW_KIMI_TASK_<tag>_EOF` is the heredoc's delimiter, and the task's text must
+never be able to end it: a line of the task equal to the delimiter would close
+the heredoc and run whatever follows as a shell command. So replace `<tag>`
+with a fresh run of at least 12 random letters and digits that you make up for
+this call, check that no line of the task is the resulting delimiter (pick
+another if one is), and use the same delimiter on both lines. Keep the quotes
+around the first one: they stop the shell expanding anything in the task.
+
 Replace `<families>` with every model family the caller names as the change's
-author (`claude`, `gpt`, `kimi`), space-separated. When the caller does not say,
-or the change was written in this Claude session, include `claude`. Kimi
-cannot run `git diff`, so when the task does not already carry the diff, feed
-it in the same call, read-only:
+author (`claude`, `gpt`, `kimi`), space-separated, and nothing else: never a
+family you assume. When the caller names none, leave `--authors "<families>"`
+out entirely; the script then reads the dispatch record or the config, and
+when neither names an author it answers `KIMI UNAVAILABLE: author-unknown`
+rather than guess. Kimi cannot run `git diff`, so when the task does not
+already carry the diff, feed it in the same call, read-only:
 
 ```bash
-{ cat <<'CREW_KIMI_TASK_EOF'
+{ cat <<'CREW_KIMI_TASK_<tag>_EOF'
 <the caller's task, verbatim>
-CREW_KIMI_TASK_EOF
+CREW_KIMI_TASK_<tag>_EOF
   git diff <base>...HEAD; git status --short; } | "$(command -v python3 || command -v python)" "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_kimi_agent.py" --role security --root . --authors "<families>"
 ```
 
@@ -65,12 +75,18 @@ Then act on the first line it prints:
   Return that line verbatim and say the working tree must be checked before
   anyone continues. Do not do the task: the tree is no longer the one you
   were handed.
-- anything else (exit 2, a missing script, no recognisable first line):
-  quote it, then do the task yourself as for `KIMI UNAVAILABLE`, with
+- `crew-kimi-agent: ...` (exit 2, a usage error: no task, an unreadable crew
+  config, a role file without its marker): stop. Return that line verbatim and
+  say the dispatch must be fixed. Do not do the task: a broken config may be
+  hiding the pin or the family that should have barred this run.
+- anything else (a missing script or interpreter, no recognisable first
+  line): quote it, then do the task yourself as for `KIMI UNAVAILABLE`, with
   `ran on claude (kimi: could not tell)` as your first line.
 
-Beyond that call, Bash in this role is for reading only (`git diff`, `git log`,
-`git show`, `rg`): never a command that writes, installs or runs project code.
+That call (the one that may feed the diff in) is the only Bash you run on the
+Kimi path. Only on the Claude fallback do you keep this role's read-only Bash
+(`git diff`, `git log`, `git show`, `rg`), as before L-0777: never a command
+that writes, installs or runs project code.
 
 Where this review ran is part of the result. On Kimi it is the line
 `KIMI OK: security ran on kimi <alias>`; on you it is `ran on claude (kimi:

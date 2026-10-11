@@ -28,6 +28,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
 - **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
   instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+- **Review round 1 (Codex).** The dispatchers make up a fresh heredoc delimiter per call, so a line of
+  the task cannot end it and run as a command; a line starting `crew-kimi-agent:` (exit 2, e.g. an
+  unreadable config layer, now refused rather than read as defaults) stops them instead of falling back;
+  security passes only the author families its caller names, and a dispatch record of unknown family is
+  `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
+  a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
 
 ### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
 

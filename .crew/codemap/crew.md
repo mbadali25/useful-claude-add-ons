@@ -2431,24 +2431,29 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 
 ## The agents on Kimi (L-0777)
 
-- **DERIVED** at `f23170fe9`: `plugin/crew/hooks/scripts/crew_kimi_agent.py` runs one crew role on
-  the Kimi Code CLI. `route` (`:141`) resolves `dev.roles.<role>` (`qa.roles.review` for `reviewer`)
+- **DERIVED** at `f23170fe9`, re-derived after review round 1: `plugin/crew/hooks/scripts/crew_kimi_agent.py`
+  runs one crew role on the Kimi Code CLI. `route` (`:162`) refuses an unreadable config layer first
+  (`_config_problem`, `:150`, exit 2), then resolves `dev.roles.<role>` (`qa.roles.review` for `reviewer`)
   through `crew_state.resolve_role`; anything but a resolved `kimi` is `not-routed`. For the
-  reviewing roles (`REVIEWING`, `:88`) the author set is `--authors` united with
-  `crew_state.author_families`, and an empty set is `author-unknown`. `run` (`:174`) fingerprints
-  the tree (`review_run.tree_fingerprint`), probes (`kimi_probe.probe` with
-  `review_run._probe_runner`), fingerprints again, launches with `kimi_probe.read_only_flags`
-  carrying the role's `ROLE_TOOLS` (`:73`, never Bash), stops survivors, fingerprints a third time
-  and judges with `review_run.reviewer_changes` (`_tree_problem`, `:164`). Exit 0 `KIMI OK`, 3
-  `KIMI UNAVAILABLE: <state>`, 8 `KIMI CHANGED THE TREE` / `KIMI TREE UNKNOWN`, 2 usage. The Kimi
-  prompt is the agent file's text after `MARKER` (`:66`, `role_instructions`, `:110`) plus the
-  task, capped at `TASK_CAP` (`:65`).
+  reviewing roles (`REVIEWING`, `:89`) an `author_families` source of `unknown` is `author-unknown`;
+  otherwise the author set is `--authors` united with `crew_state.author_families`, and an empty set is
+  `author-unknown`. `run` (`:204`) fingerprints the tree (`review_run.tree_fingerprint`; a failure here is
+  `KIMI TREE UNKNOWN`, exit 8), probes (`kimi_probe.probe` with `review_run._probe_runner`), fingerprints
+  again, launches with `kimi_probe.read_only_flags` carrying the role's `ROLE_TOOLS` (`:74`, never Bash),
+  stops survivors, fingerprints a third time and judges with `review_run.reviewer_changes`
+  (`_tree_problem`, `:194`). A scratch or agent-file write that fails is `KIMI UNAVAILABLE: failed`. Exit
+  0 `KIMI OK`, 3 `KIMI UNAVAILABLE: <state>`, 8 `KIMI CHANGED THE TREE` / `KIMI TREE UNKNOWN`, 2 usage;
+  every contract line goes through `_one_line` (`:99`), which folds line breaks. The Kimi prompt is the
+  agent file's text after `MARKER` (`:67`, `role_instructions`, `:118`) plus the task, capped at
+  `TASK_CAP` (`:66`).
 - **DERIVED**: `kimi_probe.write_agent_file` (`plugin/crew/hooks/scripts/kimi_probe.py:218`) takes
   `tools`, `disallowed`, `name`, `filename`, `description` and `body`; its defaults are the review
-  round's file byte for byte. `read_only_flags` (`:249`) passes them through.
-- **DERIVED**: `crew_state.REVIEWING_DEV_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:1197`) is
+  round's file byte for byte, the `tools:` line kept literal for `sabotage_kimi.py`'s anchor.
+  `read_only_flags` (`:254`) passes them through.
+- **DERIVED**: `crew_state.REVIEWING_DEV_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:1198`) is
   `("security",)`; `resolve_role` applies its family guard to every `qa` role and to those `dev`
-  roles (`:1652`). `DEV_ROLE_KINDS` (`:1196`) lists `explorer` and `researcher`, and
+  roles (`:1655`, the guard's `if` line kept literal for `sabotage.py`'s anchor). `DEV_ROLE_KINDS`
+  (`:1197`) lists `explorer` and `researcher`, and
   `crew_config.model_report` passes the author families to the reviewing `dev` rows.
 - **DERIVED**: `plugin/crew/agents/explorer.md`, `researcher.md` and `security.md` open with the
   dispatch section and carry the marker once; `explorer` and `researcher` hold `Bash` for it.
