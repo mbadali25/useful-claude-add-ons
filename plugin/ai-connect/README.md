@@ -188,6 +188,28 @@ To skip tool confirmation dialogs, add to `~/.claude/settings.json`:
 
 Then restart the assistant so it loads the MCP server.
 
+## Deploy
+
+`deploy/deploy.sh` (Linux) and `deploy/deploy.ps1` (Windows) do the whole Setup above in one non-interactive command, over Tailscale. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. The machine must already have Tailscale installed; a Bridge must already be on the tailnet.
+
+```bash
+# Bridge machine (Linux: sudo for systemd and the firewall; Windows: an elevated PowerShell)
+deploy/deploy.sh bridge --peer laptop --peer desk
+# every other machine, with the token file from the Bridge and a one-off auth key from vpn/mint-key
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --auth-key-file laptop.key
+deploy/deploy.sh status
+deploy/deploy.sh uninstall --yes          # --purge also deletes ~/.config/ai-connect
+```
+
+- **`bridge`**: venv and `requirements.txt`; `config.yaml` with `server.host` set to this machine's `tailscale ip -4` (through `installer.py`, which also creates the observer, user and own peer tokens); one token per `--peer`, written owner-only to `~/.config/ai-connect/peer-tokens/<name>.token`; the Bridge service (`ai-connect.service`, on Windows the `AI-Connect Bridge` scheduled task, the same ones `install.sh` / `install.ps1` create); a firewall rule for the port from `--vpn-subnet` only (default Tailscale's `100.64.0.0/10`; ufw, firewalld or Windows Firewall); then a health check that opens a WebSocket to the Bridge with this machine's own token.
+- **`peer`**: venv and `requirements.txt`; `claude plugin install ai-connect@useful-claude-add-ons` and the MCP server registration (`installer.py claude`); `vpn/vpn-up` with the one-off auth key, skipped when the machine is already on the tailnet; the client config (`client.name`, `client.bridge_url`, `client.token`); then the same WebSocket check, which fails if the Bridge refuses the token.
+- **Idempotent**: every step looks first and prints `already done: ...` instead of repeating itself. A rerun with a new `--peer` adds that peer and restarts the Bridge.
+- **`--dry-run`** (`bridge`, `peer`, `uninstall`) runs only the read-only checks and prints `would: ...` for each change.
+- **Secrets** never go on the command line and are never printed: the peer token comes from `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`. Output shows a token as `****` plus its last four characters.
+- `--port` (default 9999) and `--name` (the Bridge's own peer name, default the host name) are there when the defaults do not fit. Exit codes: 0 done, 1 a step failed, 2 bad arguments, 3 Tailscale is not installed.
+
+`deploy.ps1` does not ask through UAC: `bridge` and `uninstall` fail at the scheduled task or the firewall rule unless the shell is elevated. On Linux without ufw or firewalld the firewall step prints the rule to add by hand.
+
 ## Usage
 
 ### MCP tools
