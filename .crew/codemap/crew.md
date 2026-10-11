@@ -2452,7 +2452,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `read_only_flags` (`:254`) passes them through.
 - **DERIVED**: `crew_state.REVIEWING_DEV_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:1198`) is
   `("security",)`; `resolve_role` applies its family guard to every `qa` role and to those `dev`
-  roles (`:1655`, the guard's `if` line kept literal for `sabotage.py`'s anchor). `DEV_ROLE_KINDS`
+  roles (`:1653`, the guard's `if` line kept literal for `sabotage.py`'s anchor). `DEV_ROLE_KINDS`
   (`:1197`) lists `explorer` and `researcher`, and
   `crew_config.model_report` passes the author families to the reviewing `dev` rows.
 - **DERIVED**: `plugin/crew/agents/explorer.md`, `researcher.md` and `security.md` open with the

@@ -1650,8 +1650,6 @@ def resolve_role(cfg, kind, role, author=None, available=None,  # pylint: disabl
         return out
 
     # 1. The family guard, BEFORE the pin. See the docstring.
-    # `qa` roles and the dev roles in `REVIEWING_DEV_ROLES` review code; a
-    # writer (`dev.roles.developer`) is never barred by its author.
     guarded = kind == "qa" or (kind == "dev" and role in REVIEWING_DEV_ROLES)
     if out["family"] is not None and out["family"] in authors:
         if guarded:
