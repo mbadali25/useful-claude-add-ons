@@ -42,6 +42,8 @@ _UNREAD_ENVELOPE_BYTES = len(json.dumps({"type": "unread", "messages": []}))
 RATE_LIMITED_ERROR = "Too many messages; slow down"
 QUEUE_FULL_ERROR = "'{name}' is offline and has too many messages waiting; not sent"
 PEER_STATES = ("busy", "idle", "waiting")
+# notify_when_idle subscriptions one peer may hold at once; they end with its connection
+MAX_IDLE_SUBSCRIPTIONS_PER_PEER = 32
 IDLE_NOTICE = "{name} is done and idle."
 WAITING_NOTICE = "{name} is waiting for approval: {detail}"
 NAME_TAKEN_ERROR = (
@@ -352,10 +354,15 @@ class BridgeServer:
 
                 elif msg_type == "notify_when_idle":
                     watched = message.get("peer")
-                    if not watched:
+                    if not isinstance(watched, str) or not watched:
                         await self._send_error(websocket, "'notify_when_idle' needs a 'peer'")
                         continue
-                    await self._subscribe_idle(peer_name, watched)
+                    if not await self._subscribe_idle(peer_name, watched):
+                        await refuse(
+                            "too_many_subscriptions",
+                            f"At most {MAX_IDLE_SUBSCRIPTIONS_PER_PEER} notify_when_idle subscriptions at once",
+                            msg_type, name=watched, limit=MAX_IDLE_SUBSCRIPTIONS_PER_PEER,
+                        )
 
                 elif msg_type == "history":
                     history = await self.store.get_history(
@@ -384,6 +391,13 @@ class BridgeServer:
         if current and current.websocket is websocket:
             await self.registry.unregister(name)
 
+    def _drop_idle_subscriptions(self, subscriber: str) -> None:
+        """End every notify_when_idle subscription of subscriber (its connection is gone)."""
+        for watched in list(self._idle_subscribers):
+            self._idle_subscribers[watched].discard(subscriber)
+            if not self._idle_subscribers[watched]:
+                del self._idle_subscribers[watched]
+
     async def _send_error(self, websocket: ServerConnection, error: str) -> None:
         await websocket.send(json.dumps({"type": "error", "error": error}))
 
@@ -399,13 +413,24 @@ class BridgeServer:
         for subscriber in self._idle_subscribers.pop(name, set()):
             await self._route_message({"to": subscriber, "content": notice}, BRIDGE_SENDER)
 
-    async def _subscribe_idle(self, subscriber: str, watched: str) -> None:
-        """Notify subscriber once when watched is done; at once if it already is."""
+    async def _subscribe_idle(self, subscriber: str, watched: str) -> bool:
+        """Notify subscriber once when watched is done; at once if it already is.
+
+        False, with nothing changed, when subscriber already holds
+        MAX_IDLE_SUBSCRIPTIONS_PER_PEER: each would otherwise stay until a
+        name that may never exist goes idle.
+        """
         peer = self.registry.get(watched)
         if peer and peer.state == "idle":
             await self._route_message({"to": subscriber, "content": IDLE_NOTICE.format(name=watched)}, BRIDGE_SENDER)
-            return
+            return True
+        subscribers = self._idle_subscribers.get(watched, set())
+        if subscriber not in subscribers:
+            held = sum(subscriber in subs for subs in self._idle_subscribers.values())
+            if held >= MAX_IDLE_SUBSCRIPTIONS_PER_PEER:
+                return False
         self._idle_subscribers.setdefault(watched, set()).add(subscriber)
+        return True
 
     async def _route_message(self, message: dict, from_peer: str) -> tuple[dict, bool] | None:
         """Deliver a message; direct messages to offline peers wait in the store.
@@ -427,8 +452,12 @@ class BridgeServer:
             target = self.registry.get(to_peer)
             recipients = [target] if target else []
 
-        delivered = to_peer == "*" or bool(recipients) or is_user_name(to_peer)
-        if not delivered and await self._queue_full(to_peer, from_peer, message):
+        # A direct message to a registered peer is stored unread and marked
+        # delivered only once its send returns: a holder whose socket closed
+        # before the heartbeat noticed gets it as unread on its next register
+        direct = to_peer != "*" and bool(recipients)
+        delivered = to_peer == "*" or is_user_name(to_peer)
+        if not delivered and not direct and await self._queue_full(to_peer, from_peer, message):
             return None
         outgoing = await self.store.store(
             from_peer,
@@ -439,7 +468,8 @@ class BridgeServer:
         )
         payload = json.dumps({**outgoing, "type": "message"})
         for peer in recipients:
-            await self._send_to(peer, payload)
+            if await self._send_to(peer, payload) and direct:
+                await self.store.mark_delivered([outgoing["id"]])
         await self._notify_watchers(to_peer, from_peer, payload)
         return outgoing, bool(recipients)
 
@@ -478,11 +508,14 @@ class BridgeServer:
                 except websockets.exceptions.ConnectionClosed:
                     self._watchers[name].discard(watcher)
 
-    async def _send_to(self, peer: Peer, payload: str) -> None:
+    async def _send_to(self, peer: Peer, payload: str) -> bool:
+        """Send to one peer; False when its connection turned out closed."""
         try:
             await peer.websocket.send(payload)
         except websockets.exceptions.ConnectionClosed:
             logger.warning(f"Could not deliver to {peer.name}: connection closed")
+            return False
+        return True
 
     def _peer_list(self) -> list[dict]:
         return [
@@ -506,6 +539,8 @@ class BridgeServer:
         await self.observers.peers_changed(self._peer_list())
 
     async def _handle_left(self, peer: Peer) -> None:
+        # Every way a name leaves (close, a second name, heartbeat, timeout) passes here
+        self._drop_idle_subscriptions(peer.name)
         await self._announce_left(peer)
         await self._offer_name(peer.name)
 

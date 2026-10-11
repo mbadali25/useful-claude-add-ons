@@ -437,3 +437,100 @@ def test_rate_limit_is_per_connection(tmp_path):
                 return await recv(a), await recv(b)
 
     assert run(go()) == ({"type": "pong"}, {"type": "pong"})
+
+
+# --- Codex QA: delivery is marked only once it happened; idle subscriptions are bounded ---
+
+
+class _DeadSocket:
+    """A registry entry whose connection closed before the heartbeat noticed."""
+
+    async def send(self, _payload):
+        raise ConnectionClosed(None, None)
+
+    async def close(self):
+        return None
+
+
+def test_direct_message_to_a_closed_socket_stays_unread(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            await server.registry.register(h.BOB, "127.0.0.1", _DeadSocket(), "bob-credential")
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to=h.BOB, content="did you get this?")
+                await send(alice, type="ping")
+                await recv_type(alice, "pong")
+            return await server.store.get_unread(h.BOB)
+
+    unread = run(go())
+    assert [m["content"] for m in unread] == ["did you get this?"]
+
+
+def test_direct_message_to_a_live_peer_is_marked_delivered(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.BOB_TOKEN) as bob, connect(server, h.ALICE_TOKEN) as alice:
+                await register(bob, h.BOB)
+                await register(alice, h.ALICE)
+                await send(alice, type="message", to=h.BOB, content="hi")
+                got = await recv_type(bob, "message")
+                await send(alice, type="ping")
+                await recv_type(alice, "pong")
+                return got, await server.store.get_unread(h.BOB)
+
+    got, unread = run(go())
+    assert got["content"] == "hi"
+    assert unread == []
+
+
+def test_idle_subscriptions_per_peer_are_capped(tmp_path, caplog):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                for i in range(ws_server.MAX_IDLE_SUBSCRIPTIONS_PER_PEER):
+                    await send(alice, type="notify_when_idle", peer=f"Ghost:{i}")
+                with caplog.at_level(logging.WARNING):
+                    await send(alice, type="notify_when_idle", peer="Ghost:one-too-many")
+                    refused = await recv_type(alice, "error")
+                held = sum(h.ALICE in subs for subs in server._idle_subscribers.values())  # pylint: disable=protected-access
+                return refused, held
+
+    refused, held = run(go())
+    assert refused["code"] == "too_many_subscriptions"
+    assert held == ws_server.MAX_IDLE_SUBSCRIPTIONS_PER_PEER
+    assert "too_many_subscriptions" in caplog.text
+
+
+def test_idle_subscriptions_end_with_the_subscriber(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                await send(alice, type="notify_when_idle", peer="Ghost:1")
+                await send(alice, type="ping")
+                await recv_type(alice, "pong")
+                assert server._idle_subscribers  # pylint: disable=protected-access
+            for _ in range(50):
+                if not server._idle_subscribers:  # pylint: disable=protected-access
+                    break
+                await asyncio.sleep(0.02)
+            return dict(server._idle_subscribers)  # pylint: disable=protected-access
+
+    assert run(go()) == {}
+
+
+def test_notify_when_idle_with_a_non_string_peer_is_refused(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                await send(alice, type="notify_when_idle", peer={"not": "a name"})
+                error = await recv_type(alice, "error")
+                await send(alice, type="ping")
+                return error, await recv_type(alice, "pong")
+
+    error, pong = run(go())
+    assert "notify_when_idle" in error["error"]
+    assert pong["type"] == "pong"  # the connection survived
