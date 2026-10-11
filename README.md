@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **ai-connect 0.1.1**: Two review-fix rounds and Tailscale self-join tooling. `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put a machine on a Tailscale tailnet with a single-use key.
 - **ai-connect 0.1.0**: Peer messaging between Claude Code sessions. New plugin `ai-connect`: Claude Code sessions on different machines can message each other through a self-hosted bridge, with hooks that publish each session's state and wake an idle session when a message arrives.
-- **crew 1.2.20**: A merged ticket closes with `/crew:done` without a refresh PR. `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4 and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

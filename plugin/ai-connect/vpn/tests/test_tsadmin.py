@@ -85,7 +85,7 @@ def test_mint_key_file_acl_has_no_inherited_entries_windows(ts, api, tmp_path):
     import subprocess
     out_file = tmp_path / "alice.key"
     ts.main(["mint-key", "--name", "alice", "--out", str(out_file)])
-    acl = subprocess.run(["icacls", str(out_file)], capture_output=True, text=True).stdout
+    acl = subprocess.run(["icacls", str(out_file)], capture_output=True, text=True, check=False).stdout
     assert "(I)" not in acl  # inheritance stripped
     assert os.environ["USERNAME"].lower() in acl.lower()
 
@@ -357,7 +357,8 @@ def test_vpn_up_succeeds_but_backend_not_running_is_could_not_tell(ts, fake_ts, 
 
 
 def test_vpn_up_falls_back_to_userspace_when_no_tun(ts, fake_ts, probe, monkeypatch, tmp_path, capsys):
-    fake_ts.set(backend="Stopped", up_rc=1, up_stderr="failed to connect to local tailscaled; it doesn't appear to be running")
+    fake_ts.set(backend="Stopped", up_rc=1,
+                up_stderr="failed to connect to local tailscaled; it doesn't appear to be running")
     monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
     started = []
     monkeypatch.setattr(ts, "start_userspace_tailscaled", lambda: started.append(True))

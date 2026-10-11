@@ -119,9 +119,16 @@ async def _send(as_name: str, recipients: list[str], text: str) -> None:
         sys.exit(str(e))
     except TokenRefused:
         sys.exit("The Bridge refused the user token.")
+    refused = False
     for recipient in sent:
-        state = "delivered" if recipient["online"] else "waits until it is online"
+        if recipient.get("error"):
+            refused = True
+            state = f"refused: {recipient['error']}"
+        else:
+            state = "delivered" if recipient["online"] else "waits until it is online"
         print(f"User:{as_name} -> {recipient['to']}: {state}")
+    if refused:
+        sys.exit(1)
 
 
 def main() -> None:

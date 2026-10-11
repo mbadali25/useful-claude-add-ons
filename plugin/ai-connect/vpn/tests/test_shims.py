@@ -32,7 +32,7 @@ def test_lf_only(path):
 @pytest.mark.skipif(not BASH, reason="bash not found")
 @pytest.mark.parametrize("path", SH, ids=lambda p: p.name)
 def test_bash_syntax(path):
-    res = subprocess.run([BASH, "-n", str(path)], capture_output=True, text=True)
+    res = subprocess.run([BASH, "-n", str(path)], capture_output=True, text=True, check=False)
     assert res.returncode == 0, res.stderr
 
 
@@ -42,7 +42,7 @@ def test_ps1_parses(path):
     script = ("$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("
               f"'{path}', [ref]$null, [ref]$e); if ($e.Count) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }}")
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, check=False)
     assert res.returncode == 0, res.stdout + res.stderr
 
 
@@ -64,7 +64,7 @@ def test_sh_shim_passes_exit_code_through(tmp_path):
     env = _env_without_tailscale(tmp_path)
     if os.name == "nt":  # Git Bash needs its own coreutils (dirname) on PATH
         env["PATH"] = os.pathsep.join([r"C:\Program Files\Git\usr\bin", env["PATH"]])
-    res = subprocess.run([BASH, str(VPN / "vpn-down.sh")], capture_output=True, text=True, env=env)
+    res = subprocess.run([BASH, str(VPN / "vpn-down.sh")], capture_output=True, text=True, env=env, check=False)
     assert res.returncode == 3, res.stdout + res.stderr
     assert "not installed" in res.stderr
 
@@ -75,6 +75,6 @@ def test_ps1_shim_passes_exit_code_through(tmp_path):
     if shutil.which("tailscale", path=env["PATH"]):
         pytest.skip("tailscale on the minimal PATH")
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(VPN / "vpn-down.ps1")],
-                         capture_output=True, text=True, env=env)
+                         capture_output=True, text=True, env=env, check=False)
     assert res.returncode == 3, res.stdout + res.stderr
     assert "not installed" in res.stderr

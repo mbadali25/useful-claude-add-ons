@@ -57,7 +57,11 @@ you pass `--expiry` (`30m`, `12h`, `3d`, or seconds; the range is 60 s to 90 day
 `--peer-token` also runs ai-connect's `installer.py add-peer <name>`, which prints the
 peer's Bridge token once. The script looks for the installer in `--installer`, then
 `$AI_CONNECT_INSTALLER`, then next to this directory. If none of those exist, it says
-so and skips the step.
+so and skips the step. It runs the installer with the venv `install.sh` / `install.ps1`
+built beside it (`venv/bin/python`, `venv\Scripts\python.exe`), since the installer needs
+PyYAML, and falls back to the Python running the script when there is no venv. Run it on
+the Bridge machine: `add-peer` writes that machine's `~/.config/ai-connect/config.yaml`.
+A peer that already exists is not replaced; the script warns and the auth key stays valid.
 
 **Agent**: join.
 

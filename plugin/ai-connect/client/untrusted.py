@@ -91,19 +91,22 @@ def _context_part(context: object) -> str:
     return f"📎 {_defang_markers(location)}\n{fence}\n{excerpt}\n{fence}"
 
 
-def frame_message(sender: object, content: object, context: object = None) -> str:
+def frame_message(sender: object, content: object, context: object = None, header: object = None) -> str:
     """The untrusted block for one message, with the warning in front of it.
 
     Every argument comes from a peer and may have any type: it is rendered,
-    escaped, never assumed to be well formed.
+    escaped, never assumed to be well formed. header (who sent it, when) holds
+    the peer's name, so it goes inside the block as its first line.
     """
     name = sanitize(_text(sender), single_line=True)
     tag = secrets.token_hex(8)
     parts = [
         WARNING.format(sender=name),
         f'{START} from="{_defang_markers(name)}" id={tag}>>>',
-        _defang_markers(sanitize(_text(content))),
     ]
+    if header is not None:
+        parts.append(_defang_markers(sanitize(_text(header), single_line=True)))
+    parts.append(_defang_markers(sanitize(_text(content))))
     if context:
         parts.append(_context_part(context))
     parts.append(f"{END} id={tag}>>>")

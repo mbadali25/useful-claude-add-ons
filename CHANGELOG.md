@@ -9,6 +9,27 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
+
+- **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
+  overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put
+  a machine on a Tailscale tailnet with a single-use key.
+- **Client round.** `peer_send`/`peer_context` open the file first and judge the handle (regular file,
+  final path inside the project, at most the cap), so a symlink or junction swapped in after the name
+  check is refused. `peer_list` puts every peer-set field in one untrusted block; `peer_read` and
+  `peer_history` put the sender and time line inside each message's block. Malformed peer fields render
+  escaped instead of raising, and `peer_read` drops messages only after they render.
+- **Server round.** `PeerRegistry.register` inserts the new holder before closing the dead one, so two
+  connections can no longer hold one name. A peer may message `User:<name>`; registering or watching one
+  stays refused. Each recipient's unread queue is capped (500 messages, 8 MiB) with the error code
+  `recipient_queue_full`, and unread messages go out in frames of at most 1 MiB, each marked delivered
+  only after its send. `observer_client.cli send` prints the Bridge's error for a refused recipient and
+  exits 1 instead of reporting it as waiting.
+- **VPN tooling.** `plugin/ai-connect/vpn/`: `mint-key`, `revoke`, `vpn-up`, `vpn-down` (one stdlib
+  `tsadmin.py` behind `.sh`/`.ps1` shims) and an ACL template allowing `tag:ai-peer` to reach
+  `tag:bridge:9999` only. `mint-key --peer-token` runs `installer.py add-peer` under the venv beside the
+  installer. `.crew/verify.json` runs `vpn/tests` as a second pytest run of the ai-connect entry.
+
 ### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
 
 - **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each

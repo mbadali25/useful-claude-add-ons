@@ -201,8 +201,8 @@ def _format_messages(messages: list, me: str) -> str:
     rendered = []
     for msg in messages:
         sender, content, context, timestamp = _message_fields(msg)
-        rendered.append(f"📥 [{_safe_bridge_time(timestamp)}] [{sanitize(sender, single_line=True)} → {me}]:")
-        rendered.append(frame_message(sender, content, context))
+        header = f"📥 [{_safe_bridge_time(timestamp)}] [{sender} → {me}]:"
+        rendered.append(frame_message(sender, content, context, header))
     return "\n".join(rendered)
 
 
@@ -311,8 +311,8 @@ async def peer_history(peer: str, limit: int) -> str:
     for msg in messages:
         sender, content, context, timestamp = _message_fields(msg)
         direction = "📤" if sender == client.peer_name else "📥"
-        lines.append(f"{direction} [{_safe_bridge_time(timestamp)}] {sanitize(sender, True)}:")
-        lines.append(frame_message(sender, content, context))
+        header = f"{direction} [{_safe_bridge_time(timestamp)}] {sender}:"
+        lines.append(frame_message(sender, content, context, header))
     return "\n".join(lines)
 
 

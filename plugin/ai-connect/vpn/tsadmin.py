@@ -125,7 +125,7 @@ def oauth_credentials() -> tuple[str, str]:
     secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "")
     if not (cid and secret):
         try:
-            import keyring  # optional; the OS credential store
+            import keyring  # pylint: disable=import-error  # optional; the OS credential store
             cid = cid or (keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or "")
             secret = secret or (keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or "")
         except Exception:  # keyring absent or its backend broken: env is then the only source
@@ -269,7 +269,7 @@ def cmd_revoke(args) -> int:
     matches = []
     for dev in payload.get("devices", []):
         names = {str(dev.get("hostname", "")).lower(), str(dev.get("name", "")).lower(),
-                 str(dev.get("name", "")).split(".")[0].lower()}
+                 str(dev.get("name", "")).split(".", maxsplit=1)[0].lower()}
         if want in names and (args.any_tag or args.tag in (dev.get("tags") or [])):
             matches.append(dev)
     if not matches:
@@ -350,13 +350,16 @@ def probe_tcp(host: str, port: int, timeout: float = 5.0, socks_port: int | None
 
 def bridge_verdict(bridge: str | None, userspace: bool) -> tuple[int, str]:
     if not bridge:
-        return EXIT_UNKNOWN, "tailnet is up, but no Bridge host given (--bridge / AI_CONNECT_BRIDGE_HOST), so reachability is unknown"
+        return EXIT_UNKNOWN, ("tailnet is up, but no Bridge host given (--bridge / AI_CONNECT_BRIDGE_HOST), "
+                              "so reachability is unknown")
     result = probe_tcp(bridge, BRIDGE_PORT, socks_port=SOCKS_PORT if userspace else None)
     if result == "ok":
         return EXIT_OK, f"Bridge {bridge}:{BRIDGE_PORT} reachable"
     if result == "refused":
-        return EXIT_FAILED, f"tailnet is up but {bridge}:{BRIDGE_PORT} refused the connection (Bridge not listening?)"
-    return EXIT_UNKNOWN, f"tailnet is up but {bridge}:{BRIDGE_PORT} did not answer (timeout or name lookup failed); could not tell"
+        return EXIT_FAILED, (f"tailnet is up but {bridge}:{BRIDGE_PORT} refused the connection "
+                             "(Bridge not listening?)")
+    return EXIT_UNKNOWN, (f"tailnet is up but {bridge}:{BRIDGE_PORT} did not answer "
+                          "(timeout or name lookup failed); could not tell")
 
 
 def read_key(args) -> tuple[str, Path | None]:
@@ -392,9 +395,10 @@ def start_userspace_tailscaled() -> None:
         raise Failure("userspace fallback needs the tailscaled binary on PATH, and it is not there")
     sdir = state_dir()
     sdir.mkdir(parents=True, exist_ok=True)
-    log = open(sdir / "tailscaled.log", "ab")  # noqa: SIM115 -- handed to the child
+    # Both outlive this function on purpose: the log is handed to the detached daemon.
+    log = open(sdir / "tailscaled.log", "ab")  # noqa: SIM115  # pylint: disable=consider-using-with
     flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WINDOWS else {"start_new_session": True}
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
         [daemon, "--tun=userspace-networking", f"--socks5-server=localhost:{SOCKS_PORT}",
          f"--state={sdir / 'tailscaled.state'}", f"--socket={userspace_socket()}"],
         stdout=log, stderr=log, stdin=subprocess.DEVNULL, **flags)
@@ -489,7 +493,7 @@ def cmd_vpn_down(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tsadmin", description=__doc__.split("\n\n")[0])
+    p = argparse.ArgumentParser(prog="tsadmin", description=__doc__.split("\n\n", maxsplit=1)[0])
     sub = p.add_subparsers(dest="cmd", required=True)
 
     m = sub.add_parser("mint-key", help="ADMIN: create one single-use auth key for a peer")

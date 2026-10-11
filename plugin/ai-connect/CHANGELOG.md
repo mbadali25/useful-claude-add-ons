@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.1] - 2026-10-11
+
+Marketplace plugin version 0.1.1; the plugin's 0.1.0 shipped upstream 2.3.0-hardened. Two review-fix rounds and the VPN tooling.
+
+### Fixed
+- File sharing: `_read_shareable` opens the file first (`O_NOFOLLOW` where it exists) and decides on the handle: a regular file, its final path (`GetFinalPathNameByHandleW`, `/proc/self/fd`, `F_GETPATH`) inside the project, at most the cap read. A file or ancestor swapped for a symlink or junction after the name check is refused; a platform that cannot name the handle refuses
+- `peer_list`: every peer-set field (name, state, detail, status) goes inside one untrusted block, one escaped line per peer
+- `peer_read` / `peer_history`: the sender and time header is the first line inside each message's untrusted block, not a line above it
+- Malformed peer fields (a non-dict context, non-string content or sender, a bad timestamp) render escaped instead of raising; `peer_read` peeks, renders, then drops, so a render failure no longer loses the queue
+- `PeerRegistry.register` inserts the new holder before closing the dead one, with no await between check and insert, so two connections can no longer be authorised under one name
+- Peers may send to `User:<name>` again (the documented reply path); registering or watching a user name stays refused
+- Offline delivery: each recipient's unread queue is capped (`max_unread_per_peer` 500, `max_unread_bytes_per_peer` 8 MiB) and a send past it is refused with `recipient_queue_full`; unread messages go out in frames of at most 1 MiB, each marked delivered only after its send returns
+- `observer_client.cli send` prints the Bridge's error for a refused recipient and exits 1, instead of "waits until it is online"
+
+### Added
+- `vpn/`: Tailscale self-join tooling. `mint-key` (one single-use, ephemeral, pre-authorised `tag:ai-peer` key via an OAuth client), `revoke`, `vpn-up` (idempotent join, userspace fallback with a SOCKS5 proxy), `vpn-down`; one stdlib `tsadmin.py` behind `.sh`/`.ps1` shims, and an ACL template allowing `tag:ai-peer` to reach `tag:bridge:9999` only. See [vpn/README.md](vpn/README.md)
+- `mint-key --peer-token` runs `installer.py add-peer <name>` with the venv beside the installer (`venv/bin/python` or `venv\Scripts\python.exe`), falling back to the running Python
+
 ## [2.3.0-hardened] - 2026-10-11
 
 Security hardening across server, client and ops. Updating from 2.2: config keys move (see below); `install.sh`/`install.ps1` or `installer.py config` migrate `bridge.*` automatically, with a deprecation warning, and write the new `client:` section and per-peer tokens.
