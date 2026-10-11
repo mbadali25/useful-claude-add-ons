@@ -56,6 +56,11 @@ _env_guard_armed() {
       "{"*"}") ;;
       *) return 0 ;;
     esac
+    # A trailing comma or a comment is JSON python refuses (a corrupt layer),
+    # so it arms here too. `//` after a `:` is a URL, not a comment.
+    printf '%s' "$flat" \
+      | grep -Eq ',[[:space:]]*[]}]|/\*|(^|[[:space:],{[])//' 2>/dev/null \
+      && return 0
     # A `\u` escape can spell the key (`"env\u0047uard"`) where grep cannot
     # see it; python decodes it. Could not tell, so armed.
     case "$flat" in

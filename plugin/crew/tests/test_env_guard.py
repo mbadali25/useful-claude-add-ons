@@ -67,6 +67,20 @@ BLOCK_BASH = [
     "perl -I/x/e -e 'print %ENV'",
     # review round 2 prep: a run of code letters (`-pe`) read every way
     "node -pe 'process.env'", "node -pe'process.env'", "node -ep 'process.env'",
+    # security pass (L-0772-fix): ANSI-C unicode names, options that take an
+    # argument before the code, powershell.exe's positional -Command, pwsh
+    # -cwa, folded /proc spellings, env -i handed a secret
+    "$'\\u0065nv'", "$'\\u0070rintenv'", "$'\\U00000065nv'",
+    "node -r dotenv/config -e 'console.log(process.env)'",
+    "node --require dotenv/config -p process.env",
+    "python3 -W ignore -c 'import os;print(os.environ)'",
+    "perl -I lib -e 'print %ENV'", "ruby -I lib -e 'p ENV'",
+    "php -d x=1 -r 'print_r($_ENV);'",
+    "powershell 'Get-ChildItem env:'", "powershell -NoProfile \"gci env:\"",
+    "pwsh -cwa 'gci env:'",
+    "cat /proc/self//environ", "cat /proc/./self/environ",
+    "cat /proc/1/../self/environ", "env -i T=\"$FAKE_GITHUB_TOKEN\"",
+    "bash --rcfile /dev/null -c env", "bash -s -- a <<< env", "bash - <<< env",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
     "declare", "declare -p", "declare -x", "typeset -p", "typeset -x",
@@ -156,6 +170,11 @@ ALLOW_BASH = [
     "echo {a,b}", "python3 -Bc 'print(1)'", "python3 -W ignore -c 'print(1)'",
     "python3 -c 'import os; print(os.getenv(\"HOME\"))'",
     "perl -e 'print $ENV{HOME}'",
+    # security pass: what the new could-not-tell rules must leave alone
+    "cat $f", "cat $dir/*.txt", "cat $dir/environ.bak", "echo $((1+2))",
+    "(( x = 1 ))", "ls | bash x.sh", "cat f | python3 script.py",
+    "echo 1 | jq .", "env -i PATH=$PATH", "powershell -File x.ps1",
+    "powershell -NoProfile -Command Get-Date", "\"$PY\" -W ignore script.py",
 ]
 
 ALLOW_PS = [
@@ -175,9 +194,18 @@ CNT_BASH = [
     "/usr/bin/en?", "e{n,}v", "sudo /usr/bin/e*",
     "python3 -c 'import os; print(os.environ[name])'",
     "node -e 'console.log(process.env[k])'", "perl -e 'print $ENV{$k}'",
+    # security pass: a default-supplying expansion as the program, a
+    # command substitution inside arithmetic, code fed through a pipe, a
+    # non-literal path to an environ file, an over-long code-letter run
+    "${UNSET_X:-env}", "${UNSET_X-printenv}", "sudo ${UNSET_X:-env}",
+    "(( $(env >&2; echo 1) ))", "echo $(( $(env >&2; echo 1) ))",
+    "echo env | bash", "printf printenv | sh",
+    "echo 'import os;print(os.environ)' | python3",
+    "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
+    "python3 -" + "c" * 4000 + " 0",
 ]
 CNT_PS = ["iex $s", "& $cmd", "Invoke-Expression $code", "Write-Output 'x",
-          "gci env: | Out-String )"]
+          "gci env: | Out-String )", "[Environment]::GetEnvironmentVariable($n)"]
 
 
 def _ids(cases):
@@ -200,7 +228,13 @@ def _scrubbed_env(tmp_path, driver=None, extra=None):
     fake marker."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    # The running python's directory first: the drivers are tested with a
+    # python they can find. On Windows, Git Bash's PATH can hold only the
+    # WindowsApps Store stubs, which crew_py_strict probes and skips, so the
+    # driver would (correctly) fail closed and the parity cases would test
+    # the no-python path instead (win-repo-2, a7f25e1f9).
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    env = {"PATH": os.path.dirname(sys.executable) + os.pathsep + path,
            "HOME": str(home), "USERPROFILE": str(home),
            "CLAUDE_PROJECT_DIR": str(tmp_path / "repo"),
            "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
@@ -398,6 +432,15 @@ def test_latency_bound():
     assert per_call < 0.150, per_call
 
 
+def test_latency_bound_on_a_huge_code_cluster():
+    """Security pass: reading every split of a code-letter run was quadratic,
+    24 s for a 28,000-letter cluster, past the 15 s hook timeout."""
+    start = time.perf_counter()
+    labels = env_guard.findings("python3 -" + "c" * 28000 + " 0; env", "bash")
+    assert time.perf_counter() - start < 2.0
+    assert "could-not-tell:code-cluster" in labels
+
+
 # --- the python driver: main(), every case -------------------------------------------
 
 
@@ -521,9 +564,10 @@ _SWITCH_SAMPLE = [("Bash", "env"), ("Bash", "printenv"), ("Bash", "set"),
                   ("Bash", "eval \"$X\"")]
 
 
-@pytest.mark.parametrize("cfg", [None, {"guards": {}}, {"guards": {"envGuard": "off"}},
-                                 {"guards": {"envGuard": None}}],
-                         ids=["no-config", "absent-key", "off", "null"])
+# An explicit `null` is not here: since the round-1 review it is malformed,
+# the floor (`test_malformed_value_blocks[explicit-null]`).
+@pytest.mark.parametrize("cfg", [None, {"guards": {}}, {"guards": {"envGuard": "off"}}],
+                         ids=["no-config", "absent-key", "off"])
 @pytest.mark.parametrize("tool,command", _SWITCH_SAMPLE)
 def test_off_and_absent_allow_everything_silently(monkeypatch, capsys, tmp_path,
                                                   cfg, tool, command):
@@ -725,6 +769,11 @@ _FALLBACK_LAYERS = [
     ("case-variant-decoy",
      '{"guards": {"EnvGuard": "off", "envGuard": "block"}}', True),
     ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
+    ("trailing-comma", '{"guards": {"envGuard": "off"},}', True),
+    ("comment", '{"guards": {"envGuard": "off"} /* x */}', True),
+    ("url-is-not-a-comment",
+     '{"notify": {"url": "https://example.invalid/x"}, "guards": {"envGuard": "off"}}',
+     False),
     ("guards-off", '{"guards": {"envGuard": "off"}}', False),
     ("no-envGuard", '{"guards": {"forcePush": "block"}}', False),
 ]

@@ -669,13 +669,15 @@ off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report
   (`curl -H "Authorization: Bearer $TOKEN"`), or test that it is set (`[ -n "$TOKEN" ]`).
 - **`could-not-tell:<why>`:** it could not read the command well enough: an unbalanced quote,
   `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8, a globbed or
-  brace-expanded program name (`/usr/bin/en?`, `e{n,}v`), or inline code that reads a variable whose
-  name is not a literal (`os.environ[name]`). Write the command out literally. Under `report` these
-  are logged, not refused.
+  brace-expanded program name (`/usr/bin/en?`, `e{n,}v`), a program from an expansion with a default
+  (`${X:-env}`), inline code that reads a variable whose name is not a literal (`os.environ[name]`),
+  code fed to a shell or interpreter through a pipe (`echo env | bash`), a command substitution
+  inside `(( ))`, or a non-literal path ending in `environ` (`cat $d/environ`). Write the command
+  out literally. Under `report` these are logged, not refused.
 - **Refused although the config says `off`, with no python:** the shell fallback reads the config
   file itself and arms the guard for a file it cannot judge: unreadable, not a JSON object, holding a
-  `\u` escape, or with `envGuard` set to anything but `off` anywhere in it, an explicit `null`
-  included. Fix the file, or make python available to the hook.
+  `\u` escape, a trailing comma or a comment, or with `envGuard` set to anything but `off` anywhere
+  in it, an explicit `null` included. Fix the file, or make python available to the hook.
 - **A `/proc/*/environ` mention** outside a `git commit -m` message, a `grep` pattern or `echo` text
   (a `sed` script, a `find -name`) is refused too: a known false positive.
 

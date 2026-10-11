@@ -265,6 +265,12 @@ function Test-EnvGuardArmed {
     if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $true }
     try {
       $text = [System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8)
+      # PowerShell 7's ConvertFrom-Json accepts a trailing comma and comments,
+      # which python refuses (a corrupt layer blocks), so read it strictly
+      # first where System.Text.Json exists, and refuse the shapes regardless.
+      if ($text -match ',\s*[\]}]|/\*|(^|[\s,{\[])//') { return $true }
+      $strict = 'System.Text.Json.JsonDocument' -as [type]
+      if ($strict) { $strict::Parse($text).Dispose() }
       $parsed = $text | ConvertFrom-Json -ErrorAction Stop
     } catch {
       return $true

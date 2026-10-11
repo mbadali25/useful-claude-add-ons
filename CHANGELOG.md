@@ -84,6 +84,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   a JSON object, has a non-object `guards`, or (shell) holds a `\u` escape arms the guard.
 - **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off`
   (`crew_guards.NULL_IS_MALFORMED`). `roleWrites` and `cloudGuard` are unchanged.
+- **Security pass.** `$'\u0065nv'` decodes to `env`; an option that takes an argument (`node -r
+  dotenv/config`, `python3 -W x`, `perl -I lib`, `php -d`) no longer hides the `-c`/`-e` code after
+  it; `powershell 'gci env:'` (5.1's positional `-Command`) and `pwsh -cwa` are judged;
+  `/proc/self//environ`, `/./` and `/../` spellings are folded (also for `guards.prodServer: read`);
+  `env -i T="$TOKEN"` is a secret read; a program from `${X:-env}`, code piped into a shell or
+  interpreter, a command substitution inside `(( ))`, a non-literal `.../environ` path and
+  `GetEnvironmentVariable($n)` are could-not-tell; a code-letter run longer than six is could-not-tell
+  instead of a quadratic read; the no-python fallbacks arm on a trailing comma or a comment.
 - **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
 - **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
   could-not-verify, never a zero or a crash.
