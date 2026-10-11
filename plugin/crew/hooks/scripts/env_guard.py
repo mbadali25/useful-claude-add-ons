@@ -1938,7 +1938,7 @@ def _log(root, row):
             return
         flat = ["-" if not f else str(f).replace("\t", " ").replace(
             "\r", " ").replace("\n", " ") for f in row]
-        with open(path, "a", encoding="utf-8") as handle:
+        with open(path, "a", encoding="utf-8", newline="\n") as handle:
             handle.write("\t".join(flat) + "\n")
     except OSError:
         pass
