@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
+
+- **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each
+  other through a self-hosted bridge, with hooks that publish each session's state and wake an idle
+  session when a message arrives.
+- **Source.** A squashed, hardened fork of [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect)
+  at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55` (MIT; notice and upstream licence kept in
+  `plugin/ai-connect/NOTICE`): per-peer tokens, no name takeover, a read-only observer role, size and
+  rate limits, untrusted framing of peer text, project-confined file sharing, a VPN-scoped listener and
+  exact pins.
+- **Packaging.** Upstream's `integrations/claude-code/plugin/` became `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`; the watcher is registered once per flavour (`watch.sh` / `watch.ps1`, each standing
+  down on the other's platform, the PowerShell entry re-raising exit 2). `installer.py claude` now only
+  registers the MCP server. Menu row 19 (`repo-plugins`) stays off by default.
+- **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
+  plugin's `ruff.toml` extends the root config instead of replacing it.
+
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
 - **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4

@@ -1,0 +1,12 @@
+{
+  "name": "ai-connect",
+  "version": "0.1.0",
+  "description": "Peer messaging between Claude Code sessions on different machines: a self-hosted Python WebSocket bridge, a STDIO MCP client that joins each session as Host:Project, and hooks that publish busy/idle/waiting state and wake an idle session when a message arrives. Hardened fork of Peuqui/AI-Connect (MIT): per-peer tokens stored as SHA-256, no name takeover, peer content framed as untrusted data, confined file sharing, VPN-scoped listen address and firewall rule, exact dependency pins. The MCP server is registered by the bundled installer, not by this manifest.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "homepage": "https://github.com/mbadali25/useful-claude-add-ons/tree/main/plugin/ai-connect",
+  "license": "GPL-2.0-only",
+  "keywords": ["mcp", "agent-communication", "multi-agent", "self-hosted"]
+}

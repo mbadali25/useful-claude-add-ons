@@ -380,6 +380,12 @@
       "reach": "local",
       "why": "9s. gizmoduck shells out to real scanners; the suite drives them against fixtures under mktemp and installs nothing. reach: local - the suite drives scanners against fixtures under mktemp; nothing here reaches a real host." },
 
+    { "paths": ["plugin/ai-connect/**"],
+      "seconds": 30,
+      "run": ["sh -c 'python3 -c \"import fastmcp, websockets, aiosqlite, yaml, pytest\" >/dev/null 2>&1 || { echo \"DEPENDENCY MISSING: this python3 cannot import fastmcp/websockets/aiosqlite/yaml/pytest, so the ai-connect suite DID NOT RUN. This is an unmet precondition, not a passing check and not a failing one. Install plugin/ai-connect/requirements.txt and requirements-dev.txt into the interpreter python3 resolves to.\" >&2; exit 77; }; cd plugin/ai-connect && exec python3 -m pytest tests -q -p no:cacheprovider'"],
+      "reach": "local",
+      "why": "7s on Windows (181 cases with the fork's pinned venv, 2026-10-11). The ai-connect suite: server tokens/roles/limits/registry/store, client framing and file confinement, watcher hook registration per flavour, installer and firewall steps, and an e2e bridge test on a loopback port the test opens and closes itself. reach: local - the e2e test binds 127.0.0.1 only and every installer test isolates ~/.config and ~/.claude under tmp_path. Probe exits 77 when the plugin's own deps are absent, which is the normal state of a bare python3 here (the deps live in the plugin's venv), so a missing dependency is reported as not run rather than as red." },
+
     { "paths": ["mcp-servers/**"],
       "seconds": 196,
       "run": ["sh -c 'command -v npm >/dev/null 2>&1 || { echo \"TOOL MISSING: npm is not on PATH, so the mcp-servers suite DID NOT RUN. This is a missing tool, not a passing check and not a failing one.\" >&2; exit 77; }; [ -d mcp-servers/node_modules ] || { echo \"DEPENDENCY MISSING: mcp-servers/node_modules is absent, so npm test would die on a missing tsc. Run: npm --prefix mcp-servers install. The suite DID NOT RUN - this is an unmet precondition, not a passing check and not a failing one.\" >&2; exit 77; }; exec npm --prefix mcp-servers test'"],
