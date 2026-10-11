@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — ai-connect 0.1.2: Codex QA fixes (W-0121)
+
+- **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
+  reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
+  writes private from the first byte.
+- **Framing.** The warning in front of a peer's message is constant; the sender's peer-controlled name
+  appears only inside the untrusted block, in `peer_read`, `peer_history` and the watcher's wake notice.
+- **Client.** The inbound queue is capped (500 messages, 8 MiB) with one notice when it fills. A coded
+  refusal from the Bridge is queued as a notice for `peer_read`; a frame over the Bridge's limit is
+  refused before sending, and the default file cap drops from 256 KiB to 48 KiB. An IPv6 `bridge_url`
+  is bracketed. `peer_history`/`peer_list` requests carry a `request_id` the Bridge echoes, so a late
+  answer cannot reach the wrong caller.
+- **Bridge.** A direct message is marked delivered only after its send returns; a registration replay
+  skips a message in flight, and a send that fails across a reconnect goes to the new holder once.
+  `notify_when_idle` is capped at 32 per peer and ends when the subscriber leaves.
+- **Secrets.** The installer writes `config.yaml` and the token files 0600 from the first byte (POSIX).
+  `vpn` `mint-key --out` on Windows writes nothing when `icacls` cannot restrict the file.
+
 ### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
 
 - **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
