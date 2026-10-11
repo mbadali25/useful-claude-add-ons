@@ -36,7 +36,8 @@ def api():
 
 def setup(box: Box, api: FakeTailscaleAPI, *args: str, **env: str) -> Phase:
     base = {"TS_API_BASE": api.base, "TS_API_TOKEN": API_TOKEN}
-    return Phase(box, "tailnet-setup", *args, extra_env={**base, **env})
+    confirm = ["--yes"] if "--apply" in args and "--bogus" not in args else []  # no terminal here to ask on
+    return Phase(box, "tailnet-setup", *args, *confirm, extra_env={**base, **env})
 
 
 def keyring_of(box: Box) -> dict:
@@ -116,10 +117,46 @@ def test_a_policy_tailscale_refuses_is_never_applied(box, api):
 
 
 def test_without_an_api_token_nothing_is_called(box, api):
-    run = Phase(box, "tailnet-setup", "--apply", extra_env={"TS_API_BASE": api.base})
+    run = Phase(box, "tailnet-setup", "--apply", "--yes", extra_env={"TS_API_BASE": api.base})
     assert run.res.returncode == 2
     assert "TS_API_TOKEN" in run.res.stderr
     assert api.requests == [] and run.changed_nothing()
+
+
+def test_apply_without_a_terminal_needs_yes(box, api):
+    run = Phase(box, "tailnet-setup", "--apply", extra_env={"TS_API_BASE": api.base, "TS_API_TOKEN": API_TOKEN})
+    assert run.res.returncode == 2 and "pass --yes" in run.res.stderr
+    assert api.requests == [] and run.changed_nothing()
+    assert Phase(box, "tailnet-setup", "--yes", extra_env={"TS_API_TOKEN": API_TOKEN}).res.returncode == 2
+
+
+def test_the_api_token_can_come_from_the_credential_store(box, api):
+    Path(box.env["FAKE_KEYRING_FILE"]).write_text(json.dumps({"ai-connect-tailscale/api_token": API_TOKEN}),
+                                                  encoding="utf-8")
+    run = Phase(box, "tailnet-setup", "--apply", "--yes", extra_env={"TS_API_BASE": api.base})
+    assert run.res.returncode == 0, run.text
+    assert api.policy == WANTED and no_secret_in(run.text)
+
+
+def test_json_output_is_one_object_with_no_secret(box, api):
+    preview = setup(box, api, "--json")
+    applied = setup(box, api, "--apply", "--json")
+    for run in (preview, applied):
+        assert run.res.returncode == 0, run.text
+        assert no_secret_in(run.text) and "[1/5]" in run.res.stderr and "[1/5]" not in run.out
+    doc = json.loads(preview.out)
+    assert doc["ok"] is True and doc["applied"] is False and doc["oauth_client_id"] is None
+    assert [s["step"] for s in doc["steps"]][1:3] == ["Policy file", "Tailnet policy"]
+    assert [res["status"] for s in doc["steps"] for res in s["results"]].count("would") == 3
+    doc = json.loads(applied.out)
+    assert doc["applied"] is True and doc["oauth_client_id"] == CLIENT_ID
+    assert doc["oauth_client_stored_in"] == "credential store"
+    statuses = [res["status"] for s in doc["steps"] for res in s["results"]]
+    assert statuses.count("done") == 3 and "backup" in statuses and "would" not in statuses
+    api.validate_message = "test(s) failed"
+    failed = setup(box, api, "--apply", "--json", "--acl", str(PLUGIN / "vpn" / "acl-template.hujson"))
+    doc = json.loads(failed.out)
+    assert failed.res.returncode == 1 and doc["ok"] is False and "refuses the policy file" in doc["error"]
 
 
 def test_a_refused_api_token_stops_before_any_change(box, api):
@@ -296,7 +333,7 @@ def missing(box: Box, platform: str, target: str, **state) -> dict:
 
 
 def installer_calls(phase: Phase) -> list[list[str]]:
-    return [c for c in phase.calls if c[0] in ("curl", "sh", "winget", "msiexec", "brew")]
+    return [c for c in phase.calls if c[0] in ("curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")]
 
 
 @pytest.mark.parametrize("platform", ["linux", "windows"])
@@ -343,7 +380,7 @@ def test_windows_without_winget_uses_the_msi(box):
         server.close()
     calls = installer_calls(first)
     assert calls[0][0] == "curl" and "https://pkgs.tailscale.com/stable/tailscale-setup-latest-" in calls[0][2]
-    assert calls[1][:2] == ["msiexec", "/i"] and "winget not found" in first.out
+    assert calls[1][:2] == ["msiexec", "/i"] and "the Tailscale MSI" in first.out
 
 
 @pytest.mark.parametrize("cask", ["tailscale-app", "tailscale"])
@@ -360,6 +397,76 @@ def test_peer_on_macos_installs_with_homebrew(box, tmp_path, cask):
     assert run.res.returncode == 0, run.text
     assert installer_calls(run)[-1] == ["brew", "install", "--cask", cask]
     assert box.state()["ts_backend"] == "Running" and not leaks(AUTH_KEY, run.text)
+
+
+def ubuntu(box: Box, codename: str = "noble") -> None:
+    Path(box.env["AI_CONNECT_OS_RELEASE"]).write_text(
+        f'NAME="Ubuntu"\nID=ubuntu\nVERSION_CODENAME={codename}\n', encoding="utf-8")
+
+
+def test_ubuntu_as_root_installs_from_the_signed_apt_repository_without_sudo(box):
+    env = {**missing(box, "linux", "linux"), "AI_CONNECT_DEPLOY_ROOT": "1"}
+    ubuntu(box)
+    server = FakeBridge(set)
+    args = ["bridge", "--name", "hub", "--port", str(server.port)]
+    try:
+        dry = Phase(box, *args, "--dry-run", extra_env=env)
+        first = Phase(box, *args, extra_env=env)
+    finally:
+        server.close()
+    planned = [line.strip() for line in dry.out.splitlines() if line.strip().startswith("$ ")]
+    assert dry.changed_nothing() and installer_calls(dry) == []
+    # The dry run names every command, the keyring the repository is pinned to, and the login
+    assert planned[0].startswith("$ curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o ")
+    assert planned[1].startswith("$ curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list")
+    assert planned[2].startswith("$ install ")
+    assert planned[2].endswith(" /usr/share/keyrings/tailscale-archive-keyring.gpg")
+    assert planned[3].endswith(" /etc/apt/sources.list.d/tailscale.list")
+    assert planned[4].startswith("$ apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/tailscale.list")
+    assert planned[5] == "$ apt-get install -y tailscale"
+    assert "$ tailscale up --accept-dns=false" in planned and "signed-by" in dry.out
+    assert not any("sudo" in line for line in planned)
+    ran = installer_calls(first)
+    assert [c[0] for c in ran] == ["curl", "curl", "install", "install", "apt-get", "apt-get"], ran
+    assert ran[5] == ["apt-get", "install", "-y", "tailscale"]
+    assert not any(c[0] == "sudo" for c in first.calls), "root must not need sudo"
+    assert ["tailscale", "up", "--accept-dns=false"] in first.calls
+
+
+def test_a_release_the_apt_repository_lacks_falls_back_to_the_install_script(box):
+    env = missing(box, "linux", "linux", curl_404="/resolute.")
+    ubuntu(box, "resolute")
+    server = FakeBridge(set)
+    try:
+        first = Phase(box, "bridge", "--name", "hub", "--port", str(server.port), extra_env=env)
+    finally:
+        server.close()
+    ran = installer_calls(first)
+    assert ran[0][2] == "https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg"
+    assert [c[0] for c in ran[1:]] == ["curl", "sh"] and ran[1][2] == "https://tailscale.com/install.sh"
+    assert "if that fails, with Tailscale's install script" in first.out
+    assert box.state()["ts_backend"] == "Running"
+
+
+def test_accept_dns_is_off_unless_asked_for(box, tmp_path):
+    box.set(ts_backend="Stopped", ts_ip="")
+    token_file = tmp_path / "laptop.token"
+    token_file.write_text(PEER_TOKEN, encoding="utf-8")
+    server = FakeBridge(lambda: {hashlib.sha256(PEER_TOKEN.encode()).hexdigest()})
+    args = ["peer", "--name", "laptop", "--bridge", "127.0.0.1", "--port", str(server.port), "--token-file",
+            str(token_file)]
+    try:
+        dry = Phase(box, *args, "--dry-run", extra_env={"TS_AUTHKEY": AUTH_KEY})
+        default = Phase(box, *args, extra_env={"TS_AUTHKEY": AUTH_KEY})
+        box.set(ts_backend="Stopped", ts_ip="")
+        asked = Phase(box, *args, "--accept-dns", extra_env={"TS_AUTHKEY": AUTH_KEY})
+    finally:
+        server.close()
+    assert "--accept-dns=false" in dry.out and not leaks(AUTH_KEY, dry.text)
+    up = [c for c in default.calls if c[:2] == ["tailscale", "up"]]
+    assert len(up) == 1 and "--accept-dns=false" in up[0]
+    up = [c for c in asked.calls if c[:2] == ["tailscale", "up"]]
+    assert len(up) == 1 and "--accept-dns=true" in up[0]
 
 
 def test_no_install_tailscale_keeps_exit_3(box):

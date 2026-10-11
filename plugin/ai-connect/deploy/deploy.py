@@ -398,7 +398,7 @@ def cmd_bridge(args) -> int:
     step_deps(r)
 
     r.step("Tailscale")
-    joined = ts_install.step_install(r, not args.no_install_tailscale) and ts_install.step_login(r)
+    joined = ts_install.step_tailscale(r, not args.no_install_tailscale, args.accept_dns)
 
     r.step("Configuration")
     # Only a dry run gets here without a tailnet address: it has said what it would do about that
@@ -530,6 +530,10 @@ def cmd_peer(args) -> int:
         argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", args.name]
         if args.auth_key_file:
             argv += ["--auth-key-file", args.auth_key_file]
+        if args.accept_dns:
+            argv.append("--accept-dns")
+        out(f"    $ tailscale up --auth-key=<the one-off key> --advertise-tags={tsadmin.DEFAULT_TAG} "
+            f"--accept-dns={'true' if args.accept_dns else 'false'} --hostname={args.name}")
 
         def join() -> None:
             res = run(argv, timeout=300)
@@ -679,6 +683,9 @@ def build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
         cmd.add_argument("--port", type=port_arg, default=DEFAULT_PORT, help="Bridge port (default 9999)")
     for cmd in (b, pe):
+        cmd.add_argument("--accept-dns", action="store_true",
+                         help="let Tailscale manage this machine's DNS (MagicDNS); off by default, because it "
+                              "collides with a VPN client or DNS hook that is already there")
         cmd.add_argument("--no-install-tailscale", action="store_true",
                          help="fail (exit 3) instead of installing Tailscale when it is missing")
     for cmd in (b, u, s):

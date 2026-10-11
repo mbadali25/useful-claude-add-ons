@@ -1,7 +1,7 @@
 """Stand-in for every system tool deploy.py drives: one program, the tool's name as argv[1].
 
 tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude, and the Tailscale
-installers curl, sh, winget, msiexec and brew. State is the
+installers curl, sh, install, apt-get, winget, msiexec and brew. State is the
 JSON file in $FAKE_DEPLOY_STATE; every call's argv is appended to $FAKE_DEPLOY_LOG,
 one JSON list per line. Nothing outside those two files and the paths a test
 hands it is ever touched.
@@ -61,9 +61,23 @@ def install_tailscale(state) -> int:
     return 0
 
 
-def curl(args, _state):
+def curl(args, state):
+    # curl_404: a part of the URL the server does not have (curl -f exits 22)
+    if state.get("curl_404") and any(state["curl_404"] in arg for arg in args):
+        print("curl: (22) The requested URL returned error: 404", file=sys.stderr)
+        return 22
     Path(args[args.index("-o") + 1]).write_text("# fake download\n", encoding="utf-8")
     return 0
+
+
+def install(_args, _state):
+    return 0  # the real one would copy a file into /usr/share or /etc: never here
+
+
+def apt_get(args, state):
+    if args[:1] == ["update"]:
+        return 0
+    return install_tailscale(state) if args[:3] == ["install", "-y", "tailscale"] else 64
 
 
 def sh(_args, state):
@@ -226,7 +240,8 @@ def claude(args, state):
 
 
 TOOLS = {f.__name__: f for f in (tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude,
-                                 curl, sh, winget, msiexec, brew)}
+                                 curl, sh, winget, msiexec, brew, install)}
+TOOLS["apt-get"] = apt_get
 
 
 def main() -> int:

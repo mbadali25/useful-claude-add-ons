@@ -1,7 +1,7 @@
 """deploy tailnet-setup: the once-per-tailnet admin work, through the Tailscale API.
 
-  deploy tailnet-setup [--apply] [--admin WHO] [--acl FILE] [--device NAME]
-                       [--tailnet NAME] [--no-install-tailscale]
+  deploy tailnet-setup [--apply [--yes]] [--json] [--admin WHO] [--acl FILE] [--device NAME]
+                       [--tailnet NAME] [--no-install-tailscale] [--accept-dns]
 
 Five steps: Tailscale on this machine, the policy file validated, the tailnet
 policy compared with it (and replaced only with --apply, after a backup), the
@@ -10,7 +10,11 @@ use created and stored. Without --apply nothing is changed anywhere: it is the
 preview. Every call is documented at https://tailscale.com/api.
 
 The API access token is used for this run only and never stored or printed:
-it comes from TS_API_TOKEN, or from a prompt when there is a terminal.
+it comes from TS_API_TOKEN, then the OS credential store (keyring: service
+ai-connect-tailscale, user api_token), then a prompt when there is a terminal.
+With no terminal it never waits for an answer: --apply then needs --yes.
+--json prints one JSON object on stdout (the steps, secrets redacted) and sends
+the text for a person to stderr.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ from pathlib import Path
 
 import ts_install  # pylint: disable=import-error
 from deploy_core import (CONFIG_DIR, EXIT_OK, EXIT_USAGE, PLUGIN, Failure, Run,  # pylint: disable=import-error
-                         has_terminal, out, run, tsadmin)
+                         has_terminal, human_to_stderr, out, run, tsadmin)
 
 API_DOCS = "https://tailscale.com/api"
 OAUTH_CONSOLE = "https://login.tailscale.com/admin/settings/oauth"
@@ -84,13 +88,19 @@ def refusal(what: str, status: int, text: str) -> Failure:
 
 def api_token() -> str:
     token = os.environ.get("TS_API_TOKEN", "").strip()
+    if not token:
+        try:
+            import keyring  # pylint: disable=import-error,import-outside-toplevel  # optional
+            token = (keyring.get_password(tsadmin.KEYRING_SERVICE, "api_token") or "").strip()
+        except Exception:  # pylint: disable=broad-exception-caught  # no keyring: the other sources remain
+            token = ""
     if not token and has_terminal():
         out("  A Tailscale API access token is needed once (admin console > Settings > Keys >")
         out("  Generate access token). It is used for this run and not stored.")
         token = getpass.getpass("  API access token: ").strip()
     if not token:
-        raise Failure("no Tailscale API access token: set TS_API_TOKEN, or run this in a terminal to be asked",
-                      EXIT_USAGE)
+        raise Failure("no Tailscale API access token: set TS_API_TOKEN, store it with `keyring set "
+                      f"{tsadmin.KEYRING_SERVICE} api_token`, or run this in a terminal to be asked", EXIT_USAGE)
     tsadmin.remember_secret(token)
     return token
 
@@ -124,7 +134,7 @@ def step_validate(r: Run, token: str, tailnet: str, policy: str) -> None:
     out("  done: Tailscale validated the policy file and its tests")
 
 
-def step_policy(r: Run, token: str, tailnet: str, policy: str) -> None:
+def step_policy(r: Run, token: str, tailnet: str, policy: str, confirmed: bool) -> None:
     r.step("Tailnet policy")
     status, headers, current = call("GET", f"/tailnet/{tailnet}/acl", token, accept="application/hujson")
     if status != 200:
@@ -145,9 +155,13 @@ def step_policy(r: Run, token: str, tailnet: str, policy: str) -> None:
     out("  applying REPLACES the whole tailnet policy with the policy file.")
 
     def apply() -> None:
+        if not confirmed and input("  Replace the whole tailnet policy with the policy file? [y/N] ").strip().lower() \
+                not in ("y", "yes"):
+            raise Failure("not confirmed; the tailnet policy was left as it is")
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         backup = BACKUP_DIR / f"policy-{stamp}.hujson"
         tsadmin.write_owner_only(backup, current)
+        r.record("backup", str(backup))
         out(f"  backup of the policy as it was: {backup}")
         status, _headers, text = call("POST", f"/tailnet/{tailnet}/acl", token, text=policy, if_match=etag)
         if status == 412:
@@ -350,20 +364,38 @@ def cmd_tailnet_setup(args) -> int:
         raise Failure(f"--admin '{args.admin}' is not an email address, group:name or autogroup:name", EXIT_USAGE)
     if not TAILNET_RE.match(args.tailnet):
         raise Failure(f"--tailnet '{args.tailnet}' is not a tailnet name", EXIT_USAGE)
+    if args.yes and not args.apply:
+        raise Failure("--yes confirms --apply; without --apply there is nothing to confirm", EXIT_USAGE)
+    if args.apply and not args.yes and not has_terminal():
+        # Nobody is there to ask, and replacing a tailnet's policy is not something to do unasked
+        raise Failure("--apply replaces the whole tailnet policy and there is no terminal to confirm it on: "
+                      "pass --yes", EXIT_USAGE)
     policy = wanted_policy(args)
     tailnet = urllib.parse.quote(args.tailnet, safe="")
     r = Run(dry_run=not args.apply, total=5)
+    if args.json:
+        human_to_stderr()
+    try:
+        return run_steps(args, r, policy, tailnet)
+    except (Failure, tsadmin.Failure) as err:
+        if args.json:
+            print(json.dumps({"command": "tailnet-setup", "ok": False, "applied": False,
+                              "error": tsadmin.redact(str(err)), "steps": r.log}), flush=True)
+        raise
+
+
+def run_steps(args, r: Run, policy: str, tailnet: str) -> int:
     mode = "" if args.apply else " (preview: nothing changes without --apply)"
     out(f"=== AI-Connect deploy: tailnet-setup{mode} ===")
     token = api_token()
     r.step("Tailscale on this machine")
     joined = bool(args.device)
     if not args.device:
-        joined = ts_install.step_install(r, not args.no_install_tailscale) and ts_install.step_login(r)
+        joined = ts_install.step_tailscale(r, not args.no_install_tailscale, args.accept_dns)
     else:
         out(f"  not needed here: --device {args.device} names the Bridge machine")
     step_validate(r, token, tailnet, policy)
-    step_policy(r, token, tailnet, policy)
+    step_policy(r, token, tailnet, policy, args.yes)
     step_tag(r, args, token, tailnet, joined)
     step_oauth(r, token, tailnet)
     out("")
@@ -371,12 +403,20 @@ def cmd_tailnet_setup(args) -> int:
         out("The tailnet is set up. Next on this machine: deploy bridge --peer <name>")
     else:
         out("Preview only. Run it again with --apply to make these changes.")
+    if args.json:
+        cid, _secret, source = tsadmin.stored_oauth_credentials(use_env=False)
+        print(json.dumps({"command": "tailnet-setup", "ok": True, "applied": bool(args.apply), "steps": r.log,
+                          "oauth_client_id": cid or None, "oauth_client_stored_in": source}), flush=True)
     return EXIT_OK
 
 
 def add_parser(sub) -> None:
     t = sub.add_parser("tailnet-setup", help="ADMIN, once per tailnet: policy, Bridge tag and OAuth client")
     t.add_argument("--apply", action="store_true", help="make the changes (without it: a preview)")
+    t.add_argument("--yes", action="store_true",
+                   help="with --apply: do not ask before the tailnet policy is replaced (needed without a terminal)")
+    t.add_argument("--json", action="store_true",
+                   help="print one JSON object on stdout (steps, secrets redacted); the text goes to stderr")
     t.add_argument("--admin", default="autogroup:admin",
                    help=f"who owns the tags and keeps access to the Bridge; replaces {ADMIN_PLACEHOLDER} in the "
                         "policy file (default: autogroup:admin)")
@@ -384,4 +424,5 @@ def add_parser(sub) -> None:
     t.add_argument("--device", help="the Bridge machine's tailnet name, when it is not this machine")
     t.add_argument("--tailnet", default="-", help="tailnet to configure (default: the API token's own)")
     t.add_argument("--no-install-tailscale", action="store_true", help="fail instead of installing Tailscale")
+    t.add_argument("--accept-dns", action="store_true", help="let Tailscale manage this machine's DNS (off by default)")
     t.set_defaults(func=cmd_tailnet_setup)

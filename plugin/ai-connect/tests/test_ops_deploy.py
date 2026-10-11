@@ -402,7 +402,7 @@ def test_enrolment_by_hash_end_to_end(tmp_path, venv):
     assert first.res.returncode == 0, first.text
     assert hub.config()["auth"]["peers"]["laptop"] == enrolment["token_sha256"]
     restart = ["schtasks", "/Run"] if NATIVE == "windows" else ["systemctl", "restart", "ai-connect"]
-    assert any(c[-len(restart):] == restart or c[:len(restart)] == restart for c in first.calls), first.calls
+    assert any(restart in (c[-len(restart):], c[:len(restart)]) for c in first.calls), first.calls
     assert second.res.returncode == 0 and second.mutations == [] and not second.files_changed, second.text
     assert other.res.returncode == 1 and "already provisioned with another token" in other.res.stderr
     assert hub.config()["auth"]["peers"]["laptop"] == enrolment["token_sha256"]

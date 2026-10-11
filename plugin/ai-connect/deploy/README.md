@@ -12,10 +12,13 @@ sequenceDiagram
     participant T as Tailscale API
     participant P as Machine 2 (peer)
     A->>T: tailnet-setup --apply (policy, tag:bridge, OAuth client)
-    A->>A: bridge --peer laptop (service, firewall, laptop.token)
-    A->>T: vpn/mint-key --name laptop --out laptop.key
-    A-->>P: laptop.token and laptop.key, out of band
-    P->>P: peer --name laptop --bridge 100.x.y.z ...
+    A->>A: bridge (service, firewall)
+    P->>P: peer --print-enrolment (own token, stays here)
+    P-->>A: {name, token_sha256}
+    A->>A: add-peer --name laptop --token-sha256 ...
+    A->>T: vpn/mint-key --name laptop --expiry 1h --out laptop.key
+    A-->>P: laptop.key (one-off, expires in an hour)
+    P->>P: peer --name laptop --bridge 100.x.y.z --auth-key-file laptop.key
     P->>A: test --bridge 100.x.y.z --name laptop (TCP 9999)
 ```
 
@@ -28,8 +31,19 @@ sequenceDiagram
 - Linux Bridge: `sudo`. Windows Bridge: an elevated PowerShell.
 
 Tailscale itself does not have to be installed: `tailnet-setup`, `bridge` and `peer`
-install it when it is missing and say what is about to ask for you (sudo's password, a
-UAC prompt, a browser login).
+install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repository
+with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
+repository does not carry, Tailscale's install script. Every command is printed before
+it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+you (sudo's password, a UAC prompt, a browser login).
+
+`tailscale up` always runs with `--accept-dns=false`: Tailscale does not take over the
+machine's DNS, which would collide with a VPN client or DNS hook that is already there.
+Use the Bridge's `100.x.y.z` address, not its name. `--accept-dns` turns MagicDNS on.
+
+**See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`;
+`tailnet-setup` without `--apply` is its dry run. Each prints every command and change
+it would make and makes none.
 
 ## Machine 1: the tailnet (admin, once)
 
@@ -47,8 +61,17 @@ and pass it with `--acl FILE`. `--admin you@example.com` names who owns the tags
 keeps access to the Bridge (default: `autogroup:admin`).
 
 ```bash
-deploy/deploy.sh tailnet-setup --apply
+deploy/deploy.sh tailnet-setup --apply     # asks before it replaces the policy
 unset TS_API_TOKEN                         # PowerShell: Remove-Item Env:TS_API_TOKEN
+```
+
+Without a terminal (an agent, a script) nothing is ever asked: give the token in
+`TS_API_TOKEN` or the OS credential store (`keyring set ai-connect-tailscale api_token`)
+and confirm with `--yes`. `--json` prints one JSON object on stdout, with each step and
+its result and no secret in it, and sends the text to stderr:
+
+```bash
+deploy/deploy.sh tailnet-setup --apply --yes --json
 ```
 
 What `--apply` does, in this order:
@@ -73,29 +96,48 @@ console.
 ## Machine 1: the Bridge
 
 ```bash
-deploy/deploy.sh bridge --peer laptop      # one --peer per machine that will join
+deploy/deploy.sh bridge
 ```
 
-It prints this machine's Tailscale IPv4 (the `100.x.y.z` every peer needs) and writes
-the peer's token to `~/.config/ai-connect/peer-tokens/laptop.token`. Then mint the
-peer's one-off Tailscale key:
+It prints this machine's Tailscale IPv4: the `100.x.y.z` every peer needs.
+
+## Adding the peer: no long-lived secret crosses machines
+
+**Machine 2** makes its own token and prints only its hash:
 
 ```bash
-vpn/mint-key.sh --name laptop --out laptop.key      # vpn\mint-key.ps1 on Windows
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --print-enrolment
+# {"name": "laptop", "token_sha256": "3f1c..."}
 ```
 
-Bring `laptop.token` and `laptop.key` to machine 2 over a channel you trust. The key
-works once and expires after a day; the token is that peer's password for the Bridge.
+The token stays on machine 2, owner-only, in `~/.config/ai-connect/own-peer.token`.
+Send the one JSON line to machine 1. It is not a secret.
 
-## Machine 2: the peer
+**Machine 1** lets the peer in by that hash and mints its one-off Tailscale key:
 
 ```bash
-deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --auth-key-file laptop.key
+deploy/deploy.sh add-peer --name laptop --token-sha256 3f1c...
+vpn/mint-key.sh --name laptop --expiry 1h --out laptop.key      # vpn\mint-key.ps1 on Windows
+```
+
+Send `laptop.key` to machine 2. It works once, is pre-approved and ephemeral, and
+expires after an hour.
+
+**Machine 2** joins and connects:
+
+```bash
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --auth-key-file laptop.key --dry-run   # look first
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --auth-key-file laptop.key
 ```
 
 It installs Tailscale if needed, joins the tailnet with the key (no browser, no Tailscale
 account), deletes the used key file, registers the plugin and the MCP server with
-Claude Code, writes the client config and checks that the Bridge accepts the token.
+Claude Code, writes the client config and checks that the Bridge accepts the token. It
+never changes the peer's firewall.
+
+The older way still works: `deploy bridge --peer laptop` makes the token on the Bridge
+and writes `~/.config/ai-connect/peer-tokens/laptop.token`, which then has to be carried
+to machine 2 and passed with `--token-file`.
 
 ## The test
 
@@ -122,7 +164,7 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 |---|---|
 | VPN up | Tailscale is stopped or logged out here: run `deploy peer` again |
 | Bridge port reachable | wrong `--bridge`, the Bridge service is down (`deploy status` on machine 1), or the policy does not allow `tag:ai-peer` to reach `tag:bridge:9999` |
-| Bridge accepts this token | the token file is not the one `deploy bridge --peer laptop` wrote |
+| Bridge accepts this token | the hash given to `add-peer` is not this machine's (run `--print-enrolment` again and compare), or the Bridge was not restarted |
 | Message round trip | `name_taken`: a session is already online as this peer, close it. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
 
@@ -133,13 +175,13 @@ token in the Bridge's log.
 
 ```bash
 deploy/deploy.sh status                    # either machine: what is deployed here
-deploy/deploy.sh bridge --peer desk        # machine 1: add another peer, then mint its key
+deploy/deploy.sh add-peer --name desk --token-sha256 ...   # machine 1: another peer, then mint its key
 vpn/revoke.sh --name laptop                # machine 1: remove a peer's node from the tailnet
 deploy/deploy.sh uninstall --yes           # either machine; --purge also deletes config and tokens
 ```
 
-`bridge`, `peer` and `uninstall` take `--dry-run`, which prints `would: ...` for each
-change and makes none.
+`deploy test` is one short Python process: it opens two WebSocket connections and
+sends one message. It runs no test suite and installs nothing.
 
 ## Tests
 

@@ -456,7 +456,9 @@ def looks_like_no_tun(text: str) -> bool:
 
 
 def tailscale_up(ts: str, key: str, args, userspace: bool):
-    up = ["up", f"--auth-key={key}", f"--advertise-tags={args.tag}"]
+    # MagicDNS stays off unless asked for: it rewrites the resolver, which collides with a VPN client's DNS hook
+    up = ["up", f"--auth-key={key}", f"--advertise-tags={args.tag}",
+          f"--accept-dns={'true' if getattr(args, 'accept_dns', False) else 'false'}"]
     if args.hostname:
         up.append(f"--hostname={args.hostname}")
     if IS_WINDOWS and not userspace:
@@ -563,6 +565,8 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--bridge", help="Bridge host on the tailnet (or AI_CONNECT_BRIDGE_HOST)")
     u.add_argument("--hostname", help="this node's tailnet name (the peer name from mint-key)")
     u.add_argument("--tag", default=DEFAULT_TAG)
+    u.add_argument("--accept-dns", action="store_true",
+                   help="let Tailscale manage this machine's DNS (MagicDNS); off by default")
     u.add_argument("--userspace", action="store_true",
                    help="no admin rights / no tun: run tailscaled in userspace with a SOCKS5 proxy")
     u.set_defaults(func=cmd_vpn_up)

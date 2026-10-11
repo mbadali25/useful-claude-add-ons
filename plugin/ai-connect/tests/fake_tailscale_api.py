@@ -120,7 +120,8 @@ class FakeTailscaleAPI:
             self.clients[CLIENT_ID] = CLIENT_SECRET
             return 200, {"id": CLIENT_ID, "key": CLIENT_SECRET, "keyType": "client"}, {}
         if method == "DELETE" and path.startswith("/tailnet/-/keys/"):
-            return (200, "", {}) if self.clients.pop(path.rsplit("/", 1)[-1], None) else (404, {"message": "no key"}, {})
+            known = self.clients.pop(path.rsplit("/", 1)[-1], None)
+            return (200, "", {}) if known else (404, {"message": "no key"}, {})
         if path.startswith("/device/"):
             node, _, verb = path.removeprefix("/device/").partition("/")
             device = self.devices.get(node)

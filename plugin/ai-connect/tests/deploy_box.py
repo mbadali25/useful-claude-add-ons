@@ -28,7 +28,7 @@ DEPLOY = DEPLOY_DIR / "deploy.py"
 FAKE = Path(__file__).resolve().parent / "fake_deploy_bin.py"
 # The installers are always fakes too: no test may reach a real curl, winget or brew
 TOOLS = ("tailscale", "sudo", "tee", "rm", "systemctl", "ufw", "schtasks", "netsh", "claude",
-         "curl", "sh", "winget", "msiexec", "brew")
+         "curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")
 SUBNET = "100.64.0.0/10"
 AUTH_KEY = "tskey-auth-kDEPLOY123-AuthKeyMaterialThatMustNotLeak0123"
 PEER_TOKEN = "f00dfacecafe" * 5 + "beef"
@@ -39,7 +39,8 @@ MUTATING = {("tee",), ("rm",), ("systemctl", "enable"), ("systemctl", "restart")
             ("netsh", "advfirewall", "firewall", "add"), ("netsh", "advfirewall", "firewall", "delete"),
             ("claude", "plugin", "install"),
             ("claude", "plugin", "uninstall"), ("claude", "mcp", "add"), ("claude", "mcp", "remove"),
-            ("tailscale", "up"), ("curl",), ("sh",), ("winget",), ("msiexec",), ("brew",)}
+            ("tailscale", "up"), ("curl",), ("sh",), ("winget",), ("msiexec",), ("brew",),
+            ("install",), ("apt-get",)}
 
 PWSH_CANDIDATES = [r"C:\Program Files\PowerShell\7\pwsh.exe", "/usr/bin/pwsh", "/usr/local/bin/pwsh",
                    "/opt/homebrew/bin/pwsh"]
@@ -123,10 +124,11 @@ class Box:
                         XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), PYTHONIOENCODING="utf-8",
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
+                        AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),
                         PYTHONPATH=str(FAKE_KEYRING), FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_API_BASE", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM"):
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT"):
             self.env.pop(name, None)
         self.target = target
 

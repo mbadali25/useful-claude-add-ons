@@ -24,6 +24,8 @@ DEFAULT_PORT = 9999
 CONFIG_DIR = Path.home() / ".config" / "ai-connect"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 VENV = Path(os.environ.get("AI_CONNECT_VENV") or PLUGIN / "venv")
+# Root needs no sudo, and a machine that runs as root may not have it. The variable is a test seam
+IS_ROOT = os.environ.get("AI_CONNECT_DEPLOY_ROOT") == "1" or getattr(os, "geteuid", lambda: 1000)() == 0
 
 
 class Failure(Exception):
@@ -37,8 +39,16 @@ class Failure(Exception):
 # ---------------------------------------------------------------- output
 
 
+# Where the text for a person goes: stderr once a command prints JSON on stdout (human_to_stderr)
+_STREAM = [sys.stdout]
+
+
+def human_to_stderr() -> None:
+    _STREAM[0] = sys.stderr
+
+
 def out(msg: str = "") -> None:
-    print(tsadmin.redact(msg), flush=True)
+    print(tsadmin.redact(msg), file=_STREAM[0], flush=True)
 
 
 def mask(secret: str) -> str:
@@ -70,21 +80,30 @@ class Run:
         self.total = total
         self.number = 0
         self.config_changed = False
+        # The same run for a machine: [{"step": title, "results": [{"status", "detail"}]}], secrets redacted
+        self.log: list[dict] = []
 
     def step(self, title: str) -> None:
         self.number += 1
+        self.log.append({"step": title, "results": []})
         out(f"[{self.number}/{self.total}] {title}")
 
-    @staticmethod
-    def already(msg: str) -> None:
+    def record(self, status: str, msg: str) -> None:
+        if self.log:
+            self.log[-1]["results"].append({"status": status, "detail": tsadmin.redact(msg)})
+
+    def already(self, msg: str) -> None:
+        self.record("already", msg)
         out(f"  already done: {msg}")
 
     def change(self, msg: str, action) -> None:
         """Do one change, or in a dry run only say it would."""
         if self.dry_run:
+            self.record("would", msg)
             out(f"  would: {msg}")
             return
         action()
+        self.record("done", msg)
         out(f"  done: {msg}")
 
 
@@ -126,7 +145,7 @@ def must(res: subprocess.CompletedProcess, what: str) -> subprocess.CompletedPro
 
 def privileged(name: str) -> list[str]:
     """argv prefix for a root-only Linux tool: sudo unless already root."""
-    if getattr(os, "geteuid", lambda: 1000)() == 0:
+    if IS_ROOT:
         return [tool(name)]
     return [tool("sudo"), tool(name)]
 
