@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.18: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
+### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
 
-- **Summary.** `crew` 1.2.18 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+- **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
   records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
   deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
 - **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
