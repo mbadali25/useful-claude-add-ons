@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.27: explorer, researcher and security can run on Kimi K3 (L-0777)
+### Added — crew 1.2.28: explorer, researcher and security can run on Kimi K3 (L-0777)
 
 - **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
   "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,

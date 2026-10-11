@@ -63,7 +63,13 @@ if dump:
     agent = flag("--agent-file")
     skills = flag("--skills-dir")
     with open(dump, "a", encoding="utf-8") as fh:
+        pointed = None
+        given = flag("-p") or ""
+        if given.startswith("Your complete instructions are in the file "):
+            target = given[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
+            pointed = open(target, encoding="utf-8").read() if os.path.isfile(target) else None
         fh.write(json.dumps({"argv": argv, "stdin": stdin_text, "cwd": os.getcwd(),
+                             "prompt_file": pointed,
                              "agent_file": open(agent, encoding="utf-8").read()
                              if agent and os.path.isfile(agent) else None,
                              "skills": sorted(os.listdir(skills))

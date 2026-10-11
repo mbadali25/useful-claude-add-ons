@@ -640,8 +640,9 @@ def test_the_security_dispatch_sends_the_bundle_to_kimi(repo, tmp_path, kimi, ca
     code, out = _call(repo, tmp_path, role="security",
                       args=("--authors", "claude", "--diff-base", base), capsys=capsys)
 
-    argv = json.loads(dump.read_text(encoding="utf-8").splitlines()[-1])["argv"]
-    prompt = argv[argv.index("-p") + 1]
+    row = json.loads(dump.read_text(encoding="utf-8").splitlines()[-1])
+    # Inline, or by pointer where the platform's command line is shorter (Windows).
+    prompt = row.get("prompt_file") or row["argv"][row["argv"].index("-p") + 1]
     assert code == cka.EXIT_OK, out
     assert "unstaged edit" in prompt and "staged file" in prompt and "untracked file" in prompt
 
@@ -689,10 +690,18 @@ def test_a_detached_descendant_that_writes_within_the_settle_is_exit_8(
     kimi(FAKE_KIMI_DETACHED=str(repo / "seed.txt"), FAKE_KIMI_DETACHED_S="0.3")
     monkeypatch.setattr(cka, "SETTLE_S", 3.0)
 
+    seed = (repo / "seed.txt").read_bytes()
+
     code, out = _call(repo, tmp_path, capsys=capsys)
 
-    assert code == cka.EXIT_TREE and out.startswith("KIMI CHANGED THE TREE:")
-    assert "KIMI OK" not in out
+    if code == cka.EXIT_OK:
+        # Only correct if the descendant was stopped (Windows ends the tree):
+        # nothing may land after KIMI OK.
+        time.sleep(2.0)
+        assert (repo / "seed.txt").read_bytes() == seed, out
+    else:
+        assert code == cka.EXIT_TREE and out.startswith("KIMI CHANGED THE TREE:")
+        assert "KIMI OK" not in out
 
 
 @pytest.mark.parametrize("role", ["security", "reviewer"])
