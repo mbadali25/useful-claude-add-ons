@@ -139,10 +139,18 @@ _env_guard_armed() {
   command -v crew_repo_config_dir >/dev/null 2>&1 || return 0
   crew_repo_config_dir "$root"
   [ "$CREW_CFG_SOURCE" = unknown ] && return 0
+  # The reads below are grep, sed, tr and wc. Without one of them a test
+  # that should say "armed" just fails, which would read as off.
+  for tool in grep sed tr wc; do
+    command -v "$tool" >/dev/null 2>&1 || return 0
+  done
   for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
     _env_guard_absent "$cfg" && continue
     [ -f "$cfg" ] && [ -r "$cfg" ] || return 0
     _env_guard_json_object "$cfg" || return 0
+    # A NUL byte is not JSON to python; awk may drop it unseen, so count.
+    [ "$(tr -d '\000' < "$cfg" 2>/dev/null | wc -c)" -eq "$(wc -c < "$cfg" 2>/dev/null)" ] \
+      2>/dev/null || return 0
     flat=$(tr -d '\r\n' < "$cfg" 2>/dev/null) || return 0
     # A `\u` escape can spell the key (`"env\u0047uard"`) where grep cannot
     # see it; python decodes it. Could not tell, so armed.

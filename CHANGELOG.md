@@ -124,6 +124,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   a path they were refused a look at as could-not-tell, not absent. `trap CODE` and `su -c CODE` are
   read; a script that is a stream (`bash <(...)`, `source /dev/stdin`) and a `-c` with no code are
   could-not-tell.
+- **Security pass 2.** `powershell` and `pwsh` read every option before any positional word, so
+  `-Command` or `-EncodedCommand` after `-ExecutionPolicy Bypass` or `-Version 5.1` still counts
+  (a regression in this entry's first fix); option prefixes (`-enco`), `/c`, and code from stdin are
+  read. `node -p -e CODE`: a code flag is not another flag's code, and a code flag after a word read
+  as the script is still read. A short-option cluster gives its last letter the next word
+  (`sudo -iu USER env`, `ssh -tp 22`), and sudo's value options are all listed. `cmd //c set` (Git
+  Bash's spelling) is `cmd /c set`. Also `$'\x{65}nv'`, `bash +x -c`, `eval --`, `su -lc`, a wholly
+  non-literal `trap`, `T+=x` keeping its taint, and the shell fallback arming when grep is missing
+  or the file holds a NUL byte.
 - **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
 - **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
   could-not-verify, never a zero or a crash.

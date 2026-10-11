@@ -87,6 +87,23 @@ BLOCK_BASH = [
     # pre-round-3 self-review: code that runs later or as another user
     "trap env EXIT", "su -c env", "su - bob -c 'printenv'",
     "bash /dev/stdin <<< env",
+    # security pass 2 (owner decision 2026-10-11): -Command after an option
+    # that takes a value; a code flag before another code flag; sudo clusters
+    # and value options; Git Bash's `cmd //c`
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Variable\"",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command '$env:FAKE_TOKEN'",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command 'cmd /c set'",
+    "powershell -Version 5.1 -Command 'gci env:'",
+    "powershell -Version 2 \"gci env:\"", "pwsh /c \"gci env:\"",
+    "pwsh <<< 'gci env:'",
+    "node -p -e process.env", "node -p --eval 'console.log(process.env)'",
+    "node --print -e process.env", "bun -p -e process.env",
+    "node --disable-warning X -p process.env",
+    "sudo -iu x env", "sudo -Hu x printenv", "sudo -Eu x env",
+    "sudo -T 5 env", "sudo --chdir /tmp env", "ssh -tp 22 h env",
+    "cmd //c set", "cmd.exe //c \"set\"",
+    "$'\\x{65}nv'", "bash +x -c env", "eval -- env", "su -lc env",
+    "T=$FAKE_TOKEN; T+=x; echo $T", "bash /dev/./stdin <<< env",
     "T=\"$FAKE_TOKEN\" python3 -c 'import os; print(os.environ[\"T\"])'",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
@@ -186,6 +203,14 @@ ALLOW_BASH = [
     "T=$HOME; echo $T", "T=$FAKE_TOKEN; T=x; echo $T", "env T=1 printenv T",
     "trap \"rm -f $tmp\" EXIT", "trap - EXIT", "trap 'echo done' INT TERM",
     "su -c ls bob", "source ./x.sh", "bash script.sh",
+    # security pass 2: the neighbours of each new must-block
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Date\"",
+    "powershell -ExecutionPolicy Bypass Get-Date",
+    "pwsh -ExecutionPolicy Bypass -File x.ps1", "pwsh ./x.ps1",
+    "node -p -e '1+1'", "node -p '1+1'", "node script.js -e foo",
+    "sudo -iu x ls", "sudo --chdir /tmp ls", "sudo -T 5 ls", "ssh -tp 22 h ls",
+    "cmd //c \"echo hi\"", "cmd //c \"set X=1\"", "cmd /c dir",
+    "T=a; T+=b; echo $T", "bash +x script.sh", "su - bob",
 ]
 
 ALLOW_PS = [
@@ -218,6 +243,11 @@ CNT_BASH = [
     # pre-round-3 self-review: a script that is a stream, a `-c` with no code
     "bash <(echo env)", "source <(echo env)", ". <(echo env)",
     "python3 /dev/stdin", "echo env | xargs bash -c",
+    # security pass 2
+    "powershell -ExecutionPolicy Bypass -enc AAAA", "pwsh -enco AAAA",
+    "pwsh /enc AAAA", "echo 'gci env:' | pwsh", "powershell -",
+    "trap \"$X\" EXIT", "su --command=\"$X\"", "source -- /dev/stdin",
+    "echo env | bash +x",
     "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
     "python3 -" + "c" * 4000 + " 0",
 ]
@@ -447,6 +477,18 @@ def test_latency_bound():
         env_guard.findings(command, shell)
     per_call = (time.perf_counter() - start) / len(cases)
     assert per_call < 0.150, per_call
+
+
+@pytest.mark.parametrize("word", ["x" + "[a" * 100000, "x" + "[" * 100000,
+                                  "x" + "{a" * 100000],
+                         ids=["open-brackets-with-text", "open-brackets",
+                              "open-braces"])
+def test_latency_bound_on_a_huge_program_word(word):
+    """Security pass 2: the glob test on the program word was one regular
+    expression, quadratic on repeated `[` (13 s for 200 KB)."""
+    start = time.perf_counter()
+    env_guard.findings(word, "bash")
+    assert time.perf_counter() - start < 2.0
 
 
 def test_latency_bound_on_a_huge_code_cluster():
@@ -788,6 +830,7 @@ _FALLBACK_LAYERS = [
     ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
     ("malformed-object-without-the-key", '{"guards":{bad}}', True),
     ("value-with-a-comma", '{"guards": {"envGuard": "off,block"}}', True),
+    ("nul-byte", '{"guards": {"envGuard": "off"}, "x": "a\x00b"}', True),
     ("bare-word-value", '{"x": nope, "guards": {"envGuard": "off"}}', True),
     ("trailing-comma", '{"guards": {"envGuard": "off"},}', True),
     ("comment", '{"guards": {"envGuard": "off"} /* x */}', True),
@@ -876,6 +919,26 @@ def test_bash_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
     _raw_fixture(tmp_path, text)
     _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
     assert code == (2 if armed else 0), out
+
+
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="builds a PATH of symlinks")
+def test_bash_wrapper_without_python_or_grep_is_armed(tmp_path):
+    """Security pass 2: with no grep the fallback's reads all fail, and a
+    failed read must not be the answer "off"."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    _fixture(tmp_path, ARMED)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("bash", "sh", "awk", "sed", "tr", "wc", "git", "dirname",
+                 "basename", "cat", "head", "tail", "uname", "readlink",
+                 "timeout", "sleep", "rm", "mktemp", "date"):
+        found = shutil.which(tool)
+        if found:
+            (bindir / tool).symlink_to(found)
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env",
+                               extra={"PATH": str(bindir)})
+    assert code == 2, out
 
 
 @needs_bash
