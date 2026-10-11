@@ -24,8 +24,14 @@ server:
   # Messages per second one connection may send; up to rate_burst at once
   rate_per_second: 10
   rate_burst: 10
-  # Stored (unread and history) messages kept per sender at most
+  # Stored (unread and history) messages kept per sender at most; 0 = no cap
   max_stored_per_peer: 10000
+  # Offline queue per recipient: undelivered direct messages waiting for it
+  # to come online, by count and by bytes. A send past either is refused
+  # (recipient_queue_full). Both at least 1 (0 would refuse every offline
+  # message, not lift the cap); the byte cap at least max_message_bytes.
+  max_unread_per_peer: 500
+  max_unread_bytes_per_peer: 8388608
 
 auth:
   # Bridge machine only: SHA-256 of every known peer's token, keyed by peer

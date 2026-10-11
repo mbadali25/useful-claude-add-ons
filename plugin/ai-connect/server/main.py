@@ -39,6 +39,8 @@ def build_server(settings: ServerSettings, db_path: str = DEFAULT_DB_PATH) -> Br
             rate_per_second=settings.rate_per_second,
             rate_burst=settings.rate_burst,
             max_stored_per_peer=settings.max_stored_per_peer,
+            max_unread_per_peer=settings.max_unread_per_peer,
+            max_unread_bytes_per_peer=settings.max_unread_bytes_per_peer,
         ),
     )
 

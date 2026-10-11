@@ -25,6 +25,8 @@ _configured_project_dir = ""
 # JSON escaping can still push a smaller one over; send_message checks the frame itself
 DEFAULT_MAX_FILE_BYTES = 48 * 1024
 TOO_LARGE = "❌ Not sent: {error}. Share fewer lines (lines=\"10-80\") or a smaller file."
+# The Bridge's HISTORY_MAX_LIMIT (server/websocket_server.py); the client imports nothing from server/
+HISTORY_MAX_LIMIT = 1000
 
 NOT_CONNECTED = "❌ Not connected to the Bridge Server (peer_status shows why)."
 
@@ -307,6 +309,10 @@ def _is_bridge_time(timestamp: object) -> bool:
 
 
 async def peer_history(peer: str, limit: int) -> str:
+    # Checked here as well as on the Bridge: the Bridge refuses a bad limit
+    # with an error frame, and get_history would wait that out to its timeout
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 0 < limit <= HISTORY_MAX_LIMIT:
+        return f"❌ limit must be a whole number from 1 to {HISTORY_MAX_LIMIT}, got {limit!r}"
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
