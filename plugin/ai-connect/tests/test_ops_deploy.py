@@ -95,8 +95,9 @@ def test_bridge_rerun_is_idempotent(bridge):
     assert second.res.returncode == 0, second.text
     assert second.mutations == []
     assert not second.files_changed and not second.state_changed
-    # deps, Tailscale installed, on the tailnet, config, peer, service, firewall; the health check always runs
-    assert len(already(second.res)) == 7, second.out
+    # deps, Tailscale installed, on the tailnet, its settings pinned, config, peer, service, firewall;
+    # the health check always runs
+    assert len(already(second.res)) == 8, second.out
     assert "would:" not in second.out and "  done: write" not in second.out
 
 
@@ -443,6 +444,105 @@ def test_a_fake_machine_cannot_resolve_a_real_tailscale(box):
     assert not Path(box.env["AI_CONNECT_TAILSCALE_DIRS"]).exists()
     assert Path(shutil.which("tailscale")).parent.parent.name == "tailscale-guard"  # this process: the tripwire
 
+
+# ---------------------------------------------------------------- other VPNs on the machine
+
+PINNED = ["--accept-routes=false", "--exit-node=", "--accept-dns=false"]
+OTHER_VPN = {"linux": "tun0", "windows": "AWS Client VPN TAP-Windows Adapter V9 #1"}
+
+
+def coexistence_line(text: str) -> dict:
+    (line,) = [ln.strip() for ln in text.splitlines() if "vpn-coexistence: " in ln]
+    return json.loads(line.split("vpn-coexistence: ", 1)[1])
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+def test_a_browser_login_takes_no_routes_exit_node_or_dns(tmp_path, venv, target):
+    box = Box(tmp_path, venv, target)
+    box.set(ts_backend="NeedsLogin", ts_ip="")
+    with OwnBridge(box) as own:
+        first = Phase(box, *own.args)
+    assert first.res.returncode == 0, first.text
+    (up,) = [c for c in first.calls if "up" in c[:3] and "tailscale" in c[:2]]
+    assert up[up.index("up") + 1:][:3] == PINNED, up
+    assert not any(a.startswith(("--advertise-routes", "--advertise-exit-node")) for a in up)
+    assert box.state()["prefs"] == {"RouteAll": False, "ExitNodeID": "", "CorpDNS": False}
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+def test_a_machine_already_on_the_tailnet_is_pinned_once(tmp_path, venv, target):
+    """A desktop joined by hand had RouteAll on: an AWS VPN for 10.5.0.0/16 then cut every connection."""
+    box = Box(tmp_path, venv, target)
+    box.set(prefs={"RouteAll": True, "ExitNodeID": "nEXIT1CNTRL", "CorpDNS": True})
+    with OwnBridge(box) as own:
+        first = Phase(box, *own.args)
+        status = box.deploy("status")
+        again = Phase(box, *own.args)
+    assert first.res.returncode == 0, first.text
+    sets = [c for c in first.calls if c[:2] == ["tailscale", "set"]]
+    assert len(sets) == 1 and sets[0][-3:] == PINNED, first.calls
+    assert "RouteAll" in first.out and "ExitNode" in first.out and "CorpDNS" in first.out
+    assert box.state()["prefs"] == {"RouteAll": False, "ExitNodeID": "", "CorpDNS": False}
+    assert "tailscale settings: RouteAll false, ExitNode none, CorpDNS false" in status.stdout
+    assert " - ON:" not in status.stdout
+    assert not any(c[:2] == ["tailscale", "set"] for c in again.calls)
+    assert "already done: Tailscale takes no routes" in again.out
+
+
+def test_status_flags_every_setting_that_is_on(box):
+    box.set(prefs={"RouteAll": True, "ExitNodeID": "nEXIT1CNTRL", "CorpDNS": True})
+    status = Phase(box, "status")
+    assert status.res.returncode == 0, status.text
+    line = next(ln for ln in status.out.splitlines() if "tailscale settings:" in ln)
+    assert "RouteAll true, ExitNode nEXIT1CNTRL, CorpDNS true - ON:" in line
+    assert "(RouteAll)" in line and "(ExitNode)" in line and "(CorpDNS)" in line
+    assert status.mutations == []  # status only reports
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+@pytest.mark.parametrize("route", ["100.100.12.0/24", "100.64.0.0/10", "fd7a:115c:a1e0:ab12::/64"])
+def test_another_vpn_routing_tailnet_addresses_stops_before_anything_changes(tmp_path, venv, target, route):
+    box = Box(tmp_path, venv, target)
+    box.set(vpns=[{"name": OTHER_VPN[target], "routes": ["10.5.0.0/16", route]}])
+    run = Phase(box, "bridge", "--name", "hub")
+    assert run.res.returncode == 1, run.text
+    assert "another VPN routes Tailscale's addresses" in run.res.stderr and OTHER_VPN[target] in run.res.stderr
+    assert route.split("/")[0] in run.res.stderr
+    assert run.mutations == [] and not box.config_file.exists()
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+def test_another_vpn_elsewhere_is_named_in_one_line_and_left_alone(tmp_path, venv, target):
+    box = Box(tmp_path, venv, target)
+    # A full tunnel's routes are wider than Tailscale's /10: it loses by longest-prefix match, no conflict
+    routes = ["10.5.0.0/16", "0.0.0.0/1", "128.0.0.0/1", "0.0.0.0/0"]
+    box.set(vpns=[{"name": OTHER_VPN[target], "routes": routes}])
+    with OwnBridge(box) as own:
+        run = Phase(box, *own.args)
+    assert run.res.returncode == 0, run.text
+    record = coexistence_line(run.out)
+    assert record["other_vpns"] == [{"name": OTHER_VPN[target], "routes": routes}]
+    assert record["tailscale_takes"] == {"routes": False, "exit_node": False, "dns": False}
+
+
+def test_other_vpns_that_cannot_be_listed_are_said_so_not_taken_as_none(box):
+    box.set(vpn_probe_rc=1)
+    with OwnBridge(box) as own:
+        run = Phase(box, *own.args)
+    assert run.res.returncode == 0, run.text
+    record = coexistence_line(run.out)
+    assert record["other_vpns"] is None and "failed (exit 1)" in record["other_vpns_unknown"]
+
+
+def test_a_tool_writing_bytes_that_are_not_utf8_or_cp1252_does_not_break_status(box):
+    """Seen live on Windows: a cp1252 reader thread died on 0x9d, stdout became None, status crashed."""
+    box.set(noise=True)
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        status = Phase(box, "status")
+    assert status.res.returncode == 0, status.text
+    assert "unexpected" not in status.text and "tailscale: Running, IPv4 127.0.0.1" in status.out
+
 # ---------------------------------------------------------------- peer
 
 
@@ -492,7 +592,7 @@ def test_peer_rerun_is_idempotent(peer):
     second = peer.second
     assert second.res.returncode == 0, second.text
     assert second.changed_nothing(), second.mutations
-    assert len(already(second.res)) == 5, second.out  # deps, plugin, MCP server, VPN, config
+    assert len(already(second.res)) == 6, second.out  # deps, plugin, MCP server, VPN, its settings, config
 
 
 def test_peer_dry_run_changes_nothing(peer):
@@ -507,8 +607,13 @@ def test_peer_never_prints_token_or_auth_key(peer):
     for secret in (PEER_TOKEN, AUTH_KEY):
         assert not leaks(secret, text), "a secret leaked"
     assert "token ****beef" in peer.dry.out and "token ****beef" in peer.first.out
-    key_on_argv = [c for c in peer.first.calls if any(AUTH_KEY in a for a in c) and c[:2] != ["tailscale", "up"]]
-    assert key_on_argv == []  # only `tailscale up --auth-key=` itself ever carries it
+    # Not even `tailscale up` carries it: tailscale reads it from an owner-only file, which is gone afterwards
+    assert [c for c in peer.first.calls if any(AUTH_KEY in a for a in c)] == []
+    (up,) = [c for c in peer.first.calls if c[:2] == ["tailscale", "up"]]
+    assert any(a.startswith("--auth-key=file:") for a in up)
+    assert peer.state["up_key_sha256"] == hashlib.sha256(AUTH_KEY.encode()).hexdigest()
+    key_files = list((peer.box.tmp / "ts-state").glob("auth-key-*"))
+    assert key_files == []
 
 
 def test_peer_wrong_token_fails_verification(box, tmp_path):

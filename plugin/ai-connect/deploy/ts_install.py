@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 
 from deploy_core import (IS_ROOT, Failure, Run, backend_state, interactive, out, tool,  # pylint: disable=import-error
-                         tsadmin)
+                         ts_prefs, tsadmin)
 
 PKGS = "https://pkgs.tailscale.com/stable"
 INSTALL_SCRIPT_URL = "https://tailscale.com/install.sh"
@@ -178,19 +178,60 @@ def step_install(r: Run, allow_install: bool) -> bool:
     return not r.dry_run
 
 
+def pinned(accept_dns: bool) -> list[str]:
+    """The flags that keep Tailscale out of another VPN's way: no routes from the tailnet, no exit node,
+    and DNS only when asked for (MagicDNS rewrites the resolver a VPN client or DNS hook relies on).
+    Never --advertise-routes or --advertise-exit-node."""
+    return ["--accept-routes=false", "--exit-node=", f"--accept-dns={'true' if accept_dns else 'false'}"]
+
+
 def up_argv(accept_dns: bool) -> list[str]:
-    """`tailscale up` for a login by a person. MagicDNS stays off unless asked for: it rewrites the
-    machine's resolver, which collides with a VPN client or a DNS hook that is already there."""
-    argv = ["tailscale", "up", f"--accept-dns={'true' if accept_dns else 'false'}"]
+    """`tailscale up` for a login by a person."""
+    argv = ["tailscale", "up", *pinned(accept_dns)]
     if PLATFORM == "windows":
         argv.append("--unattended")
     return as_root(argv) if PLATFORM == "linux" else argv
+
+
+def unpinned(prefs: dict, accept_dns: bool) -> list[str]:
+    """What Tailscale's settings take that they should not, in words; empty when they take nothing."""
+    wrong = []
+    if prefs.get("RouteAll"):
+        wrong.append("accepts the tailnet's routes (RouteAll)")
+    if prefs.get("ExitNodeID") or prefs.get("ExitNodeIP"):
+        wrong.append("sends traffic through an exit node (ExitNode)")
+    if bool(prefs.get("CorpDNS")) != accept_dns:
+        wrong.append("manages DNS (CorpDNS)" if prefs.get("CorpDNS")
+                     else "leaves DNS alone, but --accept-dns was given")
+    return wrong
+
+
+def step_prefs(r: Run, accept_dns: bool = False) -> None:
+    """A machine that joined before (by hand, or by an older deploy) gets the same pinned settings."""
+    prefs = ts_prefs()
+    if prefs is None:
+        raise Failure("could not read Tailscale's settings (tailscale debug prefs)")
+    wrong = unpinned(prefs, accept_dns)
+    if not wrong:
+        r.already("Tailscale takes no routes and no exit node" + (", and manages DNS" if accept_dns else " or DNS"))
+        return
+    argv = as_root(["tailscale", "set", *pinned(accept_dns)]) if PLATFORM == "linux" else \
+        ["tailscale", "set", *pinned(accept_dns)]
+    out(f"    $ {shown(argv)}")
+
+    def pin() -> None:
+        binary = tsadmin.tailscale_bin()
+        code = interactive([tool(argv[0]), binary, *argv[2:]] if argv[0] == "sudo" else [binary, *argv[1:]])
+        if code != 0:
+            raise Failure(f"tailscale set failed (exit {code})")
+    r.change("stop Tailscale taking what another VPN needs: it " + "; ".join(wrong), pin)
 
 
 def step_login(r: Run, accept_dns: bool = False) -> bool:
     """Log this machine in to the tailnet as its user: a browser login. False in a dry run that would."""
     if backend_state() == "Running":
         r.already("this machine is on the tailnet")
+        step_prefs(r, accept_dns)
         return True
     argv = up_argv(accept_dns)
     out(f"    $ {shown(argv)}")

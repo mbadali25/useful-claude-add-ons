@@ -20,6 +20,7 @@ or from the tailscale CLI passes through redact() before it is printed.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -208,8 +209,7 @@ def write_owner_only(path: Path, text: str) -> None:
             # Fails closed: a secret is never written where others may read it
             user = os.environ.get("USERNAME", "")
             icacls = shutil.which("icacls")
-            res = subprocess.run([icacls, tmp, "/inheritance:r", "/grant:r", f"{user}:F"],
-                                 capture_output=True, text=True, check=False) if user and icacls else None
+            res = capture([icacls, tmp, "/inheritance:r", "/grant:r", f"{user}:F"]) if user and icacls else None
             if res is None or res.returncode != 0:
                 why = ("USERNAME is not set" if not user else "icacls was not found" if not icacls
                        else f"icacls exited {res.returncode}")
@@ -352,12 +352,108 @@ def tailscale_bin() -> str:
     return found
 
 
+def capture(argv: list[str], timeout: float = 60.0) -> subprocess.CompletedProcess:
+    """Run a tool and keep its output as text. Bytes that are not UTF-8 (a localised Windows tool
+    writes its code page) become U+FFFD instead of killing the reader and leaving stdout None."""
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              stdin=subprocess.DEVNULL, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, "", f"{Path(argv[0]).name} timed out")
+
+
 def run_ts(ts: str, args: list[str], *, userspace: bool = False, timeout: float = 60.0):
     argv = [ts] + ([f"--socket={userspace_socket()}"] if userspace else []) + args
+    return capture(argv, timeout=timeout)
+
+
+# ---------------------------------------------------------------- other VPNs on this machine
+
+# Tailscale's own addresses. Another VPN's route inside one of them is as specific as Tailscale's, or
+# more, so it takes traffic meant for the tailnet; a wider route (a default route, 0.0.0.0/1) loses to
+# Tailscale's by longest-prefix match and does not conflict.
+TAILNET_RANGES = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+VPN_NAME_RE = "VPN|TAP|TUN|Wintun|OpenVPN|WireGuard|AWS|Fortinet|AnyConnect|GlobalProtect|PANGP|Zscaler"
+LINUX_VPN_RE = re.compile(r"^(tun|tap|wg|ppp)")
+# Every adapter that is up and looks like a VPN, other than Tailscale's own, with its routes, as JSON
+WINDOWS_VPNS = ("$ErrorActionPreference = 'Stop'; $a = @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and "
+                "($_.Name + ' ' + $_.InterfaceDescription) -match '" + VPN_NAME_RE + "' -and "
+                "($_.Name + ' ' + $_.InterfaceDescription) -notmatch 'Tailscale' } | ForEach-Object { [ordered]@{ "
+                "name = $_.Name; routes = @(Get-NetRoute -InterfaceIndex $_.ifIndex -ErrorAction SilentlyContinue | "
+                "ForEach-Object { $_.DestinationPrefix }) } }); ConvertTo-Json -InputObject $a -Depth 3 -Compress")
+
+
+def parse_linux_vpns(links: str, routes4: str, routes6: str) -> list[dict]:
+    """[{name, routes}] from `ip -j link show up` and `ip -j [-6] route show table all`."""
+    found: dict[str, list[str]] = {link.get("ifname", ""): [] for link in json.loads(links or "[]")
+                                   if LINUX_VPN_RE.match(link.get("ifname", ""))}
+    for text, default in ((routes4, "0.0.0.0/0"), (routes6, "::/0")):
+        for route in json.loads(text or "[]"):
+            if route.get("dev") in found:
+                found[route["dev"]].append(default if route.get("dst") == "default" else str(route.get("dst")))
+    return [{"name": name, "routes": routes} for name, routes in found.items()]
+
+
+def other_vpns(platform: str) -> list[dict]:
+    """Every other VPN interface that is up, with its routes. Raises Failure when that cannot be read."""
+    if platform == "darwin":
+        raise Failure("not checked on macOS")
+    if platform == "windows":
+        powershell = shutil.which("powershell")
+        if not powershell:
+            raise Failure("powershell not found")
+        res = capture([powershell, "-NoProfile", "-NonInteractive", "-Command", WINDOWS_VPNS])
+        if res.returncode != 0:
+            raise Failure(f"Get-NetAdapter failed (exit {res.returncode})")
+        try:
+            return [{"name": str(item.get("name")), "routes": [str(r) for r in item.get("routes") or []]}
+                    for item in json.loads(res.stdout.strip() or "[]")]
+        except (ValueError, AttributeError):
+            raise Failure("Get-NetAdapter printed something that is not the expected JSON") from None
+    ip = shutil.which("ip")
+    if not ip:
+        raise Failure("`ip` (iproute2) not found")
+    def read(*args: str) -> str:
+        res = capture([ip, "-j", *args], timeout=30)
+        if res.returncode != 0:
+            raise Failure(f"`ip -j {' '.join(args)}` failed (exit {res.returncode})")
+        return res.stdout
+    links, routes4, routes6 = read("link", "show", "up"), read("route", "show", "table", "all"), \
+        read("-6", "route", "show", "table", "all")
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
-    except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(argv, 124, "", f"tailscale {args[0]} timed out")
+        return parse_linux_vpns(links, routes4, routes6)
+    except (ValueError, AttributeError):
+        raise Failure("`ip -j` printed something that is not the expected JSON") from None
+
+
+def route_conflicts(vpns: list[dict]) -> list[str]:
+    """Each route of another VPN that lies inside a tailnet range, described."""
+    hits = []
+    for vpn in vpns:
+        for text in vpn["routes"]:
+            try:
+                net = ipaddress.ip_network(text, strict=False)
+            except ValueError:
+                continue
+            hits += [f"'{vpn['name']}' routes {net}, inside Tailscale's {rng}" for rng in TAILNET_RANGES
+                     if net.version == rng.version and net.subnet_of(rng)]
+    return hits
+
+
+def vpn_coexistence(platform: str, accept_dns: bool = False) -> str:
+    """Check that no other VPN here routes Tailscale's addresses. Returns the one structured log line
+    that names the other VPNs; raises Failure on a conflict. An unreadable list is said so, not taken as none."""
+    record: dict = {"other_vpns": None,
+                    "tailscale_takes": {"routes": False, "exit_node": False, "dns": accept_dns}}
+    try:
+        record["other_vpns"] = other_vpns(platform)
+    except Failure as err:
+        record["other_vpns_unknown"] = str(err)
+    hits = route_conflicts(record["other_vpns"] or [])
+    if hits:
+        raise Failure("another VPN routes Tailscale's addresses: " + "; ".join(hits)
+                      + ". Disconnect it or narrow its routes, then run this again")
+    return "vpn-coexistence: " + json.dumps(record, separators=(",", ":"))
 
 
 def backend_state(ts: str, userspace: bool) -> str | None:
@@ -456,10 +552,12 @@ def looks_like_no_tun(text: str) -> bool:
                           r"is tailscaled running", text, re.I))
 
 
-def tailscale_up(ts: str, key: str, args, userspace: bool):
-    # MagicDNS stays off unless asked for: it rewrites the resolver, which collides with a VPN client's DNS hook
-    up = ["up", f"--auth-key={key}", f"--advertise-tags={args.tag}",
-          f"--accept-dns={'true' if getattr(args, 'accept_dns', False) else 'false'}"]
+def tailscale_up(ts: str, key_file: Path, args, userspace: bool):
+    # Tailscale takes no routes and no exit node, and DNS only when asked for: another VPN on this machine
+    # keeps its own routes and resolver. The key is read from a file by tailscale itself: on the command
+    # line any user could see it in the process list.
+    up = ["up", f"--auth-key=file:{key_file}", f"--advertise-tags={args.tag}", "--accept-routes=false",
+          "--exit-node=", f"--accept-dns={'true' if getattr(args, 'accept_dns', False) else 'false'}"]
     if args.hostname:
         up.append(f"--hostname={args.hostname}")
     if IS_WINDOWS and not userspace:
@@ -471,6 +569,8 @@ def cmd_vpn_up(args) -> int:
     ts = tailscale_bin()
     bridge = args.bridge or os.environ.get("AI_CONNECT_BRIDGE_HOST")
     userspace = args.userspace or userspace_socket().exists()
+    platform = "windows" if IS_WINDOWS else "darwin" if sys.platform == "darwin" else "linux"
+    say(vpn_coexistence(platform, args.accept_dns))
 
     if backend_state(ts, userspace) == "Running":
         code, why = bridge_verdict(bridge, userspace)
@@ -482,13 +582,19 @@ def cmd_vpn_up(args) -> int:
     key, key_path = read_key(args)
     if args.userspace:
         start_userspace_tailscaled()
-    res = tailscale_up(ts, key, args, userspace)
-    if res.returncode != 0 and not userspace and looks_like_no_tun(res.stderr + res.stdout):
-        warn("tailscale up could not use a tun device here: " + (res.stderr or res.stdout).strip())
-        warn("falling back to userspace networking")
-        userspace = True
-        start_userspace_tailscaled()
-        res = tailscale_up(ts, key, args, userspace)
+    # Exactly the key, owner-only, for `--auth-key=file:`; gone again whatever happens
+    key_file = state_dir() / f"auth-key-{os.getpid()}.tmp"
+    write_owner_only(key_file, key + "\n")
+    try:
+        res = tailscale_up(ts, key_file, args, userspace)
+        if res.returncode != 0 and not userspace and looks_like_no_tun(res.stderr + res.stdout):
+            warn("tailscale up could not use a tun device here: " + (res.stderr or res.stdout).strip())
+            warn("falling back to userspace networking")
+            userspace = True
+            start_userspace_tailscaled()
+            res = tailscale_up(ts, key_file, args, userspace)
+    finally:
+        key_file.unlink(missing_ok=True)
     if res.returncode != 0:
         kept = f"; key file {key_path} kept" if key_path else ""
         raise Failure(f"tailscale up failed (exit {res.returncode}): "

@@ -28,7 +28,7 @@ DEPLOY = DEPLOY_DIR / "deploy.py"
 FAKE = Path(__file__).resolve().parent / "fake_deploy_bin.py"
 # The installers are always fakes too: no test may reach a real curl, winget or brew
 TOOLS = ("tailscale", "sudo", "tee", "rm", "systemctl", "ufw", "schtasks", "netsh", "claude",
-         "firewall-cmd", "powershell", "curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")
+         "firewall-cmd", "powershell", "ip", "curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")
 SUBNET = "100.64.0.0/10"
 AUTH_KEY = "tskey-auth-kDEPLOY123-AuthKeyMaterialThatMustNotLeak0123"
 PEER_TOKEN = "f00dfacecafe" * 5 + "beef"
@@ -36,7 +36,7 @@ PEER_TOKEN = "f00dfacecafe" * 5 + "beef"
 MUTATING = {("tee",), ("rm",), ("systemctl", "enable"), ("systemctl", "restart"), ("systemctl", "disable"),
             ("systemctl", "daemon-reload"), ("ufw", "allow"), ("ufw", "delete"), ("schtasks", "/Create"),
             ("firewall-cmd", "--reload"), ("firewall-cmd", "--permanent", "--add-rich-rule"),
-            ("firewall-cmd", "--permanent", "--remove-rich-rule"),
+            ("firewall-cmd", "--permanent", "--remove-rich-rule"), ("tailscale", "set"),
             ("schtasks", "/Run"), ("schtasks", "/End"), ("schtasks", "/Delete"),
             ("netsh", "advfirewall", "firewall", "add"), ("netsh", "advfirewall", "firewall", "delete"),
             ("claude", "plugin", "install"),

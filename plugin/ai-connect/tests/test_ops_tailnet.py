@@ -102,7 +102,7 @@ def test_apply_again_is_idempotent(box, api):
     assert api.writes() == []
     assert again.changed_nothing() and len(backups(box)) == 1
     # installed, on the tailnet, policy, tag, OAuth client
-    assert len(already(again.res)) == 5 and "would:" not in again.out, again.out
+    assert len(already(again.res)) == 6 and "would:" not in again.out, again.out  # + Tailscale settings pinned
     preview = setup(box, api)
     assert preview.res.returncode == 0 and "would:" not in preview.out and api.writes() == []
     assert no_secret_in(again.text + preview.text)
@@ -448,13 +448,13 @@ def test_ubuntu_as_root_installs_from_the_signed_apt_repository_without_sudo(box
     assert planned[3].endswith(" /etc/apt/sources.list.d/tailscale.list")
     assert planned[4].startswith("$ apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/tailscale.list")
     assert planned[5] == "$ apt-get install -y tailscale"
-    assert "$ tailscale up --accept-dns=false" in planned and "signed-by" in dry.out
+    assert "$ tailscale up --accept-routes=false --exit-node= --accept-dns=false" in planned and "signed-by" in dry.out
     assert not any("sudo" in line for line in planned)
     ran = installer_calls(first)
     assert [c[0] for c in ran] == ["curl", "curl", "install", "install", "apt-get", "apt-get"], ran
     assert ran[5] == ["apt-get", "install", "-y", "tailscale"]
     assert not any(c[0] == "sudo" for c in first.calls), "root must not need sudo"
-    assert ["tailscale", "up", "--accept-dns=false"] in first.calls
+    assert ["tailscale", "up", "--accept-routes=false", "--exit-node=", "--accept-dns=false"] in first.calls
 
 
 def test_a_release_the_apt_repository_lacks_falls_back_to_the_install_script(box):

@@ -84,9 +84,14 @@ class FakeTailscale:
     def up_calls(self):
         return [c for c in self.calls() if "up" in c]
 
+    def up_key(self):
+        return json.loads(self.state.read_text(encoding="utf-8")).get("up_key")
+
 
 @pytest.fixture
 def fake_ts(tmp_path, monkeypatch, ts):
+    # No other VPN on the fake machine unless a test says so: the real adapters here are never listed
+    monkeypatch.setattr(ts, "other_vpns", lambda platform: [])
     fake = FakeTailscale(tmp_path)
     monkeypatch.setenv("FAKE_TS_STATE", str(fake.state))
     monkeypatch.setenv("FAKE_TS_LOG", str(fake.log))

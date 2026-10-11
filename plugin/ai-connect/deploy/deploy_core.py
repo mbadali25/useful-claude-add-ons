@@ -120,8 +120,11 @@ def tool(name: str) -> str:
 def run(argv: list[str], *, stdin_text: str | None = None, env: dict | None = None,
         timeout: float = 300) -> subprocess.CompletedProcess:
     try:
+        # A tool that writes its code page (cp1252, cp850 on a localised Windows) must not kill the reader
+        # thread: that leaves stdout None and the caller fails on it
         return subprocess.run(argv, input=stdin_text, stdin=None if stdin_text is not None else subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=timeout, check=False, env=env)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, check=False, env=env)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(argv, 124, "", f"{Path(argv[0]).name} timed out")
 
@@ -186,6 +189,17 @@ def config_tool(*args: str, env_extra: dict | None = None, timeout: float = 300)
 def backend_state() -> str | None:
     """'Running', 'NeedsLogin', ... or None when tailscaled could not be asked."""
     return tsadmin.backend_state(tsadmin.tailscale_bin(), userspace=tsadmin.userspace_socket().exists())
+
+
+def ts_prefs() -> dict | None:
+    """Tailscale's settings on this machine (RouteAll, ExitNodeID, CorpDNS, ...), or None when unreadable."""
+    res = tsadmin.run_ts(tsadmin.tailscale_bin(), ["debug", "prefs"],
+                         userspace=tsadmin.userspace_socket().exists(), timeout=30)
+    try:
+        prefs = json.loads(res.stdout) if res.returncode == 0 else None
+    except ValueError:
+        return None
+    return prefs if isinstance(prefs, dict) else None
 
 
 def tailscale_ip() -> str:

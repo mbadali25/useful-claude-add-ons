@@ -41,7 +41,7 @@ import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED, EXIT_OK,  # pylint: disable=import-error
                          EXIT_USAGE, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must, out,
-                         privileged, run, tailscale_ip, tool, tsadmin, venv_python)
+                         privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -466,6 +466,14 @@ def verify(r: Run, what: str) -> None:
 # ---------------------------------------------------------------- commands
 
 
+def coexistence(r: Run, accept_dns: bool) -> None:
+    """No other VPN here may route Tailscale's addresses (tsadmin.vpn_coexistence): one line naming them."""
+    if r.dry_run:
+        out("  would: check that no other VPN here routes Tailscale's 100.64.0.0/10 or fd7a:115c:a1e0::/48")
+        return
+    out(f"  {tsadmin.vpn_coexistence('darwin' if ts_install.PLATFORM == 'darwin' else TARGET, accept_dns)}")
+
+
 def bridge_url(host: str, port: int) -> str:
     return f"ws://[{host}]:{port}" if ":" in host else f"ws://{host}:{port}"
 
@@ -482,6 +490,7 @@ def cmd_bridge(args) -> int:
     step_deps(r)
 
     r.step("Tailscale")
+    coexistence(r, args.accept_dns)
     joined = ts_install.step_tailscale(r, not args.no_install_tailscale, args.accept_dns)
 
     r.step("Configuration")
@@ -610,8 +619,10 @@ def cmd_peer(args) -> int:
     step_claude(r)
 
     r.step("VPN (Tailscale)")
+    coexistence(r, args.accept_dns)
     if on_tailnet:
         r.already("this machine is on the tailnet")
+        ts_install.step_prefs(r, args.accept_dns)
     else:
         ts_install.step_install(r, not args.no_install_tailscale)
         argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", args.name]
@@ -619,8 +630,9 @@ def cmd_peer(args) -> int:
             argv += ["--auth-key-file", args.auth_key_file]
         if args.accept_dns:
             argv.append("--accept-dns")
-        out(f"    $ tailscale up --auth-key=<the one-off key> --advertise-tags={tsadmin.DEFAULT_TAG} "
-            f"--accept-dns={'true' if args.accept_dns else 'false'} --hostname={args.name}")
+        out(f"    $ tailscale up --auth-key=file:<owner-only copy of the one-off key> "
+            f"--advertise-tags={tsadmin.DEFAULT_TAG} {' '.join(ts_install.pinned(args.accept_dns))} "
+            f"--hostname={args.name}")
 
         def join() -> None:
             res = run(argv, timeout=300)
@@ -657,6 +669,18 @@ def cmd_status(args) -> int:
         state = backend_state() or "unknown"
         ip = tailscale_ip() if state == "Running" else "-"
         out(f"  tailscale: {state}, IPv4 {ip}")
+        prefs = ts_prefs()
+        if prefs is None:
+            out("  tailscale settings: unknown (tailscale debug prefs did not answer)")
+        else:
+            exit_node = prefs.get("ExitNodeID") or prefs.get("ExitNodeIP") or "none"
+            line = (f"  tailscale settings: RouteAll {str(bool(prefs.get('RouteAll'))).lower()}, "
+                    f"ExitNode {exit_node}, CorpDNS {str(bool(prefs.get('CorpDNS'))).lower()}")
+            wrong = ts_install.unpinned(prefs, accept_dns=False)
+            if wrong:
+                line += (" - ON: it " + "; ".join(wrong) + ". Another VPN can lose its routes or DNS to it; "
+                         "`tailscale set --accept-routes=false --exit-node= --accept-dns=false` turns them off")
+            out(line)
     except (Failure, tsadmin.Failure) as err:
         out(f"  tailscale: {err}")
     facts = inspect_config() if python else None

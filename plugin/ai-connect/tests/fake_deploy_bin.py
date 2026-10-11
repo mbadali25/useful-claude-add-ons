@@ -13,10 +13,13 @@ rule_ports {name: localport}, disable_rc / restart_rc (exit code of systemctl di
 end_rc (exit code of schtasks /End), end_noop (/End succeeds and the task runs on),
 task_state_rc (exit code of the PowerShell task-state query), ufw_status_rc (exit code of
 ufw status), fw_permanent / fw_runtime [rich rules], reload_rc (exit code of firewall-cmd
---reload), after_up (BackendState after `tailscale up`),
-ts_node_id, install_rc (exit code of an installer), shim (the launcher text an
-installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
+--reload), prefs {RouteAll, ExitNodeID, CorpDNS} (tailscale debug prefs; up and set change them),
+vpns [{name, routes}] (other VPN interfaces, for ip and Get-NetAdapter), vpn_probe_rc,
+noise (tailscale ip -4 also writes a byte that is neither cp1252 nor UTF-8),
+after_up (BackendState after `tailscale up`), ts_node_id, install_rc (exit code of an installer),
+shim (the launcher text an installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
 """
+import hashlib
 import json
 import os
 import re
@@ -35,23 +38,64 @@ def save(state: dict) -> None:
     Path(os.environ["FAKE_DEPLOY_STATE"]).write_text(text, encoding="utf-8")
 
 
+PREFS = {"--accept-routes": "RouteAll", "--accept-dns": "CorpDNS"}
+
+
+def set_prefs(args, state) -> None:
+    prefs = state.setdefault("prefs", {})
+    for arg in args:
+        flag, _, value = arg.partition("=")
+        if flag in PREFS:
+            prefs[PREFS[flag]] = value == "true"
+        elif flag == "--exit-node":
+            prefs["ExitNodeID"] = value
+
+
 def tailscale(args, state):
     if args[:2] == ["ip", "-4"]:
         if not state.get("ts_ip"):
             print("no current Tailscale IPs; state: Stopped", file=sys.stderr)
             return 1
-        print(state["ts_ip"])
+        print(state["ts_ip"], flush=True)
+        if state.get("noise"):
+            # A byte that is neither cp1252 nor UTF-8: what a localised tool can write
+            sys.stdout.buffer.write(b"\x9d\n")
         return 0
     if args and args[0] == "status":
         print(json.dumps({"BackendState": state.get("ts_backend", "Running"),
                           "Self": {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}}))
         return 0
-    if args and args[0] == "up":
-        state["ts_backend"] = state.get("after_up", "Running")
-        state["ts_ip"] = state.get("ts_ip") or "127.0.0.1"
+    if args[:2] == ["debug", "prefs"]:
+        print(json.dumps({"RouteAll": False, "ExitNodeID": "", "CorpDNS": False, **state.get("prefs", {})}))
+        return 0
+    if args and args[0] in ("up", "set"):
+        set_prefs(args[1:], state)
+        for arg in args:
+            if arg.startswith("--auth-key=file:"):  # what tailscale itself does with it: read the file
+                key = Path(arg.removeprefix("--auth-key=file:")).read_text(encoding="utf-8").strip()
+                state["up_key_sha256"] = hashlib.sha256(key.encode()).hexdigest()
+        if args[0] == "up":
+            state["ts_backend"] = state.get("after_up", "Running")
+            state["ts_ip"] = state.get("ts_ip") or "127.0.0.1"
         save(state)
         return 0
     return 64
+
+
+def ip(args, state):
+    """`ip -j link show up` and `ip -j [-6] route show table all`, from state vpns [{name, routes}]."""
+    if state.get("vpn_probe_rc"):
+        return int(state["vpn_probe_rc"])
+    vpns = state.get("vpns", [])
+    if args[1:] == ["link", "show", "up"]:
+        print(json.dumps([{"ifname": "lo"}, {"ifname": "eth0"}, {"ifname": "tailscale0"}]
+                         + [{"ifname": v["name"]} for v in vpns]))
+        return 0
+    six = "-6" in args
+    print(json.dumps([{"dst": "default", "dev": "eth0"}, {"dst": "100.64.0.0/10", "dev": "tailscale0"}]
+                     + [{"dst": "default" if r in ("0.0.0.0/0", "::/0") else r, "dev": v["name"]}
+                        for v in vpns for r in v["routes"] if (":" in r) == six]))
+    return 0
 
 
 def install_tailscale(state) -> int:
@@ -202,7 +246,13 @@ def firewall_cmd(args, state):
 
 
 def powershell(args, state):
-    """Only the scheduled-task state query: the state as a number, never as a word in some language."""
+    """The scheduled-task state query (the state as a number, never as a word in some language), and the
+    list of other VPN adapters that are up (state vpns [{name, routes}])."""
+    if "Get-NetAdapter" in args[-1]:
+        if state.get("vpn_probe_rc"):
+            return int(state["vpn_probe_rc"])
+        print(json.dumps(state.get("vpns", [])))
+        return 0
     if state.get("task_state_rc"):
         print("Get-ScheduledTask : Access is denied.", file=sys.stderr)
         return int(state["task_state_rc"])
@@ -298,6 +348,7 @@ TOOLS = {f.__name__: f for f in (tailscale, sudo, tee, rm, systemctl, ufw, schta
 TOOLS["apt-get"] = apt_get
 TOOLS["firewall-cmd"] = firewall_cmd
 TOOLS["powershell"] = powershell
+TOOLS["ip"] = ip
 
 
 def main() -> int:

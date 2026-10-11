@@ -1,5 +1,6 @@
 """tsadmin.py: mint-key, revoke, vpn-up, vpn-down against a fake API and a fake tailscale CLI."""
 import hashlib
+import json
 import os
 import re
 import socket
@@ -313,13 +314,18 @@ def test_vpn_up_bridge_host_from_env(ts, fake_ts, probe, monkeypatch):
     assert probe.seen[0][0] == "env-bridge"
 
 
-def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, capsys):
+def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(ts, "IS_WINDOWS", False)
     monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
     assert ts.main(["vpn-up", "--bridge", "b", "--hostname", "alice"]) == 0
     (call,) = fake_ts.up_calls()
-    assert f"--auth-key={AUTH_KEY}" in call
+    # tailscale reads the key from an owner-only file: it is on no command line, and the file is gone after
+    assert not any(AUTH_KEY in a for a in call) and fake_ts.up_key() == AUTH_KEY
+    assert any(a.startswith("--auth-key=file:") for a in call) and list((tmp_path / "state").glob("auth-key-*")) == []
     assert "--advertise-tags=tag:ai-peer" in call
+    # Another VPN here keeps its routes, exit and DNS: Tailscale takes none of them, and offers none
+    assert {"--accept-routes=false", "--exit-node=", "--accept-dns=false"} <= set(call)
+    assert not any(a.startswith(("--advertise-routes", "--advertise-exit-node")) for a in call)
     assert "--hostname=alice" in call
     assert "--unattended" not in call
     out, err = capsys.readouterr()
@@ -329,6 +335,9 @@ def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, cap
 
 def test_vpn_up_adds_unattended_on_windows(ts, fake_ts, probe, monkeypatch):
     monkeypatch.setattr(ts, "IS_WINDOWS", True)
+    # Only the flag is under test: off Windows, the key file cannot get a Windows ACL
+    monkeypatch.setattr(ts, "write_owner_only", lambda path, text: (path.parent.mkdir(parents=True, exist_ok=True),
+                                                                    path.write_text(text, encoding="utf-8")))
     monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
     assert ts.main(["vpn-up", "--bridge", "b"]) == 0
     assert "--unattended" in fake_ts.up_calls()[0]
@@ -339,7 +348,7 @@ def test_vpn_up_deletes_key_file_after_success(ts, fake_ts, probe, tmp_path):
     key_file.write_text("\n" + AUTH_KEY + "\n", encoding="utf-8")
     assert ts.main(["vpn-up", "--auth-key-file", str(key_file), "--bridge", "b"]) == 0
     assert not key_file.exists()
-    assert f"--auth-key={AUTH_KEY}" in fake_ts.up_calls()[0]
+    assert fake_ts.up_key() == AUTH_KEY and not any(AUTH_KEY in a for a in fake_ts.up_calls()[0])
 
 
 def test_vpn_up_key_file_from_env(ts, fake_ts, probe, tmp_path, monkeypatch):
@@ -413,6 +422,58 @@ def test_vpn_up_missing_tailscale_exit_3_with_install_hint(ts, tmp_path, monkeyp
     assert ts.main(["vpn-up", "--bridge", "b"]) == 3
     err = capsys.readouterr().err
     assert "not installed" in err and ("winget" in err or "brew" in err or "install.sh" in err)
+
+
+# ------------------------------------------------------------------ other VPNs on the machine
+
+
+def test_linux_vpn_interfaces_and_their_routes_are_read_from_ip_json(ts):
+    links = json.dumps([{"ifname": "lo"}, {"ifname": "eth0"}, {"ifname": "tailscale0"}, {"ifname": "tun0"},
+                        {"ifname": "wg0"}])
+    routes4 = json.dumps([{"dst": "default", "dev": "eth0"}, {"dst": "100.64.0.0/10", "dev": "tailscale0"},
+                          {"dst": "10.5.0.0/16", "dev": "tun0"}, {"dst": "default", "dev": "wg0"}])
+    routes6 = json.dumps([{"dst": "fd00::/8", "dev": "wg0"}, {"dst": "default", "dev": "tun0"}])
+    assert ts.parse_linux_vpns(links, routes4, routes6) == [
+        {"name": "tun0", "routes": ["10.5.0.0/16", "::/0"]}, {"name": "wg0", "routes": ["0.0.0.0/0", "fd00::/8"]}]
+
+
+@pytest.mark.parametrize("route, conflict", [
+    ("100.64.0.0/10", True), ("100.100.1.0/24", True), ("100.101.102.103", True),
+    ("fd7a:115c:a1e0::/48", True), ("fd7a:115c:a1e0:1::/64", True),
+    ("0.0.0.0/0", False), ("0.0.0.0/1", False), ("100.0.0.0/8", False), ("10.5.0.0/16", False),
+    ("100.128.0.0/10", False), ("::/0", False), ("fd7a::/16", False), ("not a route", False),
+])
+def test_only_a_route_inside_a_tailnet_range_conflicts(ts, route, conflict):
+    hits = ts.route_conflicts([{"name": "AWS VPN", "routes": [route]}])
+    assert bool(hits) == conflict, hits
+
+
+def test_vpn_up_refuses_before_joining_when_another_vpn_routes_tailnet_addresses(ts, fake_ts, probe, monkeypatch,
+                                                                              capsys):
+    monkeypatch.setattr(ts, "other_vpns", lambda platform: [{"name": "OpenVPN TAP", "routes": ["100.96.0.0/11"]}])
+    monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
+    assert ts.main(["vpn-up", "--bridge", "b"]) == 1
+    err = capsys.readouterr().err
+    assert "another VPN routes Tailscale's addresses" in err and "'OpenVPN TAP' routes 100.96.0.0/11" in err
+    assert fake_ts.up_calls() == []
+
+
+def test_vpn_up_names_the_other_vpns_in_one_line(ts, fake_ts, probe, monkeypatch, capsys):
+    monkeypatch.setattr(ts, "other_vpns", lambda platform: [{"name": "wg0", "routes": ["10.5.0.0/16"]}])
+    monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
+    assert ts.main(["vpn-up", "--bridge", "b"]) == 0
+    (line,) = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("vpn-coexistence: ")]
+    assert json.loads(line.removeprefix("vpn-coexistence: ")) == {
+        "other_vpns": [{"name": "wg0", "routes": ["10.5.0.0/16"]}],
+        "tailscale_takes": {"routes": False, "exit_node": False, "dns": False}}
+
+
+def test_a_vpn_list_that_cannot_be_read_is_unknown_not_none(ts, monkeypatch):
+    def unreadable(platform):
+        raise ts.Failure("`ip` (iproute2) not found")
+    monkeypatch.setattr(ts, "other_vpns", unreadable)
+    record = json.loads(ts.vpn_coexistence("linux").removeprefix("vpn-coexistence: "))
+    assert record["other_vpns"] is None and record["other_vpns_unknown"] == "`ip` (iproute2) not found"
 
 
 # ------------------------------------------------------------------ vpn-down

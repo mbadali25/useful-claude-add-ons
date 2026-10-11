@@ -37,13 +37,36 @@ repository does not carry, Tailscale's install script. Every command is printed 
 it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
-`tailscale up` always runs with `--accept-dns=false`: Tailscale does not take over the
-machine's DNS, which would collide with a VPN client or DNS hook that is already there.
-Use the Bridge's `100.x.y.z` address, not its name. `--accept-dns` turns MagicDNS on.
+Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client
+that is already there keeps working: see [Running alongside other VPNs](#running-alongside-other-vpns).
+Use the Bridge's `100.x.y.z` address, not its name.
 
 **See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`;
 `tailnet-setup` without `--apply` is its dry run. Each prints every command and change
 it would make and makes none.
+
+## Running alongside other VPNs
+
+Every `tailscale up` deploy runs passes `--accept-routes=false --exit-node= --accept-dns=false`,
+and never `--advertise-routes` or `--advertise-exit-node`. A peer's join adds
+`--advertise-tags=tag:ai-peer --hostname=<--name>` and reads the key from an owner-only file
+(`--auth-key=file:...`). A machine already on the tailnet with other settings is set the
+same way with `tailscale set`. `--accept-dns` turns MagicDNS on; nothing turns routes on.
+
+Before Tailscale is touched, `bridge`, `peer` and `vpn/vpn-up` list the other VPN interfaces
+that are up and their routes, and print one line:
+
+```
+vpn-coexistence: {"other_vpns":[{"name":"AWS Client VPN TAP-Windows Adapter V9 #1","routes":["10.5.0.0/16"]}],"tailscale_takes":{"routes":false,"exit_node":false,"dns":false}}
+```
+
+A route inside `100.64.0.0/10` or `fd7a:115c:a1e0::/48` stops the command before anything
+changes: disconnect that VPN or narrow its routes, then run it again. A default route or a
+full tunnel's `0.0.0.0/1` is wider than Tailscale's own routes and loses to them, so it is
+fine. `other_vpns_unknown` in the line means the list could not be read.
+
+`deploy status` shows `RouteAll`, `ExitNode` and `CorpDNS` and flags any that is on. To
+fix one by hand: `tailscale set --accept-routes=false --exit-node= --accept-dns=false`.
 
 ## Machine 1: the tailnet (admin, once)
 
