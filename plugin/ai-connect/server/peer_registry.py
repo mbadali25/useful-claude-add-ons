@@ -60,6 +60,10 @@ class PeerRegistry:
         A dead holder (closed, or silent past the timeout) is replaced, but
         only by the same credential, so a reconnect gets its name back and
         nobody else can grab it in the gap.
+
+        The check and the insert run with no await between them, so two
+        concurrent registrations cannot both pass the check: the dead
+        holder is closed only after the new peer holds the name.
         """
         existing = self._peers.get(name)
         if existing is not None:
@@ -67,10 +71,6 @@ class PeerRegistry:
                 raise NameTakenError(name)
             if existing.credential != credential:
                 raise NameTakenError(name)
-            del self._peers[name]
-            if existing.websocket:
-                with suppress(ConnectionClosed):
-                    await existing.websocket.close()
 
         peer = Peer(
             name=name,
@@ -80,6 +80,9 @@ class PeerRegistry:
             credential=credential,
         )
         self._peers[name] = peer
+        if existing is not None and existing.websocket:
+            with suppress(ConnectionClosed):
+                await existing.websocket.close()
         if self._on_join:
             await self._on_join(peer)
         return peer
