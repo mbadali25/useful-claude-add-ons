@@ -71,7 +71,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
   plugin's `ruff.toml` extends the root config instead of replacing it.
 
-### Fixed — crew 1.2.29: the environment guard's review fixes (L-0772)
+### Fixed — crew 1.2.30: the environment guard's review fixes (L-0772)
 
 - **Summary.** The environment guard no longer misses attached code (`bash -c'env'`, `node -pe`), a
   globbed program name, or an armed config when python is missing; an explicit `null` arms it.
