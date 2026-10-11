@@ -320,9 +320,7 @@ class _BashReader:
             if c in "<>" and self._peek(1) == "(":
                 cur.words.append(self._word(stop))
                 continue
-            if c in "<>" or (c == "&" and self._peek(1) == ">") or (
-                    c.isdigit() and _REDIRECT_RE.match(self.s, self.i)
-                    and self._digits_then_redirect()):
+            if self._at_redirect(c):
                 self._redirect(cur, stop)
                 continue
             if c in ";&|()":
@@ -339,6 +337,14 @@ class _BashReader:
         finish()
         self.nest -= 1
         return cmds
+
+    def _at_redirect(self, c):
+        """Whether the reader stands on a redirect operator: `<`, `>`, `&>`,
+        or a file-descriptor number followed by one (`2>`)."""
+        if c in "<>" or (c == "&" and self._peek(1) == ">"):
+            return True
+        return c.isdigit() and bool(_REDIRECT_RE.match(self.s, self.i)) \
+            and self._digits_then_redirect()
 
     def _digits_then_redirect(self):
         j = self.i
@@ -1898,9 +1904,19 @@ def _crude_armed(root):
     """Whether a config file arms the guard, read without crew's readers --
     for when those readers themselves failed. Any `envGuard` value other
     than "off" counts as armed, so a value this cannot parse fails closed.
-    The twin of env-guard.sh's `_env_guard_armed`."""
+    The twin of env-guard.sh's `_env_guard_armed`: the repo file is the
+    resolved one (a lane with no config of its own reads the main
+    checkout's), and a resolver that fails or cannot tell which file is in
+    force counts as armed -- an absent own file is no proof of off."""
+    try:
+        import crew_common  # pylint: disable=import-outside-toplevel
+        crew_dir, source, _ = crew_common.repo_config_dir(root)
+    except Exception:  # pylint: disable=broad-except
+        return True
+    if source == crew_common.SOURCE_UNKNOWN:
+        return True
     home = os.path.expanduser("~")
-    for path in (os.path.join(root, ".crew", "config.json"),
+    for path in (os.path.join(crew_dir, "config.json"),
                  os.path.join(home, ".claude", "crew", "config.json")):
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:

@@ -443,6 +443,48 @@ def test_corrupt_config_layer_blocks(monkeypatch, capsys, tmp_path):
     assert decision == "deny" and "failing closed" in reason
 
 
+def _reader_fails(monkeypatch):
+    def boom(_root):
+        raise RuntimeError("reader down")
+    monkeypatch.setattr(env_guard, "resolve_mode", boom)
+
+
+def test_failed_reader_reads_the_resolved_repo_layer(monkeypatch, capsys,
+                                                     tmp_path):
+    import crew_common  # pylint: disable=import-outside-toplevel
+    main_crew = tmp_path / "main" / ".crew"
+    main_crew.mkdir(parents=True)
+    (main_crew / "config.json").write_text(json.dumps(ARMED), encoding="utf-8")
+    _fixture(tmp_path)
+    _reader_fails(monkeypatch)
+    monkeypatch.setattr(crew_common, "repo_config_dir", lambda _root: (
+        str(main_crew), crew_common.SOURCE_MAIN, ""))
+    decision, reason = run_main(monkeypatch, capsys, tmp_path, "Bash", "env")
+    assert decision == "deny" and "failing closed" in reason
+
+
+@pytest.mark.parametrize("failure", ["raises", "unknown"])
+def test_failed_reader_with_no_resolved_layer_is_armed(monkeypatch, capsys,
+                                                       tmp_path, failure):
+    import crew_common  # pylint: disable=import-outside-toplevel
+    _fixture(tmp_path)
+    _reader_fails(monkeypatch)
+
+    def resolver(_root):
+        if failure == "raises":
+            raise OSError("git down")
+        return str(tmp_path / "repo" / ".crew"), crew_common.SOURCE_UNKNOWN, "x"
+    monkeypatch.setattr(crew_common, "repo_config_dir", resolver)
+    assert run_main(monkeypatch, capsys, tmp_path, "Bash", "env")[0] == "deny"
+
+
+def test_failed_reader_with_no_armed_layer_allows(monkeypatch, capsys, tmp_path):
+    _fixture(tmp_path, {"guards": {"envGuard": "off"}})
+    _reader_fails(monkeypatch)
+    assert run_main(monkeypatch, capsys, tmp_path, "Bash", "env") == \
+        ("allow", "")
+
+
 def test_other_tools_are_not_judged(monkeypatch, capsys, tmp_path):
     _fixture(tmp_path, ARMED)
     raw = json.dumps({"tool_name": "Write", "tool_input": {
