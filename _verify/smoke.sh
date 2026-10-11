@@ -393,7 +393,7 @@ claude_validate_check() {
     return 2
   fi
   local rc=0 target out
-  for target in . plugin/crew plugin/gizmoduck plugin/rule-of-two plugin/localgpu plugin/obsidian-vault; do
+  for target in . plugin/ai-connect plugin/crew plugin/gizmoduck plugin/rule-of-two plugin/localgpu plugin/obsidian-vault; do
     if out="$(claude plugin validate --strict "$target" 2>&1)"; then
       echo "  ok: $target"
     else

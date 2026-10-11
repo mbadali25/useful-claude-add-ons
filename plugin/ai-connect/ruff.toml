@@ -1,0 +1,14 @@
+# The repository's rule set (../../ruff.toml) plus what upstream AI-Connect
+# checked on top of it. `extend` matters: without it this file replaces the root
+# config, and ruff 0.16's widened default set applies here alone (36 findings
+# on the unchanged fork, I001/SIM117 and more, that the root deliberately does
+# not select).
+extend = "../../ruff.toml"
+# The client modules import each other as top-level modules (sys.path set in
+# client/server.py), so ruff must know them as first-party
+target-version = "py310"
+src = [".", "client"]
+
+[lint]
+# Ruff 0.16 dropped E402 from its defaults; upstream keeps checking it
+extend-select = ["E402"]
