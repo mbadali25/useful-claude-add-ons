@@ -190,25 +190,32 @@ Then restart the assistant so it loads the MCP server.
 
 ## Deploy
 
-`deploy/deploy.sh` (Linux) and `deploy/deploy.ps1` (Windows) do the whole Setup above in one non-interactive command, over Tailscale. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. The machine must already have Tailscale installed; a Bridge must already be on the tailnet.
+`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish.
 
 ```bash
-# Bridge machine (Linux: sudo for systemd and the firewall; Windows: an elevated PowerShell)
+# Machine 1, once per tailnet (admin): preview, then apply
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup --apply
+# Machine 1: the Bridge (Linux: sudo for systemd and the firewall; Windows: an elevated PowerShell)
 deploy/deploy.sh bridge --peer laptop --peer desk
 # every other machine, with the token file from the Bridge and a one-off auth key from vpn/mint-key
 deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --auth-key-file laptop.key
+deploy/deploy.sh test --bridge 100.x.y.z --name laptop
 deploy/deploy.sh status
 deploy/deploy.sh uninstall --yes          # --purge also deletes ~/.config/ai-connect
 ```
 
-- **`bridge`**: venv and `requirements.txt`; `config.yaml` with `server.host` set to this machine's `tailscale ip -4` (through `installer.py`, which also creates the observer, user and own peer tokens); one token per `--peer`, written owner-only to `~/.config/ai-connect/peer-tokens/<name>.token`; the Bridge service (`ai-connect.service`, on Windows the `AI-Connect Bridge` scheduled task, the same ones `install.sh` / `install.ps1` create); a firewall rule for the port from `--vpn-subnet` only (default Tailscale's `100.64.0.0/10`; ufw, firewalld or Windows Firewall); then a health check that opens a WebSocket to the Bridge with this machine's own token.
-- **`peer`**: venv and `requirements.txt`; `claude plugin install ai-connect@useful-claude-add-ons` and the MCP server registration (`installer.py claude`); `vpn/vpn-up` with the one-off auth key, skipped when the machine is already on the tailnet; the client config (`client.name`, `client.bridge_url`, `client.token`); then the same WebSocket check, which fails if the Bridge refuses the token.
+- **`tailnet-setup`** (admin, once per tailnet): takes a Tailscale API access token from `TS_API_TOKEN` or a prompt, uses it for that run and stores it nowhere. It has Tailscale validate `vpn/acl-template.hujson` (with `--admin`, default `autogroup:admin`, in place of `admin@example.com`), shows a diff against the tailnet's current policy, tags the Bridge machine `tag:bridge` (this machine, or `--device NAME`), and creates the OAuth client `vpn/mint-key` and `vpn/revoke` use (`auth_keys` and `devices:core`, `tag:ai-peer`). Without `--apply` it is a preview and changes nothing. With `--apply` it first writes the current policy to `~/.config/ai-connect/acl-backups/`, then **replaces the whole tailnet policy** with the file. The OAuth client goes into the OS credential store through Python `keyring`; without `keyring` it goes to the owner-only file `~/.config/ai-connect/tailscale-oauth.json`, and a later run moves it. If the API refuses to create the client, the command prints the admin-console steps and stores the client you then give it (`TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`, or the prompts). The calls are the ones in the [Tailscale API reference](https://tailscale.com/api): policy file validate, get and set, device tags, and key creation with `keyType: "client"`.
+- **`bridge`**: venv and `requirements.txt`; Tailscale (see below); `config.yaml` with `server.host` set to this machine's `tailscale ip -4` (through `installer.py`, which also creates the observer, user and own peer tokens); one token per `--peer`, written owner-only to `~/.config/ai-connect/peer-tokens/<name>.token`; the Bridge service (`ai-connect.service`, on Windows the `AI-Connect Bridge` scheduled task, the same ones `install.sh` / `install.ps1` create); a firewall rule for the port from `--vpn-subnet` only (default Tailscale's `100.64.0.0/10`; ufw, firewalld or Windows Firewall); then a health check that opens a WebSocket to the Bridge with this machine's own token.
+- **`peer`**: venv and `requirements.txt`; `claude plugin install ai-connect@useful-claude-add-ons` and the MCP server registration (`installer.py claude`); Tailscale, then `vpn/vpn-up` with the one-off auth key, skipped when the machine is already on the tailnet; the client config (`client.name`, `client.bridge_url`, `client.token`); then the same WebSocket check, which fails if the Bridge refuses the token.
+- **`test`**: five checks with one `PASS` or `FAIL` line each, and exit code 1 when any fails: Tailscale is up, the Bridge's port answers, the Bridge accepts this machine's token (`--token-file`, `AI_CONNECT_PEER_TOKEN`, else `client.token`), a message sent to `--name` comes back inside the untrusted frame, and a random token is refused. It changes nothing on this machine. The Bridge keeps the one test message in that peer's history and logs the refused token. Run it while no session is online under `--name`: the name is then taken and the round trip fails.
+- **Tailscale is installed when it is missing**: Tailscale's install script on Linux, `winget` on Windows (the MSI when there is no `winget`), Homebrew on macOS. deploy says what is about to ask for you (sudo's password, the UAC prompt, the browser login on a Bridge), hands the terminal to that tool, and carries on when it returns. `--no-install-tailscale` keeps the old behaviour: exit code 3.
 - **Idempotent**: every step looks first and prints `already done: ...` instead of repeating itself. A rerun with a new `--peer` adds that peer and restarts the Bridge.
-- **`--dry-run`** (`bridge`, `peer`, `uninstall`) runs only the read-only checks and prints `would: ...` for each change.
-- **Secrets** never go on the command line and are never printed: the peer token comes from `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`. Output shows a token as `****` plus its last four characters.
-- `--port` (default 9999) and `--name` (the Bridge's own peer name, default the host name) are there when the defaults do not fit. Exit codes: 0 done, 1 a step failed, 2 bad arguments, 3 Tailscale is not installed.
+- **`--dry-run`** (`bridge`, `peer`, `uninstall`) runs only the read-only checks and prints `would: ...` for each change. `tailnet-setup` without `--apply` is its dry run.
+- **Secrets** never go on the command line and are never printed: the peer token comes from `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`, the API access token from `TS_API_TOKEN` or a prompt. Output shows a token as `****` plus its last four characters.
+- `--port` (default 9999) and `--name` (the Bridge's own peer name, default the host name) are there when the defaults do not fit. Exit codes: 0 done, 1 a step or a check failed, 2 bad arguments, 3 Tailscale is not installed and could not be.
 
-`deploy.ps1` does not ask through UAC: `bridge` and `uninstall` fail at the scheduled task or the firewall rule unless the shell is elevated. On Linux without ufw or firewalld the firewall step prints the rule to add by hand.
+`deploy.ps1` does not ask through UAC itself: `bridge` and `uninstall` fail at the scheduled task or the firewall rule unless the shell is elevated. On Linux without ufw or firewalld the firewall step prints the rule to add by hand. A Bridge on macOS is not supported (no launchd service); a peer is.
 
 ## Usage
 

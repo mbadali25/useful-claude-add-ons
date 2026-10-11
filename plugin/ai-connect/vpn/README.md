@@ -23,6 +23,9 @@ Python 3.8+ and uses only the standard library. `keyring` is optional.
 
 ## One-time setup (a human, once per tailnet)
 
+`../deploy/deploy.sh tailnet-setup --apply` (`deploy.ps1` on Windows) does all five steps through the
+Tailscale API, with a preview first: see [`../deploy/README.md`](../deploy/README.md). The steps by hand:
+
 1. **Install Tailscale** on the Bridge host and log it in.
 2. **Tag the Bridge host**: in the admin console, open Machines, pick the Bridge host,
    choose Edit ACL tags, and add `tag:bridge`. Alternatively, run
@@ -40,6 +43,8 @@ Python 3.8+ and uses only the standard library. `keyring` is optional.
    - the OS credential store through Python `keyring`:
      `keyring set ai-connect-tailscale oauth_client_id` and
      `keyring set ai-connect-tailscale oauth_client_secret`. The environment wins if both are set.
+   - the owner-only file `~/.config/ai-connect/tailscale-oauth.json`, which `deploy tailnet-setup` writes
+     when Python `keyring` is not installed. It is read last.
 
 ## Per peer (automated)
 

@@ -120,22 +120,48 @@ def api_error(what: str, status: int, payload: dict) -> Failure:
     return Failure(f"{what} failed: HTTP {status}: {message}")
 
 
-def oauth_credentials() -> tuple[str, str]:
-    cid = os.environ.get("TS_OAUTH_CLIENT_ID", "")
-    secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "")
+def oauth_file() -> Path:
+    """Where `deploy tailnet-setup` keeps the OAuth client when no credential store takes it."""
+    return Path(os.environ.get("AI_CONNECT_OAUTH_FILE")
+                or Path.home() / ".config" / "ai-connect" / "tailscale-oauth.json")
+
+
+def stored_oauth_credentials(use_env: bool = True) -> tuple[str, str, str | None]:
+    """(client id, secret, where from) out of the environment, the OS credential store, then the
+    owner-only file; ("", "", None) when no source holds both. use_env=False asks only what is stored."""
+    cid = os.environ.get("TS_OAUTH_CLIENT_ID", "") if use_env else ""
+    secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "") if use_env else ""
+    source = "environment" if cid and secret else None
     if not (cid and secret):
         try:
-            import keyring  # pylint: disable=import-error  # optional; the OS credential store
+            import keyring  # pylint: disable=import-error,import-outside-toplevel  # optional; the OS credential store
             cid = cid or (keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or "")
             secret = secret or (keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or "")
-        except Exception:  # keyring absent or its backend broken: env is then the only source
+            source = "credential store" if cid and secret else None
+        except Exception:  # keyring absent or its backend broken: the other sources still count
             pass
     if not (cid and secret):
-        raise Failure(
-            "no Tailscale OAuth client: set TS_OAUTH_CLIENT_ID and TS_OAUTH_CLIENT_SECRET, or store "
-            f"them with `keyring set {KEYRING_SERVICE} oauth_client_id` / `oauth_client_secret`"
-        )
+        try:
+            saved = json.loads(oauth_file().read_text(encoding="utf-8"))
+            cid = cid or str(saved.get("oauth_client_id") or "")
+            secret = secret or str(saved.get("oauth_client_secret") or "")
+            source = f"file {oauth_file()}" if cid and secret else None
+        except (OSError, ValueError, AttributeError):
+            pass
+    if not (cid and secret):
+        return "", "", None
     remember_secret(secret)
+    return cid, secret, source
+
+
+def oauth_credentials() -> tuple[str, str]:
+    cid, secret, _source = stored_oauth_credentials()
+    if not (cid and secret):
+        raise Failure(
+            "no Tailscale OAuth client: run `deploy tailnet-setup --apply`, or set TS_OAUTH_CLIENT_ID and "
+            f"TS_OAUTH_CLIENT_SECRET, or store them with `keyring set {KEYRING_SERVICE} oauth_client_id` "
+            "/ `oauth_client_secret`"
+        )
     return cid, secret
 
 
@@ -305,8 +331,20 @@ def userspace_socket() -> Path:
     return state_dir() / "tailscaled.sock"
 
 
+def tailscale_dirs() -> list[str]:
+    """Where a fresh install puts the CLI before a new shell has it on PATH."""
+    override = os.environ.get("AI_CONNECT_TAILSCALE_DIRS")
+    if override is not None:
+        return [d for d in override.split(os.pathsep) if d]
+    if IS_WINDOWS:
+        return [str(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale")]
+    return ["/usr/bin", "/usr/sbin", "/usr/local/bin", "/opt/homebrew/bin",
+            "/Applications/Tailscale.app/Contents/MacOS"]
+
+
 def tailscale_bin() -> str:
-    found = shutil.which("tailscale")
+    found = shutil.which("tailscale") or next(
+        (hit for d in tailscale_dirs() for hit in [shutil.which("tailscale", path=d)] if hit), None)
     if not found:
         hint = INSTALL_HINT.get(sys.platform, INSTALL_HINT["linux"])
         raise Failure(f"tailscale is not installed. Install it: {hint}", EXIT_NO_TAILSCALE)

@@ -1,12 +1,15 @@
 """Stand-in for every system tool deploy.py drives: one program, the tool's name as argv[1].
 
-tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh and claude. State is the
+tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude, and the Tailscale
+installers curl, sh, winget, msiexec and brew. State is the
 JSON file in $FAKE_DEPLOY_STATE; every call's argv is appended to $FAKE_DEPLOY_LOG,
 one JSON list per line. Nothing outside those two files and the paths a test
 hands it is ever touched.
 
 State keys: ts_ip, ts_backend, units {name: {active, enabled}}, ufw [lines],
-tasks {name: status}, rules {name: remoteip}, plugins [ids], mcp {name: argv}.
+tasks {name: status}, rules {name: remoteip}, plugins [ids], mcp {name: argv},
+ts_node_id, install_rc (exit code of an installer), shim (the launcher text an
+installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
 """
 import json
 import os
@@ -33,14 +36,52 @@ def tailscale(args, state):
         print(state["ts_ip"])
         return 0
     if args and args[0] == "status":
-        print(json.dumps({"BackendState": state.get("ts_backend", "Running")}))
+        print(json.dumps({"BackendState": state.get("ts_backend", "Running"),
+                          "Self": {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}}))
         return 0
     if args and args[0] == "up":
         state["ts_backend"] = "Running"
-        state.setdefault("ts_ip", "127.0.0.1")
+        state["ts_ip"] = state.get("ts_ip") or "127.0.0.1"
         save(state)
         return 0
     return 64
+
+
+def install_tailscale(state) -> int:
+    """What every installer does here: put the tailscale command on the fake PATH, logged out."""
+    if state.get("install_rc"):
+        return int(state["install_rc"])
+    name = "tailscale.cmd" if os.name == "nt" else "tailscale"
+    path = Path(os.environ["FAKE_DEPLOY_BIN"]) / name
+    path.write_bytes(state["shim"].replace("{name}", "tailscale").encode("utf-8"))
+    path.chmod(0o755)
+    state["ts_backend"], state["ts_ip"] = "NeedsLogin", ""
+    save(state)
+    return 0
+
+
+def curl(args, _state):
+    Path(args[args.index("-o") + 1]).write_text("# fake download\n", encoding="utf-8")
+    return 0
+
+
+def sh(_args, state):
+    return install_tailscale(state)
+
+
+def winget(args, state):
+    return install_tailscale(state) if args[:1] == ["install"] else 64
+
+
+def msiexec(_args, state):
+    return install_tailscale(state)
+
+
+def brew(args, state):
+    # The renamed cask is the one this Homebrew knows
+    if args[:2] != ["install", "--cask"] or args[2] != state.get("brew_cask", "tailscale-app"):
+        return 1
+    return install_tailscale(state)
 
 
 def sudo(args, _state):
@@ -177,7 +218,8 @@ def claude(args, state):
     return 0
 
 
-TOOLS = {f.__name__.replace("_", "-"): f for f in (tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude)}
+TOOLS = {f.__name__: f for f in (tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude,
+                                 curl, sh, winget, msiexec, brew)}
 
 
 def main() -> int:

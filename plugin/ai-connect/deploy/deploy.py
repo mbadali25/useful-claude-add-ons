@@ -5,12 +5,15 @@
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
   deploy status
   deploy uninstall --yes [--purge] [--dry-run]
+  deploy tailnet-setup [--apply] [--admin WHO] [--acl FILE] [--device NAME]     (tailnet_setup.py)
+  deploy test --bridge HOST --name N [--port N] [--token-file F]                (smoke_test.py)
 
 Secrets never travel on the command line and are never printed: the peer
 token comes from --token-file or AI_CONNECT_PEER_TOKEN, the one-off Tailscale
 auth key from --auth-key-file or TS_AUTHKEY. Every step checks what is already
 there first and says "already done" instead of doing it again. --dry-run runs
 the read-only checks and prints what it would change, and changes nothing.
+bridge and peer install Tailscale when it is missing (ts_install.py).
 
 Exit codes: 0 done, 1 a step failed, 2 bad arguments, 3 tailscale not installed.
 """
@@ -20,130 +23,38 @@ import argparse
 import getpass
 import hashlib
 import ipaddress
-import json
 import os
 import re
 import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-PLUGIN = HERE.parent
-sys.path.insert(0, str(PLUGIN / "vpn"))
-import tsadmin  # noqa: E402  pylint: disable=wrong-import-position,import-error
+import smoke_test  # pylint: disable=import-error
+import tailnet_setup  # pylint: disable=import-error
+import ts_install  # pylint: disable=import-error
+from deploy_core import (CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED, EXIT_OK,  # pylint: disable=import-error
+                         EXIT_USAGE, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask, must, out,
+                         privileged, run, tailscale_ip, tool, tsadmin, venv_python)
 
-EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
 TASK = "AI-Connect Bridge"
 RULE = "AI-Connect Bridge"
 PLUGIN_ID = "ai-connect@useful-claude-add-ons"
 MCP_SERVER = "ai-connect"
-DEFAULT_PORT = 9999
 DEFAULT_SUBNET = "100.64.0.0/10"
-CONFIG_DIR = Path.home() / ".config" / "ai-connect"
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
 TOKEN_DIR = CONFIG_DIR / "peer-tokens"
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$")
 # Test seams: which OS's service/firewall tools to drive, and where systemd units live
 TARGET = os.environ.get("AI_CONNECT_DEPLOY_OS") or ("windows" if os.name == "nt" else "linux")
 SYSTEMD_DIR = Path(os.environ.get("AI_CONNECT_SYSTEMD_DIR") or "/etc/systemd/system")
-VENV = Path(os.environ.get("AI_CONNECT_VENV") or PLUGIN / "venv")
 HEALTH_WAIT = float(os.environ.get("AI_CONNECT_DEPLOY_HEALTH_WAIT") or 20)
 
 
-class Failure(Exception):
-    """A refusal with a one-line reason and an exit code."""
-
-    def __init__(self, message: str, code: int = EXIT_FAILED):
-        super().__init__(message)
-        self.code = code
-
-
-# ---------------------------------------------------------------- output
-
-
-def out(msg: str = "") -> None:
-    print(tsadmin.redact(msg), flush=True)
-
-
-def mask(secret: str) -> str:
-    """Never the secret: a fixed mask, plus its last 4 characters when it is long enough to spare them."""
-    return "****" + secret[-4:] if len(secret) >= 24 else "****"
-
-
-class Run:
-    """One deploy invocation: dry-run flag, step counter, what changed."""
-
-    def __init__(self, dry_run: bool, total: int):
-        self.dry_run = dry_run
-        self.total = total
-        self.number = 0
-        self.config_changed = False
-
-    def step(self, title: str) -> None:
-        self.number += 1
-        out(f"[{self.number}/{self.total}] {title}")
-
-    @staticmethod
-    def already(msg: str) -> None:
-        out(f"  already done: {msg}")
-
-    def change(self, msg: str, action) -> None:
-        """Do one change, or in a dry run only say it would."""
-        if self.dry_run:
-            out(f"  would: {msg}")
-            return
-        action()
-        out(f"  done: {msg}")
-
-
-# ---------------------------------------------------------------- processes
-
-
-def tool(name: str) -> str:
-    found = shutil.which(name)
-    if not found:
-        raise Failure(f"{name} not found on PATH")
-    return found
-
-
-def run(argv: list[str], *, stdin_text: str | None = None, env: dict | None = None,
-        timeout: float = 300) -> subprocess.CompletedProcess:
-    try:
-        return subprocess.run(argv, input=stdin_text, stdin=None if stdin_text is not None else subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=timeout, check=False, env=env)
-    except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(argv, 124, "", f"{Path(argv[0]).name} timed out")
-
-
-def must(res: subprocess.CompletedProcess, what: str) -> subprocess.CompletedProcess:
-    if res.returncode != 0:
-        detail = (res.stderr or res.stdout).strip().splitlines()
-        raise Failure(f"{what} failed (exit {res.returncode}): {detail[-1] if detail else 'no output'}")
-    return res
-
-
-def privileged(name: str) -> list[str]:
-    """argv prefix for a root-only Linux tool: sudo unless already root."""
-    if getattr(os, "geteuid", lambda: 1000)() == 0:
-        return [tool(name)]
-    return [tool("sudo"), tool(name)]
-
-
 # ---------------------------------------------------------------- venv + config tool
-
-
-def venv_python() -> Path | None:
-    for parts in (("Scripts", "python.exe"), ("bin", "python")):
-        cand = VENV.joinpath(*parts)
-        if cand.is_file():
-            return cand
-    return None
 
 
 def deps_ok(python: Path) -> bool:
@@ -151,23 +62,6 @@ def deps_ok(python: Path) -> bool:
     probe = ("import importlib.util as u, sys; "
              "sys.exit(any(u.find_spec(m) is None for m in ('yaml', 'websockets', 'aiosqlite', 'fastmcp')))")
     return run([str(python), "-c", probe], timeout=120).returncode == 0
-
-
-def config_tool(*args: str, env_extra: dict | None = None) -> dict:
-    """Run config_tool.py with the venv's Python (it imports installer.py, which needs PyYAML)."""
-    python = venv_python()
-    if python is None:
-        raise Failure(f"no venv at {VENV}; run the dependency step first")
-    env = dict(os.environ, **(env_extra or {}))
-    res = run([str(python), str(HERE / "config_tool.py"), *args], env=env)
-    try:
-        payload = json.loads(res.stdout.strip().splitlines()[-1]) if res.stdout.strip() else {}
-    except ValueError:
-        payload = {}
-    if res.returncode != 0:
-        raise Failure(payload.get("error") or f"config_tool {args[0]} failed (exit {res.returncode}): "
-                      f"{(res.stderr or res.stdout).strip()[-300:] or 'no output'}")
-    return payload
 
 
 def inspect_config() -> dict | None:
@@ -192,24 +86,6 @@ def step_deps(r: Run) -> None:
              "pip install")
 
     r.change(f"install {requirements.name} into the venv", install)
-
-
-# ---------------------------------------------------------------- tailscale
-
-
-def tailscale_ip() -> str:
-    res = run([tsadmin.tailscale_bin(), "ip", "-4"], timeout=30)
-    first = res.stdout.strip().splitlines()[0].strip() if res.stdout.strip() else ""
-    try:
-        ipaddress.IPv4Address(first)
-    except ValueError:
-        raise Failure("this machine has no Tailscale IPv4 address (`tailscale ip -4`); "
-                      "join the tailnet first (tailscale up)") from None
-    return first
-
-
-def backend_state() -> str | None:
-    return tsadmin.backend_state(tsadmin.tailscale_bin(), userspace=tsadmin.userspace_socket().exists())
 
 
 # ---------------------------------------------------------------- service
@@ -484,12 +360,16 @@ def cmd_bridge(args) -> int:
     for peer in args.peer:
         check_name(peer, "--peer")
     check_name(args.name, "--name")
-    r = Run(args.dry_run, total=6)
+    r = Run(args.dry_run, total=7)
     out(f"=== AI-Connect deploy: bridge{' (dry run)' if r.dry_run else ''} ===")
     step_deps(r)
 
+    r.step("Tailscale")
+    joined = ts_install.step_install(r, not args.no_install_tailscale) and ts_install.step_login(r)
+
     r.step("Configuration")
-    ip = tailscale_ip()
+    # Only a dry run gets here without a tailnet address: it has said what it would do about that
+    ip = tailscale_ip() if joined else "<this machine's Tailscale IPv4>"
     out(f"  Tailscale IPv4: {ip}")
     facts = inspect_config()
     if facts and facts.get("exists") and facts.get("host") == ip and facts.get("port") == args.port \
@@ -542,10 +422,9 @@ def read_peer_token(args) -> str:
 
 def cmd_peer(args) -> int:
     check_name(args.name, "--name")
-    if not HOSTNAME_RE.match(args.bridge):
-        raise Failure(f"--bridge '{args.bridge}' is not an IP address or host name", EXIT_USAGE)
+    check_host(args.bridge)
     token = read_peer_token(args)
-    on_tailnet = backend_state() == "Running"
+    on_tailnet = ts_install.installed() is not None and backend_state() == "Running"
     key_file = args.auth_key_file or os.environ.get("TS_AUTHKEY_FILE")
     if not on_tailnet and not key_file and not os.environ.get("TS_AUTHKEY", "").strip():
         raise Failure("not on the tailnet and no auth key: pass --auth-key-file or set TS_AUTHKEY")
@@ -558,6 +437,7 @@ def cmd_peer(args) -> int:
     if on_tailnet:
         r.already("this machine is on the tailnet")
     else:
+        ts_install.step_install(r, not args.no_install_tailscale)
         argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", args.name]
         if args.auth_key_file:
             argv += ["--auth-key-file", args.auth_key_file]
@@ -650,6 +530,11 @@ def check_name(name: str, flag: str) -> None:
         raise Failure(f"{flag} '{name}' must be 1-63 letters, digits or hyphens", EXIT_USAGE)
 
 
+def check_host(host: str) -> None:
+    if not HOSTNAME_RE.match(host):
+        raise Failure(f"--bridge '{host}' is not an IP address or host name", EXIT_USAGE)
+
+
 def port_arg(text: str) -> int:
     try:
         port = int(text)
@@ -695,9 +580,14 @@ def build_parser() -> argparse.ArgumentParser:
     for cmd in (b, pe, u):
         cmd.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
         cmd.add_argument("--port", type=port_arg, default=DEFAULT_PORT, help="Bridge port (default 9999)")
+    for cmd in (b, pe):
+        cmd.add_argument("--no-install-tailscale", action="store_true",
+                         help="fail (exit 3) instead of installing Tailscale when it is missing")
     for cmd in (b, u, s):
         cmd.add_argument("--vpn-subnet", type=subnet_arg, default=DEFAULT_SUBNET,
                          help="only this range may reach the port (default Tailscale's 100.64.0.0/10)")
+    tailnet_setup.add_parser(sub)
+    smoke_test.add_parser(sub, port_arg, check_name, check_host)
     return p
 
 

@@ -23,6 +23,9 @@ def ts(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("AI_CONNECT_TS_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("AI_CONNECT_TSD_WAIT", "0")
+    # No real install dir or stored OAuth client on this machine may answer
+    monkeypatch.setenv("AI_CONNECT_TAILSCALE_DIRS", str(tmp_path / "no-tailscale"))
+    monkeypatch.setenv("AI_CONNECT_OAUTH_FILE", str(tmp_path / "tailscale-oauth.json"))
     import tsadmin
     mod = importlib.reload(tsadmin)
     # A keyring on the machine running the tests must not supply credentials.

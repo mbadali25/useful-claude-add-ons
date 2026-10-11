@@ -188,6 +188,35 @@ Um Tool-Bestätigungsdialoge zu überspringen, in `~/.claude/settings.json` hinz
 
 Danach den Assistenten neu starten, damit er den MCP-Server lädt.
 
+## Deploy
+
+`deploy/deploy.sh` (Linux, und macOS für einen Peer) und `deploy/deploy.ps1` (Windows) erledigen die ganze Einrichtung oben über Tailscale, ein Befehl pro Rechner. Beide reichen direkt an `deploy/deploy.py` weiter, führen also dieselben Schritte in derselben Reihenfolge aus und geben denselben Text aus. [`deploy/README.md`](deploy/README.md) ist das Runbook für zwei Rechner, von Anfang bis Ende (englisch).
+
+```bash
+# Rechner 1, einmal pro Tailnet (Admin): erst die Vorschau, dann anwenden
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup --apply
+# Rechner 1: die Bridge (Linux: sudo für systemd und die Firewall; Windows: eine PowerShell mit Adminrechten)
+deploy/deploy.sh bridge --peer laptop --peer desk
+# jeder weitere Rechner, mit der Token-Datei von der Bridge und einem einmaligen Auth-Key aus vpn/mint-key
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --auth-key-file laptop.key
+deploy/deploy.sh test --bridge 100.x.y.z --name laptop
+deploy/deploy.sh status
+deploy/deploy.sh uninstall --yes          # --purge löscht auch ~/.config/ai-connect
+```
+
+- **`tailnet-setup`** (Admin, einmal pro Tailnet): nimmt ein Tailscale-API-Access-Token aus `TS_API_TOKEN` oder einer Abfrage, verwendet es für diesen einen Lauf und speichert es nirgends. Der Befehl lässt Tailscale `vpn/acl-template.hujson` prüfen (mit `--admin`, Standard `autogroup:admin`, anstelle von `admin@example.com`), zeigt den Unterschied zur aktuellen Policy des Tailnets, taggt den Bridge-Rechner mit `tag:bridge` (diesen Rechner, oder `--device NAME`) und legt den OAuth-Client an, den `vpn/mint-key` und `vpn/revoke` verwenden (`auth_keys` und `devices:core`, `tag:ai-peer`). Ohne `--apply` ist es eine Vorschau und ändert nichts. Mit `--apply` schreibt er zuerst die aktuelle Policy nach `~/.config/ai-connect/acl-backups/` und **ersetzt dann die gesamte Policy des Tailnets** durch die Datei. Der OAuth-Client kommt über Python `keyring` in den Credential Store des Betriebssystems; ohne `keyring` in die nur für den Besitzer lesbare Datei `~/.config/ai-connect/tailscale-oauth.json`, und ein späterer Lauf zieht ihn um. Lehnt die API das Anlegen des Clients ab, gibt der Befehl die Schritte für die Admin-Konsole aus und speichert den Client, den man ihm danach gibt (`TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`, oder die Abfragen). Die Aufrufe stehen in der [Tailscale-API-Referenz](https://tailscale.com/api): Policy-Datei prüfen, lesen und setzen, Geräte-Tags und Key-Erzeugung mit `keyType: "client"`.
+- **`bridge`**: venv und `requirements.txt`; Tailscale (siehe unten); `config.yaml` mit `server.host` auf der `tailscale ip -4` dieses Rechners (über `installer.py`, das auch das Observer-, das User- und das eigene Peer-Token anlegt); ein Token pro `--peer`, nur für den Besitzer lesbar unter `~/.config/ai-connect/peer-tokens/<name>.token`; der Bridge-Dienst (`ai-connect.service`, unter Windows die geplante Aufgabe `AI-Connect Bridge`, dieselben, die `install.sh` / `install.ps1` anlegen); eine Firewall-Regel für den Port nur aus `--vpn-subnet` (Standard Tailscales `100.64.0.0/10`; ufw, firewalld oder Windows-Firewall); danach eine Prüfung, die mit dem eigenen Token dieses Rechners einen WebSocket zur Bridge öffnet.
+- **`peer`**: venv und `requirements.txt`; `claude plugin install ai-connect@useful-claude-add-ons` und die Registrierung des MCP-Servers (`installer.py claude`); Tailscale, dann `vpn/vpn-up` mit dem einmaligen Auth-Key, übersprungen, wenn der Rechner schon im Tailnet ist; die Client-Konfiguration (`client.name`, `client.bridge_url`, `client.token`); danach dieselbe WebSocket-Prüfung, die fehlschlägt, wenn die Bridge das Token ablehnt.
+- **`test`**: fünf Prüfungen mit je einer Zeile `PASS` oder `FAIL`, und Exit-Code 1, sobald eine fehlschlägt: Tailscale läuft, der Port der Bridge antwortet, die Bridge nimmt das Token dieses Rechners an (`--token-file`, `AI_CONNECT_PEER_TOKEN`, sonst `client.token`), eine an `--name` gesendete Nachricht kommt innerhalb des Untrusted-Rahmens zurück, und ein zufälliges Token wird abgelehnt. Auf diesem Rechner ändert der Befehl nichts. Die Bridge behält die eine Testnachricht im Verlauf dieses Peers und protokolliert das abgelehnte Token. Den Test ausführen, solange keine Session unter `--name` online ist: sonst ist der Name vergeben und der Hin- und Rückweg schlägt fehl.
+- **Tailscale wird installiert, wenn es fehlt**: Tailscales Installationsskript unter Linux, `winget` unter Windows (das MSI, wenn es kein `winget` gibt), Homebrew unter macOS. deploy sagt vorher, was gleich nachfragt (das sudo-Passwort, die UAC-Abfrage, die Browser-Anmeldung auf einer Bridge), überlässt dem Werkzeug das Terminal und macht weiter, wenn es zurückkehrt. `--no-install-tailscale` behält das alte Verhalten: Exit-Code 3.
+- **Idempotent**: jeder Schritt schaut zuerst nach und gibt `already done: ...` aus, statt sich zu wiederholen. Ein erneuter Lauf mit einem neuen `--peer` legt diesen Peer an und startet die Bridge neu.
+- **`--dry-run`** (`bridge`, `peer`, `uninstall`) führt nur die lesenden Prüfungen aus und gibt für jede Änderung `would: ...` aus. `tailnet-setup` ohne `--apply` ist dessen Dry-Run.
+- **Secrets** stehen nie auf der Kommandozeile und werden nie ausgegeben: das Peer-Token kommt aus `--token-file` oder `AI_CONNECT_PEER_TOKEN`, der Auth-Key aus `--auth-key-file` oder `TS_AUTHKEY`, das API-Access-Token aus `TS_API_TOKEN` oder einer Abfrage. Die Ausgabe zeigt ein Token als `****` plus seine letzten vier Zeichen.
+- `--port` (Standard 9999) und `--name` (der eigene Peer-Name der Bridge, Standard der Hostname) sind für den Fall da, dass die Standardwerte nicht passen. Exit-Codes: 0 fertig, 1 ein Schritt oder eine Prüfung ist fehlgeschlagen, 2 falsche Argumente, 3 Tailscale ist nicht installiert und ließ sich nicht installieren.
+
+`deploy.ps1` fragt selbst nicht über UAC nach: `bridge` und `uninstall` scheitern an der geplanten Aufgabe oder der Firewall-Regel, wenn die Shell keine Adminrechte hat. Unter Linux ohne ufw oder firewalld gibt der Firewall-Schritt die Regel aus, die von Hand anzulegen ist. Eine Bridge unter macOS wird nicht unterstützt (kein launchd-Dienst), ein Peer schon.
+
 ## Verwendung
 
 ### MCP-Tools
