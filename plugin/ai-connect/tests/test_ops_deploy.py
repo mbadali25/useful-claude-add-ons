@@ -6,6 +6,7 @@ on any host through AI_CONNECT_DEPLOY_OS.
 """
 import hashlib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -268,6 +269,12 @@ def test_a_bridge_on_macos_is_refused_before_anything_changes(box):
     uninstall = Phase(box, "uninstall", "--yes", extra_env=mac)
     assert uninstall.res.returncode == 0, uninstall.text
     assert not any(c[0] in ("systemctl", "ufw", "netsh", "schtasks") for c in uninstall.calls)
+
+def test_a_fake_machine_cannot_resolve_a_real_tailscale(box):
+    found = shutil.which("tailscale", path=box.env["PATH"])
+    assert found and Path(found).parent == box.bin
+    assert not Path(box.env["AI_CONNECT_TAILSCALE_DIRS"]).exists()
+    assert Path(shutil.which("tailscale")).parent.parent.name == "tailscale-guard"  # this process: the tripwire
 
 # ---------------------------------------------------------------- peer
 

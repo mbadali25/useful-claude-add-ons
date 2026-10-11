@@ -459,3 +459,19 @@ def test_probe_tcp_ok_and_refused_on_loopback(ts):
 
 def test_probe_tcp_unresolvable_is_unknown(ts):
     assert ts.probe_tcp("no-such-host.invalid", 9999, timeout=2) == "unknown"
+
+
+# ------------------------------------------------------------------ the suite's own guard
+
+
+def test_the_suite_cannot_resolve_a_real_tailscale(ts):
+    found = Path(ts.tailscale_bin())
+    assert found.parent.parent.name == "tailscale-guard", f"a real tailscale would answer: {found}"
+    assert not any(Path(d).exists() for d in ts.tailscale_dirs())
+
+
+def test_running_the_command_on_path_trips_the_guard(ts, tmp_path_factory):
+    res = ts.run_ts(ts.tailscale_bin(), ["status"])
+    mark = tmp_path_factory.getbasetemp() / "tailscale-guard" / "called"
+    assert res.returncode == 97 and "status" in mark.read_text(encoding="utf-8")
+    mark.unlink()  # this test meant to trip it

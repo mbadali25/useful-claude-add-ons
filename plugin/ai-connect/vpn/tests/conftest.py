@@ -16,6 +16,31 @@ CLIENT_SECRET = "tskey-client-kOAUTH-ClientSecretValue9876543210"
 ACCESS_TOKEN = "access-token-value-that-must-not-leak"
 
 
+@pytest.fixture(autouse=True)
+def no_real_tailscale(tmp_path_factory, monkeypatch):
+    """No test may reach a Tailscale installed on this machine (two once ran `tailscale down` on it).
+
+    The install directories tsadmin also looks in point at nothing, and a tripwire named
+    tailscale is first on PATH: it does nothing but leave a mark, and the test that made
+    it run fails. A test that needs the command puts its own fake in front of it.
+    """
+    guard = tmp_path_factory.getbasetemp() / "tailscale-guard"
+    mark = guard / "called"
+    if not guard.exists():
+        (guard / "bin").mkdir(parents=True)
+        if os.name == "nt":
+            (guard / "bin" / "tailscale.cmd").write_text(f'@echo %*>>"{mark}"\r\n@exit /b 97\r\n', encoding="utf-8")
+        else:
+            shim = guard / "bin" / "tailscale"
+            shim.write_text(f'#!/bin/sh\necho "$@" >> "{mark}"\nexit 97\n', encoding="utf-8", newline="\n")
+            shim.chmod(0o755)
+    monkeypatch.setenv("AI_CONNECT_TAILSCALE_DIRS", str(guard / "no-such-dir"))
+    monkeypatch.setenv("PATH", str(guard / "bin") + os.pathsep + os.environ.get("PATH", ""))
+    yield
+    called = mark.read_text(encoding="utf-8") if mark.exists() else ""
+    mark.unlink(missing_ok=True)
+    assert not called, f"this test ran the tailscale command on PATH instead of a fake: {called!r}"
+
 @pytest.fixture
 def ts(tmp_path, monkeypatch):
     for var in ("TS_AUTHKEY", "TS_AUTHKEY_FILE", "AI_CONNECT_BRIDGE_HOST", "AI_CONNECT_INSTALLER",
