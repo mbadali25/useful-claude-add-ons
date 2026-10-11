@@ -331,6 +331,11 @@ def test_no_tracked_files_fails(flavour, tmp_path):
 
     assert done.returncode == 2, done.stderr
     assert "verify-gate --ci: no tracked files found" in done.stderr
+    # The refusal is the --ci one and the gate stops there: since L-0710 a
+    # gate that went on into the quiet-turn path would still exit 2 (its
+    # baseline write refuses outside a repo), so the exit code alone no
+    # longer proves this guard (L-0710 review round 3, sabotage vacuous).
+    assert done.stderr.rstrip().endswith("nothing was checked"), done.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
