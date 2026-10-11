@@ -1,6 +1,7 @@
 """Stand-in for every system tool deploy.py drives: one program, the tool's name as argv[1].
 
-tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude, and the Tailscale
+tailscale, sudo, tee, rm, systemctl, ufw, firewall-cmd, schtasks, powershell, netsh,
+claude, and the Tailscale
 installers curl, sh, install, apt-get, winget, msiexec and brew. State is the
 JSON file in $FAKE_DEPLOY_STATE; every call's argv is appended to $FAKE_DEPLOY_LOG,
 one JSON list per line. Nothing outside those two files and the paths a test
@@ -9,12 +10,16 @@ hands it is ever touched.
 State keys: ts_ip, ts_backend, units {name: {active, enabled}}, ufw [lines],
 tasks {name: status}, rules {name: remoteip}, plugins [ids], mcp {name: argv},
 rule_ports {name: localport}, disable_rc / restart_rc (exit code of systemctl disable / restart),
-end_rc (exit code of schtasks /End), after_up (BackendState after `tailscale up`),
+end_rc (exit code of schtasks /End), end_noop (/End succeeds and the task runs on),
+task_state_rc (exit code of the PowerShell task-state query), ufw_status_rc (exit code of
+ufw status), fw_permanent / fw_runtime [rich rules], reload_rc (exit code of firewall-cmd
+--reload), after_up (BackendState after `tailscale up`),
 ts_node_id, install_rc (exit code of an installer), shim (the launcher text an
 installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -153,6 +158,9 @@ def systemctl(args, state):
 def ufw(args, state):
     rules = state.setdefault("ufw", [])
     if args[0] == "status":
+        if state.get("ufw_status_rc"):
+            print("ERROR: You need to be root to run this script", file=sys.stderr)
+            return int(state["ufw_status_rc"])
         print("Status: active\n\nTo                         Action      From")
         print("--                         ------      ----")
         print("\n".join(rules))
@@ -169,6 +177,41 @@ def ufw(args, state):
     return 0
 
 
+def firewall_cmd(args, state):
+    permanent, runtime = state.setdefault("fw_permanent", []), state.setdefault("fw_runtime", [])
+    if args == ["--reload"]:
+        if state.get("reload_rc"):
+            print("Error: INVALID_ZONE: another zone's file is broken", file=sys.stderr)
+            return int(state["reload_rc"])
+        state["fw_runtime"] = list(permanent)
+        save(state)
+        return 0
+    rules = permanent if "--permanent" in args else runtime
+    verb, _, rule = args[-1].partition("=")
+    if verb == "--query-rich-rule":
+        print("yes" if rule in rules else "no")
+        return 0 if rule in rules else 1
+    if verb == "--add-rich-rule":
+        rules.append(rule)
+    elif verb == "--remove-rich-rule":
+        rules.remove(rule)
+    else:
+        return 64
+    save(state)
+    return 0
+
+
+def powershell(args, state):
+    """Only the scheduled-task state query: the state as a number, never as a word in some language."""
+    if state.get("task_state_rc"):
+        print("Get-ScheduledTask : Access is denied.", file=sys.stderr)
+        return int(state["task_state_rc"])
+    name = re.search(r"-eq '([^']+)'", args[-1]).group(1)
+    tasks = state.get("tasks", {})
+    print((4 if tasks[name] == "Running" else 3) if name in tasks else "absent")
+    return 0
+
+
 def schtasks(args, state):
     tasks = state.setdefault("tasks", {})
     name = args[args.index("/TN") + 1]
@@ -177,7 +220,9 @@ def schtasks(args, state):
         print("ERROR: The system cannot find the file specified.", file=sys.stderr)
         return 1
     if verb == "/Query":
-        print(f"TaskName:      \\{name}\nStatus:        {tasks[name]}")
+        # What a German Windows prints: a deploy that reads the state from this text gets it wrong
+        word = "Wird ausgeführt" if tasks[name] == "Running" else "Bereit"
+        print(f"Aufgabenname:  \\{name}\nStatus:        {word}")
         return 0
     if verb == "/Create":
         xml = Path(args[args.index("/XML") + 1]).read_text(encoding="utf-16")
@@ -189,7 +234,8 @@ def schtasks(args, state):
         if state.get("end_rc"):
             print("ERROR: Access is denied.", file=sys.stderr)
             return int(state["end_rc"])
-        tasks[name] = "Ready"
+        if not state.get("end_noop"):
+            tasks[name] = "Ready"
     elif verb == "/Delete":
         del tasks[name]
     save(state)
@@ -250,6 +296,8 @@ def claude(args, state):
 TOOLS = {f.__name__: f for f in (tailscale, sudo, tee, rm, systemctl, ufw, schtasks, netsh, claude,
                                  curl, sh, winget, msiexec, brew, install)}
 TOOLS["apt-get"] = apt_get
+TOOLS["firewall-cmd"] = firewall_cmd
+TOOLS["powershell"] = powershell
 
 
 def main() -> int:

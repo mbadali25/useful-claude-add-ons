@@ -284,6 +284,133 @@ def test_linux_narrowing_the_subnet_removes_the_wider_ufw_rule(tmp_path, venv):
     assert uninstall.returncode == 0 and box.state()["ufw"] == [], output(uninstall)
 
 
+def test_a_wider_ufw_rule_beside_the_wanted_one_is_removed(tmp_path, venv):
+    box = Box(tmp_path, venv, "linux")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        wide = box.state()["ufw"]
+        narrow_line = wide[0].replace(SUBNET, "100.100.0.0/24")
+        box.set(ufw=wide + [narrow_line])  # the narrow rule was staged by hand, with the comment
+        narrow = Phase(box, *own.args, "--vpn-subnet", "100.100.0.0/24")
+    assert narrow.res.returncode == 0, narrow.text
+    assert f"delete the ufw rule for {SUBNET} on port {own.server.port}" in narrow.out
+    assert box.state()["ufw"] == [narrow_line]
+
+
+def test_a_ufw_status_that_fails_is_not_read_as_no_rule(tmp_path, venv):
+    box = Box(tmp_path, venv, "linux")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        rules = box.state()["ufw"]
+        box.set(ufw_status_rc=1)
+        uninstall = box.deploy("uninstall", "--yes", "--port", str(own.server.port))
+        rerun = box.deploy(*own.args)
+    assert uninstall.returncode == 1 and "ufw status failed" in uninstall.stderr, output(uninstall)
+    assert "no AI-Connect firewall rule" not in uninstall.stdout and box.state()["ufw"] == rules
+    assert rerun.returncode == 1 and "ufw status failed" in rerun.stderr
+
+
+@pytest.fixture
+def firewalld_box(tmp_path, venv):
+    box = Box(tmp_path, venv, "linux")
+    box.remove_tool("ufw")
+    return box
+
+
+def test_firewalld_rule_is_added_reloaded_and_removed(firewalld_box):
+    box = firewalld_box
+    with OwnBridge(box) as own:
+        first = Phase(box, *own.args)
+        state = box.state()
+        second = Phase(box, *own.args)
+        status = box.deploy("status")
+        uninstall = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
+        again = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
+    assert first.res.returncode == 0, first.text
+    rule = f'rule family="ipv4" source address="{SUBNET}" port port="{own.server.port}" protocol="tcp" accept'
+    assert state["fw_permanent"] == [rule] and state["fw_runtime"] == [rule]
+    assert second.mutations == [] and f"already done: firewall-cmd rule for {SUBNET}" in second.out
+    assert f"firewall: rule present for {SUBNET}" in status.stdout
+    assert uninstall.res.returncode == 0, uninstall.text
+    assert box.state()["fw_permanent"] == [] and box.state()["fw_runtime"] == []
+    assert again.mutations == [] and "already done: no AI-Connect firewall rule" in again.out
+
+
+def test_firewalld_reload_that_failed_is_done_on_the_next_run(firewalld_box):
+    box = firewalld_box
+    with OwnBridge(box) as own:
+        box.set(reload_rc=1)
+        failed = Phase(box, *own.args)
+        left = box.state()
+        status = box.deploy("status")
+        box.set(reload_rc=0)
+        again = Phase(box, *own.args)
+        ready = box.state()
+        box.set(reload_rc=1)
+        stuck = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
+        box.set(reload_rc=0)
+        gone = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
+    assert failed.res.returncode == 1 and "firewall-cmd --reload failed" in failed.res.stderr
+    assert len(left["fw_permanent"]) == 1 and left["fw_runtime"] == []
+    assert "firewall: no rule" in status.stdout  # saved, but not in the running firewall: peers are still shut out
+    assert again.res.returncode == 0, again.text
+    assert ["firewall-cmd", "--reload"] in again.calls and ready["fw_runtime"] == ready["fw_permanent"] != []
+    # The other way round: gone from the saved rules, still open in the running firewall
+    assert stuck.res.returncode == 1 and gone.res.returncode == 0, gone.text
+    assert ["firewall-cmd", "--reload"] in gone.calls and box.state()["fw_runtime"] == []
+
+
+def test_a_firewalld_that_does_not_answer_is_not_read_as_no_rule(firewalld_box):
+    box = firewalld_box
+    # Answers 64 to everything: neither "yes" (0) nor "no" (1)
+    (box.bin / ("firewall-cmd.cmd" if os.name == "nt" else "firewall-cmd")).write_bytes(
+        box.shim("tailscale bogus").encode("utf-8"))
+    with OwnBridge(box) as own:
+        res = box.deploy(*own.args)
+    assert res.returncode == 1 and "firewall-cmd --query-rich-rule failed" in res.stderr, output(res)
+
+
+def test_windows_task_state_is_not_read_from_localised_text(tmp_path, venv):
+    box = Box(tmp_path, venv, "windows")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        second = Phase(box, *own.args)
+        status = box.deploy("status")
+        add = Phase(box, "add-peer", "--name", "laptop", "--token-sha256", "ab" * 32)
+    assert second.mutations == [] and "installed and running" in second.out, second.text
+    assert "service: running" in status.stdout
+    assert not any(c[:2] == ["schtasks", "/Query"] for c in second.calls + add.calls)
+    verbs = [c[1] for c in add.calls if c[0] == "schtasks"]
+    assert verbs == ["/End", "/Run"], add.calls  # ended without asking what state it shows, then started
+
+
+def test_windows_task_state_that_cannot_be_read_is_not_absence(tmp_path, venv):
+    box = Box(tmp_path, venv, "windows")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        box.set(task_state_rc=1)
+        res = Phase(box, "uninstall", "--yes", "--purge", "--port", str(own.server.port))
+    assert res.res.returncode == 1 and "could not read the state of scheduled task" in res.res.stderr, res.text
+    assert "no Bridge service installed" not in res.out
+    assert "AI-Connect Bridge" in box.state()["tasks"] and box.config_file.exists()
+
+
+def test_windows_task_that_runs_on_after_end_is_not_started_over(tmp_path, venv):
+    box = Box(tmp_path, venv, "windows")
+    add = ["add-peer", "--name", "laptop", "--token-sha256", "ab" * 32]
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args).returncode == 0
+        box.set(end_noop=True)
+        stuck = Phase(box, *add)
+        uninstall = Phase(box, "uninstall", "--yes", "--port", str(own.server.port))
+        box.set(end_noop=False)
+        again = Phase(box, *add)
+    assert stuck.res.returncode == 1 and "still running after schtasks /End" in stuck.res.stderr, stuck.text
+    assert not any(c[:2] == ["schtasks", "/Run"] for c in stuck.calls)
+    assert uninstall.res.returncode == 1 and not any(c[:2] == ["schtasks", "/Delete"] for c in uninstall.calls)
+    assert again.res.returncode == 0 and any(c[:2] == ["schtasks", "/Run"] for c in again.calls), again.text
+
+
 def test_a_restart_that_failed_is_still_owed_on_the_next_run(box):
     with OwnBridge(box) as own:
         assert box.deploy(*own.args).returncode == 0

@@ -62,6 +62,7 @@ HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$")
 TARGET = os.environ.get("AI_CONNECT_DEPLOY_OS") or ("windows" if os.name == "nt" else "linux")
 SYSTEMD_DIR = Path(os.environ.get("AI_CONNECT_SYSTEMD_DIR") or "/etc/systemd/system")
 HEALTH_WAIT = float(os.environ.get("AI_CONNECT_DEPLOY_HEALTH_WAIT") or 20)
+STOP_WAIT = float(os.environ.get("AI_CONNECT_DEPLOY_STOP_WAIT") or 15)
 
 
 # ---------------------------------------------------------------- venv + config tool
@@ -130,17 +131,25 @@ def task_xml(pythonw: str) -> str:
 """
 
 
+# The state as a number (4 is Running): schtasks prints it as a word in the display language,
+# "Wird ausgeführt" on a German Windows. A query that fails ends PowerShell with an error, not with "absent".
+TASK_STATE = ("$ErrorActionPreference = 'Stop'; "
+              f"$t = Get-ScheduledTask | Where-Object {{ $_.TaskName -eq '{TASK}' }} | Select-Object -First 1; "
+              "if ($null -eq $t) { 'absent' } else { [int]$t.State }")
+
+
 def service_state() -> str:
-    """'running', 'stopped' or 'absent'."""
+    """'running', 'stopped' or 'absent'. Raises when the state cannot be read: unknown is none of the three."""
     if TARGET == "linux":
         if not (SYSTEMD_DIR / f"{UNIT}.service").is_file():
             return "absent"
         res = run([tool("systemctl"), "is-active", UNIT], timeout=30)
         return "running" if res.stdout.strip() == "active" else "stopped"
-    res = run([tool("schtasks"), "/Query", "/TN", TASK, "/FO", "LIST"], timeout=30)
-    if res.returncode != 0:
-        return "absent"
-    return "running" if re.search(r"Status:\s*Running", res.stdout) else "stopped"
+    res = run([tool("powershell"), "-NoProfile", "-NonInteractive", "-Command", TASK_STATE], timeout=60)
+    word = res.stdout.strip()
+    if res.returncode != 0 or not (word == "absent" or word.isdigit()):
+        raise Failure(f"could not read the state of scheduled task '{TASK}' (powershell exit {res.returncode})")
+    return "absent" if word == "absent" else "running" if word == "4" else "stopped"
 
 
 def owe_restart(r: Run) -> None:
@@ -152,9 +161,14 @@ def owe_restart(r: Run) -> None:
 
 
 def stop_task() -> None:
-    """End the scheduled task when it runs. Only a task that is not running may fail to end."""
-    if service_state() == "running":
-        must(run([tool("schtasks"), "/End", "/TN", TASK]), "schtasks /End")
+    """End the scheduled task and see it stopped. /End succeeds on a task that is not running, and
+    /Run starts nothing while an instance still runs (MultipleInstancesPolicy IgnoreNew)."""
+    must(run([tool("schtasks"), "/End", "/TN", TASK]), "schtasks /End")
+    deadline = time.monotonic() + STOP_WAIT
+    while service_state() == "running":
+        if time.monotonic() >= deadline:
+            raise Failure(f"scheduled task '{TASK}' is still running after schtasks /End")
+        time.sleep(0.5)
 
 
 def step_service(r: Run) -> None:
@@ -257,8 +271,18 @@ UFW_RULE_RE = re.compile(rf"^\s*(\d+)/tcp\s+ALLOW(?:\s+IN)?\s+(\S+)\s+#\s*{re.es
 
 def ufw_rules() -> list[tuple[str, str]]:
     """(port, source) of every inbound TCP allow rule that carries this deployment's comment."""
-    res = run(privileged("ufw") + ["status"], timeout=30)
+    # A status that fails says nothing about the rules: it is not "no rule"
+    res = must(run(privileged("ufw") + ["status"], timeout=30), "ufw status")
     return [(m.group(1), m.group(2)) for line in res.stdout.splitlines() if (m := UFW_RULE_RE.match(line))]
+
+
+def firewalld_has(subnet: str, port: int, *, permanent: bool) -> bool:
+    """Whether the rule is among firewalld's saved rules (permanent) or in the running firewall."""
+    argv = privileged("firewall-cmd") + (["--permanent"] if permanent else [])
+    res = run(argv + [f"--query-rich-rule={rich_rule(subnet, port)}"], timeout=30)
+    if res.returncode not in (0, 1):  # 1 is "no"; anything else (252: firewalld is not running) is no answer
+        must(res, "firewall-cmd --query-rich-rule")
+    return res.returncode == 0
 
 
 def firewall_present(kind: str, subnet: str, port: int) -> bool:
@@ -269,8 +293,8 @@ def firewall_present(kind: str, subnet: str, port: int) -> bool:
                 and re.search(rf"(?<![\d./]){port}(?![\d./])", shown) is not None)
     if kind == "ufw":
         return (str(port), subnet) in ufw_rules()
-    return run(privileged("firewall-cmd") + ["--permanent", f"--query-rich-rule={rich_rule(subnet, port)}"],
-               timeout=30).returncode == 0
+    # Saved only is not present: until a reload the running firewall still shuts the peers out
+    return firewalld_has(subnet, port, permanent=True) and firewalld_has(subnet, port, permanent=False)
 
 
 def step_firewall(r: Run, subnet: str, port: int) -> None:
@@ -280,34 +304,48 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
         out(f"  neither ufw nor firewalld found; allow port {port} only from {subnet} yourself, e.g.")
         out(f"    sudo ufw allow from {subnet} to any port {port} proto tcp")
         return
-    if firewall_present(kind, subnet, port):
-        r.already(f"{kind} rule for {subnet} on port {port}")
-        return
-    if kind == "netsh":
-        if netsh_rule() is not None:
-            # Same name, another subnet or port: left in place it would keep that one open
-            drop = [tool("netsh"), "advfirewall", "firewall", "delete", "rule", f"name={RULE}"]
-            r.change(f"delete netsh rule '{RULE}', which is for another subnet or port",
-                     lambda: must(run(drop), "netsh delete rule"))
-        argv = [tool("netsh"), "advfirewall", "firewall", "add", "rule", f"name={RULE}", "dir=in", "action=allow",
-                "protocol=TCP", f"localport={port}", f"remoteip={subnet}", "profile=private"]
-        r.change(f"netsh rule '{RULE}' (private profile)", lambda: must(run(argv), "netsh add rule"))
-    elif kind == "ufw":
-        for old_port, old_subnet in ufw_rules():
-            # Ours by its comment, for another subnet or port: left in place it would keep that one open
+    if kind == "ufw":
+        rules = ufw_rules()
+        # Ours by its comment, for another subnet or port: left in place it would keep that one open,
+        # also beside the rule that is wanted
+        stale = [rule for rule in rules if rule != (str(port), subnet)]
+        if rules and not stale:
+            r.already(f"{kind} rule for {subnet} on port {port}")
+            return
+        for old_port, old_subnet in stale:
             drop = privileged("ufw") + ["delete", "allow", "from", old_subnet, "to", "any", "port", old_port,
                                         "proto", "tcp"]
             r.change(f"delete the ufw rule for {old_subnet} on port {old_port}",
                      lambda drop=drop: must(run(drop), "ufw delete"))
-        argv = privileged("ufw") + ["allow", "from", subnet, "to", "any", "port", str(port), "proto", "tcp",
-                                    "comment", RULE]
-        r.change(f"ufw allow from {subnet} to port {port}", lambda: must(run(argv), "ufw allow"))
-    else:
-        def add() -> None:
-            must(run(privileged("firewall-cmd") + ["--permanent", f"--add-rich-rule={rich_rule(subnet, port)}"]),
-                 "firewall-cmd --add-rich-rule")
-            must(run(privileged("firewall-cmd") + ["--reload"]), "firewall-cmd --reload")
-        r.change(f"firewalld rule for {subnet} on port {port}", add)
+        if (str(port), subnet) not in rules:
+            argv = privileged("ufw") + ["allow", "from", subnet, "to", "any", "port", str(port), "proto", "tcp",
+                                        "comment", RULE]
+            r.change(f"ufw allow from {subnet} to port {port}", lambda: must(run(argv), "ufw allow"))
+        return
+    if kind == "firewall-cmd":
+        saved = firewalld_has(subnet, port, permanent=True)
+        if saved and firewalld_has(subnet, port, permanent=False):
+            r.already(f"{kind} rule for {subnet} on port {port}")
+            return
+        if not saved:
+            add = privileged("firewall-cmd") + ["--permanent", f"--add-rich-rule={rich_rule(subnet, port)}"]
+            r.change(f"firewalld rule for {subnet} on port {port}",
+                     lambda: must(run(add), "firewall-cmd --add-rich-rule"))
+        # Also when an earlier run saved the rule and its reload failed
+        r.change("firewall-cmd --reload (puts the saved rule into the running firewall)",
+                 lambda: must(run(privileged("firewall-cmd") + ["--reload"]), "firewall-cmd --reload"))
+        return
+    if firewall_present(kind, subnet, port):
+        r.already(f"{kind} rule for {subnet} on port {port}")
+        return
+    if netsh_rule() is not None:
+        # Same name, another subnet or port: left in place it would keep that one open
+        drop = [tool("netsh"), "advfirewall", "firewall", "delete", "rule", f"name={RULE}"]
+        r.change(f"delete netsh rule '{RULE}', which is for another subnet or port",
+                 lambda: must(run(drop), "netsh delete rule"))
+    argv = [tool("netsh"), "advfirewall", "firewall", "add", "rule", f"name={RULE}", "dir=in", "action=allow",
+            "protocol=TCP", f"localport={port}", f"remoteip={subnet}", "profile=private"]
+    r.change(f"netsh rule '{RULE}' (private profile)", lambda: must(run(argv), "netsh add rule"))
 
 
 def remove_firewall(r: Run, subnet: str, port: int) -> None:
@@ -316,10 +354,13 @@ def remove_firewall(r: Run, subnet: str, port: int) -> None:
         r.already("no AI-Connect firewall rule on macOS (deploy does not add one there)")
         return
     kind = firewall_kind()
+    saved = running = False
+    if kind == "firewall-cmd":
+        saved, running = firewalld_has(subnet, port, permanent=True), firewalld_has(subnet, port, permanent=False)
     # Whatever its subnet or port: on Windows the rule is ours by name, with ufw by its comment
     present = kind is not None and (netsh_rule() is not None if kind == "netsh"
                                     else bool(ufw_rules()) if kind == "ufw"
-                                    else firewall_present(kind, subnet, port))
+                                    else saved or running)
     if not present:
         r.already("no AI-Connect firewall rule")
         return
@@ -333,11 +374,13 @@ def remove_firewall(r: Run, subnet: str, port: int) -> None:
             r.change(f"delete ufw rule for {old_subnet} on port {old_port}",
                      lambda argv=argv: must(run(argv), "ufw delete"))
     else:
-        def remove() -> None:
-            must(run(privileged("firewall-cmd") + ["--permanent", f"--remove-rich-rule={rich_rule(subnet, port)}"]),
-                 "firewall-cmd --remove-rich-rule")
-            must(run(privileged("firewall-cmd") + ["--reload"]), "firewall-cmd --reload")
-        r.change(f"delete firewalld rule for {subnet} on port {port}", remove)
+        if saved:
+            drop = privileged("firewall-cmd") + ["--permanent", f"--remove-rich-rule={rich_rule(subnet, port)}"]
+            r.change(f"delete firewalld rule for {subnet} on port {port}",
+                     lambda: must(run(drop), "firewall-cmd --remove-rich-rule"))
+        # Also when an earlier run deleted the saved rule and its reload failed
+        r.change("firewall-cmd --reload (takes the rule out of the running firewall)",
+                 lambda: must(run(privileged("firewall-cmd") + ["--reload"]), "firewall-cmd --reload"))
 
 
 # ---------------------------------------------------------------- claude code

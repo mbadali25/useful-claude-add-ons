@@ -1,7 +1,7 @@
 """A fake machine for the deploy suites: HOME, a PATH of fakes, and how to run deploy on it.
 
-Every system tool deploy drives (tailscale, sudo, systemctl, ufw, schtasks, netsh,
-claude, and the installers curl, sh, winget, msiexec, brew) is tests/fake_deploy_bin.py
+Every system tool deploy drives (tailscale, sudo, systemctl, ufw, firewall-cmd, schtasks,
+powershell, netsh, claude, and the installers curl, sh, winget, msiexec, brew) is tests/fake_deploy_bin.py
 on a minimal PATH, HOME is a tmp dir, systemd units go to a tmp dir, the credential
 store is tests/fake_keyring, and the "venv" is a pip-less venv that sees this
 interpreter's packages. A small WebSocket server stands in for the Bridge and checks
@@ -28,13 +28,15 @@ DEPLOY = DEPLOY_DIR / "deploy.py"
 FAKE = Path(__file__).resolve().parent / "fake_deploy_bin.py"
 # The installers are always fakes too: no test may reach a real curl, winget or brew
 TOOLS = ("tailscale", "sudo", "tee", "rm", "systemctl", "ufw", "schtasks", "netsh", "claude",
-         "curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")
+         "firewall-cmd", "powershell", "curl", "sh", "install", "apt-get", "winget", "msiexec", "brew")
 SUBNET = "100.64.0.0/10"
 AUTH_KEY = "tskey-auth-kDEPLOY123-AuthKeyMaterialThatMustNotLeak0123"
 PEER_TOKEN = "f00dfacecafe" * 5 + "beef"
 # Calls that change something; a rerun or a dry run must make none of them
 MUTATING = {("tee",), ("rm",), ("systemctl", "enable"), ("systemctl", "restart"), ("systemctl", "disable"),
             ("systemctl", "daemon-reload"), ("ufw", "allow"), ("ufw", "delete"), ("schtasks", "/Create"),
+            ("firewall-cmd", "--reload"), ("firewall-cmd", "--permanent", "--add-rich-rule"),
+            ("firewall-cmd", "--permanent", "--remove-rich-rule"),
             ("schtasks", "/Run"), ("schtasks", "/End"), ("schtasks", "/Delete"),
             ("netsh", "advfirewall", "firewall", "add"), ("netsh", "advfirewall", "firewall", "delete"),
             ("claude", "plugin", "install"),
@@ -120,7 +122,8 @@ class Box:
                         FAKE_DEPLOY_STATE=str(self.state_file), FAKE_DEPLOY_LOG=str(self.log),
                         AI_CONNECT_VENV=str(venv), AI_CONNECT_SYSTEMD_DIR=str(self.systemd),
                         AI_CONNECT_TS_STATE_DIR=str(tmp_path / "ts-state"), AI_CONNECT_DEPLOY_OS=target,
-                        AI_CONNECT_DEPLOY_HEALTH_WAIT="3", AI_CONNECT_TSD_WAIT="0",
+                        AI_CONNECT_DEPLOY_HEALTH_WAIT="3", AI_CONNECT_DEPLOY_STOP_WAIT="1",
+                        AI_CONNECT_TSD_WAIT="0",
                         XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), PYTHONIOENCODING="utf-8",
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
@@ -163,7 +166,9 @@ class Box:
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines() if line]
 
     def mutations(self) -> list[list[str]]:
-        return [c for c in self.calls() if any(tuple(c[:len(m)]) == m for m in MUTATING)]
+        # "--add-rich-rule=<rule>" is one word: compared without what follows its "="
+        return [c for c in self.calls()
+                if any(tuple(w.split("=", 1)[0] for w in c[:len(m)]) == m for m in MUTATING)]
 
     def clear_log(self) -> None:
         self.log.write_text("", encoding="utf-8")
