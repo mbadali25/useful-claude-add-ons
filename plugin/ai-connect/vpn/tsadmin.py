@@ -197,8 +197,7 @@ def write_owner_only(path: Path, text: str) -> None:
 
 def find_installer(explicit: str | None) -> Path | None:
     here = Path(__file__).resolve().parent
-    candidates = [explicit, os.environ.get("AI_CONNECT_INSTALLER"),
-                  here.parent / "installer.py", here.parent / "scripts" / "installer.py"]
+    candidates = [explicit, os.environ.get("AI_CONNECT_INSTALLER"), here.parent / "installer.py"]
     for cand in candidates:
         if cand and Path(cand).is_file():
             return Path(cand)
@@ -233,15 +232,30 @@ def cmd_mint_key(args) -> int:
     return EXIT_OK
 
 
+def installer_python(installer: Path) -> str:
+    """The interpreter for installer.py: the venv install.sh / install.ps1 built beside it.
+
+    installer.py imports PyYAML and the plugin's own modules, which the bare system
+    Python running this stdlib-only script usually lacks. With no venv there (a dev
+    checkout), fall back to this interpreter.
+    """
+    for parts in (("venv", "Scripts", "python.exe"), ("venv", "bin", "python")):
+        cand = installer.parent.joinpath(*parts)
+        if cand.is_file():
+            return str(cand)
+    return sys.executable
+
+
 def provision_peer_token(name: str, installer: str | None) -> None:
     path = find_installer(installer)
     if path is None:
         say("ai-connect peer token: skipped (installer.py not found; set AI_CONNECT_INSTALLER "
             f"or run `installer.py add-peer {name}` on the Bridge machine yourself).")
         return
+    python = installer_python(path)
     say(f"ai-connect peer token: running {path.name} add-peer {name} (it prints the token once)")
     # Inherit stdio: the token goes to the admin's terminal only, never through this process.
-    res = subprocess.run([sys.executable, str(path), "add-peer", name], check=False)
+    res = subprocess.run([python, str(path), "add-peer", name], check=False)
     if res.returncode != 0:
         warn(f"ai-connect peer token: installer exited {res.returncode}; the auth key above is still valid")
 

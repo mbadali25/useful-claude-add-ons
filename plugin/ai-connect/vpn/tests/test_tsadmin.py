@@ -1,6 +1,10 @@
 """tsadmin.py: mint-key, revoke, vpn-up, vpn-down against a fake API and a fake tailscale CLI."""
+import hashlib
 import os
+import re
 import socket
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -135,6 +139,56 @@ def test_peer_token_runs_installer_add_peer(ts, api, tmp_path, capsys):
         f"pathlib.Path({str(marker)!r}).write_text(' '.join(sys.argv[1:]))\n", encoding="utf-8")
     assert ts.main(["mint-key", "--name", "alice", "--peer-token", "--installer", str(installer)]) == 0
     assert marker.read_text() == "add-peer alice"
+
+
+REAL_INSTALLER = Path(__file__).resolve().parents[2] / "installer.py"
+
+
+@pytest.fixture
+def bridge_home(tmp_path, monkeypatch):
+    """A Bridge machine's config under a throwaway home, for the real installer.py."""
+    pytest.importorskip("yaml")
+    home = tmp_path / "home"
+    config = home / ".config" / "ai-connect" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("auth:\n  peers: {}\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return config
+
+
+def test_peer_token_drives_the_real_installer_add_peer(ts, api, bridge_home, capfd):
+    import yaml
+    assert ts.main(["mint-key", "--name", "alice", "--peer-token",
+                    "--installer", str(REAL_INSTALLER)]) == 0
+    out = capfd.readouterr().out
+    assert "Peer 'alice' added" in out
+    token = re.search(r"^\s+([0-9a-f]{64})\s*$", out, re.MULTILINE).group(1)
+    peers = yaml.safe_load(bridge_home.read_text(encoding="utf-8"))["auth"]["peers"]
+    assert peers == {"alice": hashlib.sha256(token.encode()).hexdigest()}
+
+
+def test_peer_token_existing_peer_warns_but_mint_still_succeeds(ts, api, bridge_home, capfd):
+    bridge_home.write_text("auth:\n  peers:\n    alice: " + "0" * 64 + "\n", encoding="utf-8")
+    assert ts.main(["mint-key", "--name", "alice", "--peer-token",
+                    "--installer", str(REAL_INSTALLER)]) == 0
+    captured = capfd.readouterr()
+    assert "already exists" in captured.err
+    assert "installer exited 1; the auth key above is still valid" in captured.err
+
+
+@pytest.mark.parametrize("parts", [("venv", "Scripts", "python.exe"), ("venv", "bin", "python")])
+def test_installer_runs_under_the_venv_beside_it(ts, tmp_path, parts):
+    installer = tmp_path / "installer.py"
+    installer.write_text("", encoding="utf-8")
+    venv_python = tmp_path.joinpath(*parts)
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+    assert ts.installer_python(installer) == str(venv_python)
+
+
+def test_installer_without_a_venv_falls_back_to_this_interpreter(ts, tmp_path):
+    assert ts.installer_python(tmp_path / "installer.py") == sys.executable
 
 
 # ------------------------------------------------------------------ revoke
