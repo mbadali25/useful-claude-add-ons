@@ -5,6 +5,7 @@ run inside tmp_path. Both OS flavours (systemd + ufw, scheduled task + netsh) ru
 on any host through AI_CONNECT_DEPLOY_OS.
 """
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -367,6 +368,67 @@ def test_peer_without_auth_key_when_off_tailnet_fails(box, tmp_path):
     assert "no auth key" in res.stderr
     assert not box.config_file.exists() and box.mutations() == []
 
+
+# ---------------------------------------------------------------- enrolment by hash
+
+
+def test_enrolment_by_hash_end_to_end(tmp_path, venv):
+    """The peer makes its own token; only {name, token_sha256} reaches the Bridge."""
+    (tmp_path / "bridge").mkdir()
+    (tmp_path / "peer").mkdir()
+    hub, laptop = Box(tmp_path / "bridge", venv, NATIVE), Box(tmp_path / "peer", venv, NATIVE)
+    printed = Phase(laptop, "peer", "--name", "laptop", "--bridge", "127.0.0.1", "--print-enrolment")
+    again = Phase(laptop, "peer", "--name", "laptop", "--bridge", "127.0.0.1", "--print-enrolment")
+    assert printed.res.returncode == 0, printed.text
+    enrolment = json.loads(printed.out)
+    own = laptop.home / ".config" / "ai-connect" / "own-peer.token"
+    token = own.read_text(encoding="utf-8").strip()
+    assert enrolment == {"name": "laptop", "token_sha256": hashlib.sha256(token.encode()).hexdigest()}
+    assert len(token) == 64 and not leaks(token, printed.text + again.text)
+    assert json.loads(again.out) == enrolment and printed.calls == []  # the same token, and no tool was run
+    if os.name != "nt":
+        assert own.stat().st_mode & 0o077 == 0
+
+    with OwnBridge(hub) as own_bridge:
+        assert hub.deploy(*own_bridge.args).returncode == 0
+        add = ["add-peer", "--name", "laptop", "--token-sha256", enrolment["token_sha256"]]
+        dry = Phase(hub, *add, "--dry-run")
+        first = Phase(hub, *add)
+        second = Phase(hub, *add)
+        other = Phase(hub, "add-peer", "--name", "laptop", "--token-sha256", "0" * 64)
+        joined = laptop.deploy("peer", "--name", "laptop", "--bridge", "127.0.0.1", "--port",
+                               str(own_bridge.server.port))
+    assert dry.res.returncode == 0 and dry.changed_nothing() and "would: enrol peer 'laptop'" in dry.out
+    assert first.res.returncode == 0, first.text
+    assert hub.config()["auth"]["peers"]["laptop"] == enrolment["token_sha256"]
+    restart = ["schtasks", "/Run"] if NATIVE == "windows" else ["systemctl", "restart", "ai-connect"]
+    assert any(c[-len(restart):] == restart or c[:len(restart)] == restart for c in first.calls), first.calls
+    assert second.res.returncode == 0 and second.mutations == [] and not second.files_changed, second.text
+    assert other.res.returncode == 1 and "already provisioned with another token" in other.res.stderr
+    assert hub.config()["auth"]["peers"]["laptop"] == enrolment["token_sha256"]
+    # The peer then deploys with no token file: its own token is the one the Bridge knows by hash
+    assert joined.returncode == 0, output(joined)
+    assert laptop.config()["client"]["token"] == token and not leaks(token, output(joined))
+    assert not (hub.home / ".config" / "ai-connect" / "peer-tokens" / "laptop.token").exists()
+
+
+@pytest.mark.parametrize("args", [
+    ["add-peer", "--name", "laptop"], ["add-peer", "--token-sha256", "0" * 64],
+    ["add-peer", "--name", "laptop", "--token-sha256", "ABCDEF" + "0" * 58],
+    ["add-peer", "--name", "laptop", "--token-sha256", "0" * 63],
+    ["add-peer", "--name", "bad name!", "--token-sha256", "0" * 64],
+    ["peer", "--name", "bad name!", "--bridge", "127.0.0.1", "--print-enrolment"],
+], ids=" ".join)
+def test_enrolment_bad_arguments(box, args):
+    phase = Phase(box, *args)
+    assert phase.res.returncode == 2, phase.text
+    assert phase.calls == [] and phase.changed_nothing()
+
+
+def test_add_peer_needs_a_bridge(box):
+    phase = Phase(box, "add-peer", "--name", "laptop", "--token-sha256", "0" * 64)
+    assert phase.res.returncode == 1 and "not a Bridge yet" in phase.res.stderr
+    assert phase.mutations == [] and not box.config_file.exists()
 
 # ---------------------------------------------------------------- bad arguments
 

@@ -275,6 +275,16 @@ def test_tailnet_setup_bad_arguments(box, api, args):
     assert api.requests == [] and run.changed_nothing()
 
 
+def test_out_redacts_a_secret_that_reaches_it(monkeypatch, capsys):
+    """The backstop under every step: whatever text is printed, a known secret in it is not."""
+    monkeypatch.syspath_prepend(str(PLUGIN / "deploy"))
+    import deploy_core  # pylint: disable=import-outside-toplevel,import-error
+    deploy_core.tsadmin.remember_secret("peer-token-that-must-not-show")
+    deploy_core.out("stderr of a tool said: peer-token-that-must-not-show and tskey-auth-kABC-DEFsecret")
+    shown = capsys.readouterr().out
+    assert "peer-token-that-must-not-show" not in shown and "DEFsecret" not in shown
+    assert "<redacted>" in shown and "tskey-<redacted>" in shown
+
 # ---------------------------------------------------------------- installing Tailscale
 
 

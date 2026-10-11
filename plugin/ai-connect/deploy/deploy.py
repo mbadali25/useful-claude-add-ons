@@ -3,6 +3,8 @@
 
   deploy bridge [--name N] [--peer P ...] [--port N] [--vpn-subnet CIDR] [--dry-run]
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
+  deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
+  deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
   deploy status
   deploy uninstall --yes [--purge] [--dry-run]
   deploy tailnet-setup [--apply] [--admin WHO] [--acl FILE] [--device NAME]     (tailnet_setup.py)
@@ -23,8 +25,10 @@ import argparse
 import getpass
 import hashlib
 import ipaddress
+import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import sys
@@ -47,6 +51,9 @@ PLUGIN_ID = "ai-connect@useful-claude-add-ons"
 MCP_SERVER = "ai-connect"
 DEFAULT_SUBNET = "100.64.0.0/10"
 TOKEN_DIR = CONFIG_DIR / "peer-tokens"
+# A peer's own token when it made it itself (--print-enrolment): only its hash ever leaves this machine
+OWN_TOKEN = CONFIG_DIR / "own-peer.token"
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$")
 # Test seams: which OS's service/firewall tools to drive, and where systemd units live
 TARGET = os.environ.get("AI_CONNECT_DEPLOY_OS") or ("windows" if os.name == "nt" else "linux")
@@ -444,16 +451,67 @@ def read_peer_token(args) -> str:
         except OSError as err:
             raise Failure(f"cannot read token file {args.token_file}: {err.strerror}", EXIT_USAGE) from None
     else:
-        token = os.environ.get("AI_CONNECT_PEER_TOKEN", "").strip()
+        token = os.environ.get("AI_CONNECT_PEER_TOKEN", "").strip() or own_token()
     if not token:
-        raise Failure("no peer token: pass --token-file or set AI_CONNECT_PEER_TOKEN", EXIT_USAGE)
+        raise Failure("no peer token: run `deploy peer ... --print-enrolment` first (the token then stays on this "
+                      "machine), or pass --token-file, or set AI_CONNECT_PEER_TOKEN", EXIT_USAGE)
     tsadmin.remember_secret(token)
     return token
+
+
+def own_token() -> str:
+    """The token this peer generated for itself, or "" when it has none."""
+    try:
+        token = OWN_TOKEN.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    tsadmin.remember_secret(token)
+    return token
+
+
+def cmd_print_enrolment(args) -> int:
+    """Make (once) this peer's own token and print {name, token_sha256}: what the Bridge needs, and no secret."""
+    token = own_token()
+    if not token:
+        token = secrets.token_hex(32)
+        tsadmin.remember_secret(token)
+        tsadmin.write_owner_only(OWN_TOKEN, token + "\n")
+    print(json.dumps({"name": args.name, "token_sha256": hashlib.sha256(token.encode()).hexdigest()}), flush=True)
+    print(f"deploy peer: the token itself stays in {OWN_TOKEN}. On the Bridge machine run: "
+          f"deploy add-peer --name {args.name} --token-sha256 <token_sha256>", file=sys.stderr, flush=True)
+    return EXIT_OK
+
+
+def cmd_add_peer(args) -> int:
+    check_name(args.name, "--name")
+    if not SHA256_RE.match(args.token_sha256):
+        raise Failure("--token-sha256 must be 64 lowercase hex characters (the token_sha256 that "
+                      "`deploy peer --print-enrolment` printed)", EXIT_USAGE)
+    r = Run(args.dry_run, total=2)
+    out(f"=== AI-Connect deploy: add-peer '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    r.step("Peer enrolment by token hash")
+    facts = inspect_config()
+    if not (facts and facts.get("exists")):
+        raise Failure(f"{CONFIG_FILE} missing: this machine is not a Bridge yet (run deploy bridge first)")
+    known = (facts.get("peer_sha256") or {}).get(args.name)
+    if known == args.token_sha256:
+        r.already(f"peer '{args.name}' enrolled with this token hash")
+    elif known:
+        raise Failure(f"peer '{args.name}' is already provisioned with another token; to replace it: "
+                      f"installer.py revoke-peer {args.name}, then run this again")
+    else:
+        r.change(f"enrol peer '{args.name}' by its token hash ****{args.token_sha256[-4:]} in {CONFIG_FILE}",
+                 lambda: config_tool("enrol", args.name, "--sha256", args.token_sha256))
+        r.config_changed = True
+    step_service(r)
+    return EXIT_OK
 
 
 def cmd_peer(args) -> int:
     check_name(args.name, "--name")
     check_host(args.bridge)
+    if args.print_enrolment:
+        return cmd_print_enrolment(args)
     token = read_peer_token(args)
     on_tailnet = ts_install.installed() is not None and backend_state() == "Running"
     key_file = args.auth_key_file or os.environ.get("TS_AUTHKEY_FILE")
@@ -597,8 +655,17 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--name", required=True, help="this peer's name, as provisioned on the Bridge")
     pe.add_argument("--bridge", required=True, help="the Bridge's Tailscale IP or name")
     pe.add_argument("--auth-key-file", help="one-off Tailscale auth key file (or TS_AUTHKEY); deleted after use")
-    pe.add_argument("--token-file", help="this peer's token file from the Bridge (or AI_CONNECT_PEER_TOKEN)")
+    pe.add_argument("--token-file", help="this peer's token file from the Bridge (or AI_CONNECT_PEER_TOKEN; "
+                                         "default: the token --print-enrolment made)")
+    pe.add_argument("--print-enrolment", action="store_true",
+                    help="only make this peer's own token and print {name, token_sha256} for `deploy add-peer`")
     pe.set_defaults(func=cmd_peer)
+
+    a = sub.add_parser("add-peer", help="on the Bridge: let in a peer that made its own token, by the token's hash")
+    a.add_argument("--name", required=True, help="the peer's name")
+    a.add_argument("--token-sha256", required=True, help="token_sha256 from `deploy peer --print-enrolment`")
+    a.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
+    a.set_defaults(func=cmd_add_peer)
 
     s = sub.add_parser("status", help="show what is deployed here")
     s.set_defaults(func=cmd_status)

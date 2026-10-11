@@ -8,6 +8,7 @@ to an owner-only file.
   config_tool.py inspect
   config_tool.py bridge --host IP --port N --name NAME
   config_tool.py add-peer NAME --out FILE
+  config_tool.py enrol NAME --sha256 HEX                       (the peer made its own token; only the hash is here)
   config_tool.py client --name NAME --bridge HOST --port N     (token in AI_CONNECT_PEER_TOKEN)
   config_tool.py verify
   config_tool.py smoke --bridge HOST --port N --name NAME      (token in AI_CONNECT_PEER_TOKEN, else client.token)
@@ -79,9 +80,11 @@ def cmd_inspect(_args) -> dict:
     config = load()
     server, client = config.get("server") or {}, config.get("client") or {}
     token = client.get("token") or ""
+    peers = (config.get("auth") or {}).get("peers") or {}
     return {"exists": True, "host": server.get("host"), "port": server.get("port"),
             "name": client.get("name"), "bridge_url": client.get("bridge_url"),
-            "peers": sorted((config.get("auth") or {}).get("peers") or {}),
+            # Hashes, as config.yaml itself holds them: not secrets
+            "peers": sorted(peers), "peer_sha256": {str(name): str(digest) for name, digest in peers.items()},
             "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
 
 
@@ -115,6 +118,25 @@ def cmd_add_peer(args) -> dict:
         raise SystemExit(f"could not write the token file {args.out} ({why}); peer '{args.name}' was not "
                          "provisioned") from None
     return {"action": "added", "masked": "****" + token[-4:]}
+
+
+def cmd_enrol(args) -> dict:
+    """Let a peer in by the SHA-256 of a token it generated itself: the token never leaves its machine."""
+    if not CONFIG_PATH.exists():
+        raise SystemExit(f"{CONFIG_PATH} missing: this machine is not a Bridge yet (run deploy bridge first)")
+    installer.check_config()
+    config = load()
+    peers = config.setdefault("auth", {}).setdefault("peers", {})
+    if peers is None:
+        peers = config["auth"]["peers"] = {}
+    if peers.get(args.name) == args.sha256:
+        return {"action": "present"}
+    if args.name in peers:
+        raise SystemExit(f"peer '{args.name}' is already provisioned with another token; to replace it: "
+                         f"installer.py revoke-peer {args.name}, then enrol it again")
+    peers[args.name] = args.sha256
+    installer._save_config(config)  # pylint: disable=protected-access
+    return {"action": "enrolled"}
 
 
 def cmd_client(args) -> dict:
@@ -256,6 +278,10 @@ def main() -> int:
     a.add_argument("name")
     a.add_argument("--out", required=True)
     a.set_defaults(func=cmd_add_peer)
+    e = sub.add_parser("enrol")
+    e.add_argument("name")
+    e.add_argument("--sha256", required=True)
+    e.set_defaults(func=cmd_enrol)
     c = sub.add_parser("client")
     c.add_argument("--name", required=True)
     c.add_argument("--bridge", required=True)
