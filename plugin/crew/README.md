@@ -4477,7 +4477,7 @@ Source: [`docs/diagrams/data-flow-crew-config-menu.mmd`](../../docs/diagrams/dat
 
 ### Data flow crew config no python
 
-What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
+What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
 
 ```mermaid
 flowchart LR
@@ -4497,21 +4497,29 @@ flowchart LR
         CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
         CG1 --> CG2 --> CG3
     end
+
+    subgraph EnvNoPython["env-guard's fallback - the same shape (L-0772)"]
+        direction TB
+        EG1["no usable python,<br/>or env_guard.py failed"]
+        EG2["<b>_env_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        EG3["unknown, or envGuard<br/>not off: REFUSED (exit 2)"]
+        EG1 --> EG2 --> EG3
+    end
 ```
 
 Source: [`docs/diagrams/data-flow-crew-config-no-python.mmd`](../../docs/diagrams/data-flow-crew-config-no-python.mmd)
 
 ### Data flow crew config ratchet
 
-The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the thirteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
 
 ```mermaid
 flowchart TB
 
-    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
+    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 16 write-side, 15 read-side"]
         direction TB
-        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>13 keys"]
-        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>14 keys: the thirteen + pm.authority"]
+        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>15 keys"]
+        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>16 keys: the fifteen + pm.authority"]
         RSHAPE["Confirmed by import + diff + type():<br/>tuple field order differs, so<br/>not one table as written"]
         RG --- RC --- RSHAPE
     end
@@ -4522,13 +4530,13 @@ flowchart TB
         LS --> FORCE
     end
     FORCE -.->|"overrides the resolved value"| Ratchet
-    subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
+    subgraph Except["Fifteen keys do NOT follow the precedence above (read-side ratchet)"]
         direction TB
-        E1["<b>13 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
+        E1["<b>15 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
         E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :564"]
         E3["Why: crew reads config<br/>out of CLONED repositories"]
-        E4["Absent = the narrowest tier<br/>for ELEVEN of the thirteen"]
-        E5["<b>guards.roleWrites, guards.cloudGuard</b><br/>the two exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E4["Absent = the narrowest tier<br/>for TWELVE of the fifteen"]
+        E5["<b>guards.roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
         E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
         E1 --- E2 --- E3 --- E4 --- E5 --- E6
     end
