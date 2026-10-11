@@ -439,7 +439,7 @@ KEY_META = {
                               "`off`; `report` logs only.", "1.0.25"),
     "guards.envGuard": _rat("Refuse a command that prints the whole environment or a "
                             "credential-named variable. Default `off`; `report` logs "
-                            "only.", "1.2.24"),
+                            "only.", "1.2.25"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
