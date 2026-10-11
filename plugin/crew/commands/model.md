@@ -212,7 +212,7 @@ Say this consequence out loud whenever the QA pins are named:
 > comparatively rarely elsewhere. That may be exactly what you want. It should
 > not be something you discover from a review log.
 
-**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket).
+**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket). Agent pins, offered the same way (L-0777): `dev.roles.explorer`, `dev.roles.researcher` and `dev.roles.security` -> kimi `k3` make those agents dispatch to `crew_kimi_agent.py` (Claude when Kimi cannot run); `security` is family-guarded (`REVIEWING_DEV_ROLES`), so it is BARRED on Kimi-authored work.
 
 Do not silently rewrite `qa.order` or a `roles` pin to enforce this. Tell the
 user what the consequence is and let them decide — a config that quietly

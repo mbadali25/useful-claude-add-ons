@@ -381,6 +381,13 @@ instead of reporting - is crew's review harness, and lands on its own as L-0527.
 Until then the launch gate skips it: `crew_config.review_launchable()` (the one
 coupling, `review_run.LAUNCHED` plus `claude`) leaves Kimi ineligible in the
 `qa.order` walk; a pin to kimi validates and is family-guarded.
+**Crew's agents on Kimi (L-0777).** A `dev.roles.explorer`, `dev.roles.researcher`
+or `dev.roles.security` pin to kimi makes that agent dispatch to
+`hooks/scripts/crew_kimi_agent.py`, which reuses this probe, the read-only agent
+file (per role) and the review's tree fingerprint, and answers `KIMI OK`,
+`KIMI UNAVAILABLE: <state>` (the agent falls back to Claude) or `KIMI CHANGED THE
+TREE` (it stops). `security` is family-guarded like a QA pin. See crew's README,
+"Agents on Kimi".
 `alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
 route), and a private second opinion on local hardware.
 

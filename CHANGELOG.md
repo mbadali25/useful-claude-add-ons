@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.25: explorer, researcher and security can run on Kimi K3 (L-0777)
+
+- **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
+  "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
+  and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **Why a dispatcher.** Claude Code's subagent `model` field accepts Claude models only, and
+  `ANTHROPIC_BASE_URL` moves a whole session. So each agent's first step is one Bash call to the new
+  `hooks/scripts/crew_kimi_agent.py`, and it relays the answer. Line 1 is the contract: `KIMI OK` (exit
+  0), `KIMI UNAVAILABLE: <state>` (exit 3, the agent does the task on Claude and says so), or `KIMI
+  CHANGED THE TREE` / `KIMI TREE UNKNOWN` (exit 8, the agent stops).
+- **Read-only.** `/crew:review` step 2e's controls, reused: a per-role Kimi agent file with no Bash, Write
+  or Edit, an empty skills directory, the probe first, and the working tree fingerprinted before the
+  probe, after it and after the run. A write outside the repository is not seen.
+- **Security is family-guarded.** `crew_state.REVIEWING_DEV_ROLES` puts `dev.roles.security` under
+  `resolve_role`'s family guard: a pin in the author's family is BARRED, as a `qa` pin is, and
+  `/crew:model` shows it. With a Kimi developer, `security` on Kimi is the same family as the author, so
+  cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
+- **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
+  instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
 - **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4

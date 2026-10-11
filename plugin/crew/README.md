@@ -50,7 +50,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 | Benefit | Which roles provide it |
 |---|---|
 | An isolated context window | `explorer`, `security`, `reviewer`, `researcher` |
-| A restricted tool set | `explorer` holds no `Write`, `Edit` or `Bash`; `security` holds no `Write` or `Edit` but does hold `Bash` |
+| A restricted tool set | no agent holds `Write` or `Edit`; `explorer` and `researcher` hold `Bash` for one command only, the Kimi dispatch (since L-0777); `security` holds `Bash` for reads |
 | Genuinely independent eyes | Codex, or `reviewer` in its own context |
 
 Everything else — project management, business analysis, architecture, documentation, training — is a file, a command, or you. Those are not agents because there is nothing for an agent to isolate.
@@ -3986,16 +3986,56 @@ CONFIG.md §17 has the table and the reasoning.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only + Bash (the Kimi dispatch only) | `opus` | 0 | Maps code, returns summaries not contents. Runs on Kimi when `dev.roles.explorer` pins it |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean, or when Codex's probe hits a usage limit. Renamed from `qa-reviewer` in 1.0 |
-| `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
-| `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
+| `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff. Runs on Kimi when `dev.roles.security` pins it, family-guarded |
+| `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only. Every claim carries its source. Runs on Kimi when `dev.roles.researcher` pins it |
 
 4 agents, all on the tier ladder (`crew_state.ROLE_TIERS`); `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
 
 **Verify before you state** (T-0041). `explorer`, `researcher` and `security` carry the rule: a claim about code, config, history or state is verified this session (a `path:line`, a command and its output, or a ref) or labelled `not verified` / `inferred`, and a prior decision is looked up in `CHANGELOG.md`, `docs/adr/` or a ticket's `direction.md` before a change to it is proposed. Their reports end with a **Not verified** section, and so do `/crew:done`'s and `/crew:debug`'s. `crew-best-practices` carries the same rule, and `crew-plan`'s self-review and `crew-brainstorm`'s approaches step look decisions up. `validate-prompts.py`'s `check_verification_rule` fails when any of these drops out; it reads every `agents/*.md` by default. `reviewer` is exempt by name until the review-harness half of T-0041 lands (its output is the contract `review_verdict.py` parses, so it gets no report section). The rule is crew's own and is not written into repos crew sets up.
 
 **Model tiers are part of the design, not a cost knob.** QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left. The read-only roles run on `sonnet`: narrow brief, clean context, one deliverable. `explorer` is the exception and runs on `opus`: it maps unfamiliar code with only Read/Grep/Glob when no semantic index is available, and a wrong map is inherited by every role that works from it.
+
+#### Agents on Kimi (since L-0777)
+
+Claude Code's subagent `model` field takes Claude models only (`sonnet`, `opus`, `haiku`, `fable`, a full
+Claude id or `inherit`), and `ANTHROPIC_BASE_URL` moves a whole session, never one agent. So `explorer`,
+`researcher` and `security` are **thin dispatchers**: each one's first and only dispatch step is one Bash
+call that pipes the caller's task into `hooks/scripts/crew_kimi_agent.py --role <name>`, and it relays what
+that prints. The model in the table above is the dispatcher's and the Claude fallback's.
+
+**Routing is a pin, off by default.** `dev.roles.explorer`, `dev.roles.researcher` and `dev.roles.security`
+(`qa.roles.review` for `reviewer`, once L-0778 lands) decide it. Only a pin that resolves to `kimi` dispatches;
+a fresh install pins nothing, so every role stays on Claude and the script answers `not-routed`. Set one
+with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`.
+
+**The first line is the contract.** `KIMI OK: <role> ran on kimi <alias>` (exit 0) is followed by Kimi's
+answer, secrets redacted, and the dispatcher relays it verbatim. `KIMI UNAVAILABLE: <state> - <reason>`
+(exit 3: `not-routed`, `barred`, `author-unknown`, the probe's `not-installed` / `not-authenticated` /
+`rate-limited` / `unknown`, `timed-out`, `failed`, `too-large` over a 64,000-character task) means nothing
+Kimi ran changed the tree; the dispatcher does the task itself and opens with `ran on claude (kimi:
+<state>)`. `KIMI CHANGED THE TREE: <paths>` or `KIMI TREE UNKNOWN: <reason>` (exit 8) means the tree is not,
+or may not be, what the caller handed over: the dispatcher stops and reports, and never falls back over it.
+
+**Read-only is two controls, not a flag.** `kimi -p` forces permission mode `auto`. As in `/crew:review`
+step 2e, and with the same code: a per-role Kimi agent file allowing only reads (explorer, security,
+reviewer `Read, Grep, Glob`; researcher `Read, Glob, WebSearch, FetchURL`) and disallowing `Write`, `Edit`
+and `Bash`, an empty `--skills-dir`, and the working tree fingerprinted before the probe, after it and after
+the run, with anything the call left running stopped first. A write outside the repository is caught by
+neither. No role gets Bash on Kimi.
+
+**The family guard covers `security` now.** `crew_state.REVIEWING_DEV_ROLES` puts `security` under
+`resolve_role`'s family guard, so a Kimi security pin on a diff Kimi wrote answers `KIMI UNAVAILABLE:
+barred`, and `/crew:model` shows the row barred. The author set is `--authors` united with the dispatch
+record or config (`author_families`); none known is `author-unknown`, never "no conflict". **Once your
+developer runs on Kimi, `security` and the reviewer are the same family as the author**: cross-family
+review of that work needs Codex or Claude. The Claude fallback is not guarded, and says so.
+
+**Limits.** The dispatchers' Bash is confined to the one command by instruction, not enforcement (plugin
+agents ignore `hooks` and `permissionMode`). Kimi has no MCP servers configured, so explorer's localgpu
+search and researcher's Context7 exist only on the Claude path. Kimi cannot run `git diff`, so the
+security dispatcher feeds the diff in on stdin.
 
 `opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
 
