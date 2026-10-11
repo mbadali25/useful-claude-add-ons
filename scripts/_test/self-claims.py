@@ -1296,6 +1296,9 @@ CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
 ]
 
 
+HOOKS_JSON_IS_A_DIRECTORY = "<hooks.json is a directory>"
+
+
 def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
     """`plugin-hooks:<name>` against a fixture whose plugin/widget/hooks/
     hooks.json holds ``widget_hooks`` command entries (an int), unparseable
@@ -1305,13 +1308,22 @@ def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
         if widget_hooks is not None:
             hooks_dir = os.path.join(tmp, "plugin", "widget", "hooks")
             os.makedirs(hooks_dir, exist_ok=True)
-            if isinstance(widget_hooks, str):
-                body = widget_hooks
+            target = os.path.join(hooks_dir, "hooks.json")
+            if widget_hooks == HOOKS_JSON_IS_A_DIRECTORY:
+                os.makedirs(target)
+                with open(os.path.join(target, "x"), "w", encoding="utf-8") as fh:
+                    fh.write("x\n")
+            elif isinstance(widget_hooks, bytes):
+                with open(target, "wb") as fh:
+                    fh.write(widget_hooks)
             else:
-                entry = {"hooks": [{"type": "command", "command": "bash x.sh"}]}
-                body = json.dumps({"hooks": {"PreToolUse": [entry] * widget_hooks}})
-            with open(os.path.join(hooks_dir, "hooks.json"), "w", encoding="utf-8") as fh:
-                fh.write(body)
+                if isinstance(widget_hooks, str):
+                    body = widget_hooks
+                else:
+                    entry = {"hooks": [{"type": "command", "command": "bash x.sh"}]}
+                    body = json.dumps({"hooks": {"PreToolUse": [entry] * widget_hooks}})
+                with open(target, "w", encoding="utf-8") as fh:
+                    fh.write(body)
         subprocess.run(["git", "-C", tmp, "init", "-q"], check=False, capture_output=True)
         subprocess.run(["git", "-C", tmp, "add", "-A"], check=False, capture_output=True)
         saved = CHECKER.ROOT
@@ -1355,6 +1367,20 @@ CASES_PLUGIN_HOOKS: list[tuple[str, dict, int, str, object]] = [
         1,
         "could not verify",
         "{ not json",
+    ),
+    (
+        "a hooks.json that is a directory is could-not-verify, never a zero",
+        {"P.md": "0 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        1,
+        "could not verify",
+        HOOKS_JSON_IS_A_DIRECTORY,
+    ),
+    (
+        "a hooks.json that cannot be decoded is could-not-verify, never a crash",
+        {"P.md": "0 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        1,
+        "could not verify",
+        b"\xff\xfe{",
     ),
     # --- must allow ------------------------------------------------------
     (

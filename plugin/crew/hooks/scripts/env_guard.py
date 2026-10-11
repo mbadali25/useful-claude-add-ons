@@ -150,6 +150,22 @@ _LANG_RULES = {
 }
 
 
+# A single-name read whose name is not a string literal (`os.environ[name]`,
+# `process.env[k]`, `$ENV{$k}`): the name may be a credential's, so it is
+# could-not-tell rather than a use.
+_NONLITERAL_READS = {
+    "python": re.compile(r"\bos\s*\.\s*(?:environb?\s*(?:\[|\.\s*get\s*\()"
+                         r"|getenvb?\s*\()\s*(?![\s'\"\])])"),
+    "node": re.compile(r"\b(?:process|Bun)\s*\.\s*env\s*\[\s*(?![\s'\"`\]])"
+                       r"|\bDeno\s*\.\s*env\s*\.\s*get\s*\(\s*(?![\s'\"`)])"),
+    "perl": re.compile(r"\$ENV\s*\{\s*(?=[$@&(])"),
+    "ruby": re.compile(r"(?<![\w$:.])ENV\s*(?:\[|\.\s*fetch\s*\()\s*(?![\s'\"\])])"),
+    "php": re.compile(r"\bgetenv\s*\(\s*(?![\s'\")])|\$_(?:ENV|SERVER)\s*\[\s*(?![\s'\"\]])"),
+    "awk": re.compile(r"\bENVIRON\s*\[\s*(?![\s\"\]])"),
+    "jq": re.compile(r"(?:\$ENV|(?<![\w$.])env)\s*\[\s*(?![\s\"\]])"),
+}
+
+
 def _scan_code(code, lang, ctx):
     """Inline interpreter code: a whole-environment read, or a credential
     name read. `lang` "any" applies every language's rules (a program named
@@ -159,6 +175,8 @@ def _scan_code(code, lang, ctx):
         dumps, reads = _LANG_RULES[name]
         if any(rule.search(code) for rule in dumps):
             ctx.add(f"env-dump:{name}")
+        if _NONLITERAL_READS[name].search(code):
+            ctx.add(f"could-not-tell:code-name:{name}")
         for rule in reads:
             for match in rule.finditer(code):
                 if is_secret_name(match.group(match.lastindex or 1)):
@@ -954,6 +972,7 @@ def _bash_cmd(cmd, depth, ctx):
     _argv(cmd.words, cmd, depth, ctx)
 
 
+_GLOB_HEAD_RE = re.compile(r"[*?]|\[[^\]]*\]|\{[^{}]*(?:,|\.\.)[^{}]*\}")
 _RESERVED = frozenset(("!", "{", "}", "do", "then", "else", "elif", "if",
                        "while", "until", "done", "fi", "esac", "in", "[[", "]]",
                        "coproc"))
@@ -1048,6 +1067,11 @@ def _argv(words, cmd, depth, ctx, shell="bash"):
         return
     if head.literal is None:
         _program_from_variable(words, cmd, depth, ctx)
+        return
+    if _GLOB_HEAD_RE.search(head.literal):
+        # `/usr/bin/en?`, `/usr/bin/e*v`, `{/usr/bin/env,}`: the shell may
+        # expand the name to a program this guard would refuse.
+        ctx.add("could-not-tell:program-glob")
         return
     name = _head_name(head.literal)
     lower = name.lower()
@@ -1152,6 +1176,8 @@ def _h_env(words, cmd, depth, ctx):
             continue
         if text is None:
             break
+        if text in ("--help", "--version"):
+            return True
         if text in ("-i", "--ignore-environment", "-"):
             ignore = True
             i += 1
@@ -1195,6 +1221,8 @@ def _h_env(words, cmd, depth, ctx):
 
 def _h_printenv(words, cmd, depth, ctx):
     del cmd, depth
+    if any(w.literal in ("--help", "--version") for w in words[1:]):
+        return True
     operands = [w for w in words[1:] if not (w.literal or "x").startswith("-")]
     if not operands:
         ctx.add("env-dump:printenv")
@@ -1372,6 +1400,12 @@ def _shell(words, cmd, depth, ctx):
         if text.startswith("-") and len(text) > 1 and not text.startswith("--"):
             if "c" in text[1:]:
                 code_mode = True
+                # `bash -c'env'` is one word, `-cenv`: bash reads the letters
+                # after `c` as more options, but they are scanned as code too,
+                # so a cluster cannot carry a dump past this reader.
+                attached = text[1:].split("c", 1)[1]
+                if attached and _deeper(depth, ctx):
+                    _bash_text(attached, depth + 1, ctx)
             i += 1
             continue
         if text.startswith("--"):
@@ -1407,6 +1441,8 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
     single-dash cluster ending in a letter of `cluster`), the first operand
     when `program_operand` (awk, jq), and stdin bodies when no script."""
     with_arg = set(with_arg)
+    letters = cluster or "".join(f[1] for f in flags
+                                 if len(f) == 2 and f[0] == "-")
 
     def handler(words, cmd, depth, ctx):
         del depth
@@ -1443,10 +1479,22 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
                     break
             if matched:
                 continue
-            if cluster and text.startswith("-") and not text.startswith("--") \
-                    and len(text) > 2 and text[-1] in cluster:
-                codes.append(words[i + 1].literal if i + 1 < len(words) else "")
-                i += 2
+            at = _code_letter_at(text, letters)
+            if at is not None:
+                # `-cCODE`, `-eCODE`, `-neCODE`: the code is the rest of the
+                # word; `-Bc CODE`, `-le CODE`, `-pe CODE`: it is the next
+                # word. A run of code letters (`-pe`, `-peCODE`) is read
+                # every way it could split: the rest after each letter of the
+                # run is scanned, and the next word too when the run ends the
+                # word. The next word is scanned but not skipped, so a word
+                # misread as a cluster cannot hide the real code flag after it.
+                end = at
+                while end < len(text) and text[end] in letters:
+                    codes.append(text[end + 1:])
+                    end += 1
+                if end == len(text) and i + 1 < len(words):
+                    codes.append(words[i + 1].literal)
+                i += 1
                 continue
             if text in ("-f", "--from-file"):
                 explicit_file = True
@@ -1477,6 +1525,18 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
         return True
 
     return handler
+
+
+def _code_letter_at(text, letters):
+    """The index of the first code-flag letter in a single-dash option word
+    (`-c`, `-Bc`, `-cCODE`, `-neCODE`), or None."""
+    if not letters or not text.startswith("-") or text.startswith("--") \
+            or len(text) < 2:
+        return None
+    for index, char in enumerate(text[1:], start=1):
+        if char in letters:
+            return index
+    return None
 
 
 def _h_cmd(words, cmd, depth, ctx):
@@ -1918,15 +1978,35 @@ def _crude_armed(root):
     home = os.path.expanduser("~")
     for path in (os.path.join(crew_dir, "config.json"),
                  os.path.join(home, ".claude", "crew", "config.json")):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                text = handle.read()
-        except OSError:
-            continue
-        match = re.search(r'"envGuard"\s*:\s*([^,}]*)', text)
-        if match and match.group(1).strip().strip('"').strip() != "off":
+        if _layer_arms(path):
             return True
     return False
+
+
+def _layer_arms(path):
+    """Whether one config file arms the guard, for `_crude_armed`: absent
+    does not; a file that cannot be read or parsed, is not an object, or has
+    a `guards` that is not an object does (a corrupt layer blocks); otherwise
+    any `guards.envGuard` other than "off" does. An explicit `null` arms
+    too: only an absent key means off (`crew_guards.NULL_IS_MALFORMED`)."""
+    if not os.path.lexists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8", errors="strict") as handle:
+            parsed = json.loads(handle.read())
+    except (OSError, ValueError):
+        return True
+    if not isinstance(parsed, dict):
+        return True
+    if "guards" not in parsed:
+        return False
+    guards = parsed["guards"]
+    if not isinstance(guards, dict):
+        return True
+    if "envGuard" not in guards:
+        return False
+    value = guards["envGuard"]
+    return not (isinstance(value, str) and value.strip().lower() == "off")
 
 
 def _log(root, row):
@@ -1965,7 +2045,10 @@ def _read_input():
         return {}, None, "malformed-input"
     if not isinstance(data, dict):
         return {}, None, "malformed-input"
-    if data.get("tool_name") not in ("Bash", "PowerShell"):
+    tool = data.get("tool_name")
+    if not isinstance(tool, str) or not tool:
+        return {}, None, "malformed-input"
+    if tool not in ("Bash", "PowerShell"):
         return None, None, ""
     tool_input = data.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) \

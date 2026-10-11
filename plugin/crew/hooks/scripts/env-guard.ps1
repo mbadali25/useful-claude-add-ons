@@ -246,9 +246,13 @@ function Get-CrewRepoConfigDir([string]$Root) {
 }
 
 function Test-EnvGuardArmed {
-  # Only consulted when python could not judge. Any `envGuard` value other
-  # than "off", in the repo config or the machine-global one, counts as armed,
-  # so a value this cannot parse fails closed. The twin of env-guard.sh's
+  # Only consulted when python could not judge. The file is parsed as JSON:
+  # a file that exists but cannot be read or parsed, is not an object, or has
+  # a `guards` that is not an object counts as armed (python calls that layer
+  # corrupt, and a corrupt layer blocks), and so does any guards.envGuard
+  # value other than "off" (an explicit null included: only an absent key
+  # is off), so a value this cannot parse fails closed. The
+  # twin of env-guard.sh's
   # `_env_guard_armed`. The repo file is the resolved one (T-0096): a lane
   # reads the main checkout's, and `unknown` counts as armed.
   $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { '.' }
@@ -257,13 +261,24 @@ function Test-EnvGuardArmed {
   $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
   foreach ($cfg in @((Join-Path $repo.Dir 'config.json'),
                      (Join-Path $userHome '.claude/crew/config.json'))) {
-    if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { continue }
-    $text = Get-Content -LiteralPath $cfg -Raw -ErrorAction SilentlyContinue
-    if (-not $text) { continue }
-    $m = [regex]::Match($text, '"envGuard"\s*:\s*([^,}]*)')
-    if (-not $m.Success) { continue }
-    $value = $m.Groups[1].Value -replace '["\s]', ''
-    if ($value -and $value -ne 'off') { return $true }
+    if (-not (Test-Path -LiteralPath $cfg)) { continue }
+    if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $true }
+    try {
+      $text = [System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8)
+      $parsed = $text | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      return $true
+    }
+    if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) { return $true }
+    $guardsProp = $parsed.PSObject.Properties['guards']
+    if ($null -eq $guardsProp) { continue }
+    $guards = $guardsProp.Value
+    if ($null -eq $guards -or $guards -isnot [System.Management.Automation.PSCustomObject]) { return $true }
+    $prop = $guards.PSObject.Properties['envGuard']
+    if ($null -eq $prop) { continue }
+    if ($null -eq $prop.Value) { return $true }
+    if ($prop.Value -isnot [string]) { return $true }
+    if ($prop.Value.Trim().ToLowerInvariant() -ne 'off') { return $true }
   }
   return $false
 }

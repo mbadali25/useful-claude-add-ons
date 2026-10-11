@@ -50,3 +50,45 @@ def test_widening_notes_are_total_and_name_the_key():
 
 def test_config_key_table_declares_it():
     assert "guards.envGuard" in crew_keys.KEY_META
+
+
+# Review round 1 (FIX): only an ABSENT key is off. An explicit `null` in either
+# layer is malformed, the floor -- `normalise_role_writes(None)` alone cannot
+# tell the two apart, so `resolve_ratcheted` does. `roleWrites` and
+# `cloudGuard` keep reading `null` as absent.
+def _layers(tmp_path, repo_guards, global_guards):
+    import json  # pylint: disable=import-outside-toplevel
+    import subprocess  # pylint: disable=import-outside-toplevel
+    repo = tmp_path / "repo"
+    (repo / ".crew").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, timeout=60)
+    glob = tmp_path / "global.json"
+    for path, guards in ((repo / ".crew" / "config.json", repo_guards),
+                         (glob, global_guards)):
+        if guards is not None:
+            path.write_text(json.dumps({"guards": guards}), encoding="utf-8")
+    return str(repo), str(glob)
+
+
+@pytest.mark.parametrize("repo_guards,global_guards,want", [
+    ({"envGuard": None}, None, "block"),
+    (None, {"envGuard": None}, "block"),
+    ({"envGuard": None}, {"envGuard": "off"}, "block"),
+    ({}, None, "off"),
+    (None, None, "off"),
+    ({"envGuard": "off"}, {"envGuard": "off"}, "off"),
+], ids=["repo-null", "global-null", "repo-null-over-global-off", "repo-absent",
+        "no-files", "both-off"])
+def test_explicit_null_is_block_and_absent_is_off(tmp_path, monkeypatch,
+                                                  repo_guards, global_guards,
+                                                  want):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root, glob = _layers(tmp_path, repo_guards, global_guards)
+    assert crew_config.resolve_guard(root, "envGuard", glob)["effective"] == want
+
+
+@pytest.mark.parametrize("name", ["roleWrites", "cloudGuard"])
+def test_other_switches_still_read_null_as_absent(tmp_path, monkeypatch, name):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root, glob = _layers(tmp_path, {name: None}, None)
+    assert crew_config.resolve_guard(root, name, glob)["effective"] == "off"

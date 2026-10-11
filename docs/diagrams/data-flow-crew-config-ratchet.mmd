@@ -27,10 +27,10 @@
 %%     ((function, function, dict) write-side vs (tuple, function, function)
 %%     read-side), confirmed by `type()` on each element, not asserted.
 %% Note RG: <b>READ side: crew_guards.RATCHETED_KEYS</b> plugin/crew/hooks/scripts/crew_guards.py:522-549
-%%    <b>13 keys</b> (executed + len()'d, this pass): install.policy, change.requireForProduction,
-%%    environments.prodUnattended (T-0005), and all TEN guards.* - terraformApply, forcePush, adminMerge,
-%%    mergeGate, cloudDestructive, sqlDestructive, prodDatabase, prodServer, roleWrites, <b>cloudGuard
-%%    (new)</b>. Consumed by crew_config.resolve_ratcheted() :831 via crew_guards.effective_ratcheted() :564,
+%%    <b>15 keys</b> (executed + len()'d, L-0772-fix): install.policy, change.requireForProduction,
+%%    environments.prodUnattended (T-0005), and all TWELVE guards.* - terraformApply, forcePush, adminMerge,
+%%    mergeGate, cloudDestructive, sqlDestructive, deployWorkflow, prodDatabase, prodServer, roleWrites,
+%%    cloudGuard, <b>envGuard (L-0772)</b>. Consumed by crew_config.resolve_ratcheted() :831 via crew_guards.effective_ratcheted() :564,
 %%    called at crew_config.py:875
 %% Note RC: <b>WRITE side: crew_config._RATCHETED</b> plugin/crew/hooks/scripts/crew_config.py:2527 (extended
 %%    through :2622) <b>14 keys</b>: the same thirteen PLUS pm.authority. pm.authority is still NOT in
@@ -50,7 +50,7 @@
 %%    ORs them into forced_by_corruption :762, and sets policy = #quot;block#quot; UNCONDITIONALLY at :764-765
 %%    -- BEFORE the <i>elif policy == #quot;off#quot;: return 0</i> early exit at :766-767
 %% Note E1: <b>Every key in crew_guards.RATCHETED_KEYS :522-549 -- install.policy,
-%%    change.requireForProduction, environments.prodUnattended and all TEN guards.* -- resolves by the LOWER
+%%    change.requireForProduction, environments.prodUnattended and all TWELVE guards.* -- resolves by the LOWER
 %%    rank, not by repo-beats-global.</b> CONFIG.md section 15 covers install.policy, section 16 the guards,
 %%    section 18 guards.roleWrites; environments.* is a subsection of section 16.
 %% Note E2: The effective value at each key is the <b>lower-ranked of the two layers</b> -
@@ -62,7 +62,9 @@
 %% Note E5: <b>guards.roleWrites, guards.cloudGuard and guards.envGuard (L-0772) are the three exceptions to E4, and the only keys here
 %%    whose DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is
 %%    <b>off</b>, the WIDEST tier, for all three names - cloudGuard and envGuard reuse roleWrites' own normalise/rank functions
-%%    rather than growing a second copy (crew_guards.py:450-487, guard_tiers() :490-504).
+%%    rather than growing a second copy (crew_guards.py:450-487, guard_tiers() :490-504). For envGuard alone an
+%%    EXPLICIT null is the floor, not the default (crew_guards.NULL_IS_MALFORMED, read by
+%%    crew_config.resolve_ratcheted): only an absent key is off.
 %% Note E6: install.policy: auto is safe only because no repo-controlled string can become a command -
 %%    crew_guards.INSTALLABLE maps a name to a literal argv tuple, consulted BEFORE the policy. Asserted in
 %%    tests/test_install_policy.py.

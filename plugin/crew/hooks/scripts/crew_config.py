@@ -1044,8 +1044,8 @@ def resolve_ratcheted(root, dotted, path=None):
     repo_value = _dig(crew_state.load_config(root), parts)
     global_cfg, _ = filter_global(read_global_config(path))
     global_value = _dig(global_cfg, parts)
-    repo_value = None if repo_value is _MISSING else repo_value
-    global_value = None if global_value is _MISSING else global_value
+    repo_value = _ratchet_layer_value(dotted, repo_value)
+    global_value = _ratchet_layer_value(dotted, global_value)
 
     effective = crew_state.effective_ratcheted(dotted, repo_value, global_value)
 
@@ -1061,6 +1061,22 @@ def resolve_ratcheted(root, dotted, path=None):
         "global": normalise(global_value),
         "heldDownBy": held,
     }
+
+
+# What a layer's explicit `null` becomes at a `crew_state.NULL_IS_MALFORMED`
+# key: a non-string, so the key's normaliser ranks it at the floor.
+_EXPLICIT_NULL = ("null",)
+
+
+def _ratchet_layer_value(dotted, value):
+    """One layer's raw value as `effective_ratcheted` takes it: absent is
+    None (the key's default); an explicit `null` at a key where null is
+    malformed is `_EXPLICIT_NULL` (the floor); anything else unchanged."""
+    if value is _MISSING:
+        return None
+    if value is None and dotted in crew_state.NULL_IS_MALFORMED:
+        return _EXPLICIT_NULL
+    return value
 
 
 def resolve_install_policy(root, path=None):

@@ -657,10 +657,16 @@ def count_plugin_hooks(name: str) -> int | None:
     parse, or is not the documented shape, is None ("could not count"), never
     a zero."""
     path = os.path.join(ROOT, "plugin", name, "hooks", "hooks.json")
-    if not os.path.isfile(path):
+    if not os.path.lexists(path):
         return 0
+    if not os.path.isfile(path):
+        return None
     try:
-        events = json.loads(read(path))["hooks"]
+        text = read(path)
+    except (OSError, UnicodeError):
+        return None
+    try:
+        events = json.loads(text)["hooks"]
         return sum(1 for entries in events.values() for entry in entries
                    for hook in entry["hooks"] if hook.get("type") == "command")
     except (ValueError, KeyError, TypeError, AttributeError):

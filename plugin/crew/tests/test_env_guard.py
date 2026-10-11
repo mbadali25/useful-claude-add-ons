@@ -61,6 +61,12 @@ REPORT = {"guards": {"envGuard": "report"}}
 
 # Bash forms that print the whole environment, or a credential-named variable.
 BLOCK_BASH = [
+    # review round 1: attached code flags (`-cCODE`, `-eCODE`, `-neCODE`)
+    "python3 -c'print(os.environ)'", "node -e'console.log(process.env)'",
+    "perl -ne'print %ENV'", "ruby -e'p ENV'", "bash -c'env'",
+    "perl -I/x/e -e 'print %ENV'",
+    # review round 2 prep: a run of code letters (`-pe`) read every way
+    "node -pe 'process.env'", "node -pe'process.env'", "node -ep 'process.env'",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
     "declare", "declare -p", "declare -x", "typeset -p", "typeset -x",
@@ -145,6 +151,11 @@ ALLOW_BASH = [
     "ruby -e 'puts ENV[\"HOME\"]'", "$EDITOR f", "\"$PY\" script.py",
     "PY=python3; \"$PY\" -c 'print(1)'", "echo $SSH_AUTH_SOCK",
     "echo $XDG_SESSION_TYPE",
+    # review round 1: help is not a dump; globs elsewhere are not program names
+    "printenv --help", "env --help", "env --version", "ls *.txt", "[ -f x ]",
+    "echo {a,b}", "python3 -Bc 'print(1)'", "python3 -W ignore -c 'print(1)'",
+    "python3 -c 'import os; print(os.getenv(\"HOME\"))'",
+    "perl -e 'print $ENV{HOME}'",
 ]
 
 ALLOW_PS = [
@@ -159,6 +170,11 @@ ALLOW_PS = [
 CNT_BASH = [
     "env '", "eval \"$(ssh-agent -s)\"", "eval \"$X\"", "bash -c \"$CMD\"",
     "X=$(echo env); $X", "echo \"${!n}\"", "echo $(env", "cat <<EOF\nno end",
+    # review round 1: a globbed or brace-expanded program name, a non-literal
+    # name read in inline code
+    "/usr/bin/en?", "e{n,}v", "sudo /usr/bin/e*",
+    "python3 -c 'import os; print(os.environ[name])'",
+    "node -e 'console.log(process.env[k])'", "perl -e 'print $ENV{$k}'",
 ]
 CNT_PS = ["iex $s", "& $cmd", "Invoke-Expression $code", "Write-Output 'x",
           "gci env: | Out-String )"]
@@ -422,8 +438,10 @@ def test_could_not_tell_denies_in_block_and_logs_in_report(
 
 
 @pytest.mark.parametrize("raw", [b"", b"not json", b"[1]",
-                                 b'{"tool_name":"Bash","tool_input":{}}'],
-                         ids=["empty", "not-json", "not-object", "no-command"])
+                                 b'{"tool_name":"Bash","tool_input":{}}',
+                                 b"{}", b'{"tool_name":123}'],
+                         ids=["empty", "not-json", "not-object", "no-command",
+                              "no-tool-name", "non-string-tool-name"])
 def test_malformed_input_is_could_not_tell(monkeypatch, capsys, tmp_path, raw):
     _fixture(tmp_path, ARMED)
     decision, reason = run_main(monkeypatch, capsys, tmp_path, "Bash", "",
@@ -523,7 +541,8 @@ def test_report_allows_and_logs(monkeypatch, capsys, tmp_path, tool, command):
                         for r in rows), rows
 
 
-@pytest.mark.parametrize("value", ["blok", 1, True, ["block"]])
+@pytest.mark.parametrize("value", ["blok", 1, True, ["block"], None],
+                         ids=["typo", "int", "bool", "list", "explicit-null"])
 def test_malformed_value_blocks(monkeypatch, capsys, tmp_path, value):
     _fixture(tmp_path, {"guards": {"envGuard": value}})
     assert run_main(monkeypatch, capsys, tmp_path, "Bash", "env")[0] == "deny"
@@ -688,6 +707,64 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
                                extra=_NO_PYTHON)
     assert code == (2 if armed else 0), out
     assert MARKER not in out
+
+
+# Review round 1: the crude readers judge every layer the way python would --
+# an unrelated `envGuard` key cannot hide the guard's, a value on the next line
+# is still read, and a file that exists but is not a JSON object is armed.
+_FALLBACK_LAYERS = [
+    ("decoy-off-before-block",
+     '{"metadata": {"envGuard": "off"}, "guards": {"envGuard": "block"}}', True),
+    ("value-on-next-line", '{"guards": {"envGuard":\n  "block"}}', True),
+    ("malformed-json", "{ this is not json", True),
+    ("not-an-object", '["envGuard", "off"]', True),
+    ("explicit-null", '{"guards": {"envGuard": null}}', True),
+    ("escaped-key", '{"guards": {"env\\u0047uard": "block"}}', True),
+    ("guards-not-object", '{"guards": "off"}', True),
+    ("empty-file", "", True),
+    ("case-variant-decoy",
+     '{"guards": {"EnvGuard": "off", "envGuard": "block"}}', True),
+    ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
+    ("guards-off", '{"guards": {"envGuard": "off"}}', False),
+    ("no-envGuard", '{"guards": {"forcePush": "block"}}', False),
+]
+
+
+def _raw_fixture(tmp_path, text):
+    repo = _fixture(tmp_path)
+    (repo / ".crew" / "config.json").write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_python_crude_reader_judges_the_layer(tmp_path, text, armed):
+    path = tmp_path / "config.json"
+    path.write_text(text, encoding="utf-8")
+    assert env_guard._layer_arms(str(path)) is armed  # pylint: disable=protected-access
+
+
+def test_python_crude_reader_a_directory_is_armed(tmp_path):
+    (tmp_path / "config.json").mkdir()
+    assert env_guard._layer_arms(str(tmp_path / "config.json")) is True  # pylint: disable=protected-access
+
+
+@needs_bash
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_bash_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
+    _raw_fixture(tmp_path, text)
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
+    assert code == (2 if armed else 0), out
+
+
+@needs_pwsh
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_pwsh_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
+    _raw_fixture(tmp_path, text)
+    _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                               extra=_NO_PYTHON)
+    assert code == (2 if armed else 0), out
 
 
 # --- 9: registration -----------------------------------------------------------------

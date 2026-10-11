@@ -29,7 +29,14 @@ INPUT=$(cat)
 # Whether a config layer arms the guard, read WITHOUT python -- only consulted
 # when python could not run at all. Crude on purpose: any `envGuard` value
 # other than "off", in the repo config or the machine-global one, counts as
-# armed, so a value this cannot parse fails closed rather than open. The repo
+# armed, so a value this cannot parse fails closed rather than open. EVERY
+# `envGuard` in the file is read, not the first (an unrelated key of that name
+# cannot hide the guard's), the file is read as one line (a value on the next
+# line is still seen, and an empty one is armed), and a file that exists but
+# cannot be read, or does not look like a JSON object, is armed: python would
+# call that layer corrupt, and a corrupt layer blocks. So is a file holding a
+# `\u` escape, which could spell the key out of grep's sight, or a `guards`
+# that is not an object. The repo
 # file is the resolved one (crew_repo_config_dir, T-0096): a lane with no config
 # of its own reads the main checkout's, and when git cannot tell which that is
 # (`unknown`) the guard counts as armed -- an absent own file is no proof of off.
@@ -41,11 +48,31 @@ _env_guard_armed() {
   crew_repo_config_dir "$root"
   [ "$CREW_CFG_SOURCE" = unknown ] && return 0
   for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
-    [ -f "$cfg" ] || continue
-    value=$(grep -o '"envGuard"[[:space:]]*:[[:space:]]*[^,}]*' "$cfg" 2>/dev/null \
-            | head -n 1 | sed -E 's/.*:[[:space:]]*//' | tr -d '"[:space:]\r')
-    [ -z "$value" ] && continue
-    [ "$value" = "off" ] || return 0
+    [ -e "$cfg" ] || [ -L "$cfg" ] || continue
+    [ -f "$cfg" ] && [ -r "$cfg" ] || return 0
+    flat=$(tr -d '\r\n' < "$cfg" 2>/dev/null) || return 0
+    trimmed=$(printf '%s' "$flat" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+    case "$trimmed" in
+      "{"*"}") ;;
+      *) return 0 ;;
+    esac
+    # A `\u` escape can spell the key (`"env\u0047uard"`) where grep cannot
+    # see it; python decodes it. Could not tell, so armed.
+    case "$flat" in
+      *'\u'*) return 0 ;;
+    esac
+    # A `guards` that is not an object (`"guards": "off"`, `null`) is a
+    # corrupt layer to python, so it arms here too.
+    printf '%s' "$flat" \
+      | grep -Eq '"guards"[[:space:]]*:[[:space:]]*[^{[:space:]]' 2>/dev/null \
+      && return 0
+    values=$(printf '%s' "$flat" \
+             | grep -o '"envGuard"[[:space:]]*:[[:space:]]*[^,}]*' 2>/dev/null \
+             | sed -E 's/^"envGuard"[[:space:]]*:[[:space:]]*//' | tr -d '"\t ')
+    printf '%s' "$flat" | grep -q '"envGuard"' 2>/dev/null || continue
+    printf '%s\n' "$values" | while IFS= read -r value; do
+      [ "$value" = "off" ] || exit 1
+    done || return 0
   done
   return 1
 }
