@@ -284,6 +284,19 @@ It needs the user token, a third token that may only send as a user. It is kept 
 
 `server:` and `auth:` are the Bridge's: `server.host` is the address it listens on, the machine's VPN address (never `0.0.0.0`), and `auth.peers` holds the SHA-256 of every peer's token. `client:` is this machine's own peer: `client.name`, `client.token`, `client.bridge_url` (`ws://<Bridge VPN address>:9999`) and `client.project_dir`, the only directory `peer_send`/`peer_context` may share files from (`""` = the session's project directory). The Bridge machine runs a peer of its own Bridge from the same file, so the two never share a token.
 
+The Bridge's limits are the exception to "every key is required": each is optional under `server:` and defaults to the value below. A value of the wrong type (a string, a boolean, a fraction where a whole number belongs) or below its minimum stops the Bridge with a message naming the key.
+
+| Key | Default | Minimum | Description |
+|-----|---------|---------|-------------|
+| `server.max_message_bytes` | `65536` | `1` | A frame larger than this is refused (`message_too_large`) |
+| `server.rate_per_second` | `10` | `0.001` | Messages per second one connection may send; a fraction is allowed |
+| `server.rate_burst` | `rate_per_second`, at least 1 | `1` | Messages a connection may send at once before the rate applies |
+| `server.max_stored_per_peer` | `10000` | `0` | Stored messages kept per sender; the oldest are deleted beyond it. `0` = no cap |
+| `server.max_unread_per_peer` | `500` | `1` | Undelivered direct messages queued for one offline recipient; a send past it is refused (`recipient_queue_full`) |
+| `server.max_unread_bytes_per_peer` | `8388608` (8 MiB) | `server.max_message_bytes` | Bytes queued for one offline recipient; a send past it is refused (`recipient_queue_full`) |
+
+The two queue caps have no "off" value: `0` would refuse every message to an offline peer, so it is rejected.
+
 | Environment variable | Description |
 |----------------------|-------------|
 | `AI_CONNECT_PEER_NAME` | Overrides the peer name (`client.name`); the name needs its own token on the Bridge |
