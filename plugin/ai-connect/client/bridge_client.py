@@ -267,8 +267,8 @@ class BridgeClient:
         The same notice twice in a row is queued once (a rate-limit flood).
         Notices carry no id, which tells them from the Bridge's own messages.
         """
-        last = self._message_queue[-1] if self._message_queue else None
-        if isinstance(last, dict) and "id" not in last and last.get("from") == NOTICE_SENDER \
+        last: object = self._message_queue[-1] if self._message_queue else {}
+        if isinstance(last, dict) and last.get("id") is None and last.get("from") == NOTICE_SENDER \
                 and last.get("content") == content:
             return
         self._enqueue(self._notice(content))
