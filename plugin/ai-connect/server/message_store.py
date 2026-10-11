@@ -160,6 +160,20 @@ class MessageStore:
         )
         return [_row_to_message(row) for row in await cursor.fetchall()]
 
+    async def unread_size(self, peer: str) -> tuple[int, int]:
+        """How many direct messages wait for this peer, and their content and context bytes."""
+        cursor = await self._conn.execute(
+            """
+            SELECT COUNT(*),
+                   COALESCE(SUM(LENGTH(CAST(content AS BLOB)) + COALESCE(LENGTH(CAST(context AS BLOB)), 0)), 0)
+            FROM messages
+            WHERE to_peer = ? AND delivered = 0
+            """,
+            (peer,)
+        )
+        count, size = await cursor.fetchone()
+        return count, size
+
     async def mark_delivered(self, message_ids: list[str]) -> None:
         """Mark messages as delivered."""
         if not message_ids:
