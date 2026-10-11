@@ -1,0 +1,86 @@
+{
+  "base": "a7fb104b04233315abe5b9b4d1a55fe6554841aa",
+  "budget": 2,
+  "bundle_sha256": "e77a43952df4140c3eb154698e3e71143aa1fa2067a62cafc89a055901b1180a",
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 3,
+    "NIT": 0
+  },
+  "elapsed_s": 237,
+  "exit_code": 0,
+  "failure_class": null,
+  "findings": [
+    "FIX|plugin/crew/hooks/scripts/crew_docs_check.py:315|Landed CHANGELOG checks use current marketplace names and sources; later changes can erase an owed entry or reject a valid one.|Land a ticket, then rename its marketplace entry or move its source in another release; checking the original ticket yields MISSING or not needed instead of its landing verdict.",
+    "FIX|plugin/crew/hooks/scripts/crew_refresh_check.py:1710|A failed landing diff bypasses the required full since-base fallback, leaving both checks without document or artifact findings.|Make diff-tree fail while changed_paths(top, base) succeeds; own_changes raises RuntimeError instead of returning the full set and explanatory note.",
+    "FIX|plugin/crew/hooks/scripts/crew_refresh_check.py:1599|Reading a nonregular review receipt can hang checks 4 and 5 indefinitely.|Replace the landed ticket\u2019s review.json with a FIFO without a writer and run either check; open blocks without a timeout or fallback."
+  ],
+  "gate": {
+    "overridden": true,
+    "reason": "the verify gate has never recorded a clean pass in this checkout (no .crew/.verify-verified-at); the gate's record lists as not verified: rules[27]: sh -c 'command -v npm >/dev/null 2>&1 || { echo \"TOOL MISSING: npm is not on PAT (SKIP (rc 77, environment absent) - not verified); CI receipt UNVERIFIED: this branch changes the receipt producer (plugin/crew/hooks/scripts/ci_receipt.py); a receipt it produced cannot vouch for itself - gate locally",
+    "state": "UNVERIFIED"
+  },
+  "head": "7a874c8fc2be50fcf5415f5609ee8a4df8a9a4b6",
+  "ignored_lines": 0,
+  "ignored_text": [],
+  "model": null,
+  "model_family": "gpt",
+  "model_launched": null,
+  "parts_expected": [
+    "/repos/personal/uca-L-0753/.work/review/L-0753-done-calibration-9UyltD/diff.txt.parts/part-001-of-003.patch",
+    "/repos/personal/uca-L-0753/.work/review/L-0753-done-calibration-9UyltD/diff.txt.parts/part-002-of-003.patch",
+    "/repos/personal/uca-L-0753/.work/review/L-0753-done-calibration-9UyltD/diff.txt.parts/part-003-of-003.patch"
+  ],
+  "parts_missing": [],
+  "prereview": {
+    "bundle_sha256": "e77a43952df4140c3eb154698e3e71143aa1fa2067a62cafc89a055901b1180a",
+    "checks": [
+      {
+        "detail": "no new findings in 6 file(s)",
+        "files": 6,
+        "name": "ruff",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "shellcheck",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "psscriptanalyzer",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "actionlint",
+        "new": [],
+        "status": "n/a"
+      }
+    ],
+    "overridden": false,
+    "result": "pass",
+    "round": 1,
+    "stood_down": false,
+    "ticket": "L-0753"
+  },
+  "provider": "codex",
+  "reasons": [],
+  "refund_refused": null,
+  "refunded": false,
+  "round": 1,
+  "ticket": "L-0753",
+  "timed_out": false,
+  "verdict": "FINDINGS",
+  "webtest_check": null,
+  "webtest_findings": null,
+  "webtest_open": "not-applicable",
+  "webtest_verdict": null,
+  "written_at": "2026-10-10T04:00:57+00:00"
+}

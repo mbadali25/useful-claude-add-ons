@@ -1,0 +1,86 @@
+{
+  "base": "e77532e01775ac61e7cd6c3cf276ad4453b67ac3",
+  "budget": 2,
+  "bundle_sha256": "b0013ae53ff90db86ac7d78995f72dbea672fa5c8c8f7bbe4b1caee1aaae5f05",
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 3,
+    "NIT": 2
+  },
+  "elapsed_s": 282,
+  "exit_code": 0,
+  "failure_class": null,
+  "findings": [
+    "FIX|plugin/crew/hooks/scripts/promote-gate.ps1:928|The new policy reader launches the first git Application directly; a git.cmd or git.bat wrapper works for the gate\u2019s earlier git calls but cannot be launched this way, so valid deploys block.|On Windows, put a working git.cmd ahead of git.exe on PATH and run a valid PowerShell deploy.",
+    "FIX|.crew/verify.json:142|The targeted verify rule matches the new tree-policy test file but never runs it, so the gate can miss the linked-worktree regression this ticket fixes.|Make worktree deploys read the project map again, then run the rule\u2019s listed command; it omits test_promote_gate_tree_policy.py.",
+    "FIX|plugin/crew/skills/crew-verification/SKILL.md:432|The skill still tells users that verify.json is read from the session\u2019s project directory, contradicting the new committed-sha policy stated earlier in the same skill.|Read lines 412 and 429\u2013435, then deploy a worktree whose committed map differs from the project directory\u2019s.",
+    "NIT|plugin/crew/tests/test_promote_gate_effective_tree.py:15|The changed test file\u2019s header still says the main checkout\u2019s verify.json stays policy, which is false after this change.|Compare the header with test_a_waiver_committed_on_the_worktree_branch_admits.",
+    "NIT|plugin/crew/CONFIG.md:2067|The CONFIG edit leaves the config data-flow diagram anchored to an older version of a file it explicitly lists as an input.|Compare this edit with the Anchors line and provenance header in docs/diagrams/data-flow-crew-config.mmd."
+  ],
+  "gate": {
+    "overridden": true,
+    "reason": "the verify gate has never recorded a clean pass in this checkout (no .crew/.verify-verified-at); CI receipt UNVERIFIED: verify-gate.yml run 38072897120 (the newest for HEAD) concluded skipped",
+    "state": "UNVERIFIED"
+  },
+  "head": "1626dcc2e5a82d59bf7f67c4ecf2c2aeb234f3d3",
+  "ignored_lines": 0,
+  "ignored_text": [],
+  "model": "gpt-6-sol",
+  "model_family": "gpt",
+  "model_launched": "gpt-6-sol",
+  "parts_expected": [
+    "/repos/personal/uca-L-0768/.work/review/L-0768-tree-policy-GG94ob/diff.txt.parts/part-001-of-001.patch"
+  ],
+  "parts_missing": [],
+  "prereview": {
+    "bundle_sha256": "b0013ae53ff90db86ac7d78995f72dbea672fa5c8c8f7bbe4b1caee1aaae5f05",
+    "checks": [
+      {
+        "detail": "no new findings in 6 file(s)",
+        "files": 6,
+        "name": "ruff",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no new findings in 1 file(s)",
+        "files": 1,
+        "name": "shellcheck",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no new findings in 1 file(s)",
+        "files": 1,
+        "name": "psscriptanalyzer",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "actionlint",
+        "new": [],
+        "status": "n/a"
+      }
+    ],
+    "overridden": false,
+    "result": "pass",
+    "round": 2,
+    "stood_down": false,
+    "ticket": "L-0768"
+  },
+  "provider": "codex",
+  "reasons": [],
+  "refund_refused": null,
+  "refunded": false,
+  "round": 2,
+  "ticket": "L-0768",
+  "timed_out": false,
+  "verdict": "FINDINGS",
+  "webtest_check": null,
+  "webtest_findings": null,
+  "webtest_open": "not-applicable",
+  "webtest_verdict": null,
+  "written_at": "2026-10-10T17:49:11+00:00"
+}

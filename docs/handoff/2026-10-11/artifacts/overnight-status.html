@@ -1,0 +1,160 @@
+<title>Overnight Crew Watch</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: a single ops log column with a lane board, newest status first */
+:root{
+  --bg:#f6f7f5; --panel:#ffffff; --fg:#1d2321; --muted:#5c6763; --line:#dde2df;
+  --accent:#2f6f5e; --ok:#2e7d4f; --warn:#a86a12; --stop:#b23a3a; --wait:#4a5fa8;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121615; --panel:#1a201e; --fg:#e4ebe8; --muted:#97a39e; --line:#2c3532;
+  --accent:#6cc0a6; --ok:#5fc48a; --warn:#e0a54a; --stop:#ec7a7a; --wait:#8fa2ec; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121615; --panel:#1a201e; --fg:#e4ebe8; --muted:#97a39e; --line:#2c3532;
+  --accent:#6cc0a6; --ok:#5fc48a; --warn:#e0a54a; --stop:#ec7a7a; --wait:#8fa2ec; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55}
+.wrap{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:28px 48px;display:grid;gap:28px}
+h1{font-family:var(--display);font-size:clamp(26px,4vw,34px);margin:0;text-wrap:balance}
+h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+.stamp{font-family:var(--mono);color:var(--muted);font-size:13px;margin-top:4px}
+.lede{max-width:65ch;margin:10px 0 0}
+.lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.lane{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:6px;min-width:0}
+.lane .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.id{font-family:var(--mono);font-weight:500}
+.pill{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;border:1px solid currentColor}
+.run{color:var(--accent)} .wait{color:var(--wait)} .done{color:var(--ok)} .hold{color:var(--warn)} .stop{color:var(--stop)}
+.lane p{margin:0;color:var(--muted);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+tr:last-child td{border-bottom:0}
+td.mono{font-family:var(--mono);white-space:nowrap;font-variant-numeric:tabular-nums}
+ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.alert{border:1px solid var(--stop);border-radius:8px;padding:12px 16px;background:var(--panel)}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Overnight Crew Watch</h1>
+    <div class="stamp">Update 11 · as of 2026-10-11 14:10 CDT · waiting on your answers</div>
+    <p class="lede">Nothing has merged today since #582 at 08:49 CDT; main is at <code>987ea4fb</code>, crew 1.2.30. All lanes resumed after the 13:00 CDT limit reset. Every full gate on this host ends on the same two test failures, which also fail on main, so no gate can record a pass yet. #584 fixes those two tests but cannot merge until #605 lands. Question 1 below breaks that loop.</p>
+    <p class="lede">Since update 10: #603 was pushed (new head <code>6767f6365</code>), #597's hold on [redacted: b] was lifted, [redacted: b] filed six tickets, and the Tailscale deploy went on hold.</p>
+    <p class="lede">Source: state as the coordinator reported it to the lead, the handoff's newest blocks, the ticket index, and GitHub PR state read at 14:08 CDT. Gate figures are shown as reported; no gate log was opened for this page.</p>
+  </header>
+
+  <section>
+    <h2>Lanes · phase order: Brainstorm, Spec, Review (spec), Implement, Review, Fix, Gate, Land</h2>
+    <div class="lanes">
+      <div class="lane"><div class="top"><span class="id">L-0790 · #605</span><span class="pill stop">Review · critical path</span></div><p>Makes the ai-connect firewall test hermetic. Round 1's 1 BLOCK and 3 FIX are fixed and pushed in <code>ee9b9c2c1</code>. True full gate: the only failures are the two tests that also fail on main. The ai-connect rule passes as an unprivileged user, mcp-servers is 69 of 69, ruff has 0 new findings. Evidence complete. CI: 19 passed, 4 skipped. Blocker: your answer to question 1. Next: Codex round 2.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0709 · #584</span><span class="pill run">Gate</span></div><p>The last open Phase 1 PR. No pytest failure on <code>bdc7bc55</code>: it fixes the two failing tests. Sabotage has 11 still-green entries, covered by L-0766's list, and 5 red but unproven, not covered (question 2). CI: 30 passed, mergeable. Blocker: #605 landing. Next: merge main, a true full gate run, the ai-connect rule.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0777 · #600</span><span class="pill run">Gate</span></div><p>Crew agents dispatch to Kimi K3. New head <code>46d015a35</code>: main merged (bookkeeping files only), its own diagram re-anchored, crew 1.2.33, no conflict. mcp-servers 69 of 69. The final-head gate was still running at 14:05; a true full gate run follows. GitHub shows one failed check on this head, Pytest / test (3.12), finished 13:35. Blockers: that gate, the failed check, question 2, #605.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0772 fix · #603</span><span class="pill hold">Fix</span></div><p>Env guard fix-forward. Pushed today, head <code>6767f6365</code>, mergeable: the 4 BLOCK fixes plus 11 further fixes from the same security report, each with a block case, an allow case and a red sabotage; 5 untested fixes moved to L-0788. True full gate: only the two on-main failures and the ai-connect skip. CI on the new head: 16 passed, 12 still running, Marketplace / check failed. Blockers: round 3, the security pass and the merge are held; questions 1 and 4. [redacted: b] is running the 8 Windows parity cases on this head.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0789 · #604</span><span class="pill wait">Review · no round spent</span></div><p>Re-anchors two config diagrams. True full gate on <code>b129d3030</code>: only the two on-main failures; mcp-servers passes; ai-connect rule not run. CI: 30 passed, mergeable. Blocker: waits for a gate that can pass. Next: the one Codex round.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0768 · #597</span><span class="pill wait">Gate · held</span></div><p>Promote gate reads policy from the deployed SHA. Run 2 has only the two on-main failures; the ai-connect rule is not verified. Windows results are in: serial repeat 79 passed, 6 skipped, no failures, and the one odd failure did not reproduce. CI: 30 passed on <code>3a11fb98d</code>, mergeable. Blocker: #605 landing.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0770 · #598</span><span class="pill wait">Review · no agent</span></div><p>Harness half of L-0765. Unchanged: no agent, and GitHub reports it conflicts with main. CI: 30 passed on <code>e14c8263d</code>.</p></div>
+      <div class="lane"><div class="top"><span class="id">L-0778 · L-0791 · L-0792 · L-0787 · L-0788</span><span class="pill wait">Spec / Brainstorm · not started</span></div><p>L-0778 has a drafted spec and plan, not approved. The other four are filed, status direction, not started.</p></div>
+      <div class="lane"><div class="top"><span class="id">Other work</span><span class="pill hold">On hold</span></div><p><b>ai-connect Tailscale deploy on this laptop: on hold, not waiting on you.</b> The lead's review of the deploy branch found it would turn on hooks and a user-scope MCP server for every session on this machine. The Windows session agreed, is fixing it, and will send a new commit for re-review. Nothing has been installed.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gate results · as reported by the coordinator</h2>
+    <div class="tbl"><table>
+      <tr><th>PR</th><th>Head</th><th>Result</th></tr>
+      <tr><td class="mono">#605 (L-0790)</td><td><code>ee9b9c2c1</code></td><td>True full gate: the only failures are the two tests that also fail on main. ai-connect rule as an unprivileged user: 284 passed; 79 passed, 10 skipped. mcp-servers 69 of 69. Wallclock half 74 passed, 6 skipped. ruff 0 new. Evidence complete.</td></tr>
+      <tr><td class="mono">#584 (L-0709)</td><td><code>bdc7bc55</code></td><td>No pytest failure; the two failing tests are both named PASSED on this head. Sabotage: 11 still green (on L-0766's list) and 5 red but unproven. A true full gate run and the ai-connect rule are still owed, after #605 lands.</td></tr>
+      <tr><td class="mono">#600 (L-0777)</td><td><code>46d015a35</code></td><td>Final-head gate still running at 14:05 CDT; a true full gate run follows. mcp-servers 69 of 69. Sabotage on the previous head: 12 still green (L-0766's list) and the same 5 unproven.</td></tr>
+      <tr><td class="mono">#603 (L-0772 fix)</td><td><code>6767f6365</code></td><td>True full gate: only the two on-main failures and the ai-connect skip. Wallclock half passed. Not run on this head: the full sabotage step, anything on Windows.</td></tr>
+      <tr><td class="mono">#604 (L-0789)</td><td><code>b129d3030</code></td><td>True full gate: only the two on-main failures. mcp-servers passes. ai-connect rule not run.</td></tr>
+      <tr><td class="mono">#597 (L-0768)</td><td><code>3a11fb98d</code></td><td>Run 2: only the two on-main failures. ai-connect rule not verified.</td></tr>
+    </table></div>
+    <p class="lede">A full gate cannot record a pass on this host while the two tests fail on main.</p>
+  </section>
+
+  <section>
+    <h2>Waiting on you</h2>
+    <div class="alert">
+      <ul>
+        <li><b>1. May #605's Codex round 2 start with the gate override flag, this once?</b> <b>Recommended: yes.</b> The gate's only failures are two tests that also fail on main, and every other rule has a real result. #584 fixes those two tests but cannot merge until #605 lands. Planned order if yes: #605, then #584, then #604 and #603 behind a gate that can pass, then #600 and #597 as their conditions clear.</li>
+        <li><b>2. The five "red but unproven" sabotage entries on #600 and #584.</b> Two never test their mutation (one points at a test id that no longer exists, one mutation is a syntax error); three are proven on Linux only. All five behave the same on main. <b>Recommended: accept as pre-existing on main and ticket the repair</b>, which is harness work that lands alone.</li>
+        <li><b>3. After #605 lands, may the gate run the ai-connect rule as root, with its dependency in a venv,</b> so <code>/crew:done</code> check 2 can pass by tool? <b>Recommended: yes.</b> The alternative is a recorded check 2 exception on every PR. Until you answer, nobody runs that suite as root.</li>
+        <li><b>4. May #603 merge, once all else is clean, with the 8 Windows parity failures that also fail on main?</b> <b>Recommended: yes</b>, recorded as pre-existing, with W-0131 as the follow-up.</li>
+        <li><b>5. Feature-freeze triage of W-0130 to W-0135.</b> <b>Recommended: let W-0132 through as a bug fix (W-0132: cloud guard has a must-block miss and over-blocks some prose; detail in the ticket).</b></li>
+        <li><b>6. Whether to update this laptop's installed crew plugin from 1.2.5.</b> It is 25 versions behind main, so every session here runs the older hooks.</li>
+        <li><b>7. Carried, not re-confirmed:</b> L-0713's interactive <code>/crew:init</code> walkthrough; triage of L-0779 and L-0782; the runner start token's permission on <code>github-runner-infra</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="cols">
+    <div>
+      <h2>Landed</h2>
+      <div class="tbl"><table>
+        <tr><th>PR</th><th>Ticket</th><th>Merge</th></tr>
+        <tr><td class="mono">none</td><td>No merge since update 10 (13:11 CDT), and none today since #582. Nothing deploys from this repo; merged to main is production.</td><td class="mono">main 987ea4fb</td></tr>
+        <tr><td class="mono">#582</td><td>L-0710 Stop gate harness half. The last merge, 08:49 CDT.</td><td class="mono">987ea4fb · 1.2.30</td></tr>
+        <tr><td class="mono">#602</td><td>Install URL re-pin (another session)</td><td class="mono">a192c68e</td></tr>
+        <tr><td class="mono">#601</td><td>W-0121 ai-connect ([redacted: b])</td><td class="mono">2a26b27b</td></tr>
+        <tr><td class="mono">#599</td><td>L-0772 env guard, <b>merged with open BLOCKs</b></td><td class="mono">5eb635f2 · 1.2.26</td></tr>
+      </table></div>
+    </div>
+    <div>
+      <h2>Filed</h2>
+      <ul>
+        <li><b>New, filed by [redacted: b] on its own box</b> (status direction, nothing implemented): W-0130 platform-sync hook rewrites config; W-0131: the hook's python resolver can exhaust its time budget on Windows, so an armed guard refuses; detail in the ticket; W-0132: cloud guard has a must-block miss and over-blocks some prose; detail in the ticket; W-0133 Bash-only agents do not work on Windows; W-0134 verify-gate picks Git Bash over WSL; W-0135 nested subagents not seeing a project agent type (not reproduced). They are not in this host's index or on the Kanban board yet.</li>
+        <li>Filed earlier today, all status direction, none started: L-0785, L-0786, L-0787, L-0788, L-0791, L-0792.</li>
+        <li>Noted to ticket later, not filed: the ticket mint producing a T- number; the gate summary printing a stale "over budget" line; the promote gate in installed crew 1.2.5 blocking read-only commands as "workflow dispatch" (reported by the TSS session; unknown on main).</li>
+        <li>Kanban board: checked against the index, every card already in the matching lane. No card moved.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="cols">
+    <div>
+      <h2>Your decisions today</h2>
+      <ul>
+        <li><b>L-0790 first.</b> The ai-connect rule is "not run, blocked on L-0790" on every PR until #605 merges. Never as root, no waiver.</li>
+        <li><b>Check 4 diagram waiver, narrow:</b> only diagrams already stale on main that the PR did not create, follow-up L-0791. Covers #600, #584, #597, #603.</li>
+        <li><b>#603:</b> fix all 4 security BLOCKs; round 3 next; one more round only if needed. Check 4 measured by hand.</li>
+        <li>An owner decision on this morning's incident is recorded locally [redacted: a].</li>
+        <li><b>[redacted: b] trace of #603's 8 Windows parity failures:</b> approved and reported. Likely a hook defect, so the test skip is held.</li>
+        <li><b>From earlier today:</b> check 2 as environment-blocked only with on-main reproduction evidence. SKIPs are not waived.</li>
+        <li><b>Lead's rulings since the resume:</b> the still-green sabotage entries (12 on #600, 11 on #584) are accepted because L-0766's list covers them. The 5 "red but unproven" entries are not covered, so they come to you as question 2. #603's push was released at 14:05; its round 3, security pass and merge stay held.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>[redacted: b]</h2>
+      <ul>
+        <li>In: #597's serial repeat, 79 passed, 6 skipped, no failures. The one odd failure did not reproduce on head or main. #597's hold on [redacted: b] is lifted.</li>
+        <li>In: the 8 parity cases also fail on main's tip <code>987ea4fb</code>.</li>
+        <li>Running: the same 8 on #603's new head <code>6767f6365</code>.</li>
+        <li>Filed on its own box, status direction, nothing implemented: W-0130 to W-0135.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Review plan phases</h2>
+    <ul>
+      <li><b>Phase 1, now:</b> #584 (L-0709) is the one open PR, in Gate, waiting on #605. L-0711 and L-0712 are done. L-0710 is merged (#582) and stays in review until its recorded round, which waits on #598. L-0713 is merged and stays in review until your walkthrough.</li>
+      <li><b>Phases 2 and 3:</b> not started, held by the freeze.</li>
+      <li><b>Phase 4:</b> planned, waits for Phase 1.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Not confirmed</h2>
+    <ul>
+      <li>Gate and sabotage figures are the coordinator's and the handoff's. No gate log was read for this page.</li>
+      <li>#600: the report calls the new head mergeable. GitHub agrees there is no conflict, but shows one failed check on it (Pytest / test (3.12)) and the merge as blocked. The cause of that failure is unknown here.</li>
+      <li>#603: the handoff expects the Marketplace / check failure as the version-drift line until the version bump at landing. Whether that is its only problem line on this head is not confirmed, and 12 checks are still running.</li>
+      <li>#604: the handoff still has no lane report since the resume; its line above is the coordinator's.</li>
+      <li>The handoff still records an open question on L-0791 (the redraw ticket alone does not end the diagram waiver). It is not in the lead's list above.</li>
+      <li>#598 conflicts with main. #588 (L-0743) is open with a failing check and a conflict while the index lists L-0743 as direction.</li>
+      <li>This checkout's local main is at <code>a192c68e</code>, one merge behind the remote's <code>987ea4fb</code>.</li>
+    </ul>
+  </section>
+</div>

@@ -1,0 +1,167 @@
+{
+  "budget": 2,
+  "receipt": {
+    "accepted_at": "2026-10-11T13:06:58+00:00",
+    "accepted_by": "Matthew Badali (owner rule: final round edge-case-only, 0 BLOCK, accepted with follow-up L-0787; owner grant 2026-10-11 past the 3-round cap)",
+    "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+    "bundle_sha256": "941c8b78a4c0d93111a627fe60c858ea7da7f6878c3c4ede6578b15fa5bb84e3",
+    "kind": "owner-accepted",
+    "round": 4,
+    "verdict": "FINDINGS"
+  },
+  "refused": [],
+  "rejected": {
+    "at": "2026-10-11T12:57:34+00:00",
+    "by": "Matthew Badali (owner grant 2026-10-11, past the 3-round cap)",
+    "round": 3
+  },
+  "rounds": [
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "5b7aa9d35b21360e140ef01ef5bb71af95528f85ff23371478fbd631c4834762",
+      "completed_at": "2026-10-11T11:07:35+00:00",
+      "counts": {
+        "BLOCK": 3,
+        "FIX": 6,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/agents/explorer.md:35|A caller task can end the fixed heredoc and execute shell commands despite the read-only role; researcher and security use the same delimiter|Put CREW_KIMI_TASK_EOF on its own line in the task, followed by touch pwned.",
+        "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:149|An unknown author source is treated as a known family, allowing Kimi to review work it may have written|Corrupt .work/dispatch.json, configure Claude as developer and Kimi as security, then dispatch security without --authors; author_families reports source unknown with a Claude fallback family, but Kimi runs.",
+        "BLOCK|plugin/crew/agents/security.md:40|Guessing claude when the caller gives no author defeats the required author-unknown refusal|Use a developer pin whose model family is unknown and omit the author; the dispatcher supplies --authors claude and permits Kimi.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:145|Unreadable or malformed config becomes a default route instead of the specified exit 2|Put invalid JSON in .crew/config.json and invoke the script; resolve_config returns defaults, producing not-routed rather than a usage error.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:195|A failed initial tree fingerprint returns exit 3, inviting Claude fallback when tree state cannot be established|Make git status fail before the probe; the script prints KIMI UNAVAILABLE instead of KIMI TREE UNKNOWN with exit 8.",
+        "FIX|plugin/crew/agents/explorer.md:52|The dispatcher falls back on exit 2 although the ticket requires it to stop; researcher and security repeat this instruction|Remove the role marker or make the config unreadable, then follow the agent instructions.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:105|Unescaped newlines in failure details or changed path names can forge extra protocol lines|Have a failing Kimi process emit stderr containing a newline and KIMI OK; exit 3 stdout contains that forged line.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:213|Scratch creation or prompt and agent-file write failures escape as a traceback with no contract line|Make the temporary directory unwritable after a successful probe; the script exits 1 instead of reporting an unavailable or unknown state.",
+        "FIX|plugin/crew/agents/security.md:72|Security is permitted further Bash calls although the ticket limits each dispatcher to its first and only Bash call|On a Claude fallback, follow the instruction to run git diff in a second Bash call."
+      ],
+      "head": "1a7983766a04e50cc476733eeb9a9b79a0fb9267",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1623137,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T11:05:01+00:00",
+      "round": 1,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "8e0bf475c5f224282ad40c1d8be178aea5be073b612d60140d150a8f9cfb9657",
+      "completed_at": "2026-10-11T12:09:09+00:00",
+      "counts": {
+        "BLOCK": 4,
+        "FIX": 4,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/agents/security.md:60|The literal `<base>...HEAD` is shell redirection, so the advertised read-only dispatch can write `...HEAD` and send no diff to Kimi|Use the shown command with a readable file named `base`; the shell creates `...HEAD` before the script fingerprints the tree.",
+        "BLOCK|plugin/crew/agents/security.md:60|The supplied diff omits uncommitted changes, so Kimi can report a clean security review without seeing the changed code|Modify a tracked file without committing, then dispatch a task that does not already contain the diff; Kimi gets `git status --short` but no patch for that edit.",
+        "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:146|Author names are neither validated nor normalized, allowing the family guard to miss a Kimi author|Pin security to Kimi and invoke it with `--authors Kimi` while the recorded/configured author is Claude; `resolve_role` compares `Kimi` with `kimi` and launches Kimi.",
+        "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:268|A detached descendant can write after a `KIMI OK` result because `stop_survivors` sees only the original process group|Have fake Kimi start a `setsid` child with stdout and stderr redirected, schedule a tracked-file write, then exit successfully; the fingerprint stays clean until after the script returns.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:172|An unpinned reviewing role reports `author-unknown` instead of the specified `not-routed` state|Use default config with no author record and call `--role security`; the author check returns before routing checks the missing pin.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:169|A valid JSON config with invalid nested pin types is treated as a default route rather than a config error|Set `dev.roles.explorer.provider` to `[]`; `_unreadable_config` accepts the object and the script returns `not-routed` instead of exit 2.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:169|Config is read once to check it and again to route, so a change between those reads can bypass the unreadable-config refusal|Replace `.crew/config.json` with malformed JSON after `_config_problem` returns; `resolve_config` reads it as defaults and the script reports `not-routed`.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:303|The 64,000-character cap does not bound stdin reading, allowing an oversized or never-closed pipe to consume unbounded memory or hang before `too-large`|Stream a large task, or keep the writing end open after 64,001 characters; the script waits for EOF instead of returning exit 3."
+      ],
+      "head": "0878999db483fd99b355978cd2d8e05027798f19",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1257435,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T12:06:57+00:00",
+      "round": 2,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "f875b6b4d688a6e17794566ff0538a500883054b4728076a171ff158da6fcd73",
+      "completed_at": "2026-10-11T12:48:09+00:00",
+      "counts": {
+        "BLOCK": 3,
+        "FIX": 4,
+        "NIT": 1
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/agents/security.md:35|A base ref containing an apostrophe can execute a shell command before the script fingerprints the tree|Use a valid Git branch name such as `x'$(touch${IFS}PWNED)'` as `<base>` in the shown command.",
+        "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:279|A failed probe can leave a detached writer that changes the tree after exit 3, while the dispatcher has already fallen back|Have the fake probe start a detached child that writes a tracked file after 0.5 seconds, then answer 401; the immediate fingerprint passes and no settle follows.",
+        "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:160|An unknown alphabetic `--authors` value is accepted as a family, so a misspelled Kimi author can pass the security guard|Pin security to Kimi, set the configured author to Claude, and pass `--authors Kimmi`; the script launches Kimi instead of rejecting the unknown family.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:191|An unreadable config can be treated as absent, yielding `not-routed` instead of the required usage error|Deny access to the parent of `.crew/config.json` as a non-root user; `_unreadable_config` uses `lexists`, which returns false on the failed lookup.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:176|A scratch-directory failure while building `--diff-base` escapes as a traceback instead of exit 2|Make `tempfile.mkdtemp` fail inside `review_patch.compute`; `diff_bundle` catches only `RuntimeError`.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:149|The task is not passed verbatim because `strip()` removes leading indentation|Send a task whose first line begins with four spaces and inspect the prompt received by fake Kimi.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:318|Scratch cleanup failure is ignored, so an exit 0 can leave the prompt and agent file behind|Make `shutil.rmtree` fail after a clean fake Kimi run; the script still prints `KIMI OK`.",
+        "NIT|docs/diagrams/process-crew-kimi-agent.mmd:4|The new diagram cites obsolete code lines, making its route and fingerprint references wrong at this commit|Compare its `route():141` and fingerprint `:193-238` citations with the current script, where `route` starts at 197 and `run` at 246."
+      ],
+      "head": "924483f6454b0945842e03f6d1620fde6843e333",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 3323367,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T12:44:53+00:00",
+      "round": 3,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "941c8b78a4c0d93111a627fe60c858ea7da7f6878c3c4ede6578b15fa5bb84e3",
+      "completed_at": "2026-10-11T13:06:36+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 4,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:218|An unresolved linked-worktree config source is treated as an absent pin, so a Kimi-pinned role reports `not-routed`|Use a linked worktree with no local config and a Kimi pin in the main checkout, then make the main-checkout lookup fail; `repo_config_dir` returns `unknown`, but `route` continues with defaults.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:310|A wrong-typed Kimi model can raise `TypeError` without the required exit-2 contract line|Set `dev.roles.explorer` to `{\"provider\":\"kimi\",\"model\":[\"k3\"]}`; provider validation accepts it, then the probe uses the list as a dictionary key.",
+        "FIX|plugin/crew/agents/security.md:63|When the caller supplies neither a base nor a full diff, the dispatcher cannot determine the instructed merge-base while keeping its first and only Bash call as the dispatch|Ask security to review a change without naming a base; it must run Git first, guess a base, or dispatch without the required change bundle.",
+        "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:140|Reading an agent path that is a FIFO can hang indefinitely instead of returning a usage error|Pass an `--agents-dir` whose `explorer.md` is a FIFO with no writer; the script blocks in `open()` before printing a contract line."
+      ],
+      "head": "ee19528bf52b78ad589db6773396a6345a59c85d",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 16580,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T13:03:43+00:00",
+      "round": 4,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    }
+  ],
+  "state": "ACCEPTED",
+  "successors": [
+    {
+      "after_round": 2,
+      "approved_at": "2026-10-11T12:12:31+00:00",
+      "approved_by": "Matthew Badali",
+      "at": "2026-10-11T12:12:31+00:00",
+      "plan_sha256": "c2d91800c9dbc542cbe2b1ef978eea40505d2a91b3df4fc2690248a434f38463"
+    },
+    {
+      "after_round": 3,
+      "approved_at": "2026-10-11T12:57:34+00:00",
+      "approved_by": "Matthew Badali",
+      "at": "2026-10-11T12:57:34+00:00",
+      "plan_sha256": "712f6a2c0b4bdf67bc3c2b2f8b3173bc46bf3eb3c13fd19a0576e80241da14bc"
+    }
+  ],
+  "ticket": "L-0777"
+}

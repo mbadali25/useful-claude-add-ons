@@ -1,0 +1,176 @@
+<title>Crew Fix Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,600;7..72,700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one working column. Phase strip, then Phase 1 item by item, then the other phases, then work found while fixing, then decisions. */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --ink:#1b2321; --muted:#5d6a66; --rule:#dbe0dd;
+  --accent:#1f6f6b; --accent-soft:#e1efed;
+  --ready:#1d7348; --ready-soft:#e0f2e7; --work:#8a5a00; --work-soft:#f8ecd3;
+  --wait:#4a5662; --wait-soft:#e9ecef; --hot:#b0302f; --hot-soft:#f9e1df;
+  --display:"Literata", Georgia, "Times New Roman", serif;
+  --body:"Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121715; --surface:#19201e; --ink:#e5ebe8; --muted:#9aa8a3; --rule:#2b3431;
+  --accent:#6cc3bc; --accent-soft:#18302e;
+  --ready:#6fd39c; --ready-soft:#16301f; --work:#f0b85a; --work-soft:#33270f;
+  --wait:#aab5bf; --wait-soft:#232a30; --hot:#ff8a85; --hot-soft:#3a1b1b;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121715; --surface:#19201e; --ink:#e5ebe8; --muted:#9aa8a3; --rule:#2b3431;
+  --accent:#6cc3bc; --accent-soft:#18302e;
+  --ready:#6fd39c; --ready-soft:#16301f; --work:#f0b85a; --work-soft:#33270f;
+  --wait:#aab5bf; --wait-soft:#232a30; --hot:#ff8a85; --hot-soft:#3a1b1b;
+  color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--body);padding-inline:16px;padding-block:28px 64px}
+.wrap{max-width:68rem;margin:0 auto;display:grid;gap:40px}
+h1,h2,h3{margin:0;text-wrap:balance}
+h1{font:700 clamp(1.9rem,4.5vw,2.7rem)/1.1 var(--display);letter-spacing:-.01em}
+h2{font:600 1.45rem/1.2 var(--display)}
+h3{font:700 1.02rem/1.3 var(--body)}
+p{margin:0}
+code{font-family:var(--mono);font-size:.85em;background:var(--wait-soft);padding:1px 5px;border-radius:4px}
+.eyebrow{font:600 .7rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{max-width:46rem;color:var(--muted)}
+section{display:grid;gap:16px;min-width:0}
+.sub{color:var(--muted);max-width:48rem}
+.phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:10px}
+.ph{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:grid;gap:6px;align-content:start}
+.ph.now{border:2px solid var(--accent)}
+.ph .n{font:600 .72rem var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.ph .s{font-size:.9rem;color:var(--muted)}
+.bar{height:6px;border-radius:3px;background:var(--wait-soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.chip{display:inline-block;font:600 .68rem/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:5px;white-space:nowrap}
+.chip.ready{background:var(--ready-soft);color:var(--ready)}
+.chip.work{background:var(--work-soft);color:var(--work)}
+.chip.wait{background:var(--wait-soft);color:var(--wait)}
+.chip.hot{background:var(--hot-soft);color:var(--hot)}
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:9px 11px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+thead th{font:600 .7rem/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--bg)}
+tbody tr:last-child td{border-bottom:0}
+td.id{white-space:nowrap;font-family:var(--mono);font-size:.82rem;color:var(--muted)}
+.you{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:16px;display:grid;gap:8px}
+.you ul{margin:0;padding-left:1.15rem;display:grid;gap:6px}
+.foot{color:var(--muted);font-size:.84rem;border-top:1px solid var(--rule);padding-top:14px}
+.trk{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;width:7.5rem;margin-top:6px}
+.trk i{height:5px;border-radius:2px;background:var(--wait-soft)}
+.trk i.d{background:var(--accent)}
+.trk i.c{background:var(--work)}
+.phn{font:600 .78rem/1.2 var(--mono);white-space:nowrap}
+.key{display:flex;flex-wrap:wrap;gap:6px 14px;font:500 .74rem/1.3 var(--mono);color:var(--muted)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:16px}
+.box{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:8px;align-content:start;min-width:0}
+.box ul,.box ol{margin:0;padding-left:1.15rem;display:grid;gap:6px}
+</style>
+
+<div class="wrap">
+
+<header style="display:grid;gap:12px">
+  <span class="eyebrow">Follow-up to the Crew 1.2.0 Review · as of 2026-10-11 14:10 CDT</span>
+  <h1>Crew Fix Board</h1>
+  <p class="lede">Nothing has merged today since #582 at 08:49 CDT. Main is at <code>987ea4fb</code>, crew 1.2.30. Every full gate on this host ends on the same two test failures, which also fail on main, so no gate can record a pass yet. #584 fixes those two tests but cannot merge until #605 lands. Question 1 under "Waiting on you" breaks that loop.</p>
+  <p class="lede">Planned order if question 1 is yes: #605, then #584, then #604 and #603 behind a gate that can pass, then #600 and #597 as their conditions clear.</p>
+  <p class="lede">Source: state as the coordinator reported it to the lead, the newest blocks of <code>.work/HANDOFF.md</code>, <code>.work/INDEX.md</code>, and GitHub PR state read at 14:08 CDT. Gate figures are shown as reported, not re-measured here.</p>
+</header>
+
+<section>
+  <h2>Review plan phases</h2>
+  <div class="phases">
+    <div class="ph now"><span class="n">Phase 1 · now</span><h3>Stop the leaks</h3><div class="bar"><i style="width:90%"></i></div><p class="s">One PR still open: #584 (L-0709), in Gate. It has no pytest failure and waits on #605. L-0711 and L-0712 are done. L-0710 and L-0713 are merged and stay in review in the index: L-0710 waits for a recorded round after #598, L-0713 waits on your walkthrough.</p></div>
+    <div class="ph"><span class="n">Phase 2</span><h3>Make review cheaper</h3><div class="bar"><i style="width:0%"></i></div><p class="s">Not started, held by the freeze. L-0781 is folded into L-0717.</p></div>
+    <div class="ph"><span class="n">Phase 3</span><h3>State and safety in code</h3><div class="bar"><i style="width:0%"></i></div><p class="s">Not started, held by the freeze.</p></div>
+    <div class="ph"><span class="n">Phase 4</span><h3>Shrink it and prove it</h3><div class="bar"><i style="width:0%"></i></div><p class="s">Planned and pulled forward past the freeze. Implementation waits for Phase 1.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Every crew fix, and its phase right now</h2>
+  <p class="sub">Phase order: Brainstorm, Spec, Review (spec), Implement, Review, Fix, Gate, Land. Nothing below is marked passed, clean or done unless the coordinator's report, the handoff or GitHub says so. Phase 1 items are L-0709, L-0710 and L-0713; the rest are fixes found along the way.</p>
+  <div class="key"><span>1 Brainstorm</span><span>2 Spec</span><span>3 Review (spec)</span><span>4 Implement</span><span>5 Review</span><span>6 Fix</span><span>7 Gate</span><span>8 Land</span></div>
+  <div class="tbl"><table>
+    <thead><tr><th>Ticket / PR</th><th>What it is</th><th>Phase now</th><th>Blocked on</th><th>Next step</th></tr></thead>
+    <tbody>
+      <tr><td class="id">L-0790<br>#605 open</td><td>Makes the ai-connect firewall test hermetic, so it stops running the real <code>sudo ufw</code> as root (ai-connect 0.1.5). <b>Critical path.</b></td><td><span class="phn">5/8 Review</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Round 1 fixed and pushed. Evidence complete. Round 2 not started</div></td><td><b>Your answer to question 1.</b> True full gate: the only failures are the two tests that also fail on main. ai-connect rule as an unprivileged user 284 passed; 79 passed, 10 skipped. mcp-servers 69 of 69. Wallclock half 74 passed, 6 skipped. ruff 0 new. CI: 19 passed, 4 skipped.</td><td>Codex round 2, security pass 2 on the final head, <code>/crew:done</code>, report before any merge. First in the planned order.</td></tr>
+      <tr><td class="id">L-0709<br>#584 open</td><td>Every crew test runs under a home of its own. The last open Phase 1 PR (crew 1.2.32 held).</td><td><span class="phn">7/8 Gate</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">No pytest failure; fixes the two failing tests</div></td><td><b>#605 landing.</b> Sabotage: 11 still green (covered by L-0766's list) and 5 red but unproven (not covered; question 2). CI: 30 passed on <code>bdc7bc55</code>, mergeable.</td><td>After #605 lands: merge main, a true full gate run, the ai-connect rule. Second in the planned order.</td></tr>
+      <tr><td class="id">L-0777<br>#600 open</td><td>Crew's explorer, researcher and security agents dispatch to Kimi K3, with a read-only thin dispatcher.</td><td><span class="phn">7/8 Gate</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">New head <code>46d015a35</code>, crew 1.2.33; final-head gate running at 14:05</div></td><td>The final-head gate, then a true full gate run. Question 2 (the same 5 unproven entries; the 12 still green are on L-0766's list). GitHub: no conflict, but <b>one failed check</b> on this head, Pytest / test (3.12). mcp-servers 69 of 69. #605 landing.</td><td>Read the gate, look at the failed check, run the true full gate. Lands as its conditions clear.</td></tr>
+      <tr><td class="id">L-0772 fix<br>#603 open</td><td>Fix-forward for the env guard that merged in #599 with BLOCKs open. The guard is off by default.</td><td><span class="phn">6/8 Fix</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Pushed today, head <code>6767f6365</code>. Round 3 not yet run</div></td><td>Round 3, the security pass and the merge are <b>held</b> (questions 1 and 4). True full gate: only the two on-main failures and the ai-connect skip. The 8 Windows parity cases also fail on main's tip; [redacted: b] is running them on the new head. CI: 16 passed, 12 running, Marketplace / check failed.</td><td>Round 3 behind a gate that can pass, then the security pass. The full sabotage step is still owed on this head.</td></tr>
+      <tr><td class="id">L-0789<br>#604 open</td><td>Re-anchors two config diagrams after L-0710. Not a pure re-anchor: one box label and one count are corrected.</td><td><span class="phn">5/8 Review</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">No review round spent</div></td><td>Waits for a gate that can pass. True full gate on <code>b129d3030</code>: only the two on-main failures; mcp-servers passes; ai-connect rule not run. CI: 30 passed, mergeable.</td><td>The one Codex round, <code>/crew:done</code>, crew version re-check, merge.</td></tr>
+      <tr><td class="id">L-0768<br>#597 open</td><td>The promote gate reads deploy policy from the SHA being deployed, not the session's checkout (crew 1.2.31 held).</td><td><span class="phn">7/8 Gate</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Run 2: only the two on-main failures. Hold on [redacted: b] lifted</div></td><td>#605 landing; the ai-connect rule is not verified. Windows results in: serial repeat 79 passed, 6 skipped, no failures; the one odd failure did not reproduce on head or main. CI: 30 passed on <code>3a11fb98d</code>, mergeable.</td><td>After #605 lands: merge main, re-take a crew version, the ai-connect rule, <code>/crew:done</code>, report before merging.</td></tr>
+      <tr><td class="id">L-0770<br>#598 open</td><td>Harness half of L-0765: rebuild a reviewed bundle with a pinned merged-main commit (crew 1.2.23).</td><td><span class="phn">5/8 Review</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Index: round 2 auto-accepted, 0 BLOCK, 3 FIX; full gate queued, not merged</div></td><td>No agent is working it; queued after the PRs above. GitHub reports it <b>conflicts with main</b>. Gate result: unknown. CI: 30 passed on <code>e14c8263d</code>.</td><td>Picked up after the current PRs. L-0710's recorded round and L-0747 wait on it.</td></tr>
+      <tr><td class="id">L-0710<br>#582 merged</td><td>Phase 1 item 1.2: make the Stop gate fit its budget. Merged at <code>987ea4fb</code>, crew 1.2.30.</td><td><span class="phn">8/8 Land</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Merged; index status stays review</div></td><td>Its recorded review round on the post-accept gate code waits for L-0770 (#598), by your decision today.</td><td>The recorded round after #598 lands, then close.</td></tr>
+      <tr><td class="id">L-0713<br>#580, #590 merged</td><td>Phase 1 item 1.5: one true quickstart. Both PRs merged.</td><td><span class="phn">8/8 Land</span><div class="trk"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Merged; index status stays review</div></td><td><code>/crew:done</code> refused on main. Waits on your interactive <code>/crew:init</code> walkthrough (carried, not re-confirmed). No lane.</td><td>Your walkthrough, then the close.</td></tr>
+      <tr><td class="id">L-0778<br>no PR</td><td>Harness half of L-0777: the reviewer agent as a Kimi dispatcher.</td><td><span class="phn">2/8 Spec</span><div class="trk"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Spec and plan drafted, not approved</div></td><td>Not approved and not started. Follows #600.</td><td>Approval of the spec, after #600 lands.</td></tr>
+      <tr><td class="id">L-0791<br>no PR</td><td>Redraw the config and brief diagrams whose drawn labels are wrong on main. Names today's check 4 waiver.</td><td><span class="phn">1/8 Brainstorm</span><div class="trk"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Filed, status direction, not started</div></td><td>The lead's go. The handoff records an open question on it: the redraw alone does not end the diagram waiver.</td><td>Do not start its lane without the lead's go.</td></tr>
+      <tr><td class="id">L-0792<br>no PR</td><td>Follow-ups from L-0790's sweep: three more ai-connect test leaks (tailscaled PATH, DNS lookup, record_seen home).</td><td><span class="phn">1/8 Brainstorm</span><div class="trk"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Filed, status direction, not started</div></td><td>Nothing scheduled.</td><td>Not started.</td></tr>
+      <tr><td class="id">L-0787<br>no PR</td><td>The 4 FIX items left by #600's round 4.</td><td><span class="phn">1/8 Brainstorm</span><div class="trk"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Filed, status direction, not started</div></td><td>Nothing scheduled.</td><td>Not started.</td></tr>
+      <tr><td class="id">L-0788<br>no PR</td><td>Env guard coverage items that #603 defers. Now also holds the 5 untested fixes removed from #603.</td><td><span class="phn">1/8 Brainstorm</span><div class="trk"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div style="font-size:.8rem;color:var(--muted);margin-top:4px">Filed, status direction, not started</div></td><td>Nothing scheduled.</td><td>Not started.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub"><b>Other work, on hold, not waiting on you:</b> the ai-connect Tailscale deploy on this laptop. The lead's review of the deploy branch found it would turn on hooks and a user-scope MCP server for every session on this machine. The Windows session agreed, is fixing it, and will send a new commit for re-review. Nothing has been installed.</p>
+</section>
+
+<section>
+  <h2>The gate results</h2>
+  <p class="sub">As the coordinator reported them. A full gate cannot record a pass on this host while the two tests fail on main.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>PR</th><th>Head</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="id">#605 (L-0790)</td><td><code>ee9b9c2c1</code></td><td>True full gate: the only failures are the two tests that also fail on main. ai-connect rule as an unprivileged user: 284 passed; 79 passed, 10 skipped. mcp-servers 69 of 69. Wallclock half 74 passed, 6 skipped. ruff 0 new. Evidence complete.</td></tr>
+      <tr><td class="id">#584 (L-0709)</td><td><code>bdc7bc55</code></td><td>No pytest failure; the two failing tests are both named PASSED on this head. Sabotage: 11 still green (on L-0766's list) and 5 red but unproven. A true full gate run and the ai-connect rule are still owed, after #605 lands.</td></tr>
+      <tr><td class="id">#600 (L-0777)</td><td><code>46d015a35</code></td><td>Final-head gate still running at 14:05 CDT; a true full gate run follows. mcp-servers 69 of 69. Sabotage on the previous head: 12 still green (L-0766's list) and the same 5 unproven.</td></tr>
+      <tr><td class="id">#603 (L-0772 fix)</td><td><code>6767f6365</code></td><td>True full gate: only the two on-main failures and the ai-connect skip. Wallclock half passed. Not run on this head: the full sabotage step, anything on Windows.</td></tr>
+      <tr><td class="id">#604 (L-0789)</td><td><code>b129d3030</code></td><td>True full gate: only the two on-main failures. mcp-servers passes. ai-connect rule not run.</td></tr>
+      <tr><td class="id">#597 (L-0768)</td><td><code>3a11fb98d</code></td><td>Run 2: only the two on-main failures. ai-connect rule not verified.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="two">
+    <div class="you">
+      <h3>Waiting on you</h3>
+      <ul>
+        <li><b>1. May #605's Codex round 2 start with the gate override flag, this once?</b> <b>Recommended: yes.</b> The gate's only failures are two tests that also fail on main, and every other rule has a real result. #584 fixes those two tests but cannot merge until #605 lands.</li>
+        <li><b>2. The five "red but unproven" sabotage entries on #600 and #584.</b> Two never test their mutation (one points at a test id that no longer exists, one mutation is a syntax error); three are proven on Linux only. <b>Recommended: accept as pre-existing on main and ticket the repair</b>, which is harness work that lands alone.</li>
+        <li><b>3. After #605 lands, may the gate run the ai-connect rule as root, with its dependency in a venv,</b> so <code>/crew:done</code> check 2 can pass by tool? <b>Recommended: yes.</b> The alternative is a recorded check 2 exception on every PR.</li>
+        <li><b>4. May #603 merge, once all else is clean, with the 8 Windows parity failures that also fail on main?</b> <b>Recommended: yes</b>, recorded as pre-existing, with W-0131 as the follow-up.</li>
+        <li><b>5. Feature-freeze triage of W-0130 to W-0135.</b> <b>Recommended: let W-0132 through as a bug fix (W-0132: cloud guard has a must-block miss and over-blocks some prose; detail in the ticket).</b></li>
+        <li><b>6. Whether to update this laptop's installed crew plugin from 1.2.5.</b> It is 25 versions behind main.</li>
+        <li><b>7. Carried, not re-confirmed:</b> L-0713's interactive <code>/crew:init</code> walkthrough; triage of L-0779 and L-0782; the runner start token's permission on <code>github-runner-infra</code>.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>[redacted: b]</h3>
+      <ul>
+        <li>In: #597's serial repeat, 79 passed, 6 skipped, no failures. The one odd failure did not reproduce on head or main. #597's hold is lifted.</li>
+        <li>In: the 8 parity cases also fail on main's tip <code>987ea4fb</code>.</li>
+        <li>Running: the same 8 on #603's new head <code>6767f6365</code>.</li>
+        <li>Filed on its own box, status direction, nothing implemented: W-0130 platform-sync hook rewrites config; W-0131: the hook's python resolver can exhaust its time budget on Windows, so an armed guard refuses; detail in the ticket; W-0132: cloud guard has a must-block miss and over-blocks some prose; detail in the ticket; W-0133 Bash-only agents do not work on Windows; W-0134 verify-gate picks Git Bash over WSL; W-0135 nested subagents not seeing a project agent type (not reproduced).</li>
+      </ul>
+      <p class="sub">Replies arrive in the lead's conversation.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Your decisions today</h2>
+  <div class="box"><ol>
+    <li><b>L-0790 is fixed on main first.</b> Until #605 merges, the ai-connect rule is "not run, blocked on L-0790" on every PR: never as root, no waiver. After it lands, each open PR merges main and runs the rule as nobody.</li>
+    <li><b>Check 4 diagram waiver, narrow.</b> Waived only for a diagram already stale on main that the PR did not create, follow-up L-0791. Covers #600, #584, #597 and #603. Not covered: a diagram the PR wrote or redrew, code maps and the graph (L-0764), a line that says "unknown", or any other check.</li>
+    <li><b>#603: fix all 4 security BLOCKs.</b> Round 3 runs next. One more round only if round 3 leaves something that needs it. Check 4 is measured by hand for this fix-forward.</li>
+    <li>An owner decision on this morning's incident is recorded locally [redacted: a].</li>
+    <li><b>[redacted: b]'s trace of #603's 8 Windows parity failures: approved and reported.</b> It reads as a likely hook defect (W-0131: the hook's python resolver can exhaust its time budget on Windows, so an armed guard refuses; detail in the ticket), so the test skip is held.</li>
+    <li><b>Still in force from earlier today:</b> #584's and #600's check 2 may be recorded as environment-blocked only with on-main reproduction evidence. SKIPs are not waived.</li>
+  </ol>
+  <p class="sub"><b>Lead's rulings since the resume:</b> the still-green sabotage entries (12 on #600, 11 on #584) are accepted because L-0766's list covers them. The 5 "red but unproven" entries are not covered, so they come to you as question 2. #603's push was released at 14:05; its round 3, security pass and merge stay held.</p>
+  <p class="sub">Noted to ticket later, not filed: the ticket mint producing a T- number; the gate summary printing a stale "over budget" line; the promote gate in installed crew 1.2.5 blocking read-only commands as "workflow dispatch" (reported by the TSS session; unknown on main).</p></div>
+</section>
+
+<footer class="foot">Built from the coordinator's report to the lead, the newest blocks of <code>.work/HANDOFF.md</code>, <code>.work/INDEX.md</code> and GitHub PR state at 14:08 CDT on 2026-10-11. GitHub is newer than the report in two places: #600's new head has one failed check (Pytest / test (3.12)) and its merge shows as blocked; #603's new head has Marketplace / check failed with 12 checks still running. W-0130 to W-0135 are not in this host's index or on the Kanban board. #588 (L-0743) is open with a failing check while the index lists that ticket as direction. Not verified here: any gate log or sabotage output, drift-detection.sh, and the review's measurable targets.</footer>
+</div>

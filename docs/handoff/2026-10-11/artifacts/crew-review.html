@@ -1,0 +1,359 @@
+<title>Crew 1.2.0 Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: single reading column (~72ch) with full-bleed tables; summary first, evidence after, plan last. */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --ink:#18202b; --muted:#5b6676; --rule:#dde2ea;
+  --accent:#2453c7; --accent-soft:#e6edfb;
+  --good:#1f7a4d; --good-soft:#e2f3ea; --warn:#9a5b00; --warn-soft:#fbefd9; --bad:#b4282f; --bad-soft:#fbe4e5;
+  --h0:#eef1f5; --h1:#f6dede; --h2:#f7e8d2; --h3:#eef0db; --h4:#d9eedf; --h5:#bfe3cb;
+  --display:"Fraunces", Georgia, "Times New Roman", serif;
+  --body:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151b; --surface:#181e26; --ink:#e7ebf1; --muted:#9aa6b6; --rule:#2a323d;
+  --accent:#7ea2ff; --accent-soft:#1d2a47;
+  --good:#5cc78f; --good-soft:#15301f; --warn:#f0b35a; --warn-soft:#33270f; --bad:#ff7d84; --bad-soft:#3a1a1d;
+  --h0:#1c222b; --h1:#3e1f22; --h2:#3b2c14; --h3:#2f331a; --h4:#183323; --h5:#1d4a2f;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151b; --surface:#181e26; --ink:#e7ebf1; --muted:#9aa6b6; --rule:#2a323d;
+  --accent:#7ea2ff; --accent-soft:#1d2a47;
+  --good:#5cc78f; --good-soft:#15301f; --warn:#f0b35a; --warn-soft:#33270f; --bad:#ff7d84; --bad-soft:#3a1a1d;
+  --h0:#1c222b; --h1:#3e1f22; --h2:#3b2c14; --h3:#2f331a; --h4:#183323; --h5:#1d4a2f;
+  color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--body);padding-inline:16px;padding-block:32px 64px}
+.wrap{max-width:72rem;margin:0 auto;display:grid;gap:56px}
+.col{max-width:46rem}
+h1,h2,h3{font-family:var(--display);font-weight:650;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(2.1rem,5vw,3.2rem);letter-spacing:-.01em}
+h2{font-size:1.75rem;margin-bottom:6px}
+h3{font-size:1.15rem;font-family:var(--body);font-weight:700}
+p{margin:0}
+.eyebrow{font:600 .72rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:1.15rem;color:var(--ink);max-width:46rem}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--muted);font-size:.9rem}
+.meta b{color:var(--ink);font-weight:600}
+section{display:grid;gap:18px}
+.sub{color:var(--muted);max-width:46rem}
+code,.mono{font-family:var(--mono);font-size:.86em}
+code{background:var(--h0);padding:1px 5px;border-radius:4px}
+a{color:var(--accent)}
+
+/* verdict */
+.verdict{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:24px;display:grid;gap:14px}
+.verdict ul{margin:0;padding-left:1.2rem;display:grid;gap:8px}
+.stamp{display:inline-flex;align-items:center;gap:8px;font:600 .8rem/1 var(--mono);letter-spacing:.06em;padding:6px 10px;border-radius:6px;background:var(--warn-soft);color:var(--warn);width:max-content}
+
+/* numbers */
+.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(11.5rem,1fr));gap:12px}
+.num{border-top:3px solid var(--rule);padding-top:10px;display:grid;gap:4px;min-width:0}
+.num .v{font:600 1.6rem/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.num .l{font-size:.86rem;color:var(--muted)}
+.num.bad{border-color:var(--bad)} .num.good{border-color:var(--good)} .num.warn{border-color:var(--warn)}
+
+/* scorecard */
+.score{display:grid;gap:10px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:20px}
+.srow{display:grid;grid-template-columns:minmax(7.5rem,11rem) 1fr 4.5rem;align-items:center;gap:12px}
+.srow .d{font-size:.92rem;font-weight:600}
+.track{position:relative;height:22px;border-radius:4px;background:linear-gradient(90deg,var(--h1) 0 20%,var(--h2) 20% 40%,var(--h3) 40% 60%,var(--h4) 60% 80%,var(--h5) 80% 100%)}
+.tick{position:absolute;top:0;bottom:0;width:1px;background:var(--rule)}
+.dot{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;transform:translate(-50%,-50%);border:2px solid var(--surface)}
+.dot.o{background:var(--accent)} .dot.c{background:var(--ink);width:10px;height:10px;border-radius:2px}
+.dot.f{background:transparent;border:2px dashed var(--muted);width:16px;height:16px}
+.srow .n{font:600 .82rem/1 var(--mono);text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:.84rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.lg{display:inline-block;width:12px;height:12px;border-radius:50%}
+.axis{display:grid;grid-template-columns:minmax(7.5rem,11rem) 1fr 4.5rem;gap:12px;font:.72rem var(--mono);color:var(--muted)}
+.axis .ax{display:flex;justify-content:space-between}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:8px 10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+thead th{font:600 .72rem/1.2 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg);position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+.heat td.s{text-align:center;font:600 .85rem/1 var(--mono);font-variant-numeric:tabular-nums;min-width:2.4rem}
+.heat tr.me td{font-weight:700}
+.heat tr.me td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.s1{background:var(--h1)} .s2{background:var(--h2)} .s3{background:var(--h3)} .s4{background:var(--h4)} .s5{background:var(--h5)}
+.toggle{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--surface)}
+.toggle button{font:600 .85rem var(--body);padding:8px 14px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+.toggle button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* lists of findings */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(20rem,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;display:grid;gap:8px;align-content:start;min-width:0}
+.card p{color:var(--muted);font-size:.93rem}
+.card .ev{font:.78rem/1.45 var(--mono);color:var(--muted);border-top:1px dashed var(--rule);padding-top:8px;overflow-wrap:anywhere}
+.chip{display:inline-block;font:600 .7rem/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:5px;width:max-content}
+.chip.crit{background:var(--bad-soft);color:var(--bad)} .chip.high{background:var(--warn-soft);color:var(--warn)} .chip.med{background:var(--h0);color:var(--muted)}
+.chip.agree{background:var(--good-soft);color:var(--good)}
+.chip.s{background:var(--good-soft);color:var(--good)} .chip.m{background:var(--warn-soft);color:var(--warn)} .chip.l{background:var(--bad-soft);color:var(--bad)}
+.hdr{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+
+/* plan */
+.phase{display:grid;gap:14px;background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:20px}
+.phase-h{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;justify-content:space-between}
+.phase-h .when{font:600 .8rem var(--mono);color:var(--accent)}
+.phase-goal{color:var(--muted);max-width:52rem}
+.items{display:grid;gap:12px}
+.item{display:grid;grid-template-columns:2.2rem 1fr;gap:12px;border-top:1px solid var(--rule);padding-top:12px}
+.item .k{font:600 .9rem var(--mono);color:var(--muted);padding-top:2px}
+.item .t{display:grid;gap:6px;min-width:0}
+.item .row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.item .how{font-size:.93rem}
+.item .files{font:.76rem/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.item .done-when{font-size:.88rem;color:var(--good)}
+.item .done-when::before{content:"Done when: ";font-weight:700}
+
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:14px}
+.box{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start}
+.box ul{margin:0;padding-left:1.1rem;display:grid;gap:6px;font-size:.93rem}
+.box.keep{border-color:var(--good)}
+.decide{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:18px;display:grid;gap:10px}
+.decide ol{margin:0;padding-left:1.2rem;display:grid;gap:8px}
+.foot{color:var(--muted);font-size:.85rem;display:grid;gap:6px;border-top:1px solid var(--rule);padding-top:18px}
+@media (max-width:560px){.srow,.axis{grid-template-columns:6.5rem 1fr 3.4rem}.item{grid-template-columns:1.6rem 1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header style="display:grid;gap:16px">
+  <span class="eyebrow">Plugin evaluation · useful-claude-add-ons · 2026-10-08</span>
+  <p class="sub"><b>Snapshot as of 2026-10-08; republished 2026-10-11, content not re-verified.</b> For current progress on the plan, see the Crew Fix Board.</p>
+  <h1>Crew 1.2.0 Review</h1>
+  <p class="lede">Two independent evaluators, Claude Opus 5.5 and Codex <code>gpt-6-luna</code>, both at high effort, read the plugin, its tests and ten weeks of real use. A third agent mapped the field as it stands in October 2026. This page brings the three together and ends with a phased plan for fixing what they found.</p>
+  <div class="meta">
+    <span><b>Subject</b> crew 1.2.0 at <span class="mono">origin/main c25ef990</span></span>
+    <span><b>Evidence</b> ~400 tickets, 572 PRs, 220 review rounds</span>
+    <span><b>Field</b> 27 tools, primary sources</span>
+  </div>
+</header>
+
+<section>
+  <div class="verdict">
+    <span class="stamp">VERDICT · STRONG CORE, OVERGROWN, LEAKING AT THE EDGES</span>
+    <ul>
+      <li><b>Best governance core in the field.</b> No other tool combines all four: write permission tied to a hash of the approved spec, a scope guard on writes, environment-aware cloud and Terraform guards, and review by a different model family with a ledger of every round. About 2,650 sabotage mutations prove the guards fail when they should. Both evaluators agree on this.</li>
+      <li><b>Also the heaviest, by an order of magnitude.</b> Production Python grew 3.3x in the 12 days after the 1.0 "make it smaller" redesign. The plugin has 38 commands, 33 skills and 234 config keys. Its complexity budget is spent, and the cost now shows up as defects every week.</li>
+      <li><b>The gates leak where it matters.</b> On a clean main, the Stop gate takes about 55 s and still blocks. Shell-route scope checks read a ticket layout from before 1.0. Review quietly falls back to Claude reviewing Claude, which was the case for 32% of rounds. The tracker drifted by about 100 tickets.</li>
+      <li><b>The field moved.</b> Claude Code now ships an auto-mode guard classifier, Workflows and ultrareview, and OpenAI ships an official Codex review plugin with its own Stop gate. Cross-model review is no longer unique to crew. What still sets crew apart is that its guards are deterministic and tested, and that it binds approval to a specific spec.</li>
+      <li><b>The fix:</b> keep the gates and the evidence discipline. Stop the five leaks, make review cheaper, put state under code, and cut the surface by about half. Hold back new features until main is green.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Measured</span>
+  <div class="nums">
+    <div class="num bad"><span class="v">88.6k</span><span class="l">lines of production Python (3.3x since 1.0, 12 days earlier)</span></div>
+    <div class="num warn"><span class="v">38 / 33</span><span class="l">commands / skills, whose descriptions sit in context on every turn</span></div>
+    <div class="num warn"><span class="v">234</span><span class="l">config keys (149 repo + 85 machine)</span></div>
+    <div class="num bad"><span class="v">~55 s</span><span class="l">Stop gate on a clean main, which still exits 2 with 7 rules deferred</span></div>
+    <div class="num bad"><span class="v">32%</span><span class="l">of 220 review rounds were Claude reviewing Claude</span></div>
+    <div class="num warn"><span class="v">3.1</span><span class="l">mean review rounds per ticket; 12 tickets ran 6 or more</span></div>
+    <div class="num good"><span class="v">2,651</span><span class="l">sabotage mutations proving the guards fail when they should</span></div>
+    <div class="num good"><span class="v">~100 ms</span><span class="l">typical hook latency (Python start-up dominates)</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Where crew stands</h2>
+  <p class="sub">Each dimension is scored 1 to 5 by both evaluators, where 5 is best in the field. For cost, 5 means lightest. The dashed ring marks the best score any other tool earned on that dimension in the Opus table.</p>
+  <div class="score" id="scorecard" role="img" aria-label="Crew scores by dimension from both evaluators"></div>
+  <div class="legend">
+    <span><i class="lg" style="background:var(--accent)"></i>Opus 5.5</span>
+    <span><i class="lg" style="background:var(--ink);border-radius:2px"></i>Codex gpt-6-luna</span>
+    <span><i class="lg" style="border:2px dashed var(--muted)"></i>Best other tool (Opus)</span>
+  </div>
+  <p class="sub"><b>Where they disagree.</b> On verification, Codex gave 5 because it judged the design, while Opus gave 3 because it measured the gate blocking a clean tree. Codex ran no tests, so the measured score is the one to trust. On portability, Codex gave 1 (Claude Code only) and Opus gave 3 (bash plus PowerShell parity). Both readings hold, because they measure different kinds of portability.</p>
+</section>
+
+<section>
+  <div class="hdr">
+    <h2>Against the field</h2>
+    <div class="toggle" role="group" aria-label="Choose evaluator">
+      <button type="button" id="t-o" aria-pressed="true">Opus scores</button>
+      <button type="button" id="t-c" aria-pressed="false">Codex scores</button>
+    </div>
+  </div>
+  <div class="tbl"><table class="heat" id="field"></table></div>
+  <p class="sub">Crew wins the columns that need code: spec discipline, safety and review. It loses the ones that need restraint: UX, cost and maturity. The platforms (Cursor, Codex, Devin, Factory) win on runtime isolation. A guard that inspects command text is a seatbelt, while an operating-system sandbox is a wall. Crew needs both and should say so.</p>
+</section>
+
+<section>
+  <h2>What changed in the field since September</h2>
+  <div class="cards">
+    <div class="card"><h3>Cross-model review went mainstream</h3><p>OpenAI's official <code>codex-plugin-cc</code> (33.9k stars) adds <code>/codex:review</code>, an adversarial review and a Stop-hook review gate inside Claude Code. The September comparison missed it.</p></div>
+    <div class="card"><h3>The platform now blocks infra actions</h3><p>Claude Code's auto mode, the default since v2.1.283, blocks prod deploys, IaC destroy, force push, IAM grants and unapproved merges by default. That overlaps crew's cloud-guard and promote-gate, but the platform uses a model to decide, while crew uses tested rules.</p></div>
+    <div class="card"><h3>Review got deeper and cheaper to buy</h3><p><code>/code-review ultra</code> reproduces every finding before it reports it. Managed review reads a <code>REVIEW.md</code> that caps nitpicks and stops re-review loops.</p></div>
+    <div class="card"><h3>Parallelism is native now</h3><p>Claude Code Workflows run 16 agents at a time. Agent teams, Cursor Projects and Kiro background workflows also exist. Crew's own wave/lane runtime duplicates this.</p></div>
+    <div class="card"><h3>Heavy frameworks are thinning out</h3><p>Roo Code is archived, ccpm and SuperClaude have been idle since March, and <code>wshobson/commands</code> is archived. The leaders, superpowers (296k stars), Spec Kit (141k) and OpenSpec (71k), are light and portable.</p></div>
+    <div class="card"><h3>Users' recurring complaints</h3><p>Ceremony on small tasks, tiring markdown review, startup token overhead, overlap with native features, and review loops that drain usage. Crew shows all five.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Strengths</h2>
+  <p class="sub">These are the parts to protect while everything else changes. Both evaluators named each one independently.</p>
+  <div class="cards">
+    <div class="card"><span class="chip agree">Both agree</span><h3>Approval bound to the exact spec</h3><p>The approval receipt carries the spec's hash, so editing the spec cancels the approval. No other tool turns an approved spec into a write boundary.</p><div class="ev">scope_guard.py:31-32 · approval-hook · /crew:approve</div></div>
+    <div class="card"><span class="chip agree">Both agree</span><h3>Real write-scope enforcement</h3><p>Write and Edit calls outside the ticket's <code>## Touch</code> list are refused, and so are attempts to self-approve through the shell.</p><div class="ev">scope_guard.py:62-71, :237</div></div>
+    <div class="card"><span class="chip agree">Both agree</span><h3>Environment-aware infra guard</h3><p>A probe confirmed it blocks terraform apply, recursive s3 rm, force pushes, <code>--admin</code> merges and DROP TABLE, including through <code>env</code>, <code>bash -c</code> and variable indirection. An unknown environment is treated as prod.</p><div class="ev">cloud_guard.py:1-60 · sandbox probe of 1.2.0</div></div>
+    <div class="card"><span class="chip agree">Both agree</span><h3>Review as a protocol</h3><p>Review follows a fixed procedure. It works from a bundle that includes the working tree, splits large diffs without truncating them, and gives a script-derived CLEAN / FINDINGS / INCOMPLETE verdict. It refuses the author's model family, and rounds are reserved before launch.</p><div class="ev">review.md:330-507 · crew_state.py:1606-1614 · review_ledger.py:14-16</div></div>
+    <div class="card"><span class="chip agree">Both agree</span><h3>Unknowns never pass as safe</h3><p>Gates treat an unknown state as unknown, never as a pass. A failed probe, a missing receipt or a check that ran nothing is reported as NOT VERIFIED.</p><div class="ev">verify-gate.sh:62-75 · verify_record.py:787</div></div>
+    <div class="card"><span class="chip agree">Both agree</span><h3>Mutation-tested guards</h3><p>About 2,651 sabotage entries put bugs back into the guards and require the test suite to fail. No other tool in the survey publishes anything like it.</p><div class="ev">plugin/crew/tests/sabotage*.py (33 files)</div></div>
+    <div class="card"><span class="chip agree">Opus</span><h3>Commit-anchored code map</h3><p>Every claim in the code map is marked DERIVED or JUDGEMENT and anchored to a commit, and a self-claims checker tests the repo's statements about itself.</p><div class="ev">.crew/codemap · crew_freshness.py · check_self_claims</div></div>
+    <div class="card"><span class="chip agree">Codex</span><h3>Grounded handoff</h3><p>The handoff records branch, HEAD and a concrete next action. Auto-clear refuses to run when its reading of context usage is uncertain.</p><div class="ev">skills/crew-context/SKILL.md:35-68</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Weaknesses</h2>
+  <p class="sub">Ordered by how much each one hurts day to day. I checked three of these by hand against <code>origin/main</code>: the scope reader, the hard-coded Claude fallback and the quickstart contradiction.</p>
+  <div class="cards">
+    <div class="card"><span class="chip crit">Critical · verified</span><h3>Stop gate can't pass on its own main</h3><p>On a clean main it takes about 55 s, defers 7 rules as "permanently over budget" and exits 2. The priced rules total 1,810 s against a 60 s budget. A gate that blocks because checks didn't run, rather than because they failed, trains you to ignore it. You see it on every turn here.</p><div class="ev">verify-gate.sh · .crew/verify.json (72 priced rules) · test_crew_autopilot_status.py:225</div></div>
+    <div class="card"><span class="chip crit">Critical · verified</span><h3>Shell-route scope is effectively unchecked</h3><p><code>scope_report.py</code> still parses the pre-1.0 <code>- touch:</code> lines in <code>.work/tickets/&lt;id&gt;.md</code>. Crew 1.0 writes <code>&lt;id&gt;/spec.md ## Touch</code> instead. The check is also report-only (<code>|| true</code>). Writes made with <code>sed -i</code>, <code>cat &gt;</code> or <code>python -c</code> escape Touch.</p><div class="ev">scope_report.py:33-69 · verify-gate.sh:848-868</div></div>
+    <div class="card"><span class="chip crit">High · verified</span><h3>Review falls back to the author's family without telling you</h3><p>When a pinned model is unavailable, the fallback is hard-coded to <code>provider="claude"</code>. That made 32% of rounds Claude reviewing Claude, and today it also broke the gpt-6.1-sol fallback swap.</p><div class="ev">crew_state.py:1619-1626</div></div>
+    <div class="card"><span class="chip high">High · verified</span><h3>The docs contradict each other</h3><p>The quickstart says it is current for 1.0, yet also says <code>/crew:init</code> "still writes the 0.20 config". The README and CONFIG.md disagree about which config file is active. The plugin's evals still test roles that were deleted in 1.0.</p><div class="ev">quickstart.md:22, :88 · README.md:3912 · CONFIG.md:35 · README.md:4100-4143</div></div>
+    <div class="card"><span class="chip high">High</span><h3>The round cap doesn't cap anything</h3><p>The cap is advertised as "two rounds, no flag changes it", but re-planning resets the budget. The mean is 3.1 rounds and the maximum 10, and a round costs 1.5 to 6 hours. 55-60% of findings belong to classes the standards already describe.</p><div class="ev">commands/review.md · docs/review/08-qa-rounds-analysis.md</div></div>
+    <div class="card"><span class="chip high">High</span><h3>State is kept by prose, not code</h3><p>INDEX statuses, Kanban cards, ticket ids and plugin versions are moved by hand-written session notes. About 100 tickets had to be reconciled by hand today, and versions are "claimed" and "burned" in HANDOFF.md.</p><div class="ev">.work/INDEX.md.bak-20261008T032821Z · HANDOFF.md:150</div></div>
+    <div class="card"><span class="chip high">High</span><h3>Size and instruction surface</h3><p><code>review.md</code> is 44 KB, about 11k tokens, with bash the model has to transcribe, and its wording is frozen by nine tests. <code>verify.json</code> is 182 KB, 77% of it rationale. The README is 4,925 lines and the CHANGELOG 17.7k.</p><div class="ev">BUDGETS.md:10-12 (target 6k MD lines, actual 27.6k)</div></div>
+    <div class="card"><span class="chip med">Medium</span><h3>Main CI red half the time</h3><p>Three of the last six <code>pytest-crew</code> runs failed, most recently on a timing flake. There have been 104 reverts in 10 weeks, and 34% of PRs are bookkeeping: refreshes, version bumps and notes.</p><div class="ev">test_review_checks.py:2261 · gh pr list</div></div>
+    <div class="card"><span class="chip med">Medium</span><h3>Text guards aren't a sandbox</h3><p>Wrapping a command in <code>python -c subprocess</code>, base64 or <code>make deploy</code> gets it past the guard. Nothing in crew checks that Claude Code's sandbox or a devcontainer is on before an unattended run.</p><div class="ev">Opus sandbox probe</div></div>
+    <div class="card"><span class="chip med">Medium</span><h3>Windows parity and memory</h3><p>The 17 <code>.ps1</code> twins total 10.1k lines, and each <code>.ps1</code> hook costs about 440 ms just to start pwsh. Lane OOMs are capped by memory notes and a host wrapper, not by crew itself.</p><div class="ev">hooks/hooks.json (34 registrations) · crew_wave.py</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>What's missing</h2>
+  <div class="two">
+    <div class="box"><h3>Proof that it pays off</h3><ul><li>There are no outcome evals comparing escaped defects, rounds, tokens and hours against plain Claude Code with <code>/code-review</code>.</li><li>No per-ticket token or cost telemetry.</li><li>No second user has completed <code>/crew:init</code>.</li></ul></div>
+    <div class="box"><h3>Gates in the right place</h3><ul><li>The full verify map should be a required CI check, with Stop running only a fast check on what changed.</li><li>Tests should be picked by the import graph, which graphify already has.</li><li>Reviewer findings should be checked before they cost a round.</li></ul></div>
+    <div class="box"><h3>State owned by code</h3><ul><li>Merges should move tickets and cards automatically.</li><li>Ids and versions should be allocated by code, not prose.</li><li>A GitHub Issues adapter, then Linear.</li></ul></div>
+    <div class="box"><h3>Use the platform</h3><ul><li>Lanes should run on Claude Code Workflows instead of a custom wave runtime.</li><li>Crew should layer on the auto-mode classifier rather than duplicate it.</li><li>Standards should be exported to <code>REVIEW.md</code>, the AGENTS.md review rules and <code>BUGBOT.md</code>.</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">The plan</span>
+  <h2>How we fix it</h2>
+  <p class="sub">The plan has four phases, in order. Each item says what to change, roughly how, which files it touches, and how we'll know it's done. Effort is per lane: S is under a day, M is 2 to 5 days, L is 1 to 3 weeks. Feature work stays frozen until Phase 1 is done and main has been green for a week.</p>
+
+  <div class="phase">
+    <div class="phase-h"><h3 style="font-family:var(--display);font-size:1.35rem">Phase 1 · Stop the leaks</h3><span class="when">this week · 5 items · all S or M</span></div>
+    <p class="phase-goal">Make the gates you already have tell the truth, so a red result means something is broken.</p>
+    <div class="items">
+      <div class="item"><span class="k">1.1</span><div class="t"><div class="row"><b>Hermetic tests, then a green main</b><span class="chip s">S</span></div><p class="how">Merge PR #545 (L-0704). Then add an autouse fixture to <code>conftest.py</code> that points <code>HOME</code>, <code>XDG_*</code>, <code>CLAUDE_CONFIG_DIR</code> and <code>CLAUDE_PROJECT_DIR</code> at <code>tmp_path</code>, and a meta-test that fails any test opening the real home directory. Quarantine timing flakes, each with a named owner.</p><p class="files">plugin/crew/tests/conftest.py · test_crew_autopilot_status.py · test_review_checks.py:2261</p><p class="done-when">The Stop hook stops failing on this machine's config, and main's pytest-crew is green for 7 days.</p></div></div>
+      <div class="item"><span class="k">1.2</span><div class="t"><div class="row"><b>Make the Stop gate fit its budget</b><span class="chip m">M</span></div><p class="how">At Stop, run only rules mapped to files changed since the marker that fit in <code>stopBudgetSeconds</code>. Never exit 2 just because rules were deferred. Rules that never fit become a required CI check and a precondition for <code>/crew:done</code>, which reads the CI receipt. When zero rules ran, say so, and don't write the verified marker.</p><p class="files">verify-gate.sh · verify_record.py · verify_fingerprint.py · commands/done.md · .github/workflows/verify-gate.yml · .crew/verify.json</p><p class="done-when">Stop on a clean main takes under 15 s and exits 0, and <code>/crew:done</code> refuses until CI is green.</p></div></div>
+      <div class="item"><span class="k">1.3</span><div class="t"><div class="row"><b>Fix the shell-route scope reader</b><span class="chip s">S</span></div><p class="how">Make <code>scope_report.py</code> read <code>.work/tickets/&lt;id&gt;/spec.md ## Touch</code> with the same parser <code>scope_guard.py</code> uses. Remove the <code>|| true</code> so <code>/crew:done</code> refuses out-of-Touch changes. Add sabotage entries that put the old layout back.</p><p class="files">scope_report.py:33-69 · scope_base.py · verify-gate.sh:848-868 · commands/done.md · tests + sabotage</p><p class="done-when">A <code>sed -i</code> write outside Touch blocks <code>/crew:done</code> on a 1.0 ticket.</p></div></div>
+      <div class="item"><span class="k">1.4</span><div class="t"><div class="row"><b>No silent same-family review</b><span class="chip s">S</span></div><p class="how">Replace the hard-coded <code>"claude"</code> fallback with the next cross-family provider in <code>qa.order</code>, which also makes the fallback take its own provider. If none answers, record the round as INCOMPLETE and refund it. Show the share of same-family rounds in <code>/crew:status</code>.</p><p class="files">crew_state.py:1606-1630 · review_run.py · review_ledger.py · crew_status.py · commands/review.md</p><p class="done-when">The share of same-family rounds drops from 32% to under 5%, and a gpt fallback dispatches to Codex.</p></div></div>
+      <div class="item"><span class="k">1.5</span><div class="t"><div class="row"><b>One true quickstart</b><span class="chip s">S</span></div><p class="how">Make the quickstart, README, CONFIG.md, init.md and migrate.md agree on the config filename and migration status. Delete the evals for deleted roles. Add a release-time consistency check covering version, config filenames, command inventory and eval roster.</p><p class="files">docs/guides/crew/src/quickstart.md · README.md · CONFIG.md · commands/init.md · commands/migrate.md · plugin/crew/evals/ · scripts/check-marketplace.py</p><p class="done-when">A fresh <code>/crew:init</code> following only the quickstart ends with <code>/crew:status</code> clean.</p></div></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-h"><h3 style="font-family:var(--display);font-size:1.35rem">Phase 2 · Make review cheaper</h3><span class="when">weeks 2–3 · target mean rounds 3.1 → under 2</span></div>
+    <p class="phase-goal">Most findings belong to classes we already know about, and the biggest predictor of rounds is diff size. Catch the known classes with tools and keep diffs small.</p>
+    <div class="items">
+      <div class="item"><span class="k">2.1</span><div class="t"><div class="row"><b>Split by size at approval</b><span class="chip s">S</span></div><p class="how">Refuse <code>/crew:approve</code> when a plan projects more than about 300 production lines, or when it mixes a parser, guard or state machine with other work. Route those to <code>/crew:split</code>. Tickets under 150 lines averaged 2.19 rounds; tickets of 600 to 1,500 lines averaged 4.85.</p><p class="files">commands/approve.md · crew_ticket.py · crew_autopilot_split.py · skills/crew-plan/SKILL.md</p><p class="done-when">No approved plan is over the threshold unless it carries an owner waiver.</p></div></div>
+      <div class="item"><span class="k">2.2</span><div class="t"><div class="row"><b>Turn known finding classes into lint</b><span class="chip m">M</span></div><p class="how">Ship ruff and semgrep rules for the recurring classes: U+2028 in line protocols, unquoted <code>CLAUDE_PLUGIN_ROOT</code>, symlink or FIFO opens, duplicate-key JSON, bare executables, and tests with no failing control. A round can't be reserved until they pass.</p><p class="files">review_checks.py · .crew/standards.md · new plugin/crew/lint/ · review_ledger.py</p><p class="done-when">First-round findings in known classes fall by half.</p></div></div>
+      <div class="item"><span class="k">2.3</span><div class="t"><div class="row"><b>Verify findings, carry dispositions</b><span class="chip m">M</span></div><p class="how">Borrow two ideas from ultrareview and REVIEW.md. First, reproduce or refute each finding before it costs a round. Second, feed the previous round's accepted and rejected findings into the next prompt, with a convergence rule ("after round 1, no new nitpicks").</p><p class="files">review_run.py · review_prompt.py · recurring_findings.py · commands/review.md</p><p class="done-when">Round 2 and later contain only regressions or unresolved findings.</p></div></div>
+      <div class="item"><span class="k">2.4</span><div class="t"><div class="row"><b>One review budget per ticket</b><span class="chip s">S</span></div><p class="how">Count rounds across successor plans. Resetting the count takes a named owner decision, recorded in the ledger.</p><p class="files">review_ledger.py · commands/review.md · commands/status.md</p><p class="done-when">The advertised cap matches the ledger.</p></div></div>
+      <div class="item"><span class="k">2.5</span><div class="t"><div class="row"><b>Export standards to PR-side reviewers</b><span class="chip s">S</span></div><p class="how">Generate <code>REVIEW.md</code>, an AGENTS.md "Code Review Rules" block and <code>.cursor/BUGBOT.md</code> from <code>.crew/standards.md</code>, with a freshness check like the code map's.</p><p class="files">crew_docs_check.py · skills/crew-standards/ · commands/init.md · crew_freshness.py</p><p class="done-when">Every reviewer, crew's or not, checks the same list.</p></div></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-h"><h3 style="font-family:var(--display);font-size:1.35rem">Phase 3 · Put state and safety in code</h3><span class="when">weeks 3–5</span></div>
+    <p class="phase-goal">Stop relying on session prose for anything another session or a merge can make wrong.</p>
+    <div class="items">
+      <div class="item"><span class="k">3.1</span><div class="t"><div class="row"><b>Tracker reconcile from merges</b><span class="chip m">M</span></div><p class="how">Add <code>crew_tracker.py reconcile</code>. It reads merged PRs and moves INDEX rows and cards, applying the rules used in today's manual pass: the merge must reach main and the PR must complete the ticket. Run it from <code>/crew:done</code>, SessionStart (rate-limited) and a CI job on main. Add a GitHub Issues adapter.</p><p class="files">crew_tracker.py · handoff-read.sh/.ps1 · commands/done.md · commands/status.md · new workflow</p><p class="done-when">A merged PR moves its ticket to Done without a human.</p></div></div>
+      <div class="item"><span class="k">3.2</span><div class="t"><div class="row"><b>Release-time version bumps</b><span class="chip m">M</span></div><p class="how">Bump the version once per release, computed from changed plugin paths, instead of claiming and "burning" numbers per PR. Keep the drift check. Move code map, graph and diagram refreshes into the release job.</p><p class="files">scripts/check-marketplace.py · CLAUDE.md "Stop and ask" · .github/workflows/release.yml · plugin.json</p><p class="done-when">Bookkeeping PRs drop from 34% to under 10%.</p></div></div>
+      <div class="item"><span class="k">3.3</span><div class="t"><div class="row"><b>Require a sandbox for unattended runs</b><span class="chip s">S</span></div><p class="how"><code>autopilot run</code> and <code>wave</code> refuse to start unless Claude Code's sandbox or a devcontainer is detected, or both config layers opt out. The docs say plainly that crew's guard is a seatbelt and the sandbox is the wall.</p><p class="files">crew_autopilot.py · crew_platform.py · commands/autopilot.md · README.md</p><p class="done-when">An unattended run without isolation is refused with a clear message.</p></div></div>
+      <div class="item"><span class="k">3.4</span><div class="t"><div class="row"><b>Memory-aware lane governor</b><span class="chip m">M</span></div><p class="how">Cap the number of lanes based on cgroup or <code>/proc/meminfo</code>. Run heavy suites under <code>systemd-run --scope -p MemoryMax=</code> on Linux and a job object on Windows. This replaces the memory notes and the host wrapper.</p><p class="files">crew_wave.py · crew_autopilot.py · crew_shell.py · commands/autopilot.md</p><p class="done-when">No more OOMs from lanes, and no hand-set concurrency limit.</p></div></div>
+      <div class="item"><span class="k">3.5</span><div class="t"><div class="row"><b>State hygiene</b><span class="chip s">S</span></div><p class="how">Clean up stale <code>.autoclear-sent-*</code>, <code>.handoff-requested-*</code> and retired <code>.pm-pulse*</code> files at SessionStart. Replace ADR 0003, which still defends 54 agents, with a new ADR. Re-anchor the crew code map, which is about 200 versions behind.</p><p class="files">handoff-read.sh/.ps1 · crew_migrate.py · docs/adr/0006-*.md · .crew/codemap/crew.md</p><p class="done-when"><code>.crew/</code> holds only live state.</p></div></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-h"><h3 style="font-family:var(--display);font-size:1.35rem">Phase 4 · Shrink it and prove it</h3><span class="when">weeks 5–9 · the large one</span></div>
+    <p class="phase-goal">Cut the surface by about half, lean on what the platform now does natively, and publish evidence that crew is worth its overhead.</p>
+    <div class="items">
+      <div class="item"><span class="k">4.1</span><div class="t"><div class="row"><b>Core plus opt-in plugins</b><span class="chip l">L</span></div><p class="how">The core <code>crew</code> plugin keeps the lifecycle, guards, review and verify. Opt-in plugins hold the rest: <code>crew-trackers</code> (sdp/jira/obsidian/change), <code>crew-autopilot</code>, <code>crew-promote</code> (promote/emergency/gate), <code>crew-cloud</code> and <code>crew-docs</code> (diagram/runbook/reference/survey/graph). That takes commands from 38 to about 20 and deletes the removal stubs.</p><p class="files">plugin/crew/commands/ · skills/ · .claude-plugin/marketplace.json · plugin/PLUGINS.md · both install scripts</p><p class="done-when">The core installs with about 12 commands, and its description cost per turn is measured before and after.</p></div></div>
+      <div class="item"><span class="k">4.2</span><div class="t"><div class="row"><b>Config from 234 keys to about 40</b><span class="chip m">M</span></div><p class="how">Collapse the ten <code>guards.*</code> keys into one <code>guards.profile: off | standard | strict</code> with per-guard overrides. Drop keys nobody has set in any layer, and generate CONFIG.md from code. This is the T-0048 ticket that has sat in spec since 2026-09-26.</p><p class="files">crew_config.py (4,869 lines) · CONFIG.md · config_reference.py</p><p class="done-when">CONFIG.md is generated and under 600 lines.</p></div></div>
+      <div class="item"><span class="k">4.3</span><div class="t"><div class="row"><b>Cut the instruction surface</b><span class="chip m">M</span></div><p class="how">Shrink <code>review.md</code> from 44 KB to under 120 lines, with <code>review_run.py</code> doing the steps. Repoint the nine tests that assert prose so they test script behaviour instead. Move the rationale in <code>verify.json</code> to a separate doc. Cut the README to under 800 lines and move its history into the CHANGELOG and ADRs.</p><p class="files">commands/review.md · promote.md · autopilot.md · prose tests · .crew/verify.json · README.md · BUDGETS.md</p><p class="done-when">Plugin markdown meets the 6,000-line budget.</p></div></div>
+      <div class="item"><span class="k">4.4</span><div class="t"><div class="row"><b>Use the platform</b><span class="chip l">L</span></div><p class="how">Move lane fan-out onto Claude Code Workflows, shipped in the plugin's <code>workflows/</code> folder, and freeze the 17 <code>crew_autopilot_*</code> modules. Reduce the 34 hook registrations to one launcher per event per shell that calls a single <code>crew_hook.py</code>. Evaluate reusing <code>codex-plugin-cc</code> rather than maintaining crew's own Codex invocation. Drop the session-typing resume once native resume covers it.</p><p class="files">hooks/hooks.json · hooks/scripts/*.ps1 · crew_wave.py · crew_autocycle.py · new workflows/</p><p class="done-when">The <code>.ps1</code> side is about one file, and lanes run as a Workflow.</p></div></div>
+      <div class="item"><span class="k">4.5</span><div class="t"><div class="row"><b>Outcome evals and cost telemetry</b><span class="chip m">M</span></div><p class="how">Replace the PM-era evals with real tasks run two ways, with crew and with plain Claude Code plus <code>/code-review</code>. Measure escaped defects, rounds, tokens and wall time. Record tokens per ticket in <code>.crew/metrics.md</code>, and publish the numbers.</p><p class="files">plugin/crew/evals/ · .github/workflows/plugin-evals.yml · crew_metrics.py</p><p class="done-when">There is a published number saying whether crew pays for itself, and for which ticket sizes.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="two">
+    <div class="box keep"><h3>Do not cut</h3><ul><li>Spec-hash approval and the Touch write guard</li><li>Review receipts and the CLEAN / FINDINGS / INCOMPLETE protocol</li><li>The fail-closed rule that an unknown is never a pass</li><li>Sabotage mutation tests. Reorganise them, but keep them</li><li>The cloud guard's environment model</li><li>The commit-anchored code map</li></ul></div>
+    <div class="box"><h3>Cut or fold</h3><ul><li>Delete the removal stubs <code>ticket</code>, <code>upgrade</code> and <code>work</code></li><li>Fold <code>config-setup</code> into <code>config</code>, <code>help</code> into <code>status</code> and <code>split</code> into <code>plan</code></li><li>Drop the PostToolUse context hook on every Read/Edit unless measurement shows it helps</li><li>Drop the Notification hook and the typed auto-clear resume, which overlap native features</li><li>Archive the CHANGELOG at each minor version, and drop the 30-line provenance headers</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <div class="decide">
+    <h3>Decisions only you can make</h3>
+    <ol>
+      <li><b>Feature freeze.</b> Hold all new crew features until Phase 1 lands and main stays green for a week. Recommended: yes.</li>
+      <li><b>Who crew is for.</b> Is crew for you alone, or for a second user? The answer decides whether Phase 4.1 (the split) and the onboarding work come first or last.</li>
+      <li><b>Windows parity scope.</b> Keep full PowerShell twins, or move to the single-dispatch launcher (4.4) so Windows support costs about one file.</li>
+      <li><b>Ticket filing.</b> I can file these 20 items as tickets (next free C-0070 / L-0709) with Kanban cards, grouped by phase. Phase 1 can then run as parallel lanes.</li>
+    </ol>
+  </div>
+</section>
+
+<footer class="foot">
+  <p><b>Method.</b> The Opus 5.5 evaluator read the code at <span class="mono">origin/main c25ef990</span>, measured a scratch clone, timed the installed 1.2.0 hooks and probed the guards in a sandbox. Codex <span class="mono">gpt-6-luna</span> (high, read-only) did a static review of a throwaway worktree plus the ticket and PR evidence. It ran no tests, and its field scores likely come from model knowledge. The research agent gathered star counts and dates from the GitHub API on 2026-10-08 and vendor docs, and marked secondary sources. Full reports are in the session scratchpad at <span class="mono">eval/opus-eval.md</span>, <span class="mono">codex-eval.md</span> and <span class="mono">research.md</span>.</p>
+  <p><b>Not verified.</b> Codex's field scores. Factory governance details and Amp adoption figures, which come from secondary sources. The token cost of crew compared with a baseline, which nobody has measured.</p>
+</footer>
+</div>
+
+<script>
+const DIMS=["Spec discipline","Review independence","Verification","Safety guards","Autonomy / parallel","Tracker integration","Context mgmt","Onboarding / UX","Cost (5 = light)","Portability","Maturity"];
+const SHORT=["Spec","Review","Verify","Safety","Auto","Tracker","Context","UX","Cost","Port","Maturity"];
+const OPUS={"crew 1.2.0":[5,4,3,5,3,3,4,1,1,3,2],"Claude Code built-ins":[3,3,2,4,4,1,4,5,5,3,5],"superpowers":[4,2,2,1,3,1,3,5,4,5,5],"Ruflo (claude-flow)":[1,1,2,3,5,3,3,2,1,4,2],"BMAD-METHOD":[4,2,1,1,2,2,3,3,2,4,4],"ccpm":[3,1,1,1,4,4,3,3,3,3,2],"GitHub Spec Kit":[4,1,2,1,2,2,3,4,4,5,5],"Kiro":[4,2,3,3,3,2,3,5,3,3,4],"OpenSpec":[3,1,1,1,1,1,3,5,5,5,4],"Cursor":[2,4,3,4,4,3,3,5,3,3,5],"OpenAI Codex":[2,4,2,5,4,2,3,4,4,4,5],"Devin":[2,3,3,3,5,4,3,4,2,4,4],"Factory":[2,3,3,4,4,3,3,4,3,4,4]};
+const CODEX={"crew 1.2.0":[5,5,5,4,4,3,4,2,1,1,3],"Claude Code built-ins":[3,4,3,4,4,2,5,5,3,2,5],"superpowers":[5,3,5,2,4,1,4,4,3,4,5],"Ruflo (claude-flow)":[3,2,3,2,5,3,5,2,1,3,3],"BMAD-METHOD":[5,3,4,2,4,2,4,3,2,4,4],"ccpm":[4,2,3,2,5,5,4,3,2,5,3],"GitHub Spec Kit":[5,2,4,2,3,1,3,4,4,5,5],"Kiro":[5,3,4,5,5,3,5,5,2,2,4],"OpenSpec":[4,2,3,1,3,1,4,5,4,5,4],"Cursor":[3,4,4,5,5,4,5,5,2,2,5],"OpenAI Codex":[3,4,5,5,5,4,5,3,2,2,4],"Devin":[3,4,4,5,5,5,5,3,1,1,4],"Factory":[4,4,5,5,5,5,5,3,1,1,4]};
+const pos=v=>((v-1)/4*92+4)+"%";
+function scorecard(){
+  const el=document.getElementById("scorecard");
+  const o=OPUS["crew 1.2.0"],c=CODEX["crew 1.2.0"];
+  let h='<div class="axis"><span></span><span class="ax"><span>1 weak</span><span>3</span><span>5 best</span></span><span style="text-align:right">O / C</span></div>';
+  DIMS.forEach((d,i)=>{
+    let best=0;for(const k in OPUS){if(k!=="crew 1.2.0")best=Math.max(best,OPUS[k][i]);}
+    let ticks="";for(let t=1;t<=5;t++)ticks+=`<span class="tick" style="left:${pos(t)}"></span>`;
+    h+=`<div class="srow"><span class="d">${d}</span><span class="track">${ticks}<span class="dot f" style="left:${pos(best)}" title="Best other tool: ${best}"></span><span class="dot o" style="left:${pos(o[i])}" title="Opus: ${o[i]}"></span><span class="dot c" style="left:${pos(c[i])}" title="Codex: ${c[i]}"></span></span><span class="n">${o[i]} / ${c[i]}</span></div>`;
+  });
+  el.innerHTML=h;
+}
+function field(src){
+  const t=document.getElementById("field");
+  let h="<thead><tr><th>Tool</th>"+SHORT.map(s=>`<th>${s}</th>`).join("")+"<th>Total</th></tr></thead><tbody>";
+  for(const k in src){const v=src[k];const tot=v.reduce((a,b)=>a+b,0);
+    h+=`<tr class="${k==='crew 1.2.0'?'me':''}"><td>${k}</td>`+v.map(x=>`<td class="s s${x}">${x}</td>`).join("")+`<td class="s">${tot}</td></tr>`;}
+  t.innerHTML=h+"</tbody>";
+}
+function setEval(which){
+  const o=document.getElementById("t-o"),c=document.getElementById("t-c");
+  o.setAttribute("aria-pressed",which==="o");c.setAttribute("aria-pressed",which==="c");
+  field(which==="o"?OPUS:CODEX);
+  try{localStorage.setItem("crewReviewEval",which)}catch(e){}
+}
+document.getElementById("t-o").addEventListener("click",()=>setEval("o"));
+document.getElementById("t-c").addEventListener("click",()=>setEval("c"));
+scorecard();
+let saved="o";try{saved=localStorage.getItem("crewReviewEval")||"o"}catch(e){}
+setEval(saved==="c"?"c":"o");
+</script>

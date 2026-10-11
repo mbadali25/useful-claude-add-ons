@@ -1,0 +1,211 @@
+{
+  "budget": 2,
+  "receipt": {
+    "accepted_at": "2026-10-10T09:14:12+00:00",
+    "accepted_by": "Matthew Badali",
+    "base": "f3ccccc36fffe17a167366b0c1696b37063ee73a",
+    "bundle_sha256": "eef049089f63f0b6b87de4d3b533b188569865f53b479714497b07f1bf180681",
+    "kind": "owner-accepted",
+    "round": 6,
+    "verdict": "FINDINGS"
+  },
+  "refused": [],
+  "rejected": {
+    "at": "2026-10-10T09:11:07+00:00",
+    "by": "Matthew Badali",
+    "round": 5
+  },
+  "rounds": [
+    {
+      "base": "554ed783c5529244ae2afa74e043013f3d8bcf70",
+      "bundle_sha256": "e4c5cf87c7f6c80685c99ad7193dec4aefe24ef62cdaa3e77c29be5457e45106",
+      "completed_at": "2026-10-08T13:36:55+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 0,
+        "NIT": 0
+      },
+      "failure_class": "tool",
+      "findings": [],
+      "head": "80cb04857377e465dec40b1f37754c7d126f8e12",
+      "ignored_lines": 0,
+      "model": "kimi-code/kimi-for-coding-highspeed",
+      "model_family": "kimi",
+      "pid": 2864718,
+      "provider": "kimi",
+      "refunded": true,
+      "reserved_at": "2026-10-08T13:36:01+00:00",
+      "round": 1,
+      "status": "completed",
+      "verdict": "INCOMPLETE",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "554ed783c5529244ae2afa74e043013f3d8bcf70",
+      "bundle_sha256": "e4c5cf87c7f6c80685c99ad7193dec4aefe24ef62cdaa3e77c29be5457e45106",
+      "completed_at": "2026-10-08T13:39:40+00:00",
+      "counts": {
+        "BLOCK": 3,
+        "FIX": 4,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1265|Acceptance check 2 fails: CLAUDE_CONFIG_DIR and CLAUDE_PROJECT_DIR are deleted by conftest instead of pointed at the test home; an ambient XDG_RUNTIME_DIR is also left untouched|Inside a test, inspect those environment variables after the autouse fixtures run",
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1218|The real-home audit misses opens through a symlink outside the home because it compares the path spelling rather than its resolved target|Create a symlink in a test temp directory to the real home, then open its .claude/crew/config.json",
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1243|A spawned process can read the real home without failing the meta-test: the audit checks only its HOME and USERPROFILE, while CREW_TEST_REAL_HOME gives it the real path|Spawn Python with the inherited environment and open a path built from CREW_TEST_REAL_HOME",
+        "FIX|plugin/crew/tests/conftest.py:148|The audit is active only during the function-scoped fixture, so opens in session or module fixture setup escape the promised check|Add an autouse module fixture that opens the recorded real-home config before a test runs",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1198|Putting the real home on PYTHONPATH allows every open beneath it because all sys.path entries become allowed prefixes|Run pytest with PYTHONPATH set to the real home and open its .claude/crew/config.json in a test",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1229|A child HOME inside the real home is accepted, although that child can read or write operator files beneath it|Spawn with HOME set to a subdirectory of the recorded real home; home_spawn_violation returns no violation",
+        "FIX|plugin/crew/tests/conftest.py:331|A quarantine marker exempts a flaky skip from validation, so explicitly selecting quarantined tests can still silently skip them|Put both quarantine(owner=\"x\", ticket=\"L-0001\") and skip(reason=\"flaky\") on one test, then run with -m quarantine"
+      ],
+      "head": "80cb04857377e465dec40b1f37754c7d126f8e12",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 2888673,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-08T13:37:22+00:00",
+      "round": 2,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "554ed783c5529244ae2afa74e043013f3d8bcf70",
+      "bundle_sha256": "e84becf70f4fb64e950208e57495ab1f623efb8efaff1c42e09ab4b875bb3a09",
+      "completed_at": "2026-10-08T15:51:22+00:00",
+      "counts": {
+        "BLOCK": 4,
+        "FIX": 2,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/tests/conftest.py:253|Module and session fixtures inherit CREW_TEST_REAL_HOME before the function fixture removes it, handing their child processes the operator's real-home path|Add a session-scoped fixture that spawns a child which reads CREW_TEST_REAL_HOME.",
+        "BLOCK|plugin/crew/tests/conftest.py:263|Ambient CLAUDE_CONFIG_DIR and CLAUDE_PROJECT_DIR remain set during module and session fixture setup, so a child can read the real config despite its isolated HOME|Set CLAUDE_CONFIG_DIR to the operator's .claude directory and read it from a subprocess in a session-scoped fixture.",
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1206|Allowing every sys.path prefix lets a test open real-home files without an audit violation|Set PYTHONPATH to the real ~/.claude/crew directory, then open its config.json in a test.",
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1254|The spawn guard handles only subprocess.Popen; os.posix_spawn can receive the real HOME without failing the test|Call os.posix_spawn with an environment whose HOME is the recorded real home.",
+        "FIX|plugin/crew/tests/conftest.py:338|A timing test can skip at runtime without a quarantine marker or collection failure|Add a test that calls pytest.skip(\"flaky under load\"); collection accepts it.",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1227|The symlink target is checked before open, so swapping it between the audit check and the filesystem open can reach the real home|Race a symlink between a safe target and a real-home file while opening through it."
+      ],
+      "head": "0216c3bec2d07f154f303256cf5ce324456d8cee",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1394356,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-08T15:47:49+00:00",
+      "round": 3,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "f3ccccc36fffe17a167366b0c1696b37063ee73a",
+      "bundle_sha256": "87df47e8e047f55aea849267c9dfefc7b383e4ec97f2a3412f8c3b340f47c5a0",
+      "completed_at": "2026-10-10T04:17:38+00:00",
+      "counts": {
+        "BLOCK": 1,
+        "FIX": 5,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1208|An ordinary PYTHONPATH entry under the operator\u2019s home can exempt its config from the required audit|Set PYTHONPATH to ~/.claude, then have a test open ~/.claude/crew/config.json; the open is allowed",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1229|The audit checks a symlink before the filesystem open, so it cannot guarantee the required block for opens through symlinks|Swap a link from a safe target to a real-home file between the audit check and the open",
+        "FIX|plugin/crew/tests/conftest.py:186|A runtime timing xfail bypasses the quarantine rule because reports with wasxfail are excluded|Call pytest.xfail(\"flaky under load\") inside an unmarked test; it is reported as xfailed",
+        "FIX|plugin/crew/tests/test_hermetic_home.py:236|The real-home-record test cannot verify session or module-fixture isolation because the per-test fixture removes the record first|Remove _drop_real_home_record; this test still passes while a module fixture\u2019s child inherits CREW_TEST_REAL_HOME",
+        "FIX|plugin/crew/tests/test_hermetic_home.py:253|The session Claude-directory test runs after the per-test fixture clears both variables, so it misses a session leak|Set both variables to real-home paths and remove the session clearing loop; this test still passes while a module fixture inherits them",
+        "FIX|plugin/crew/tests/test_hermetic_home.py:273|On Windows, real_homes reads the already isolated HOME and USERPROFILE, so the module-fixture test misses the original config path|Remove the session GLOBAL_CONFIG_PATH rebinding on Windows; the module fixture captures the operator path but this test still passes"
+      ],
+      "head": "6245dfce63ac5393ef093956a05164545d5da206",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 3711254,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T04:14:53+00:00",
+      "round": 4,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "f3ccccc36fffe17a167366b0c1696b37063ee73a",
+      "bundle_sha256": "0eb664cc9b856474822f7b49749c8883ab57ac95cfaea46e8e15d301f9b37f3b",
+      "completed_at": "2026-10-10T08:18:31+00:00",
+      "counts": {
+        "BLOCK": 1,
+        "FIX": 2,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/tests/crew_fixtures.py:1346|An os.open call with dir_fd can open the real home without an audit violation|Open the real home's parent directory, then open .claude/crew/config.json relative to that descriptor; the pre-open check resolves against cwd and the post-open check is skipped",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1229|The new .claude filter blocks legitimate interpreter imports|Run pytest from a virtual environment under ~/.claude/venv and import a package during a test; its site-packages path is refused despite the interpreter allowance",
+        "FIX|plugin/crew/tests/crew_fixtures.py:1363|The symlink-swap fix misses open aliases captured before audit installation|Capture builtins.open before pytest_configure, swap a safe symlink to a real-home file after the audit check, then call the captured alias; no post-open check runs"
+      ],
+      "head": "46c86b5a893bc3e720e6a83cfeed80443196c962",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1497877,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T08:15:21+00:00",
+      "round": 5,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "f3ccccc36fffe17a167366b0c1696b37063ee73a",
+      "bundle_sha256": "eef049089f63f0b6b87de4d3b533b188569865f53b479714497b07f1bf180681",
+      "completed_at": "2026-10-10T09:14:02+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 1,
+        "NIT": 1
+      },
+      "failure_class": null,
+      "findings": [
+        "FIX|plugin/crew/tests/crew_fixtures.py:1223|An interpreter prefix at ~/.claude/crew exempts the operator\u2019s crew config from the home audit|Set sys.prefix and sys.exec_prefix to ~/.claude/crew, then call home_allowed_prefixes; home_open_violation allows ~/.claude/crew/config.json",
+        "NIT|plugin/crew/tests/crew_fixtures.py:1298|The docstring incorrectly lists an open alias captured before audit installation as unguarded|Capture alias = open before sys.addaudithook, then call alias afterward; the open audit event still fires"
+      ],
+      "head": "6fca4d1cea912aabbae224ffd34826850b093b60",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1806572,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T09:12:25+00:00",
+      "round": 6,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    }
+  ],
+  "state": "ACCEPTED",
+  "successors": [
+    {
+      "after_round": 3,
+      "approved_at": "2026-10-10T04:11:29+00:00",
+      "approved_by": "Matthew Badali",
+      "at": "2026-10-10T04:11:29+00:00",
+      "plan_sha256": "7f90f4f87e9b36df45dfe71b7a29a012824ba13277e197f03450155b558923dd"
+    },
+    {
+      "after_round": 5,
+      "approved_at": "2026-10-10T09:11:07+00:00",
+      "approved_by": "Matthew Badali",
+      "at": "2026-10-10T09:11:07+00:00",
+      "plan_sha256": "dc329e1188cf3a7bd2556d9d6d0daf4df75b25eb3fe2065cf869d20398a35b56"
+    }
+  ],
+  "ticket": "L-0709"
+}

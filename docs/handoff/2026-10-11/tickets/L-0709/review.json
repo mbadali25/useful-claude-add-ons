@@ -1,0 +1,84 @@
+{
+  "base": "f3ccccc36fffe17a167366b0c1696b37063ee73a",
+  "budget": 2,
+  "bundle_sha256": "eef049089f63f0b6b87de4d3b533b188569865f53b479714497b07f1bf180681",
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 1,
+    "NIT": 1
+  },
+  "elapsed_s": 97,
+  "exit_code": 0,
+  "failure_class": null,
+  "findings": [
+    "FIX|plugin/crew/tests/crew_fixtures.py:1223|An interpreter prefix at ~/.claude/crew exempts the operator\u2019s crew config from the home audit|Set sys.prefix and sys.exec_prefix to ~/.claude/crew, then call home_allowed_prefixes; home_open_violation allows ~/.claude/crew/config.json",
+    "NIT|plugin/crew/tests/crew_fixtures.py:1298|The docstring incorrectly lists an open alias captured before audit installation as unguarded|Capture alias = open before sys.addaudithook, then call alias afterward; the open audit event still fires"
+  ],
+  "gate": {
+    "overridden": true,
+    "reason": "the verify gate has never recorded a clean pass in this checkout (no .crew/.verify-verified-at); CI receipt UNVERIFIED: no verify-gate.yml run for HEAD in mbadali25/useful-claude-add-ons (not pushed, CREW_RUNNER unset, or the run not started)",
+    "state": "UNVERIFIED"
+  },
+  "head": "6fca4d1cea912aabbae224ffd34826850b093b60",
+  "ignored_lines": 0,
+  "ignored_text": [],
+  "model": "gpt-6-sol",
+  "model_family": "gpt",
+  "model_launched": "gpt-6-sol",
+  "parts_expected": [
+    "/repos/personal/uca-L-0709/.work/review/L-0709-hermetic-aCbNTn/diff.txt.parts/part-001-of-001.patch"
+  ],
+  "parts_missing": [],
+  "prereview": {
+    "bundle_sha256": "eef049089f63f0b6b87de4d3b533b188569865f53b479714497b07f1bf180681",
+    "checks": [
+      {
+        "detail": "no new findings in 6 file(s)",
+        "files": 6,
+        "name": "ruff",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "shellcheck",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "psscriptanalyzer",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "actionlint",
+        "new": [],
+        "status": "n/a"
+      }
+    ],
+    "overridden": false,
+    "result": "pass",
+    "round": 6,
+    "stood_down": false,
+    "ticket": "L-0709"
+  },
+  "provider": "codex",
+  "reasons": [],
+  "refund_refused": null,
+  "refunded": false,
+  "round": 6,
+  "same_family": false,
+  "ticket": "L-0709",
+  "timed_out": false,
+  "verdict": "FINDINGS",
+  "webtest_check": null,
+  "webtest_findings": null,
+  "webtest_open": "not-applicable",
+  "webtest_verdict": null,
+  "written_at": "2026-10-10T09:14:02+00:00"
+}

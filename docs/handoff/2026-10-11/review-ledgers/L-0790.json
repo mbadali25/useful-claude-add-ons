@@ -1,0 +1,82 @@
+{
+  "budget": 2,
+  "receipt": {
+    "accepted_at": "2026-10-11T19:50:24+00:00",
+    "accepted_by": "auto: 0 BLOCK, owner policy 2026-09-30",
+    "base": "987ea4fb89087bfe35fcc5f2883ba37fd69d26ba",
+    "bundle_sha256": "4366347ba6664ca712caa9abe8a8fa6c48522805fa68c2bd04a2b7eb347f6dec",
+    "findings": [
+      "FIX|plugin/ai-connect/tests/test_ops_firewall.py:49|A relative `BASH` result can no longer launch after the child PATH is restricted, so the suite fails before testing the firewall|Put a `bash` executable in the working directory, put an empty entry first on the caller's PATH, and run the suite; `shutil.which` returns `bash`, which the child's PATH cannot resolve",
+      "FIX|plugin/ai-connect/tests/test_ops_firewall.py:262|Child output is decoded with the platform default encoding; Git Bash output containing a non-ASCII temp path can be misdecoded and fail the new environment test|On Windows with a non-ASCII temp path and a non-UTF-8 Python locale, run `test_child_sees_the_built_environment_not_the_callers`; its decoded `home` differs from the path passed to the child"
+    ],
+    "follow_up": "L-0792",
+    "ignored_lines": 0,
+    "kind": "auto-accepted",
+    "model_family": "gpt",
+    "provider": "codex",
+    "review_json_sha256": "6b4e651e5244e054f75821cfa64536693b02514b4f47dd6d83de1d683de8827c",
+    "round": 2,
+    "verdict": "FINDINGS"
+  },
+  "refused": [],
+  "rounds": [
+    {
+      "base": "987ea4fb89087bfe35fcc5f2883ba37fd69d26ba",
+      "bundle_sha256": "3b9cea4bc02943c3db30c62957bb249e50a1b59248df93c5c96668641fc4dfb9",
+      "completed_at": "2026-10-11T14:55:21+00:00",
+      "counts": {
+        "BLOCK": 1,
+        "FIX": 3,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/ai-connect/tests/test_ops_firewall.py:233|The preamble treats a symlink to a real tool as a fake because `-ef` follows the link, so it can allow a real sudo or firewall command to run|Symlink `bin/sudo` and `bin/ufw` to canary executables outside `bin`, then call `run_configure_firewall(bin, euid=0)`; the preamble passes and the canaries run",
+        "FIX|plugin/ai-connect/tests/test_ops_firewall.py:208|The grep and cat wrappers do not always exec absolute paths; `shutil.which` can return a relative path, which can resolve to a different command or recurse into the wrapper|Put an executable `grep` in the current directory and start pytest with an empty leading PATH entry; `shutil.which(\"grep\")` returns `grep`, and the generated wrapper execs itself",
+        "FIX|plugin/ai-connect/tests/test_ops_firewall.py:98|No test checks that the module-level root skip is installed, so the required root refusal can disappear while the suite stays green|Remove the `_ROOT_SKIP` marker from `pytestmark` and run the tests as a non-root user; the helper tests still pass although a root invocation would no longer skip",
+        "FIX|plugin/ai-connect/tests/test_ops_firewall.py:468|The PATH test accepts extra directories under `tmp_path`, so it does not enforce the required two-directory PATH|Have `child_env` create and append an empty third directory under `tmp_path`; the directory and environment assertions still pass"
+      ],
+      "head": "7d6ea249202cafd62eab8f69c868c65d3630d786",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1980526,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T14:52:33+00:00",
+      "round": 1,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "987ea4fb89087bfe35fcc5f2883ba37fd69d26ba",
+      "bundle_sha256": "4366347ba6664ca712caa9abe8a8fa6c48522805fa68c2bd04a2b7eb347f6dec",
+      "completed_at": "2026-10-11T19:44:22+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 2,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "FIX|plugin/ai-connect/tests/test_ops_firewall.py:49|A relative `BASH` result can no longer launch after the child PATH is restricted, so the suite fails before testing the firewall|Put a `bash` executable in the working directory, put an empty entry first on the caller's PATH, and run the suite; `shutil.which` returns `bash`, which the child's PATH cannot resolve",
+        "FIX|plugin/ai-connect/tests/test_ops_firewall.py:262|Child output is decoded with the platform default encoding; Git Bash output containing a non-ASCII temp path can be misdecoded and fail the new environment test|On Windows with a non-ASCII temp path and a non-UTF-8 Python locale, run `test_child_sees_the_built_environment_not_the_callers`; its decoded `home` differs from the path passed to the child"
+      ],
+      "head": "ee9b9c2c1b73582ff81b1f7b376a56ca56528b09",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1706283,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-11T19:40:09+00:00",
+      "round": 2,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    }
+  ],
+  "state": "ACCEPTED",
+  "ticket": "L-0790"
+}

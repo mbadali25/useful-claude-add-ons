@@ -1,0 +1,90 @@
+{
+  "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+  "budget": 2,
+  "bundle_sha256": "f875b6b4d688a6e17794566ff0538a500883054b4728076a171ff158da6fcd73",
+  "counts": {
+    "BLOCK": 3,
+    "FIX": 4,
+    "NIT": 1
+  },
+  "elapsed_s": 196,
+  "exit_code": 0,
+  "failure_class": null,
+  "findings": [
+    "BLOCK|plugin/crew/agents/security.md:35|A base ref containing an apostrophe can execute a shell command before the script fingerprints the tree|Use a valid Git branch name such as `x'$(touch${IFS}PWNED)'` as `<base>` in the shown command.",
+    "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:279|A failed probe can leave a detached writer that changes the tree after exit 3, while the dispatcher has already fallen back|Have the fake probe start a detached child that writes a tracked file after 0.5 seconds, then answer 401; the immediate fingerprint passes and no settle follows.",
+    "BLOCK|plugin/crew/hooks/scripts/crew_kimi_agent.py:160|An unknown alphabetic `--authors` value is accepted as a family, so a misspelled Kimi author can pass the security guard|Pin security to Kimi, set the configured author to Claude, and pass `--authors Kimmi`; the script launches Kimi instead of rejecting the unknown family.",
+    "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:191|An unreadable config can be treated as absent, yielding `not-routed` instead of the required usage error|Deny access to the parent of `.crew/config.json` as a non-root user; `_unreadable_config` uses `lexists`, which returns false on the failed lookup.",
+    "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:176|A scratch-directory failure while building `--diff-base` escapes as a traceback instead of exit 2|Make `tempfile.mkdtemp` fail inside `review_patch.compute`; `diff_bundle` catches only `RuntimeError`.",
+    "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:149|The task is not passed verbatim because `strip()` removes leading indentation|Send a task whose first line begins with four spaces and inspect the prompt received by fake Kimi.",
+    "FIX|plugin/crew/hooks/scripts/crew_kimi_agent.py:318|Scratch cleanup failure is ignored, so an exit 0 can leave the prompt and agent file behind|Make `shutil.rmtree` fail after a clean fake Kimi run; the script still prints `KIMI OK`.",
+    "NIT|docs/diagrams/process-crew-kimi-agent.mmd:4|The new diagram cites obsolete code lines, making its route and fingerprint references wrong at this commit|Compare its `route():141` and fingerprint `:193-238` citations with the current script, where `route` starts at 197 and `run` at 246."
+  ],
+  "gate": {
+    "overridden": true,
+    "reason": "the verify gate has never recorded a clean pass in this checkout (no .crew/.verify-verified-at); CI receipt UNVERIFIED: verify-gate.yml run 38140419674 (the newest for HEAD) concluded skipped",
+    "state": "UNVERIFIED"
+  },
+  "head": "924483f6454b0945842e03f6d1620fde6843e333",
+  "ignored_lines": 0,
+  "ignored_text": [],
+  "model": "gpt-6-sol",
+  "model_family": "gpt",
+  "model_launched": "gpt-6-sol",
+  "parts_expected": [
+    "/repos/personal/uca-L-0777/.work/review/L-0777-kimi-agents-67Esbn/diff.txt.parts/part-001-of-001.patch"
+  ],
+  "parts_missing": [],
+  "prereview": {
+    "bundle_sha256": "f875b6b4d688a6e17794566ff0538a500883054b4728076a171ff158da6fcd73",
+    "checks": [
+      {
+        "detail": "no new findings in 8 file(s)",
+        "files": 8,
+        "name": "ruff",
+        "new": [],
+        "status": "pass"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "shellcheck",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "psscriptanalyzer",
+        "new": [],
+        "status": "n/a"
+      },
+      {
+        "detail": "no changed file matches this linter",
+        "files": 0,
+        "name": "actionlint",
+        "new": [],
+        "status": "n/a"
+      }
+    ],
+    "overridden": false,
+    "result": "pass",
+    "round": 3,
+    "stood_down": false,
+    "ticket": "L-0777"
+  },
+  "provider": "codex",
+  "reasons": [],
+  "refund_refused": null,
+  "refunded": false,
+  "round": 3,
+  "same_family": false,
+  "ticket": "L-0777",
+  "timed_out": false,
+  "verdict": "FINDINGS",
+  "webtest_check": null,
+  "webtest_findings": null,
+  "webtest_open": "not-applicable",
+  "webtest_verdict": null,
+  "written_at": "2026-10-11T12:48:09+00:00"
+}

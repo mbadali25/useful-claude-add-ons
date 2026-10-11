@@ -1,0 +1,87 @@
+{
+  "budget": 2,
+  "receipt": {
+    "accepted_at": "2026-10-10T17:49:55+00:00",
+    "accepted_by": "auto: 0 BLOCK, owner policy 2026-09-30",
+    "base": "e77532e01775ac61e7cd6c3cf276ad4453b67ac3",
+    "bundle_sha256": "b0013ae53ff90db86ac7d78995f72dbea672fa5c8c8f7bbe4b1caee1aaae5f05",
+    "findings": [
+      "FIX|plugin/crew/hooks/scripts/promote-gate.ps1:928|The new policy reader launches the first git Application directly; a git.cmd or git.bat wrapper works for the gate\u2019s earlier git calls but cannot be launched this way, so valid deploys block.|On Windows, put a working git.cmd ahead of git.exe on PATH and run a valid PowerShell deploy.",
+      "FIX|.crew/verify.json:142|The targeted verify rule matches the new tree-policy test file but never runs it, so the gate can miss the linked-worktree regression this ticket fixes.|Make worktree deploys read the project map again, then run the rule\u2019s listed command; it omits test_promote_gate_tree_policy.py.",
+      "FIX|plugin/crew/skills/crew-verification/SKILL.md:432|The skill still tells users that verify.json is read from the session\u2019s project directory, contradicting the new committed-sha policy stated earlier in the same skill.|Read lines 412 and 429\u2013435, then deploy a worktree whose committed map differs from the project directory\u2019s.",
+      "NIT|plugin/crew/tests/test_promote_gate_effective_tree.py:15|The changed test file\u2019s header still says the main checkout\u2019s verify.json stays policy, which is false after this change.|Compare the header with test_a_waiver_committed_on_the_worktree_branch_admits.",
+      "NIT|plugin/crew/CONFIG.md:2067|The CONFIG edit leaves the config data-flow diagram anchored to an older version of a file it explicitly lists as an input.|Compare this edit with the Anchors line and provenance header in docs/diagrams/data-flow-crew-config.mmd."
+    ],
+    "follow_up": "L-0774",
+    "ignored_lines": 0,
+    "kind": "auto-accepted",
+    "model_family": "gpt",
+    "provider": "codex",
+    "review_json_sha256": "6d9d975a451473e5dab7bd6ad319043300ce4a67c65356d0fb9a8ecbc5a26c2b",
+    "round": 2,
+    "verdict": "FINDINGS"
+  },
+  "refused": [],
+  "rounds": [
+    {
+      "base": "e77532e01775ac61e7cd6c3cf276ad4453b67ac3",
+      "bundle_sha256": "b6332b73e5c67b9ddf48ff14e75aef8711102c37f23cba30902f14a0833dbd7e",
+      "completed_at": "2026-10-10T14:36:44+00:00",
+      "counts": {
+        "BLOCK": 3,
+        "FIX": 0,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/hooks/scripts/_promote_github.py:265|A case change in an environment name silently skips the deployed map\u2019s github shaInput rule|Declare `development` in the project map and `Development` with shaInput in the deployed map; a workflow command without the sha is admitted.",
+        "BLOCK|plugin/crew/hooks/scripts/promote-gate.sh:728|The new map listing has no deadline, so a stalled Git process can outlive the hook timeout without issuing a block|Put a Git wrapper on PATH that hangs on `ls-tree --full-tree`, then deploy.",
+        "BLOCK|plugin/crew/hooks/scripts/promote-gate.ps1:920|The new map listing and blob read have no deadline, so a stalled Git process can outlive the hook timeout without issuing a block|Hang Git on `ls-tree --full-tree` or `cat-file blob` during a PowerShell deploy."
+      ],
+      "head": "97bde0fa755dd4e5deb6ea73f0afcb2bb8d12f7a",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 2482638,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T14:33:02+00:00",
+      "round": 1,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "e77532e01775ac61e7cd6c3cf276ad4453b67ac3",
+      "bundle_sha256": "b0013ae53ff90db86ac7d78995f72dbea672fa5c8c8f7bbe4b1caee1aaae5f05",
+      "completed_at": "2026-10-10T17:49:11+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 3,
+        "NIT": 2
+      },
+      "failure_class": null,
+      "findings": [
+        "FIX|plugin/crew/hooks/scripts/promote-gate.ps1:928|The new policy reader launches the first git Application directly; a git.cmd or git.bat wrapper works for the gate\u2019s earlier git calls but cannot be launched this way, so valid deploys block.|On Windows, put a working git.cmd ahead of git.exe on PATH and run a valid PowerShell deploy.",
+        "FIX|.crew/verify.json:142|The targeted verify rule matches the new tree-policy test file but never runs it, so the gate can miss the linked-worktree regression this ticket fixes.|Make worktree deploys read the project map again, then run the rule\u2019s listed command; it omits test_promote_gate_tree_policy.py.",
+        "FIX|plugin/crew/skills/crew-verification/SKILL.md:432|The skill still tells users that verify.json is read from the session\u2019s project directory, contradicting the new committed-sha policy stated earlier in the same skill.|Read lines 412 and 429\u2013435, then deploy a worktree whose committed map differs from the project directory\u2019s.",
+        "NIT|plugin/crew/tests/test_promote_gate_effective_tree.py:15|The changed test file\u2019s header still says the main checkout\u2019s verify.json stays policy, which is false after this change.|Compare the header with test_a_waiver_committed_on_the_worktree_branch_admits.",
+        "NIT|plugin/crew/CONFIG.md:2067|The CONFIG edit leaves the config data-flow diagram anchored to an older version of a file it explicitly lists as an input.|Compare this edit with the Anchors line and provenance header in docs/diagrams/data-flow-crew-config.mmd."
+      ],
+      "head": "1626dcc2e5a82d59bf7f67c4ecf2c2aeb234f3d3",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 3958503,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T17:44:29+00:00",
+      "round": 2,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    }
+  ],
+  "state": "ACCEPTED",
+  "ticket": "L-0768"
+}

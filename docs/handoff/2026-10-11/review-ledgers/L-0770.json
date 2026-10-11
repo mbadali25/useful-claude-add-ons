@@ -1,0 +1,83 @@
+{
+  "budget": 2,
+  "receipt": {
+    "accepted_at": "2026-10-10T18:32:43+00:00",
+    "accepted_by": "auto: 0 BLOCK, owner policy 2026-09-30",
+    "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+    "bundle_sha256": "436135d0d8f9bbdac12634e8ca1bdb42f64f259580d04db067a0ed68c140d58d",
+    "findings": [
+      "FIX|plugin/crew/hooks/scripts/scope_base.py:429|A configured base on a remote other than origin is mistaken for a ticket branch, so an unknown start is returned as HEAD|Set tickets.baseBranch to upstream/main, check out local main at the same commit with no record, then run --base; it exits 0 and prints HEAD instead of exiting 3.",
+      "FIX|plugin/crew/tests/test_scope_base.py:559|The recorded-start acceptance test misses a record at current HEAD, leaving the new source guard without a failing control|Remove the source != \"merge-base\" guard, then run the suite; the test still passes, although --base on main immediately after --record now wrongly exits 3.",
+      "FIX|plugin/crew/hooks/scripts/merged_main.py:132|The could-not-tell ancestry branch has no test or sabotage control|Make _is_ancestor return None, then remove this branch; the pinned tests do not detect that a failed ancestry probe reaches the applied-pin path."
+    ],
+    "follow_up": "L-0775",
+    "ignored_lines": 0,
+    "kind": "auto-accepted",
+    "model_family": "gpt",
+    "provider": "codex",
+    "review_json_sha256": "76062de75e4dd939999d7a117eed8aabbc888bcbbfc715f23fc6a835b187687c",
+    "round": 2,
+    "verdict": "FINDINGS"
+  },
+  "refused": [],
+  "rounds": [
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "5c487fb403ecc0693baef83464d0a99d07f433c8dda5ab659f491465e51d6806",
+      "completed_at": "2026-10-10T18:16:32+00:00",
+      "counts": {
+        "BLOCK": 1,
+        "FIX": 2,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "BLOCK|plugin/crew/hooks/scripts/scope_base.py:439|A valid `refs/heads/main` base ref is not recognized as the checked-out `main` branch, so an unknown start is returned as HEAD|Set `tickets.baseBranch` to `refs/heads/main`, check out `main` with no record, and run `scope_base.py --base T-1`; it exits 0 and prints HEAD instead of exiting 3",
+        "FIX|plugin/crew/hooks/scripts/scope_base.py:432|Failure of the added HEAD or base-branch probe permits an empty review range instead of reporting could-not-tell|Make the second `rev-parse HEAD` or `base_branch` probe fail after `resolve` returns the HEAD merge-base; `--base` exits 0 and prints HEAD",
+        "FIX|plugin/crew/hooks/scripts/merged_main.py:119|A malformed pin raises a traceback instead of returning could-not-tell|Call `pinned(root, valid_base, \"\\x00\")`; `subprocess.run` raises `ValueError: embedded null byte`"
+      ],
+      "head": "301848f2021e5a05d157da091f84b740be35e801",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 896479,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T18:12:40+00:00",
+      "round": 1,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    },
+    {
+      "base": "c972653ad1cd500a99c4355d34316135f6fad0df",
+      "bundle_sha256": "436135d0d8f9bbdac12634e8ca1bdb42f64f259580d04db067a0ed68c140d58d",
+      "completed_at": "2026-10-10T18:32:02+00:00",
+      "counts": {
+        "BLOCK": 0,
+        "FIX": 3,
+        "NIT": 0
+      },
+      "failure_class": null,
+      "findings": [
+        "FIX|plugin/crew/hooks/scripts/scope_base.py:429|A configured base on a remote other than origin is mistaken for a ticket branch, so an unknown start is returned as HEAD|Set tickets.baseBranch to upstream/main, check out local main at the same commit with no record, then run --base; it exits 0 and prints HEAD instead of exiting 3.",
+        "FIX|plugin/crew/tests/test_scope_base.py:559|The recorded-start acceptance test misses a record at current HEAD, leaving the new source guard without a failing control|Remove the source != \"merge-base\" guard, then run the suite; the test still passes, although --base on main immediately after --record now wrongly exits 3.",
+        "FIX|plugin/crew/hooks/scripts/merged_main.py:132|The could-not-tell ancestry branch has no test or sabotage control|Make _is_ancestor return None, then remove this branch; the pinned tests do not detect that a failed ancestry probe reaches the applied-pin path."
+      ],
+      "head": "4d3ad2fd84ae3568fd1f9e4254e3360610fd5e7e",
+      "ignored_lines": 0,
+      "model": "gpt-6-sol",
+      "model_family": "gpt",
+      "pid": 1720289,
+      "provider": "codex",
+      "refunded": false,
+      "reserved_at": "2026-10-10T18:28:01+00:00",
+      "round": 2,
+      "status": "completed",
+      "verdict": "FINDINGS",
+      "webtest_open": "not-applicable"
+    }
+  ],
+  "state": "ACCEPTED",
+  "ticket": "L-0770"
+}
