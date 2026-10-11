@@ -7,7 +7,9 @@ config and never touches the real ~/.config/ai-connect or ~/.claude.
 
 import hashlib
 import json
+import os
 import re
+from pathlib import Path
 
 import pytest
 import yaml
@@ -335,3 +337,49 @@ def test_create_token_adds_deny_rules_to_existing_settings(config_path, tmp_path
     settings = json.loads(installer.CLAUDE_SETTINGS.read_text(encoding="utf-8"))
     deny = settings["permissions"]["deny"]
     assert any("observer.token" in rule or "observer_client" in rule for rule in deny)
+
+
+# ---------------------------------------------------------------------------
+# Secret files are private from the moment they hold a secret
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def replaced(monkeypatch):
+    """Record every os.replace the installer makes: (target name, source mode, source text)."""
+    calls = []
+    real_replace = os.replace
+
+    def spy(src, dst):
+        calls.append((Path(dst).name, os.stat(src).st_mode, Path(src).read_text(encoding="utf-8")))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(installer.os, "replace", spy)
+    return calls
+
+
+def test_secret_files_are_written_whole_then_moved_into_place(config_path, tmp_path, replaced):
+    """config.yaml and the token file appear only by an atomic replace of a complete temp file."""
+    write_yaml(config_path, full_config())
+    installer.create_token("observer", config_path)
+    token = installer.TOKEN_PATHS["observer"].read_text(encoding="utf-8")
+    names = [name for name, _, _ in replaced]
+    assert "observer.token" in names and "config.yaml" in names
+    assert (dict((n, t) for n, _, t in replaced))["observer.token"] == token
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yaml", "observer.token", "user.token"] or \
+        not [p for p in tmp_path.iterdir() if p.name.startswith(".")]  # no temp file left
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+def test_secret_files_are_never_group_or_world_readable(config_path, replaced, monkeypatch):
+    """Under umask 022 a secret file must be 0600 before it holds the secret, and stay 0600."""
+    old = os.umask(0o022)
+    try:
+        write_yaml(config_path, full_config())
+        config_path.chmod(0o644)
+        installer.create_token("user", config_path)
+    finally:
+        os.umask(old)
+    assert replaced and all(mode & 0o077 == 0 for _, mode, _ in replaced)
+    assert config_path.stat().st_mode & 0o077 == 0
+    assert installer.TOKEN_PATHS["user"].stat().st_mode & 0o077 == 0

@@ -26,6 +26,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -134,7 +135,6 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
         _reject_placeholder(token, "Peer token")
         config["client"]["token"] = token
 
-    config_path.parent.mkdir(parents=True, exist_ok=True)
     _save_config(config, config_path)
     print(f"  Config written: {config_path}")
 
@@ -156,11 +156,29 @@ def _bridge_url(host: str, port: int) -> str:
     return f"ws://{host}:{port}"
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Write a secret file whole, readable by its owner only from the first byte.
+
+    mkstemp creates the temp file 0600 on POSIX whatever the umask, and
+    os.replace moves it into place atomically, so the secret never sits in a
+    file others may open (a reader that opens it early keeps its descriptor
+    after a later chmod). On Windows the file inherits the directory's ACL:
+    the config directory lives in the user's profile.
+    """
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 def _save_config(config: dict, config_path: Path = CONFIG_PATH) -> None:
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, sort_keys=False)
-    # The token is a secret; on Windows this only clears the read-only flag
-    config_path.chmod(0o600)
+    # The config holds a token: it is a secret file
+    _write_private(config_path, yaml.safe_dump(config, sort_keys=False))
 
 
 # Role -> token file; the config key of its hash is auth.<role>_token_sha256
@@ -176,8 +194,7 @@ def create_token(role: str, config_path: Path = CONFIG_PATH) -> None:
     """
     path = TOKEN_PATHS[role]
     token = secrets.token_hex(32)
-    path.write_text(token + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    _write_private(path, token + "\n")
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
     config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
