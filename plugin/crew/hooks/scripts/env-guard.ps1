@@ -261,8 +261,18 @@ function Test-EnvGuardArmed {
   $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
   foreach ($cfg in @((Join-Path $repo.Dir 'config.json'),
                      (Join-Path $userHome '.claude/crew/config.json'))) {
-    if (-not (Test-Path -LiteralPath $cfg)) { continue }
-    if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $true }
+    # Get-Item, not Test-Path: Test-Path answers $false for a path it was
+    # not allowed to look at, which is not proof the file is absent.
+    $item = $null
+    try {
+      $item = Get-Item -LiteralPath $cfg -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+      $item = $null
+    } catch {
+      return $true
+    }
+    if ($null -eq $item) { continue }
+    if ($item.PSIsContainer) { return $true }
     try {
       $text = [System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8)
       # PowerShell 7's ConvertFrom-Json accepts a trailing comma and comments,

@@ -71,7 +71,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
   plugin's `ruff.toml` extends the root config instead of replacing it.
 
-### Fixed — crew 1.2.30: the environment guard's review fixes (L-0772)
+### Fixed — crew, next version: the environment guard's review fixes (L-0772)
 
 - **Summary.** The environment guard no longer misses attached code (`bash -c'env'`, `node -pe`), a
   globbed program name, or an armed config when python is missing; an explicit `null` arms it.
@@ -88,10 +88,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   dotenv/config`, `python3 -W x`, `perl -I lib`, `php -d`) no longer hides the `-c`/`-e` code after
   it; `powershell 'gci env:'` (5.1's positional `-Command`) and `pwsh -cwa` are judged;
   `/proc/self//environ`, `/./` and `/../` spellings are folded (also for `guards.prodServer: read`);
-  `env -i T="$TOKEN"` is a secret read; a program from `${X:-env}`, code piped into a shell or
-  interpreter, a command substitution inside `(( ))`, a non-literal `.../environ` path and
-  `GetEnvironmentVariable($n)` are could-not-tell; a code-letter run longer than six is could-not-tell
-  instead of a quadratic read; the no-python fallbacks arm on a trailing comma or a comment.
+  `env -i T="$TOKEN"` is a secret read; a program from `${X:-env}`, a shell or interpreter left to
+  read its code from stdin (`echo env | bash`, `bash < f`), a command substitution inside `(( ))`,
+  a non-literal `.../environ` path and `GetEnvironmentVariable($n)` are could-not-tell; a code-letter
+  run longer than six is could-not-tell instead of a quadratic read.
+- **Review round 2.** A name assigned from a credential is a credential for the rest of the command
+  (`env T="$TOKEN" printenv T`, `T=$TOKEN; echo $T`). `env-guard.sh` checks the layer is one strict
+  JSON object with awk, so `{"guards":{bad}}` arms it; all three fallbacks and `plugin-hooks:` treat
+  a path they were refused a look at as could-not-tell, not absent.
 - **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
 - **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
   could-not-verify, never a zero or a crash.

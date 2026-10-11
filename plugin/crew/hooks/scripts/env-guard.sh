@@ -33,7 +33,8 @@ INPUT=$(cat)
 # `envGuard` in the file is read, not the first (an unrelated key of that name
 # cannot hide the guard's), the file is read as one line (a value on the next
 # line is still seen, and an empty one is armed), and a file that exists but
-# cannot be read, or does not look like a JSON object, is armed: python would
+# cannot be read, is not one strict JSON object (`_env_guard_json_object`), or
+# sits where this user cannot look (`_env_guard_absent`), is armed: python would
 # call that layer corrupt, and a corrupt layer blocks. So is a file holding a
 # `\u` escape, which could spell the key out of grep's sight, or a `guards`
 # that is not an object. The repo
@@ -42,25 +43,107 @@ INPUT=$(cat)
 # (`unknown`) the guard counts as armed -- an absent own file is no proof of off.
 # So does a resolver that is not there at all (`_common.sh` failed to source):
 # that is "could not tell" too, and refused as it was before T-0096.
+# Whether "$1" holds one strict JSON object and nothing else (RFC 8259: no
+# trailing comma, no comment, no bare word), read by awk because python is
+# what is missing. `{"guards":{bad}}` looks like an object to a brace check
+# and has no envGuard for grep to find; python calls that layer corrupt. No
+# awk, or a file awk cannot read, is "could not tell": not valid.
+_env_guard_json_object() {
+  command -v awk >/dev/null 2>&1 || return 1
+  awk '
+    function ws() { while (pos <= n && index(" \t\r\n", substr(s, pos, 1))) pos++ }
+    function str(   c, d) {
+      pos++
+      while (pos <= n) {
+        c = substr(s, pos, 1)
+        if (c == "\"") { pos++; return 1 }
+        if (c == "\\") {
+          d = substr(s, pos + 1, 1)
+          if (d != "" && index("\"\\/bfnrt", d)) { pos += 2; continue }
+          if (d == "u" && substr(s, pos + 2, 4) ~ /^[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$/) { pos += 6; continue }
+          return 0
+        }
+        if (index(ctl, c)) return 0
+        pos++
+      }
+      return 0
+    }
+    function val(depth,   c, rest) {
+      if (depth > 200) return 0
+      ws()
+      c = substr(s, pos, 1)
+      if (c == "{") return obj(depth)
+      if (c == "[") return arr(depth)
+      if (c == "\"") return str()
+      rest = substr(s, pos, 64)
+      if (match(rest, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/)) { pos += RLENGTH; return 1 }
+      if (substr(s, pos, 4) == "true") { pos += 4; return 1 }
+      if (substr(s, pos, 5) == "false") { pos += 5; return 1 }
+      if (substr(s, pos, 4) == "null") { pos += 4; return 1 }
+      return 0
+    }
+    function obj(depth) {
+      pos++; ws()
+      if (substr(s, pos, 1) == "}") { pos++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, pos, 1) != "\"" || !str()) return 0
+        ws()
+        if (substr(s, pos, 1) != ":") return 0
+        pos++
+        if (!val(depth + 1)) return 0
+        ws()
+        if (substr(s, pos, 1) == ",") { pos++; continue }
+        if (substr(s, pos, 1) == "}") { pos++; return 1 }
+        return 0
+      }
+    }
+    function arr(depth) {
+      pos++; ws()
+      if (substr(s, pos, 1) == "]") { pos++; return 1 }
+      while (1) {
+        if (!val(depth + 1)) return 0
+        ws()
+        if (substr(s, pos, 1) == ",") { pos++; continue }
+        if (substr(s, pos, 1) == "]") { pos++; return 1 }
+        return 0
+      }
+    }
+    BEGIN { for (i = 1; i < 32; i++) ctl = ctl sprintf("%c", i) }
+    { s = s $0 "\n" }
+    END {
+      n = length(s); pos = 1; ws()
+      if (substr(s, pos, 1) != "{" || !obj(0)) exit 1
+      ws()
+      exit (pos > n) ? 0 : 1
+    }
+  ' "$1" 2>/dev/null
+}
+
+# Whether "$1" can be said to be absent: nothing is there AND every directory
+# above it down from the nearest one that exists can be searched. A config
+# under a directory this user cannot enter looks absent to `[ -e ]` too.
+_env_guard_absent() {
+  [ -e "$1" ] || [ -L "$1" ] && return 1
+  dir=$(dirname -- "$1")
+  while [ ! -e "$dir" ] && [ ! -L "$dir" ]; do
+    parent=$(dirname -- "$dir")
+    [ "$parent" = "$dir" ] && break
+    dir=$parent
+  done
+  [ -d "$dir" ] && [ -x "$dir" ]
+}
+
 _env_guard_armed() {
   root="${CLAUDE_PROJECT_DIR:-.}"
   command -v crew_repo_config_dir >/dev/null 2>&1 || return 0
   crew_repo_config_dir "$root"
   [ "$CREW_CFG_SOURCE" = unknown ] && return 0
   for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
-    [ -e "$cfg" ] || [ -L "$cfg" ] || continue
+    _env_guard_absent "$cfg" && continue
     [ -f "$cfg" ] && [ -r "$cfg" ] || return 0
+    _env_guard_json_object "$cfg" || return 0
     flat=$(tr -d '\r\n' < "$cfg" 2>/dev/null) || return 0
-    trimmed=$(printf '%s' "$flat" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-    case "$trimmed" in
-      "{"*"}") ;;
-      *) return 0 ;;
-    esac
-    # A trailing comma or a comment is JSON python refuses (a corrupt layer),
-    # so it arms here too. `//` after a `:` is a URL, not a comment.
-    printf '%s' "$flat" \
-      | grep -Eq ',[[:space:]]*[]}]|/\*|(^|[[:space:],{[])//' 2>/dev/null \
-      && return 0
     # A `\u` escape can spell the key (`"env\u0047uard"`) where grep cannot
     # see it; python decodes it. Could not tell, so armed.
     case "$flat" in

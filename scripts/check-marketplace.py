@@ -657,8 +657,12 @@ def count_plugin_hooks(name: str) -> int | None:
     parse, or is not the documented shape, is None ("could not count"), never
     a zero."""
     path = os.path.join(ROOT, "plugin", name, "hooks", "hooks.json")
-    if not os.path.lexists(path):
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return 0
+    except OSError:
+        return None  # could not look: not proof there is no hooks.json
     if not os.path.isfile(path):
         return None
     try:

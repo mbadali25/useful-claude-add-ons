@@ -81,6 +81,10 @@ BLOCK_BASH = [
     "cat /proc/self//environ", "cat /proc/./self/environ",
     "cat /proc/1/../self/environ", "env -i T=\"$FAKE_GITHUB_TOKEN\"",
     "bash --rcfile /dev/null -c env", "bash -s -- a <<< env", "bash - <<< env",
+    # review round 2: a credential handed on under another name
+    "env -i T=\"$FAKE_TOKEN\" printenv T", "env T=\"$FAKE_TOKEN\" printenv T",
+    "T=$FAKE_GITHUB_TOKEN; echo $T",
+    "T=\"$FAKE_TOKEN\" python3 -c 'import os; print(os.environ[\"T\"])'",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
     "declare", "declare -p", "declare -x", "typeset -p", "typeset -x",
@@ -175,6 +179,8 @@ ALLOW_BASH = [
     "(( x = 1 ))", "ls | bash x.sh", "cat f | python3 script.py",
     "echo 1 | jq .", "env -i PATH=$PATH", "powershell -File x.ps1",
     "powershell -NoProfile -Command Get-Date", "\"$PY\" -W ignore script.py",
+    # review round 2: a name assigned from a non-credential, or reassigned
+    "T=$HOME; echo $T", "T=$FAKE_TOKEN; T=x; echo $T", "env T=1 printenv T",
 ]
 
 ALLOW_PS = [
@@ -201,6 +207,9 @@ CNT_BASH = [
     "(( $(env >&2; echo 1) ))", "echo $(( $(env >&2; echo 1) ))",
     "echo env | bash", "printf printenv | sh",
     "echo 'import os;print(os.environ)' | python3",
+    # review round 2: the same shell with no pipe in sight of it
+    "echo env | bash -c bash", "echo env | ( bash )", "echo env | { :; bash; }",
+    "bash < f.sh", "python3 < f.py", "echo env | sudo bash",
     "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
     "python3 -" + "c" * 4000 + " 0",
 ]
@@ -769,6 +778,8 @@ _FALLBACK_LAYERS = [
     ("case-variant-decoy",
      '{"guards": {"EnvGuard": "off", "envGuard": "block"}}', True),
     ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
+    ("malformed-object-without-the-key", '{"guards":{bad}}', True),
+    ("bare-word-value", '{"x": nope, "guards": {"envGuard": "off"}}', True),
     ("trailing-comma", '{"guards": {"envGuard": "off"},}', True),
     ("comment", '{"guards": {"envGuard": "off"} /* x */}', True),
     ("url-is-not-a-comment",
@@ -790,6 +801,58 @@ def test_python_crude_reader_judges_the_layer(tmp_path, text, armed):
     path = tmp_path / "config.json"
     path.write_text(text, encoding="utf-8")
     assert env_guard._layer_arms(str(path)) is armed  # pylint: disable=protected-access
+
+
+def test_python_crude_reader_a_layer_it_cannot_look_at_is_armed(tmp_path,
+                                                               monkeypatch):
+    """Review round 2: a refused `lstat` (an unsearchable parent) is not
+    proof the layer is absent; only FileNotFoundError is."""
+    def refused(path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+    monkeypatch.setattr(env_guard.os, "lstat", refused)
+    assert env_guard._layer_arms(str(tmp_path / "config.json")) is True  # pylint: disable=protected-access
+
+
+def test_python_crude_reader_an_absent_layer_is_not_armed(tmp_path):
+    assert env_guard._layer_arms(str(tmp_path / "nope" / "config.json")) is False  # pylint: disable=protected-access
+
+
+_IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+needs_mode_bits = pytest.mark.skipif(
+    _IS_ROOT or os.name == "nt",
+    reason="mode bits do not refuse root, and are not Windows ACLs: the "
+           "unsearchable-directory case cannot be built here")
+
+
+def _unsearchable_layer(tmp_path):
+    crew = _fixture(tmp_path) / ".crew"
+    (crew / "config.json").write_text(json.dumps(ARMED), encoding="utf-8")
+    crew.chmod(0)
+    return crew
+
+
+@needs_bash
+@needs_mode_bits
+def test_bash_wrapper_without_python_a_layer_it_cannot_look_at_is_armed(tmp_path):
+    crew = _unsearchable_layer(tmp_path)
+    try:
+        _, _, code, out = run_hook("bash", tmp_path, "Bash", "env",
+                                   extra=_NO_PYTHON)
+    finally:
+        crew.chmod(0o755)
+    assert code == 2, out
+
+
+@needs_pwsh
+@needs_mode_bits
+def test_pwsh_wrapper_without_python_a_layer_it_cannot_look_at_is_armed(tmp_path):
+    crew = _unsearchable_layer(tmp_path)
+    try:
+        _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                                   extra=_NO_PYTHON)
+    finally:
+        crew.chmod(0o755)
+    assert code == 2, out
 
 
 def test_python_crude_reader_a_directory_is_armed(tmp_path):

@@ -198,7 +198,7 @@ def _scan_code(code, lang, ctx):
             ctx.add(f"could-not-tell:code-name:{name}")
         for rule in reads:
             for match in rule.finditer(code):
-                if is_secret_name(match.group(match.lastindex or 1)):
+                if ctx.secret(match.group(match.lastindex or 1)):
                     ctx.add(f"secret-read:{name}")
 
 
@@ -275,13 +275,12 @@ class Word:
 
 
 class _Cmd:
-    __slots__ = ("words", "redirects", "heredocs", "piped")
+    __slots__ = ("words", "redirects", "heredocs")
 
     def __init__(self):
         self.words = []
         self.redirects = []   # (op, Word)
         self.heredocs = []    # (body text, delimiter was quoted)
-        self.piped = False    # stdin is the previous command's `|`
 
     def empty(self):
         return not (self.words or self.redirects or self.heredocs)
@@ -371,7 +370,6 @@ class _BashReader:
                 continue
             if c in ";&|()":
                 finish()
-                start = self.i
                 self.i += 1
                 while self.i < self.n and self.s[self.i] in ";&|" and \
                         self.s[self.i - 1] == self.s[self.i]:
@@ -379,7 +377,6 @@ class _BashReader:
                 if self.i < self.n and self.s[self.i - 1] == "|" and \
                         self.s[self.i] == "&":
                     self.i += 1
-                cur.piped = self.s[start:self.i] in ("|", "|&")
                 continue
             cur.words.append(self._word(stop))
         finish()
@@ -964,6 +961,12 @@ class _Ctx:
     def __init__(self):
         self.found = []
         self.assigned = {}  # name -> literal value, or None (not literal)
+        self.tainted = set()  # names assigned from a credential's value
+
+    def secret(self, name):
+        """`name` is credential-named, or was assigned from one in this
+        command (`T="$API_TOKEN"; echo "$T"`, `env T="$API_TOKEN" printenv T`)."""
+        return is_secret_name(name) or name in self.tainted
 
     def add(self, label):
         if label not in self.found:
@@ -1057,6 +1060,10 @@ def _record_assignment(word, ctx):
     eq = raw.index("=")
     value = word.literal[eq + 1:] if word.literal is not None else None
     ctx.assigned[name] = value
+    if any(ctx.secret(var) for var in word.vars):
+        ctx.tainted.add(name)
+    else:
+        ctx.tainted.discard(name)
 
 
 def _is_assignment(word):
@@ -1104,10 +1111,12 @@ def _stdin_bodies(cmd):
 
 def _argv(words, cmd, depth, ctx, shell="bash"):
     """Judge one simple command's words."""
-    while words and _is_assignment(words[0]):
-        _record_assignment(words[0], ctx)
-        words = words[1:]
-    while words and words[0].literal in _RESERVED:
+    # Assignments and reserved words, in whatever order they lead the
+    # command (`do T=$X cmd`, `T=1 if ...`).
+    while words and (_is_assignment(words[0])
+                     or words[0].literal in _RESERVED):
+        if _is_assignment(words[0]):
+            _record_assignment(words[0], ctx)
         words = words[1:]
     if not words:
         return
@@ -1296,7 +1305,7 @@ def _h_env(words, cmd, depth, ctx):
         if not ignore:
             ctx.add("env-dump:env")
         # `env -i T="$GITHUB_TOKEN"` prints what it was handed.
-        elif any(is_secret_name(name) for word in assigned
+        elif any(ctx.secret(name) for word in assigned
                  for name in word.vars):
             ctx.add("secret-read:env")
         return True
@@ -1314,7 +1323,7 @@ def _h_printenv(words, cmd, depth, ctx):
     for word in operands:
         if word.literal is None:
             ctx.add("could-not-tell:printenv-name")
-        elif is_secret_name(word.literal):
+        elif ctx.secret(word.literal):
             ctx.add("secret-read:printenv")
     return True
 
@@ -1348,7 +1357,7 @@ def _declare_like(form, words, ctx, functions_ok=True):
         if "p" in letters:
             if word.literal is None:
                 ctx.add("could-not-tell:declare-name")
-            elif is_secret_name(word.literal):
+            elif ctx.secret(word.literal):
                 ctx.add(f"secret-read:{form}")
     return True
 
@@ -1434,7 +1443,7 @@ def _h_printer(words, cmd, depth, ctx):
             (w.literal or "").startswith("-v") for w in words[1:2]):
         return True
     for word in words[1:]:
-        if any(is_secret_name(v) for v in word.vars):
+        if any(ctx.secret(v) for v in word.vars):
             ctx.add(f"secret-read:{_head_name(words[0].literal)}")
     return True
 
@@ -1520,9 +1529,12 @@ def _shell(words, cmd, depth, ctx):
                 ctx.add("could-not-tell:code")
             elif _deeper(depth, ctx):
                 _bash_text(body, depth + 1, ctx)
-        if not bodies and cmd is not None and cmd.piped:
-            # `echo env | bash`: the code is whatever the pipe carries.
-            ctx.add("could-not-tell:piped-code")
+        if not bodies:
+            # A shell with no script, no `-c` and no body this reader was
+            # handed runs whatever its stdin carries: `echo env | bash`,
+            # `bash < f`, and the same shell nested in `bash -c bash`, a
+            # `( )` group or a loop, where no pipe is in sight.
+            ctx.add("could-not-tell:stdin-code")
     return True
 
 
@@ -1616,10 +1628,10 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
             i += 1
         if not codes and (operand is None or words[operand].literal == "-"):
             codes.extend(_stdin_bodies(cmd))
-            if not codes and cmd is not None and cmd.piped \
-                    and not program_operand:
-                # `echo 'print(os.environ)' | python3`: the code is the pipe.
-                ctx.add("could-not-tell:piped-code")
+            if not codes and not program_operand:
+                # `echo 'print(os.environ)' | python3`, `python3 < f`: the
+                # code is whatever stdin carries, wherever the pipe is.
+                ctx.add("could-not-tell:stdin-code")
         for code in codes:
             if code is None:
                 ctx.add("could-not-tell:code")
@@ -2124,8 +2136,13 @@ def _layer_arms(path):
     a `guards` that is not an object does (a corrupt layer blocks); otherwise
     any `guards.envGuard` other than "off" does. An explicit `null` arms
     too: only an absent key means off (`crew_guards.NULL_IS_MALFORMED`)."""
-    if not os.path.lexists(path):
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return False
+    except OSError:
+        # Could not look (an unreadable parent): not proof of absent.
+        return True
     try:
         with open(path, encoding="utf-8", errors="strict") as handle:
             parsed = json.loads(handle.read())

@@ -896,12 +896,14 @@ off</strong> (<code>guards.envGuard: off</code>); turn it on with <code>{"guards
   <code>eval "$X"</code>, <code>bash -c "$CMD"</code>, <code>eval "$(ssh-agent -s)"</code>, nesting deeper than 8, a globbed or
   brace-expanded program name (<code>/usr/bin/en?</code>, <code>e{n,}v</code>), a program from an expansion with a default
   (<code>${X:-env}</code>), inline code that reads a variable whose name is not a literal (<code>os.environ[name]</code>),
-  code fed to a shell or interpreter through a pipe (<code>echo env | bash</code>), a command substitution
+  a shell or interpreter left to read its code from stdin (<code>echo env | bash</code>, <code>bash &lt; f</code>, a bare
+  <code>python3</code>), a command substitution
   inside <code>(( ))</code>, or a non-literal path ending in <code>environ</code> (<code>cat $d/environ</code>). Write the command
   out literally. Under <code>report</code> these are logged, not refused.</li>
 <li><strong>Refused although the config says <code>off</code>, with no python:</strong> the shell fallback reads the config
-  file itself and arms the guard for a file it cannot judge: unreadable, not a JSON object, holding a
-  <code>\u</code> escape, a trailing comma or a comment, or with <code>envGuard</code> set to anything but <code>off</code> anywhere
+  file itself and arms the guard for a file it cannot judge: unreadable, under a directory it cannot
+  enter, not one strict JSON object (a trailing comma, a comment, a bare word), holding a <code>\u</code>
+  escape, or with <code>envGuard</code> set to anything but <code>off</code> anywhere
   in it, an explicit <code>null</code> included. Fix the file, or make python available to the hook.</li>
 <li><strong>A <code>/proc/*/environ</code> mention</strong> outside a <code>git commit -m</code> message, a <code>grep</code> pattern or <code>echo</code> text
   (a <code>sed</code> script, a <code>find -name</code>) is refused too: a known false positive.</li>

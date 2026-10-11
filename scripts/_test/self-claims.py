@@ -1297,6 +1297,24 @@ CASES_CONSISTENCY: list[tuple[str, dict, int, str, list[str] | None]] = [
 
 
 HOOKS_JSON_IS_A_DIRECTORY = "<hooks.json is a directory>"
+HOOKS_JSON_CANNOT_BE_LOOKED_AT = "<lstat(hooks.json) is refused>"
+
+
+class _DeniedLstat:
+    """`os` for the checker with `lstat` refused on any hooks.json, as an
+    unsearchable parent directory refuses it (root cannot be denied by mode
+    bits, so the fixture cannot be built on disk)."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def lstat(self, path, *args, **kwargs):
+        if str(path).endswith("hooks.json"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return self._real.lstat(path, *args, **kwargs)
 
 
 def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
@@ -1309,7 +1327,9 @@ def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
             hooks_dir = os.path.join(tmp, "plugin", "widget", "hooks")
             os.makedirs(hooks_dir, exist_ok=True)
             target = os.path.join(hooks_dir, "hooks.json")
-            if widget_hooks == HOOKS_JSON_IS_A_DIRECTORY:
+            if widget_hooks == HOOKS_JSON_CANNOT_BE_LOOKED_AT:
+                pass
+            elif widget_hooks == HOOKS_JSON_IS_A_DIRECTORY:
                 os.makedirs(target)
                 with open(os.path.join(target, "x"), "w", encoding="utf-8") as fh:
                     fh.write("x\n")
@@ -1327,13 +1347,17 @@ def run_hooks(docs: dict[str, str], widget_hooks) -> list[str]:
         subprocess.run(["git", "-C", tmp, "init", "-q"], check=False, capture_output=True)
         subprocess.run(["git", "-C", tmp, "add", "-A"], check=False, capture_output=True)
         saved = CHECKER.ROOT
+        saved_os = CHECKER.os
         CHECKER.ROOT = tmp
+        if widget_hooks == HOOKS_JSON_CANNOT_BE_LOOKED_AT:
+            CHECKER.os = _DeniedLstat(saved_os)
         try:
             problems: list[str] = []
             CHECKER.check_self_claims(ENTRIES, problems.append)
             return problems
         finally:
             CHECKER.ROOT = saved
+            CHECKER.os = saved_os
 
 
 # `plugin-hooks:<name>` (L-0772) -- the command entries in a plugin's own
@@ -1374,6 +1398,13 @@ CASES_PLUGIN_HOOKS: list[tuple[str, dict, int, str, object]] = [
         1,
         "could not verify",
         HOOKS_JSON_IS_A_DIRECTORY,
+    ),
+    (
+        "a hooks.json that cannot be looked at is could-not-verify, never a zero",
+        {"P.md": "0 hook entries<!-- claim: plugin-hooks:widget -->\n"},
+        1,
+        "could not verify",
+        HOOKS_JSON_CANNOT_BE_LOOKED_AT,
     ),
     (
         "a hooks.json that cannot be decoded is could-not-verify, never a crash",

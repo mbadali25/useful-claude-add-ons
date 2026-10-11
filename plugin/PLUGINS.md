@@ -61,7 +61,7 @@ claude plugin uninstall ai-connect@useful-claude-add-ons
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.30<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.26<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
