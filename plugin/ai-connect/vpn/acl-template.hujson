@@ -1,0 +1,61 @@
+// ai-connect tailnet policy template.
+// Paste into Access controls in the Tailscale admin console (or merge into your
+// existing policy), replace admin@example.com, and save: Tailscale runs the
+// "tests" block on save and refuses a policy that fails it.
+//
+// Shape: agents' machines (tag:ai-peer) may reach the Bridge (tag:bridge) on
+// TCP 9999 and nothing else. Peers cannot reach each other, and nothing is
+// allowed to reach a peer. Tailscale denies by default, so the absence of any
+// other rule is what enforces "no peer-to-peer".
+{
+	"tagOwners": {
+		// Who may apply the tags. The OAuth client that mints keys must be
+		// created with tag:ai-peer selected, so it can only mint keys for it.
+		"tag:ai-peer": ["admin@example.com"],
+		"tag:bridge":  ["admin@example.com"],
+	},
+
+	"grants": [
+		{
+			"src": ["tag:ai-peer"],
+			"dst": ["tag:bridge"],
+			"ip":  ["tcp:9999"],
+		},
+		// Keep the admin's own access to the Bridge host (SSH, the observer).
+		// Delete or narrow this if the admin reaches it some other way.
+		{
+			"src": ["admin@example.com"],
+			"dst": ["tag:bridge"],
+			"ip":  ["*"],
+		},
+	],
+
+	"tests": [
+		{
+			// A peer reaches the Bridge port...
+			"src":    "tag:ai-peer",
+			"proto":  "tcp",
+			"accept": ["tag:bridge:9999"],
+			// ...and nothing else on it.
+			"deny":   ["tag:bridge:22", "tag:bridge:80", "tag:bridge:443", "tag:bridge:10000"],
+		},
+		{
+			// No peer-to-peer: a peer cannot reach another peer on the Bridge port or SSH.
+			"src":   "tag:ai-peer",
+			"proto": "tcp",
+			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:22"],
+		},
+		{
+			// UDP to the Bridge port is not allowed either.
+			"src":   "tag:ai-peer",
+			"proto": "udp",
+			"deny":  ["tag:bridge:9999"],
+		},
+		{
+			// The Bridge cannot open connections to peers.
+			"src":   "tag:bridge",
+			"proto": "tcp",
+			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:22"],
+		},
+	],
+}

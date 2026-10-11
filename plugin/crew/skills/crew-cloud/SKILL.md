@@ -29,7 +29,11 @@ Three rules, and `crew-setup` should enforce them by asking:
 
 crew's cloud guard (below) can refuse destructive `aws`/`az` commands and
 commands run as the wrong identity, but a guard on the shell does not cover an
-MCP tool call. The credential is the real boundary.
+MCP tool call. The credential is the real boundary. A cloud credential in the
+agent's environment is also one `env` away from its context and transcript:
+`guards.envGuard` (off by default; README "Environment guard") refuses the
+commands that print it, and a sealed, per-command credential keeps it out of
+the environment in the first place.
 
 ---
 

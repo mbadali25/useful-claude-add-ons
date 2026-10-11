@@ -48,6 +48,92 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   saying so at run time fails the test. Quarantined (L-0737 fixes them):
   `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
   2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
+### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
+
+- **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
+  reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
+  writes private from the first byte.
+- **Framing.** The warning in front of a peer's message is constant; the sender's peer-controlled name
+  appears only inside the untrusted block, in `peer_read`, `peer_history` and the watcher's wake notice.
+- **Client.** The inbound queue is capped (500 messages, 8 MiB) with one notice when it fills. A coded
+  refusal from the Bridge is queued as a notice for `peer_read`; a frame over the Bridge's limit is
+  refused before sending, and the default file cap drops from 256 KiB to 48 KiB. An IPv6 `bridge_url`
+  is bracketed. `peer_history`/`peer_list` requests carry a `request_id` the Bridge echoes, so a late
+  answer cannot reach the wrong caller.
+- **Bridge.** A direct message is marked delivered only after its send returns; a registration replay
+  skips a message in flight, and a send that fails across a reconnect goes to the new holder once.
+  `notify_when_idle` is capped at 32 per peer and ends when the subscriber leaves.
+- **Secrets.** The installer writes `config.yaml` and the token files 0600 from the first byte (POSIX).
+  `vpn` `mint-key --out` on Windows writes nothing when `icacls` cannot restrict the file.
+- **CI.** The `vpn/` `.ps1` shims no longer dot-source `_common.ps1`, which `scripts/check-powershell.ps1`
+  cannot follow; that checker exempts `install.ps1`'s NetSecurity/NetTCPIP cmdlets (scoped to that file)
+  and two more ScheduledTasks names, with must-block and must-allow cases in its suite. `.pylintrc`
+  ignores the module name `server`, which is both localgpu's `mcp/server.py` and ai-connect's package.
+  `tsadmin.py` resolves `icacls`/`taskkill` with `shutil.which`, and the shim tests give every `pwsh`
+  their own `XDG_CACHE_HOME`. 0.1.2 and 0.1.3 were set on the branch and never released.
+
+### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
+
+- **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
+  overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put
+  a machine on a Tailscale tailnet with a single-use key.
+- **Client round.** `peer_send`/`peer_context` open the file first and judge the handle (regular file,
+  final path inside the project, at most the cap), so a symlink or junction swapped in after the name
+  check is refused. `peer_list` puts every peer-set field in one untrusted block; `peer_read` and
+  `peer_history` put the sender and time line inside each message's block. Malformed peer fields render
+  escaped instead of raising, and `peer_read` drops messages only after they render.
+- **Server round.** `PeerRegistry.register` inserts the new holder before closing the dead one, so two
+  connections can no longer hold one name. A peer may message `User:<name>`; registering or watching one
+  stays refused. Each recipient's unread queue is capped (500 messages, 8 MiB) with the error code
+  `recipient_queue_full`, and unread messages go out in frames of at most 1 MiB, each marked delivered
+  only after its send. `observer_client.cli send` prints the Bridge's error for a refused recipient and
+  exits 1 instead of reporting it as waiting.
+- **VPN tooling.** `plugin/ai-connect/vpn/`: `mint-key`, `revoke`, `vpn-up`, `vpn-down` (one stdlib
+  `tsadmin.py` behind `.sh`/`.ps1` shims) and an ACL template allowing `tag:ai-peer` to reach
+  `tag:bridge:9999` only. `mint-key --peer-token` runs `installer.py add-peer` under the venv beside the
+  installer. `.crew/verify.json` runs `vpn/tests` as a second pytest run of the ai-connect entry.
+
+### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
+
+- **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each
+  other through a self-hosted bridge, with hooks that publish each session's state and wake an idle
+  session when a message arrives.
+- **Source.** A squashed, hardened fork of [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect)
+  at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55` (MIT; notice and upstream licence kept in
+  `plugin/ai-connect/NOTICE`): per-peer tokens, no name takeover, a read-only observer role, size and
+  rate limits, untrusted framing of peer text, project-confined file sharing, a VPN-scoped listener and
+  exact pins.
+- **Packaging.** Upstream's `integrations/claude-code/plugin/` became `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`; the watcher is registered once per flavour (`watch.sh` / `watch.ps1`, each standing
+  down on the other's platform, the PowerShell entry re-raising exit 2). `installer.py claude` now only
+  registers the MCP server. Menu row 19 (`repo-plugins`) stays off by default.
+- **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
+  plugin's `ruff.toml` extends the root config instead of replacing it.
+
+### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
+
+- **Summary.** crew can now refuse a command that would print the whole environment, or a
+  credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **`env-guard.sh` / `env-guard.ps1` -> `env_guard.py`**, a `PreToolUse` hook on Bash and PowerShell,
+  registered once per flavour (the PowerShell entry with `shell: "powershell"`; 36 hook entries).
+  It refuses `env` with nothing to run, `printenv`, bare `set`, `export -p`, `declare -p`,
+  `/proc/<pid>/environ`, `ps eww`, inline interpreter code reading `os.environ`/`process.env`/`%ENV`/
+  `ENV`/`getenv()`/`ENVIRON`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`,
+  `Get-Variable`, `cmd /c set`, and a credential-named variable in a printing form (`echo
+  "$GITHUB_TOKEN"`, `$env:API_KEY`), through `bash -c`, `eval`, `$( )`, pipes, loops and the usual
+  wrappers. What it cannot read is refused as could-not-tell. A refusal names a fixed label
+  (`env-dump:`, `secret-read:`, `could-not-tell:`) and never a value or the command, in the reason
+  and in `.crew/guard.log`.
+- **`guards.envGuard`**: `off` (default) / `report` / `block`, both layers, narrower wins; a malformed
+  value reads as `block`. Without a usable python both wrappers refuse (exit 2) only when a config file
+  arms it.
+- **BREAKING (narrowing): production reads.** `printenv` left `PROD_READ_COMMANDS`, bare `env` is a
+  write, and any remote command the env guard flags is a write, so `ssh prod printenv`, `ssh prod env`
+  and `ssh prod cat /proc/1/environ` are refused at `guards.prodServer: read`. `full` is unchanged.
+- **`plugin-hooks:<name>`**, a new self-claim marker: `check_self_claims` counts the command entries in
+  a plugin's `hooks/hooks.json`.
+- Follow-ups: L-0773 (the committed sabotage entries, a harness change) and L-0776 (keep credentials
+  out of the agent's environment, the stronger control).
 
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 

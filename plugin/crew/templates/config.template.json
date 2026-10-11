@@ -190,7 +190,8 @@
     "prodDatabase": "none",
     "prodServer": "none",
     "roleWrites": "off",
-    "cloudGuard": "off"
+    "cloudGuard": "off",
+    "envGuard": "off"
   },
   "production": {
     "databases": [],

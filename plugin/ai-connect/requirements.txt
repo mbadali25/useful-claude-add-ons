@@ -1,0 +1,7 @@
+# fastmcp 3 and later break the MCP servers (seen with 4.0.10); 2.14.7 is tested.
+# Every version here is pinned exactly to what `pip freeze` reported for the
+# tested venv (2026-10-11); bump deliberately, not with --upgrade.
+fastmcp==2.14.7
+websockets==17.2
+aiosqlite==0.22.1
+PyYAML==6.0.3

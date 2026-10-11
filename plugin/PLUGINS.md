@@ -6,15 +6,65 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 
 ---
 
+## `ai-connect` — peer messaging between Claude Code sessions
+
+| | |
+|---|---|
+| **Source** | [`ai-connect/`](ai-connect) |
+| **Version** | 0.1.4<!-- claim: plugin-version:ai-connect --> |
+| **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine) |
+| **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
+| **Registers** | Hooks on 5 events: `mcp_tool` state hooks, and a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest |
+| **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |
+| **Upstream guide** | [`ai-connect/README.md`](ai-connect/README.md) |
+
+Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Host:Project`), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
+
+This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-256 (a token can register and watch only its own name), refuses a takeover of a live name, makes the observer token read-only, caps message size, rate and stored messages, frames every piece of peer text Claude sees as untrusted data with a random-id delimiter, confines `peer_send` / `peer_context` file paths to the project, and pins every dependency exactly. `installer.py claude` here only registers the MCP server; upstream's local-marketplace install of the plugin is gone, because this marketplace installs it.
+
+### Hooks — the part that runs without being asked
+
+| Hook | Event | What it does |
+|---|---|---|
+| `mcp_tool` → `peer_set_state` | `UserPromptSubmit`, `PostToolUse` | Sets this session's state to `busy` on the bridge. Sends the state word only, never the prompt or tool text |
+| `mcp_tool` → `peer_set_state` | `Notification` (`permission_prompt`) | Sets `waiting`. The permission-prompt text is deliberately not sent |
+| `mcp_tool` → `peer_set_state` | `Stop` | Sets `idle`, so `peer_notify_when_idle` can tell another session this one finished |
+| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
+
+The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1. The `mcp_tool` hooks run no shell, so they are registered once.
+
+**Until the installer has run, the hooks have nothing to talk to.** The state hooks name an MCP server called `ai-connect` that only `installer.py claude` registers, and the watcher exits 1 with a stderr line naming the missing venv. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+
+**Never run a woken session in bypass or auto-approve mode.** A peer message resumes the session's turn; with confirmations off, whatever the message asks would run. The untrusted framing and the bundled behaviour rules (`integrations/claude-code/CLAUDE.md`, which you `@`-import into your own `CLAUDE.md`) tell the model to show peer requests to you and confirm before acting — that is a prompt, not an enforcement mechanism.
+
+### The venv lives in the plugin directory
+
+The installer creates `venv/` next to `installer.py`, and the hooks look for it there. The plugin cache directory changes with every version, so **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path.
+
+### Testing
+
+`plugin/ai-connect/tests/` — 181 cases across the server (tokens, roles, limits, registry, store), the client (config, tools, untrusted framing, file confinement), the watcher and its hook registration, the installer and the firewall step, plus an end-to-end bridge test. They need the plugin's own dependencies (`requirements.txt` + `requirements-dev.txt`); `.crew/verify.json` runs them when `fastmcp`, `websockets`, `aiosqlite`, `yaml` and `pytest` all import, and reports the rule as not run (exit 77) when they do not.
+
+### Uninstall
+
+```bash
+"<plugin dir>/venv/bin/python" "<plugin dir>/installer.py" unregister   # Windows: venv\Scripts\python.exe
+claude plugin uninstall ai-connect@useful-claude-add-ons
+```
+
+`install.sh --uninstall` / `install.cmd -Uninstall` also remove the bridge service. The config and tokens under `~/.config/ai-connect/` and the deny rules the installer added to `~/.claude/settings.json` are left in place.
+
+---
+
 ## `crew` — virtual dev team for multi-repo legacy work
 
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.21<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.26<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -23,13 +73,14 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Thirteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 34 hook entries. **These are why
+Fourteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew -->. **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
 |---|---|---|
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.cloudGuard`: `off`/`report`/`block`). Judges `terraform`/`tofu` apply/destroy, `aws` delete/terminate/`rm --recursive`, `az` delete/purge, SQL `DROP`/`TRUNCATE` and force push, and checks the effective AWS profile/region and Azure subscription against the pinned `cloud.*` values; an unknown identity is never allowed unattended, and it never emits an allow |
+| `env-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.envGuard`: `off`/`report`/`block`, L-0772). Refuses a command whose own text prints the whole process environment (`env`, `printenv`, bare `set`, `export -p`, `/proc/*/environ`, `ps eww`, `os.environ`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`, `cmd /c set`) or a credential-named variable (`echo "$GITHUB_TOKEN"`, `$env:API_KEY`) into the agent's context, through `bash -c`, `eval`, pipes and wrappers; a command it cannot read is refused as could-not-tell. Names a fixed label, never a value |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
