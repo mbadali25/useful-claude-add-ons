@@ -29,6 +29,64 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   names, and both mixed-version pairings. Nine mutations of the guard, the fan-out and the replay claim each
   turn the suites red. Not run against a live Bridge.
 
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
+
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:

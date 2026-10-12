@@ -230,10 +230,28 @@
       "version": "0.2.0"
     },
     {
+      "name": "angular-lsp",
+      "source": "./plugin/angular-lsp",
+      "description": "Angular language server (@angular/language-server, ngserver) for code intelligence in Angular HTML templates - definitions, references, hover and template diagnostics. Registers an LSP server only: no hooks, commands, agents or skills. Maps .html only; .ts stays with typescript-lsp. Needs Node.js and a global '@angular/language-server' install; the plugin does not install either.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "bash-lsp",
+      "source": "./plugin/bash-lsp",
+      "description": "Bash language server (bash-language-server) for code intelligence in .sh and .bash files - diagnostics (through shellcheck when it is on PATH), hover, definitions, references, symbols and completion. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js 20 or newer and a global 'bash-language-server' install; the plugin does not install either.",
+      "version": "0.1.0"
+    },
+    {
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 38 slash commands, 33 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
       "version": "1.2.30"
+    },
+    {
+      "name": "css-lsp",
+      "source": "./plugin/css-lsp",
+      "description": "CSS language server (vscode-css-language-server, from the npm package vscode-langservers-extracted) for code intelligence in .css, .scss and .less files - diagnostics, hover, definitions, references, symbols and formatting. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js and a global 'vscode-langservers-extracted' install; the plugin does not install either.",
+      "version": "0.1.0"
     },
     {
       "name": "gizmoduck",
@@ -254,10 +272,34 @@
       "version": "0.5.1"
     },
     {
+      "name": "powershell-lsp",
+      "source": "./plugin/powershell-lsp",
+      "description": "PowerShell language server (PowerShell Editor Services) hosted in Windows PowerShell 5.1 (powershell.exe) for code intelligence in .ps1, .psm1 and .psd1 files, for Windows machines without PowerShell 7. Windows only, and Editor Services supports 5.1 on a best-effort basis. Registers an LSP server only: no hooks, commands, agents or skills. Maps the same extensions as pwsh-lsp, so install one of the two, never both. Needs an unzipped PowerShell Editor Services release; the plugin does not install it.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "pwsh-lsp",
+      "source": "./plugin/pwsh-lsp",
+      "description": "PowerShell language server (PowerShell Editor Services) hosted in PowerShell 7 (pwsh) for code intelligence in .ps1, .psm1 and .psd1 files - PSScriptAnalyzer diagnostics, hover, definitions, references, symbols and completion. Registers an LSP server only: no hooks, commands, agents or skills. Windows, Linux and macOS. Maps the same extensions as powershell-lsp, so install one of the two, never both. Needs pwsh on PATH and an unzipped PowerShell Editor Services release; the plugin does not install either.",
+      "version": "0.1.0"
+    },
+    {
       "name": "rule-of-two",
       "source": "./plugin/rule-of-two",
       "description": "Two adversarial reviewers from different model families - a Claude agent and a Codex agent - tear apart a Claude Code agent, skill or plugin against one shared rubric and return a viability verdict with cited defects, weaknesses and the edits worth making. Use when reviewing a skill, agent, command or plugin as an artifact: 'is this skill worth shipping', 'tear apart this plugin', 'will this agent's description actually trigger', 'review my SKILL.md', 'does this duplicate something we already have'. Coverage is a reported outcome: if only one reviewer runs, or the two models cannot be resolved to different families, the report says so in its own title rather than passing a single-family opinion off as two. Do NOT use for architecture, implementation plans, product ideas or code diffs - use crew's architect-reviewer, planner or code-reviewer. Standalone - its own two-model config, never crew's. No hooks.",
       "version": "0.1.3"
+    },
+    {
+      "name": "sql-lsp",
+      "source": "./plugin/sql-lsp",
+      "description": "SQL language server (sqls) for .sql files - keyword completion and formatting with no database, schema-aware completion, hover and definition once you supply your own sqls connection config. Registers an LSP server only: no hooks, commands, agents or skills, and ships no connection config. Needs the sqls binary on PATH; the plugin does not install it.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "terraform-lsp",
+      "source": "./plugin/terraform-lsp",
+      "description": "Terraform language server (HashiCorp terraform-ls) for code intelligence in .tf and .tfvars files - definitions, references, hover, symbols and diagnostics. Registers an LSP server only: no hooks, commands, agents or skills. Needs the terraform-ls binary on PATH; the plugin does not install it.",
+      "version": "0.1.0"
     }
   ]
 }
