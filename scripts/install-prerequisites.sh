@@ -3365,16 +3365,114 @@ install_pyright_binary() {
   fi
   install_lsp_binary "pyright-langserver" "pyright-langserver" npm_install_global pyright
 }
+# typescript-language-server is a front end for tsserver and ships no TypeScript of its
+# own (its package.json declares no dependencies), so outside a project that has a local
+# 'typescript' it falls back to whatever Node resolves from its own install directory:
+# a 'typescript' nested inside it, else the global one beside it. What it needs from
+# that package is lib/tsserver.js - and that file is the invariant here, not a version
+# number. TypeScript 7 (the native compiler) ships lib/tsc.js alone, so the unpinned
+# 'npm install -g typescript' this step used to run started producing a server that
+# answers every 'initialize' with:
+#     Could not find a valid TypeScript installation. Please ensure that the
+#     "typescript" dependency is installed in the workspace or that a valid
+#     `tsserver.path` is specified. Exiting.
+# ngserver dies on the same global package for the same reason when it is told to
+# probe npm's global root: it wants lib/tsserverlibrary.js, minimum version 5.0.
+#
+# Measured against the registry on 2026-10-12 by unpacking each tarball: 5.9.3, 6.0.2
+# and 6.0.3 carry lib/tsserver.js and lib/tsserverlibrary.js, 7.0.2 carries neither,
+# and @angular/language-server 22.2.2 itself depends on exactly 6.0.3. So the spec
+# below is the 6.x line - the newest that still ships a tsserver. Move it only to a
+# release that has been unpacked and seen to contain lib/tsserver.js. The spec is
+# deliberately a bare major rather than '<7': a '<' reaches cmd.exe through npm.cmd
+# on the Windows half of this pair, and the two halves install the same text.
+TYPESCRIPT_LSP_SPEC="typescript@6"
+typescript_lsp_tsserver_state() {
+  # What would the typescript-language-server under npm's global root fall back to?
+  # Prints one of:
+  #   ok           a typescript with lib/tsserver.js
+  #   no-tsserver  a typescript WITHOUT it (7 or later) - the broken combination
+  #   absent       no typescript at all
+  #   unknown      could not tell: no npm, or the server is not under npm's global
+  #                root (pnpm, volta, a distribution package). Never folded into
+  #                'ok' or 'no-tsserver' - the caller says so and leaves it alone.
+  # A copy nested inside the server's own directory wins over the global one, in
+  # Node's resolution order, so it is the one judged when it exists.
+  local root tls
+  root="$(npm root -g 2>/dev/null)" || root=""
+  tls="$root/typescript-language-server"
+  if [ -z "$root" ] || [ ! -d "$tls" ]; then
+    echo unknown
+  elif [ -d "$tls/node_modules/typescript" ]; then
+    if [ -f "$tls/node_modules/typescript/lib/tsserver.js" ]; then echo ok; else echo no-tsserver; fi
+  elif [ -f "$root/typescript/lib/tsserver.js" ]; then
+    echo ok
+  elif [ -d "$root/typescript" ]; then
+    echo no-tsserver
+  else
+    echo absent
+  fi
+}
 install_typescript_lsp_binary() {
+  local state="" had_server=0
   if have typescript-language-server; then
-    skip "typescript-language-server already installed ($(command -v typescript-language-server))"
-    return 0
+    had_server=1
+    state="$(typescript_lsp_tsserver_state)"
+    # The binary being on PATH is not "already installed": with a typescript that has
+    # no tsserver it starts and then refuses every request. Only 'ok' and 'unknown'
+    # stop here; the other two states fall through to be repaired or reported.
+    case "$state" in
+      ok)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        return 0
+        ;;
+      unknown)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        warn "could not check which TypeScript it falls back to (it is not under npm's global root, or npm is missing) - it needs one that ships lib/tsserver.js, i.e. $TYPESCRIPT_LSP_SPEC, not 7 or later."
+        return 0
+        ;;
+    esac
   fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "typescript-language-server" "typescript-language-server" npm_install_global typescript-language-server typescript
+  if [ "$had_server" -eq 0 ]; then
+    install_lsp_binary "typescript-language-server" "typescript-language-server" npm_install_global typescript-language-server || return 1
+    state="$(typescript_lsp_tsserver_state)"
+  fi
+  case "$state" in
+    ok) return 0 ;;
+    absent)
+      # Nothing global to replace, so nobody's 'tsc' changes under them.
+      if ! npm_install_global "$TYPESCRIPT_LSP_SPEC"; then
+        warn "'npm install -g $TYPESCRIPT_LSP_SPEC' failed - typescript-language-server has no TypeScript to run. Install it by hand, then re-run."
+        return 1
+      fi
+      state="$(typescript_lsp_tsserver_state)"
+      if [ "$state" != "ok" ]; then
+        warn "$TYPESCRIPT_LSP_SPEC installed but lib/tsserver.js is still not where typescript-language-server looks (state: $state)."
+        return 1
+      fi
+      [ "$had_server" -eq 1 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "$TYPESCRIPT_LSP_SPEC installed for typescript-language-server (it ships lib/tsserver.js)"
+      ;;
+    no-tsserver)
+      # A global typescript is already there and it is 7 or later. Whether this
+      # script's own earlier unpinned install put it there or its owner wants the
+      # native 'tsc' cannot be told apart from here, and replacing it changes what
+      # every global 'tsc' call on this machine compiles with - so it is reported,
+      # with the one command that fixes it, and never done silently. The step fails
+      # on purpose: "already installed" is the wrong thing to say about a server
+      # that cannot start.
+      warn "typescript-language-server cannot start: the global 'typescript' has no lib/tsserver.js (TypeScript 7 and later ship only the native compiler)."
+      warn "Not replacing it for you - that would change your global 'tsc'. To fix it: npm install -g $TYPESCRIPT_LSP_SPEC (with sudo if npm's global prefix is root-owned), then re-run. A project with its own local typescript 5 or 6 is unaffected either way."
+      return 1
+      ;;
+    *)
+      warn "typescript-language-server installed, but could not check which TypeScript it falls back to - it needs one that ships lib/tsserver.js ($TYPESCRIPT_LSP_SPEC)."
+      ;;
+  esac
 }
 install_angular_language_server() {
   if have ngserver; then
