@@ -1233,7 +1233,7 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)"
+  "This repo's plugins: ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
@@ -1385,6 +1385,7 @@ unset _i
 # and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
 # Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
 PLUGIN_KEYS=(
+  "ai-connect"
   "crew"
   "gizmoduck"
   "localgpu"
@@ -1392,6 +1393,7 @@ PLUGIN_KEYS=(
   "rule-of-two"
 )
 PLUGIN_NAME=(
+  "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
   "crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
@@ -1399,6 +1401,7 @@ PLUGIN_NAME=(
   "rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks"
 )
 PLUGIN_SPEC=(
+  "ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
@@ -1494,7 +1497,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
+  "This repo's plugins: %s of %s (ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"

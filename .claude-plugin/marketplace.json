@@ -224,10 +224,16 @@
       "version": "1.1.2"
     },
     {
+      "name": "ai-connect",
+      "source": "./plugin/ai-connect",
+      "description": "Peer messaging between Claude Code sessions across machines - a self-hosted WebSocket bridge, an MCP client per session, and hooks that publish busy/idle/waiting state and wake an idle session on a new message. Hardened fork of Peuqui/AI-Connect (MIT): per-peer tokens, no name takeover, peer content framed as untrusted, VPN-scoped listener. Hooks run once installed; the MCP server is registered by its own installer.",
+      "version": "0.1.8"
+    },
+    {
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 38 slash commands, 33 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
-      "version": "1.2.23"
+      "version": "1.2.31"
     },
     {
       "name": "gizmoduck",

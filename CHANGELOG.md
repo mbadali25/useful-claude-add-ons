@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.23: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+### Fixed — crew 1.2.31: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
-- **Summary.** `crew` 1.2.23 lets the review harness rebuild a round's bundle after its reviewed head
+- **Summary.** `crew` 1.2.31 lets the review harness rebuild a round's bundle after its reviewed head
   has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
   `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
   itself, so `/crew:review` stops rather than reporting "nothing to review".
@@ -24,6 +24,170 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
   its fork point still gets HEAD.
 - **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
+### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
+
+- **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
+  `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
+  and `deploy remove` show and take machines off.
+- **Onboarding.** An invite is a single-use, non-ephemeral `tag:ai-peer` key in one code; `join` installs and
+  joins Tailscale, makes the machine's own token and config, and prints only the token's hash. `approve` lets it
+  in and turns its node key expiry off. Guide: `plugin/ai-connect/deploy/ONBOARDING.md`.
+- **Safer peers.** A peer gets no plugin hooks and no MCP server unless asked, `--dry-run` runs no tool, the
+  install falls back to Tailscale's script only for a release its repository lacks, and what keeps running
+  lives outside the checkout (`~/.local/share/ai-connect`).
+- **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
+  prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
+  (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
+- **Tailnet.** `tailnet-setup` validates and diffs the policy, and with `--apply` backs it up, replaces it, tags
+  the Bridge and creates the OAuth client, stored in the OS credential store. `--yes` and `--json` make it
+  usable without a terminal.
+- **Enrolment.** A peer makes its own token and prints only its SHA-256; `deploy add-peer` lets it in by that
+  hash, so no long-lived secret crosses machines.
+- **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
+- **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
+  matches `README.md` again, and CI now runs the plugin's suites.
+- **Secrets.** `~/.config/ai-connect` is the deploying user's alone whichever step makes it (0700; on Windows
+  an ACL without inherited entries or broad groups). `deploy invite` warns that an invite is password-equivalent,
+  single use, and good until its expiry; `deploy join` deletes a used invite file.
+- **Tests.** No test may open a socket that leaves the machine: a guard refuses it, in the test and in every
+  Python it starts, and fails the test. It caught one real DNS query.
+- **Live test.** On one real tailnet: an Ubuntu laptop joined as a permanent node and passed `deploy test` 5 of 5
+  with its AWS VPN routes unchanged; a Windows 11 machine joined with routes and DNS unchanged, 9 ms direct to
+  the Bridge. Everything else is verified against fakes only.
+- **Numbering.** The deployment was 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them;
+  the 0.1.5 below (L-0790) reached main first.
+
+### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
+
+- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
+- **Cause.** `plugin/ai-connect/tests/test_ops_firewall.py` put its fake tools in front of the caller's
+  whole `PATH` and its fake `sudo` ran whatever that `PATH` resolved, so a test that wrote no fake
+  `ufw` found the real one. On 2026-10-11 a root run added the bridge's allow rule (TCP 9999 from
+  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules` while ufw was inactive; the entry was deleted
+  by hand.
+- **Fix.** The child's `PATH` is two directories the test creates, the fake `sudo` runs only a file
+  inside the fake directory, the harness sets the euid the function sees, and every child stops
+  before the code under test if `sudo`, `ufw` or `firewall-cmd` resolves to anything but a fake.
+  The module skips as root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`, and when `bash` is Windows' WSL
+  launcher. New tests plant canary `ufw`, `firewall-cmd` and `sudo` on the caller's `PATH` and
+  fail if any of them runs.
+- **If you ran the suite before 0.1.5** as root or with passwordless sudo on a host with ufw or
+  firewalld, check for that rule; `plugin/ai-connect/CHANGELOG.md` has the commands.
+- Nothing the plugin installs or runs changes. `install.sh` is untouched.
+
+### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
+
+- **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+  records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
+  deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
+- **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
+  write `.crew/.verify-verified-at` = HEAD - a verified claim about a tree nothing checked. Both
+  flavours now print `verify-gate: 0 rules ran ...` and write neither the marker nor the
+  fingerprint. `review_gate` therefore answers UNVERIFIED for a checkout that ran nothing.
+- **Diff baseline.** That quiet-turn write was also the diff baseline on a default branch with no
+  marker; without it merge-base stays HEAD and a commit made there is never in scope. A quiet turn
+  now records `.crew/.verify-gate.base-at` (HEAD) instead, read only by the base resolution
+  (marker, then base-at, then merge-base, then HEAD) - as is when it is an ancestor of HEAD,
+  through its merge-base with HEAD otherwise - and records the HEAD read before the changed set.
+  A zero-command turn moves it only when nothing committed differs from the base; it is removed
+  when a real pass writes the marker and never read as verified. A baseline that cannot be read,
+  is not a regular file (a FIFO would hang Stop) or names no commit, or a write that fails,
+  refuses the turn.
+- **Chronic rules go to CI.** A rule priced over `verify.stopBudgetSeconds` on its own is still
+  deferred every Stop and never blocks the turn; its notice and record reason now say `deferred to
+  CI (the verify-gate check)` and that `/crew:done` needs its VERIFIED receipt (or a clean
+  `/crew:verify --all`); an old record's reason is re-said that way too. A rule that runs in
+  budget and fails still exits 2, whatever was deferred beside it.
+- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 24
+  sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
+
+### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
+
+- **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
+  reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
+  writes private from the first byte.
+- **Framing.** The warning in front of a peer's message is constant; the sender's peer-controlled name
+  appears only inside the untrusted block, in `peer_read`, `peer_history` and the watcher's wake notice.
+- **Client.** The inbound queue is capped (500 messages, 8 MiB) with one notice when it fills. A coded
+  refusal from the Bridge is queued as a notice for `peer_read`; a frame over the Bridge's limit is
+  refused before sending, and the default file cap drops from 256 KiB to 48 KiB. An IPv6 `bridge_url`
+  is bracketed. `peer_history`/`peer_list` requests carry a `request_id` the Bridge echoes, so a late
+  answer cannot reach the wrong caller.
+- **Bridge.** A direct message is marked delivered only after its send returns; a registration replay
+  skips a message in flight, and a send that fails across a reconnect goes to the new holder once.
+  `notify_when_idle` is capped at 32 per peer and ends when the subscriber leaves.
+- **Secrets.** The installer writes `config.yaml` and the token files 0600 from the first byte (POSIX).
+  `vpn` `mint-key --out` on Windows writes nothing when `icacls` cannot restrict the file.
+- **CI.** The `vpn/` `.ps1` shims no longer dot-source `_common.ps1`, which `scripts/check-powershell.ps1`
+  cannot follow; that checker exempts `install.ps1`'s NetSecurity/NetTCPIP cmdlets (scoped to that file)
+  and two more ScheduledTasks names, with must-block and must-allow cases in its suite. `.pylintrc`
+  ignores the module name `server`, which is both localgpu's `mcp/server.py` and ai-connect's package.
+  `tsadmin.py` resolves `icacls`/`taskkill` with `shutil.which`, and the shim tests give every `pwsh`
+  their own `XDG_CACHE_HOME`. 0.1.2 and 0.1.3 were set on the branch and never released.
+
+### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
+
+- **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
+  overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put
+  a machine on a Tailscale tailnet with a single-use key.
+- **Client round.** `peer_send`/`peer_context` open the file first and judge the handle (regular file,
+  final path inside the project, at most the cap), so a symlink or junction swapped in after the name
+  check is refused. `peer_list` puts every peer-set field in one untrusted block; `peer_read` and
+  `peer_history` put the sender and time line inside each message's block. Malformed peer fields render
+  escaped instead of raising, and `peer_read` drops messages only after they render.
+- **Server round.** `PeerRegistry.register` inserts the new holder before closing the dead one, so two
+  connections can no longer hold one name. A peer may message `User:<name>`; registering or watching one
+  stays refused. Each recipient's unread queue is capped (500 messages, 8 MiB) with the error code
+  `recipient_queue_full`, and unread messages go out in frames of at most 1 MiB, each marked delivered
+  only after its send. `observer_client.cli send` prints the Bridge's error for a refused recipient and
+  exits 1 instead of reporting it as waiting.
+- **VPN tooling.** `plugin/ai-connect/vpn/`: `mint-key`, `revoke`, `vpn-up`, `vpn-down` (one stdlib
+  `tsadmin.py` behind `.sh`/`.ps1` shims) and an ACL template allowing `tag:ai-peer` to reach
+  `tag:bridge:9999` only. `mint-key --peer-token` runs `installer.py add-peer` under the venv beside the
+  installer. `.crew/verify.json` runs `vpn/tests` as a second pytest run of the ai-connect entry.
+
+### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
+
+- **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each
+  other through a self-hosted bridge, with hooks that publish each session's state and wake an idle
+  session when a message arrives.
+- **Source.** A squashed, hardened fork of [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect)
+  at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55` (MIT; notice and upstream licence kept in
+  `plugin/ai-connect/NOTICE`): per-peer tokens, no name takeover, a read-only observer role, size and
+  rate limits, untrusted framing of peer text, project-confined file sharing, a VPN-scoped listener and
+  exact pins.
+- **Packaging.** Upstream's `integrations/claude-code/plugin/` became `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`; the watcher is registered once per flavour (`watch.sh` / `watch.ps1`, each standing
+  down on the other's platform, the PowerShell entry re-raising exit 2). `installer.py claude` now only
+  registers the MCP server. Menu row 19 (`repo-plugins`) stays off by default.
+- **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
+  plugin's `ruff.toml` extends the root config instead of replacing it.
+
+### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
+
+- **Summary.** crew can now refuse a command that would print the whole environment, or a
+  credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **`env-guard.sh` / `env-guard.ps1` -> `env_guard.py`**, a `PreToolUse` hook on Bash and PowerShell,
+  registered once per flavour (the PowerShell entry with `shell: "powershell"`; 36 hook entries).
+  It refuses `env` with nothing to run, `printenv`, bare `set`, `export -p`, `declare -p`,
+  `/proc/<pid>/environ`, `ps eww`, inline interpreter code reading `os.environ`/`process.env`/`%ENV`/
+  `ENV`/`getenv()`/`ENVIRON`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`,
+  `Get-Variable`, `cmd /c set`, and a credential-named variable in a printing form (`echo
+  "$GITHUB_TOKEN"`, `$env:API_KEY`), through `bash -c`, `eval`, `$( )`, pipes, loops and the usual
+  wrappers. What it cannot read is refused as could-not-tell. A refusal names a fixed label
+  (`env-dump:`, `secret-read:`, `could-not-tell:`) and never a value or the command, in the reason
+  and in `.crew/guard.log`.
+- **`guards.envGuard`**: `off` (default) / `report` / `block`, both layers, narrower wins; a malformed
+  value reads as `block`. Without a usable python both wrappers refuse (exit 2) only when a config file
+  arms it.
+- **BREAKING (narrowing): production reads.** `printenv` left `PROD_READ_COMMANDS`, bare `env` is a
+  write, and any remote command the env guard flags is a write, so `ssh prod printenv`, `ssh prod env`
+  and `ssh prod cat /proc/1/environ` are refused at `guards.prodServer: read`. `full` is unchanged.
+- **`plugin-hooks:<name>`**, a new self-claim marker: `check_self_claims` counts the command entries in
+  a plugin's `hooks/hooks.json`.
+- Follow-ups: L-0773 (the committed sabotage entries, a harness change) and L-0776 (keep credentials
+  out of the agent's environment, the stronger control).
 
 ### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
 
