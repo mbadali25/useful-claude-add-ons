@@ -239,18 +239,23 @@ def find_installer(explicit: str | None) -> Path | None:
     return None
 
 
-def cmd_mint_key(args) -> int:
-    if not PEER_NAME_RE.match(args.name):
-        raise Failure(f"peer name '{args.name}' must be 1-63 letters, digits or hyphens")
-    expiry = parse_expiry(args.expiry)
+def mint_auth_key(name: str, tag: str, expiry_seconds: int, ephemeral: bool = False) -> tuple[str, str]:
+    """One single-use, pre-authorised, tagged auth key through the OAuth client: (key, when it expires)."""
     token = access_token()
     status, payload = http("POST", f"{API_BASE}/tailnet/-/keys", token=token,
-                           body=key_request_body(args.name, args.tag, expiry, args.ephemeral))
+                           body=key_request_body(name, tag, expiry_seconds, ephemeral))
     key = payload.get("key") if status == 200 else None
     if not key:
         raise api_error("auth key creation", status, payload)
     remember_secret(key)
-    expires = payload.get("expires", f"in {expiry}s")
+    return key, str(payload.get("expires") or f"in {expiry_seconds}s")
+
+
+def cmd_mint_key(args) -> int:
+    if not PEER_NAME_RE.match(args.name):
+        raise Failure(f"peer name '{args.name}' must be 1-63 letters, digits or hyphens")
+    expiry = parse_expiry(args.expiry)
+    key, expires = mint_auth_key(args.name, args.tag, expiry, args.ephemeral)
     kind = "ephemeral" if args.ephemeral else "not ephemeral"
     if args.out:
         write_owner_only(Path(args.out), key + "\n")

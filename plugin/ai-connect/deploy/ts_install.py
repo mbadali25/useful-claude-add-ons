@@ -206,9 +206,9 @@ def pinned(accept_dns: bool) -> list[str]:
     return ["--accept-routes=false", "--exit-node=", f"--accept-dns={'true' if accept_dns else 'false'}"]
 
 
-def up_argv(accept_dns: bool) -> list[str]:
-    """`tailscale up` for a login by a person."""
-    argv = ["tailscale", "up", *pinned(accept_dns)]
+def up_argv(accept_dns: bool, extra: tuple[str, ...] = ()) -> list[str]:
+    """`tailscale up` for a login by a person; extra: e.g. the tag and host name `deploy join` asks for."""
+    argv = ["tailscale", "up", *pinned(accept_dns), *extra]
     if PLATFORM == "windows":
         argv.append("--unattended")
     return as_root(argv) if PLATFORM == "linux" else argv
@@ -248,12 +248,12 @@ def step_prefs(r: Run, accept_dns: bool = False) -> None:
     r.change("stop Tailscale taking what another VPN needs: it " + "; ".join(wrong), pin)
 
 
-def step_login(r: Run, accept_dns: bool = False) -> bool:
+def step_login(r: Run, accept_dns: bool = False, extra: tuple[str, ...] = ()) -> bool:
     """Log this machine in to the tailnet as its user: a browser login. False in a dry run that would, and
     in a dry run of bridge or peer, which asks no tool whether this machine is on the tailnet already
     (tailnet-setup's preview does ask)."""
     if tsadmin.NO_EXEC[0]:
-        out(f"    $ {shown(up_argv(accept_dns))}")
+        out(f"    $ {shown(up_argv(accept_dns, extra))}")
         r.change("log this machine in to the tailnet (browser login), unless it is on it already; then make "
                  f"its settings `{' '.join(pinned(accept_dns))}` with tailscale set if they differ", lambda: None)
         return False
@@ -261,7 +261,7 @@ def step_login(r: Run, accept_dns: bool = False) -> bool:
         r.already("this machine is on the tailnet")
         step_prefs(r, accept_dns)
         return True
-    argv = up_argv(accept_dns)
+    argv = up_argv(accept_dns, extra)
     out(f"    $ {shown(argv)}")
 
     def login() -> None:
@@ -270,7 +270,11 @@ def step_login(r: Run, accept_dns: bool = False) -> bool:
         binary = tsadmin.tailscale_bin()
         code = interactive([tool(argv[0]), binary, *argv[2:]] if argv[0] == "sudo" else [binary, *argv[1:]])
         if code != 0:
-            raise Failure(f"tailscale up failed (exit {code})")
+            tags = [a for a in extra if a.startswith("--advertise-tags=")]
+            why = (f"; to apply {tags[0].split('=', 1)[1]}, the account that signed in must be one of its "
+                   "tagOwners in the tailnet policy (deploy tailnet-setup --apply makes it the admins')"
+                   if tags else "")
+            raise Failure(f"tailscale up failed (exit {code}){why}")
         state = backend_state()
         if state != "Running":
             raise Failure("tailscale up returned, but this machine is not on the tailnet "

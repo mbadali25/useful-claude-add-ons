@@ -6,6 +6,10 @@
               [--register-mcp [--scope project|user]] [--install-hooks]      both off by default
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
+  deploy invite --name N [--bridge HOST] [--expiry 1h] [--ephemeral] [--out F] [--dry-run]
+                                                            on the Bridge: a one-use join key as an invite code
+  deploy join (--invite-file F | --invite | --name N --bridge HOST) [--with-hooks] [--register-mcp] [--dry-run]
+                                                            a new machine: Tailscale, the tailnet, its token, config
   deploy approve --name N [--token-sha256 HEX] [--dry-run]  add-peer, the restart, and the node's key expiry off
   deploy remove --name N --yes [--dry-run]                  the node off the tailnet and out of the Bridge
   deploy list                                               tailnet nodes beside the Bridge's peers
@@ -26,6 +30,8 @@ Exit codes: 0 done, 1 a step failed, 2 bad arguments, 3 tailscale not installed.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import getpass
 import hashlib
 import ipaddress
@@ -44,9 +50,9 @@ import smoke_test  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED,  # pylint: disable=import-error
-                         EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask,
-                         must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs, ts_self, tsadmin,
-                         venv_python)
+                         EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool,
+                         has_terminal, mask, must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs,
+                         ts_self, tsadmin, venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -727,7 +733,7 @@ def cmd_print_enrolment(args) -> int:
     if not token:
         token = secrets.token_hex(32)
         tsadmin.remember_secret(token)
-        tsadmin.write_owner_only(OWN_TOKEN, token + "\n")
+        write_own_token(token)
     print(json.dumps({"name": args.name, "token_sha256": hashlib.sha256(token.encode()).hexdigest()}), flush=True)
     print(f"deploy peer: the token itself stays in {OWN_TOKEN}. On the Bridge machine run: "
           f"deploy add-peer --name {args.name} --token-sha256 <token_sha256>", file=sys.stderr, flush=True)
@@ -907,42 +913,234 @@ def cmd_peer(args) -> int:
         ts_install.step_prefs(r, args.accept_dns)
     else:
         ts_install.step_install(r, not args.no_install_tailscale)
-        argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", args.name]
-        if args.auth_key_file:
-            argv += ["--auth-key-file", args.auth_key_file]
-        if args.accept_dns:
-            argv.append("--accept-dns")
-        out(f"    $ tailscale up --auth-key=file:<owner-only copy of the one-off key> "
-            f"--advertise-tags={tsadmin.DEFAULT_TAG} {' '.join(ts_install.pinned(args.accept_dns))} "
-            f"--hostname={args.name}")
+        step_join_with_key(r, args.name, args.accept_dns, key_file=args.auth_key_file)
 
-        def join() -> None:
-            res = run(argv, timeout=300)
-            for line in (res.stdout + res.stderr).strip().splitlines():
-                out(f"  {line}")
-            # 2 = joined, but vpn-up had no Bridge to probe; the last step checks the Bridge itself
-            if res.returncode not in (tsadmin.EXIT_OK, tsadmin.EXIT_UNKNOWN):
-                raise Failure(f"vpn-up failed (exit {res.returncode})")
-            state = backend_state()
-            if state != "Running":
-                raise Failure(f"vpn-up returned, but this machine is not on the tailnet (state: {state or 'unknown'})")
-        r.change(f"join the tailnet as '{args.name}' with the one-off auth key"
-                 + (", unless this machine is on it already (then pin its settings)" if r.dry_run else ""), join)
-
-    r.step("Client configuration")
-    url = bridge_url(args.bridge, args.port)
-    facts = inspect_config() or {}
-    wanted = {"exists": True, "name": args.name, "bridge_url": url,
-              "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
-    if token and all(facts.get(key) == value for key, value in wanted.items()):
-        r.already(f"{CONFIG_FILE} points at {url} as '{args.name}' with this token")
-    else:
-        r.change(f"write {CONFIG_FILE}: client.name {args.name}, bridge {url}, token {mask(token)}",
-                 lambda: config_tool("client", "--name", args.name, "--bridge", args.bridge, "--port", str(args.port),
-                                     env_extra={"AI_CONNECT_PEER_TOKEN": token}))
-
+    step_client_config(r, args.name, args.bridge, args.port, token)
     verify(r, "Bridge connection")
     return EXIT_OK
+
+
+def step_join_with_key(r: Run, name: str, accept_dns: bool, *, key_file: str | None = None,
+                       key: str | None = None) -> None:
+    """Join the tailnet with a one-off auth key through vpn-up: from key_file, from key (handed over in the
+    environment, never on a command line), else from TS_AUTHKEY / TS_AUTHKEY_FILE."""
+    argv = [sys.executable, str(PLUGIN / "vpn" / "tsadmin.py"), "vpn-up", "--hostname", name]
+    if key_file:
+        argv += ["--auth-key-file", key_file]
+    if accept_dns:
+        argv.append("--accept-dns")
+    out(f"    $ tailscale up --auth-key=file:<owner-only copy of the one-off key> "
+        f"--advertise-tags={tsadmin.DEFAULT_TAG} {' '.join(ts_install.pinned(accept_dns))} --hostname={name}")
+
+    def join() -> None:
+        res = run(argv, timeout=300, env=dict(os.environ, TS_AUTHKEY=key) if key else None)
+        for line in (res.stdout + res.stderr).strip().splitlines():
+            out(f"  {line}")
+        # 2 = joined, but vpn-up had no Bridge to probe; the last step checks the Bridge itself
+        if res.returncode not in (tsadmin.EXIT_OK, tsadmin.EXIT_UNKNOWN):
+            raise Failure(f"vpn-up failed (exit {res.returncode})")
+        state = backend_state()
+        if state != "Running":
+            raise Failure(f"vpn-up returned, but this machine is not on the tailnet (state: {state or 'unknown'})")
+    r.change(f"join the tailnet as '{name}' with the one-off auth key"
+             + (", unless this machine is on it already (then pin its settings)" if r.dry_run else ""), join)
+
+
+def step_client_config(r: Run, name: str, bridge: str, port: int, token: str) -> None:
+    r.step("Client configuration")
+    url = bridge_url(bridge, port)
+    facts = inspect_config() or {}
+    wanted = {"exists": True, "name": name, "bridge_url": url,
+              "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
+    if token and all(facts.get(key) == value for key, value in wanted.items()):
+        r.already(f"{CONFIG_FILE} points at {url} as '{name}' with this token")
+    else:
+        r.change(f"write {CONFIG_FILE}: client.name {name}, bridge {url}, token {mask(token)}",
+                 lambda: config_tool("client", "--name", name, "--bridge", bridge, "--port", str(port),
+                                     env_extra={"AI_CONNECT_PEER_TOKEN": token}))
+
+
+# ---------------------------------------------------------------- invite and join
+
+
+INVITE_PREFIX = "aic1."
+INVITE_HELP = "not an ai-connect invite (expected the aic1. code that `deploy invite` made)"
+
+
+def encode_invite(name: str, bridge: str, port: int, key: str) -> str:
+    """aic1. and the base64url (no padding) of {v, name, bridge, port, key}: one line to paste or carry in a file."""
+    raw = json.dumps({"v": 1, "name": name, "bridge": bridge, "port": port, "key": key}).encode()
+    return INVITE_PREFIX + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode_invite(code: str) -> dict:
+    """The invite's fields, checked. Never quotes the code: it holds a key."""
+    code = code.strip()
+    body = code[len(INVITE_PREFIX):] if code.startswith(INVITE_PREFIX) else ""
+    try:
+        invite = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))) if body else None
+    except (ValueError, binascii.Error):
+        invite = None
+    ok = (isinstance(invite, dict) and invite.get("v") == 1
+          and tsadmin.PEER_NAME_RE.match(str(invite.get("name", ""))) is not None
+          and HOSTNAME_RE.match(str(invite.get("bridge", ""))) is not None
+          and isinstance(invite.get("port"), int) and 1 <= invite["port"] <= 65535
+          and str(invite.get("key", "")).startswith("tskey-auth-"))
+    if not ok:
+        raise Failure(INVITE_HELP, EXIT_USAGE)
+    tsadmin.remember_secret(invite["key"])
+    return invite
+
+
+def cmd_invite(args) -> int:
+    """A single-use, non-ephemeral, pre-approved tag:ai-peer key for one new machine, as an invite code."""
+    check_name(args.name, "--name")
+    if args.bridge:
+        check_host(args.bridge)
+    expiry = tsadmin.parse_expiry(args.expiry)
+    tag, kind = tsadmin.DEFAULT_TAG, "ephemeral" if args.ephemeral else "not ephemeral"
+    r = Run(args.dry_run, total=1)
+    out(f"=== AI-Connect deploy: invite '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    r.step("Join key")
+    where = f"write the invite owner-only to {args.out}" if args.out else "show the invite once"
+    if r.dry_run:
+        r.change(f"mint a single-use, {kind}, pre-approved {tag} key for '{args.name}' (expires in {args.expiry}) "
+                 f"and {where}", lambda: None)
+        return EXIT_OK
+    bridge = args.bridge or tailscale_ip()
+    port = args.port or (inspect_config() or {}).get("port") or DEFAULT_PORT  # this Bridge's own port
+    key, expires = tsadmin.mint_auth_key(args.name, tag, expiry, args.ephemeral)
+    code = encode_invite(args.name, bridge, port, key)
+    tsadmin.remember_secret(code)
+    what = f"invite for '{args.name}' (single use, {kind}, {tag}, Bridge {bridge}:{port}, expires {expires})"
+    if args.out:
+        tsadmin.write_owner_only(Path(args.out), code + "\n")
+        r.record("done", what)
+        out(f"  done: {what} written to {Path(args.out).resolve()}")
+        out(f"  Carry that file to '{args.name}' and run there: deploy join --invite-file <file>")
+    else:
+        out(f"  {what}, shown once. It is a secret until it is used or expires:")
+        print(f"  {code}", flush=True)  # the one deliberate secret on stdout: the admin asked for it
+        out(f"  On '{args.name}': deploy join --invite, and paste it at the prompt "
+            "(or put it in a file: --invite-file F, or in AI_CONNECT_INVITE)")
+    out(f"  Then here: deploy approve --name {args.name} --token-sha256 <the hash join prints>")
+    return EXIT_OK
+
+
+def read_invite(args) -> dict | None:
+    """The invite from --invite-file, AI_CONNECT_INVITE, or a hidden prompt (--invite); None without one."""
+    if args.invite_file:
+        try:
+            code = Path(args.invite_file).read_text(encoding="utf-8")
+        except OSError as err:
+            raise Failure(f"cannot read the invite file {args.invite_file}: {err.strerror}", EXIT_USAGE) from None
+    elif os.environ.get("AI_CONNECT_INVITE", "").strip():
+        code = os.environ["AI_CONNECT_INVITE"]
+    elif args.invite:
+        if not has_terminal():
+            raise Failure("--invite asks for the code, and there is no terminal here: pass --invite-file F or set "
+                          "AI_CONNECT_INVITE", EXIT_USAGE)
+        code = getpass.getpass("  Invite code (not shown): ")
+    else:
+        return None
+    tsadmin.remember_secret(code.strip())
+    return decode_invite(code)
+
+
+def private_config_dir() -> None:
+    """~/.config/ai-connect owner-only (0700): it holds this machine's token."""
+    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name != "nt":
+        CONFIG_DIR.chmod(0o700)
+
+
+def write_own_token(token: str) -> None:
+    private_config_dir()
+    tsadmin.write_owner_only(OWN_TOKEN, token + "\n")
+
+
+def join_summary(bridge: str, port: int, name: str, digest: str) -> int:
+    """VPN, port and token: PASS or FAIL, and PENDING for a token the Bridge has not been told about yet."""
+    rows = [("VPN up", *smoke_test.check_vpn()), ("Bridge port reachable", *smoke_test.check_port(bridge, port))]
+    auth = config_tool("verify")
+    if auth.get("result") == "ok":
+        rows.append(("Bridge accepts this token", True, f"{auth.get('url')} accepted this machine's token"))
+    elif auth.get("result") == "refused":
+        rows.append(("Bridge accepts this token", None, f"not approved yet: on the Bridge run deploy approve --name "
+                                                        f"{name} --token-sha256 {digest}"))
+    else:
+        rows.append(("Bridge accepts this token", False, str(auth.get("detail") or auth.get("result") or "no answer")))
+    width = max(len(title) for title, _ok, _detail in rows)
+    out("")
+    out(f"  {'CHECK'.ljust(width)}  RESULT   DETAIL")
+    for title, ok, detail in rows:
+        result = "PENDING" if ok is None else "PASS" if ok else "FAIL"
+        out(f"  {title.ljust(width)}  {result.ljust(7)}  {detail}")
+    if rows[-1][1]:
+        out(f"  Joined and approved. The full end-to-end check: deploy test --bridge {bridge} --name {name}")
+    return EXIT_FAILED if any(ok is False for _title, ok, _detail in rows) else EXIT_OK
+
+
+def cmd_join(args) -> int:
+    """A new machine in one command: Tailscale, the tailnet (invite or login), its own token, the client
+    config, and a summary. Only the token's hash is printed, for `deploy approve` on the Bridge."""
+    invite = read_invite(args)
+    name = args.name or (invite or {}).get("name")
+    bridge = args.bridge or (invite or {}).get("bridge")
+    port = args.port or (invite or {}).get("port") or DEFAULT_PORT
+    if invite and args.name and args.name != invite["name"]:
+        raise Failure(f"--name {args.name} differs from the name the invite was made for ({invite['name']})",
+                      EXIT_USAGE)
+    if not (name and bridge):
+        raise Failure("join needs --name and --bridge, or an invite that carries both (--invite-file F)", EXIT_USAGE)
+    check_name(name, "--name")
+    check_host(bridge)
+    tag = tsadmin.DEFAULT_TAG
+    r = Run(args.dry_run, total=6)
+    out(f"=== AI-Connect deploy: join '{name}' to {bridge}:{port}{' (dry run)' if r.dry_run else ''} ===")
+
+    r.step("Preflight")
+    coexistence(r, args.accept_dns)
+    if TARGET == "linux" and not IS_ROOT and shutil.which("sudo") is None:
+        raise Failure("not root and no sudo: installing and starting Tailscale needs root; run this as root")
+    out("  running as root" if IS_ROOT else "  sudo or Windows (UAC) asks where root or an administrator is needed")
+    step_deps(r)
+
+    r.step("Tailscale")
+    ts_install.step_install(r, not args.no_install_tailscale)
+    on_tailnet = not r.dry_run and ts_install.installed() is not None and backend_state() == "Running"
+    if on_tailnet:
+        r.already("this machine is on the tailnet")
+        ts_install.step_prefs(r, args.accept_dns)
+    elif invite:
+        step_join_with_key(r, name, args.accept_dns, key=invite["key"])
+    else:
+        ts_install.step_login(r, args.accept_dns, (f"--advertise-tags={tag}", f"--hostname={name}"))
+        out(f"  joined by a login: `deploy approve --name {name}` on the Bridge also turns this node's key "
+            "expiry off (an invite's key does that by itself)")
+    if invite and args.invite_file and not r.dry_run and not on_tailnet:
+        Path(args.invite_file).unlink(missing_ok=True)
+        out(f"  used invite file {args.invite_file} deleted")
+
+    r.step("Peer token")
+    token = own_token()
+    if token:
+        r.already(f"this machine's own token is in {OWN_TOKEN}")
+    else:
+        token = secrets.token_hex(32)
+        tsadmin.remember_secret(token)
+        r.change(f"make this machine's own token, owner-only in {OWN_TOKEN}", lambda: write_own_token(token))
+    step_client_config(r, name, bridge, port, token)
+    step_claude(r, argparse.Namespace(install_hooks=args.with_hooks, register_mcp=args.register_mcp,
+                                      scope=args.scope))
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    if r.dry_run:
+        out("  would: print this machine's enrolment {name, token_sha256} and check VPN, port and token")
+        return EXIT_OK
+    out("")
+    print(json.dumps({"name": name, "token_sha256": digest}), flush=True)
+    out(f"  The token stays here. On the Bridge: deploy approve --name {name} --token-sha256 {digest}")
+    return join_summary(bridge, port, name, digest)
 
 
 def cmd_status(args) -> int:
@@ -1097,6 +1295,32 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--token-sha256", required=True, help="token_sha256 from `deploy peer --print-enrolment`")
     a.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
     a.set_defaults(func=cmd_add_peer)
+
+    iv = sub.add_parser("invite", help="on the Bridge: a single-use, non-ephemeral join key for one new machine")
+    iv.add_argument("--name", required=True, help="the new machine's peer name")
+    iv.add_argument("--bridge", help="the Bridge address the invite carries (default: this machine's Tailscale IPv4)")
+    iv.add_argument("--port", type=port_arg, default=None, help="Bridge port (default: this Bridge's, else 9999)")
+    iv.add_argument("--expiry", default="1h", help="how long the invite can be used: 1h (default), 30m, 1d")
+    iv.add_argument("--ephemeral", action="store_true",
+                    help="the node is removed soon after it goes offline: throwaway or CI machines only")
+    iv.add_argument("--out", help="write the invite owner-only to this file (default: show it once)")
+    iv.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
+    iv.set_defaults(func=cmd_invite)
+
+    jn = sub.add_parser("join", help="a new machine: Tailscale, the tailnet, its own token and the client config")
+    jn.add_argument("--invite-file", help="the invite `deploy invite --out` wrote (deleted once used)")
+    jn.add_argument("--invite", action="store_true", help="ask for the invite code (hidden); or AI_CONNECT_INVITE")
+    jn.add_argument("--name", help="this machine's peer name (default: the invite's)")
+    jn.add_argument("--bridge", help="the Bridge's Tailscale IP (default: the invite's)")
+    jn.add_argument("--port", type=port_arg, default=None, help="Bridge port (default: the invite's, else 9999)")
+    jn.add_argument("--with-hooks", action="store_true",
+                    help="also install the plugin with its hooks for every Claude Code session here (off by default)")
+    jn.add_argument("--register-mcp", action="store_true", help="also register the MCP server (off by default)")
+    jn.add_argument("--scope", choices=("project", "user"), default="project", help="where --register-mcp goes")
+    jn.add_argument("--accept-dns", action="store_true", help="let Tailscale manage DNS (off: another VPN keeps it)")
+    jn.add_argument("--no-install-tailscale", action="store_true", help="fail (exit 3) instead of installing it")
+    jn.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
+    jn.set_defaults(func=cmd_join)
 
     ap = sub.add_parser("approve", help="on the Bridge: let a joined machine in (add-peer, restart, key expiry off)")
     ap.add_argument("--name", required=True, help="the peer's name")
