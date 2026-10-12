@@ -9,6 +9,7 @@ import asyncio
 import test_server_harness as h
 
 import pytest
+from websockets.exceptions import ConnectionClosed
 
 from server.roles import Roles, token_sha256
 from test_server_harness import connect, recv, recv_type, register, running_bridge, send
@@ -311,6 +312,102 @@ def test_backlog_of_the_machine_is_delivered_exactly_once_across_concurrent_regi
 
     first, second = run(go())
     assert sorted(first + second) == [f"m{i}" for i in range(5)]
+
+
+def test_a_sibling_that_fetched_the_backlog_before_it_was_delivered_does_not_send_it_again(tmp_path):
+    """Two sessions register together and the second one's read of the store returns late,
+    after the first has sent, marked and let go of every row: it must not send its stale copy."""
+    async def drain(ws) -> list[str]:
+        contents = []
+        try:
+            while True:
+                frame = await recv(ws, 0.8)
+                if frame["type"] == "unread":
+                    contents += [m["content"] for m in frame["messages"]]
+        except asyncio.TimeoutError:
+            return contents
+
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.BOB_TOKEN) as bob:
+                await register(bob, h.BOB)
+                for i in range(3):
+                    await send(bob, type="message", to=h.ALICE, content=f"m{i}")
+                assert await no_message(bob)
+            read, calls = server.store.get_unread, []
+
+            async def slow_second_read(peer):
+                rows = await read(peer)
+                if peer == h.ALICE:
+                    calls.append(peer)
+                    if len(calls) == 2:
+                        await asyncio.sleep(0.4)  # the snapshot is taken; the first replay finishes meanwhile
+                return rows
+
+            server.store.get_unread = slow_second_read
+            async with connect(server, h.ALICE_TOKEN) as one, connect(server, h.ALICE_TOKEN) as two:
+                await asyncio.gather(send(one, type="register", name=A1), send(two, type="register", name=A2))
+                return await asyncio.gather(drain(one), drain(two))
+
+    first, second = run(go())
+    assert sorted(first + second) == ["m0", "m1", "m2"]
+
+
+class ClosedSocket:
+    """A session whose connection broke: every send fails."""
+    state = None
+
+    async def send(self, _payload):
+        raise ConnectionClosed(None, None)
+
+
+def test_a_backlog_whose_session_broke_goes_to_a_sibling_at_once(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.ALICE_TOKEN) as two, connect(server, h.ALICE_TOKEN) as three:
+                await register(two, A2)
+                await register(three, f"{A2}-3")
+                await asyncio.sleep(0.1)  # their own replays, which follow "registered", are over
+                for i in range(2):
+                    await server.store.store(h.BOB, h.ALICE, f"m{i}", None, delivered=False)
+                await server.store.store(h.BOB, A1, "for the broken one", None, delivered=False)
+                with pytest.raises(ConnectionClosed):
+                    await server._deliver_unread(ClosedSocket(), A1, h.ALICE)  # pylint: disable=protected-access
+                got = await recv_type(two, "unread")
+                return (got, await no_message(three), await server.store.get_unread(h.ALICE),
+                        await server.store.get_unread(A1))
+
+    got, sibling_quiet, machine_left, own_left = run(go())
+    assert [m["content"] for m in got["messages"]] == ["m0", "m1"]
+    assert sibling_quiet  # one sibling, not each of them
+    assert machine_left == []
+    # What was for the broken session's own name waits for it, and reaches no sibling
+    assert [m["content"] for m in own_left] == ["for the broken one"]
+
+
+def test_a_backlog_with_no_sibling_online_stays_for_the_next_registration(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            await server.store.store(h.BOB, h.ALICE, "m", None, delivered=False)
+            with pytest.raises(ConnectionClosed):
+                await server._deliver_unread(ClosedSocket(), A1, h.ALICE)  # pylint: disable=protected-access
+            async with connect(server, h.ALICE_TOKEN) as one:
+                await register(one, A1)
+                return await recv_type(one, "unread")
+
+    assert [m["content"] for m in run(go())["messages"]] == ["m"]
+
+
+def test_a_register_refusal_says_that_this_bridge_knows_session_names(tmp_path):
+    """So a client can tell "not your name" from a Bridge older than 0.2.0, which sends the same code."""
+    async def go():
+        async with running_bridge(tmp_path) as server:
+            async with connect(server, h.ALICE_TOKEN) as ws:
+                return await register(ws, f"{h.BOB}:proj")
+
+    frame = run(go())
+    assert frame["code"] == "name_not_bound_to_token"
+    assert frame["session_names"] is True
 
 
 # --- watchers, history, idle notices -------------------------------------------------

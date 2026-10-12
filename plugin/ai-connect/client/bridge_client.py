@@ -34,6 +34,12 @@ QUEUE_FULL_NOTICE = (
     "peer_history. Broadcasts missed meanwhile are not in it."
 )
 REFUSED_NOTICE = "The Bridge refused something this session sent ({code}): {error}"
+NAME_NOT_OURS_NOTICE = (
+    "The Bridge refused the name {name} (name_not_bound_to_token), so this session is offline. "
+    "Either client.name in config.yaml ({machine}) is not the name this machine's token was "
+    "enrolled with, or {name} belongs to another enrolled machine: then start this session with "
+    "AI_CONNECT_PEER_SUFFIX set, which gives it a different name."
+)
 OLDER_BRIDGE_NOTICE = (
     "This Bridge is older than AI-Connect 0.2.0 and knows one name per machine, so this session "
     "joined as {machine} instead of {session}. Only one session of this machine is online at a "
@@ -403,7 +409,12 @@ class BridgeClient:
             await self._on_name_taken()
 
         elif msg_type == "error" and data.get("code") == "name_not_bound_to_token" and self._can_fall_back():
-            await self._fall_back_to_machine_name()
+            # The one code has two causes. A Bridge that knows session names marks
+            # its refusals: there the name really is someone else's
+            if data.get("session_names"):
+                self._on_name_not_ours(data)
+            else:
+                await self._fall_back_to_machine_name()
 
         elif msg_type == "error":
             logger.error(f"Bridge reported an error ({data.get('code')}): {data.get('error')}")
@@ -423,6 +434,16 @@ class BridgeClient:
     def _can_fall_back(self) -> bool:
         """Whether the refused name was this session's own under its machine, not yet given up."""
         return bool(self._machine_name) and not self._fell_back and self.peer_name != self._machine_name
+
+    def _on_name_not_ours(self, data: dict) -> None:
+        """A 0.2.0 Bridge refused the session's name: it is not under this token's enrolled name.
+
+        Not retried under the machine's name: that would join, and hide that
+        client.name is wrong or that the project's name is another machine's.
+        """
+        self._connected = False
+        logger.error(f"Bridge refused the name '{self.peer_name}' ({data.get('code')}): {data.get('error')}")
+        self._queue_notice(NAME_NOT_OURS_NOTICE.format(name=self.peer_name, machine=self._machine_name))
 
     async def _fall_back_to_machine_name(self) -> None:
         """A Bridge from before 0.2.0 binds the token to the machine name alone: join as that.

@@ -50,6 +50,10 @@ PEER_STATES = ("busy", "idle", "waiting")
 MAX_IDLE_SUBSCRIPTIONS_PER_PEER = 32
 IDLE_NOTICE = "{name} is done and idle."
 WAITING_NOTICE = "{name} is waiting for approval: {detail}"
+# On every register refusal. A Bridge from before 0.2.0 refuses each session name
+# ("<machine>:<label>") with name_not_bound_to_token, the code this one keeps for a
+# name another machine owns: the mark tells a client which of the two it met
+SESSION_NAMES = {"session_names": True}
 NAME_TAKEN_ERROR = (
     "'{name}' is online in another session. Register under another name of this token "
     "('<client.name>:<label>', as AI-Connect 0.2.0 and later do by themselves), close one, "
@@ -136,6 +140,9 @@ class BridgeServer:
         self._idle_subscribers: dict[str, set[str]] = {}
         # Ids of direct messages being sent live right now (stored unread until sent)
         self._in_flight: set[str] = set()
+        # One replay of waiting messages per machine at a time: its sessions
+        # share what waited for the machine's name
+        self._replay_locks: dict[str, asyncio.Lock] = {}
 
         self.registry.on_join(self._announce_joined)
         self.registry.on_leave(self._handle_left)
@@ -201,8 +208,11 @@ class BridgeServer:
         # Only the first refusal of a run is logged, so a flood does not flood the log
         rate_limited = False
 
-        async def refuse(reason: str, error: str, msg_type: object = None, log: bool = True, **fields: object) -> None:
-            await websocket.send(json.dumps({"type": "error", "error": error, "code": reason}))
+        async def refuse(  # pylint: disable=too-many-arguments
+            reason: str, error: str, msg_type: object = None, log: bool = True,
+            frame: dict | None = None, **fields: object,
+        ) -> None:
+            await websocket.send(json.dumps({"type": "error", "error": error, "code": reason, **(frame or {})}))
             if log:
                 log_refusal(reason, ip=client_ip, peer=peer_name, role=role, msg_type=msg_type, **fields)
 
@@ -242,7 +252,10 @@ class BridgeServer:
                         continue
                     reason = self.roles.register_refusal(identity, name)
                     if reason:
-                        await refuse(reason, f"'{name}' may not be registered with this token", msg_type, name=name)
+                        await refuse(
+                            reason, f"'{name}' may not be registered with this token", msg_type,
+                            frame=SESSION_NAMES, name=name,
+                        )
                         continue
                     holder = self.registry.get(name)
                     if holder is not None and holder.websocket is websocket:
@@ -568,23 +581,51 @@ class BridgeServer:
         """Send what waited for name in frames the client accepts, each marked once it is sent.
 
         What waited for the machine (the token's enrolled name) goes to its
-        first session to register. A send that fails leaves the rest unread
-        for the next registration.
+        first session to register. A send that fails leaves the rest unread:
+        what was for the session's own name waits for its next registration,
+        what was for the machine goes to a sibling session that is online.
         """
-        waiting = await self.store.get_unread(name)
-        if machine and machine != name:
-            waiting = sorted(waiting + await self.store.get_unread(machine), key=lambda m: m["timestamp"])
-        # No await between this check and the claim: a sibling session
-        # registering right now skips what this one is about to send
-        waiting = [m for m in waiting if m["id"] not in self._in_flight]
-        claimed = {m["id"] for m in waiting}
-        self._in_flight |= claimed
         try:
-            for chunk in _unread_chunks(waiting):
-                await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
-                await self.store.mark_delivered([m["id"] for m in chunk])
-        finally:
-            self._in_flight -= claimed
+            await self._replay(websocket, name, machine)
+        except websockets.exceptions.ConnectionClosed:
+            if machine:
+                await self._replay_to_sibling(machine, websocket)
+            raise
+
+    async def _replay(self, websocket: ServerConnection, name: str, machine: str | None) -> None:
+        """Send and mark what waits for name and its machine; ConnectionClosed if the send fails."""
+        if not machine:
+            await self._send_unread(websocket, await self.store.get_unread(name))
+            return
+        # Read, send and mark under the machine's lock: a sibling that read the
+        # same rows before this one marked them would send them a second time
+        async with self._replay_locks.setdefault(machine, asyncio.Lock()):
+            waiting = await self.store.get_unread(name)
+            if machine != name:
+                waiting = sorted(waiting + await self.store.get_unread(machine), key=lambda m: m["timestamp"])
+            await self._send_unread(websocket, waiting)
+
+    async def _send_unread(self, websocket: ServerConnection, waiting: list[dict]) -> None:
+        # A row being sent live right now (see _route_message) is not sent as unread too
+        for chunk in _unread_chunks([m for m in waiting if m["id"] not in self._in_flight]):
+            await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
+            await self.store.mark_delivered([m["id"] for m in chunk])
+
+    async def _replay_to_sibling(self, machine: str, failed: ServerConnection) -> None:
+        """What still waits for the machine goes to one of its other online sessions.
+
+        Without this it would wait for the next registration, with a sibling
+        online the whole time. With none online it stays unread.
+        """
+        for peer in self._addressed(machine):
+            if peer.websocket is failed or getattr(peer.websocket, "state", None) is not State.OPEN:
+                continue
+            try:
+                await self._replay(peer.websocket, peer.name, machine)
+            except websockets.exceptions.ConnectionClosed:
+                continue
+            logger.info(f"Waiting messages for {machine} went to {peer.name}: the session they were sent to broke")
+            return
 
     async def _notify_watchers(self, to_peer: str, from_peer: str, payload: str) -> None:
         """Tell the watchers of every recipient that a message arrived."""

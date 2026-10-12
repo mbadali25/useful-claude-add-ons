@@ -386,6 +386,7 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 | `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `installer.py add-peer <name>`, put the token in `client.token`, restart the Bridge and the client |
 | `may not be registered with this token` | `client.name` is not the name the token was issued for | Set `client.name` to the name given to `add-peer` |
 | `peer_status` shows standby | Another session holds the same name (`name_taken`): the Bridge or this client is still 0.1.8, or two sessions were given the same `AI_CONNECT_PEER_NAME` | Update both to 0.2.0, where every session has its own name; until then close one. The standby session takes the name once the other one leaves |
+| `peer_read` says the Bridge refused the session's name (`name_not_bound_to_token`) and the session is offline | `client.name` is not the name the token was enrolled with, or the session's name belongs to another enrolled machine (`client.name: Host` in a project `Alice`, with `Host:Alice` enrolled too) | Fix `client.name`, or start that session with `AI_CONNECT_PEER_SUFFIX` set so it gets a different name |
 | `peer_read` says the Bridge is older than 0.2.0 | A 0.2.0 session joined a 0.1.8 Bridge, which knows one name per machine | Update the Bridge (`deploy bridge` from a 0.2.0 checkout); the sessions take their own names at their next connection |
 
 ## Limitations

@@ -20,11 +20,15 @@ Every session on an enrolled machine is online at once. In 0.1.8 all sessions of
 
 ### Fixed
 - One watcher per session was keyed on the session's process id alone, so two machines whose sessions shared a process id turned each other's watcher away; it is keyed on the token as well
-- Two sessions registering at the same moment could both be sent the same waiting messages; a replay now claims what it sends
+
+### Delivery of what waited
+- One replay per machine at a time (a lock around read, send and mark): two sessions registering together cannot both send the rows that waited for the machine's name, whichever read the store first
+- A replay whose connection breaks hands what still waits for the machine to one of its other online sessions at once, instead of leaving it until the next registration; what waited for the broken session's own name stays for that name
 
 ### Compatibility
 - 0.1.8 client, 0.2.0 Bridge: works as before, one session per machine under `client.name`, standby for a second
 - 0.2.0 client, 0.1.8 Bridge: the session name is refused (`name_not_bound_to_token`); the client registers as `client.name` instead, says so once in `peer_read`, and asks for its own name again at every new connection. One session per machine until the Bridge is updated
+- A 0.2.0 Bridge sends the same code for a name another enrolled machine owns (`client.name: Host`, project `Alice`, with `Host:Alice` enrolled) or a wrong `client.name`, and marks every register refusal with `"session_names": true`. The client falls back only when the mark is absent; with it, the session stays offline and `peer_read` names the conflict instead of blaming the Bridge's age
 - Update the Bridge first. Messages already waiting under a machine's name are delivered to its first 0.2.0 session
 
 ## [0.1.8] - 2026-10-12

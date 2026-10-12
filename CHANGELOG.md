@@ -26,8 +26,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `peer_read`.
 - **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
   must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
-  names, and both mixed-version pairings. Nine mutations of the guard, the fan-out and the replay claim each
-  turn the suites red. Not run against a live Bridge.
+  names, both mixed-version pairings, two sessions replaying the machine's backlog at once, and a replay whose
+  connection breaks. Thirteen mutations of the guard, the fan-out, the replay lock and the fallback each turn
+  the suites red. Not run against a live Bridge.
 
 ### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
 

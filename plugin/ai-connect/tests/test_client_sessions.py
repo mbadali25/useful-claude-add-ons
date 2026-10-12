@@ -20,7 +20,10 @@ from peer_name import machine_name, peer_name, session_label  # noqa: E402  # py
 from server.roles import SESSION_LABEL  # noqa: E402  # pylint: disable=wrong-import-position
 
 TAKEN = {"type": "error", "code": "name_taken", "error": "held"}
+# A Bridge from before session names (0.1.8) refuses every "<machine>:<label>" this way
 NOT_BOUND = {"type": "error", "code": "name_not_bound_to_token", "error": "not yours"}
+# A 0.2.0 Bridge sends the same code for a name another machine owns, and marks the frame
+NOT_YOURS = {**NOT_BOUND, "session_names": True}
 
 
 def session_client(**kwargs) -> tuple[BridgeClient, list[dict]]:
@@ -153,6 +156,22 @@ def test_an_older_bridge_gets_the_machine_name_and_the_session_is_told():
     assert client.connected
     notices = [m["content"] for m in client.pop_messages()]
     assert len(notices) == 1 and "0.2.0" in notices[0] and "laptop" in notices[0]
+
+
+def test_a_name_another_machine_owns_is_not_mistaken_for_an_older_bridge(caplog):
+    """client.name "Host" in a project "Alice" asks for "Host:Alice", which may be enrolled itself:
+    joining as "Host" instead, with a notice blaming the Bridge's age, would hide the conflict."""
+    client, sent = session_client()
+    with caplog.at_level(logging.ERROR):
+        handle(client, NOT_YOURS)
+    assert sent == []  # no fallback to the machine name
+    assert client.peer_name == "laptop:proj"
+    assert not client.connected
+    notices = [m["content"] for m in client.pop_messages()]
+    assert len(notices) == 1
+    assert "laptop:proj" in notices[0] and "client.name" in notices[0] and "another" in notices[0]
+    assert "0.2.0" not in notices[0] and "older" not in notices[0]
+    assert "name_not_bound_to_token" in caplog.text
 
 
 def test_on_an_older_bridge_a_second_session_waits_on_standby_as_before():

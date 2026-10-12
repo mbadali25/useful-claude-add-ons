@@ -310,8 +310,9 @@ def test_a_session_joins_a_bridge_from_before_session_names_under_the_machine_na
             return "name_bound_to_other_token"
         return None
 
-    from server import roles  # pylint: disable=import-outside-toplevel
+    from server import roles, websocket_server  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(roles.Roles, "register_refusal", register_refusal_0_1_8)
+    monkeypatch.setattr(websocket_server, "SESSION_NAMES", {})  # 0.1.8 marked no frame
 
     async def go():
         server = build_server(provisioned["server"], db_path=provisioned["db"])
@@ -336,6 +337,32 @@ def test_a_session_joins_a_bridge_from_before_session_names_under_the_machine_na
     assert online == sorted([BRIDGE_PEER, LAPTOP_PEER])
     assert any("0.2.0" in content for content in shown)
     assert "hello" in shown
+
+
+def test_a_session_name_under_another_machine_is_refused_without_falling_back(provisioned):
+    """Against a 0.2.0 Bridge the same refusal code means a real conflict: the session stays
+    offline and says why, instead of joining under the machine's name as if the Bridge were old."""
+    async def go():
+        server = build_server(provisioned["server"], db_path=provisioned["db"])
+        await server.start()
+        laptop = provisioned["laptop_peer"]
+        client = bridge_client.BridgeClient(
+            host=laptop.host, port=server.bound_port, peer_name=f"{BRIDGE_PEER}:repo", token=laptop.token,
+            machine_name=LAPTOP_PEER, collision_suffix="111",
+        )
+        try:
+            assert await client.connect()
+            await until(client.peek_messages, "the refusal reached the session")
+            await asyncio.sleep(0.1)
+            return client.connected, [p.name for p in server.registry.all()], client.pop_messages()
+        finally:
+            await client.disconnect()
+            await server.stop()
+
+    connected, online, notices = run(go())
+    assert not connected
+    assert online == []  # not as "laptop" either
+    assert len(notices) == 1 and "another" in notices[0]["content"] and "0.2.0" not in notices[0]["content"]
 
 
 def test_observer_hash_written_by_installer_reaches_the_bridge(provisioned, tmp_path):
