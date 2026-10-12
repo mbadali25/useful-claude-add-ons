@@ -77,11 +77,20 @@ async def session_peer(session: str) -> str | None:
     return None
 
 
+def peer_settings(peer: str):
+    """The Bridge address and the token of the name the session's client chose and recorded.
+
+    Not a name chosen again here: with client.name_mode per-project the
+    hook's working directory need not be the project's.
+    """
+    return client_settings(load_config(), name=peer)
+
+
 async def watch(session: str) -> None:
     peer = await session_peer(session)
     if peer is None:
         sys.exit("aiconnect_watch.py: this session has no AI-Connect MCP client (no name recorded)")
-    settings = client_settings(load_config())
+    settings = peer_settings(peer)
     uri = settings.uri
     headers = {"Authorization": f"Bearer {settings.token}"}
     while True:

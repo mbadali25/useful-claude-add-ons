@@ -11,8 +11,8 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.1.11<!-- claim: plugin-version:ai-connect --> |
-| **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine) |
+| **Version** | 0.1.16<!-- claim: plugin-version:ai-connect --> |
+| **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
 | **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |

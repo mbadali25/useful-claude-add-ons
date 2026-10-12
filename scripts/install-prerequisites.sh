@@ -175,6 +175,25 @@ as_root() {
   fi
 }
 
+# 'npm install -g', run as whoever can actually write npm's global prefix. A
+# distribution's own nodejs (apt on Debian/Ubuntu, dnf on Fedora) keeps that prefix at
+# /usr/local, which only root can write, so the bare command dies there for anyone else:
+#     npm ERR! Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/pyright'
+# The Claude Code CLI install always elevated for this. The language servers and
+# skillui did not, so on a stock Ubuntu Server (26.04 is where it was reported) the CLI
+# went in and every global package after it failed. One helper, so that a new call site
+# cannot forget again. A prefix the user owns (nvm, fnm, 'npm config set prefix') is
+# writable and is never elevated: root-owned files in there break the next plain install.
+npm_install_global() {
+  local npm_prefix
+  npm_prefix="$(npm config get prefix)"
+  if [ -w "$npm_prefix" ]; then
+    npm install -g "$@"
+  else
+    as_root npm install -g "$@"
+  fi
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- uv, under PEP 668 --------------------------------------------------------
@@ -2306,6 +2325,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+# 'sudo bash install-prerequisites.sh' looks like the obvious way to satisfy "needs root
+# or sudo" on the first menu row, and it is the one way to get nothing: sudo points HOME
+# at root's, so every marketplace, plugin, skill and uv tool below lands in /root and
+# the account that typed the command finds Claude Code empty, after a run that reported
+# success. 'sudo -E' used to be the workaround; sudo-rs (Ubuntu 25.10+) ignores it:
+#     sudo: preserving the entire environment is not supported, '-E' is ignored
+# Said before the first install and again in the summary, because between the two sit
+# several thousand lines of package-manager output. A warning, not a refusal: installing
+# for root on purpose is legitimate, and only the person at the keyboard knows which.
+sudo_home_warning() {
+  [ "$(id -u 2>/dev/null || true)" = "0" ] || return 0
+  [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] || return 0
+  warn "running as root through sudo: plugins, marketplaces, skills and per-user tools are being installed for root (HOME=$HOME), NOT for '$SUDO_USER'. To install them for '$SUDO_USER', run this script as that user without sudo - it elevates the individual commands that need it."
+}
+sudo_home_warning
+
 SKILLUI_GUIDE="$(select_skillui_guide)"
 NOTIFY_SETUP="$(select_notify_setup)"
 
@@ -2424,13 +2459,7 @@ update_claude_cli() {
     return 0
   fi
   step "Claude Code $local_ver -> $latest available"
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  else
-    as_root npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  fi
+  npm_install_global @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
   COUNT_UPDATED=$((COUNT_UPDATED+1))
   ok "Claude Code updated $local_ver -> $(claude_local_version)"
 }
@@ -2444,13 +2473,7 @@ install_claude_cli() {
     update_claude_cli
     return 0
   fi
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code
-  else
-    as_root npm install -g @anthropic-ai/claude-code
-  fi
+  npm_install_global @anthropic-ai/claude-code
   local rc=$?
   [ $rc -eq 0 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   return $rc
@@ -2656,7 +2679,12 @@ install_find_skills() {
     skip "find-skills already installed at $dir (--no-update set)"
     return 0
   fi
-  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
+  # --global --yes: without them the skills CLI stops on a terminal to ask "Installation
+  # scope: Project / Global" and then "Proceed with installation?". Project is its
+  # default, which is not where the check below looks unless the run started in $HOME,
+  # and a Ctrl-C at that unexplained prompt ends the whole run before the community
+  # plugins, this repo's plugins and the language servers were reached.
+  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes || return 1
   if ! user_skill_installed "find-skills"; then
     warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
     return 1
@@ -3047,11 +3075,11 @@ install_skillui() {
   if have skillui && [ "$NO_UPDATE" -eq 1 ]; then
     skip "skillui already installed ($(command -v skillui); --no-update set)"
   else
-    npm install -g skillui || return 1
+    npm_install_global skillui || return 1
     COUNT_INSTALLED=$((COUNT_INSTALLED+1))
     ok "skillui installed"
   fi
-  npm install -g playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
+  npm_install_global playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
   # Downloads the browser binary itself; skipping it leaves skillui able to start and
   # unable to render anything.
   npx -y playwright install chromium || warn "'npx playwright install chromium' failed - run it by hand before using skillui."
@@ -3449,18 +3477,116 @@ install_pyright_binary() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
     return 1
   fi
-  install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
+  install_lsp_binary "pyright-langserver" "pyright-langserver" npm_install_global pyright
+}
+# typescript-language-server is a front end for tsserver and ships no TypeScript of its
+# own (its package.json declares no dependencies), so outside a project that has a local
+# 'typescript' it falls back to whatever Node resolves from its own install directory:
+# a 'typescript' nested inside it, else the global one beside it. What it needs from
+# that package is lib/tsserver.js - and that file is the invariant here, not a version
+# number. TypeScript 7 (the native compiler) ships lib/tsc.js alone, so the unpinned
+# 'npm install -g typescript' this step used to run started producing a server that
+# answers every 'initialize' with:
+#     Could not find a valid TypeScript installation. Please ensure that the
+#     "typescript" dependency is installed in the workspace or that a valid
+#     `tsserver.path` is specified. Exiting.
+# ngserver dies on the same global package for the same reason when it is told to
+# probe npm's global root: it wants lib/tsserverlibrary.js, minimum version 5.0.
+#
+# Measured against the registry on 2026-10-12 by unpacking each tarball: 5.9.3, 6.0.2
+# and 6.0.3 carry lib/tsserver.js and lib/tsserverlibrary.js, 7.0.2 carries neither,
+# and @angular/language-server 22.2.2 itself depends on exactly 6.0.3. So the spec
+# below is the 6.x line - the newest that still ships a tsserver. Move it only to a
+# release that has been unpacked and seen to contain lib/tsserver.js. The spec is
+# deliberately a bare major rather than '<7': a '<' reaches cmd.exe through npm.cmd
+# on the Windows half of this pair, and the two halves install the same text.
+TYPESCRIPT_LSP_SPEC="typescript@6"
+typescript_lsp_tsserver_state() {
+  # What would the typescript-language-server under npm's global root fall back to?
+  # Prints one of:
+  #   ok           a typescript with lib/tsserver.js
+  #   no-tsserver  a typescript WITHOUT it (7 or later) - the broken combination
+  #   absent       no typescript at all
+  #   unknown      could not tell: no npm, or the server is not under npm's global
+  #                root (pnpm, volta, a distribution package). Never folded into
+  #                'ok' or 'no-tsserver' - the caller says so and leaves it alone.
+  # A copy nested inside the server's own directory wins over the global one, in
+  # Node's resolution order, so it is the one judged when it exists.
+  local root tls
+  root="$(npm root -g 2>/dev/null)" || root=""
+  tls="$root/typescript-language-server"
+  if [ -z "$root" ] || [ ! -d "$tls" ]; then
+    echo unknown
+  elif [ -d "$tls/node_modules/typescript" ]; then
+    if [ -f "$tls/node_modules/typescript/lib/tsserver.js" ]; then echo ok; else echo no-tsserver; fi
+  elif [ -f "$root/typescript/lib/tsserver.js" ]; then
+    echo ok
+  elif [ -d "$root/typescript" ]; then
+    echo no-tsserver
+  else
+    echo absent
+  fi
 }
 install_typescript_lsp_binary() {
+  local state="" had_server=0
   if have typescript-language-server; then
-    skip "typescript-language-server already installed ($(command -v typescript-language-server))"
-    return 0
+    had_server=1
+    state="$(typescript_lsp_tsserver_state)"
+    # The binary being on PATH is not "already installed": with a typescript that has
+    # no tsserver it starts and then refuses every request. Only 'ok' and 'unknown'
+    # stop here; the other two states fall through to be repaired or reported.
+    case "$state" in
+      ok)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        return 0
+        ;;
+      unknown)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        warn "could not check which TypeScript it falls back to (it is not under npm's global root, or npm is missing) - it needs one that ships lib/tsserver.js, i.e. $TYPESCRIPT_LSP_SPEC, not 7 or later."
+        return 0
+        ;;
+    esac
   fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
+  if [ "$had_server" -eq 0 ]; then
+    install_lsp_binary "typescript-language-server" "typescript-language-server" npm_install_global typescript-language-server || return 1
+    state="$(typescript_lsp_tsserver_state)"
+  fi
+  case "$state" in
+    ok) return 0 ;;
+    absent)
+      # Nothing global to replace, so nobody's 'tsc' changes under them.
+      if ! npm_install_global "$TYPESCRIPT_LSP_SPEC"; then
+        warn "'npm install -g $TYPESCRIPT_LSP_SPEC' failed - typescript-language-server has no TypeScript to run. Install it by hand, then re-run."
+        return 1
+      fi
+      state="$(typescript_lsp_tsserver_state)"
+      if [ "$state" != "ok" ]; then
+        warn "$TYPESCRIPT_LSP_SPEC installed but lib/tsserver.js is still not where typescript-language-server looks (state: $state)."
+        return 1
+      fi
+      [ "$had_server" -eq 1 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "$TYPESCRIPT_LSP_SPEC installed for typescript-language-server (it ships lib/tsserver.js)"
+      ;;
+    no-tsserver)
+      # A global typescript is already there and it is 7 or later. Whether this
+      # script's own earlier unpinned install put it there or its owner wants the
+      # native 'tsc' cannot be told apart from here, and replacing it changes what
+      # every global 'tsc' call on this machine compiles with - so it is reported,
+      # with the one command that fixes it, and never done silently. The step fails
+      # on purpose: "already installed" is the wrong thing to say about a server
+      # that cannot start.
+      warn "typescript-language-server cannot start: the global 'typescript' has no lib/tsserver.js (TypeScript 7 and later ship only the native compiler)."
+      warn "Not replacing it for you - that would change your global 'tsc'. To fix it: npm install -g $TYPESCRIPT_LSP_SPEC (with sudo if npm's global prefix is root-owned), then re-run. A project with its own local typescript 5 or 6 is unaffected either way."
+      return 1
+      ;;
+    *)
+      warn "typescript-language-server installed, but could not check which TypeScript it falls back to - it needs one that ships lib/tsserver.js ($TYPESCRIPT_LSP_SPEC)."
+      ;;
+  esac
 }
 install_angular_language_server() {
   if have ngserver; then
@@ -3471,7 +3597,7 @@ install_angular_language_server() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
+  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm_install_global @angular/language-server
 }
 install_css_language_server() {
   if have vscode-css-language-server; then
@@ -3482,7 +3608,7 @@ install_css_language_server() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "CSS language server (vscode-css-language-server)" "vscode-css-language-server" npm install -g vscode-langservers-extracted
+  install_lsp_binary "CSS language server (vscode-css-language-server)" "vscode-css-language-server" npm_install_global vscode-langservers-extracted
 }
 install_bash_language_server() {
   if have bash-language-server; then
@@ -3506,7 +3632,7 @@ install_bash_language_server() {
         return 1
       fi ;;
   esac
-  install_lsp_binary "bash-language-server" "bash-language-server" npm install -g bash-language-server
+  install_lsp_binary "bash-language-server" "bash-language-server" npm_install_global bash-language-server
 }
 install_powershell_lsp_plugin() {
   # Exactly one of the two, chosen by what this machine can run. The conflict
@@ -3835,3 +3961,4 @@ else
   for s in "${FAILED_STEPS[@]}"; do echo "  - $s"; done
   printf '\033[33mRe-run this script after resolving the above; earlier successful steps are safe to repeat.\033[0m\n'
 fi
+sudo_home_warning
