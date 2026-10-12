@@ -1082,14 +1082,14 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
-    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)" }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: ai-connect, angular-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
     [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
     [pscustomobject]@{ Key = 'aws-docs-mcp';      Default = $false; Name = 'MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)' }
     [pscustomobject]@{ Key = 'aws-pricing-mcp';   Default = $false; Name = 'MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)' }
     [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
-    [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, sql, terraform (this repo), with their language servers' }
+    [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, css, sql, terraform (this repo), with their language servers' }
     [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)' }
 )
 
@@ -1176,6 +1176,7 @@ $script:PluginCatalog = @(
     [pscustomobject]@{ Key = 'ai-connect'; Selected = $true; Name = 'ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks'; Spec = 'ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'angular-lsp'; Selected = $true; Name = 'angular-lsp             - Angular template language server (ngserver). LSP only, no hooks'; Spec = 'angular-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'css-lsp'; Selected = $true; Name = 'css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks'; Spec = 'css-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'localgpu'; Selected = $true; Name = 'localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks'; Spec = 'localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
@@ -1233,7 +1234,7 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw, github)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
-    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp)  >" }
+    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (ai-connect, angular-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp)  >" }
 )
 
 function Get-Group {
@@ -2960,8 +2961,10 @@ if (Test-Selected 'ms-mcp') {
 # 'angular' entry - so Angular's language server goes in as a plain npm package
 # instead, the same way skillui's Playwright/Chromium install is above.
 #
-# Three more plugins come from THIS repo's marketplace rather than Anthropic's:
-# angular-lsp (the Angular gap above, closed here), terraform-lsp and sql-lsp.
+# Four more plugins come from THIS repo's marketplace rather than Anthropic's:
+# angular-lsp (the Angular gap above, closed here), css-lsp, terraform-lsp and
+# sql-lsp. css-lsp's server is the npm package vscode-langservers-extracted,
+# installed the same way as the other npm servers here.
 # Each registers an LSP server and nothing else, and none of them installs its
 # language server either. Two of those servers have no package this step will
 # fetch unverified, following install_tflint's precedent in step 23:
@@ -2996,6 +2999,16 @@ function Install-LspBinary {
     }
     $script:Summary.Installed++
     Write-Ok "$Label installed at $($cmd.Source)"
+}
+function Install-CssLanguageServer {
+    # Detect the binary BEFORE requiring its prerequisite, as the other npm
+    # servers in this step do: one already on PATH is not a failure without npm.
+    if (-not (Get-Command vscode-css-language-server -ErrorAction SilentlyContinue)) {
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+    }
+    Install-LspBinary -Label 'CSS language server (vscode-css-language-server)' -Probe 'vscode-css-language-server' -Install { npm install -g vscode-langservers-extracted }
 }
 function Install-TerraformLs {
     $existing = Get-Command terraform-ls -ErrorAction SilentlyContinue
@@ -3087,6 +3100,10 @@ if (Test-Selected 'lsp-plugins') {
         }
         Install-LspBinary -Label 'Angular language server (ngserver)' -Probe 'ngserver' -Install { npm install -g '@angular/language-server' }
     }
+    Invoke-Step "Plugin: css-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'css-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "CSS language server (npm)" { Install-CssLanguageServer }
     Invoke-Step "Plugin: terraform-lsp@useful-claude-add-ons" {
         Install-ClaudePlugin 'terraform-lsp@useful-claude-add-ons'
     }

@@ -9,10 +9,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — terraform-lsp, angular-lsp and sql-lsp 0.1.0: three language-server plugins
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
 
-- **Summary.** Three new plugins give Claude Code language-server support for Terraform, Angular templates and
-  SQL; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
 - **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
   (`terraform-vars`), the language IDs the server's own usage guide requires.
 - **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
@@ -24,17 +24,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
   the user writes, and the README says plainly that which database to point it at, production included, is the
   user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
 - **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
   `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
   inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
 - **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
-  installs the three plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
-  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`). Where neither route exists the step stops
-  and names the manual, verify-it-yourself route, as `tflint` already does. The three also join the
-  `repo-plugins` catalog.
-- **Not verified.** Windows and macOS for all three, a Claude Code session using any of the servers on a real
-  project, `sqls` with a database connected (none was, on purpose), and the `go install`, Homebrew and `winget`
-  routes for real: this machine has none of the three, so they were exercised against stubs only.
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
 
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 

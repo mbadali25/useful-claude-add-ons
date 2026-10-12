@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Regression suite for T11's LSP-plugin and stack-tool install steps, in BOTH halves
 # of the matched pair: install_lsp_binary/install_csharp_ls_binary/install_pyright_binary/
-# install_typescript_lsp_binary/install_angular_language_server/install_terraform_ls/
-# install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
+# install_typescript_lsp_binary/install_angular_language_server/
+# install_css_language_server/install_terraform_ls/install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
 # install_psscriptanalyzer in scripts/install-prerequisites.sh, and their
-# Install-LspBinary/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
+# Install-LspBinary/CssLanguageServer/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
 # equivalents in scripts/install-prerequisites.ps1.
 #
 # Idempotency is the point (CLAUDE.md: "both install scripts are idempotent - a new
@@ -214,6 +214,61 @@ COUNT_SKIPPED=0
 install_angular_language_server >/dev/null 2>&1; rc=$?
 check "ngserver: already installed -> exits 0"     0 "$rc"
 check "ngserver: already installed -> counted skip" 1 "$COUNT_SKIPPED"
+
+echo "=== install_css_language_server ==="
+newstubs
+stub vscode-css-language-server 'exit 0'
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_css_language_server >/dev/null 2>&1; rc=$?
+check "css: already installed, no npm -> exits 0"       0 "$rc"
+check "css: already installed -> counted skip"          1 "$COUNT_SKIPPED"
+check "css: already installed -> not counted installed" 0 "$COUNT_INSTALLED"
+
+newstubs
+COUNT_INSTALLED=0
+out="$(install_css_language_server 2>&1)"; rc=$?
+check "css: no npm -> warns and fails"             1 "$rc"
+check "css: no npm -> names npm"                   yes "$(case "$out" in *"npm not found"*) echo yes;; *) echo no;; esac)"
+check "css: no npm -> does not count as installed" 0 "$COUNT_INSTALLED"
+
+newstubs
+# The stub records its argv and only produces the binary for the right package:
+# an npm that installed something for any argument would pass a typo in the name,
+# and the package name (vscode-langservers-extracted) is not the command name.
+NPM_ARGS="$TMP/css-npm-args"
+: > "$NPM_ARGS"
+export NPM_ARGS_FILE="$NPM_ARGS" CSS_STUB_DIR="$STUBS"
+cat > "$STUBS/npm" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$NPM_ARGS_FILE"
+if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "vscode-langservers-extracted" ]; then
+  printf '#!/bin/sh\nexit 0\n' > "$CSS_STUB_DIR/vscode-css-language-server"
+  chmod +x "$CSS_STUB_DIR/vscode-css-language-server"
+fi
+exit 0
+EOF
+chmod +x "$STUBS/npm"
+COUNT_INSTALLED=0
+install_css_language_server >/dev/null 2>&1; rc=$?
+check "css: npm present, installs -> exits 0"           0 "$rc"
+check "css: npm present, installs -> counted installed" 1 "$COUNT_INSTALLED"
+check "css: npm asked for vscode-langservers-extracted" "install -g vscode-langservers-extracted" "$(cat "$NPM_ARGS")"
+unset NPM_ARGS_FILE CSS_STUB_DIR
+
+newstubs
+# npm "succeeds" and leaves nothing on PATH: must not be reported as installed.
+stub npm 'exit 0'
+COUNT_INSTALLED=0
+install_css_language_server >/dev/null 2>&1; rc=$?
+check "css: npm exits 0 but no binary -> fails"       1 "$rc"
+check "css: npm exits 0 but no binary -> not counted" 0 "$COUNT_INSTALLED"
+
+newstubs
+stub npm 'exit 1'
+COUNT_INSTALLED=0
+install_css_language_server >/dev/null 2>&1; rc=$?
+check "css: npm install fails -> exits 1"     1 "$rc"
+check "css: npm install fails -> not counted" 0 "$COUNT_INSTALLED"
 
 echo "=== install_terraform_ls ==="
 newstubs
@@ -537,6 +592,7 @@ Invoke-Expression (Get-Block '^function Write-Step' '^function Write-Skip')
 function Sync-SessionEnvironment { }
 $script:Summary = @{ Installed = 0; Updated = 0; Skipped = 0 }
 Invoke-Expression (Get-Block '^function Install-LspBinary' '^\}')
+Invoke-Expression (Get-Block '^function Install-CssLanguageServer' '^\}')
 Invoke-Expression (Get-Block '^function Install-TerraformLs' '^\}')
 # The pin is lifted from the script, not restated here, so the case below reads
 # the value the real step would use.
@@ -600,6 +656,60 @@ Install-LspBinary -Label 'Angular language server' -Probe 'ngserver' -Install {
     $global:LASTEXITCODE = 0
 }
 $results += "absent-then-installed:installed=$($script:Summary.Installed)"
+
+# --- CSS language server ---------------------------------------------------
+# These cases run on the curated coreutils copy, not $basePath: a machine that
+# uses the plugin has a real npm and a real vscode-css-language-server on its
+# ambient PATH, and "no npm" would then find one and install for real.
+# Already installed and no npm anywhere: must skip, not throw for the missing npm.
+$stubC1 = Join-Path $env:TESTTMP 'css-installed'; New-Item -ItemType Directory -Path $stubC1 -Force | Out-Null
+Write-ProbeStub (Get-ProbePath $stubC1 'vscode-css-language-server')
+$env:PATH = "$stubC1$sep$env:REALTOOLS_DIR"
+$script:Summary.Installed = 0
+$threw = $false
+try { Install-CssLanguageServer } catch { $threw = $true }
+$results += "css-already-installed:installed=$($script:Summary.Installed),threw=$threw"
+
+$stubC2 = Join-Path $env:TESTTMP 'css-none'; New-Item -ItemType Directory -Path $stubC2 -Force | Out-Null
+$env:PATH = "$stubC2$sep$env:REALTOOLS_DIR"
+$threw = $false
+try { Install-CssLanguageServer } catch { $threw = ($_.Exception.Message -match 'npm not found') }
+$results += "css-no-npm-throws:$threw"
+
+# npm only produces the binary when asked for the right package, and records
+# what it was asked for - the package name is not the command name.
+$stubC3 = Join-Path $env:TESTTMP 'css-npm'; New-Item -ItemType Directory -Path $stubC3 -Force | Out-Null
+$cssOut = Get-ProbePath $stubC3 'vscode-css-language-server'
+$cssArgs = Join-Path $env:TESTTMP 'css-npm-args-ps1'
+$npmCss = (@'
+#!/bin/sh
+echo "$@" > "ARGS_OUT"
+if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "vscode-langservers-extracted" ]; then
+  printf '#!/bin/sh\nexit 0\n' > "CSS_OUT"
+  chmod +x "CSS_OUT"
+fi
+exit 0
+'@).Replace('CSS_OUT', $cssOut).Replace('ARGS_OUT', $cssArgs)
+$npmCssPath = Join-Path $stubC3 'npm'
+Set-Content -Path $npmCssPath -Value $npmCss -NoNewline
+& chmod +x $npmCssPath
+$env:PATH = "$stubC3$sep$env:REALTOOLS_DIR"
+$script:Summary.Installed = 0
+# Caught, so a wrong package name fails these two cases and not the whole harness.
+try { Install-CssLanguageServer } catch { $results += "css-npm-install-threw:$($_.Exception.Message)" }
+$results += "css-npm-installs:installed=$($script:Summary.Installed)"
+$asked = if (Test-Path $cssArgs) { (Get-Content -Raw $cssArgs).Trim() } else { '<npm never ran>' }
+$results += "css-npm-args:$asked"
+
+# npm "succeeds" and leaves nothing on PATH: must throw, not count.
+$stubC4 = Join-Path $env:TESTTMP 'css-npm-noop'; New-Item -ItemType Directory -Path $stubC4 -Force | Out-Null
+Write-ProbeStub (Join-Path $stubC4 'npm')
+$env:PATH = "$stubC4$sep$env:REALTOOLS_DIR"
+$script:Summary.Installed = 0
+$threw = $false
+try { Install-CssLanguageServer } catch { $threw = ($_.Exception.Message -match 'not resolvable') }
+$results += "css-npm-unverified-throws:$threw,installed=$($script:Summary.Installed)"
+$env:PATH = $basePath
 
 # --- terraform-ls ----------------------------------------------------------
 $stubL1 = Join-Path $env:TESTTMP 'tfls-installed'; New-Item -ItemType Directory -Path $stubL1 -Force | Out-Null
@@ -852,9 +962,15 @@ $results -join "`n"
 PS1EOF
   export PS1SCRIPT="$(win "$PS1SCRIPT")"
   export TESTTMP="$(win "$TMP")"
+  export REALTOOLS_DIR="$(win "$REALTOOLS")"
   out="$("$PWSH" -NoProfile -File "$(win "$PSHARNESS")" 2>&1)"
   check ".ps1 Install-LspBinary: already-installed counts nothing"   "yes" "$(case "$out" in *"already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-LspBinary: absent-then-installed counts one"   "yes" "$(case "$out" in *"absent-then-installed:installed=1"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-CssLanguageServer: already installed, no npm -> skips" "yes" "$(case "$out" in *"css-already-installed:installed=0,threw=False"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-CssLanguageServer: no npm throws, names npm"   "yes" "$(case "$out" in *"css-no-npm-throws:True"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-CssLanguageServer: npm present installs"       "yes" "$(case "$out" in *"css-npm-installs:installed=1"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-CssLanguageServer: npm asked for vscode-langservers-extracted" "yes" "$(case "$out" in *"css-npm-args:install -g vscode-langservers-extracted"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-CssLanguageServer: npm success w/o binary throws" "yes" "$(case "$out" in *"css-npm-unverified-throws:True,installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-TerraformLs: already-installed counts nothing" "yes" "$(case "$out" in *"tfls-already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-TerraformLs: no winget throws, names the manual route" "yes" "$(case "$out" in *"tfls-no-winget-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-TerraformLs: winget installs HashiCorp's package id" "yes" "$(case "$out" in *"tfls-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
@@ -880,7 +996,7 @@ PS1EOF
   check ".ps1 Install-Shellcheck: winget installs and verifies"      "yes" "$(case "$out" in *"shellcheck-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-PSScriptAnalyzer: no hosts throws"             "yes" "$(case "$out" in *"psa-no-hosts-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-PSScriptAnalyzer: one host installs"           "yes" "$(case "$out" in *"psa-one-host-installs:installed=1"*) echo yes;; *) echo no;; esac)"
-  unset PS1SCRIPT TESTTMP
+  unset PS1SCRIPT TESTTMP REALTOOLS_DIR
 fi
 
 echo

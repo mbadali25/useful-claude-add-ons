@@ -1233,14 +1233,14 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)"
+  "This repo's plugins: ai-connect, angular-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
-  "LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, sql, terraform (this repo), with their language servers"
+  "LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, css, sql, terraform (this repo), with their language servers"
   "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
 )
 
@@ -1388,6 +1388,7 @@ PLUGIN_KEYS=(
   "ai-connect"
   "angular-lsp"
   "crew"
+  "css-lsp"
   "gizmoduck"
   "localgpu"
   "obsidian-vault"
@@ -1399,6 +1400,7 @@ PLUGIN_NAME=(
   "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
   "angular-lsp             - Angular template language server (ngserver). LSP only, no hooks"
   "crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks"
+  "css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
@@ -1410,6 +1412,7 @@ PLUGIN_SPEC=(
   "ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "angular-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "css-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
@@ -1506,7 +1509,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp)  >"
+  "This repo's plugins: %s of %s (ai-connect, angular-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
@@ -3296,8 +3299,10 @@ fi
 # 'angular' entry - so Angular's language server goes in as a plain npm package
 # instead, the same way skillui's Playwright/Chromium install is above.
 #
-# Three more plugins come from THIS repo's marketplace rather than Anthropic's:
-# angular-lsp (the Angular gap above, closed here), terraform-lsp and sql-lsp.
+# Four more plugins come from THIS repo's marketplace rather than Anthropic's:
+# angular-lsp (the Angular gap above, closed here), css-lsp, terraform-lsp and
+# sql-lsp. css-lsp's server is the npm package vscode-langservers-extracted,
+# installed the same way as the other npm servers here.
 # Each registers an LSP server and nothing else, and none of them installs its
 # language server either. Two of those servers have no package this step will
 # fetch unverified, following install_tflint's precedent in step 23:
@@ -3384,6 +3389,17 @@ install_angular_language_server() {
   fi
   install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
 }
+install_css_language_server() {
+  if have vscode-css-language-server; then
+    skip "CSS language server (vscode-css-language-server) already installed ($(command -v vscode-css-language-server))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "CSS language server (vscode-css-language-server)" "vscode-css-language-server" npm install -g vscode-langservers-extracted
+}
 install_terraform_ls() {
   if have terraform-ls; then
     skip "terraform-ls already installed ($(command -v terraform-ls))"
@@ -3436,6 +3452,8 @@ if is_selected "lsp-plugins"; then
     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
   run_step "Plugin: angular-lsp@useful-claude-add-ons" install_plugin "angular-lsp@useful-claude-add-ons"
   run_step "Angular language server (npm)" install_angular_language_server
+  run_step "Plugin: css-lsp@useful-claude-add-ons" install_plugin "css-lsp@useful-claude-add-ons"
+  run_step "CSS language server (npm)" install_css_language_server
   run_step "Plugin: terraform-lsp@useful-claude-add-ons" install_plugin "terraform-lsp@useful-claude-add-ons"
   run_step "terraform-ls (HashiCorp)" install_terraform_ls
   run_step "Plugin: sql-lsp@useful-claude-add-ons" install_plugin "sql-lsp@useful-claude-add-ons"

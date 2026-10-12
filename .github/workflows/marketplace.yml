@@ -269,6 +269,7 @@ jobs:
           claude plugin validate --strict plugin/ai-connect
           claude plugin validate --strict plugin/angular-lsp
           claude plugin validate --strict plugin/crew
+          claude plugin validate --strict plugin/css-lsp
           claude plugin validate --strict plugin/gizmoduck
           claude plugin validate --strict plugin/rule-of-two
           claude plugin validate --strict plugin/localgpu

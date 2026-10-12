@@ -545,6 +545,42 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 
 ---
 
+## `css-lsp` — CSS, SCSS and Less language server
+
+| | |
+|---|---|
+| **Source** | [`css-lsp/`](css-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:css-lsp --> |
+| **Install** | `claude plugin install css-lsp@useful-claude-add-ons`, plus `npm install -g vscode-langservers-extracted` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`css`, for `.css`, `.scss` and `.less`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`css-lsp/README.md`](css-lsp/README.md) |
+
+Starts `vscode-css-language-server --stdio`, the CSS server from Visual Studio
+Code as repackaged in the npm package
+[`vscode-langservers-extracted`](https://www.npmjs.com/package/vscode-langservers-extracted),
+with `.css` sent as language `css`, `.scss` as `scss` and `.less` as `less`.
+Anthropic's official marketplace has no CSS entry.
+
+**`--stdio` is required.** Run bare, the server throws
+`Connection input stream is not set` and never reads a request. `.sass`, the
+indented syntax, is deliberately not mapped: the server parses SCSS, not
+indented Sass.
+
+The npm package is a community repackaging rather than a Microsoft release, and
+it also puts the HTML, JSON, Markdown and ESLint servers from the same source on
+`PATH`. This plugin starts the CSS one only.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall css-lsp@useful-claude-add-ons`.
+
+Not verified: any request beyond `initialize` and `shutdown`, Windows and macOS,
+and a Claude Code session against a real stylesheet. The README lists what was
+measured.
+
+---
+
 ## `gizmoduck` — Nuclei and a multi-tool scan routine, diffed and triaged into tickets
 
 | | |

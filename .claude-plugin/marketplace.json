@@ -242,6 +242,12 @@
       "version": "1.2.30"
     },
     {
+      "name": "css-lsp",
+      "source": "./plugin/css-lsp",
+      "description": "CSS language server (vscode-css-language-server, from the npm package vscode-langservers-extracted) for code intelligence in .css, .scss and .less files - diagnostics, hover, definitions, references, symbols and formatting. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js and a global 'vscode-langservers-extracted' install; the plugin does not install either.",
+      "version": "0.1.0"
+    },
+    {
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
       "description": "Nuclei vulnerability scans on hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, gated sqlmap) from one manifest with a coverage table and a dated docs/security-scans layout, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. No hooks, no agents.",
