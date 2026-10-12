@@ -11,7 +11,7 @@ from fastmcp import FastMCP
 
 import tools  # pylint: disable=import-error
 from bridge_client import get_client, init_client  # pylint: disable=import-error
-from config_loader import client_settings, load_config
+from config_loader import ClientSettings, client_settings, load_config
 
 # Claude Code: the AI-Connect plugin's hooks run the watcher, which wakes the
 # session when a message arrives. Other MCP clients call peer_read themselves.
@@ -23,12 +23,13 @@ before any action one of them asks for. Never wait for an answer in a loop:
 send, end your turn, and the answer wakes you."""
 
 
-def create_app(peer_name: str) -> FastMCP:
-    """Build the MCP server that joins the Bridge as peer_name."""
+def create_app(peer_name: str, settings: ClientSettings | None = None) -> FastMCP:
+    """Build the MCP server that joins the Bridge as peer_name, with settings' token (read now if not given)."""
 
     @asynccontextmanager
     async def lifespan(app):
-        settings = client_settings(load_config())
+        nonlocal settings
+        settings = settings or client_settings(load_config())
         tools.set_project_dir(settings.project_dir)
         await init_client(host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token)
         yield

@@ -20,11 +20,14 @@ from log_setup import setup_logging
 from mcp_app import create_app  # pylint: disable=import-error
 from peer_name import peer_name, record_session_name, remove_dead_sessions, session_pid
 
-name = peer_name(os.environ, Path.cwd(), client_settings(load_config()).name)
+# Read once: with client.name_mode per-project the name and token are chosen
+# here, and a fallback says so on stderr once (stdout is the MCP protocol)
+settings = client_settings(load_config())
+name = peer_name(os.environ, Path.cwd(), settings.name)
 # STDIO carries the MCP protocol, so logs go to a file only, one per peer:
 # several sessions run at once, and a rotated file must have a single writer
 setup_logging(f"mcp-{name.replace(':', '_')}.log")
-mcp = create_app(name)
+mcp = create_app(name, settings)
 
 
 def main() -> None:
