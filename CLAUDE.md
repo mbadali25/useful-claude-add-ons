@@ -104,6 +104,40 @@ and re-pin both.
 Quote failures exactly; never summarise a stack trace. Name which suites ran and which did not.
 `drift-detection.sh` is skipped by default — say so rather than implying the gate is green.
 
+## Tooling - a missing tool is installed, not skipped
+
+**A tool a test, QA step or gate needs and this machine lacks gets installed - not skipped, stubbed
+or worked around.** Owner rule, 2026-10-12. The owner has given standing authority for that on their
+own machines. A missing tool is reported as *missing*, with the install that fixed it - never as a
+failed check and never as a passed one. Prefer the distro package, then the vendor's own package,
+then `uv tool install`, then `npm -g`; match the version CI pins where it pins one.
+
+Measured on the Ubuntu 26.04 host, 2026-10-12 - what each rule needs is in `.crew/verify.json`:
+
+- **apt**: `shellcheck`; `pylint`, `python3-docx`, `python3-numpy`, `python3-pil`, `python3-pymupdf`
+  (the lint rule and the combined pytest run's doc-builder suites); `libreoffice-writer-nogui`
+  (doc-builder's conversion test and the guide's DOCX/PDF build).
+- **`pip install --break-system-packages`, into `/usr/local`** - the one route left, because the
+  rules call `python3 -m <module>` on the system interpreter, so a venv does not satisfy them:
+  `pytest` and `markdown` (apt's are not the versions CI pins), `pytest-xdist` (kept beside the
+  pytest it loads into) and `ruff` (no apt package on 26.04).
+- **a venv outside every worktree**, `/root/.venvs/ai-connect`, built with `uv` from
+  `plugin/ai-connect/requirements*.txt`: nothing of ai-connect's goes into the system Python, and
+  its rule runs as root only on the owner's say-so.
+- **npm**: `npm --prefix mcp-servers ci` for that suite; `@mermaid-js/mermaid-cli` globally, at the
+  version `verify-gate.yml` pins, for the diagram render suite.
+- **`uv tool install`**: `graphifyy`, as `install-prerequisites.sh` does it.
+- **PowerShell**: the `powershell` snap works on 26.04 as root. A bare `pwsh` that aborts at startup
+  with `FileLoadException: The given assembly name was invalid` is a corrupt
+  `~/.cache/powershell/StartupProfileData-NonInteractive`, not a broken install: delete that file,
+  do not reinstall. `scripts/pwsh-isolated.sh` gives each run a private cache, so the repo's gates
+  stay green while it is corrupt and only a bare `pwsh` (a hook, a shell) shows it. The snap cannot
+  start as `nobody`, so the one `plugin-evals-runner` case that drops privileges stays NOT RUN.
+
+Out of scope for that authority: anything needing credentials or an account, Docker images, GPU
+models, desktop apps, and the real-`claude` `drift-detection.sh` run. Follow-up, not done here:
+`install-prerequisites.{sh,ps1}` install none of the Python modules above.
+
 ## Memory - where the code map and runbooks live
 
 Two maps, both **in this repo**, both tracked; no Obsidian vault. The history and measurements
