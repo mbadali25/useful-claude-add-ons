@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — ai-connect 0.1.14: one peer name per project, opt-in
+### Added — ai-connect 0.1.15: one peer name per project, opt-in
 
 - **Summary.** With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as
   `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one

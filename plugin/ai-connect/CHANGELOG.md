@@ -1,9 +1,10 @@
 # Changelog
 
-## [0.1.14] - 2026-10-12
+## [0.1.15] - 2026-10-12
 
 One peer name per project, opt-in, on the same branch as 0.1.12 (PR #614). 0.1.13 was the feature's commit
-(c6f7d5893); the test changes below came after it, so it was never published.
+(c6f7d5893) and 0.1.14 the test changes after it (5978d7ac4); the merge of main with #610 (0.1.11) after that
+changed this directory again, so neither was published.
 
 ### Added
 - `client.name_mode: per-project` (left out = unchanged). A session's name is `<client.name>-<project>`: the project is `CLAUDE_PROJECT_DIR`, else the working directory, resolved; its folder name is cut down to a peer name (every run of characters other than `A-Za-z0-9-` becomes one `-`, hyphens at either end dropped, the whole name cut to 63 characters with no trailing hyphen). Its token is `~/.config/ai-connect/session-tokens/<name>.token`, the directory 0.1.12's `session --name` uses. `AI_CONNECT_PEER_NAME` still wins. Any other `name_mode` value stops the client with a message

@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.14**: One peer name per project, opt-in. With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
+- **ai-connect 0.1.15**: One peer name per project, opt-in. With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
 - **ai-connect 0.1.12**: Setup in one run per machine, and a firewall rule that is checked. `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real firewall: the suite drives fakes).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
