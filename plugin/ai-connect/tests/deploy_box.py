@@ -45,7 +45,7 @@ MUTATING = {("tee",), ("rm",), ("systemctl", "enable"), ("systemctl", "restart")
             ("install",), ("apt-get",)}
 
 PWSH_CANDIDATES = [r"C:\Program Files\PowerShell\7\pwsh.exe", "/usr/bin/pwsh", "/usr/local/bin/pwsh",
-                   "/opt/homebrew/bin/pwsh"]
+                   "/opt/homebrew/bin/pwsh", "/snap/bin/pwsh"]
 PWSH = next((p for p in PWSH_CANDIDATES if os.path.isfile(p)), None)
 GIT_BASH = r"C:\Program Files\Git\bin\bash.exe"
 BASH = (GIT_BASH if os.path.isfile(GIT_BASH) else None) if os.name == "nt" else shutil.which("bash")
@@ -130,6 +130,8 @@ class Box:
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
                         AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),
+                        # Never this host's /etc/ufw/ufw.conf: absent unless a test writes it
+                        AI_CONNECT_UFW_CONF=str(tmp_path / "ufw.conf"),
                         PYTHONPATH=os.pathsep.join([str(FAKE_KEYRING), str(NETGUARD)]),
                         FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))

@@ -9,6 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — ai-connect 0.1.11: setup in one run per machine, and a firewall rule that is checked
+
+- **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
+  installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now
+  says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real
+  firewall: the suite drives fakes).
+- **Setup.** `setup bridge [--peer NAME] [--enrol NAME=SHA256]`, `setup peer --name N --bridge IP
+  [--token-file F]` and `setup session --name N` are a thin layer over `deploy bridge`, `peer`, `join` and
+  `add-peer`, which still make every change. `--register-mcp` is off by default and registers at user scope.
+  `setup` never runs `tailnet-setup`; it says when that step looks outstanding.
+- **Firewall.** `ufw allow` succeeds on an inactive ufw and `ufw status` then lists no rule, so `deploy bridge`
+  called the rule done while it filtered nothing, and added it again on every run. It now asks whether ufw,
+  firewalld or the Windows Firewall's Private profile is on, answers on, off or could not tell, and never turns
+  a firewall on.
+- **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
+  `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
+  token, and the client sends it for that name.
+- **Order.** Versioned after PR #610 (0.1.10), which is meant to merge first.
+
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:

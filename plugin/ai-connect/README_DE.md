@@ -226,6 +226,21 @@ deploy/deploy.sh uninstall --yes          # --purge löscht auch ~/.config/ai-co
 
 `deploy.ps1` fragt selbst nicht über UAC nach: `bridge` und `uninstall` scheitern an der geplanten Aufgabe oder der Firewall-Regel, wenn die Shell keine Adminrechte hat. Unter Linux ohne ufw oder firewalld gibt der Firewall-Schritt die Regel aus, die von Hand anzulegen ist. Eine Bridge unter macOS wird nicht unterstützt (kein launchd-Dienst), ein Peer schon.
 
+**Ein Lauf pro Rechner: `deploy/setup.sh` und `deploy/setup.ps1`.** Eine dünne Schicht über den Befehlen oben (ein Kern, `deploy/peer_setup.py`; jede Änderung machen die Schritte von `deploy` selbst), für einen Rechner, der das Plugin hat und sonst nichts. Ohne `--apply` wird nur der Plan ausgegeben und nichts geändert; mit `--apply` wird er ausgeführt, und beides lässt sich wiederholen.
+
+```bash
+deploy/setup.sh bridge --peer laptop --apply      # die Bridge: Dienst, Konfiguration, Firewall-Regel, eine Token-Datei für 'laptop'
+deploy/setup.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --apply   # der Peer, mit dieser Datei
+deploy/setup.sh peer --name laptop --bridge 100.x.y.z --apply    # oder: eigenes Token; gibt {name, token_sha256} aus
+deploy/setup.sh bridge --enrol laptop=<token_sha256> --apply     # ...das die Bridge über den Hash zulässt
+deploy/setup.sh session --name laptop-2 --apply   # ein zweiter Peer-Name hier, für eine zweite Sitzung auf diesem Rechner
+```
+
+- **Die Firewall wird geprüft, nicht nur beschrieben.** Eine Regel in einer ausgeschalteten Firewall filtert nichts, und `ufw allow` gelingt auch bei inaktivem ufw. `deploy bridge` (und damit `setup bridge`) meldet jetzt `NOT ENFORCED`, wenn ufw, firewalld oder das private Profil der Windows-Firewall aus ist, `NOT VERIFIED`, wenn es sich nicht feststellen ließ, und findet seine gespeicherte Regel bei inaktivem ufw, statt sie erneut anzulegen. Eine Firewall wird nie eingeschaltet: Das ändert jeden Port des Rechners, auch eine SSH-Sitzung. `deploy status` meldet dasselbe.
+- **`--register-mcp`** (standardmäßig aus) registriert den MCP-Server bei Claude Code, im Benutzer-Scope, außer mit `--scope project`. Plugin-Hooks installiert `setup` nicht.
+- **`session --name N`** legt einen zweiten Peer-Namen mit eigenem Token an (`~/.config/ai-connect/session-tokens/N.token`, nur für den Besitzer lesbar). Auf dem Bridge-Rechner wird der Hash eingetragen und die Bridge neu gestartet; sonst wird `{name, token_sha256}` für `setup bridge --enrol` ausgegeben. Diese Sitzung startet mit `AI_CONNECT_PEER_NAME=N claude` (PowerShell: `$env:AI_CONNECT_PEER_NAME = 'N'; claude`): MCP-Server und Watcher senden dann dieses Token statt `client.token`.
+- **`tailnet-setup` führt `setup` nie aus.** Es braucht das Tailscale-API-Token des Besitzers und ersetzt die Tailnet-Richtlinie. `setup bridge` liest die Tags dieses Rechners und sucht den gespeicherten OAuth-Client und meldet `OUTSTANDING` samt den Befehlen, wenn der Schritt nicht erledigt aussieht; `setup peer` meldet es, wenn der Port der Bridge nicht antwortet.
+
 ### Neben anderen VPNs
 
 Tailscale teilt sich den Rechner mit den VPN-Clients, die schon da sind (AWS VPN Client, OpenVPN, WireGuard, ein Firmen-Client), und deploy hält es aus deren Weg:
@@ -332,7 +347,7 @@ Es braucht das User-Token, ein drittes Token, das nur als User senden darf. Es l
 ## Details
 
 - **Peer-Namen**: STDIO-Client und HTTP/SSE-Server treten als `client.name` bei, der eine Name, den das Token dieses Rechners anmelden darf. `AI_CONNECT_PEER_NAME` überschreibt ihn (der Name braucht dann ein eigenes Token). Mit `client.name: ""` nennt sich der STDIO-Client `Host:Projekt`, was nur das alte gemeinsame Token annimmt.
-- **Eine Sitzung pro Name**: Ein Name, der online ist, lässt sich nicht übernehmen. Tritt eine zweite Sitzung unter einem Namen bei, der schon online ist, weist die Bridge sie ab (`name_taken`); der Client protokolliert den Grund und meldet sich einmal im Standby neu an: Er sendet und empfängt nichts und übernimmt den Namen, sobald die erste Sitzung geht. Die wartende Sitzung bekommt einen Hinweis von `Bridge`. Sitzungen auf einem Rechner teilen sich `client.name`, also ist immer nur eine online — eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben. Ein Token meldet nie den Namen eines anderen Peers an.
+- **Eine Sitzung pro Name**: Ein Name, der online ist, lässt sich nicht übernehmen. Tritt eine zweite Sitzung unter einem Namen bei, der schon online ist, weist die Bridge sie ab (`name_taken`); der Client protokolliert den Grund und meldet sich einmal im Standby neu an: Er sendet und empfängt nichts und übernimmt den Namen, sobald die erste Sitzung geht. Die wartende Sitzung bekommt einen Hinweis von `Bridge`. Sitzungen auf einem Rechner teilen sich `client.name`, also ist immer nur eine online — eine schließen oder der zweiten einen eigenen Namen samt Token geben: `deploy/setup.sh session --name N` legt beides an, und die Sitzung startet mit `AI_CONNECT_PEER_NAME=N`. Ein Token meldet nie den Namen eines anderen Peers an.
 - **Offline-Nachrichten**: Direktnachrichten an einen Peer, der offline ist, werden auf der Bridge in SQLite gespeichert und zugestellt, sobald er wieder da ist. Rundrufe (`*`) erreichen nur die Peers, die in dem Moment online sind.
 - **Aufbewahrung des Verlaufs**: Die Bridge löscht Nachrichten, die älter als `server.history_days` sind (14 in der Vorlage), beim Start und danach täglich.
 - **Logs**: Jeder STDIO-Client schreibt eine eigene Datei, `~/.config/ai-connect/mcp-<Host>_<Projekt>.log`, der HTTP/SSE-Server `mcp-http.log`; beide werden bei `logging.max_megabytes` rotiert, `logging.backup_count` alte Dateien bleiben. Die Bridge schreibt `bridge.log`, ebenso rotiert, und unter systemd zusätzlich ins Journal.
@@ -359,7 +374,7 @@ Die beiden Warteschlangen-Grenzen haben keinen „Aus“-Wert: `0` würde jede N
 
 | Umgebungsvariable | Beschreibung |
 |-------------------|--------------|
-| `AI_CONNECT_PEER_NAME` | Überschreibt den Peer-Namen (`client.name`); der Name braucht ein eigenes Token auf der Bridge |
+| `AI_CONNECT_PEER_NAME` | Überschreibt den Peer-Namen (`client.name`); der Name braucht ein eigenes Token auf der Bridge. Der Client sendet dafür `~/.config/ai-connect/session-tokens/<name>.token`, wenn es die Datei gibt (`deploy/setup.sh session --name <name>` schreibt sie), sonst `client.token`, das die Bridge unter einem anderen Namen abweist |
 | `AI_CONNECT_PROJECT_DIR` | Überschreibt `client.project_dir`, das einzige Verzeichnis, aus dem Dateien geteilt werden dürfen |
 | `AI_CONNECT_PEER_SUFFIX` | Nur mit `client.name: ""` (altes gemeinsames Token) — STDIO-Client: wird mit Bindestrich angehängt, `Host:Projekt-Zusatz`, damit mehrere Sitzungen in einem Projekt jede für sich erreichbar sind. `AI_CONNECT_PEER_NAME` hat Vorrang |
 
@@ -383,7 +398,7 @@ Unter Windows: `install.cmd -Status`; die Logs liegen in `%USERPROFILE%\.config\
 | Timeout | Firewall | Port 9999 auf dem Bridge-Rechner nur für das eigene VPN-Subnetz öffnen |
 | `peer_status`: Bridge hat den Token abgewiesen | `client.token` ist der Bridge unbekannt oder widerrufen | Auf dem Bridge-Rechner `installer.py add-peer <Name>`, das Token in `client.token` eintragen, Bridge und Client neu starten |
 | `may not be registered with this token` | `client.name` ist nicht der Name, für den das Token ausgestellt wurde | `client.name` auf den Namen setzen, der `add-peer` gegeben wurde |
-| `peer_status` zeigt Standby | Eine andere Sitzung hält denselben Namen (`name_taken`) | Eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben; die Sitzung im Standby übernimmt den Namen, sobald die andere geht |
+| `peer_status` zeigt Standby | Eine andere Sitzung hält denselben Namen (`name_taken`) | Eine schließen oder der zweiten einen eigenen Namen samt Token geben (`deploy/setup.sh session --name N`, dann mit `AI_CONNECT_PEER_NAME=N` starten); die Sitzung im Standby übernimmt den Namen, sobald die andere geht |
 
 ## Einschränkungen
 

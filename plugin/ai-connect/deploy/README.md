@@ -212,6 +212,76 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 The test leaves one message in the peer's own history on the Bridge and one refused
 token in the Bridge's log.
 
+## One run per machine: setup
+
+`deploy/setup.sh` (Linux, macOS for a peer) and `deploy\setup.ps1` (Windows) take a machine
+that has the plugin and nothing else to a working peer in one run. Both hand straight to
+`deploy/peer_setup.py`, so they take the same options in the same order and print the same
+text. It is a thin layer: every change is made by the `deploy` commands above (`bridge`,
+`peer`, `join`, `add-peer`), in this process, with their own text.
+
+**Without `--apply` it prints the plan and changes nothing** (it runs no tool at all, like
+`--dry-run`). With `--apply` it does the work. Either can be run again; a step that is done
+says `already done`.
+
+| Command | What it does |
+|---|---|
+| `setup bridge [--name N] [--peer P ...] [--enrol NAME=SHA256 ...] [--port N] [--vpn-subnet CIDR]` | `deploy bridge` (venv, Tailscale, config, one token file per `--peer`, the service, the firewall rule, the health check), then `deploy add-peer` for each `--enrol`, then the two checks below, then the lines to run on each peer, for both operating systems |
+| `setup peer --name N --bridge IP --token-file F [--auth-key-file F]` | `deploy peer` with the token file the Bridge made (`~/.config/ai-connect/peer-tokens/N.token` there). Run again without the file, it checks the connection and rewrites nothing |
+| `setup peer --name N --bridge IP` | `deploy join`: the machine makes its own token and prints `{name, token_sha256}`; the Bridge lets it in with `setup bridge --enrol N=<token_sha256>` |
+| `setup peer --invite-file F` | `deploy join` with an invite from `deploy invite` |
+| `setup session --name N` | A second peer name on this machine, with its own token: see below |
+
+`bridge` and `peer` also take `--register-mcp` (off by default; `--scope user`, the
+default, or `project`), `--no-install-tailscale` and `--port`. `setup` installs no plugin
+hooks.
+
+**What it checks that `deploy` left to the reader**
+
+- **Is the firewall on?** `ufw allow` succeeds on an inactive ufw, and `ufw status` then
+  lists no rule at all, so a rule could be reported as done while it filtered nothing, and
+  be added again on every run. The firewall step now asks: ufw from `ufw status` (or
+  `ENABLED=` in `/etc/ufw/ufw.conf` when ufw answers in another language), firewalld from
+  `firewall-cmd --state`, Windows from the Private profile's state
+  (`Get-NetFirewallProfile`). It prints `NOT ENFORCED` when the firewall is off and
+  `NOT VERIFIED` when it could not tell, repeats that in the summary, and reads the rules
+  of an inactive ufw from `ufw show added`. **It never turns a firewall on**: enabling one
+  applies its default policy to every port of the machine, an SSH session included. With
+  firewalld not running no rule is added, and the deploy goes on to its health check.
+  `deploy status` flags a rule that is not enforced, and `deploy uninstall` removes the
+  stored rule of an inactive ufw.
+- **Has the tailnet policy been set?** `setup` never runs `tailnet-setup`: it needs the
+  owner's Tailscale API token, and `--apply` replaces the whole tailnet policy. On the
+  Bridge, `setup bridge` reads this machine's tags (`tailscale status`) and looks for the
+  stored OAuth client, the two things `tailnet-setup --apply` leaves there, and prints
+  `OUTSTANDING` with the commands when either is missing. It does not read the policy
+  itself. On a peer, `setup peer` opens one TCP connection to the Bridge's port; a port
+  that does not answer is the usual sign of a policy that does not let `tag:ai-peer`
+  reach `tag:bridge:9999`.
+
+### A second session on one machine
+
+Every session on a machine joins as `client.name` with `client.token`, and a live name
+cannot be taken over, so a second session waits on standby. To have both online:
+
+```bash
+deploy/setup.sh session --name laptop-2            # the plan
+deploy/setup.sh session --name laptop-2 --apply
+AI_CONNECT_PEER_NAME=laptop-2 claude               # PowerShell: $env:AI_CONNECT_PEER_NAME = 'laptop-2'; claude
+```
+
+It makes a token for that name, owner-only, in
+`~/.config/ai-connect/session-tokens/laptop-2.token`. On the Bridge machine it enrols the
+token's hash and restarts the Bridge (every peer that is online is disconnected for a
+moment). On any other machine it prints `{name, token_sha256}`, and the Bridge lets it in
+with `setup bridge --enrol laptop-2=<token_sha256> --apply`. The client then sends that
+token whenever `AI_CONNECT_PEER_NAME` is `laptop-2`, and `client.token` otherwise. Set the
+variable for the `claude` command itself, not in the MCP server's registration: the
+watcher hook reads it too. To take it back, on the Bridge: `deploy remove --name laptop-2
+--yes` (it asks the Tailscale API for a node of that name first, so it needs the stored
+OAuth client), or `installer.py revoke-peer laptop-2` and a Bridge restart; then delete the
+token file.
+
 ## Afterwards
 
 ```bash
@@ -231,3 +301,8 @@ sends one message. It runs no test suite and installs nothing.
 fakes: a fake Tailscale API on a loopback port, fake system tools on a minimal `PATH`, a
 fake credential store, and the real Bridge server on a loopback port for `deploy test`.
 No test calls Tailscale or installs anything.
+
+`tests/test_ops_setup.py` runs `setup` on the same fake machine: the plan changes nothing
+and runs no tool, both roles end to end, a second session whose token the client then
+sends, an inactive ufw, a firewalld that is not running, the Windows profile states, the
+outstanding tailnet policy, and `setup.sh` against `setup.ps1` line for line.

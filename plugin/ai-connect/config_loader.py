@@ -2,6 +2,9 @@
 """Reads the AI-Connect config for the Bridge Server and both MCP clients."""
 
 import logging
+import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +13,10 @@ from urllib.parse import urlsplit
 import yaml
 
 CONFIG_PATH = Path.home() / ".config" / "ai-connect" / "config.yaml"
+# One owner-only token per second peer name on this machine (session_token)
+SESSION_TOKEN_DIR = CONFIG_PATH.parent / "session-tokens"
+# vpn/tsadmin.py PEER_NAME_RE: the names deploy and setup accept
+_SESSION_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,62}")
 # Kept out of config.yaml, which every agent reads: the Claude Code settings
 # deny reading these files (see installer.py observer-token, user-token)
 OBSERVER_TOKEN_PATH = CONFIG_PATH.parent / "observer.token"
@@ -186,8 +193,34 @@ def ws_uri(host: str, port: int) -> str:
     return f"ws://{host}:{port}"
 
 
-def client_settings(config: dict) -> ClientSettings:
-    """client: {name, token, bridge_url, project_dir}; a pre-2.3 bridge: section is read with a warning."""
+def session_token(name: str | None, configured: str = "", directory: Path | None = None) -> str | None:
+    """The token of a second peer name on this machine, or None.
+
+    Every session here joins as client.name with client.token, and a live name
+    cannot be taken over, so only one is online at a time. A second session
+    started with AI_CONNECT_PEER_NAME=<name> needs a token bound to that name:
+    `deploy/setup.sh session --name <name>` makes it, owner-only, in
+    session-tokens/<name>.token. Without that file the session sends
+    client.token, as before, and the Bridge refuses the name.
+
+    The name becomes a file name, so only a plain peer name is looked up.
+    """
+    if not name or name == configured or not _SESSION_NAME.fullmatch(name):
+        return None
+    try:
+        token = (directory or SESSION_TOKEN_DIR).joinpath(f"{name}.token").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return token or None
+
+
+def client_settings(config: dict, environ: Mapping[str, str] | None = None) -> ClientSettings:
+    """client: {name, token, bridge_url, project_dir}; a pre-2.3 bridge: section is read with a warning.
+
+    The token is session_token()'s when AI_CONNECT_PEER_NAME names a second
+    peer that has one, else client.token.
+    """
+    environ = os.environ if environ is None else environ
     client = config.get("client")
     if not client and config.get("bridge"):
         bridge = config["bridge"]
@@ -209,7 +242,7 @@ def client_settings(config: dict) -> ClientSettings:
         raise ValueError("client.token is required (installer.py add-peer <name> on the Bridge machine prints one)")
     return ClientSettings(
         name=client.get("name") or "",
-        token=client["token"],
+        token=session_token(environ.get("AI_CONNECT_PEER_NAME"), client.get("name") or "") or client["token"],
         host=bridge_target(url.hostname),
         port=port,
         project_dir=client.get("project_dir") or "",

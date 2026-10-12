@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.11] - 2026-10-12
+
+Setup in one run per machine, a firewall step that says when its rule does nothing, and a second peer name
+for a second session. Numbered 0.1.11 because 0.1.9 and 0.1.10 belong to the quiet-when-unconfigured change
+(PR #610), which is meant to merge first.
+
+### Added
+- `deploy/setup.sh` and `deploy/setup.ps1`, one core (`deploy/peer_setup.py`): `bridge`, `peer` and `session`. A thin layer over `deploy bridge`, `peer`, `join` and `add-peer`, which still make every change. Without `--apply` it prints the plan and changes nothing; `--register-mcp` (off by default) registers the MCP server at user scope
+- `setup bridge --peer NAME` makes a peer's token file and prints the command to run on that machine for both operating systems; `--enrol NAME=SHA256` lets in a peer that made its own token
+- `setup session --name N`: a second peer name on this machine with its own owner-only token (`~/.config/ai-connect/session-tokens/N.token`), enrolled by hash on the Bridge machine or printed as `{name, token_sha256}` elsewhere
+- The client sends that token when `AI_CONNECT_PEER_NAME` names a second peer that has one (`config_loader.session_token`), so two sessions on one machine can both be online. Until now the variable changed the name only, the client still sent `client.token`, and the Bridge refused the name
+- `setup bridge` says when `deploy tailnet-setup --apply` looks outstanding (this machine not tagged `tag:bridge`, or no OAuth client stored) and prints the commands; `setup peer` says so when the Bridge's port does not answer. `setup` never runs `tailnet-setup`
+- `deploy/firewall_state.py`: whether ufw, firewalld or the Windows Firewall's Private profile is on, with three answers (on, off, could not tell)
+- `tests/test_ops_setup.py`, against the fake machine (`tests/deploy_box.py`); the fakes learned an inactive ufw, `ufw show added`, `firewall-cmd --state`, `Get-NetFirewallProfile` and a tagged node
+
+### Fixed
+- `deploy bridge` reported a firewall rule as done on an inactive ufw, where it filters nothing, and added it again on every run: `ufw status` lists no rule while ufw is inactive. It now prints `NOT ENFORCED` (or `NOT VERIFIED`), finds the stored rule through `ufw show added`, and never turns a firewall on
+- `deploy bridge` stopped at the firewall step, before its health check, when firewalld was installed and not running. It now says so, adds no rule, and goes on
+- `deploy status` shows a rule in a firewall that is off as `NOT ENFORCED`; `deploy uninstall` removes the stored rule of an inactive ufw, which it did not find before
+
+### Known limitations
+- Nothing here has run on Windows, or against a real ufw, firewalld, Windows Firewall or tailnet: the suite drives fakes. `setup.ps1` was parsed and run by PowerShell 7 on Linux against those fakes only. The `Get-NetFirewallProfile` query and whether it needs elevation are untested on a real Windows
+- The Windows rule is in the Private profile, and only that profile's state is checked: whether the Tailscale adapter is classified Private on a given machine is not
+- A translated `ufw status` is told on from off through `/etc/ufw/ufw.conf`; with ufw active and translated, the rule list (`ALLOW`) may still not be read, as before
+- The tailnet-policy check reads what `tailnet-setup --apply` leaves on the Bridge machine, not the policy
+
 ## [0.1.8] - 2026-10-12
 
 One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's
