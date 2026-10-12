@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — ai-connect 0.1.6: one-command deployment and onboarding over Tailscale (W-0129)
+### Added — ai-connect 0.1.7: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
   `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
@@ -32,7 +32,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
   matches `README.md` again, and CI now runs the plugin's suites.
 - **Not verified.** Nothing in `deploy/` has run against a real tailnet; the suites use fakes throughout.
-- **Numbering.** The deployment was 0.1.5 on its branch and never published under that number; the 0.1.5
+- **Numbering.** The deployment was 0.1.5, then 0.1.6, on its branch and published under neither; the 0.1.5
   below (L-0790) reached main first.
 
 ### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)

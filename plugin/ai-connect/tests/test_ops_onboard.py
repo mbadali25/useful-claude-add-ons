@@ -57,7 +57,7 @@ def test_list_joins_the_tailnet_with_the_bridge_peers_and_flags_expiring_keys(bo
     api.devices[STRAY_ID] = device(STRAY_ID, "stray", "100.64.0.3", ["tag:ai-peer"], expiry_disabled=True)
     with OwnBridge(box) as own:
         assert box.deploy(*own.args, "--peer", "laptop", "--peer", "desk").returncode == 0
-        api.devices[NODE_ID]["keyExpiryDisabled"] = False  # as on a Bridge deployed before 0.1.6
+        api.devices[NODE_ID]["keyExpiryDisabled"] = False  # as on a Bridge deployed before 0.1.7
         api.requests.clear()
         run = Phase(box, "list", extra_env=env)
     assert run.res.returncode == 0, run.text

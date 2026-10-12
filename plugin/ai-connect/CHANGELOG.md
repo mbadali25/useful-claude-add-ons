@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.1.6] - 2026-10-11
+## [0.1.7] - 2026-10-11
 
 One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's
-review (W-0129). The deployment was numbered 0.1.5 on its branch and never published under that number:
+review (W-0129). The deployment was numbered 0.1.5, then 0.1.6, on its branch and published under neither:
 the 0.1.5 below is L-0790's test fix, which reached main first.
 
 ### Added
