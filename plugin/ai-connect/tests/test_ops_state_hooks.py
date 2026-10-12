@@ -215,6 +215,49 @@ def test_a_file_that_is_not_settings_is_refused_and_left_alone(tmp_path, text):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["settings.json"]  # no temp file left either
 
 
+def test_a_write_that_cannot_be_done_is_a_settings_error_and_changes_nothing(tmp_path):
+    """Not a traceback after the MCP server is already registered: one line the installer can exit with."""
+    path = tmp_path / "settings.json"
+    text = '{"env": {"X": "\\ud83d"}}'  # a lone surrogate: valid JSON, not writable as UTF-8
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(state_hooks.SettingsError, match="not changed"):
+        state_hooks.add(path)
+    assert path.read_text(encoding="utf-8") == text
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["settings.json"]
+
+
+def test_remove_runs_without_the_venv_for_an_uninstall_after_a_plugin_update(tmp_path):
+    """install.sh --uninstall has no venv then, so no installer.py: state_hooks.py alone, standard library only."""
+    config_dir = tmp_path / "claude"
+    path = config_dir / "settings.json"
+    config_dir.mkdir()
+    path.write_text(json.dumps(FOREIGN), encoding="utf-8")
+    state_hooks.add(path)
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env.update(CLAUDE_CONFIG_DIR=str(config_dir), HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+
+    def run(*args):
+        # -I -S: no site-packages, so a third-party import in state_hooks.py would fail here
+        return subprocess.run([sys.executable, "-I", "-S", str(PLUGIN / "state_hooks.py"), *args], env=env,
+                              capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=60)
+    first = run("remove")
+    assert first.returncode == 0 and "removed" in first.stdout, first.stderr
+    assert load(path) == FOREIGN
+    assert run("remove").returncode == 0 and load(path) == FOREIGN
+    assert run("add").returncode == 2 and run().returncode == 2  # removing is all it offers
+    path.write_text("{", encoding="utf-8")
+    refused = run("remove")
+    assert refused.returncode == 1 and "not valid JSON" in refused.stderr and path.read_text(encoding="utf-8") == "{"
+
+
+def test_both_install_scripts_remove_the_state_hooks_when_the_venv_is_gone():
+    """The pair: each uninstall falls back to state_hooks.py remove, and neither starts a bare pwsh."""
+    for name in ("install.sh", "install.ps1"):
+        text = (PLUGIN / name).read_text(encoding="utf-8")
+        assert "state_hooks.py" in text and "remove" in text and "python3" in text and "py" in text, name
+        assert "claude mcp remove -s user ai-connect" in text, name
+
+
 def test_odd_but_valid_groups_are_passed_over(tmp_path):
     """Entries this does not understand inside a valid file are not ours to judge: kept as they are."""
     odd = {"hooks": {"Stop": ["a string", {"hooks": "not a list"}, {"no": "hooks"}, 7], "PreToolUse": []}}
@@ -261,7 +304,7 @@ def test_a_failed_write_leaves_the_old_file_and_no_temp_file(tmp_path, monkeypat
         raise OSError("disk full")
 
     monkeypatch.setattr(state_hooks.os, "replace", fail)
-    with pytest.raises(OSError, match="disk full"):
+    with pytest.raises(state_hooks.SettingsError, match="disk full"):
         state_hooks.add(path)
     assert path.read_text(encoding="utf-8") == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["settings.json"]

@@ -13,7 +13,11 @@ next to that registration, and takes them out with it:
   for --scope project (the server is then only in that project's .mcp.json)
 
 Standard library only: deploy.py runs under the system Python, before there
-is a venv.
+is a venv. For the same reason this file can be run by itself, to take the
+hooks out of the user's settings where the venv is gone and installer.py
+cannot run:
+
+    python3 state_hooks.py remove
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ import copy
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -83,7 +88,9 @@ def read(path: Path) -> dict | None:
     try:
         # utf-8-sig: Windows PowerShell 5.1 writes a byte order mark
         settings = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError) as error:
+    except OSError as error:
+        raise SettingsError(f"{path} could not be read ({error}).\n{unchanged}") from error
+    except ValueError as error:
         raise SettingsError(f"{path} is not valid JSON ({error}).\n{unchanged}") from error
     problem = None
     if not isinstance(settings, dict):
@@ -164,18 +171,28 @@ def write(path: Path, settings: dict) -> None:
     without its settings.
     """
     text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+    try:
+        payload = text.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise SettingsError(f"{path} holds text that cannot be written as UTF-8 ({error}).\n"
+                            "It was not changed.") from error
     # realpath: a settings.json that is a link into a dotfiles checkout stays one
     target = Path(os.path.realpath(path))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}-")
+    tmp = None
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(text)
-        if target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}-")
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+        # Not on Windows: there the only mode bit is read-only, and a read-only temp file can neither
+        # replace the target nor be deleted again
+        if os.name != "nt" and target.exists():
             shutil.copymode(target, tmp)
         os.replace(tmp, target)
+    except OSError as error:
+        raise SettingsError(f"{path} could not be written ({error}).\nIt was not changed.") from error
     finally:
-        if os.path.exists(tmp):
+        if tmp and os.path.exists(tmp):
             os.unlink(tmp)
 
 
@@ -210,3 +227,23 @@ def remove(path: Path) -> bool:
         return False
     write(path, updated)
     return True
+
+
+def main(argv: list[str]) -> int:
+    """`remove`: take the state hooks out of the user's settings. Nothing else is offered here: adding
+    them belongs to whatever registers the MCP server."""
+    if argv != ["remove"]:
+        print("usage: state_hooks.py remove", file=sys.stderr)
+        return 2
+    path = user_settings_path()
+    try:
+        removed = remove(path)
+    except SettingsError as error:
+        print(error, file=sys.stderr)
+        return 1
+    print(f"  State hooks removed from {path}" if removed else f"  No AI-Connect state hooks in {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -863,6 +863,20 @@ def test_uninstall_removes_the_state_hooks_and_nothing_else_from_the_settings(bo
     assert again.res.returncode == 0 and "peer-state hooks" not in again.out, again.text
 
 
+def test_uninstall_removes_the_state_hooks_without_the_claude_cli_and_past_unreadable_settings(box, tmp_path):
+    """The hooks are in files: no CLI is needed to take them out. And settings uninstall cannot read must not
+    stop it half-way, with the service gone and the rest left."""
+    assert peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", "--scope", "user").res.returncode == 0
+    box.project_settings.parent.mkdir(parents=True)
+    box.project_settings.write_text("{", encoding="utf-8")
+    box.remove_tool("claude")
+    run = Phase(box, "uninstall", "--yes")
+    assert run.res.returncode == 0, run.text
+    assert json.loads(box.user_settings.read_text(encoding="utf-8")) == {}
+    assert "WARNING" in run.out and str(box.project_settings) in run.out
+    assert box.project_settings.read_text(encoding="utf-8") == "{"
+
+
 def test_peer_dry_run_needs_no_token_and_no_key(box):
     """A first look at a fresh machine: no token made yet, no key minted yet, Tailscale's state unknown."""
     box.set(ts_backend="Stopped", ts_ip="")

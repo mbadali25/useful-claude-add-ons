@@ -635,7 +635,16 @@ def remove_claude(r: Run) -> None:
         r.change(f"remove the peer-state hooks from {' and '.join(map(str, settings))}, if they are there",
                  lambda: None)
         return
-    holding = [path for path in settings if state_step(state_hooks.holds_any, path)]
+    # A settings file this cannot read holds up nothing here: the service and the firewall rule are
+    # already gone, and stopping now would leave the MCP server and the plugin behind as well
+    holding = []
+    for path in settings:
+        try:
+            if state_hooks.holds_any(path):
+                holding.append(path)
+        except state_hooks.SettingsError as error:
+            out(f"  WARNING: {str(error).splitlines()[0]} Any peer-state hooks in it are still there: "
+                f"remove them by hand.")
     claude = claude_bin()
     if claude is None:
         r.already("Claude Code not found, nothing registered there")
