@@ -19,8 +19,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from deploy_core import (IS_ROOT, Failure, Run, backend_state, interactive, out, tool,  # pylint: disable=import-error
-                         ts_prefs, tsadmin)
+from deploy_core import (IS_ROOT, Failure, Run, backend_state, interactive, out, run,  # pylint: disable=import-error
+                         tool, ts_prefs, tsadmin)
 
 PKGS = "https://pkgs.tailscale.com/stable"
 INSTALL_SCRIPT_URL = "https://tailscale.com/install.sh"
@@ -110,14 +110,15 @@ def shown(argv: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in argv)
 
 
-def fallback_reason(step: int, code: int) -> str | None:
-    """Why the next way to install may be tried after this one failed at command `step` with `code`;
-    None: stop. On Linux the only next way is the install script, run as root, so it is tried only when
-    the apt repository has no key or list for this release (curl -f exits 22 on an HTTP error). A held
-    dpkg lock, no network or a refused sudo is not fixed by a script piped from the internet."""
+def fallback_reason(step: int, code: int, detail: str = "") -> str | None:
+    """Why the next way to install may be tried after this one failed at command `step` with `code`
+    (detail: what it printed on stderr); None: stop. On Linux the only next way is the install script,
+    run as root, so it is tried only when the apt repository has no key or list for this release: curl
+    -f exits 22 on any HTTP error, so the status itself must be 404. A 403, a 429 or a 500, a held dpkg
+    lock, no network or a refused sudo is not fixed by a script piped from the internet."""
     if PLATFORM != "linux":
         return f"exit {code}"
-    if step in (0, 1) and code == 22:
+    if step in (0, 1) and code == 22 and re.search(r"error: 404\b", detail):
         distro, codename = apt_release() or ("this distribution", "")
         return f"Tailscale's apt repository does not carry {distro} {codename}".rstrip()
     return None
@@ -139,29 +140,37 @@ def describe(tmp: str = "<tmp>") -> None:
         out("  The commands behind sudo need root: sudo may ask for your password.")
 
 
-def _run_plan(title: str, commands: list[list[str]]) -> tuple[int, int]:
-    """(exit code, index of the command that failed); (0, -1) when every command succeeded."""
+def _run_plan(title: str, commands: list[list[str]]) -> tuple[int, int, str]:
+    """(exit code, index of the command that failed, what it printed on stderr); (0, -1, "") when every
+    command succeeded. A download asks no one anything, so its stderr is kept: it names the HTTP status."""
     out(f"  installing with {title}")
     for step, argv in enumerate(commands):
         out(f"    $ {shown(argv)}")
-        code = interactive([tool(argv[0]), *argv[1:]])
+        detail = ""
+        if argv[0] == "curl":
+            res = run([tool(argv[0]), *argv[1:]], timeout=300)
+            code, detail = res.returncode, res.stderr
+            for line in detail.strip().splitlines():
+                out(f"    {line}")
+        else:
+            code = interactive([tool(argv[0]), *argv[1:]])
         if code != 0:
             out(f"    exit {code}")
-            return code, step
-    return 0, -1
+            return code, step, detail
+    return 0, -1, ""
 
 
 def _install() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         options = plans(tmp)
         for index, (title, commands) in enumerate(options):
-            code, step = _run_plan(title, commands)
+            code, step, detail = _run_plan(title, commands)
             if code == 0:
                 break
             failed = f"installing Tailscale with {title} failed at `{shown(commands[step])}` (exit {code})"
             if index + 1 == len(options):
                 raise Failure(failed)
-            why = fallback_reason(step, code)
+            why = fallback_reason(step, code, detail)
             if why is None:
                 raise Failure(f"{failed}; deploy does not fall back to {options[index + 1][0]} for that: "
                               "fix the cause and run this again")

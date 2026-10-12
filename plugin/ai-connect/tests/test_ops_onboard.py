@@ -259,6 +259,37 @@ def test_join_with_an_invite_joins_makes_its_token_and_prints_only_the_hash(box)
     assert "deploy test --bridge 127.0.0.1 --name laptop" in again.out
 
 
+@pytest.mark.skipif(NATIVE != "linux", reason="sudo is the Linux path; Windows joins through vpn-up")
+@pytest.mark.parametrize("root", [False, True], ids=["user", "root"])
+def test_join_with_an_invite_on_linux_runs_tailscale_up_as_root(box, root):
+    """tailscale up needs root (no operator is set on a fresh machine): through sudo for a user, the config and
+    token stay the user's. The key reaches tailscale as a file, never on a command line."""
+    joiner(box)
+    env = {"AI_CONNECT_DEPLOY_ROOT": "1"} if root else {}
+    server = FakeBridge(set)
+    invite = box.tmp / "laptop.invite"
+    invite.write_text(invite_code("laptop", "127.0.0.1", server.port), encoding="utf-8")
+    try:
+        run = Phase(box, "join", "--invite-file", str(invite), extra_env=env)
+    finally:
+        server.close()
+    assert run.res.returncode == 0, run.text
+    sudo_up = [c for c in run.calls if c[0] == "sudo" and "up" in c]
+    assert (sudo_up == []) if root else (len(sudo_up) == 1 and any(a.startswith("--auth-key=file:") for a in
+                                                                    sudo_up[0])), run.calls
+    assert not any(AUTH_KEY_MINTED in a for c in run.calls for a in c)
+    assert box.state()["up_key_sha256"] == hashlib.sha256(AUTH_KEY_MINTED.encode()).hexdigest()
+    assert not list(own_token(box).parent.glob("*.join-key*"))  # the key's file is gone again
+
+
+@pytest.mark.parametrize("how", [["--invite"], ["--invite-file", "missing.invite"]], ids=["prompt", "missing-file"])
+def test_join_dry_run_reads_no_invite(box, how):
+    """A first look asks for no secret and needs no file: the plan, with the invite's fields unknown."""
+    run = Phase(box, "join", *how, "--dry-run")
+    assert run.res.returncode == 0, run.text
+    assert run.calls == [] and run.changed_nothing() and "would: join the tailnet" in run.out
+
+
 def test_join_by_login_advertises_the_peer_tag(box):
     joiner(box)
     server = FakeBridge(set)

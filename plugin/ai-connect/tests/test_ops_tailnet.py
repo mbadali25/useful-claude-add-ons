@@ -474,7 +474,8 @@ def test_a_release_the_apt_repository_lacks_falls_back_to_the_install_script(box
     assert box.state()["ts_backend"] == "Running"
 
 
-@pytest.mark.parametrize("state", [{"apt_rc": 100}, {"curl_rc": 6}], ids=["dpkg-lock", "no-network"])
+@pytest.mark.parametrize("state", [{"apt_rc": 100}, {"curl_rc": 6}, {"curl_http_error": 403},
+                                   {"curl_http_error": 500}], ids=["dpkg-lock", "no-network", "http-403", "http-500"])
 def test_an_apt_failure_that_is_not_a_missing_release_stops_without_the_install_script(box, state):
     """A held dpkg lock or no network is not fixed by piping a script from the internet into a root shell."""
     env = missing(box, "linux", "linux", **state)

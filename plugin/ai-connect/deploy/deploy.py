@@ -51,8 +51,8 @@ import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED,  # pylint: disable=import-error
                          EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool,
-                         has_terminal, mask, must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs,
-                         ts_self, tsadmin, venv_python)
+                         has_terminal, interactive, mask, must, no_tools, out, privileged, run, tailscale_ip, tool,
+                         ts_prefs, ts_self, tsadmin, venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -79,7 +79,21 @@ STOP_WAIT = float(os.environ.get("AI_CONNECT_DEPLOY_STOP_WAIT") or 15)
 # ---------------------------------------------------------------- venv + config tool
 
 
+# Written into the venv after its pip install: a newer checkout with other pins is installed again
+REQUIREMENTS_DIGEST = VENV / ".ai-connect-requirements.sha256"
+
+
+def requirements_digest() -> str:
+    return hashlib.sha256((PLUGIN / "requirements.txt").read_bytes()).hexdigest()
+
+
 def deps_ok(python: Path) -> bool:
+    """The venv has this checkout's requirements: the same pins installed, and the modules there."""
+    try:
+        if REQUIREMENTS_DIGEST.read_text(encoding="utf-8").strip() != requirements_digest():
+            return False
+    except OSError:
+        return False
     # find_spec, not import: importing fastmcp takes seconds, and this runs on every invocation
     probe = ("import importlib.util as u, sys; "
              "sys.exit(any(u.find_spec(m) is None for m in ('yaml', 'websockets', 'aiosqlite', 'fastmcp')))")
@@ -136,9 +150,17 @@ def step_app(r: Run, restart_on_change: bool) -> None:
         for rel in stale:
             (APP / rel).unlink(missing_ok=True)
     what = f"{len(changed)} changed, {len(stale)} removed" if have else f"{len(changed)} files"
+    if have and (restart_on_change or bridge_here()):
+        # A running Bridge still has the old code loaded. Owed before the copy, so a copy that stops
+        # halfway, or one made for the MCP server, still restarts it on the next deploy bridge
+        owe_restart(r)
     r.change(f"install this checkout's files to {APP} ({what})", sync)
-    if have and restart_on_change:
-        owe_restart(r)  # a running Bridge still has the old code loaded
+
+
+def bridge_here() -> bool:
+    """This machine runs the Bridge: its config listens, and its own peer is one of auth.peers."""
+    facts = inspect_config() or {}
+    return bool(facts.get("host")) and facts.get("name") in (facts.get("peers") or [])
 
 
 def step_deps(r: Run) -> None:
@@ -154,6 +176,7 @@ def step_deps(r: Run) -> None:
     def install() -> None:
         must(run([str(venv_python()), "-m", "pip", "install", "-q", "-r", str(requirements)], timeout=900),
              "pip install")
+        REQUIREMENTS_DIGEST.write_text(requirements_digest() + "\n", encoding="utf-8")
 
     r.change(f"install {requirements.name} into the venv", install)
 
@@ -494,9 +517,14 @@ def mcp_server_file() -> Path:
     return APP / "client" / "server.py"
 
 
-def mcp_registered(claude: str) -> bool:
+def mcp_registered(claude: str, scope: str, python: Path) -> bool:
+    """Registered as asked: this server file, under this venv's Python, in this scope ("Scope: User config
+    ..." or "Scope: Project config ..." in `claude mcp get`; a line it does not print is not checked)."""
     res = run([claude, "mcp", "get", MCP_SERVER], timeout=60)
-    return res.returncode == 0 and str(mcp_server_file()) in res.stdout
+    if res.returncode != 0 or str(mcp_server_file()) not in res.stdout or str(python) not in res.stdout:
+        return False
+    line = next((ln.strip().lower() for ln in res.stdout.splitlines() if ln.strip().lower().startswith("scope:")), "")
+    return not line or f"{scope} config" in line
 
 
 HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
@@ -537,8 +565,8 @@ def step_claude(r: Run, args) -> None:
     if r.dry_run:
         r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
         return
-    if mcp_registered(claude):
-        r.already(f"MCP server '{MCP_SERVER}' registered")
+    if mcp_registered(claude, args.scope, python):
+        r.already(f"MCP server '{MCP_SERVER}' registered ({where})")
         return
 
     def register() -> None:
@@ -929,10 +957,46 @@ def step_join_with_key(r: Run, name: str, accept_dns: bool, *, key_file: str | N
         argv += ["--auth-key-file", key_file]
     if accept_dns:
         argv.append("--accept-dns")
-    out(f"    $ tailscale up --auth-key=file:<owner-only copy of the one-off key> "
-        f"--advertise-tags={tsadmin.DEFAULT_TAG} {' '.join(ts_install.pinned(accept_dns))} --hostname={name}")
+    up = ["tailscale", "up", "--auth-key=file:<owner-only copy of the one-off key>",
+          f"--advertise-tags={tsadmin.DEFAULT_TAG}", *ts_install.pinned(accept_dns), f"--hostname={name}"]
+    as_user = TARGET == "linux" and ts_install.PLATFORM == "linux" and not IS_ROOT
+    out(f"    $ {'sudo ' if as_user else ''}{' '.join(up)}")
+
+    def join_as_root() -> None:
+        """tailscale up needs root on Linux (no operator is set on a fresh machine): through sudo, with the
+        key in an owner-only file root reads. The config and the token stay this user's."""
+        secret = key or ""
+        source = key_file or os.environ.get("TS_AUTHKEY_FILE")
+        if not secret and source:
+            try:
+                secret = Path(source).read_text(encoding="utf-8").strip()
+            except OSError as err:
+                raise Failure(f"cannot read the key file {source}: {err.strerror}", EXIT_USAGE) from None
+        secret = secret or os.environ.get("TS_AUTHKEY", "").strip()
+        if not secret:
+            raise Failure("no auth key: pass --auth-key-file or set TS_AUTHKEY", EXIT_USAGE)
+        tsadmin.remember_secret(secret)
+        private_config_dir()
+        held = CONFIG_DIR / f".join-key-{os.getpid()}"
+        tsadmin.write_owner_only(held, secret + "\n")
+        try:
+            code = interactive([tool("sudo"), tsadmin.tailscale_bin(), "up", f"--auth-key=file:{held}", *up[3:]])
+        finally:
+            held.unlink(missing_ok=True)
+        if code != 0:
+            raise Failure(f"tailscale up failed (exit {code}): the key may be used or expired; make a new one")
+        state = backend_state()
+        if state != "Running":
+            raise Failure("tailscale up returned, but this machine is not on the tailnet "
+                          f"(state: {state or 'unknown'})")
+        if key_file:
+            Path(key_file).unlink(missing_ok=True)
+            out(f"  used key file {key_file} deleted")
 
     def join() -> None:
+        if as_user:
+            join_as_root()
+            return
         res = run(argv, timeout=300, env=dict(os.environ, TS_AUTHKEY=key) if key else None)
         for line in (res.stdout + res.stderr).strip().splitlines():
             out(f"  {line}")
@@ -1084,17 +1148,23 @@ def join_summary(bridge: str, port: int, name: str, digest: str) -> int:
 def cmd_join(args) -> int:
     """A new machine in one command: Tailscale, the tailnet (invite or login), its own token, the client
     config, and a summary. Only the token's hash is printed, for `deploy approve` on the Bridge."""
-    invite = read_invite(args)
-    name = args.name or (invite or {}).get("name")
-    bridge = args.bridge or (invite or {}).get("bridge")
+    # A dry run asks for no secret and needs no file: the invite's fields are then shown as unknown
+    unread = args.dry_run and not os.environ.get("AI_CONNECT_INVITE", "").strip() and (
+        (args.invite and not args.invite_file) or (args.invite_file and not Path(args.invite_file).is_file()))
+    invite = None if unread else read_invite(args)
+    unknown = "<the invite's>"
+    name = args.name or (invite or {}).get("name") or (unknown if unread else None)
+    bridge = args.bridge or (invite or {}).get("bridge") or (unknown if unread else None)
     port = args.port or (invite or {}).get("port") or DEFAULT_PORT
     if invite and args.name and args.name != invite["name"]:
         raise Failure(f"--name {args.name} differs from the name the invite was made for ({invite['name']})",
                       EXIT_USAGE)
     if not (name and bridge):
         raise Failure("join needs --name and --bridge, or an invite that carries both (--invite-file F)", EXIT_USAGE)
-    check_name(name, "--name")
-    check_host(bridge)
+    if name != unknown:
+        check_name(name, "--name")
+    if bridge != unknown:
+        check_host(bridge)
     tag = tsadmin.DEFAULT_TAG
     r = Run(args.dry_run, total=6)
     out(f"=== AI-Connect deploy: join '{name}' to {bridge}:{port}{' (dry run)' if r.dry_run else ''} ===")
@@ -1112,8 +1182,8 @@ def cmd_join(args) -> int:
     if on_tailnet:
         r.already("this machine is on the tailnet")
         ts_install.step_prefs(r, args.accept_dns)
-    elif invite:
-        step_join_with_key(r, name, args.accept_dns, key=invite["key"])
+    elif invite or unread:
+        step_join_with_key(r, name, args.accept_dns, key=(invite or {}).get("key"))
     else:
         ts_install.step_login(r, args.accept_dns, (f"--advertise-tags={tag}", f"--hostname={name}"))
         out(f"  joined by a login: `deploy approve --name {name}` on the Bridge also turns this node's key "
@@ -1213,7 +1283,11 @@ def cmd_uninstall(args) -> int:
     remove_claude(r)
     r.step("Configuration and installed files")
     # Only what deploy made there: an AI_CONNECT_HOME pointed at a busier directory keeps everything else
-    installed = [p for p in (APP, APP_HOME / "venv") if p.exists()]
+    # The venv only when it is deploy's own: the default place, unmoved by AI_CONNECT_VENV, and a venv
+    ours = APP_HOME / "venv"
+    installed = [APP] if (APP / ".claude-plugin" / "plugin.json").is_file() and (APP / "server").is_dir() else []
+    if VENV == ours and (ours / "pyvenv.cfg").is_file():
+        installed.append(ours)
     if not args.purge:
         out(f"  kept: {CONFIG_DIR} and {APP_HOME} (pass --purge to delete them, the tokens with them)")
     else:

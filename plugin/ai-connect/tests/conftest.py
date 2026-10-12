@@ -5,6 +5,7 @@ puts tests/ on sys.path, not the repo root where installer.py and
 config_loader.py live.
 """
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -30,6 +31,9 @@ def venv(tmp_path_factory):
                              check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout.strip()
     dirs = [p for p in sys.path if p and os.path.isdir(p) and Path(p).resolve() != PLUGIN.resolve()]
     Path(purelib, "outer.pth").write_text("\n".join(dirs) + "\n", encoding="utf-8")
+    # What deploy writes after its pip install: these requirements are in, so it installs nothing
+    digest = hashlib.sha256((PLUGIN / "requirements.txt").read_bytes()).hexdigest()
+    (path / ".ai-connect-requirements.sha256").write_text(digest + "\n", encoding="utf-8")
     return path
 
 

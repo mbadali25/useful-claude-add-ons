@@ -119,6 +119,9 @@ def curl(args, state):
     if state.get("curl_404") and any(state["curl_404"] in arg for arg in args):
         print("curl: (22) The requested URL returned error: 404", file=sys.stderr)
         return 22
+    if state.get("curl_http_error"):  # any URL answers this HTTP status: 403, 429, 500
+        print(f"curl: (22) The requested URL returned error: {state['curl_http_error']}", file=sys.stderr)
+        return 22
     if state.get("curl_rc"):  # e.g. 6, could not resolve the host: no network
         print(f"curl: ({state['curl_rc']}) Could not resolve host", file=sys.stderr)
         return int(state["curl_rc"])
@@ -340,10 +343,14 @@ def claude(args, state):
         if args[2] not in mcp:
             print(f'No MCP server named "{args[2]}".', file=sys.stderr)
             return 1
-        print(f"{args[2]}:\n  Command: {mcp[args[2]][0]}\n  Args: {' '.join(mcp[args[2]][1:])}")
+        # As Claude Code prints it: the scope in words, then the command
+        scope = {"user": "User config (available in all your projects)",
+                 "project": "Project config (shared via .mcp.json)"}.get(state.get("mcp_scope", {}).get(args[2]), "")
+        print(f"{args[2]}:\n  Scope: {scope}\n  Command: {mcp[args[2]][0]}\n  Args: {' '.join(mcp[args[2]][1:])}")
         return 0
     elif args[:2] == ["mcp", "add"]:
         mcp[args[4]] = args[args.index("--") + 1:]
+        state.setdefault("mcp_scope", {})[args[4]] = args[3]
     elif args[:2] == ["mcp", "remove"]:
         if args[-1] not in mcp:
             print(f'No MCP server named "{args[-1]}" found', file=sys.stderr)

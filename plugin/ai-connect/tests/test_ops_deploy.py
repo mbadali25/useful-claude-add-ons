@@ -175,6 +175,53 @@ def test_uninstall_removes_everything_and_reruns_clean(bridge):
     assert len(already(again.res)) == 6, again.out
 
 
+def test_uninstall_purge_keeps_a_venv_deploy_did_not_make(tmp_path, venv):
+    """AI_CONNECT_HOME on a busier directory whose venv/ is not deploy's (AI_CONNECT_VENV points elsewhere)."""
+    box = Box(tmp_path, venv, NATIVE)
+    home = {"AI_CONNECT_HOME": str(tmp_path / "shared")}
+    theirs = tmp_path / "shared" / "venv"
+    (theirs / "bin").mkdir(parents=True)
+    (theirs / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    with OwnBridge(box) as own:
+        assert box.deploy(*own.args, extra_env=home).returncode == 0
+        assert (tmp_path / "shared" / "app" / "server" / "main.py").is_file()
+        run = Phase(box, "uninstall", "--yes", "--purge", "--port", str(own.server.port), extra_env=home)
+    assert run.res.returncode == 0, run.text
+    assert not (tmp_path / "shared" / "app").exists() and (theirs / "pyvenv.cfg").is_file()
+
+
+def test_requirements_that_changed_are_installed_again(tmp_path, venv):
+    """A newer checkout's pins: a venv that has the old ones is not 'already done'."""
+    own_venv = tmp_path / "venv"
+    shutil.copytree(venv, own_venv, symlinks=True)
+    box = Box(tmp_path, own_venv, NATIVE)
+    (own_venv / ".ai-connect-requirements.sha256").write_text("0" * 64 + "\n", encoding="utf-8")
+    dry = Phase(box, "bridge", "--name", "hub", "--dry-run")
+    assert dry.res.returncode == 0, dry.text
+    assert "would: install requirements.txt into the venv" in dry.out
+
+
+def test_a_bridge_owes_a_restart_before_its_installed_files_change(tmp_path, monkeypatch):
+    """The marker is written before the copy, so an interrupted copy still restarts the Bridge next time;
+    a copy made for the MCP server on a Bridge machine owes the restart too."""
+    monkeypatch.syspath_prepend(str(DEPLOY_DIR))
+    import deploy  # pylint: disable=import-outside-toplevel,import-error
+    app, pending = tmp_path / "app", tmp_path / "config" / ".bridge-restart-pending"
+    (app / "server").mkdir(parents=True)
+    (app / "server" / "main.py").write_text("# older\n", encoding="utf-8")
+    monkeypatch.setattr(deploy, "APP", app)
+    monkeypatch.setattr(deploy, "RESTART_PENDING", pending)
+    monkeypatch.setattr(deploy, "inspect_config",
+                        lambda: {"exists": True, "host": "100.64.0.1", "name": "hub", "peers": ["hub"]})
+
+    def interrupted(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(deploy.shutil, "copy2", interrupted)
+    with pytest.raises(OSError):
+        deploy.step_app(deploy.Run(False, total=1), restart_on_change=False)
+    assert pending.is_file()
+
+
 def test_default_install_dir_and_venv_are_outside_the_checkout(tmp_path):
     """crew's blocker: a venv and a service inside a worktree die with it, and a stray venv in a checkout
     was picked up by the suites. Nothing deploy installs may default to a path inside the checkout."""
@@ -695,6 +742,15 @@ def test_peer_registers_for_every_project_with_scope_user(box, tmp_path):
     assert run.res.returncode == 0, run.text
     (add,) = [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
     assert add[3:5] == ["-s", "user"] and "every project of this user" in run.out
+
+
+def test_peer_registers_again_for_another_scope(box, tmp_path):
+    """A project registration is not 'already done' when user scope is asked for."""
+    assert peer_on_tailnet(box, tmp_path, "--register-mcp").res.returncode == 0
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp", "--scope", "user")
+    assert run.res.returncode == 0, run.text
+    adds = [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert len(adds) == 1 and adds[0][3:5] == ["-s", "user"], run.calls
 
 
 def test_peer_installs_the_hooks_only_when_asked_and_warns(box, tmp_path):
