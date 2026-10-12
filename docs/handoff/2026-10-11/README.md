@@ -22,10 +22,10 @@ Where something sensitive was removed, the text reads `[redacted: <class>]`. The
 
 | Title | Link | File here |
 |---|---|---|
-| Overnight Crew Watch | https://claude.ai/artifact/HexV4k9h9Q7YND9ihSnZJf | `artifacts/overnight-status.html` |
-| Crew Fix Board | https://claude.ai/artifact/W2Vks2tModJxDjckcDNqza | `artifacts/crew-fix-board.html` |
-| Crew 1.2.0 Review | https://claude.ai/artifact/GkuHMyUbttAXHNNQJ7A1Fg | `artifacts/crew-review.html` |
-| QA Pipeline Speed-ups | https://claude.ai/artifact/47kSfXtdJYo9FmqEaENiAK | `artifacts/qa-pipeline-report.html` |
+| Overnight Crew Watch | https://claude.ai/artifact/9uoFWWde7i2BhUg9ftDDsp | `artifacts/overnight-status.html` |
+| Crew Fix Board | https://claude.ai/artifact/NbP6MHm5nuBez7mstsAHB2 | `artifacts/crew-fix-board.html` |
+| Crew 1.2.0 Review | https://claude.ai/artifact/KBp989cfCq1Uh6iurcUh1i | `artifacts/crew-review.html` |
+| QA Pipeline Speed-ups | https://claude.ai/artifact/AAt9EmhAn68dqYSVEWhi9W | `artifacts/qa-pipeline-report.html` |
 
 Republished Sun Oct 11 04:01:38 PM CDT 2026 after the earlier links stopped resolving; the old links are dead.
 
@@ -99,3 +99,8 @@ L-0791, L-0792 and L-0793.
 The 64-character hex values left in `tickets/*/review.json`, `tickets/*/selfcheck.md`,
 `tickets/L-0787/direction.md` and `review-ledgers/*.json` are review bundle, plan, standards and receipt digests.
 They are not token hashes, and the ledgers need them to match receipts.
+
+## Added 2026-10-12
+
+- The artifact links above were republished on 2026-10-12; the 2026-10-11 links are dead. The pages are unchanged (status as of 14:10 CDT 2026-10-11).
+- Unfiled defect, not yet ticketed: four crew messages advise "commit or stash" (`plugin/crew` `crew_train.py:1102`, `promote-gate.sh:734`, `promote-gate.ps1:962`, `commands/promote.md:110`). `git stash` is shared across worktrees, so a lane that stashes can lose or cross work with another lane. Suggested: a ticket to reword them, and "never git stash in a worktree; use WIP commits" in the lane brief.
