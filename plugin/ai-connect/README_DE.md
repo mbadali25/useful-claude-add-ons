@@ -22,7 +22,7 @@ AI-Connect ist ein MCP-Server: Assistenten schicken einander Nachrichten, teilen
 - **Selbst betrieben**: Die Bridge läuft im eigenen LAN oder VPN; Nachrichten laufen über keinen fremden Dienst
 - **Code-Kontext**: eine Datei oder einige ihrer Zeilen reisen mit einer Frage mit und sind auf dem anderen Rechner lesbar
 - **Offline-Zustellung**: Direktnachrichten warten in der Bridge, bis der Empfänger online ist
-- **Ein Peer pro Claude-Code-Sitzung**, benannt als `Host:Projekt` (z.B. `Mini:AIfred-Intelligence`)
+- **Ein Peer pro Claude-Code-Sitzung**, benannt als `Rechner:Projekt` (z.B. `Mini:AIfred-Intelligence`); mehrere Sitzungen auf einem Rechner sind gleichzeitig online, mit dem einen Token dieses Rechners
 - **Zwei Zugänge**: ein STDIO-Client pro Sitzung (Claude Code) oder ein gemeinsamer HTTP/SSE-Server für jeden anderen MCP-Client
 - **Nachrichten-Wächter**, der eine Claude-Code-Sitzung bei einer neuen Nachricht weckt — startet von selbst über die Hooks des Plugins, von der Bridge angestoßen, ohne Polling, ohne Tokens beim Warten
 - **Status und Zustand**: Jede Sitzung zeigt eine Statuszeile und ob sie arbeitet, fertig ist oder auf eine Freigabe wartet; „sag mir, wenn die Sitzung fertig ist“ funktioniert über Rechnergrenzen
@@ -79,7 +79,7 @@ Beides lässt sich parallel nutzen. (Stand: Claude Code 2.1.289, Oktober 2026.)
 ```
 
 - **Bridge Server** läuft auf einem Rechner und leitet Nachrichten zwischen allen Peers weiter. Er hält den Verlauf in SQLite und bewahrt Nachrichten für Peers auf, die offline sind.
-- **STDIO-Client** (`client/server.py`): Claude Code startet einen pro Sitzung. Er tritt als `client.name` bei, der Name, an den das Token dieses Rechners gebunden ist, und verschwindet mit dem Ende der Sitzung.
+- **STDIO-Client** (`client/server.py`): Claude Code startet einen pro Sitzung. Er tritt als `<client.name>:<Projekt>` bei, ein eigener Name unter dem, an den das Token dieses Rechners gebunden ist, und verschwindet mit dem Ende der Sitzung.
 - **HTTP/SSE-Server** (`client/http_server.py`): ein Dauerdienst für Clients, die sich mit einer URL verbinden, statt einen Prozess zu starten. Er tritt als ein Peer unter `client.name` aus der Config bei.
 - Auf dem Bridge-Rechner können ebenfalls Assistenten laufen; er ist dann zugleich Rechner A oder B.
 
@@ -149,7 +149,7 @@ Bis dahin werden die alten `bridge:`-Schlüssel noch gelesen, mit einer Veraltet
 
 ### 3. Claude Code und andere MCP-Clients
 
-**Claude Code:** Das erledigt der Installer: Er trägt den MCP-Server ein (`claude mcp add`, mit der venv dieser Installation) und installiert das AI-Connect-Plugin aus dem lokalen Verzeichnis, das die Hooks für busy / idle / waiting mitbringt. Jede Sitzung tritt unter ihrem eigenen Namen `Host:Projekt` bei. Diesen Schritt allein wiederholen, z. B. wenn Claude Code erst später installiert wird: `venv/bin/python installer.py claude`. Verhaltensregeln und Nachrichten-Wächter: [integrations/claude-code/README.md](integrations/claude-code/README.md).
+**Claude Code:** Das erledigt der Installer: Er trägt den MCP-Server ein (`claude mcp add`, mit der venv dieser Installation) und installiert das AI-Connect-Plugin aus dem lokalen Verzeichnis, das die Hooks für busy / idle / waiting mitbringt. Jede Sitzung tritt unter ihrem eigenen Namen `<client.name>:<Projekt>` bei. Diesen Schritt allein wiederholen, z. B. wenn Claude Code erst später installiert wird: `venv/bin/python installer.py claude`. Verhaltensregeln und Nachrichten-Wächter: [integrations/claude-code/README.md](integrations/claude-code/README.md).
 
 **Andere MCP-Clients** (VS Code, Cursor, Claude Desktop, …) verbinden sich mit dem HTTP/SSE-Server (mit `--http` installieren). In VS Code `~/.config/Code/User/mcp.json` (Remote: `~/.vscode-server/data/User/mcp.json`):
 
@@ -331,8 +331,10 @@ Es braucht das User-Token, ein drittes Token, das nur als User senden darf. Es l
 
 ## Details
 
-- **Peer-Namen**: STDIO-Client und HTTP/SSE-Server treten als `client.name` bei, der eine Name, den das Token dieses Rechners anmelden darf. `AI_CONNECT_PEER_NAME` überschreibt ihn (der Name braucht dann ein eigenes Token). Mit `client.name: ""` nennt sich der STDIO-Client `Host:Projekt`, was nur das alte gemeinsame Token annimmt.
-- **Eine Sitzung pro Name**: Ein Name, der online ist, lässt sich nicht übernehmen. Tritt eine zweite Sitzung unter einem Namen bei, der schon online ist, weist die Bridge sie ab (`name_taken`); der Client protokolliert den Grund und meldet sich einmal im Standby neu an: Er sendet und empfängt nichts und übernimmt den Namen, sobald die erste Sitzung geht. Die wartende Sitzung bekommt einen Hinweis von `Bridge`. Sitzungen auf einem Rechner teilen sich `client.name`, also ist immer nur eine online — eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben. Ein Token meldet nie den Namen eines anderen Peers an.
+- **Peer-Namen**: `client.name` benennt den Rechner, und sein Token meldet diesen Namen und jedes `<client.name>:<Label>` darunter an, sonst nichts. Eine Claude-Code-Sitzung (der STDIO-Client) tritt als `<client.name>:<Projekt>` bei: der Name des Projektverzeichnisses, ohne Akzente und mit einem Bindestrich für alles außer Buchstaben, Ziffern, `.`, `_` und `-`, höchstens 40 Zeichen (ein Name ohne solche Zeichen bekommt einen kurzen Hash seiner selbst). Der HTTP/SSE-Server tritt als `client.name` selbst bei. `AI_CONNECT_PEER_NAME` ersetzt den ganzen Namen; er muss weiterhin einer sein, den das Token anmelden darf. Mit `client.name: ""` nennt sich der STDIO-Client `Host:Projekt`, was nur das alte gemeinsame Token annimmt.
+- **Mehrere Sitzungen pro Rechner**: Jede Sitzung auf einem angemeldeten Rechner ist gleichzeitig online, mit dem einen Token des Rechners: keine zweite Anmeldung, keine Änderung an der Config der Bridge, kein Neustart. Eine Nachricht an `laptop:repo` erreicht genau diese Sitzung; ist sie offline, wartet die Nachricht auf die nächste Sitzung, die unter diesem Namen beitritt, also die nächste, die in diesem Projekt geöffnet wird. Eine Nachricht an den Namen des Rechners allein, `laptop`, erreicht jede Sitzung dieses Rechners, die online ist (nicht die, die sie geschickt hat); ist keine online, wartet sie auf die erste, die beitritt. `peer_history("laptop")` ist das Gespräch mit allen seinen Sitzungen, und `peer_notify_when_idle("laptop")` meldet sich für die, die zuerst fertig ist.
+- **Zwei Sitzungen in einem Projekt**: Die zweite findet den Namen vergeben (`name_taken`) und tritt als `<client.name>:<Projekt>-<ihre Prozess-ID>` bei, ein Name, den sie bis zu ihrem Ende behält; `peer_status` und `peer_list` zeigen ihn. Ein Name, der online ist, wird nie übernommen. Eine Sitzung, deren zweiter Name ebenfalls vergeben ist, und ein 0.1.8-Client melden sich stattdessen im Standby an: Sie senden und empfangen nichts, übernehmen den Namen, sobald er frei ist, und bekommen einen Hinweis von `Bridge`.
+- **Update von 0.1.8, ein Rechner nach dem anderen**: zuerst die Bridge aktualisieren. Ein 0.1.8-Client an einer 0.2.0-Bridge arbeitet wie bisher, eine Sitzung pro Rechner unter `client.name`. Einer 0.2.0-Sitzung an einer 0.1.8-Bridge wird ihr eigener Name verweigert (`name_not_bound_to_token`); sie tritt stattdessen als `client.name` bei und sagt das in `peer_read`. Dieser Rechner hat dann nur eine Sitzung gleichzeitig online, bis die Bridge aktualisiert ist, und jede neue Verbindung fragt wieder nach dem eigenen Namen der Sitzung.
 - **Offline-Nachrichten**: Direktnachrichten an einen Peer, der offline ist, werden auf der Bridge in SQLite gespeichert und zugestellt, sobald er wieder da ist. Rundrufe (`*`) erreichen nur die Peers, die in dem Moment online sind.
 - **Aufbewahrung des Verlaufs**: Die Bridge löscht Nachrichten, die älter als `server.history_days` sind (14 in der Vorlage), beim Start und danach täglich.
 - **Logs**: Jeder STDIO-Client schreibt eine eigene Datei, `~/.config/ai-connect/mcp-<Host>_<Projekt>.log`, der HTTP/SSE-Server `mcp-http.log`; beide werden bei `logging.max_megabytes` rotiert, `logging.backup_count` alte Dateien bleiben. Die Bridge schreibt `bridge.log`, ebenso rotiert, und unter systemd zusätzlich ins Journal.
@@ -359,9 +361,9 @@ Die beiden Warteschlangen-Grenzen haben keinen „Aus“-Wert: `0` würde jede N
 
 | Umgebungsvariable | Beschreibung |
 |-------------------|--------------|
-| `AI_CONNECT_PEER_NAME` | Überschreibt den Peer-Namen (`client.name`); der Name braucht ein eigenes Token auf der Bridge |
+| `AI_CONNECT_PEER_NAME` | Der ganze Peer-Name, statt `<client.name>:<Projekt>`. Er muss `client.name` oder `<client.name>:<Label>` sein (Buchstaben, Ziffern, `.`, `_`, `-`, höchstens 64) oder ein Name mit eigenem Token auf der Bridge |
 | `AI_CONNECT_PROJECT_DIR` | Überschreibt `client.project_dir`, das einzige Verzeichnis, aus dem Dateien geteilt werden dürfen |
-| `AI_CONNECT_PEER_SUFFIX` | Nur mit `client.name: ""` (altes gemeinsames Token) — STDIO-Client: wird mit Bindestrich angehängt, `Host:Projekt-Zusatz`, damit mehrere Sitzungen in einem Projekt jede für sich erreichbar sind. `AI_CONNECT_PEER_NAME` hat Vorrang |
+| `AI_CONNECT_PEER_SUFFIX` | STDIO-Client: wird mit Bindestrich an das Projekt angehängt, `<client.name>:<Projekt>-<Zusatz>`, damit ein Harness, der eine zweite Sitzung in einem Projekt startet, ihren Namen vorher kennt (höchstens 16 Zeichen; ohne ihn hängt die zweite Sitzung ihre Prozess-ID an). `AI_CONNECT_PEER_NAME` hat Vorrang |
 
 ## Fehlersuche
 
@@ -383,7 +385,8 @@ Unter Windows: `install.cmd -Status`; die Logs liegen in `%USERPROFILE%\.config\
 | Timeout | Firewall | Port 9999 auf dem Bridge-Rechner nur für das eigene VPN-Subnetz öffnen |
 | `peer_status`: Bridge hat den Token abgewiesen | `client.token` ist der Bridge unbekannt oder widerrufen | Auf dem Bridge-Rechner `installer.py add-peer <Name>`, das Token in `client.token` eintragen, Bridge und Client neu starten |
 | `may not be registered with this token` | `client.name` ist nicht der Name, für den das Token ausgestellt wurde | `client.name` auf den Namen setzen, der `add-peer` gegeben wurde |
-| `peer_status` zeigt Standby | Eine andere Sitzung hält denselben Namen (`name_taken`) | Eine schließen oder der zweiten mit `AI_CONNECT_PEER_NAME` einen eigenen Namen samt Token geben; die Sitzung im Standby übernimmt den Namen, sobald die andere geht |
+| `peer_status` zeigt Standby | Eine andere Sitzung hält denselben Namen (`name_taken`): Die Bridge oder dieser Client ist noch 0.1.8, oder zwei Sitzungen haben dasselbe `AI_CONNECT_PEER_NAME` bekommen | Beide auf 0.2.0 aktualisieren, dort hat jede Sitzung ihren eigenen Namen; bis dahin eine schließen. Die Sitzung im Standby übernimmt den Namen, sobald die andere geht |
+| `peer_read` meldet, die Bridge sei älter als 0.2.0 | Eine 0.2.0-Sitzung ist einer 0.1.8-Bridge beigetreten, die einen Namen pro Rechner kennt | Die Bridge aktualisieren (`deploy bridge` aus einem 0.2.0-Checkout); die Sitzungen nehmen bei ihrer nächsten Verbindung ihre eigenen Namen an |
 
 ## Einschränkungen
 

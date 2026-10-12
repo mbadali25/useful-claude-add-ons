@@ -4,8 +4,9 @@ A connection gets its identity from the token it shows in the handshake. The
 Bridge knows every token only by its SHA-256, so the config does not give
 any away:
 
-- auth.peers maps each peer name to the hash of that peer's own token; the
-  token may register (and watch) that name and no other.
+- auth.peers maps each peer name (one per machine) to the hash of that
+  machine's own token; the token may register (and watch) that name and its
+  sessions, "<name>:<label>", and nothing else.
 - auth.token, the legacy token all peers shared, counts only with
   auth.allow_shared_token: true. It may register any name that has no token
   of its own, so names are not bound to it; the Bridge warns when it is used.
@@ -39,6 +40,9 @@ ALLOWED_MESSAGE_TYPES: dict[str, frozenset[str]] = {
 }
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+# What may follow "<name>:" in a session's name. No colon, so a label cannot
+# reach into a name enrolled below this one
+SESSION_LABEL = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 
 def token_sha256(token: str) -> str:
@@ -120,28 +124,50 @@ class Roles:
             return "shared_token_disabled"
         return "unknown_token"
 
+    def owner(self, name: str) -> str | None:
+        """The enrolled name that name is, or is a session of ("<owner>:..."), None if nobody's.
+
+        Compared with the separator, so "Mini" does not own "MiniOther:x". When
+        auth.peers holds both "Host" and "Host:Alice", the longer one owns what
+        is under it.
+        """
+        owners = [bound for bound in self._bound_names if name == bound or name.startswith(bound + ":")]
+        return max(owners, key=len, default=None)
+
+    def is_machine(self, name: str) -> bool:
+        """Whether name is enrolled in auth.peers: a message to it reaches every session under it."""
+        return name in self._bound_names
+
     def register_refusal(self, identity: Identity, name: str) -> str | None:
-        """Why identity may not register name, None if it may."""
+        """Why identity may not register name, None if it may.
+
+        A per-peer token registers its own name and its sessions,
+        "<name>:<label>": several Claude Code sessions on one machine, each
+        reachable, with the one token the machine was enrolled with.
+        """
         if is_reserved_name(name):
             return "reserved_name"
-        if identity.peer_name is not None and name != identity.peer_name:
-            return "name_not_bound_to_token"
-        if identity.shared and name in self._bound_names:
+        if identity.peer_name is not None:
+            if self.owner(name) != identity.peer_name:
+                return "name_not_bound_to_token"
+            if name != identity.peer_name and not SESSION_LABEL.fullmatch(name[len(identity.peer_name) + 1:]):
+                return "invalid_session_label"
+        if identity.shared and self.owner(name) is not None:
             return "name_bound_to_other_token"
         return None
 
     def watch_refusal(self, identity: Identity, name: str) -> str | None:
         """Why identity may not watch name (read the messages to it), None if it may.
 
-        A per-peer token watches only its own name. The shared token cannot
-        be told apart from any other peer, so it keeps the old open watch:
-        one more reason it is off unless allowed.
+        A per-peer token watches only its own name and its sessions. The
+        shared token cannot be told apart from any other peer, so it keeps
+        the old open watch: one more reason it is off unless allowed.
         """
         if is_reserved_name(name):
             return "reserved_name"
-        if identity.peer_name is not None and name != identity.peer_name:
+        if identity.peer_name is not None and self.owner(name) != identity.peer_name:
             return "watch_not_own_name"
-        if identity.shared and name in self._bound_names:
+        if identity.shared and self.owner(name) is not None:
             return "watch_not_own_name"
         return None
 

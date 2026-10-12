@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0] - 2026-10-12
+
+Every session on an enrolled machine is online at once. In 0.1.8 all sessions of a machine registered under its one
+`client.name`: the first held it, and every other one sat on standby with none of its tools working.
+
+### Changed
+- A machine's token registers its name and every `<name>:<label>` under it (`server/roles.py`). The STDIO client joins as `<client.name>:<project>` (`peer_name.py`): the project directory's name made plain (accents dropped, other characters a hyphen, at most 40 characters, a short hash for a name with nothing plain in it). No second enrolment, no change to `auth.peers`, no Bridge restart per session
+- A message to a machine's name (`laptop`) reaches every online session of that machine except the sender; with none online it waits for the first to register and is delivered once. A message to `laptop:repo` reaches that session only. A peer writing to its own name still gets it back alone, so `deploy test` wakes nobody
+- `peer_history` of a session includes what was sent to its machine's name; asked by a machine's name it is the conversation with all of that machine's sessions. `peer_notify_when_idle` on a machine's name answers for its first session to be done. A session's watcher is woken by messages to the machine's name too
+- Two sessions in one project: the second gets `name_taken` and registers as `<client.name>:<project>-<process id>`, kept for the process's life. Standby stays for a name held twice over and for 0.1.8 clients
+- `AI_CONNECT_PEER_SUFFIX` now applies with `client.name` set (`<client.name>:<project>-<suffix>`); `AI_CONNECT_PEER_NAME` may be any name the machine's token may register
+- The watcher's name file (`~/.config/ai-connect/sessions/<pid>`) is rewritten with the name the Bridge registered, once it differs from the one asked for
+
+### Security
+- The prefix is compared with its separator and by the longest enrolled name: `Mini` does not own `MiniOther:x`, and with both `Host` and `Host:Alice` enrolled, `Host`'s token cannot register under `Host:Alice`. The same rule guards `watch`. Refused with `name_not_bound_to_token` / `watch_not_own_name`
+- A label is letters, digits, `.`, `_`, `-`, at most 64, with no colon (`invalid_session_label`)
+- The legacy shared token can no longer register or watch a name under an enrolled machine's (`laptop:x`); before, only the bare enrolled name was protected
+
+### Fixed
+- One watcher per session was keyed on the session's process id alone, so two machines whose sessions shared a process id turned each other's watcher away; it is keyed on the token as well
+- Two sessions registering at the same moment could both be sent the same waiting messages; a replay now claims what it sends
+
+### Compatibility
+- 0.1.8 client, 0.2.0 Bridge: works as before, one session per machine under `client.name`, standby for a second
+- 0.2.0 client, 0.1.8 Bridge: the session name is refused (`name_not_bound_to_token`); the client registers as `client.name` instead, says so once in `peer_read`, and asks for its own name again at every new connection. One session per machine until the Bridge is updated
+- Update the Bridge first. Messages already waiting under a machine's name are delivered to its first 0.2.0 session
+
 ## [0.1.8] - 2026-10-12
 
 One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's

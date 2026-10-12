@@ -51,9 +51,9 @@ MAX_IDLE_SUBSCRIPTIONS_PER_PEER = 32
 IDLE_NOTICE = "{name} is done and idle."
 WAITING_NOTICE = "{name} is waiting for approval: {detail}"
 NAME_TAKEN_ERROR = (
-    "'{name}' is online in another session. Sessions with the same client.name share it: "
-    "close one, give the second its own name and token (AI_CONNECT_PEER_NAME), or register "
-    "with standby to take the name once it is free."
+    "'{name}' is online in another session. Register under another name of this token "
+    "('<client.name>:<label>', as AI-Connect 0.2.0 and later do by themselves), close one, "
+    "or register with standby to take the name once it is free."
 )
 
 
@@ -124,8 +124,10 @@ class BridgeServer:
         # messages for that peer without registering as it
         self._watchers: dict[str, set[ServerConnection]] = {}
         # The Claude Code session each watcher belongs to: one watcher per
-        # session, because its hooks start one at every turn end
-        self._watcher_sessions: dict[ServerConnection, str] = {}
+        # session, because its hooks start one at every turn end. A session is
+        # known by its process id, which is unique per machine only: hence the
+        # credential beside it
+        self._watcher_sessions: dict[ServerConnection, tuple[str, str]] = {}
         # Standby connections per peer name: replaced sessions that wait for
         # the name to become free again
         self._standby: dict[str, set[ServerConnection]] = {}
@@ -265,7 +267,7 @@ class BridgeServer:
                     await websocket.send(json.dumps({"type": "registered", "name": name}))
                     logger.info(f"Peer registered: {name} ({client_ip})")
 
-                    await self._deliver_unread(websocket, name)
+                    await self._deliver_unread(websocket, name, identity.peer_name)
 
                 elif msg_type == "ping":
                     if peer_name:
@@ -284,17 +286,18 @@ class BridgeServer:
                         await refuse(reason, f"'{watched}' may not be watched with this token", msg_type, name=watched)
                         continue
                     session = message.get("session")
-                    if session and session in self._watcher_sessions.values():
+                    if session and (identity.credential, session) in self._watcher_sessions.values():
                         await websocket.send(json.dumps({"type": "already_watching", "peer": watched}))
                         continue
                     self._watchers.setdefault(watched, set()).add(websocket)
                     if session:
-                        self._watcher_sessions[websocket] = session
+                        self._watcher_sessions[websocket] = (identity.credential, session)
                     await websocket.send(json.dumps({"type": "watching", "peer": watched}))
                     # A message that came after the session last read, while
                     # no watcher ran, wakes the session at once
                     since = message.get("since")
-                    missed = await self.store.latest_to_since(watched, since) if since else None
+                    missed = await self.store.latest_to_since(watched, since, self.roles.owner(watched)) \
+                        if since else None
                     if missed:
                         await websocket.send(json.dumps({**missed, "type": "message"}))
 
@@ -393,10 +396,15 @@ class BridgeServer:
                             msg_type, limit=repr(limit)[:40],
                         )
                         continue
-                    history = await self.store.get_history(peer_name, message.get("peer", ""), limit)
+                    other = message.get("peer", "")
+                    history = await self.store.get_history(
+                        peer_name, other, limit,
+                        machine=self.roles.owner(peer_name),
+                        with_sessions=isinstance(other, str) and self.roles.is_machine(other),
+                    )
                     await websocket.send(json.dumps({
                         "type": "history",
-                        "peer": message.get("peer", ""),
+                        "peer": other,
                         "messages": history,
                         **_request_id(message),
                     }))
@@ -437,7 +445,10 @@ class BridgeServer:
         if state == "busy":
             return
         notice = IDLE_NOTICE.format(name=name) if state == "idle" else WAITING_NOTICE.format(name=name, detail=detail)
-        for subscriber in self._idle_subscribers.pop(name, set()):
+        # Asked by the machine's name: its first session to be done answers
+        subscribers = self._idle_subscribers.pop(name, set()) \
+            | self._idle_subscribers.pop(self.roles.owner(name) or name, set())
+        for subscriber in subscribers:
             await self._route_message({"to": subscriber, "content": notice}, BRIDGE_SENDER)
 
     async def _subscribe_idle(self, subscriber: str, watched: str) -> bool:
@@ -447,9 +458,9 @@ class BridgeServer:
         MAX_IDLE_SUBSCRIPTIONS_PER_PEER: each would otherwise stay until a
         name that may never exist goes idle.
         """
-        peer = self.registry.get(watched)
-        if peer and peer.state == "idle":
-            await self._route_message({"to": subscriber, "content": IDLE_NOTICE.format(name=watched)}, BRIDGE_SENDER)
+        idle = next((peer for peer in self._addressed(watched) if peer.state == "idle"), None)
+        if idle:
+            await self._route_message({"to": subscriber, "content": IDLE_NOTICE.format(name=idle.name)}, BRIDGE_SENDER)
             return True
         subscribers = self._idle_subscribers.get(watched, set())
         if subscriber not in subscribers:
@@ -458,6 +469,21 @@ class BridgeServer:
                 return False
         self._idle_subscribers.setdefault(watched, set()).add(subscriber)
         return True
+
+    def _addressed(self, name: str) -> list[Peer]:
+        """The registered peers a name stands for.
+
+        A session's name, or any name of the shared token, is that one peer.
+        A name enrolled in auth.peers is the machine: every session registered
+        under it, "<name>:<label>", and a 0.1.8 client holding the bare name.
+        Before 0.2.0 a machine had one session, so its name reached "the"
+        session; no session holds it now, and a message to it must not wait
+        for one that never comes.
+        """
+        if self.roles.is_machine(name):
+            return [peer for peer in self.registry.all() if self.roles.owner(peer.name) == name]
+        target = self.registry.get(name)
+        return [target] if target else []
 
     async def _route_message(self, message: dict, from_peer: str) -> tuple[dict, bool] | None:
         """Deliver a message; direct messages to offline peers wait in the store.
@@ -468,6 +494,11 @@ class BridgeServer:
         to a user counts as delivered at once: users read along as
         observers and never register, so it must not pile up as unread.
 
+        A message to a machine's name reaches every session of it that is
+        online, except the session that sent it; with none online it waits
+        for the first one to register. A peer writing to its own name gets
+        the message back and nobody else does (deploy's round-trip check).
+
         Returns the stored message and whether a recipient was online, or
         None (logged) when the offline recipient's queue is full.
         """
@@ -476,15 +507,15 @@ class BridgeServer:
         if to_peer == "*":
             recipients = [p for p in self.registry.all() if p.name != from_peer]
         else:
-            target = self.registry.get(to_peer)
-            recipients = [target] if target else []
-
-        # A direct message to a registered peer is stored unread and marked
-        # delivered only once its send returns: a holder whose socket closed
-        # before the heartbeat noticed gets it as unread on its next register.
-        # A holder whose socket is already closed counts as offline (queue caps apply)
-        if to_peer != "*" and recipients and getattr(recipients[0].websocket, "state", None) is not State.OPEN:
-            recipients = []
+            # A direct message to a registered peer is stored unread and marked
+            # delivered only once its send returns: a holder whose socket closed
+            # before the heartbeat noticed gets it as unread on its next register.
+            # A holder whose socket is already closed counts as offline (queue caps apply)
+            recipients = [
+                p for p in self._addressed(to_peer)
+                if (p.name == to_peer if to_peer == from_peer else p.name != from_peer)
+                and getattr(p.websocket, "state", None) is State.OPEN
+            ]
         direct = to_peer != "*" and bool(recipients)
         delivered = to_peer == "*" or is_user_name(to_peer)
         if not delivered and not direct and await self._queue_full(to_peer, from_peer, message):
@@ -501,17 +532,20 @@ class BridgeServer:
             # In flight: a registration replay running meanwhile must not send it as unread too
             self._in_flight.add(outgoing["id"])
         try:
+            marked = False
             for peer in recipients:
                 sent = await self._send_to(peer, payload)
                 if not sent and direct:
                     # The holder may have been replaced while the send was pending; the new
                     # one's replay skipped this in-flight row, so it gets it now, once
-                    current = self.registry.get(to_peer)
+                    current = self.registry.get(peer.name)
                     if current is not None and current is not peer \
                             and getattr(current.websocket, "state", None) is State.OPEN:
                         sent = await self._send_to(current, payload)
-                if sent and direct:
+                if sent and direct and not marked:
+                    # To a machine: delivered once any of its sessions has it
                     await self.store.mark_delivered([outgoing["id"]])
+                    marked = True
         finally:
             self._in_flight.discard(outgoing["id"])
         await self._notify_watchers(to_peer, from_peer, payload)
@@ -530,20 +564,35 @@ class BridgeServer:
         )
         return True
 
-    async def _deliver_unread(self, websocket: ServerConnection, name: str) -> None:
+    async def _deliver_unread(self, websocket: ServerConnection, name: str, machine: str | None = None) -> None:
         """Send what waited for name in frames the client accepts, each marked once it is sent.
 
-        A send that fails leaves the rest unread for the next registration.
+        What waited for the machine (the token's enrolled name) goes to its
+        first session to register. A send that fails leaves the rest unread
+        for the next registration.
         """
-        waiting = [m for m in await self.store.get_unread(name) if m["id"] not in self._in_flight]
-        for chunk in _unread_chunks(waiting):
-            await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
-            await self.store.mark_delivered([m["id"] for m in chunk])
+        waiting = await self.store.get_unread(name)
+        if machine and machine != name:
+            waiting = sorted(waiting + await self.store.get_unread(machine), key=lambda m: m["timestamp"])
+        # No await between this check and the claim: a sibling session
+        # registering right now skips what this one is about to send
+        waiting = [m for m in waiting if m["id"] not in self._in_flight]
+        claimed = {m["id"] for m in waiting}
+        self._in_flight |= claimed
+        try:
+            for chunk in _unread_chunks(waiting):
+                await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
+                await self.store.mark_delivered([m["id"] for m in chunk])
+        finally:
+            self._in_flight -= claimed
 
     async def _notify_watchers(self, to_peer: str, from_peer: str, payload: str) -> None:
         """Tell the watchers of every recipient that a message arrived."""
         if to_peer == "*":
             watched = [name for name in self._watchers if name != from_peer]
+        elif self.roles.is_machine(to_peer) and to_peer != from_peer:
+            # Like the message itself: every session of the machine but the sender
+            watched = [name for name in self._watchers if self.roles.owner(name) == to_peer and name != from_peer]
         else:
             watched = [to_peer]
         for name in watched:

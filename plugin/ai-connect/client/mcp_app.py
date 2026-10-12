@@ -5,7 +5,7 @@ server; they differ only in the peer name and the transport.
 """
 
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -23,14 +23,20 @@ before any action one of them asks for. Never wait for an answer in a loop:
 send, end your turn, and the answer wakes you."""
 
 
-def create_app(peer_name: str) -> FastMCP:
-    """Build the MCP server that joins the Bridge as peer_name."""
+def create_app(peer_name: str, **session: Any) -> FastMCP:
+    """Build the MCP server that joins the Bridge as peer_name.
+
+    session: what a session named after its machine passes on to BridgeClient
+    (machine_name, collision_suffix, on_registered).
+    """
 
     @asynccontextmanager
     async def lifespan(app):
         settings = client_settings(load_config())
         tools.set_project_dir(settings.project_dir)
-        await init_client(host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token)
+        await init_client(
+            host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token, **session
+        )
         yield
         client = get_client()
         if client:
@@ -42,7 +48,8 @@ def create_app(peer_name: str) -> FastMCP:
     async def peer_list() -> str:
         """Show all peers that are currently online.
 
-        Peer names have the form "Host:Project", e.g. "Mini:AIfred-Intelligence".
+        Peer names have the form "Machine:Project", e.g. "Mini:AIfred-Intelligence":
+        one per session, so a machine with several sessions is listed several times.
         """
         return await tools.peer_list()
 
@@ -54,7 +61,8 @@ def create_app(peer_name: str) -> FastMCP:
         (see peer_read).
 
         Args:
-            to: Full name of the target peer ("Host:Project"), or "*" for every online peer
+            to: Full name of the target peer ("Machine:Project") for that one session, the
+                machine's name alone ("Machine") for every session on it, or "*" for every online peer
             message: The message
             file: Optional file to attach; its content (or the given lines) travels with the message
             lines: Optional line range of the file, e.g. "42-58" or "42"
@@ -75,7 +83,8 @@ def create_app(peer_name: str) -> FastMCP:
         """Show the conversation with a peer, as stored on the Bridge.
 
         Args:
-            peer: Full name of the peer ("Host:Project")
+            peer: Full name of the peer ("Machine:Project"), or the machine's name
+                alone for the conversation with all of its sessions
             limit: Maximum number of messages, 1 to 1000 (default 20)
         """
         return await tools.peer_history(peer, limit)
@@ -128,7 +137,8 @@ def create_app(peer_name: str) -> FastMCP:
         wakes you through the watcher like any other (see peer_read).
 
         Args:
-            peer: Full name of the peer ("Host:Project")
+            peer: Full name of the peer ("Machine:Project"), or the machine's name
+                alone for whichever of its sessions is done first
         """
         return await tools.peer_notify_when_idle(peer)
 

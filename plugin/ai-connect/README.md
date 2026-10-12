@@ -22,7 +22,7 @@ AI-Connect is an MCP server: assistants send each other messages, share code con
 - **Self-hosted**: the Bridge runs in your LAN or VPN; messages never pass through a third-party service
 - **Code context**: a file or some of its lines travel with a question, readable on the other machine
 - **Offline delivery**: direct messages wait in the Bridge until the recipient comes online
-- **One peer per Claude Code session**, named `Host:Project` (e.g. `Mini:AIfred-Intelligence`)
+- **One peer per Claude Code session**, named `Machine:Project` (e.g. `Mini:AIfred-Intelligence`); several sessions on one machine are all online at once, on that machine's one token
 - **Two ways in**: a STDIO client per session (Claude Code) or a shared HTTP/SSE server for any other MCP client
 - **Message watcher** that wakes a Claude Code session when a message arrives — started by itself through the plugin's hooks, pushed by the Bridge, no polling, no tokens while waiting
 - **Status and state**: every session shows a one-line status and whether it is busy, idle or waiting for an approval; "tell me when that session is done" works across machines
@@ -79,7 +79,7 @@ Both work side by side. (As of Claude Code 2.1.289, October 2026.)
 ```
 
 - **Bridge Server** runs on one machine and routes messages between all peers. It keeps the history in SQLite and holds messages for peers that are offline.
-- **STDIO client** (`client/server.py`): Claude Code starts one per session. It joins as `client.name`, the name this machine's token is bound to, and leaves when the session ends.
+- **STDIO client** (`client/server.py`): Claude Code starts one per session. It joins as `<client.name>:<project>`, a name of its own under the one this machine's token is bound to, and leaves when the session ends.
 - **HTTP/SSE server** (`client/http_server.py`): a permanent service for clients that connect to a URL instead of starting a process. It joins as one peer under `client.name` from the config.
 - The Bridge machine can run assistants too; it then simply is machine A or B as well.
 
@@ -149,7 +149,7 @@ Until then the old `bridge:` keys are still read, with a deprecation warning in 
 
 ### 3. Claude Code and other MCP clients
 
-**Claude Code:** the installer does it: it registers the MCP server (`claude mcp add`, with this installation's venv) and installs the AI-Connect plugin from the local directory, which brings the hooks that report busy / idle / waiting. Every session joins under its own name `Host:Project`. To repeat this step alone, e.g. after installing Claude Code later: `venv/bin/python installer.py claude`. Behaviour rules and the message watcher: [integrations/claude-code/README.md](integrations/claude-code/README.md).
+**Claude Code:** the installer does it: it registers the MCP server (`claude mcp add`, with this installation's venv) and installs the AI-Connect plugin from the local directory, which brings the hooks that report busy / idle / waiting. Every session joins under its own name `<client.name>:<project>`. To repeat this step alone, e.g. after installing Claude Code later: `venv/bin/python installer.py claude`. Behaviour rules and the message watcher: [integrations/claude-code/README.md](integrations/claude-code/README.md).
 
 **Other MCP clients** (VS Code, Cursor, Claude Desktop, …) connect to the HTTP/SSE server (install with `--http`). In VS Code, `~/.config/Code/User/mcp.json` (remote: `~/.vscode-server/data/User/mcp.json`):
 
@@ -331,8 +331,10 @@ It needs the user token, a third token that may only send as a user. It is kept 
 
 ## Details
 
-- **Peer names**: the STDIO client and the HTTP/SSE server join as `client.name`, the one name this machine's token may register. `AI_CONNECT_PEER_NAME` overrides it (that name then needs a token of its own). With `client.name: ""` the STDIO client names itself `Host:Project`, which only the legacy shared token accepts.
-- **One session per name**: a live name cannot be taken over. When a second session joins under a name that is already online, the Bridge refuses it (`name_taken`); the client logs why and registers once more on standby: it neither sends nor receives, and takes the name as soon as the first session leaves. The waiting session gets a notice from `Bridge`. Sessions on one machine share `client.name`, so only one is online at a time — close one, or give the second its own name and token with `AI_CONNECT_PEER_NAME`. A token never registers another peer's name.
+- **Peer names**: `client.name` names the machine, and its token registers that name and every `<client.name>:<label>` under it, nothing else. A Claude Code session (the STDIO client) joins as `<client.name>:<project>`: the project directory's name, with accents dropped and anything but letters, digits, `.`, `_` and `-` turned into a hyphen, at most 40 characters (a name with none of those gets a short hash of itself). The HTTP/SSE server joins as `client.name` itself. `AI_CONNECT_PEER_NAME` replaces the whole name; it must still be one the token may register. With `client.name: ""` the STDIO client names itself `Host:Project`, which only the legacy shared token accepts.
+- **Several sessions per machine**: every session on an enrolled machine is online at once, with the machine's one token: no second enrolment, no change to the Bridge's config, no restart. A message to `laptop:repo` reaches that one session; sent while it is offline, it waits for the next session that joins under that name, which is the next one opened in that project. A message to the machine's name alone, `laptop`, reaches every session of that machine that is online (not the one that sent it); with none online it waits for the first to join. `peer_history("laptop")` is the conversation with all of its sessions, and `peer_notify_when_idle("laptop")` answers for whichever is done first.
+- **Two sessions in one project**: the second finds the name taken (`name_taken`) and joins as `<client.name>:<project>-<its process id>`, a name it keeps until it ends; `peer_status` and `peer_list` show it. A live name is never taken over. A session whose second name is held as well, and a 0.1.8 client, register on standby instead: they neither send nor receive, take the name as soon as it is free, and get a notice from `Bridge`.
+- **Updating from 0.1.8, one machine at a time**: update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session per machine under `client.name`. A 0.2.0 session against a 0.1.8 Bridge is refused its own name (`name_not_bound_to_token`), joins as `client.name` instead and says so in `peer_read`; that machine has one session online at a time until the Bridge is updated, and each new connection asks for the session's own name again.
 - **Offline messages**: direct messages to an offline peer are stored in SQLite on the Bridge and delivered when the peer comes back. Broadcasts (`*`) reach only the peers online at that moment.
 - **History retention**: the Bridge deletes messages older than `server.history_days` (14 in the template), at start and then daily.
 - **Logs**: each STDIO client writes its own file, `~/.config/ai-connect/mcp-<Host>_<Project>.log`, the HTTP/SSE server `mcp-http.log`; both are rotated at `logging.max_megabytes`, keeping `logging.backup_count` old files. The Bridge writes `bridge.log`, rotated the same way, and under systemd also the journal.
@@ -359,9 +361,9 @@ The two queue caps have no "off" value: `0` would refuse every message to an off
 
 | Environment variable | Description |
 |----------------------|-------------|
-| `AI_CONNECT_PEER_NAME` | Overrides the peer name (`client.name`); the name needs its own token on the Bridge |
+| `AI_CONNECT_PEER_NAME` | The whole peer name, instead of `<client.name>:<project>`. It must be `client.name` or `<client.name>:<label>` (letters, digits, `.`, `_`, `-`, at most 64), or a name with its own token on the Bridge |
 | `AI_CONNECT_PROJECT_DIR` | Overrides `client.project_dir`, the only directory files may be shared from |
-| `AI_CONNECT_PEER_SUFFIX` | Only with `client.name: ""` (legacy shared token) — STDIO client: appended with a hyphen, `Host:Project-Suffix`, so several sessions in one project are each reachable. `AI_CONNECT_PEER_NAME` takes precedence |
+| `AI_CONNECT_PEER_SUFFIX` | STDIO client: appended to the project with a hyphen, `<client.name>:<project>-<suffix>`, so a harness that starts a second session in one project knows its name beforehand (at most 16 characters; without it the second session appends its process id). `AI_CONNECT_PEER_NAME` takes precedence |
 
 ## Troubleshooting
 
@@ -383,7 +385,8 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 | Timeout | Firewall | Open port 9999 on the Bridge machine for your VPN subnet only |
 | `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `installer.py add-peer <name>`, put the token in `client.token`, restart the Bridge and the client |
 | `may not be registered with this token` | `client.name` is not the name the token was issued for | Set `client.name` to the name given to `add-peer` |
-| `peer_status` shows standby | Another session holds the same name (`name_taken`) | Close one, or give the second its own name and token with `AI_CONNECT_PEER_NAME`; the standby session takes the name once the other one leaves |
+| `peer_status` shows standby | Another session holds the same name (`name_taken`): the Bridge or this client is still 0.1.8, or two sessions were given the same `AI_CONNECT_PEER_NAME` | Update both to 0.2.0, where every session has its own name; until then close one. The standby session takes the name once the other one leaves |
+| `peer_read` says the Bridge is older than 0.2.0 | A 0.2.0 session joined a 0.1.8 Bridge, which knows one name per machine | Update the Bridge (`deploy bridge` from a 0.2.0 checkout); the sessions take their own names at their next connection |
 
 ## Limitations
 

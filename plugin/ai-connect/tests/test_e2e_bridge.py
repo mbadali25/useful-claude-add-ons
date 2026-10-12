@@ -210,6 +210,134 @@ def test_second_session_with_the_same_name_waits_on_standby(provisioned, caplog)
     assert any("online again" in n for n in notices)
 
 
+def session_client(settings, port: int, label: str, suffix: str = "") -> bridge_client.BridgeClient:
+    """A 0.2.0 session of the provisioned machine: its own name under the machine's token."""
+    return bridge_client.BridgeClient(
+        host=settings.host, port=port, peer_name=f"{settings.name}:{label}", token=settings.token,
+        machine_name=settings.name, collision_suffix=suffix,
+    )
+
+
+def test_two_sessions_of_one_machine_both_connect_and_receive(provisioned):
+    """No second enrolment and no Bridge restart: both use the laptop's one token."""
+    async def go():
+        server = build_server(provisioned["server"], db_path=provisioned["db"])
+        await server.start()
+        sender = peer_client(provisioned["bridge_peer"], server.bound_port)
+        one = session_client(provisioned["laptop_peer"], server.bound_port, "repo-a")
+        two = session_client(provisioned["laptop_peer"], server.bound_port, "repo-b")
+        try:
+            assert await sender.connect() and await one.connect() and await two.connect()
+            await until(lambda: len(server.registry.all()) == 3, "all three registered")
+            listed = sorted(p["name"] for p in await sender.list_peers())
+            assert await sender.send_message(f"{LAPTOP_PEER}:repo-a", "for a")
+            assert await sender.send_message(f"{LAPTOP_PEER}:repo-b", "for b")
+            assert await two.send_message(BRIDGE_PEER, "from b")
+            await until(lambda: one._message_queue and two._message_queue and sender._message_queue, "all received")
+            return (listed, one.standby or two.standby, [m["content"] for m in one.pop_messages()],
+                    [m["content"] for m in two.pop_messages()], [m["from"] for m in sender.pop_messages()])
+        finally:
+            for client in (sender, one, two):
+                await client.disconnect()
+            await server.stop()
+
+    listed, standby, to_one, to_two, replies = run(go())
+    assert listed == sorted([BRIDGE_PEER, f"{LAPTOP_PEER}:repo-a", f"{LAPTOP_PEER}:repo-b"])
+    assert not standby
+    assert (to_one, to_two) == (["for a"], ["for b"])
+    assert replies == [f"{LAPTOP_PEER}:repo-b"]
+
+
+def test_two_sessions_in_one_project_get_names_of_their_own(provisioned):
+    async def go():
+        server = build_server(provisioned["server"], db_path=provisioned["db"])
+        await server.start()
+        first = session_client(provisioned["laptop_peer"], server.bound_port, "repo", "111")
+        second = session_client(provisioned["laptop_peer"], server.bound_port, "repo", "222")
+        try:
+            assert await first.connect()
+            await until(lambda: server.registry.get(f"{LAPTOP_PEER}:repo") is not None, "first registered")
+            assert await second.connect()
+            await until(lambda: server.registry.get(f"{LAPTOP_PEER}:repo-222") is not None, "second registered")
+            await until(lambda: second.connected, "second online")
+            return first.peer_name, second.peer_name, first.connected, second.standby, second.pop_messages()
+        finally:
+            await first.disconnect()
+            await second.disconnect()
+            await server.stop()
+
+    assert run(go()) == (f"{LAPTOP_PEER}:repo", f"{LAPTOP_PEER}:repo-222", True, False, [])
+
+
+def test_a_session_that_lost_its_connection_comes_back_under_its_name(provisioned):
+    async def go():
+        server = build_server(provisioned["server"], db_path=provisioned["db"])
+        await server.start()
+        sender = peer_client(provisioned["bridge_peer"], server.bound_port)
+        first = session_client(provisioned["laptop_peer"], server.bound_port, "repo", "111")
+        second = session_client(provisioned["laptop_peer"], server.bound_port, "repo", "222")
+        name = f"{LAPTOP_PEER}:repo-222"
+        try:
+            assert await sender.connect() and await first.connect()
+            await until(lambda: server.registry.get(f"{LAPTOP_PEER}:repo") is not None, "first registered")
+            assert await second.connect()
+            await until(lambda: server.registry.get(name) is not None and second.connected, "second registered")
+            # The Bridge loses the second session; a message for it waits
+            await server.registry.get(name).websocket.close()
+            await until(lambda: server.registry.get(name) is None and not second.connected, "second gone")
+            assert await sender.send_message(name, "while away")
+            await asyncio.sleep(0.1)
+            assert not first.peek_messages()
+            assert await second.connect()
+            await until(second.peek_messages, "second got what waited")
+            return second.peer_name, [m["content"] for m in second.pop_messages()], first.peer_name
+        finally:
+            for client in (sender, first, second):
+                await client.disconnect()
+            await server.stop()
+
+    assert run(go()) == (f"{LAPTOP_PEER}:repo-222", ["while away"], f"{LAPTOP_PEER}:repo")
+
+
+def test_a_session_joins_a_bridge_from_before_session_names_under_the_machine_name(provisioned, monkeypatch):
+    """Machines update one at a time: a 0.2.0 session must still work against a 0.1.8 Bridge."""
+    def register_refusal_0_1_8(self, identity, name):  # server/roles.py as 0.1.8 had it
+        if roles.is_reserved_name(name):
+            return "reserved_name"
+        if identity.peer_name is not None and name != identity.peer_name:
+            return "name_not_bound_to_token"
+        if identity.shared and name in self._bound_names:  # pylint: disable=protected-access
+            return "name_bound_to_other_token"
+        return None
+
+    from server import roles  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(roles.Roles, "register_refusal", register_refusal_0_1_8)
+
+    async def go():
+        server = build_server(provisioned["server"], db_path=provisioned["db"])
+        await server.start()
+        sender = peer_client(provisioned["bridge_peer"], server.bound_port)
+        first = session_client(provisioned["laptop_peer"], server.bound_port, "repo-a", "111")
+        second = session_client(provisioned["laptop_peer"], server.bound_port, "repo-b", "222")
+        try:
+            assert await sender.connect() and await first.connect()
+            await until(lambda: first.connected and first.peer_name == LAPTOP_PEER, "first fell back")
+            assert await sender.send_message(LAPTOP_PEER, "hello")
+            await until(lambda: any(m.get("content") == "hello" for m in first.peek_messages()), "first received")
+            assert await second.connect()
+            await until(lambda: second.standby, "second on standby, as on 0.1.8")
+            return [m["content"] for m in first.pop_messages()], sorted(p.name for p in server.registry.all())
+        finally:
+            for client in (sender, first, second):
+                await client.disconnect()
+            await server.stop()
+
+    shown, online = run(go())
+    assert online == sorted([BRIDGE_PEER, LAPTOP_PEER])
+    assert any("0.2.0" in content for content in shown)
+    assert "hello" in shown
+
+
 def test_observer_hash_written_by_installer_reaches_the_bridge(provisioned, tmp_path):
     async def go():
         server = build_server(provisioned["server"], db_path=provisioned["db"])
