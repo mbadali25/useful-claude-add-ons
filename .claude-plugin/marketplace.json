@@ -226,8 +226,8 @@
     {
       "name": "ai-connect",
       "source": "./plugin/ai-connect",
-      "description": "Peer messaging between Claude Code sessions across machines - a self-hosted WebSocket bridge, an MCP client per session, and hooks that publish busy/idle/waiting state and wake an idle session on a new message. Hardened fork of Peuqui/AI-Connect (MIT): per-peer tokens, no name takeover, peer content framed as untrusted, VPN-scoped listener. Hooks run once installed; the MCP server is registered by its own installer.",
-      "version": "0.1.8"
+      "description": "Peer messaging between Claude Code sessions across machines - a self-hosted WebSocket bridge, an MCP client per session, a hook that wakes an idle session on a new message, and busy/idle/waiting state hooks its installer writes into your settings. Hardened fork of Peuqui/AI-Connect (MIT): per-peer tokens, no name takeover, peer content framed as untrusted, VPN-scoped listener. The watcher hook runs once installed and is silent until the plugin's own installer has run; that installer registers the MCP server and the state hooks.",
+      "version": "0.1.9"
     },
     {
       "name": "crew",

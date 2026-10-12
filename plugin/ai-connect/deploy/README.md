@@ -176,6 +176,16 @@ MCP server, `--install-hooks` the plugin's hooks for every session on the machin
 prints a warning: in a bypass-permissions session, what another peer sends is acted on
 with no prompt in between.
 
+The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written only
+with both options, into the settings of the scope the server is in: the user's
+`~/.claude/settings.json` with `--scope user`, this project's `.claude/settings.local.json`
+with `--scope project` (in the user's settings they would fail in every other project,
+which has no such server). Other hooks and keys in that file are kept, a file that is not
+valid JSON stops the step untouched, and `deploy uninstall` takes them out again from the
+user's settings and from the project it is run in. A peer deployed with both options
+before 0.1.9 got these hooks from the plugin; after updating the plugin, run the same
+`deploy peer` command again to write them.
+
 The older way still works: `deploy bridge --peer laptop` makes the token on the Bridge
 and writes `~/.config/ai-connect/peer-tokens/laptop.token`, which then has to be carried
 to machine 2 and passed with `--token-file`.
