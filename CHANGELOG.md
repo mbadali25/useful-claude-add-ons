@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — ai-connect 0.1.9: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+### Fixed — ai-connect 0.1.10: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
 
 - **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
 - **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`

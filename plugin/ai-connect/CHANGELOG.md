@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.1.9] - 2026-10-12
+## [0.1.10] - 2026-10-12
 
 A plugin that is installed but was never set up no longer reports an error on every prompt, tool call and
-turn end.
+turn end. Numbered 0.1.9 on its branch and published under 0.1.10, after the review fixes.
 
 ### Fixed
 - `hooks/hooks.json` no longer ships the four `mcp_tool` state hooks (`peer_set_state` on `UserPromptSubmit`, `PostToolUse`, `Notification` and `Stop`). That hook type has no quiet mode, and the MCP server it names exists only once an installer registered it, so `claude plugin install` alone produced `MCP server 'ai-connect' not connected` on each of those events

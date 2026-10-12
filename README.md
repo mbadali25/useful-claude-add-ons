@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.9**: Installed but not set up, the plugin no longer errors on every prompt, tool call and turn end. `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **ai-connect 0.1.10**: Installed but not set up, the plugin no longer errors on every prompt, tool call and turn end. `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
 - **ai-connect 0.1.8**: One-command deployment and onboarding over Tailscale. `ai-connect` can now be set up with one command per machine, and a new machine joins in three: `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list` and `deploy remove` show and take machines off.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
