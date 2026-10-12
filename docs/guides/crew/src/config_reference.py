@@ -366,17 +366,25 @@ def splice(text, block, body):
 def expected():
     """`{path: full expected text}` for both files."""
     model = Model()
-    with open(CONFIG_MD, encoding="utf-8", newline="") as fh:
-        config_md = fh.read()
+    config_md = _read(CONFIG_MD)
+    if config_md is None:
+        raise FileNotFoundError(CONFIG_MD)
     for block in BLOCKS:
         config_md = splice(config_md, block, render_config_block(block, model))
     return {REFERENCE: render_reference(model), CONFIG_MD: config_md}
 
 
 def _read(path):
+    """The file's text with CRLF folded to LF, or None when it is missing.
+
+    The committed blobs are LF and every text here is rendered with LF, but a
+    `core.autocrlf=true` checkout (Git for Windows' default) hands the same blob
+    back with CRLF. Compared byte for byte, both files then read as stale on
+    every Windows checkout while CI on Linux stays green. Only the CRLF pair is
+    folded, so any other difference - one byte included - still fails."""
     try:
         with open(path, encoding="utf-8", newline="") as fh:
-            return fh.read()
+            return fh.read().replace("\r\n", "\n")
     except FileNotFoundError:
         return None
 
