@@ -183,7 +183,7 @@ with `--scope project` (in the user's settings they would fail in every other pr
 which has no such server). Other hooks and keys in that file are kept, a file that is not
 valid JSON stops the step untouched, and `deploy uninstall` takes them out again from the
 user's settings and from the project it is run in. A peer deployed with both options
-before 0.1.10 got these hooks from the plugin; after updating the plugin, run the same
+before 0.1.11 got these hooks from the plugin; after updating the plugin, run the same
 `deploy peer` command again to write them.
 
 The older way still works: `deploy bridge --peer laptop` makes the token on the Bridge

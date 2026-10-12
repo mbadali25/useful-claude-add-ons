@@ -1,0 +1,22 @@
+{
+  "name": "terraform-lsp",
+  "version": "0.1.0",
+  "description": "Terraform language server (HashiCorp terraform-ls) for code intelligence in .tf and .tfvars files - definitions, references, hover, symbols and diagnostics. Registers an LSP server only: no hooks, commands, agents or skills. Needs the terraform-ls binary on PATH; the plugin does not install it.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "license": "GPL-2.0-only",
+  "lspServers": {
+    "terraform": {
+      "command": "terraform-ls",
+      "args": [
+        "serve"
+      ],
+      "extensionToLanguage": {
+        ".tf": "terraform",
+        ".tfvars": "terraform-vars"
+      }
+    }
+  }
+}
