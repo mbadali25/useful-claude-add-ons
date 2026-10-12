@@ -2236,7 +2236,9 @@ if (Test-Selected 'find-skills') {
             Write-Skip "find-skills already installed at $findSkillsDir (-NoUpdate set)"
             return
         }
-        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+        # --global --yes: without them the skills CLI stops to ask for the install scope
+        # (default: Project, which is not where the check below looks) and to confirm.
+        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes
         if (-not (Test-UserSkillInstalled 'find-skills')) {
             throw "the installer finished but '$findSkillsDir\SKILL.md' was not created - see the output above."
         }

@@ -175,6 +175,25 @@ as_root() {
   fi
 }
 
+# 'npm install -g', run as whoever can actually write npm's global prefix. A
+# distribution's own nodejs (apt on Debian/Ubuntu, dnf on Fedora) keeps that prefix at
+# /usr/local, which only root can write, so the bare command dies there for anyone else:
+#     npm ERR! Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/pyright'
+# The Claude Code CLI install always elevated for this. The language servers and
+# skillui did not, so on a stock Ubuntu Server (26.04 is where it was reported) the CLI
+# went in and every global package after it failed. One helper, so that a new call site
+# cannot forget again. A prefix the user owns (nvm, fnm, 'npm config set prefix') is
+# writable and is never elevated: root-owned files in there break the next plain install.
+npm_install_global() {
+  local npm_prefix
+  npm_prefix="$(npm config get prefix)"
+  if [ -w "$npm_prefix" ]; then
+    npm install -g "$@"
+  else
+    as_root npm install -g "$@"
+  fi
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- uv, under PEP 668 --------------------------------------------------------
@@ -2225,6 +2244,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+# 'sudo bash install-prerequisites.sh' looks like the obvious way to satisfy "needs root
+# or sudo" on the first menu row, and it is the one way to get nothing: sudo points HOME
+# at root's, so every marketplace, plugin, skill and uv tool below lands in /root and
+# the account that typed the command finds Claude Code empty, after a run that reported
+# success. 'sudo -E' used to be the workaround; sudo-rs (Ubuntu 25.10+) ignores it:
+#     sudo: preserving the entire environment is not supported, '-E' is ignored
+# Said before the first install and again in the summary, because between the two sit
+# several thousand lines of package-manager output. A warning, not a refusal: installing
+# for root on purpose is legitimate, and only the person at the keyboard knows which.
+sudo_home_warning() {
+  [ "$(id -u 2>/dev/null || true)" = "0" ] || return 0
+  [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] || return 0
+  warn "running as root through sudo: plugins, marketplaces, skills and per-user tools are being installed for root (HOME=$HOME), NOT for '$SUDO_USER'. To install them for '$SUDO_USER', run this script as that user without sudo - it elevates the individual commands that need it."
+}
+sudo_home_warning
+
 SKILLUI_GUIDE="$(select_skillui_guide)"
 NOTIFY_SETUP="$(select_notify_setup)"
 
@@ -2343,13 +2378,7 @@ update_claude_cli() {
     return 0
   fi
   step "Claude Code $local_ver -> $latest available"
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  else
-    as_root npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  fi
+  npm_install_global @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
   COUNT_UPDATED=$((COUNT_UPDATED+1))
   ok "Claude Code updated $local_ver -> $(claude_local_version)"
 }
@@ -2363,13 +2392,7 @@ install_claude_cli() {
     update_claude_cli
     return 0
   fi
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code
-  else
-    as_root npm install -g @anthropic-ai/claude-code
-  fi
+  npm_install_global @anthropic-ai/claude-code
   local rc=$?
   [ $rc -eq 0 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   return $rc
@@ -2575,7 +2598,12 @@ install_find_skills() {
     skip "find-skills already installed at $dir (--no-update set)"
     return 0
   fi
-  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
+  # --global --yes: without them the skills CLI stops on a terminal to ask "Installation
+  # scope: Project / Global" and then "Proceed with installation?". Project is its
+  # default, which is not where the check below looks unless the run started in $HOME,
+  # and a Ctrl-C at that unexplained prompt ends the whole run before the community
+  # plugins, this repo's plugins and the language servers were reached.
+  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes || return 1
   if ! user_skill_installed "find-skills"; then
     warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
     return 1
@@ -2966,11 +2994,11 @@ install_skillui() {
   if have skillui && [ "$NO_UPDATE" -eq 1 ]; then
     skip "skillui already installed ($(command -v skillui); --no-update set)"
   else
-    npm install -g skillui || return 1
+    npm_install_global skillui || return 1
     COUNT_INSTALLED=$((COUNT_INSTALLED+1))
     ok "skillui installed"
   fi
-  npm install -g playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
+  npm_install_global playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
   # Downloads the browser binary itself; skipping it leaves skillui able to start and
   # unable to render anything.
   npx -y playwright install chromium || warn "'npx playwright install chromium' failed - run it by hand before using skillui."
@@ -3335,7 +3363,7 @@ install_pyright_binary() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
     return 1
   fi
-  install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
+  install_lsp_binary "pyright-langserver" "pyright-langserver" npm_install_global pyright
 }
 install_typescript_lsp_binary() {
   if have typescript-language-server; then
@@ -3346,7 +3374,7 @@ install_typescript_lsp_binary() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
+  install_lsp_binary "typescript-language-server" "typescript-language-server" npm_install_global typescript-language-server typescript
 }
 install_angular_language_server() {
   if have ngserver; then
@@ -3357,7 +3385,7 @@ install_angular_language_server() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
+  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm_install_global @angular/language-server
 }
 if is_selected "lsp-plugins"; then
   run_step "Marketplace: anthropics/claude-plugins-official" \
@@ -3529,3 +3557,4 @@ else
   for s in "${FAILED_STEPS[@]}"; do echo "  - $s"; done
   printf '\033[33mRe-run this script after resolving the above; earlier successful steps are safe to repeat.\033[0m\n'
 fi
+sudo_home_warning
