@@ -272,8 +272,11 @@ hooks.
 
 ### A second session on one machine
 
-Every session on a machine joins as `client.name` with `client.token`, and a live name
-cannot be taken over, so a second session waits on standby. To have both online:
+Since 0.2.0 every session on a machine is online by itself, as `<client.name>:<project>`
+with `client.token`: nothing to set up ([ONBOARDING.md](ONBOARDING.md#several-sessions-on-one-machine)).
+Before 0.2.0 they all joined as `client.name`, and a live name cannot be taken over, so a
+second session waited on standby. A session that should have a name and a **token of its
+own** (one that can be revoked without the machine's) is still made like this:
 
 ```bash
 deploy/setup.sh session --name laptop-2            # the plan

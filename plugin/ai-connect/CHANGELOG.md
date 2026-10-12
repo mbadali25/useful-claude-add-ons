@@ -30,6 +30,8 @@ Every session on an enrolled machine is online at once. In 0.1.8 all sessions of
 - 0.2.0 client, 0.1.8 Bridge: the session name is refused (`name_not_bound_to_token`); the client registers as `client.name` instead, says so once in `peer_read`, and asks for its own name again at every new connection. One session per machine until the Bridge is updated
 - A 0.2.0 Bridge sends the same code for a name another enrolled machine owns (`client.name: Host`, project `Alice`, with `Host:Alice` enrolled) or a wrong `client.name`, and marks every register refusal with `"session_names": true`. The client falls back only when the mark is absent; with it, the session stays offline and `peer_read` names the conflict instead of blaming the Bridge's age
 - Update the Bridge first. Messages already waiting under a machine's name are delivered to its first 0.2.0 session
+- `client.name_mode: per-project` (0.1.13) still names a session `<client.name>-<project>` under that project's own token, registered as it is. Where the mode fell back to `client.name` (no token for the project, a loose or foreign token file, another directory's `.dir`), and with the mode off, the session is now `<client.name>:<project>` on `client.token`; the stderr line reads `joining under client.name` instead of `joining as`. `AI_CONNECT_PEER_NAME` with a session token is unchanged, and the watcher sends `client.token` for a session name
+- `tests/test_ops_setup.py::test_no_usable_name_falls_back` used a project folder named `...`, which Windows drops from a path, so it failed there on main; it uses `___`
 
 ## [0.1.16] - 2026-10-12
 
