@@ -1233,14 +1233,14 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)"
+  "This repo's plugins: ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
-  "LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm"
+  "LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, sql, terraform (this repo), with their language servers"
   "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
 )
 
@@ -1386,27 +1386,36 @@ unset _i
 # Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
 PLUGIN_KEYS=(
   "ai-connect"
+  "angular-lsp"
   "crew"
   "gizmoduck"
   "localgpu"
   "obsidian-vault"
   "rule-of-two"
+  "sql-lsp"
+  "terraform-lsp"
 )
 PLUGIN_NAME=(
   "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
+  "angular-lsp             - Angular template language server (ngserver). LSP only, no hooks"
   "crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
   "rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks"
+  "sql-lsp                 - SQL language server (sqls); no DB connection shipped. No hooks"
+  "terraform-lsp           - Terraform language server (terraform-ls). LSP only, no hooks"
 )
 PLUGIN_SPEC=(
   "ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "angular-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "rule-of-two@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "sql-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "terraform-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
 for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
@@ -1497,7 +1506,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
+  "This repo's plugins: %s of %s (ai-connect, angular-lsp, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two, sql-lsp, terraform-lsp)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
@@ -3286,6 +3295,22 @@ fi
 # lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
 # 'angular' entry - so Angular's language server goes in as a plain npm package
 # instead, the same way skillui's Playwright/Chromium install is above.
+#
+# Three more plugins come from THIS repo's marketplace rather than Anthropic's:
+# angular-lsp (the Angular gap above, closed here), terraform-lsp and sql-lsp.
+# Each registers an LSP server and nothing else, and none of them installs its
+# language server either. Two of those servers have no package this step will
+# fetch unverified, following install_tflint's precedent in step 23:
+#   terraform-ls - Homebrew (hashicorp/tap) or winget (Hashicorp.TerraformLanguageServer,
+#                  present in microsoft/winget-pkgs on 2026-10-12). No Chocolatey
+#                  package exists. Otherwise: stop and name the manual route.
+#   sqls         - not in Homebrew core, Chocolatey or winget on 2026-10-12. With Go
+#                  on PATH it is a version-pinned 'go install', which Go verifies
+#                  against its checksum database. Otherwise: stop and name the
+#                  manual route.
+# Neither function downloads a release archive itself: that would be this script
+# choosing and trusting a binary on the user's behalf with no pinned checksum.
+# SQLS_VERSION is the one place the sqls pin lives; bumping it is a reviewed edit.
 install_lsp_binary() {
   # $1 label (for messages), $2 the command Claude Code will actually run, the
   # rest is the install command's own argv - run directly, never eval'd.
@@ -3359,6 +3384,45 @@ install_angular_language_server() {
   fi
   install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
 }
+install_terraform_ls() {
+  if have terraform-ls; then
+    skip "terraform-ls already installed ($(command -v terraform-ls))"
+    return 0
+  fi
+  if have brew; then
+    brew install hashicorp/tap/terraform-ls || return 1
+  else
+    warn "terraform-ls has no unpinned auto-install path here (no brew on PATH) - download a release from https://releases.hashicorp.com/terraform-ls/ (verify it against the SHA256SUMS file published beside it, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  if ! have terraform-ls; then
+    warn "terraform-ls installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "terraform-ls installed at $(command -v terraform-ls)"
+}
+SQLS_VERSION="v0.2.48"
+install_sqls() {
+  if have sqls; then
+    skip "sqls already installed ($(command -v sqls))"
+    return 0
+  fi
+  if ! have go; then
+    warn "sqls has no unpinned auto-install path here (no go on PATH) - install Go and re-run, or download a release from https://github.com/sqls-server/sqls/releases (verify its SHA-256 against the digest GitHub shows for that asset, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  # 'go install' writes into GOBIN, or GOPATH/bin when GOBIN is unset, and adds
+  # neither to PATH - export it for this session before the shared helper's
+  # post-install probe runs, the same reason install_csharp_ls_binary does.
+  local gobin
+  gobin="$(go env GOBIN 2>/dev/null)"
+  [ -n "$gobin" ] || gobin="$(go env GOPATH 2>/dev/null)/bin"
+  export PATH="$gobin:$PATH"
+  install_lsp_binary "sqls" "sqls" go install "github.com/sqls-server/sqls@${SQLS_VERSION}" || return 1
+  warn "sqls is on PATH for this session only - add $gobin to your shell profile to keep it there in new shells."
+  warn "sqls ships with no database connection, and this script configures none. Schema-aware completion needs your own ~/.config/sqls/config.yml - see plugin/sql-lsp/README.md before pointing it at any database."
+}
 if is_selected "lsp-plugins"; then
   run_step "Marketplace: anthropics/claude-plugins-official" \
     add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
@@ -3368,7 +3432,14 @@ if is_selected "lsp-plugins"; then
   run_step "pyright-langserver (npm)" install_pyright_binary
   run_step "Plugin: typescript-lsp@claude-plugins-official" install_plugin "typescript-lsp@claude-plugins-official"
   run_step "typescript-language-server (npm)" install_typescript_lsp_binary
-  run_step "Angular language server (npm; no official Claude plugin)" install_angular_language_server
+  run_step "Marketplace: mbadali25/useful-claude-add-ons" \
+    add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
+  run_step "Plugin: angular-lsp@useful-claude-add-ons" install_plugin "angular-lsp@useful-claude-add-ons"
+  run_step "Angular language server (npm)" install_angular_language_server
+  run_step "Plugin: terraform-lsp@useful-claude-add-ons" install_plugin "terraform-lsp@useful-claude-add-ons"
+  run_step "terraform-ls (HashiCorp)" install_terraform_ls
+  run_step "Plugin: sql-lsp@useful-claude-add-ons" install_plugin "sql-lsp@useful-claude-add-ons"
+  run_step "sqls (pinned go install)" install_sqls
 fi
 
 # --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer --

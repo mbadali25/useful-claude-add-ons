@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Regression suite for T11's LSP-plugin and stack-tool install steps, in BOTH halves
 # of the matched pair: install_lsp_binary/install_csharp_ls_binary/install_pyright_binary/
-# install_typescript_lsp_binary/install_angular_language_server/install_tflint/
-# install_ruff/install_sqlfluff/install_shellcheck/install_psscriptanalyzer in
-# scripts/install-prerequisites.sh, and their Install-LspBinary/tflint/ruff/sqlfluff/
-# ShellCheck/PSScriptAnalyzer equivalents in scripts/install-prerequisites.ps1.
+# install_typescript_lsp_binary/install_angular_language_server/install_terraform_ls/
+# install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
+# install_psscriptanalyzer in scripts/install-prerequisites.sh, and their
+# Install-LspBinary/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
+# equivalents in scripts/install-prerequisites.ps1.
 #
 # Idempotency is the point (CLAUDE.md: "both install scripts are idempotent - a new
 # step needs a detection branch reporting 'already installed'"), so every function
@@ -214,6 +215,125 @@ install_angular_language_server >/dev/null 2>&1; rc=$?
 check "ngserver: already installed -> exits 0"     0 "$rc"
 check "ngserver: already installed -> counted skip" 1 "$COUNT_SKIPPED"
 
+echo "=== install_terraform_ls ==="
+newstubs
+stub terraform-ls 'exit 0'
+COUNT_SKIPPED=0
+install_terraform_ls >/dev/null 2>&1; rc=$?
+check "terraform-ls: already installed -> exits 0"     0 "$rc"
+check "terraform-ls: already installed -> counted skip" 1 "$COUNT_SKIPPED"
+
+newstubs
+COUNT_INSTALLED=0
+out="$(install_terraform_ls 2>&1)"; rc=$?
+check "terraform-ls: no brew -> warns and fails"            1 "$rc"
+check "terraform-ls: no brew -> names the release site"     yes "$(case "$out" in *releases.hashicorp.com/terraform-ls*) echo yes;; *) echo no;; esac)"
+check "terraform-ls: no brew -> tells the user to verify it" yes "$(case "$out" in *SHA256SUMS*) echo yes;; *) echo no;; esac)"
+
+newstubs
+# The stub records its argv so the case can assert WHICH formula was asked for,
+# and only produces the binary for that one - a brew that installed something
+# for any argument would pass a typo in the tap name.
+BREW_ARGS="$TMP/brew-args"
+: > "$BREW_ARGS"
+export BREW_ARGS_FILE="$BREW_ARGS"
+cat > "$STUBS/brew" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$BREW_ARGS_FILE"
+if [ "$1" = "install" ] && [ "$2" = "hashicorp/tap/terraform-ls" ]; then
+  printf '#!/bin/sh\nexit 0\n' > "$(dirname "$0")/terraform-ls"
+  chmod +x "$(dirname "$0")/terraform-ls"
+fi
+exit 0
+EOF
+chmod +x "$STUBS/brew"
+COUNT_INSTALLED=0
+install_terraform_ls >/dev/null 2>&1; rc=$?
+check "terraform-ls: brew present, installs -> exits 0"       0 "$rc"
+check "terraform-ls: brew present, installs -> counted"       1 "$COUNT_INSTALLED"
+check "terraform-ls: brew asked for HashiCorp's own tap"      "install hashicorp/tap/terraform-ls" "$(cat "$BREW_ARGS")"
+unset BREW_ARGS_FILE
+
+newstubs
+# brew "succeeds" and leaves nothing on PATH: must not be reported as installed.
+stub brew 'exit 0'
+COUNT_INSTALLED=0
+install_terraform_ls >/dev/null 2>&1; rc=$?
+check "terraform-ls: brew exits 0 but no binary -> fails"        1 "$rc"
+check "terraform-ls: brew exits 0 but no binary -> not counted"  0 "$COUNT_INSTALLED"
+
+echo "=== install_sqls ==="
+newstubs
+stub sqls 'exit 0'
+COUNT_SKIPPED=0
+install_sqls >/dev/null 2>&1; rc=$?
+check "sqls: already installed -> exits 0"     0 "$rc"
+check "sqls: already installed -> counted skip" 1 "$COUNT_SKIPPED"
+
+newstubs
+COUNT_INSTALLED=0
+out="$(install_sqls 2>&1)"; rc=$?
+check "sqls: no go -> warns and fails"              1 "$rc"
+check "sqls: no go -> names the release page"       yes "$(case "$out" in *github.com/sqls-server/sqls/releases*) echo yes;; *) echo no;; esac)"
+check "sqls: no go -> tells the user to verify it"  yes "$(case "$out" in *SHA-256*) echo yes;; *) echo no;; esac)"
+check "sqls: no go -> does not count as installed"  0 "$COUNT_INSTALLED"
+
+newstubs
+# A fake go: 'go env' answers with a GOBIN under $TMP, 'go install' records the
+# module argument and drops the binary there. The case then asserts the module
+# was version-pinned - an unpinned '@latest' is exactly what this step refuses.
+GOBIN_DIR="$TMP/gobin-$RANDOM"
+"$REALTOOLS/mkdir" -p "$GOBIN_DIR"
+GO_ARGS="$TMP/go-args"
+: > "$GO_ARGS"
+export GO_ARGS_FILE="$GO_ARGS" FAKE_GOBIN="$GOBIN_DIR"
+cat > "$STUBS/go" <<'EOF'
+#!/bin/sh
+case "$1" in
+  env) [ "$2" = "GOBIN" ] && echo "$FAKE_GOBIN" ;;
+  install)
+    echo "$2" >> "$GO_ARGS_FILE"
+    printf '#!/bin/sh\nexit 0\n' > "$FAKE_GOBIN/sqls"
+    chmod +x "$FAKE_GOBIN/sqls"
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$STUBS/go"
+COUNT_INSTALLED=0
+out="$(install_sqls 2>&1)"; rc=$?
+check "sqls: go present -> installs, exits 0"   0 "$rc"
+check "sqls: go install is version-pinned"      "github.com/sqls-server/sqls@$SQLS_VERSION" "$(cat "$GO_ARGS")"
+check "sqls: the pin is a release tag, not @latest" yes "$(case "$SQLS_VERSION" in v[0-9]*.[0-9]*.[0-9]*) echo yes;; *) echo no;; esac)"
+check "sqls: says no database connection is configured" yes "$(case "$out" in *"no database connection"*) echo yes;; *) echo no;; esac)"
+# The count is read outside the subshell above, so run it once more un-captured
+# against a fresh GOBIN to see the counter move.
+newstubs
+GOBIN_DIR="$TMP/gobin-$RANDOM"
+"$REALTOOLS/mkdir" -p "$GOBIN_DIR"
+export FAKE_GOBIN="$GOBIN_DIR"
+cat > "$STUBS/go" <<'EOF'
+#!/bin/sh
+case "$1" in
+  env) [ "$2" = "GOBIN" ] && echo "$FAKE_GOBIN" ;;
+  install) printf '#!/bin/sh\nexit 0\n' > "$FAKE_GOBIN/sqls"; chmod +x "$FAKE_GOBIN/sqls" ;;
+esac
+exit 0
+EOF
+chmod +x "$STUBS/go"
+COUNT_INSTALLED=0
+install_sqls >/dev/null 2>&1; rc=$?
+check "sqls: go present -> counted installed" 1 "$COUNT_INSTALLED"
+
+newstubs
+# go install fails: nothing is counted and the step fails.
+stub go 'case "$1" in env) echo /nonexistent-gobin ;; install) exit 1 ;; esac'
+COUNT_INSTALLED=0
+install_sqls >/dev/null 2>&1; rc=$?
+check "sqls: go install fails -> exits 1"      1 "$rc"
+check "sqls: go install fails -> not counted"  0 "$COUNT_INSTALLED"
+unset GO_ARGS_FILE FAKE_GOBIN
+
 echo "=== install_tflint ==="
 newstubs
 stub tflint 'exit 0'
@@ -417,6 +537,11 @@ Invoke-Expression (Get-Block '^function Write-Step' '^function Write-Skip')
 function Sync-SessionEnvironment { }
 $script:Summary = @{ Installed = 0; Updated = 0; Skipped = 0 }
 Invoke-Expression (Get-Block '^function Install-LspBinary' '^\}')
+Invoke-Expression (Get-Block '^function Install-TerraformLs' '^\}')
+# The pin is lifted from the script, not restated here, so the case below reads
+# the value the real step would use.
+Invoke-Expression (Get-Block '^\$script:SqlsVersion' '^\$script:SqlsVersion')
+Invoke-Expression (Get-Block '^function Install-Sqls \{' '^\}')
 $script:UvEnsured = $null
 Invoke-Expression (Get-Block '^function Install-Uv \{' '^\}')
 Invoke-Expression (Get-Block '^function Get-UvCommand' '^\}')
@@ -475,6 +600,95 @@ Install-LspBinary -Label 'Angular language server' -Probe 'ngserver' -Install {
     $global:LASTEXITCODE = 0
 }
 $results += "absent-then-installed:installed=$($script:Summary.Installed)"
+
+# --- terraform-ls ----------------------------------------------------------
+$stubL1 = Join-Path $env:TESTTMP 'tfls-installed'; New-Item -ItemType Directory -Path $stubL1 -Force | Out-Null
+Write-ProbeStub (Get-ProbePath $stubL1 'terraform-ls')
+$env:PATH = "$stubL1$sep$basePath"
+$script:Summary.Installed = 0
+Install-TerraformLs
+$results += "tfls-already-installed:installed=$($script:Summary.Installed)"
+
+$stubL2 = Join-Path $env:TESTTMP 'tfls-none'; New-Item -ItemType Directory -Path $stubL2 -Force | Out-Null
+$env:PATH = "$stubL2$sep$basePath"
+$threw = $false
+try { Install-TerraformLs } catch { $threw = ($_.Exception.Message -match 'releases\.hashicorp\.com/terraform-ls' -and $_.Exception.Message -match 'SHA256SUMS') }
+$results += "tfls-no-winget-throws:$threw"
+
+# winget only produces the binary when asked for HashiCorp's package id, and
+# records what it was asked for - a typo in the id must not pass.
+$stubL3 = Join-Path $env:TESTTMP 'tfls-winget'; New-Item -ItemType Directory -Path $stubL3 -Force | Out-Null
+$tflsOut = Get-ProbePath $stubL3 'terraform-ls'
+$tflsArgs = Join-Path $env:TESTTMP 'tfls-winget-args'
+$wingetTfls = (@'
+#!/bin/sh
+echo "$@" > "ARGS_OUT"
+case " $* " in
+  *" Hashicorp.TerraformLanguageServer "*)
+    printf '#!/bin/sh\nexit 0\n' > "TFLS_OUT"
+    chmod +x "TFLS_OUT"
+    ;;
+esac
+exit 0
+'@).Replace('TFLS_OUT', $tflsOut).Replace('ARGS_OUT', $tflsArgs)
+$wingetTflsPath = Join-Path $stubL3 'winget'
+Set-Content -Path $wingetTflsPath -Value $wingetTfls -NoNewline
+& chmod +x $wingetTflsPath
+$env:PATH = "$stubL3$sep$basePath"
+$script:Summary.Installed = 0
+Install-TerraformLs
+$results += "tfls-winget-installs:installed=$($script:Summary.Installed)"
+
+# winget "succeeds" and leaves nothing on PATH: must throw, not count.
+$stubL4 = Join-Path $env:TESTTMP 'tfls-winget-noop'; New-Item -ItemType Directory -Path $stubL4 -Force | Out-Null
+Write-ProbeStub (Join-Path $stubL4 'winget')
+$env:PATH = "$stubL4$sep$basePath"
+$threw = $false
+try { Install-TerraformLs } catch { $threw = ($_.Exception.Message -match 'not resolvable') }
+$results += "tfls-winget-unverified-throws:$threw"
+
+# --- sqls --------------------------------------------------------------------
+$stubG1 = Join-Path $env:TESTTMP 'sqls-installed'; New-Item -ItemType Directory -Path $stubG1 -Force | Out-Null
+Write-ProbeStub (Get-ProbePath $stubG1 'sqls')
+$env:PATH = "$stubG1$sep$basePath"
+$script:Summary.Installed = 0
+Install-Sqls
+$results += "sqls-already-installed:installed=$($script:Summary.Installed)"
+
+$stubG2 = Join-Path $env:TESTTMP 'sqls-none'; New-Item -ItemType Directory -Path $stubG2 -Force | Out-Null
+$env:PATH = "$stubG2$sep$basePath"
+$threw = $false
+try { Install-Sqls } catch { $threw = ($_.Exception.Message -match 'sqls-server/sqls/releases' -and $_.Exception.Message -match 'SHA-256') }
+$results += "sqls-no-go-throws:$threw"
+
+# A fake go: 'go env GOBIN' names a directory under TESTTMP, 'go install' records
+# the module argument and drops the binary there.
+$stubG3 = Join-Path $env:TESTTMP 'sqls-go'; New-Item -ItemType Directory -Path $stubG3 -Force | Out-Null
+$gobinDir = Join-Path $env:TESTTMP 'sqls-gobin'; New-Item -ItemType Directory -Path $gobinDir -Force | Out-Null
+$sqlsOut = Get-ProbePath $gobinDir 'sqls'
+$goArgs = Join-Path $env:TESTTMP 'sqls-go-args'
+$goScript = (@'
+#!/bin/sh
+case "$1" in
+  env) [ "$2" = "GOBIN" ] && echo "GOBIN_DIR" ;;
+  install)
+    echo "$2" > "ARGS_OUT"
+    printf '#!/bin/sh\nexit 0\n' > "SQLS_OUT"
+    chmod +x "SQLS_OUT"
+    ;;
+esac
+exit 0
+'@).Replace('GOBIN_DIR', $gobinDir).Replace('SQLS_OUT', $sqlsOut).Replace('ARGS_OUT', $goArgs)
+$goPath = Join-Path $stubG3 'go'
+Set-Content -Path $goPath -Value $goScript -NoNewline
+& chmod +x $goPath
+$env:PATH = "$stubG3$sep$basePath"
+$script:Summary.Installed = 0
+Install-Sqls
+$results += "sqls-go-installs:installed=$($script:Summary.Installed)"
+$asked = if (Test-Path $goArgs) { (Get-Content -Raw $goArgs).Trim() } else { '<go install never ran>' }
+$results += "sqls-go-module:$asked"
+$results += "sqls-pin:$($script:SqlsVersion)"
 
 # --- tflint --------------------------------------------------------------
 $stubT1 = Join-Path $env:TESTTMP 'tflint-installed'; New-Item -ItemType Directory -Path $stubT1 -Force | Out-Null
@@ -641,6 +855,17 @@ PS1EOF
   out="$("$PWSH" -NoProfile -File "$(win "$PSHARNESS")" 2>&1)"
   check ".ps1 Install-LspBinary: already-installed counts nothing"   "yes" "$(case "$out" in *"already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-LspBinary: absent-then-installed counts one"   "yes" "$(case "$out" in *"absent-then-installed:installed=1"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-TerraformLs: already-installed counts nothing" "yes" "$(case "$out" in *"tfls-already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-TerraformLs: no winget throws, names the manual route" "yes" "$(case "$out" in *"tfls-no-winget-throws:True"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-TerraformLs: winget installs HashiCorp's package id" "yes" "$(case "$out" in *"tfls-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-TerraformLs: winget success w/o binary throws" "yes" "$(case "$out" in *"tfls-winget-unverified-throws:True"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-Sqls: already-installed counts nothing"        "yes" "$(case "$out" in *"sqls-already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-Sqls: no go throws, names the manual route"    "yes" "$(case "$out" in *"sqls-no-go-throws:True"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-Sqls: go present installs"                     "yes" "$(case "$out" in *"sqls-go-installs:installed=1"*) echo yes;; *) echo no;; esac)"
+  # The .ps1 pin and the .sh pin are one decision: the module go was asked for
+  # must be the .sh's SQLS_VERSION, so the two scripts cannot drift apart.
+  check ".ps1 Install-Sqls: go install is pinned to the .sh's version" "yes" "$(case "$out" in *"sqls-go-module:github.com/sqls-server/sqls@$SQLS_VERSION"*) echo yes;; *) echo no;; esac)"
+  check ".ps1 Install-Sqls: \$script:SqlsVersion equals SQLS_VERSION" "yes" "$(case "$out" in *"sqls-pin:$SQLS_VERSION"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-Tflint: already-installed counts nothing"      "yes" "$(case "$out" in *"tflint-already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-Tflint: no manager throws"                     "yes" "$(case "$out" in *"tflint-no-manager-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-Tflint: winget installs and verifies"          "yes" "$(case "$out" in *"tflint-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
