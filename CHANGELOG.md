@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — ai-connect 0.1.11: setup in one run per machine, and a firewall rule that is checked
+### Added — ai-connect 0.1.12: setup in one run per machine, and a firewall rule that is checked
 
 - **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
   installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now

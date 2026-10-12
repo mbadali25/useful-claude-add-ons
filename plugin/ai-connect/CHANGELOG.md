@@ -1,10 +1,11 @@
 # Changelog
 
-## [0.1.11] - 2026-10-12
+## [0.1.12] - 2026-10-12
 
 Setup in one run per machine, a firewall step that says when its rule does nothing, and a second peer name
-for a second session. Numbered 0.1.11 because 0.1.9 and 0.1.10 belong to the quiet-when-unconfigured change
-(PR #610), which is meant to merge first.
+for a second session. 0.1.9 and 0.1.10 belong to the quiet-when-unconfigured change (PR #610), which is meant
+to merge first. 0.1.11 was this branch's first commit; a test fix changed content after it, so it was never
+published.
 
 ### Added
 - `deploy/setup.sh` and `deploy/setup.ps1`, one core (`deploy/peer_setup.py`): `bridge`, `peer` and `session`. A thin layer over `deploy bridge`, `peer`, `join` and `add-peer`, which still make every change. Without `--apply` it prints the plan and changes nothing; `--register-mcp` (off by default) registers the MCP server at user scope

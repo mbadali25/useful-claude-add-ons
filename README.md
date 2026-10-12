@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.11**: Setup in one run per machine, and a firewall rule that is checked. `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real firewall: the suite drives fakes).
+- **ai-connect 0.1.12**: Setup in one run per machine, and a firewall rule that is checked. `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real firewall: the suite drives fakes).
 - **ai-connect 0.1.8**: One-command deployment and onboarding over Tailscale. `ai-connect` can now be set up with one command per machine, and a new machine joins in three: `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list` and `deploy remove` show and take machines off.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
