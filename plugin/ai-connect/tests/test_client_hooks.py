@@ -61,6 +61,9 @@ class Machine:
         self.root = tmp_path / "plugin root"  # a space: the cache path has one on some machines
         self.home = tmp_path / "home"
         self.home.mkdir()
+        # pwsh's startup cache: the test's own, beside the home rather than under it (L-0557)
+        self.xdg_cache = tmp_path / "xdg-cache"
+        self.xdg_cache.mkdir()
         shutil.copytree(ROOT / "hooks", self.root / "hooks")
         self.marker = tmp_path / "watcher-ran"
 
@@ -85,7 +88,7 @@ class Machine:
         env = {k: v for k, v in os.environ.items() if k not in ("OS", "CLAUDE_CONFIG_DIR", "AI_CONNECT_HOME")}
         env.update(HOME=str(self.home), USERPROFILE=str(self.home), CLAUDE_PLUGIN_ROOT=str(self.root),
                    # A private PowerShell startup cache: two pwsh sharing one can corrupt it (scripts/pwsh-isolated.sh)
-                   XDG_CACHE_HOME=str(self.home / ".cache"))
+                   XDG_CACHE_HOME=str(self.xdg_cache))
         if windows:
             env["OS"] = "Windows_NT"
         if flavour(hook) == "powershell":
