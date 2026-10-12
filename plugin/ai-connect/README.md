@@ -221,7 +221,7 @@ deploy/deploy.sh uninstall --yes          # --purge also deletes ~/.config/ai-co
 - **A peer's firewall is never touched.** Only `bridge` adds a rule, on the Bridge machine.
 - **Idempotent**: every step looks first and prints `already done: ...` instead of repeating itself. A rerun with a new `--peer` adds that peer and restarts the Bridge.
 - **`--dry-run`** (`bridge`, `peer`, `add-peer`, `uninstall`) runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`, `systemctl`, ...) and needs no token or key file: it prints `would: ...` for each step it may change, and reads only files (and `config.yaml` through this plugin's own helper in its venv). `status` runs nothing through `sudo` and no `claude` command. `tailnet-setup` without `--apply` is its dry run.
-- **Secrets** never go on the command line and are never printed: the peer token comes from the peer's own token file, `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`, the API access token from `TS_API_TOKEN` or a prompt. Output shows a token as `****` plus its last four characters.
+- **Secrets** never go on the command line and are never printed: the peer token comes from the peer's own token file, `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`, the API access token from `TS_API_TOKEN` or a prompt. Output shows a token as `****` plus its last four characters. `~/.config/ai-connect`, where the config and every token are, is the deploying user's alone: mode 0700, on Windows an ACL without inherited entries or broad groups. `invite` prints a warning with each invite: it is password-equivalent, single use, and good until the expiry it names.
 - `--port` (default 9999) and `--name` (the Bridge's own peer name, default the host name) are there when the defaults do not fit. Exit codes: 0 done, 1 a step or a check failed, 2 bad arguments, 3 Tailscale is not installed and could not be.
 
 `deploy.ps1` does not ask through UAC itself: `bridge` and `uninstall` fail at the scheduled task or the firewall rule unless the shell is elevated. On Linux without ufw or firewalld the firewall step prints the rule to add by hand. A Bridge on macOS is not supported (no launchd service); a peer is.
@@ -236,6 +236,17 @@ Tailscale shares the machine with whatever VPN clients are already there (AWS VP
 - **`deploy status`** shows `RouteAll`, `ExitNode` and `CorpDNS`, and flags each one that is on with the `tailscale set` command that turns it off.
 
 Why: on a Windows desktop whose Tailscale had `RouteAll` on, connecting the AWS VPN Client to `10.5.0.0/16` cut every connection.
+
+### Live test
+
+Run on a real tailnet in October 2026, with the Bridge on a Windows desktop:
+
+| Machine | OS | Result |
+|---|---|---|
+| `laptop` | Ubuntu | joined as a permanent (non-ephemeral) node; `deploy test` passed 5 of 5; the AWS VPN Client's routes were the same before and after |
+| `dadeush-legion` | Windows 11 | joined; routes and DNS unchanged; a direct connection to the Bridge, 9 ms |
+
+That is two machines on one tailnet, not a compatibility matrix. The test suites cover everything else in this section against fakes only: no test opens a socket that leaves the machine it runs on.
 
 ## Usage
 

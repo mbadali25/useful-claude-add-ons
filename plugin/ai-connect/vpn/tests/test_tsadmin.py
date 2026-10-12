@@ -124,6 +124,33 @@ def test_mint_key_refuses_to_write_when_acl_cannot_be_restricted(ts, api, tmp_pa
     assert list(out_dir.iterdir()) == []  # neither the key nor its temp file
 
 
+def test_private_dir_closes_a_directory_that_was_open_to_others(ts, tmp_path):
+    import subprocess
+    loose = tmp_path / "config"
+    loose.mkdir()
+    loose.chmod(0o755)
+    for path in (loose, tmp_path / "new" / "config"):
+        ts.private_dir(path)
+        if os.name == "nt":
+            acl = subprocess.run(["icacls", str(path)], capture_output=True, text=True, check=False).stdout
+            entries = [line.replace(str(path), "").strip() for line in acl.splitlines() if ":(" in line]
+            assert len(entries) == 1 and "(I)" not in acl, acl  # mkdir(mode=0o700) alone leaves SYSTEM in
+            assert entries[0].lower().split(":(")[0].endswith("\\" + os.environ["USERNAME"].lower())
+        else:
+            assert path.stat().st_mode & 0o777 == 0o700
+
+
+def test_private_dir_fails_closed_when_the_acl_cannot_be_set(ts, tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(ts, "IS_WINDOWS", True)
+    monkeypatch.setenv("USERNAME", "alice")
+    monkeypatch.setattr(ts.shutil, "which", lambda name: r"C:\Windows\System32\icacls.exe")
+    monkeypatch.setattr(ts.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 5, "", "Access is denied."))
+    with pytest.raises(ts.Failure, match=r"could not restrict .*\(icacls exited 5\)"):
+        ts.private_dir(tmp_path / "config")
+
+
 def test_mint_key_api_error_names_status_and_leaks_nothing(ts, api, capsys):
     api.routes[("POST", "/tailnet/-/keys")] = (403, {"message": f"denied for {CLIENT_SECRET}"})
     assert ts.main(["mint-key", "--name", "alice"]) == 1
@@ -527,7 +554,10 @@ def test_probe_tcp_ok_and_refused_on_loopback(ts):
     assert ts.probe_tcp("127.0.0.1", port, timeout=5) == "refused"
 
 
-def test_probe_tcp_unresolvable_is_unknown(ts):
+def test_probe_tcp_unresolvable_is_unknown(ts, monkeypatch):
+    def unresolvable(*_args, **_kwargs):  # the resolver's answer, without a DNS query leaving this machine
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+    monkeypatch.setattr(ts.socket, "getaddrinfo", unresolvable)
     assert ts.probe_tcp("no-such-host.invalid", 9999, timeout=2) == "unknown"
 
 

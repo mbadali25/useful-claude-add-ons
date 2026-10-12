@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from deploy_box import NATIVE, PEER_TOKEN, Box, FakeBridge, OwnBridge, Phase, already, leaks
+from deploy_box import NATIVE, PEER_TOKEN, Box, FakeBridge, OwnBridge, Phase, already, leaks, owner_only
 from fake_tailscale_api import (AUTH_KEY_MINTED, CLIENT_ID, CLIENT_SECRET, NODE_ID, OAUTH_ACCESS_TOKEN,
                                 FakeTailscaleAPI, device)
 
@@ -175,6 +175,12 @@ def decode(code: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
 
 
+def warns_about_the_invite(text: str) -> bool:
+    """One WARNING line that says what an invite is: a password, good once, until the key's expiry."""
+    line = next((line for line in text.splitlines() if "WARNING" in line), "")
+    return all(part in line for part in ("password-equivalent", "single use", "expires 2026-10-12T00:00:00Z"))
+
+
 def test_invite_mints_a_single_use_non_ephemeral_key_into_an_owner_only_file(box, api):
     env = admin_env(box, api)
     out_file = box.tmp / "laptop.invite"
@@ -191,6 +197,7 @@ def test_invite_mints_a_single_use_non_ephemeral_key_into_an_owner_only_file(box
                             "key": AUTH_KEY_MINTED}
     assert not leaks(AUTH_KEY_MINTED.rsplit("-", 1)[-1], run.text) and code not in run.text
     assert "deploy join --invite-file" in run.out and no_secret_in(run.text)
+    assert warns_about_the_invite(run.out) and not warns_about_the_invite(dry.out), run.out
     if NATIVE == "linux":
         assert out_file.stat().st_mode & 0o077 == 0
 
@@ -202,6 +209,7 @@ def test_invite_without_out_shows_the_code_once(box, api):
     codes = [line.strip() for line in run.out.splitlines() if line.strip().startswith("aic1.")]
     assert len(codes) == 1 and decode(codes[0])["bridge"] == "100.64.0.1"
     assert api.auth_keys[0]["ephemeral"] is True and "shown once" in run.out
+    assert warns_about_the_invite(run.out), run.out
 
 
 def joiner(box: Box) -> None:
@@ -223,6 +231,8 @@ def accepted_own(box: Box):
 
 def test_join_with_an_invite_joins_makes_its_token_and_prints_only_the_hash(box):
     joiner(box)
+    own_token(box).parent.mkdir(parents=True)  # there already, and open to others: join closes it
+    own_token(box).parent.chmod(0o755)
     approved = [False]
     accepted = accepted_own(box)
     server = FakeBridge(lambda: accepted() if approved[0] else set())
@@ -252,8 +262,9 @@ def test_join_with_an_invite_joins_makes_its_token_and_prints_only_the_hash(box)
     assert "PENDING" in first.out and "not approved yet" in first.out
     for secret in (token, AUTH_KEY_MINTED):
         assert not leaks(secret.rsplit("-", 1)[-1], first.text + again.text)
+    assert owner_only(own_token(box).parent)
     if NATIVE == "linux":
-        assert own_token(box).parent.stat().st_mode & 0o077 == 0 and box.config_file.stat().st_mode & 0o077 == 0
+        assert box.config_file.stat().st_mode & 0o077 == 0
     assert again.res.returncode == 0 and again.mutations == [], again.text
     assert "Bridge accepts this token" in again.out and "PASS" in again.out and "PENDING" not in again.out
     assert "deploy test --bridge 127.0.0.1 --name laptop" in again.out
@@ -280,6 +291,44 @@ def test_join_with_an_invite_on_linux_runs_tailscale_up_as_root(box, root):
     assert not any(AUTH_KEY_MINTED in a for c in run.calls for a in c)
     assert box.state()["up_key_sha256"] == hashlib.sha256(AUTH_KEY_MINTED.encode()).hexdigest()
     assert not list(own_token(box).parent.glob("*.join-key*"))  # the key's file is gone again
+
+
+@pytest.mark.parametrize("how", ["file", "env"])
+def test_join_never_puts_the_invite_in_argv_logs_or_output(box, how):
+    """An invite is a password: neither the code nor the key in it reaches a command line, the output, or any
+    file the join leaves behind (logs, config, state)."""
+    joiner(box)
+    server = FakeBridge(set)
+    code = invite_code("laptop", "127.0.0.1", server.port)
+    invite = box.tmp / "laptop.invite"
+    invite.write_text(code + "\n", encoding="utf-8")
+    try:
+        run = Phase(box, "join", *(["--invite-file", str(invite)] if how == "file" else []),
+                    extra_env={"AI_CONNECT_INVITE": code} if how == "env" else None)
+    finally:
+        server.close()
+    assert run.res.returncode == 0, run.text
+    assert box.state()["up_key_sha256"] == hashlib.sha256(AUTH_KEY_MINTED.encode()).hexdigest()  # it was used
+    invite.unlink(missing_ok=True)  # by env the file was never read: it is the test's own
+    left = "".join(p.read_text(encoding="utf-8", errors="replace") for p in sorted(box.tmp.rglob("*")) if p.is_file())
+    assert run.calls and box.log.read_text(encoding="utf-8") in left  # the argv log is in there
+    for where, text in (("argv", json.dumps(run.calls)), ("output", run.text), ("a file left behind", left)):
+        for secret in (code.removeprefix("aic1."), AUTH_KEY_MINTED.rsplit("-", 1)[-1]):
+            assert not leaks(secret, text), f"the invite leaked into {where}"
+
+
+def test_join_on_a_machine_already_on_the_tailnet_says_the_invite_is_still_live(box):
+    """Nothing used the key, so the file is not deleted behind the admin's back: it is named as a live secret."""
+    server = FakeBridge(set)
+    invite = box.tmp / "laptop.invite"
+    invite.write_text(invite_code("laptop", "127.0.0.1", server.port) + "\n", encoding="utf-8")
+    try:
+        run = Phase(box, "join", "--invite-file", str(invite))
+    finally:
+        server.close()
+    assert run.res.returncode == 0, run.text
+    assert not [c for c in run.calls if c[:2] == ["tailscale", "up"]] and invite.exists()
+    assert f"WARNING: the invite in {invite} was not used" in run.out and "delete it" in run.out
 
 
 @pytest.mark.parametrize("how", [["--invite"], ["--invite-file", "missing.invite"]], ids=["prompt", "missing-file"])

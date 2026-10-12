@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from deploy_box import (AUTH_KEY, BASH, DEPLOY_DIR, NATIVE, PEER_TOKEN, PLUGIN, PWSH, SUBNET, Box, FakeBridge,
-                        OwnBridge, Phase, already, leaks, output, steps)
+                        OwnBridge, Phase, already, leaks, output, owner_only, steps)
 
 # ---------------------------------------------------------------- bridge
 
@@ -50,6 +50,7 @@ def bridge(request, tmp_path_factory, venv):
         run.unit = box.systemd / "ai-connect.service"
         run.unit_text = run.unit.read_text(encoding="utf-8") if run.unit.exists() else ""
         config_dir = box.home / ".config" / "ai-connect"
+        run.config_dir_private = owner_only(config_dir)
         run.laptop_token = (config_dir / "peer-tokens" / "laptop.token").read_text(encoding="utf-8").strip()
         run.secrets = [run.laptop_token, run.config["client"]["token"],
                        (config_dir / "observer.token").read_text(encoding="utf-8").strip(),
@@ -98,6 +99,12 @@ def test_bridge_happy_path(bridge):
         assert str(PLUGIN) not in state["task_xml"]
         added = [c for c in first.calls if c[:5] == ["netsh", "advfirewall", "firewall", "add", "rule"]]
         assert len(added) == 1 and "profile=private" in added[0] and f"remoteip={SUBNET}" in added[0]
+
+
+def test_bridge_config_dir_is_owner_only(bridge):
+    """The directory of the config and every token: 0700, on Windows an ACL of the deploying user alone."""
+    assert bridge.first.res.returncode == 0, bridge.first.text
+    assert bridge.config_dir_private
 
 
 def test_bridge_rerun_is_idempotent(bridge):

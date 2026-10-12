@@ -202,6 +202,37 @@ def key_request_body(name: str, tag: str, expiry_seconds: int, ephemeral: bool =
     }
 
 
+# Everyone, Authenticated Users, Users, SYSTEM, Administrators, OWNER RIGHTS, CREATOR OWNER: by SID, so the
+# Windows display language does not matter. Python's own mkdir(mode=0o700) grants three of them by name
+BROAD_SIDS = ("*S-1-1-0", "*S-1-5-11", "*S-1-5-32-545", "*S-1-5-18", "*S-1-5-32-544", "*S-1-3-4", "*S-1-3-0")
+
+
+def _acl_of_user_alone(path: str, rights: str) -> str:
+    """Windows: path's ACL becomes the current user's entry: nothing inherited, no entry of a broad group.
+    (An entry someone gave another account by name stays: icacls cannot replace an ACL whole.)
+    Why not, or '' when done."""
+    user = os.environ.get("USERNAME", "")
+    icacls = shutil.which("icacls")
+    res = capture([icacls, path, "/inheritance:r", "/grant:r", f"{user}:{rights}", "/remove:g", *BROAD_SIDS]) \
+        if user and icacls else None
+    if res is not None and res.returncode == 0:
+        return ""
+    return ("USERNAME is not set" if not user else "icacls was not found" if not icacls
+            else f"icacls exited {res.returncode}")
+
+
+def private_dir(path: Path) -> None:
+    """path as a directory only its owner may enter, made or already there: 0700, on Windows an ACL of the
+    current user alone that the files in it inherit. Fails closed: it is where a config and its tokens go."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not IS_WINDOWS:
+        path.chmod(0o700)
+        return
+    why = _acl_of_user_alone(str(path), "(OI)(CI)F")
+    if why:
+        raise Failure(f"could not restrict {path} to the current user ({why}); nothing was written there")
+
+
 def write_owner_only(path: Path, text: str) -> None:
     """Write via temp file + os.replace, readable by the current user only."""
     path = path.resolve()
@@ -210,12 +241,8 @@ def write_owner_only(path: Path, text: str) -> None:
     try:
         if IS_WINDOWS:
             # Fails closed: a secret is never written where others may read it
-            user = os.environ.get("USERNAME", "")
-            icacls = shutil.which("icacls")
-            res = capture([icacls, tmp, "/inheritance:r", "/grant:r", f"{user}:F"]) if user and icacls else None
-            if res is None or res.returncode != 0:
-                why = ("USERNAME is not set" if not user else "icacls was not found" if not icacls
-                       else f"icacls exited {res.returncode}")
+            why = _acl_of_user_alone(tmp, "F")
+            if why:
                 raise Failure(f"could not restrict {path} to the current user ({why}); nothing was "
                               "written. The minted key was not shown and expires unused; retry with "
                               "--out on a local NTFS path, or without --out to print it")

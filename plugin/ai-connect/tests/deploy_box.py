@@ -50,6 +50,8 @@ PWSH = next((p for p in PWSH_CANDIDATES if os.path.isfile(p)), None)
 GIT_BASH = r"C:\Program Files\Git\bin\bash.exe"
 BASH = (GIT_BASH if os.path.isfile(GIT_BASH) else None) if os.name == "nt" else shutil.which("bash")
 FAKE_KEYRING = Path(__file__).resolve().parent / "fake_keyring"
+# sitecustomize there guards every Python the Box starts: no socket leaves this machine (conftest.py)
+NETGUARD = Path(__file__).resolve().parent / "netguard"
 
 
 def free_port() -> int:
@@ -128,7 +130,8 @@ class Box:
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
                         AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),
-                        PYTHONPATH=str(FAKE_KEYRING), FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
+                        PYTHONPATH=os.pathsep.join([str(FAKE_KEYRING), str(NETGUARD)]),
+                        FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
                      "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME"):
@@ -209,6 +212,18 @@ def steps(text: str) -> list[str]:
 def leaks(secret: str, text: str) -> bool:
     """True when any 12-character run of the secret shows up in text."""
     return any(secret[i:i + 12] in text for i in range(len(secret) - 11))
+
+
+def owner_only(path: Path) -> bool:
+    """True when only its owner may reach path: no group or other bit, on Windows an ACL of this user alone."""
+    if os.name != "nt":
+        return path.stat().st_mode & 0o077 == 0
+    acl = subprocess.run(["icacls", str(path)], capture_output=True, text=True, check=True,
+                         stdin=subprocess.DEVNULL).stdout
+    entries = [line.replace(str(path), "").strip() for line in acl.splitlines() if ":(" in line]
+    user = os.environ["USERNAME"].lower()
+    return bool(entries) and all(entry.lower().split(":(")[0].rsplit("\\", 1)[-1] == user and "(I)" not in entry
+                                 for entry in entries)
 
 
 def already(res: subprocess.CompletedProcess) -> list[str]:

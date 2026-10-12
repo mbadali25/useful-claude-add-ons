@@ -247,7 +247,7 @@ def owe_restart(r: Run) -> None:
     """config.yaml changed (or is about to): the running Bridge has to be restarted to read it."""
     r.config_changed = True
     if not r.dry_run:
-        RESTART_PENDING.parent.mkdir(parents=True, exist_ok=True)
+        tsadmin.private_dir(RESTART_PENDING.parent)  # the config directory: this may be what makes it
         RESTART_PENDING.write_text("config.yaml changed; the Bridge has not been restarted since\n", encoding="utf-8")
 
 
@@ -1077,6 +1077,8 @@ def cmd_invite(args) -> int:
     code = encode_invite(args.name, bridge, port, key)
     tsadmin.remember_secret(code)
     what = f"invite for '{args.name}' (single use, {kind}, {tag}, Bridge {bridge}:{port}, expires {expires})"
+    out(f"  WARNING: this invite is password-equivalent: whoever holds it joins the tailnet as '{args.name}'. "
+        f"It is single use and expires {expires}; hand it over a private channel and never paste it in a chat")
     if args.out:
         tsadmin.write_owner_only(Path(args.out), code + "\n")
         r.record("done", what)
@@ -1112,10 +1114,8 @@ def read_invite(args) -> dict | None:
 
 
 def private_config_dir() -> None:
-    """~/.config/ai-connect owner-only (0700): it holds this machine's token."""
-    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if os.name != "nt":
-        CONFIG_DIR.chmod(0o700)
+    """~/.config/ai-connect owner-only (0700, on Windows an ACL of this user alone): it holds this machine's token."""
+    tsadmin.private_dir(CONFIG_DIR)
 
 
 def write_own_token(token: str) -> None:
@@ -1191,6 +1191,9 @@ def cmd_join(args) -> int:
     if invite and args.invite_file and not r.dry_run and not on_tailnet:
         Path(args.invite_file).unlink(missing_ok=True)
         out(f"  used invite file {args.invite_file} deleted")
+    elif invite and args.invite_file and not r.dry_run:
+        out(f"  WARNING: the invite in {args.invite_file} was not used, and its key works until it expires: "
+            "delete it, or hand it to no one else")
 
     r.step("Peer token")
     token = own_token()

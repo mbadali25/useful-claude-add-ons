@@ -160,6 +160,7 @@ def step_policy(r: Run, token: str, tailnet: str, policy: str, confirmed: bool) 
             raise Failure("not confirmed; the tailnet policy was left as it is")
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         backup = BACKUP_DIR / f"policy-{stamp}.hujson"
+        tsadmin.private_dir(BACKUP_DIR.parent)
         tsadmin.write_owner_only(backup, current)
         r.record("backup", str(backup))
         out(f"  backup of the policy as it was: {backup}")
@@ -255,6 +256,8 @@ def store_oauth(cid: str, secret: str) -> str:
         why = ("Python keyring is not installed" if isinstance(err, ImportError)
                else f"keyring failed: {type(err).__name__}")
     target = tsadmin.oauth_file()
+    if target.parent == CONFIG_DIR:  # an AI_CONNECT_OAUTH_FILE elsewhere is in a directory of the user's own
+        tsadmin.private_dir(CONFIG_DIR)
     tsadmin.write_owner_only(target, json.dumps({"oauth_client_id": cid, "oauth_client_secret": secret}) + "\n")
     return (f"the owner-only file {target} ({why}; `pip install keyring` and run this again to move it "
             "into the OS credential store)")

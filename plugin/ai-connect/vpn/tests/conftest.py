@@ -9,11 +9,28 @@ import pytest
 
 VPN_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(VPN_DIR))
+sys.path.insert(0, str(VPN_DIR.parent / "tests" / "netguard"))
+import netguard  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 FAKE = Path(__file__).resolve().parent / "fake_tailscale.py"
 AUTH_KEY = "tskey-auth-kTEST123CNTRL-SuperSecretKeyMaterial0123456789"
 CLIENT_SECRET = "tskey-client-kOAUTH-ClientSecretValue9876543210"
 ACCESS_TOKEN = "access-token-value-that-must-not-leak"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def network_guard(tmp_path_factory):
+    netguard.guard(tmp_path_factory.getbasetemp() / "netguard-opened")
+
+
+@pytest.fixture(autouse=True)
+def no_network(network_guard):  # pylint: disable=redefined-outer-name,unused-argument
+    """No test may open a socket that leaves this machine, itself or in a Python it starts (tests/netguard):
+    the guard refuses the socket and notes it, and the test that opened it fails."""
+    netguard.take()
+    yield
+    opened = netguard.take()
+    assert not opened, f"this test opened a non-loopback socket: {opened!r}"
 
 
 @pytest.fixture(autouse=True)

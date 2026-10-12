@@ -18,6 +18,23 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 PLUGIN = REPO_ROOT
+sys.path.insert(0, str(Path(__file__).resolve().parent / "netguard"))
+import netguard  # noqa: E402  pylint: disable=wrong-import-position,import-error
+
+
+@pytest.fixture(scope="session", autouse=True)
+def network_guard(tmp_path_factory):
+    netguard.guard(tmp_path_factory.getbasetemp() / "netguard-opened")
+
+
+@pytest.fixture(autouse=True)
+def no_network(network_guard):  # pylint: disable=redefined-outer-name,unused-argument
+    """No test may open a socket that leaves this machine, itself or in a Python it starts (tests/netguard):
+    the guard refuses the socket and notes it, and the test that opened it fails."""
+    netguard.take()
+    yield
+    opened = netguard.take()
+    assert not opened, f"this test opened a non-loopback socket: {opened!r}"
 
 
 @pytest.fixture(scope="session")
