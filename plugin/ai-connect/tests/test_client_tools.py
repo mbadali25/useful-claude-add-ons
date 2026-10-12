@@ -241,6 +241,35 @@ def test_peer_history_frames_content(monkeypatch):
     assert len(ends) == 1
 
 
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "5", None, 10**6])
+def test_peer_history_rejects_an_invalid_limit_without_asking_the_bridge(monkeypatch, limit):
+    """The Bridge answers a bad limit with an error frame, which the client would wait out to its timeout."""
+    fake = FakeClient([_msg("A:B", "hi")])
+    asked = []
+
+    async def get_history(peer, lim):
+        asked.append(lim)
+        return []
+
+    fake.get_history = get_history
+    monkeypatch.setattr(tools, "get_client", lambda: fake)
+    out = asyncio.run(tools.peer_history("A:B", limit))
+    assert out.startswith("❌") and f"1 to {tools.HISTORY_MAX_LIMIT}" in out
+    assert asked == []
+
+
+def test_peer_history_bound_matches_the_bridge():
+    from server import websocket_server  # pylint: disable=import-outside-toplevel
+    assert tools.HISTORY_MAX_LIMIT == websocket_server.HISTORY_MAX_LIMIT
+
+
+@pytest.mark.parametrize("limit", [1, 1000])
+def test_peer_history_accepts_limits_at_the_bounds(monkeypatch, limit):
+    fake = FakeClient([_msg("A:B", "hi")])
+    monkeypatch.setattr(tools, "get_client", lambda: fake)
+    assert not asyncio.run(tools.peer_history("A:B", limit)).startswith("❌")
+
+
 def _inside_frame(out, needle):
     """True when every line holding needle sits between a START and its END marker."""
     inside, hits = False, []

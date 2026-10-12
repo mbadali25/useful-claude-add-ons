@@ -76,7 +76,7 @@ def create_app(peer_name: str) -> FastMCP:
 
         Args:
             peer: Full name of the peer ("Host:Project")
-            limit: Maximum number of messages (default 20)
+            limit: Maximum number of messages, 1 to 1000 (default 20)
         """
         return await tools.peer_history(peer, limit)
 

@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.1.8] - 2026-10-12
+
+One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's
+review (W-0129). The deployment was numbered 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them:
+the 0.1.5 below is L-0790's test fix, which reached main first.
+
+### Added
+- `deploy invite --name N`: a single-use, non-ephemeral, pre-approved `tag:ai-peer` join key as one `aic1.` invite code, written owner-only (`--out`) or shown once
+- `deploy join --invite-file F` (or `--invite` at a hidden prompt, or `--name N --bridge H` for a browser login): preflight, Tailscale installed and joined with the pinned flags, the machine's own token (0600, its directory 0700), the client config, the enrolment hash, and a VPN / port / token summary where an unapproved token is PENDING
+- `deploy approve --name N [--token-sha256 H]`: add-peer, the Bridge restart, and the node's key expiry turned off through the API
+- `deploy remove --name N --yes`: the node off the tailnet, the peer out of the Bridge, the Bridge restarted
+- `deploy list`: every tailnet node (IP, tags, online, key expiry) beside the Bridge's peers, naming any key that still expires
+- `deploy/ONBOARDING.md`: add, remove and rotate a machine, troubleshooting, VPN coexistence
+- `deploy invite` prints a warning with every invite: it is password-equivalent, single use, and good until the expiry it names; `deploy join` on a machine already on the tailnet says the unused invite file still holds a live key
+- `~/.config/ai-connect` is the deploying user's alone whichever step makes it, new or already there: 0700, on Windows an ACL without inherited entries or broad groups (`vpn/tsadmin.py` `private_dir`, failing closed); `installer.py`, the restart marker, the own token and `tailnet-setup`'s backup and OAuth file go through it
+- `tests/netguard`: no test may open a socket that leaves the machine, in the pytest process or in a Python it starts (deploy, the fake tools); the guard refuses it and the test fails. It caught one test sending a real DNS query
+- README: a Live test section with the results from two machines on a real tailnet
+
+### Changed
+- `vpn/mint-key` mints non-ephemeral keys by default; `--ephemeral` opts in, for throwaway and CI nodes
+- `deploy peer` and `deploy join` install no plugin hooks and register no MCP server unless asked (`--install-hooks` / `--with-hooks`, `--register-mcp [--scope project|user]`), each with a bypass-permissions warning
+- `--dry-run` runs no tool at all and needs no token or key file; `status` runs nothing through `sudo` and no `claude` command
+- The apt install falls back to Tailscale's install script only when the repository does not carry the release; a held dpkg lock or no network stops instead
+- What keeps running is installed outside the checkout: the venv and a copy of the plugin in `~/.local/share/ai-connect` (Windows `%LOCALAPPDATA%\ai-connect`); a rerun from a newer checkout updates the copy and restarts the Bridge, and a scheduled task left pointing elsewhere is registered again
+- `deploy bridge` and `tailnet-setup` turn the Bridge's own node key expiry off; `deploy status` flags a node key that still expires
+
+### Added (the deployment)
+- `deploy/deploy.sh` and `deploy/deploy.ps1`, one core (`deploy/deploy.py`): `bridge`, `peer`, `add-peer`, `status`, `uninstall`, `tailnet-setup` and `test`. Every step is idempotent, `--dry-run` prints each change and command and makes none, and no secret is printed or put on a command line. Runbook: `deploy/README.md`
+- `deploy tailnet-setup` (admin, once per tailnet), through the Tailscale API with a one-time access token: validates `vpn/acl-template.hujson`, shows a diff against the current policy, and with `--apply` backs the policy up, replaces it (`If-Match`), tags the Bridge machine `tag:bridge` and creates the OAuth client `mint-key` and `revoke` use (`POST /tailnet/-/keys`, `keyType: "client"`). The client goes to the OS credential store through `keyring`, or to an owner-only file without it; when the API refuses, the admin-console steps are printed. Never waits without a terminal: `--yes`, the token from `TS_API_TOKEN` or the credential store, `--json` for one JSON object with no secret in it
+- Enrolment by hash: `deploy peer --print-enrolment` makes the peer's own token and prints `{name, token_sha256}`; `deploy add-peer --name N --token-sha256 HEX` lets it in on the Bridge. No long-lived secret crosses machines
+- `deploy bridge`, `peer` and `tailnet-setup` install Tailscale when it is missing: Tailscale's apt repository with a `signed-by` keyring on Debian and Ubuntu, its install script elsewhere on Linux, `winget` or the MSI on Windows, Homebrew on macOS. Every command is printed first; as root nothing goes through `sudo`
+- `deploy test --bridge HOST --name N`: Tailscale up, the Bridge's port, this machine's token, a message round trip inside the untrusted frame, a wrong token refused. A PASS/FAIL table, exit code 1 on any FAIL
+- `server.max_unread_per_peer` and `server.max_unread_bytes_per_peer` in `config.yaml` (the offline queue caps)
+- A CI workflow that runs the plugin's suites; until now no workflow did
+
+### Changed (the deployment)
+- `tailscale up` (`vpn/vpn-up` and deploy) passes `--accept-dns=false`: Tailscale no longer takes over the machine's DNS unless `--accept-dns` is given, because MagicDNS collides with a VPN client or DNS hook that is already there. Reach the Bridge by its `100.x.y.z` address
+- `vpn/tsadmin.py` also finds the `tailscale` command in the directory a fresh install uses, before a new shell has it on `PATH`, and reads the OAuth client as a whole pair from one source: the environment, the credential store, then `~/.config/ai-connect/tailscale-oauth.json`
+
+### Fixed
+- A `history` request with a `limit` that is not a whole number from 1 to the maximum is refused (`invalid_limit`) instead of reaching the store
+- `README_DE.md` is back in step with `README.md`; a test compares their section outlines
+
+### Known limitations
+- Nothing in `deploy/` has run against a real tailnet: the suites use a fake Tailscale API, fake system tools and a fake credential store. The `winget` package ID and the Homebrew cask name are the documented ones, untested
+- A Bridge on macOS is refused (no launchd service); a peer there works
+- firewalld keeps the old rule when `--vpn-subnet` is narrowed on a rerun; ufw and Windows Firewall replace it. A Windows rule is compared by subnet and port only
+- `deploy.ps1` does not raise its own UAC prompt: `bridge` and `uninstall` need an elevated shell
+
 ## [0.1.5] - 2026-10-11
 
 A test-only fix (L-0790). Nothing the plugin installs or runs changes. Verified on Linux as a non-root user; not run on Windows.

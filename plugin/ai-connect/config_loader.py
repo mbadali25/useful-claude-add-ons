@@ -50,6 +50,8 @@ DEFAULT_HISTORY_DAYS = 14
 DEFAULT_MAX_MESSAGE_BYTES = 64 * 1024
 DEFAULT_RATE_PER_SECOND = 10.0
 DEFAULT_MAX_STORED_PER_PEER = 10_000
+DEFAULT_MAX_UNREAD_PER_PEER = 500
+DEFAULT_MAX_UNREAD_BYTES_PER_PEER = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,8 @@ class ServerSettings:
     rate_per_second: float
     rate_burst: int
     max_stored_per_peer: int
+    max_unread_per_peer: int
+    max_unread_bytes_per_peer: int
 
 
 def _number(value: Any, key: str, minimum: float, kind: type = int) -> Any:
@@ -113,6 +117,20 @@ def server_settings(config: dict) -> ServerSettings:
     if port is None:
         raise ValueError("server.port is required")
     rate = _number(server.get("rate_per_second", DEFAULT_RATE_PER_SECOND), "server.rate_per_second", 0.001, float)
+    max_message_bytes = _number(
+        server.get("max_message_bytes", DEFAULT_MAX_MESSAGE_BYTES), "server.max_message_bytes", 1
+    )
+    # Minimum 1, not 0: the caps are compared as count + 1 <= cap, so 0 would
+    # refuse every message to an offline peer rather than lift the cap
+    max_unread_bytes = _number(
+        server.get("max_unread_bytes_per_peer", DEFAULT_MAX_UNREAD_BYTES_PER_PEER),
+        "server.max_unread_bytes_per_peer", 1,
+    )
+    if max_unread_bytes < max_message_bytes:
+        raise ValueError(
+            f"server.max_unread_bytes_per_peer ({max_unread_bytes}) must be at least "
+            f"server.max_message_bytes ({max_message_bytes}), or an offline peer cannot be sent one large message"
+        )
 
     peers = auth.get("peers") or {}
     if not isinstance(peers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in peers.items()):
@@ -129,14 +147,16 @@ def server_settings(config: dict) -> ServerSettings:
         allow_shared_token=auth.get("allow_shared_token") is True,
         observer_token_sha256=_setting(auth, "observer_token_sha256", bridge, "auth", "") or "",
         user_token_sha256=_setting(auth, "user_token_sha256", bridge, "auth", "") or "",
-        max_message_bytes=_number(
-            server.get("max_message_bytes", DEFAULT_MAX_MESSAGE_BYTES), "server.max_message_bytes", 1
-        ),
+        max_message_bytes=max_message_bytes,
         rate_per_second=rate,
         rate_burst=_number(server.get("rate_burst", max(1, int(rate))), "server.rate_burst", 1),
         max_stored_per_peer=_number(
             server.get("max_stored_per_peer", DEFAULT_MAX_STORED_PER_PEER), "server.max_stored_per_peer", 0
         ),
+        max_unread_per_peer=_number(
+            server.get("max_unread_per_peer", DEFAULT_MAX_UNREAD_PER_PEER), "server.max_unread_per_peer", 1
+        ),
+        max_unread_bytes_per_peer=max_unread_bytes,
     )
 
 

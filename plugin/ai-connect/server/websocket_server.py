@@ -33,6 +33,9 @@ HEARTBEAT_SECONDS = 60
 HISTORY_CLEANUP_SECONDS = 24 * 60 * 60
 # Messages in one history_all page; the contents often carry code and files
 HISTORY_ALL_MAX_LIMIT = 1000
+# Messages in one peer's history answer, and how many without a 'limit'
+HISTORY_MAX_LIMIT = 1000
+HISTORY_DEFAULT_LIMIT = 50
 # Frames above this are closed by websockets itself (1009); between the
 # app limit and this, the Bridge answers with an error frame instead
 WEBSOCKET_MAX_SIZE_FLOOR = 1 << 20
@@ -63,6 +66,12 @@ def _request_id(message: dict) -> dict:
     """The request's request_id, echoed in its answer so a client can tell a late answer apart."""
     request_id = message.get("request_id")
     return {"request_id": request_id} if isinstance(request_id, str) and len(request_id) <= 64 else {}
+
+
+def _valid_limit(limit: object, maximum: int) -> bool:
+    """A whole number from 1 to maximum. Not a bool (an int subclass: True would be 1), and
+    never negative: SQLite reads LIMIT -1 as no limit at all."""
+    return isinstance(limit, int) and not isinstance(limit, bool) and 0 < limit <= maximum
 
 
 def _unread_chunks(messages: list[dict]) -> list[list[dict]]:
@@ -301,7 +310,7 @@ class BridgeServer:
 
                 elif msg_type == "history_all":
                     since, limit = message.get("since"), message.get("limit")
-                    if not since or not isinstance(limit, int) or not 0 < limit <= HISTORY_ALL_MAX_LIMIT:
+                    if not since or not _valid_limit(limit, HISTORY_ALL_MAX_LIMIT):
                         await self._send_error(
                             websocket, f"'history_all' needs 'since' and a 'limit' of 1 to {HISTORY_ALL_MAX_LIMIT}"
                         )
@@ -376,9 +385,15 @@ class BridgeServer:
                         )
 
                 elif msg_type == "history":
-                    history = await self.store.get_history(
-                        peer_name, message.get("peer", ""), message.get("limit", 50)
-                    )
+                    limit = message.get("limit", HISTORY_DEFAULT_LIMIT)
+                    if not _valid_limit(limit, HISTORY_MAX_LIMIT):
+                        await refuse(
+                            "invalid_limit",
+                            f"'history' needs a 'limit' of 1 to {HISTORY_MAX_LIMIT} (a whole number)",
+                            msg_type, limit=repr(limit)[:40],
+                        )
+                        continue
+                    history = await self.store.get_history(peer_name, message.get("peer", ""), limit)
                     await websocket.send(json.dumps({
                         "type": "history",
                         "peer": message.get("peer", ""),

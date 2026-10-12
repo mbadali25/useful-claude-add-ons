@@ -9,6 +9,39 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
+
+- **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
+  `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
+  and `deploy remove` show and take machines off.
+- **Onboarding.** An invite is a single-use, non-ephemeral `tag:ai-peer` key in one code; `join` installs and
+  joins Tailscale, makes the machine's own token and config, and prints only the token's hash. `approve` lets it
+  in and turns its node key expiry off. Guide: `plugin/ai-connect/deploy/ONBOARDING.md`.
+- **Safer peers.** A peer gets no plugin hooks and no MCP server unless asked, `--dry-run` runs no tool, the
+  install falls back to Tailscale's script only for a release its repository lacks, and what keeps running
+  lives outside the checkout (`~/.local/share/ai-connect`).
+- **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
+  prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
+  (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
+- **Tailnet.** `tailnet-setup` validates and diffs the policy, and with `--apply` backs it up, replaces it, tags
+  the Bridge and creates the OAuth client, stored in the OS credential store. `--yes` and `--json` make it
+  usable without a terminal.
+- **Enrolment.** A peer makes its own token and prints only its SHA-256; `deploy add-peer` lets it in by that
+  hash, so no long-lived secret crosses machines.
+- **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
+- **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
+  matches `README.md` again, and CI now runs the plugin's suites.
+- **Secrets.** `~/.config/ai-connect` is the deploying user's alone whichever step makes it (0700; on Windows
+  an ACL without inherited entries or broad groups). `deploy invite` warns that an invite is password-equivalent,
+  single use, and good until its expiry; `deploy join` deletes a used invite file.
+- **Tests.** No test may open a socket that leaves the machine: a guard refuses it, in the test and in every
+  Python it starts, and fails the test. It caught one real DNS query.
+- **Live test.** On one real tailnet: an Ubuntu laptop joined as a permanent node and passed `deploy test` 5 of 5
+  with its AWS VPN routes unchanged; a Windows 11 machine joined with routes and DNS unchanged, 9 ms direct to
+  the Bridge. Everything else is verified against fakes only.
+- **Numbering.** The deployment was 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them;
+  the 0.1.5 below (L-0790) reached main first.
+
 ### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
 
 - **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
