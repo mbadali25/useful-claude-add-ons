@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — ai-connect 0.1.7: one-command deployment and onboarding over Tailscale (W-0129)
+### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
   `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
@@ -31,9 +31,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
 - **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
   matches `README.md` again, and CI now runs the plugin's suites.
-- **Not verified.** Nothing in `deploy/` has run against a real tailnet; the suites use fakes throughout.
-- **Numbering.** The deployment was 0.1.5, then 0.1.6, on its branch and published under neither; the 0.1.5
-  below (L-0790) reached main first.
+- **Secrets.** `~/.config/ai-connect` is the deploying user's alone whichever step makes it (0700; on Windows
+  an ACL without inherited entries or broad groups). `deploy invite` warns that an invite is password-equivalent,
+  single use, and good until its expiry; `deploy join` deletes a used invite file.
+- **Tests.** No test may open a socket that leaves the machine: a guard refuses it, in the test and in every
+  Python it starts, and fails the test. It caught one real DNS query.
+- **Live test.** On one real tailnet: an Ubuntu laptop joined as a permanent node and passed `deploy test` 5 of 5
+  with its AWS VPN routes unchanged; a Windows 11 machine joined with routes and DNS unchanged, 9 ms direct to
+  the Bridge. Everything else is verified against fakes only.
+- **Numbering.** The deployment was 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them;
+  the 0.1.5 below (L-0790) reached main first.
 
 ### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
 

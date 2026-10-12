@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.1.7] - 2026-10-11
+## [0.1.8] - 2026-10-12
 
 One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's
-review (W-0129). The deployment was numbered 0.1.5, then 0.1.6, on its branch and published under neither:
+review (W-0129). The deployment was numbered 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them:
 the 0.1.5 below is L-0790's test fix, which reached main first.
 
 ### Added
@@ -13,6 +13,10 @@ the 0.1.5 below is L-0790's test fix, which reached main first.
 - `deploy remove --name N --yes`: the node off the tailnet, the peer out of the Bridge, the Bridge restarted
 - `deploy list`: every tailnet node (IP, tags, online, key expiry) beside the Bridge's peers, naming any key that still expires
 - `deploy/ONBOARDING.md`: add, remove and rotate a machine, troubleshooting, VPN coexistence
+- `deploy invite` prints a warning with every invite: it is password-equivalent, single use, and good until the expiry it names; `deploy join` on a machine already on the tailnet says the unused invite file still holds a live key
+- `~/.config/ai-connect` is the deploying user's alone whichever step makes it, new or already there: 0700, on Windows an ACL without inherited entries or broad groups (`vpn/tsadmin.py` `private_dir`, failing closed); `installer.py`, the restart marker, the own token and `tailnet-setup`'s backup and OAuth file go through it
+- `tests/netguard`: no test may open a socket that leaves the machine, in the pytest process or in a Python it starts (deploy, the fake tools); the guard refuses it and the test fails. It caught one test sending a real DNS query
+- README: a Live test section with the results from two machines on a real tailnet
 
 ### Changed
 - `vpn/mint-key` mints non-ephemeral keys by default; `--ephemeral` opts in, for throwaway and CI nodes
