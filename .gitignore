@@ -416,7 +416,7 @@ graphify-out/*
 .crew/.approved-*
 .crew/*.lock
 # crew-setup SKILL.md §3c names two more, documentation-only in the same way:
-# `.crew/*` already ignores both, as `git check-ignore -v` shows.
+# `.crew/*` ignores both, as `git check-ignore -v` shows with these two deleted.
 .crew/*.local
 .crew/.hook-*
 .work/cache/
