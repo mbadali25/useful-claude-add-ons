@@ -236,6 +236,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "bash-lsp",
+      "source": "./plugin/bash-lsp",
+      "description": "Bash language server (bash-language-server) for code intelligence in .sh and .bash files - diagnostics (through shellcheck when it is on PATH), hover, definitions, references, symbols and completion. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js 20 or newer and a global 'bash-language-server' install; the plugin does not install either.",
+      "version": "0.1.0"
+    },
+    {
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 38 slash commands, 33 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
@@ -264,6 +270,18 @@
       "source": "./plugin/obsidian-vault",
       "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), a vault contract guard whose frontmatter and ASCII rules ship off and whose canvas shape check ships on, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
       "version": "0.5.1"
+    },
+    {
+      "name": "powershell-lsp",
+      "source": "./plugin/powershell-lsp",
+      "description": "PowerShell language server (PowerShell Editor Services) hosted in Windows PowerShell 5.1 (powershell.exe) for code intelligence in .ps1, .psm1 and .psd1 files, for Windows machines without PowerShell 7. Windows only, and Editor Services supports 5.1 on a best-effort basis. Registers an LSP server only: no hooks, commands, agents or skills. Maps the same extensions as pwsh-lsp, so install one of the two, never both. Needs an unzipped PowerShell Editor Services release; the plugin does not install it.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "pwsh-lsp",
+      "source": "./plugin/pwsh-lsp",
+      "description": "PowerShell language server (PowerShell Editor Services) hosted in PowerShell 7 (pwsh) for code intelligence in .ps1, .psm1 and .psd1 files - PSScriptAnalyzer diagnostics, hover, definitions, references, symbols and completion. Registers an LSP server only: no hooks, commands, agents or skills. Windows, Linux and macOS. Maps the same extensions as powershell-lsp, so install one of the two, never both. Needs pwsh on PATH and an unzipped PowerShell Editor Services release; the plugin does not install either.",
+      "version": "0.1.0"
     },
     {
       "name": "rule-of-two",

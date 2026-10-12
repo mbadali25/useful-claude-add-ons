@@ -268,12 +268,15 @@ jobs:
           claude plugin validate --strict .
           claude plugin validate --strict plugin/ai-connect
           claude plugin validate --strict plugin/angular-lsp
+          claude plugin validate --strict plugin/bash-lsp
           claude plugin validate --strict plugin/crew
           claude plugin validate --strict plugin/css-lsp
           claude plugin validate --strict plugin/gizmoduck
           claude plugin validate --strict plugin/rule-of-two
           claude plugin validate --strict plugin/localgpu
           claude plugin validate --strict plugin/obsidian-vault
+          claude plugin validate --strict plugin/powershell-lsp
+          claude plugin validate --strict plugin/pwsh-lsp
           claude plugin validate --strict plugin/sql-lsp
           claude plugin validate --strict plugin/terraform-lsp
           # skills/* have no per-directory manifest to validate; the

@@ -2,10 +2,13 @@
 # Regression suite for T11's LSP-plugin and stack-tool install steps, in BOTH halves
 # of the matched pair: install_lsp_binary/install_csharp_ls_binary/install_pyright_binary/
 # install_typescript_lsp_binary/install_angular_language_server/
-# install_css_language_server/install_terraform_ls/install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
+# install_css_language_server/install_bash_language_server/install_powershell_lsp_plugin/install_pses/
+# install_terraform_ls/install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
 # install_psscriptanalyzer in scripts/install-prerequisites.sh, and their
-# Install-LspBinary/CssLanguageServer/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
-# equivalents in scripts/install-prerequisites.ps1.
+# Install-LspBinary/CssLanguageServer/BashLanguageServer/PowerShellLspPlugin/Pses/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
+# equivalents in scripts/install-prerequisites.ps1. Also lsp_plugin_conflict /
+# Get-LspPluginConflict, the rule that keeps two plugins from serving one file
+# extension, and the two shipped copies of pses-launch.ps1 being one file.
 #
 # Idempotency is the point (CLAUDE.md: "both install scripts are idempotent - a new
 # step needs a detection branch reporting 'already installed'"), so every function
@@ -80,6 +83,15 @@ eval "$(awk '/^# --- uv, under PEP 668/,/^# --- JSON helper/' "$SCRIPT" | sed '$
 # functions directly), and without a stub for it eval fails loudly on both.
 is_selected() { return 1; }
 eval "$(awk '/^# --- 22\. LSP plugins/,/^# --- Summary/' "$SCRIPT" | sed '$d')"
+# The extension-conflict rule lives beside install_group, outside step 22, because
+# the repo-plugins row asks it too. Lifted up to (not including) install_group.
+eval "$(awk '/^is_windows_shell\(\) \{/,/^install_group\(\) \{/' "$SCRIPT" | sed '$d')"
+# What 'claude plugin list' would report, as a space-separated list of bare names,
+# and a recorder in place of the real install_plugin: no case here runs claude.
+FAKE_INSTALLED=""
+plugin_version() { case " $FAKE_INSTALLED " in *" $1 "*) printf '0.1.0'; return 0 ;; esac; return 1; }
+PLUGIN_CALLS=""
+install_plugin() { PLUGIN_CALLS="$PLUGIN_CALLS$1 "; return 0; }
 
 FAILED_STEPS=()
 COUNT_INSTALLED=0
@@ -97,9 +109,13 @@ COUNT_SKIPPED=0
 # mistake this suite tripped over while it was being written: an early draft
 # fell back to "$STUBS:/usr/bin:/bin", and the "no npm" cases found the host's
 # real npm and ran real 'npm install -g' commands before this was caught.
+# mv/mktemp/unzip/sha256sum/ls are what install_pses and its cases run; curl and
+# wget are deliberately NOT copied, so its download can only ever be a stub.
+# uname is not copied either: without it is_windows_shell answers "not Windows",
+# and the Windows cases stub one.
 REALTOOLS="$TMP/realtools"
 mkdir -p "$REALTOOLS"
-for _t in mkdir chmod dirname id grep cat touch cp rm stat; do
+for _t in mkdir chmod dirname id grep cat touch cp rm stat mv mktemp unzip sha256sum ls; do
   _src="$(command -v "$_t" 2>/dev/null)" || continue
   [ -n "$_src" ] && cp "$_src" "$REALTOOLS/$_t"
 done
@@ -124,6 +140,60 @@ stub() {
 export HOME="$TMP/home"
 mkdir -p "$HOME"
 UV_ENSURED=""
+
+# --- Fixtures for the PSES cases, built while PATH is still the ambient one ---
+LAUNCHER_A="$REPO/plugin/pwsh-lsp/scripts/pses-launch.ps1"
+LAUNCHER_B="$REPO/plugin/powershell-lsp/scripts/pses-launch.ps1"
+if [ -f "$LAUNCHER_A" ] && [ -f "$LAUNCHER_B" ] && cmp -s "$LAUNCHER_A" "$LAUNCHER_B"; then
+  LAUNCHERS_SAME=yes
+else
+  LAUNCHERS_SAME=no
+fi
+# A stand-in for the PSES release zip: the same top-level layout, a few bytes.
+# Built with whichever Python resolves (Git Bash ships none - then the cases
+# that need it SKIP loudly instead of passing for a reason that is not real).
+FIXTURE_ZIP="$TMP/fixture-pses.zip"
+FIXTURE_SHA=""
+_py=""
+for _c in python3 python py; do
+  if command -v "$_c" >/dev/null 2>&1 && "$_c" -c 'import zipfile' >/dev/null 2>&1; then _py="$_c"; break; fi
+done
+if [ -n "$_py" ]; then
+  "$_py" -c 'import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1], "w")
+z.writestr("PowerShellEditorServices/Start-EditorServices.ps1", "# fixture\n")
+z.writestr("PSScriptAnalyzer/placeholder.txt", "fixture\n")
+z.close()' "$FIXTURE_ZIP"
+  FIXTURE_SHA="$(sha256sum "$FIXTURE_ZIP" 2>/dev/null)"; FIXTURE_SHA="${FIXTURE_SHA%% *}"
+fi
+unset _py _c
+
+# Every PSES case installs into this one directory, and remove_under_tmp is the
+# ONLY thing in the new cases that deletes. It refuses anything that is not
+# strictly inside this run's own temp root. That is not belt and braces: an
+# earlier draft of these cases cleaned up with 'rm -rf "$HOME/.local"', and
+# when that text was once executed outside the suite - HOME being the real one
+# - it removed a real ~/.local. A destructive helper must carry its own proof of
+# where it is, not inherit it from a variable set 600 lines earlier.
+PSES_TARGET="$TMP/home/.local/share/powershell-editor-services"
+remove_under_tmp() {
+  local target="${1:-}"
+  if [ -z "${TMP:-}" ] || [ ! -d "$TMP" ]; then
+    echo "FATAL: remove_under_tmp called with no temp root - refusing" >&2
+    exit 2
+  fi
+  case "$target" in
+    *"/../"*|*"/.."|*"/./"*)
+      echo "FATAL: remove_under_tmp '$target' is not a plain path - refusing" >&2
+      exit 2 ;;
+    "$TMP"/?*) ;;
+    *)
+      echo "FATAL: remove_under_tmp '$target' is not under \$TMP ($TMP) - refusing" >&2
+      exit 2 ;;
+  esac
+  rm -rf -- "$target"
+}
+pses_reset() { remove_under_tmp "$PSES_TARGET"; }
 
 echo "=== install_lsp_binary (the shared helper) ==="
 newstubs
@@ -269,6 +339,304 @@ COUNT_INSTALLED=0
 install_css_language_server >/dev/null 2>&1; rc=$?
 check "css: npm install fails -> exits 1"     1 "$rc"
 check "css: npm install fails -> not counted" 0 "$COUNT_INSTALLED"
+
+echo "=== install_bash_language_server ==="
+newstubs
+stub bash-language-server 'exit 0'
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_bash_language_server >/dev/null 2>&1; rc=$?
+check "bash-ls: already installed, no npm -> exits 0"       0 "$rc"
+check "bash-ls: already installed -> counted skip"          1 "$COUNT_SKIPPED"
+check "bash-ls: already installed -> not counted installed" 0 "$COUNT_INSTALLED"
+
+newstubs
+COUNT_INSTALLED=0
+out="$(install_bash_language_server 2>&1)"; rc=$?
+check "bash-ls: no npm -> warns and fails" 1 "$rc"
+check "bash-ls: no npm -> names npm"       yes "$(case "$out" in *"npm not found"*) echo yes;; *) echo no;; esac)"
+
+newstubs
+# Node 18: npm would only warn (EBADENGINE) and install a server that cannot
+# start. The npm stub records any call, and there must be none.
+NPM_ARGS="$TMP/bash-npm-args-old-node"
+: > "$NPM_ARGS"
+export NPM_ARGS_FILE="$NPM_ARGS"
+stub node 'echo v18.20.4'
+stub npm 'echo "$@" >> "$NPM_ARGS_FILE"; exit 0'
+out="$(install_bash_language_server 2>&1)"; rc=$?
+check "bash-ls: Node 18 -> fails"            1   "$rc"
+check "bash-ls: Node 18 -> names Node.js 20" yes "$(case "$out" in *"Node.js 20 or newer"*) echo yes;; *) echo no;; esac)"
+check "bash-ls: Node 18 -> npm never ran"    ""  "$(cat "$NPM_ARGS")"
+
+newstubs
+# The stub records its argv and only produces the binary for the right package.
+NPM_ARGS="$TMP/bash-npm-args"
+: > "$NPM_ARGS"
+export NPM_ARGS_FILE="$NPM_ARGS" BASH_STUB_DIR="$STUBS"
+stub node 'echo v22.22.1'
+stub npm 'echo "$@" >> "$NPM_ARGS_FILE"; if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "bash-language-server" ]; then printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; fi; exit 0'
+COUNT_INSTALLED=0
+install_bash_language_server >/dev/null 2>&1; rc=$?
+check "bash-ls: npm present, installs -> exits 0"           0 "$rc"
+check "bash-ls: npm present, installs -> counted installed" 1 "$COUNT_INSTALLED"
+check "bash-ls: npm asked for bash-language-server"         "install -g bash-language-server" "$(cat "$NPM_ARGS")"
+unset NPM_ARGS_FILE BASH_STUB_DIR
+
+newstubs
+# No node on PATH at all: the version is unknown, and unknown is left to npm
+# rather than treated as too old.
+export BASH_STUB_DIR="$STUBS"
+stub npm 'printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; exit 0'
+install_bash_language_server >/dev/null 2>&1; rc=$?
+check "bash-ls: node version unreadable -> not refused" 0 "$rc"
+unset BASH_STUB_DIR
+
+newstubs
+stub npm 'exit 0'
+COUNT_INSTALLED=0
+install_bash_language_server >/dev/null 2>&1; rc=$?
+check "bash-ls: npm exits 0 but no binary -> fails"       1 "$rc"
+check "bash-ls: npm exits 0 but no binary -> not counted" 0 "$COUNT_INSTALLED"
+
+echo "=== lsp_plugin_conflict (one language server per file extension) ==="
+blocked() { lsp_plugin_conflict "$1" >/dev/null 2>&1 && echo yes || echo no; }
+newstubs
+FAKE_INSTALLED=""
+check "an unrelated plugin is never blocked"                  no  "$(blocked crew)"
+# Python is not this rule's business: the official pyright-lsp is installed as
+# before, whatever else is on the machine.
+check "pyright-lsp is never blocked"                          no  "$(blocked pyright-lsp)"
+FAKE_INSTALLED="powershell-lsp"
+check "powershell-lsp: already installed itself -> never blocked" no "$(blocked powershell-lsp)"
+FAKE_INSTALLED=""
+check "pwsh-lsp: no pwsh on PATH -> blocked"                  yes "$(blocked pwsh-lsp)"
+check "powershell-lsp: not Windows -> blocked"                yes "$(blocked powershell-lsp)"
+newstubs
+stub pwsh 'exit 0'
+check "pwsh-lsp: pwsh on PATH -> allowed"                     no  "$(blocked pwsh-lsp)"
+FAKE_INSTALLED="powershell-lsp"
+check "pwsh-lsp: powershell-lsp installed -> blocked"         yes "$(blocked pwsh-lsp)"
+FAKE_INSTALLED=""
+newstubs
+stub uname 'echo MINGW64_NT-10.0-19045'
+check "powershell-lsp: Windows, no pwsh -> allowed"            no  "$(blocked powershell-lsp)"
+FAKE_INSTALLED="pwsh-lsp"
+check "powershell-lsp: Windows, pwsh-lsp installed -> blocked" yes "$(blocked powershell-lsp)"
+FAKE_INSTALLED=""
+stub pwsh 'exit 0'
+check "powershell-lsp: Windows WITH pwsh -> blocked"           yes "$(blocked powershell-lsp)"
+# With both PowerShell plugins asked for on one machine, exactly one goes in,
+# whichever order they are asked in. This is the repo-plugins row, where both
+# are ticked by default. PATH still holds the MINGW uname and the pwsh stub.
+for _order in "powershell-lsp pwsh-lsp" "pwsh-lsp powershell-lsp"; do
+  PLUGIN_CALLS=""; FAKE_INSTALLED=""
+  for _p in $_order; do install_plugin_unless_conflict "$_p@useful-claude-add-ons" >/dev/null 2>&1; done
+  check "Windows with pwsh, asked '$_order' -> only pwsh-lsp" "pwsh-lsp@useful-claude-add-ons " "$PLUGIN_CALLS"
+done
+newstubs
+stub uname 'echo MINGW64_NT-10.0-19045'
+for _order in "powershell-lsp pwsh-lsp" "pwsh-lsp powershell-lsp"; do
+  PLUGIN_CALLS=""; FAKE_INSTALLED=""
+  for _p in $_order; do install_plugin_unless_conflict "$_p@useful-claude-add-ons" >/dev/null 2>&1; done
+  check "Windows without pwsh, asked '$_order' -> only powershell-lsp" "powershell-lsp@useful-claude-add-ons " "$PLUGIN_CALLS"
+done
+newstubs
+stub pwsh 'exit 0'
+for _order in "powershell-lsp pwsh-lsp" "pwsh-lsp powershell-lsp"; do
+  PLUGIN_CALLS=""; FAKE_INSTALLED=""
+  for _p in $_order; do install_plugin_unless_conflict "$_p@useful-claude-add-ons" >/dev/null 2>&1; done
+  check "Linux with pwsh, asked '$_order' -> only pwsh-lsp" "pwsh-lsp@useful-claude-add-ons " "$PLUGIN_CALLS"
+done
+newstubs
+for _order in "powershell-lsp pwsh-lsp" "pwsh-lsp powershell-lsp"; do
+  PLUGIN_CALLS=""; FAKE_INSTALLED=""
+  for _p in $_order; do install_plugin_unless_conflict "$_p@useful-claude-add-ons" >/dev/null 2>&1; done
+  check "Linux without pwsh, asked '$_order' -> neither" "" "$PLUGIN_CALLS"
+done
+unset _order _p
+newstubs
+FAKE_INSTALLED=""
+out="$(install_plugin_unless_conflict "powershell-lsp@useful-claude-add-ons" 2>&1)"; rc=$?
+PLUGIN_CALLS=""
+install_plugin_unless_conflict "powershell-lsp@useful-claude-add-ons" >/dev/null 2>&1
+check "blocked install is not a failed step"         0   "$rc"
+check "blocked install says it is not installing"    yes "$(case "$out" in *"not installing 'powershell-lsp@useful-claude-add-ons'"*) echo yes;; *) echo no;; esac)"
+check "blocked install never reaches install_plugin" ""  "$PLUGIN_CALLS"
+PLUGIN_CALLS=""
+install_plugin_unless_conflict "crew@useful-claude-add-ons" >/dev/null 2>&1
+check "unblocked install reaches install_plugin" "crew@useful-claude-add-ons " "$PLUGIN_CALLS"
+
+echo "=== install_powershell_lsp_plugin (one per machine) ==="
+newstubs
+PLUGIN_CALLS=""; FAKE_INSTALLED=""
+out="$(install_powershell_lsp_plugin 2>&1)"; rc=$?
+check "no pwsh, not Windows -> fails"      1   "$rc"
+check "no pwsh, not Windows -> names pwsh" yes "$(case "$out" in *"pwsh (PowerShell 7) not found"*) echo yes;; *) echo no;; esac)"
+newstubs
+stub pwsh 'exit 0'
+PLUGIN_CALLS=""
+install_powershell_lsp_plugin >/dev/null 2>&1; rc=$?
+check "pwsh present -> exits 0"           0 "$rc"
+check "pwsh present -> installs pwsh-lsp" "pwsh-lsp@useful-claude-add-ons " "$PLUGIN_CALLS"
+newstubs
+stub uname 'echo MINGW64_NT-10.0-19045'
+PLUGIN_CALLS=""
+install_powershell_lsp_plugin >/dev/null 2>&1; rc=$?
+check "Windows, no pwsh -> installs powershell-lsp" "powershell-lsp@useful-claude-add-ons " "$PLUGIN_CALLS"
+
+echo "=== install_pses (pinned release zip, sha256-verified) ==="
+check "the two shipped pses-launch.ps1 copies are byte-identical" yes "$LAUNCHERS_SAME"
+check "PSES_SHA256 is a full sha256"  yes "$(case "$PSES_SHA256" in *[!0-9a-f]*) echo no;; *) [ "${#PSES_SHA256}" -eq 64 ] && echo yes || echo no;; esac)"
+check "PSES_VERSION is a release tag" yes "$(case "$PSES_VERSION" in v[0-9]*.[0-9]*.[0-9]*) echo yes;; *) echo no;; esac)"
+REAL_PSES_SHA256="$PSES_SHA256"
+unset PSES_BUNDLE_PATH LOCALAPPDATA
+newstubs
+check "pses_dir: Linux default is under ~/.local/share" "$PSES_TARGET" "$(pses_dir)"
+export PSES_BUNDLE_PATH="$TMP/elsewhere"
+check "pses_dir: PSES_BUNDLE_PATH wins" "$TMP/elsewhere" "$(pses_dir)"
+unset PSES_BUNDLE_PATH
+stub uname 'echo MINGW64_NT-10.0-19045'
+export LOCALAPPDATA='C:\Users\someone\AppData\Local'
+check "pses_dir: Windows default is under LOCALAPPDATA" "C:/Users/someone/AppData/Local/powershell-editor-services" "$(pses_dir)"
+unset LOCALAPPDATA
+check "pses_dir: Windows without LOCALAPPDATA falls back to the home rule" "$PSES_TARGET" "$(pses_dir)"
+# The launcher has to name the same two default directories the installers do.
+check "the launcher and both installers name one directory" yes "$(grep -q "'powershell-editor-services'" "$LAUNCHER_A" && grep -q 'LOCALAPPDATA' "$LAUNCHER_A" && grep -q "'powershell-editor-services'" "$PS1SCRIPT" && grep -q '/powershell-editor-services' "$SCRIPT" && echo yes || echo no)"
+
+pses_leftovers() {
+  local n=0 f
+  for f in "$TMP/home/.local/share"/.pses-install.*; do [ -e "$f" ] && n=$((n+1)); done
+  printf '%d' "$n"
+}
+# A curl that "downloads" the fixture and records the URL it was asked for.
+PSES_URLS="$TMP/pses-urls"
+: > "$PSES_URLS"
+export PSES_URL_FILE="$PSES_URLS" PSES_FIXTURE="$FIXTURE_ZIP"
+pses_curl_stub() {
+  stub curl 'out=""; url=""; while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift ;; -*) ;; *) url="$1" ;; esac; shift; done; echo "$url" >> "$PSES_URL_FILE"; cp "$PSES_FIXTURE" "$out"'
+}
+
+newstubs; pses_reset
+mkdir -p "$PSES_TARGET/PowerShellEditorServices"
+: > "$PSES_TARGET/PowerShellEditorServices/Start-EditorServices.ps1"
+out="$(install_pses 2>&1)"; rc=$?
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_pses >/dev/null 2>&1
+check "pses: already installed -> exits 0"               0   "$rc"
+check "pses: already installed -> says so"               yes "$(case "$out" in *"already installed"*) echo yes;; *) echo no;; esac)"
+check "pses: already installed -> counted skip"          1   "$COUNT_SKIPPED"
+check "pses: already installed -> not counted installed" 0   "$COUNT_INSTALLED"
+
+newstubs; pses_reset
+pses_curl_stub
+out="$(install_pses 2>&1)"; rc=$?
+check "pses: no pwsh, not Windows -> fails"      1   "$rc"
+check "pses: no pwsh, not Windows -> names pwsh" yes "$(case "$out" in *"pwsh not found"*) echo yes;; *) echo no;; esac)"
+check "pses: no pwsh -> nothing written"         no  "$([ -e "$PSES_TARGET" ] && echo yes || echo no)"
+check "pses: no pwsh -> nothing downloaded"      ""  "$(cat "$PSES_URLS")"
+
+newstubs; pses_reset
+stub pwsh 'exit 0'
+out="$(install_pses 2>&1)"; rc=$?
+check "pses: no curl or wget -> fails"             1   "$rc"
+check "pses: no curl or wget -> names them"        yes "$(case "$out" in *"neither curl nor wget"*) echo yes;; *) echo no;; esac)"
+check "pses: no curl or wget -> no directory left" no  "$([ -e "$PSES_TARGET" ] && echo yes || echo no)"
+check "pses: no curl or wget -> no temp dir left"  0   "$(pses_leftovers)"
+
+newstubs; pses_reset
+stub pwsh 'exit 0'
+stub curl 'exit 22'
+out="$(install_pses 2>&1)"; rc=$?
+check "pses: download fails -> fails"             1  "$rc"
+check "pses: download fails -> no directory left" no "$([ -e "$PSES_TARGET" ] && echo yes || echo no)"
+check "pses: download fails -> no temp dir left"  0  "$(pses_leftovers)"
+
+newstubs; pses_reset
+stub pwsh 'exit 0'
+mkdir -p "$PSES_TARGET"; : > "$PSES_TARGET/mine.txt"
+pses_curl_stub
+out="$(install_pses 2>&1)"; rc=$?
+check "pses: directory exists without PSES -> fails"           1   "$rc"
+check "pses: directory exists without PSES -> says so"         yes "$(case "$out" in *"not overwriting"*) echo yes;; *) echo no;; esac)"
+check "pses: directory exists without PSES -> not overwritten" yes "$([ -f "$PSES_TARGET/mine.txt" ] && echo yes || echo no)"
+
+if [ -z "$FIXTURE_SHA" ]; then
+  echo "SKIPPED: no python to build a fixture zip - install_pses's sha256-mismatch and install cases went unverified in this run."
+else
+  newstubs; pses_reset
+  stub pwsh 'exit 0'
+  pses_curl_stub
+  : > "$PSES_URLS"
+  # The real pin against an archive that is not the pinned one: what a tampered
+  # or replaced download looks like. Must refuse and leave nothing behind.
+  PSES_SHA256="$REAL_PSES_SHA256"
+  out="$(install_pses 2>&1)"; rc=$?
+  COUNT_INSTALLED=0
+  install_pses >/dev/null 2>&1
+  check "pses: sha256 mismatch -> fails"                 1   "$rc"
+  check "pses: sha256 mismatch -> says MISMATCH"         yes "$(case "$out" in *"sha256 MISMATCH"*) echo yes;; *) echo no;; esac)"
+  check "pses: sha256 mismatch -> names both digests"    yes "$(case "$out" in *"$REAL_PSES_SHA256"*"$FIXTURE_SHA"*) echo yes;; *) echo no;; esac)"
+  check "pses: sha256 mismatch -> nothing installed"     no  "$([ -e "$PSES_TARGET" ] && echo yes || echo no)"
+  check "pses: sha256 mismatch -> no temp dir left"      0   "$(pses_leftovers)"
+  check "pses: sha256 mismatch -> not counted installed" 0   "$COUNT_INSTALLED"
+  check "pses: downloads the pinned release asset"       "https://github.com/PowerShell/PowerShellEditorServices/releases/download/$PSES_VERSION/PowerShellEditorServices.zip" "$(IFS= read -r _l < "$PSES_URLS"; printf '%s' "${_l:-}")"
+
+  newstubs; pses_reset
+  stub pwsh 'exit 0'
+  pses_curl_stub
+  # No digest tool at all: "could not tell" is a refusal, never a match. The
+  # digest would match if it could be computed - that is the point of the case.
+  mv "$REALTOOLS/sha256sum" "$REALTOOLS/sha256sum.off"
+  PSES_SHA256="$FIXTURE_SHA"
+  out="$(install_pses 2>&1)"; rc=$?
+  mv "$REALTOOLS/sha256sum.off" "$REALTOOLS/sha256sum"
+  check "pses: no digest tool -> fails"              1   "$rc"
+  check "pses: no digest tool -> says cannot verify" yes "$(case "$out" in *"cannot verify"*) echo yes;; *) echo no;; esac)"
+  check "pses: no digest tool -> nothing installed"  no  "$([ -e "$PSES_TARGET" ] && echo yes || echo no)"
+
+  newstubs; pses_reset
+  stub pwsh 'exit 0'
+  pses_curl_stub
+  PSES_SHA256="$FIXTURE_SHA"
+  COUNT_INSTALLED=0
+  install_pses >/dev/null 2>&1; rc=$?
+  check "pses: digest matches -> exits 0"           0   "$rc"
+  check "pses: digest matches -> counted installed" 1   "$COUNT_INSTALLED"
+  check "pses: digest matches -> start script where the launcher looks" yes "$([ -f "$PSES_TARGET/PowerShellEditorServices/Start-EditorServices.ps1" ] && echo yes || echo no)"
+  check "pses: digest matches -> bundled modules beside it" yes "$([ -d "$PSES_TARGET/PSScriptAnalyzer" ] && echo yes || echo no)"
+  check "pses: digest matches -> no temp dir left"  0   "$(pses_leftovers)"
+  # Second run with the pin put back to one that would now MISMATCH: detection
+  # comes first, so nothing is downloaded and nothing fails.
+  PSES_SHA256="$REAL_PSES_SHA256"
+  : > "$PSES_URLS"
+  COUNT_SKIPPED=0
+  install_pses >/dev/null 2>&1; rc=$?
+  check "pses: second run -> already installed" "0 1" "$rc $COUNT_SKIPPED"
+  check "pses: second run -> no download"       ""    "$(cat "$PSES_URLS")"
+fi
+PSES_SHA256="$REAL_PSES_SHA256"
+pses_reset
+unset PSES_URL_FILE PSES_FIXTURE
+
+echo "=== remove_under_tmp (the guard on this suite's own cleanup) ==="
+# Each refusal runs in a subshell, because refusing is 'exit 2'.
+mkdir -p "$TMP/guard-victim"
+( remove_under_tmp "$TMP/guard-victim/../guard-victim" ) >/dev/null 2>&1; rc=$?
+check "a path with .. is refused"                2   "$rc"
+# A path that does not exist, so that even a sabotaged guard removes nothing.
+( remove_under_tmp "/nonexistent-outside-the-temp-root/x" ) >/dev/null 2>&1; rc=$?
+check "a path outside the temp root is refused"  2   "$rc"
+( remove_under_tmp "$TMP" ) >/dev/null 2>&1; rc=$?
+check "the temp root itself is refused"          2   "$rc"
+( remove_under_tmp "" ) >/dev/null 2>&1; rc=$?
+check "an empty path is refused"                 2   "$rc"
+# TMP is emptied inside a child bash, not a ( ) group, so the parent's own TMP
+# is visibly untouched rather than "modified in a subshell".
+"$BASH" -c "$(declare -f remove_under_tmp); TMP=''; remove_under_tmp /nonexistent-guard-victim" >/dev/null 2>&1; rc=$?
+check "an empty temp root is refused"            2   "$rc"
+check "none of the refusals removed anything"    yes "$([ -d "$TMP/guard-victim" ] && echo yes || echo no)"
+( remove_under_tmp "$TMP/guard-victim" ) >/dev/null 2>&1; rc=$?
+check "a path under the temp root is removed"    "0 no" "$rc $([ -e "$TMP/guard-victim" ] && echo yes || echo no)"
 
 echo "=== install_terraform_ls ==="
 newstubs
@@ -593,6 +961,29 @@ function Sync-SessionEnvironment { }
 $script:Summary = @{ Installed = 0; Updated = 0; Skipped = 0 }
 Invoke-Expression (Get-Block '^function Install-LspBinary' '^\}')
 Invoke-Expression (Get-Block '^function Install-CssLanguageServer' '^\}')
+Invoke-Expression (Get-Block '^function Install-BashLanguageServer' '^\}')
+Invoke-Expression (Get-Block '^function Install-PowerShellLspPlugin' '^\}')
+Invoke-Expression (Get-Block '^\$script:PsesVersion' '^\$script:PsesVersion')
+Invoke-Expression (Get-Block '^\$script:PsesSha256' '^\$script:PsesSha256')
+Invoke-Expression (Get-Block '^function Get-PsesDirectory' '^\}')
+Invoke-Expression (Get-Block '^function Install-Pses \{' '^\}')
+Invoke-Expression (Get-Block '^function Get-LspPluginConflict' '^\}')
+Invoke-Expression (Get-Block '^function Install-ClaudePluginUnlessConflict' '^\}')
+# FUNCTION-MOCKED, not lifted, for the same reason Sync-SessionEnvironment is:
+# the real ones run 'claude', read the host OS and download from GitHub.
+$script:FakeInstalled = @{}
+function Get-ClaudePlugins { return $script:FakeInstalled }
+$script:PluginCalls = @()
+function Install-ClaudePlugin { param([string]$Spec) $script:PluginCalls += $Spec }
+$script:FakeWindows = $false
+function Test-IsWindowsHost { return $script:FakeWindows }
+$script:ArchiveUrls = @()
+$script:ArchiveFails = $false
+function Get-PsesArchive { param([string]$Url, [string]$OutFile)
+    $script:ArchiveUrls += $Url
+    if ($script:ArchiveFails) { throw 'simulated network failure' }
+    Copy-Item -LiteralPath $env:PSES_FIXTURE -Destination $OutFile
+}
 Invoke-Expression (Get-Block '^function Install-TerraformLs' '^\}')
 # The pin is lifted from the script, not restated here, so the case below reads
 # the value the real step would use.
@@ -709,6 +1100,205 @@ $script:Summary.Installed = 0
 $threw = $false
 try { Install-CssLanguageServer } catch { $threw = ($_.Exception.Message -match 'not resolvable') }
 $results += "css-npm-unverified-throws:$threw,installed=$($script:Summary.Installed)"
+$env:PATH = $basePath
+
+# --- bash-language-server ----------------------------------------------------
+function Write-ScriptStub { param([string]$Path, [string]$Body)
+    Set-Content -Path $Path -Value $Body -NoNewline
+    & chmod +x $Path
+}
+$stubB1 = Join-Path $env:TESTTMP 'bashls-installed'; New-Item -ItemType Directory -Path $stubB1 -Force | Out-Null
+Write-ProbeStub (Get-ProbePath $stubB1 'bash-language-server')
+$env:PATH = "$stubB1$sep$env:REALTOOLS_DIR"
+$script:Summary.Installed = 0
+$threw = $false
+try { Install-BashLanguageServer } catch { $threw = $true }
+$results += "bashls-already-installed:installed=$($script:Summary.Installed),threw=$threw"
+
+$stubB2 = Join-Path $env:TESTTMP 'bashls-none'; New-Item -ItemType Directory -Path $stubB2 -Force | Out-Null
+$env:PATH = "$stubB2$sep$env:REALTOOLS_DIR"
+$threw = $false
+try { Install-BashLanguageServer } catch { $threw = ($_.Exception.Message -match 'npm not found') }
+$results += "bashls-no-npm-throws:$threw"
+
+# npm only produces the binary when asked for the right package, and records
+# what it was asked for.
+$stubB3 = Join-Path $env:TESTTMP 'bashls-npm'; New-Item -ItemType Directory -Path $stubB3 -Force | Out-Null
+$bashOut = Get-ProbePath $stubB3 'bash-language-server'
+$bashArgs = Join-Path $env:TESTTMP 'bashls-npm-args-ps1'
+Write-ScriptStub (Join-Path $stubB3 'node') "#!/bin/sh`necho v22.22.1`n"
+Write-ScriptStub (Join-Path $stubB3 'npm') ((@'
+#!/bin/sh
+echo "$@" > "ARGS_OUT"
+if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "bash-language-server" ]; then
+  printf '#!/bin/sh\nexit 0\n' > "BASH_OUT"
+  chmod +x "BASH_OUT"
+fi
+exit 0
+'@).Replace('BASH_OUT', $bashOut).Replace('ARGS_OUT', $bashArgs))
+$env:PATH = "$stubB3$sep$env:REALTOOLS_DIR"
+$script:Summary.Installed = 0
+try { Install-BashLanguageServer } catch { $results += "bashls-npm-install-threw:$($_.Exception.Message)" }
+$results += "bashls-npm-installs:installed=$($script:Summary.Installed)"
+$asked = if (Test-Path $bashArgs) { (Get-Content -Raw $bashArgs).Trim() } else { '<npm never ran>' }
+$results += "bashls-npm-args:$asked"
+
+# Node 18: must refuse before npm runs.
+$stubB4 = Join-Path $env:TESTTMP 'bashls-old-node'; New-Item -ItemType Directory -Path $stubB4 -Force | Out-Null
+$oldNodeMark = Join-Path $env:TESTTMP 'bashls-old-node-npm-ran'
+Write-ScriptStub (Join-Path $stubB4 'node') "#!/bin/sh`necho v18.20.4`n"
+Write-ScriptStub (Join-Path $stubB4 'npm') "#!/bin/sh`necho ran > `"$oldNodeMark`"`nexit 0`n"
+$env:PATH = "$stubB4$sep$env:REALTOOLS_DIR"
+$threw = $false
+try { Install-BashLanguageServer } catch { $threw = ($_.Exception.Message -match 'Node\.js 20 or newer') }
+$results += "bashls-old-node-throws:$threw,npm-ran=$(Test-Path $oldNodeMark)"
+
+# --- Get-LspPluginConflict: one language server per file extension ----------
+$noPwsh = Join-Path $env:TESTTMP 'conflict-no-pwsh'; New-Item -ItemType Directory -Path $noPwsh -Force | Out-Null
+$withPwsh = Join-Path $env:TESTTMP 'conflict-pwsh'; New-Item -ItemType Directory -Path $withPwsh -Force | Out-Null
+Write-ProbeStub (Get-ProbePath $withPwsh 'pwsh')
+function Test-Blocked { param([string]$Name) return [bool](Get-LspPluginConflict $Name) }
+$env:PATH = "$noPwsh$sep$env:REALTOOLS_DIR"
+$script:FakeWindows = $false; $script:FakeInstalled = @{}
+$results += "conflict-unrelated:$(Test-Blocked 'crew')"
+$results += "conflict-pyright-untouched:$(Test-Blocked 'pyright-lsp')"
+$results += "conflict-pwsh-no-pwsh:$(Test-Blocked 'pwsh-lsp')"
+$results += "conflict-powershell-not-windows:$(Test-Blocked 'powershell-lsp')"
+$script:FakeInstalled = @{ 'powershell-lsp' = @{ Version = '0.1.0' } }
+$results += "conflict-powershell-already-there:$(Test-Blocked 'powershell-lsp')"
+$script:FakeWindows = $true; $script:FakeInstalled = @{}
+$results += "conflict-powershell-windows-no-pwsh:$(Test-Blocked 'powershell-lsp')"
+$script:FakeInstalled = @{ 'pwsh-lsp' = @{ Version = '0.1.0' } }
+$results += "conflict-powershell-pwshlsp-installed:$(Test-Blocked 'powershell-lsp')"
+$env:PATH = "$withPwsh$sep$env:REALTOOLS_DIR"
+$script:FakeInstalled = @{}
+$results += "conflict-powershell-windows-with-pwsh:$(Test-Blocked 'powershell-lsp')"
+$results += "conflict-pwsh-with-pwsh:$(Test-Blocked 'pwsh-lsp')"
+$script:FakeInstalled = @{ 'powershell-lsp' = @{ Version = '0.1.0' } }
+$results += "conflict-pwsh-powershelllsp-installed:$(Test-Blocked 'pwsh-lsp')"
+# Both asked for on one machine, in both orders: exactly one goes in (or none,
+# where the machine can run neither).
+foreach ($case in @(
+    @{ Label = 'win-pwsh';     Windows = $true;  Path = $withPwsh },
+    @{ Label = 'win-nopwsh';   Windows = $true;  Path = $noPwsh },
+    @{ Label = 'linux-pwsh';   Windows = $false; Path = $withPwsh },
+    @{ Label = 'linux-nopwsh'; Windows = $false; Path = $noPwsh })) {
+    foreach ($order in @(@('powershell-lsp', 'pwsh-lsp'), @('pwsh-lsp', 'powershell-lsp'))) {
+        $env:PATH = "$($case.Path)$sep$env:REALTOOLS_DIR"
+        $script:FakeWindows = $case.Windows; $script:FakeInstalled = @{}; $script:PluginCalls = @()
+        foreach ($n in $order) { Install-ClaudePluginUnlessConflict "$n@useful-claude-add-ons" 6>$null }
+        $results += "both-$($case.Label)-$($order[0])-first:[$($script:PluginCalls -join ',')]"
+    }
+}
+# A blocked install is a warning, not a throw, and never reaches the installer.
+$script:FakeWindows = $false; $script:FakeInstalled = @{}; $script:PluginCalls = @()
+$threw = $false
+try { Install-ClaudePluginUnlessConflict 'powershell-lsp@useful-claude-add-ons' 6>$null } catch { $threw = $true }
+$results += "blocked-install:threw=$threw,calls=$($script:PluginCalls.Count)"
+# Install-PowerShellLspPlugin picks by what the machine can run.
+$script:FakeInstalled = @{}
+$env:PATH = "$withPwsh$sep$env:REALTOOLS_DIR"; $script:FakeWindows = $true; $script:PluginCalls = @()
+Install-PowerShellLspPlugin
+$results += "pick-pwsh:[$($script:PluginCalls -join ',')]"
+$env:PATH = "$noPwsh$sep$env:REALTOOLS_DIR"; $script:FakeWindows = $true; $script:PluginCalls = @()
+Install-PowerShellLspPlugin
+$results += "pick-windows-51:[$($script:PluginCalls -join ',')]"
+$script:FakeWindows = $false; $script:PluginCalls = @(); $threw = $false
+try { Install-PowerShellLspPlugin } catch { $threw = ($_.Exception.Message -match 'pwsh \(PowerShell 7\) not found') }
+$results += "pick-neither-throws:$threw,calls=$($script:PluginCalls.Count)"
+
+# --- Install-Pses -----------------------------------------------------------
+$results += "pses-pin:[$($script:PsesVersion) $($script:PsesSha256)]"
+$realPin = $script:PsesSha256
+# The directory rule, on both platforms' conditions. $env:OS is what the launcher
+# itself reads, so it is set here rather than mocked.
+$savedOs = $env:OS; $savedLocal = $env:LOCALAPPDATA
+$env:PSES_BUNDLE_PATH = $null; $env:OS = $null; $env:LOCALAPPDATA = $null
+$results += "pses-dir-unix:[$(Get-PsesDirectory)]"
+$env:OS = 'Windows_NT'; $env:LOCALAPPDATA = Join-Path $env:TESTTMP 'AppData-Local'
+$results += "pses-dir-windows:[$(Get-PsesDirectory)]"
+$env:LOCALAPPDATA = $null
+$results += "pses-dir-windows-no-localappdata:[$(Get-PsesDirectory)]"
+$env:PSES_BUNDLE_PATH = Join-Path $env:TESTTMP 'override'
+$results += "pses-dir-override:[$(Get-PsesDirectory)]"
+$env:OS = $savedOs; $env:LOCALAPPDATA = $savedLocal
+
+# Every case below installs into this one directory, and Remove-UnderTestTmp is
+# the only thing in these cases that deletes. It refuses anything that is not
+# strictly inside this run's own temp root.
+$psesDir = Join-Path $env:TESTTMP 'pses-ps1-target'
+$env:PSES_BUNDLE_PATH = $psesDir
+function Remove-UnderTestTmp { param([string]$Path)
+    $root = $env:TESTTMP
+    if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) { throw 'Remove-UnderTestTmp: no temp root - refusing' }
+    $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('/', '\')
+    if (-not $Path) { throw 'Remove-UnderTestTmp: empty path - refusing' }
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $prefix = $rootFull + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $full.StartsWith($prefix, [System.StringComparison]::Ordinal) -or $full.Length -le $prefix.Length) {
+        throw "Remove-UnderTestTmp: '$Path' is not under the temp root ($rootFull) - refusing"
+    }
+    if (Test-Path -LiteralPath $full) { Remove-Item -LiteralPath $full -Recurse -Force }
+}
+function Reset-Pses { Remove-UnderTestTmp $psesDir }
+function Get-PsesLeftovers { return @(Get-ChildItem -Force -LiteralPath $env:TESTTMP | Where-Object { $_.Name -like '.pses-install.*' }).Count }
+$guard = @()
+foreach ($bad in @('', $env:TESTTMP, '/nonexistent-outside-the-temp-root/x', (Join-Path $env:TESTTMP '../nonexistent-outside-the-temp-root'))) {
+    $refused = $false
+    try { Remove-UnderTestTmp $bad } catch { $refused = $true }
+    $guard += $refused
+}
+$results += "pses-cleanup-guard:[$($guard -join ',')]"
+
+# No host at all: not Windows, no pwsh.
+Reset-Pses
+$env:PATH = "$noPwsh$sep$env:REALTOOLS_DIR"; $script:FakeWindows = $false; $script:ArchiveUrls = @()
+$threw = $false
+try { Install-Pses } catch { $threw = ($_.Exception.Message -match 'pwsh not found') }
+$results += "pses-no-host-throws:$threw,downloads=$($script:ArchiveUrls.Count)"
+
+$env:PATH = "$withPwsh$sep$env:REALTOOLS_DIR"
+if ($env:PSES_FIXTURE_SHA) {
+    # The real pin against an archive that is not the pinned one.
+    Reset-Pses
+    $script:Summary.Installed = 0; $script:ArchiveUrls = @(); $threw = $false
+    try { Install-Pses } catch { $threw = ($_.Exception.Message -match 'sha256 MISMATCH' -and $_.Exception.Message -match $env:PSES_FIXTURE_SHA) }
+    $results += "pses-mismatch-throws:$threw,installed=$($script:Summary.Installed),dir=$(Test-Path $psesDir),leftovers=$(Get-PsesLeftovers)"
+    $results += "pses-url:[$($script:ArchiveUrls -join ',')]"
+
+    Reset-Pses
+    $script:ArchiveFails = $true; $threw = $false
+    try { Install-Pses } catch { $threw = ($_.Exception.Message -match 'downloading .* failed') }
+    $script:ArchiveFails = $false
+    $results += "pses-download-fails-throws:$threw,dir=$(Test-Path $psesDir),leftovers=$(Get-PsesLeftovers)"
+
+    # An upper-case pin must still match: Get-FileHash returns upper case.
+    Reset-Pses
+    $script:PsesSha256 = $env:PSES_FIXTURE_SHA.ToUpperInvariant()
+    $script:Summary.Installed = 0
+    try { Install-Pses } catch { $results += "pses-install-threw:$($_.Exception.Message)" }
+    $startThere = Test-Path (Join-Path (Join-Path $psesDir 'PowerShellEditorServices') 'Start-EditorServices.ps1')
+    $results += "pses-installs:installed=$($script:Summary.Installed),start=$startThere,modules=$(Test-Path (Join-Path $psesDir 'PSScriptAnalyzer')),leftovers=$(Get-PsesLeftovers)"
+    # Second run, with a pin that would now mismatch and a download that would
+    # fail: neither is reached, because detection comes first.
+    $script:PsesSha256 = $realPin; $script:ArchiveFails = $true; $script:ArchiveUrls = @()
+    $script:Summary.Installed = 0; $script:Summary.Skipped = 0; $threw = $false
+    try { Install-Pses } catch { $threw = $true }
+    $script:ArchiveFails = $false
+    $results += "pses-already-installed:installed=$($script:Summary.Installed),skipped=$($script:Summary.Skipped),threw=$threw,downloads=$($script:ArchiveUrls.Count)"
+} else {
+    $results += "pses-fixture-missing"
+}
+$script:PsesSha256 = $realPin
+# A directory that exists and is not PSES is the user's: refuse, do not replace.
+Reset-Pses
+New-Item -ItemType Directory -Path $psesDir -Force | Out-Null
+Set-Content -Path (Join-Path $psesDir 'mine.txt') -Value 'mine'
+$threw = $false
+try { Install-Pses } catch { $threw = ($_.Exception.Message -match 'not overwriting') }
+$results += "pses-foreign-dir-throws:$threw,kept=$(Test-Path (Join-Path $psesDir 'mine.txt'))"
+Reset-Pses
+$env:PSES_BUNDLE_PATH = $null
 $env:PATH = $basePath
 
 # --- terraform-ls ----------------------------------------------------------
@@ -963,6 +1553,8 @@ PS1EOF
   export PS1SCRIPT="$(win "$PS1SCRIPT")"
   export TESTTMP="$(win "$TMP")"
   export REALTOOLS_DIR="$(win "$REALTOOLS")"
+  PSES_FIXTURE="$(win "$FIXTURE_ZIP")"
+  export PSES_FIXTURE PSES_FIXTURE_SHA="$FIXTURE_SHA"
   out="$("$PWSH" -NoProfile -File "$(win "$PSHARNESS")" 2>&1)"
   check ".ps1 Install-LspBinary: already-installed counts nothing"   "yes" "$(case "$out" in *"already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-LspBinary: absent-then-installed counts one"   "yes" "$(case "$out" in *"absent-then-installed:installed=1"*) echo yes;; *) echo no;; esac)"
@@ -971,6 +1563,55 @@ PS1EOF
   check ".ps1 Install-CssLanguageServer: npm present installs"       "yes" "$(case "$out" in *"css-npm-installs:installed=1"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-CssLanguageServer: npm asked for vscode-langservers-extracted" "yes" "$(case "$out" in *"css-npm-args:install -g vscode-langservers-extracted"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-CssLanguageServer: npm success w/o binary throws" "yes" "$(case "$out" in *"css-npm-unverified-throws:True,installed=0"*) echo yes;; *) echo no;; esac)"
+  # has: the harness prints one result per line, so a whole line is matched -
+  # 'x:True' must not be satisfied by 'x:True,extra' or by a longer label.
+  has() { case $'\n'"$out"$'\n' in *$'\n'"$1"$'\n'*) echo yes;; *) echo no;; esac; }
+  PKG="@useful-claude-add-ons"
+  check ".ps1 Install-BashLanguageServer: already installed, no npm -> skips" "yes" "$(has "bashls-already-installed:installed=0,threw=False")"
+  check ".ps1 Install-BashLanguageServer: no npm throws, names npm"   "yes" "$(has "bashls-no-npm-throws:True")"
+  check ".ps1 Install-BashLanguageServer: npm present installs"       "yes" "$(has "bashls-npm-installs:installed=1")"
+  check ".ps1 Install-BashLanguageServer: npm asked for bash-language-server" "yes" "$(has "bashls-npm-args:install -g bash-language-server")"
+  check ".ps1 Install-BashLanguageServer: Node 18 refuses before npm runs" "yes" "$(has "bashls-old-node-throws:True,npm-ran=False")"
+  check ".ps1 conflict: an unrelated plugin is never blocked"         "yes" "$(has "conflict-unrelated:False")"
+  check ".ps1 conflict: pyright-lsp is never blocked"                 "yes" "$(has "conflict-pyright-untouched:False")"
+  check ".ps1 conflict: powershell-lsp already installed is never blocked" "yes" "$(has "conflict-powershell-already-there:False")"
+  check ".ps1 conflict: pwsh-lsp blocked without pwsh"                "yes" "$(has "conflict-pwsh-no-pwsh:True")"
+  check ".ps1 conflict: pwsh-lsp allowed with pwsh"                   "yes" "$(has "conflict-pwsh-with-pwsh:False")"
+  check ".ps1 conflict: pwsh-lsp blocked by powershell-lsp"           "yes" "$(has "conflict-pwsh-powershelllsp-installed:True")"
+  check ".ps1 conflict: powershell-lsp blocked off Windows"           "yes" "$(has "conflict-powershell-not-windows:True")"
+  check ".ps1 conflict: powershell-lsp allowed on Windows without pwsh" "yes" "$(has "conflict-powershell-windows-no-pwsh:False")"
+  check ".ps1 conflict: powershell-lsp blocked on Windows with pwsh"  "yes" "$(has "conflict-powershell-windows-with-pwsh:True")"
+  check ".ps1 conflict: powershell-lsp blocked by pwsh-lsp"           "yes" "$(has "conflict-powershell-pwshlsp-installed:True")"
+  for _first in powershell-lsp pwsh-lsp; do
+    check ".ps1 both asked, Windows with pwsh, $_first first -> only pwsh-lsp" "yes" "$(has "both-win-pwsh-$_first-first:[pwsh-lsp$PKG]")"
+    check ".ps1 both asked, Windows without pwsh, $_first first -> only powershell-lsp" "yes" "$(has "both-win-nopwsh-$_first-first:[powershell-lsp$PKG]")"
+    check ".ps1 both asked, Linux with pwsh, $_first first -> only pwsh-lsp" "yes" "$(has "both-linux-pwsh-$_first-first:[pwsh-lsp$PKG]")"
+    check ".ps1 both asked, Linux without pwsh, $_first first -> neither" "yes" "$(has "both-linux-nopwsh-$_first-first:[]")"
+  done
+  unset _first
+  check ".ps1 blocked install warns, does not throw, installs nothing" "yes" "$(has "blocked-install:threw=False,calls=0")"
+  check ".ps1 Install-PowerShellLspPlugin: pwsh present -> pwsh-lsp"  "yes" "$(has "pick-pwsh:[pwsh-lsp$PKG]")"
+  check ".ps1 Install-PowerShellLspPlugin: Windows 5.1 only -> powershell-lsp" "yes" "$(has "pick-windows-51:[powershell-lsp$PKG]")"
+  check ".ps1 Install-PowerShellLspPlugin: neither -> throws, installs nothing" "yes" "$(has "pick-neither-throws:True,calls=0")"
+  # One pin and one directory rule, in both scripts.
+  check ".ps1 Install-Pses: version and sha256 equal the .sh's pin"   "yes" "$(has "pses-pin:[$PSES_VERSION $REAL_PSES_SHA256]")"
+  check ".ps1 Get-PsesDirectory: Linux default equals the .sh's"      "yes" "$(has "pses-dir-unix:[$(win "$PSES_TARGET")]")"
+  check ".ps1 Get-PsesDirectory: Windows default is under LOCALAPPDATA" "yes" "$(has "pses-dir-windows:[$(win "$TMP")/AppData-Local/powershell-editor-services]")"
+  check ".ps1 Get-PsesDirectory: Windows without LOCALAPPDATA falls back" "yes" "$(has "pses-dir-windows-no-localappdata:[$(win "$PSES_TARGET")]")"
+  check ".ps1 Get-PsesDirectory: PSES_BUNDLE_PATH wins"               "yes" "$(has "pses-dir-override:[$(win "$TMP")/override]")"
+  check ".ps1 cleanup guard refuses empty, the root, outside and .. paths" "yes" "$(has "pses-cleanup-guard:[True,True,True,True]")"
+  check ".ps1 Install-Pses: no PowerShell host -> throws, downloads nothing" "yes" "$(has "pses-no-host-throws:True,downloads=0")"
+  check ".ps1 Install-Pses: foreign directory -> refuses, keeps it"   "yes" "$(has "pses-foreign-dir-throws:True,kept=True")"
+  if [ -z "$FIXTURE_SHA" ]; then
+    echo "SKIPPED: no python to build a fixture zip - Install-Pses's sha256-mismatch and install cases went unverified in this run."
+  else
+    check ".ps1 Install-Pses: sha256 mismatch refuses, leaves nothing"  "yes" "$(has "pses-mismatch-throws:True,installed=0,dir=False,leftovers=0")"
+    check ".ps1 Install-Pses: downloads the pinned release asset"       "yes" "$(has "pses-url:[https://github.com/PowerShell/PowerShellEditorServices/releases/download/$PSES_VERSION/PowerShellEditorServices.zip]")"
+    check ".ps1 Install-Pses: download failure throws, leaves nothing"  "yes" "$(has "pses-download-fails-throws:True,dir=False,leftovers=0")"
+    check ".ps1 Install-Pses: digest matches -> installed where the launcher looks" "yes" "$(has "pses-installs:installed=1,start=True,modules=True,leftovers=0")"
+    check ".ps1 Install-Pses: second run -> already installed, no download" "yes" "$(has "pses-already-installed:installed=0,skipped=1,threw=False,downloads=0")"
+  fi
+  unset PKG
   check ".ps1 Install-TerraformLs: already-installed counts nothing" "yes" "$(case "$out" in *"tfls-already-installed:installed=0"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-TerraformLs: no winget throws, names the manual route" "yes" "$(case "$out" in *"tfls-no-winget-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-TerraformLs: winget installs HashiCorp's package id" "yes" "$(case "$out" in *"tfls-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
@@ -996,7 +1637,7 @@ PS1EOF
   check ".ps1 Install-Shellcheck: winget installs and verifies"      "yes" "$(case "$out" in *"shellcheck-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-PSScriptAnalyzer: no hosts throws"             "yes" "$(case "$out" in *"psa-no-hosts-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-PSScriptAnalyzer: one host installs"           "yes" "$(case "$out" in *"psa-one-host-installs:installed=1"*) echo yes;; *) echo no;; esac)"
-  unset PS1SCRIPT TESTTMP REALTOOLS_DIR
+  unset PS1SCRIPT TESTTMP REALTOOLS_DIR PSES_FIXTURE PSES_FIXTURE_SHA
 fi
 
 echo
