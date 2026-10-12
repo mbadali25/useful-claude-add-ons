@@ -2302,7 +2302,9 @@ if (Test-Selected 'find-skills') {
             Write-Skip "find-skills already installed at $findSkillsDir (-NoUpdate set)"
             return
         }
-        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+        # --global --yes: without them the skills CLI stops to ask for the install scope
+        # (default: Project, which is not where the check below looks) and to confirm.
+        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes
         if (-not (Test-UserSkillInstalled 'find-skills')) {
             throw "the installer finished but '$findSkillsDir\SKILL.md' was not created - see the output above."
         }
@@ -3078,6 +3080,110 @@ function Install-LspBinary {
     $script:Summary.Installed++
     Write-Ok "$Label installed at $($cmd.Source)"
 }
+# typescript-language-server is a front end for tsserver and ships no TypeScript of its
+# own (its package.json declares no dependencies), so outside a project that has a local
+# 'typescript' it falls back to whatever Node resolves from its own install directory:
+# a 'typescript' nested inside it, else the global one beside it. What it needs from
+# that package is lib/tsserver.js - and that file is the invariant here, not a version
+# number. TypeScript 7 (the native compiler) ships lib/tsc.js alone, so the unpinned
+# 'npm install -g typescript' this step used to run started producing a server that
+# answers every 'initialize' with:
+#     Could not find a valid TypeScript installation. Please ensure that the
+#     "typescript" dependency is installed in the workspace or that a valid
+#     `tsserver.path` is specified. Exiting.
+# ngserver dies on the same global package for the same reason when it is told to
+# probe npm's global root: it wants lib/tsserverlibrary.js, minimum version 5.0.
+#
+# Measured against the registry on 2026-10-12 by unpacking each tarball: 5.9.3, 6.0.2
+# and 6.0.3 carry lib/tsserver.js and lib/tsserverlibrary.js, 7.0.2 carries neither,
+# and @angular/language-server 22.2.2 itself depends on exactly 6.0.3. So the spec
+# below is the 6.x line - the newest that still ships a tsserver. Move it only to a
+# release that has been unpacked and seen to contain lib/tsserver.js. The spec is
+# deliberately a bare major rather than '<7': a '<' reaches cmd.exe through npm.cmd
+# on this half of the pair, and the two halves install the same text.
+$script:TypeScriptLspSpec = 'typescript@6'
+function Get-TypeScriptLspTsserverState {
+    # What would the typescript-language-server under npm's global root fall back to?
+    # Returns one of:
+    #   ok           a typescript with lib/tsserver.js
+    #   no-tsserver  a typescript WITHOUT it (7 or later) - the broken combination
+    #   absent       no typescript at all
+    #   unknown      could not tell: no npm, or the server is not under npm's global
+    #                root (pnpm, volta, a distribution package). Never folded into
+    #                'ok' or 'no-tsserver' - the caller says so and leaves it alone.
+    # A copy nested inside the server's own directory wins over the global one, in
+    # Node's resolution order, so it is the one judged when it exists.
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { return 'unknown' }
+    $root = ''
+    try { $root = [string](& npm root -g 2>$null | Select-Object -First 1) } catch { $root = '' }
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($root)) { return 'unknown' }
+    $root = $root.Trim()
+    $tls = Join-Path $root 'typescript-language-server'
+    if (-not (Test-Path -LiteralPath $tls -PathType Container)) { return 'unknown' }
+    $nested = Join-Path (Join-Path $tls 'node_modules') 'typescript'
+    $globalTs = Join-Path $root 'typescript'
+    if (Test-Path -LiteralPath $nested -PathType Container) {
+        if (Test-Path -LiteralPath (Join-Path (Join-Path $nested 'lib') 'tsserver.js') -PathType Leaf) { return 'ok' }
+        return 'no-tsserver'
+    }
+    if (Test-Path -LiteralPath (Join-Path (Join-Path $globalTs 'lib') 'tsserver.js') -PathType Leaf) { return 'ok' }
+    if (Test-Path -LiteralPath $globalTs -PathType Container) { return 'no-tsserver' }
+    return 'absent'
+}
+function Install-TypeScriptLsp {
+    $spec = $script:TypeScriptLspSpec
+    $state = ''
+    $existing = Get-Command typescript-language-server -ErrorAction SilentlyContinue
+    if ($existing) {
+        $state = Get-TypeScriptLspTsserverState
+        # The binary being on PATH is not "already installed": with a typescript that has
+        # no tsserver it starts and then refuses every request. Only 'ok' and 'unknown'
+        # stop here; the other two states fall through to be repaired or reported.
+        if ($state -eq 'ok') {
+            Write-Skip "typescript-language-server already installed ($($existing.Source))"
+            return
+        }
+        if ($state -eq 'unknown') {
+            Write-Skip "typescript-language-server already installed ($($existing.Source))"
+            Write-Warn2 "could not check which TypeScript it falls back to (it is not under npm's global root, or npm is missing) - it needs one that ships lib/tsserver.js, i.e. $spec, not 7 or later."
+            return
+        }
+    }
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    }
+    if (-not $existing) {
+        Install-LspBinary -Label 'typescript-language-server' -Probe 'typescript-language-server' -Install { npm install -g typescript-language-server }
+        $state = Get-TypeScriptLspTsserverState
+    }
+    if ($state -eq 'ok') { return }
+    if ($state -eq 'absent') {
+        # Nothing global to replace, so nobody's 'tsc' changes under them.
+        & npm install -g $spec
+        if ($LASTEXITCODE -ne 0) {
+            throw "'npm install -g $spec' failed (exit $LASTEXITCODE) - typescript-language-server has no TypeScript to run. Install it by hand, then re-run."
+        }
+        $state = Get-TypeScriptLspTsserverState
+        if ($state -ne 'ok') {
+            throw "$spec installed but lib/tsserver.js is still not where typescript-language-server looks (state: $state)."
+        }
+        if ($existing) { $script:Summary.Installed++ }
+        Write-Ok "$spec installed for typescript-language-server (it ships lib/tsserver.js)"
+        return
+    }
+    if ($state -eq 'no-tsserver') {
+        # A global typescript is already there and it is 7 or later. Whether this
+        # script's own earlier unpinned install put it there or its owner wants the
+        # native 'tsc' cannot be told apart from here, and replacing it changes what
+        # every global 'tsc' call on this machine compiles with - so it is reported,
+        # with the one command that fixes it, and never done silently. The step fails
+        # on purpose: "already installed" is the wrong thing to say about a server
+        # that cannot start.
+        Write-Warn2 "typescript-language-server cannot start: the global 'typescript' has no lib/tsserver.js (TypeScript 7 and later ship only the native compiler)."
+        throw "Not replacing it for you - that would change your global 'tsc'. To fix it: npm install -g $spec, then re-run. A project with its own local typescript 5 or 6 is unaffected either way."
+    }
+    Write-Warn2 "typescript-language-server installed, but could not check which TypeScript it falls back to - it needs one that ships lib/tsserver.js ($spec)."
+}
 function Install-CssLanguageServer {
     # Detect the binary BEFORE requiring its prerequisite, as the other npm
     # servers in this step do: one already on PATH is not a failure without npm.
@@ -3255,12 +3361,7 @@ if (Test-Selected 'lsp-plugins') {
         Install-ClaudePlugin 'typescript-lsp@claude-plugins-official'
     }
     Invoke-Step "typescript-language-server (npm)" {
-        if (-not (Get-Command typescript-language-server -ErrorAction SilentlyContinue)) {
-            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
-            }
-        }
-        Install-LspBinary -Label 'typescript-language-server' -Probe 'typescript-language-server' -Install { npm install -g typescript-language-server typescript }
+        Install-TypeScriptLsp
     }
     Invoke-Step "Marketplace: mbadali25/useful-claude-add-ons" {
         Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'

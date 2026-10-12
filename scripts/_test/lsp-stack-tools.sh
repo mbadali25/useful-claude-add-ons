@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Regression suite for T11's LSP-plugin and stack-tool install steps, in BOTH halves
 # of the matched pair: install_lsp_binary/install_csharp_ls_binary/install_pyright_binary/
-# install_typescript_lsp_binary/install_angular_language_server/
+# typescript_lsp_tsserver_state/install_typescript_lsp_binary/install_angular_language_server/
 # install_css_language_server/install_bash_language_server/install_powershell_lsp_plugin/install_pses/
 # install_terraform_ls/install_sqls/install_tflint/install_ruff/install_sqlfluff/install_shellcheck/
 # install_psscriptanalyzer in scripts/install-prerequisites.sh, and their
-# Install-LspBinary/CssLanguageServer/BashLanguageServer/PowerShellLspPlugin/Pses/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
+# Install-LspBinary/Get-TypeScriptLspTsserverState/Install-TypeScriptLsp/CssLanguageServer/BashLanguageServer/PowerShellLspPlugin/Pses/TerraformLs/Sqls/tflint/ruff/sqlfluff/ShellCheck/PSScriptAnalyzer
 # equivalents in scripts/install-prerequisites.ps1. Also lsp_plugin_conflict /
 # Get-LspPluginConflict, the rule that keeps two plugins from serving one file
 # extension, and the two shipped copies of pses-launch.ps1 being one file.
@@ -273,6 +273,130 @@ install_typescript_lsp_binary >/dev/null 2>&1; rc=$?
 check "typescript-language-server: already installed -> exits 0"     0 "$rc"
 check "typescript-language-server: already installed -> counted skip" 1 "$COUNT_SKIPPED"
 
+echo "=== typescript-language-server: the TypeScript it falls back to must ship lib/tsserver.js ==="
+# A fake npm that behaves like the registry did on 2026-10-12, when this was found:
+# a bare 'typescript' resolves to 7, which has lib/tsc.js and NO lib/tsserver.js;
+# 'typescript@6' has both. 'npm root -g' answers $FAKE_NPM_ROOT, 'npm config get
+# prefix' a directory this user can write (so npm_install_global never reaches for
+# sudo), and every 'install' is appended to $FAKE_NPM_LOG. Reintroduce the unpinned
+# 'npm_install_global typescript-language-server typescript' in
+# install_typescript_lsp_binary and the "fresh machine" cases below go red.
+fakenpm() {
+  export FAKE_NPM_ROOT="$TMP/npmroot-$RANDOM/lib/node_modules"
+  export FAKE_NPM_LOG="$FAKE_NPM_ROOT/../install.log"
+  export FAKE_NPM_BIN="$STUBS"
+  mkdir -p "$FAKE_NPM_ROOT"
+  : > "$FAKE_NPM_LOG"
+  cat > "$STUBS/npm" <<'NPMEOF'
+#!/bin/sh
+case "$1 $2" in
+  "root -g") echo "$FAKE_NPM_ROOT"; exit 0 ;;
+  "config get") dirname "$FAKE_NPM_ROOT"; exit 0 ;;
+  "install -g") ;;
+  *) exit 0 ;;
+esac
+shift 2
+echo "$*" >> "$FAKE_NPM_LOG"
+for pkg in "$@"; do
+  case "$pkg" in
+    typescript-language-server)
+      mkdir -p "$FAKE_NPM_ROOT/typescript-language-server/lib"
+      printf '#!/bin/sh\nexit 0\n' > "$FAKE_NPM_BIN/typescript-language-server"
+      chmod +x "$FAKE_NPM_BIN/typescript-language-server" ;;
+    typescript@6)
+      rm -rf "$FAKE_NPM_ROOT/typescript"
+      mkdir -p "$FAKE_NPM_ROOT/typescript/lib"
+      touch "$FAKE_NPM_ROOT/typescript/lib/tsc.js" "$FAKE_NPM_ROOT/typescript/lib/tsserver.js" ;;
+    typescript)
+      rm -rf "$FAKE_NPM_ROOT/typescript"
+      mkdir -p "$FAKE_NPM_ROOT/typescript/lib"
+      touch "$FAKE_NPM_ROOT/typescript/lib/tsc.js" ;;
+  esac
+done
+exit 0
+NPMEOF
+  chmod +x "$STUBS/npm"
+}
+# has_text TEXT NEEDLE: a substring test on any text. Not named 'has': the .ps1 half
+# below defines its own one-argument has() (a whole-line match on $out), and a
+# shared name meant whichever came last answered both - so the .ps1 typescript
+# cases asked the wrong question and reported themselves skipped.
+has_text() { case "$1" in *"$2"*) echo yes;; *) echo no;; esac; }
+
+newstubs; fakenpm
+check "tsserver state: server not under npm's global root -> unknown" unknown "$(typescript_lsp_tsserver_state)"
+mkdir -p "$FAKE_NPM_ROOT/typescript-language-server"
+check "tsserver state: no typescript at all -> absent" absent "$(typescript_lsp_tsserver_state)"
+mkdir -p "$FAKE_NPM_ROOT/typescript/lib"; touch "$FAKE_NPM_ROOT/typescript/lib/tsc.js"
+check "tsserver state: global typescript with tsc.js only (7) -> no-tsserver" no-tsserver "$(typescript_lsp_tsserver_state)"
+touch "$FAKE_NPM_ROOT/typescript/lib/tsserver.js"
+check "tsserver state: global typescript with lib/tsserver.js -> ok" ok "$(typescript_lsp_tsserver_state)"
+# Node resolves the server's own node_modules before the global root, so a nested
+# copy without a tsserver shadows a good global one - and the reverse.
+mkdir -p "$FAKE_NPM_ROOT/typescript-language-server/node_modules/typescript/lib"
+check "tsserver state: nested copy without tsserver shadows a good global -> no-tsserver" no-tsserver "$(typescript_lsp_tsserver_state)"
+touch "$FAKE_NPM_ROOT/typescript-language-server/node_modules/typescript/lib/tsserver.js"
+rm -f "$FAKE_NPM_ROOT/typescript/lib/tsserver.js"
+check "tsserver state: nested copy with tsserver beats a global 7 -> ok" ok "$(typescript_lsp_tsserver_state)"
+newstubs
+check "tsserver state: no npm -> unknown, not ok" unknown "$(typescript_lsp_tsserver_state)"
+
+# The reported machine: binary on PATH, global typescript 7. The old check said
+# "already installed". It must fail, say why, name the fix - and install nothing,
+# because replacing a global typescript changes that user's 'tsc'.
+newstubs; fakenpm
+stub typescript-language-server 'exit 0'
+mkdir -p "$FAKE_NPM_ROOT/typescript-language-server" "$FAKE_NPM_ROOT/typescript/lib"
+touch "$FAKE_NPM_ROOT/typescript/lib/tsc.js"
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+out="$(install_typescript_lsp_binary 2>&1)"; rc=$?
+check "on PATH + global typescript 7: fails, not 'already installed'" 1 "$rc"
+check "on PATH + global typescript 7: no SKIP line"                    no  "$(has_text "$out" SKIP)"
+check "on PATH + global typescript 7: names lib/tsserver.js"           yes "$(has_text "$out" lib/tsserver.js)"
+check "on PATH + global typescript 7: names the fix"                   yes "$(has_text "$out" 'npm install -g typescript@6')"
+check "on PATH + global typescript 7: installs nothing (tsc untouched)" "" "$(cat "$FAKE_NPM_LOG")"
+
+# Binary on PATH, no typescript anywhere: nothing to replace, so it is repaired.
+newstubs; fakenpm
+stub typescript-language-server 'exit 0'
+mkdir -p "$FAKE_NPM_ROOT/typescript-language-server"
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_typescript_lsp_binary >/dev/null 2>&1; rc=$?
+check "on PATH + no typescript: exits 0"                    0 "$rc"
+check "on PATH + no typescript: installs typescript@6 only" "typescript@6" "$(cat "$FAKE_NPM_LOG")"
+check "on PATH + no typescript: counted installed, not skipped" "1/0" "$COUNT_INSTALLED/$COUNT_SKIPPED"
+check "on PATH + no typescript: tsserver.js now present"    ok "$(typescript_lsp_tsserver_state)"
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_typescript_lsp_binary >/dev/null 2>&1; rc=$?
+check "re-run after the repair: counted skip, nothing installed" "0/1/0" "$rc/$COUNT_SKIPPED/$COUNT_INSTALLED"
+
+# Fresh machine: the server AND a typescript it can run. This is the sabotage
+# target - an unpinned 'typescript' here leaves no lib/tsserver.js behind.
+newstubs; fakenpm
+COUNT_SKIPPED=0; COUNT_INSTALLED=0
+install_typescript_lsp_binary >/dev/null 2>&1; rc=$?
+check "fresh machine: exits 0"                               0 "$rc"
+check "fresh machine: what it leaves behind has lib/tsserver.js" ok "$(typescript_lsp_tsserver_state)"
+check "fresh machine: never installs an unpinned typescript" no "$(grep -Eq '(^| )typescript( |$)' "$FAKE_NPM_LOG" && echo yes || echo no)"
+check "fresh machine: counted once"                          1 "$COUNT_INSTALLED"
+
+# Fresh server, but a good global typescript is already there: leave it alone.
+newstubs; fakenpm
+mkdir -p "$FAKE_NPM_ROOT/typescript/lib"; touch "$FAKE_NPM_ROOT/typescript/lib/tsserver.js"
+install_typescript_lsp_binary >/dev/null 2>&1; rc=$?
+check "fresh server + usable global typescript: exits 0, typescript not reinstalled" "0 typescript-language-server" "$rc $(cat "$FAKE_NPM_LOG")"
+
+# Present, but installed some other way (not under npm's global root): unknown is
+# reported as unknown, and nothing is installed over it.
+newstubs; fakenpm
+stub typescript-language-server 'exit 0'
+COUNT_SKIPPED=0
+out="$(install_typescript_lsp_binary 2>&1)"; rc=$?
+check "on PATH, not under npm's root: exits 0"            0 "$rc"
+check "on PATH, not under npm's root: says it could not check" yes "$(has_text "$out" 'could not check')"
+check "on PATH, not under npm's root: installs nothing"   "" "$(cat "$FAKE_NPM_LOG")"
+unset FAKE_NPM_ROOT FAKE_NPM_LOG FAKE_NPM_BIN
+
 newstubs
 out="$(install_angular_language_server 2>&1)"; rc=$?
 check "ngserver: no npm -> warns and fails" 1 "$rc"
@@ -305,11 +429,15 @@ newstubs
 # The stub records its argv and only produces the binary for the right package:
 # an npm that installed something for any argument would pass a typo in the name,
 # and the package name (vscode-langservers-extracted) is not the command name.
+# 'npm config get prefix' is npm_install_global asking where it would write: it is
+# answered with this writable stub directory, so the install never goes through
+# as_root, and it is not logged as an install.
 NPM_ARGS="$TMP/css-npm-args"
 : > "$NPM_ARGS"
 export NPM_ARGS_FILE="$NPM_ARGS" CSS_STUB_DIR="$STUBS"
 cat > "$STUBS/npm" <<'EOF'
 #!/bin/sh
+if [ "$1" = "config" ]; then echo "$CSS_STUB_DIR"; exit 0; fi
 echo "$@" >> "$NPM_ARGS_FILE"
 if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "vscode-langservers-extracted" ]; then
   printf '#!/bin/sh\nexit 0\n' > "$CSS_STUB_DIR/vscode-css-language-server"
@@ -327,14 +455,18 @@ unset NPM_ARGS_FILE CSS_STUB_DIR
 
 newstubs
 # npm "succeeds" and leaves nothing on PATH: must not be reported as installed.
-stub npm 'exit 0'
+# Every npm stub from here on answers 'config get prefix' with its own (writable)
+# directory, so npm_install_global runs the stub itself rather than as_root.
+# shellcheck disable=SC2016  # $1/$0 belong to the stub script, expanded when it runs
+stub npm 'if [ "$1" = "config" ]; then dirname "$0"; fi; exit 0'
 COUNT_INSTALLED=0
 install_css_language_server >/dev/null 2>&1; rc=$?
 check "css: npm exits 0 but no binary -> fails"       1 "$rc"
 check "css: npm exits 0 but no binary -> not counted" 0 "$COUNT_INSTALLED"
 
 newstubs
-stub npm 'exit 1'
+# shellcheck disable=SC2016  # $1/$0 belong to the stub script, expanded when it runs
+stub npm 'if [ "$1" = "config" ]; then dirname "$0"; exit 0; fi; exit 1'
 COUNT_INSTALLED=0
 install_css_language_server >/dev/null 2>&1; rc=$?
 check "css: npm install fails -> exits 1"     1 "$rc"
@@ -374,7 +506,7 @@ NPM_ARGS="$TMP/bash-npm-args"
 : > "$NPM_ARGS"
 export NPM_ARGS_FILE="$NPM_ARGS" BASH_STUB_DIR="$STUBS"
 stub node 'echo v22.22.1'
-stub npm 'echo "$@" >> "$NPM_ARGS_FILE"; if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "bash-language-server" ]; then printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; fi; exit 0'
+stub npm 'if [ "$1" = "config" ]; then dirname "$0"; exit 0; fi; echo "$@" >> "$NPM_ARGS_FILE"; if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "bash-language-server" ]; then printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; fi; exit 0'
 COUNT_INSTALLED=0
 install_bash_language_server >/dev/null 2>&1; rc=$?
 check "bash-ls: npm present, installs -> exits 0"           0 "$rc"
@@ -386,13 +518,14 @@ newstubs
 # No node on PATH at all: the version is unknown, and unknown is left to npm
 # rather than treated as too old.
 export BASH_STUB_DIR="$STUBS"
-stub npm 'printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; exit 0'
+stub npm 'if [ "$1" = "config" ]; then dirname "$0"; exit 0; fi; printf "#!/bin/sh\nexit 0\n" > "$BASH_STUB_DIR/bash-language-server"; chmod +x "$BASH_STUB_DIR/bash-language-server"; exit 0'
 install_bash_language_server >/dev/null 2>&1; rc=$?
 check "bash-ls: node version unreadable -> not refused" 0 "$rc"
 unset BASH_STUB_DIR
 
 newstubs
-stub npm 'exit 0'
+# shellcheck disable=SC2016  # $1/$0 belong to the stub script, expanded when it runs
+stub npm 'if [ "$1" = "config" ]; then dirname "$0"; fi; exit 0'
 COUNT_INSTALLED=0
 install_bash_language_server >/dev/null 2>&1; rc=$?
 check "bash-ls: npm exits 0 but no binary -> fails"       1 "$rc"
@@ -960,6 +1093,9 @@ Invoke-Expression (Get-Block '^function Write-Step' '^function Write-Skip')
 function Sync-SessionEnvironment { }
 $script:Summary = @{ Installed = 0; Updated = 0; Skipped = 0 }
 Invoke-Expression (Get-Block '^function Install-LspBinary' '^\}')
+$script:TypeScriptLspSpec = 'typescript@6'
+Invoke-Expression (Get-Block '^function Get-TypeScriptLspTsserverState' '^\}')
+Invoke-Expression (Get-Block '^function Install-TypeScriptLsp' '^\}')
 Invoke-Expression (Get-Block '^function Install-CssLanguageServer' '^\}')
 Invoke-Expression (Get-Block '^function Install-BashLanguageServer' '^\}')
 Invoke-Expression (Get-Block '^function Install-PowerShellLspPlugin' '^\}')
@@ -1523,6 +1659,90 @@ $script:Summary.Installed = 0
 Install-Shellcheck
 $results += "shellcheck-winget-installs:installed=$($script:Summary.Installed)"
 
+# --- typescript-language-server: the TypeScript it falls back to ---------------
+# Same fake npm as the .sh half: a bare 'typescript' is 7 (lib/tsc.js only),
+# 'typescript@6' ships lib/tsserver.js. These stubs are /bin/sh scripts, so this
+# block is exercised on Linux/macOS pwsh only; on Windows it reports 'skipped'
+# rather than a pass it did not earn.
+if ($IsWindows) {
+    $results += 'ts-skipped-on-windows'
+} else {
+    function New-FakeNpm { param([string]$Name)
+        $dir = Join-Path $env:TESTTMP $Name; New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $root = Join-Path $dir 'lib/node_modules'; New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $log = Join-Path $dir 'install.log'; Set-Content -Path $log -Value '' -NoNewline
+        $npm = (@'
+#!/bin/sh
+case "$1 $2" in
+  "root -g") echo "NPMROOT"; exit 0 ;;
+  "install -g") ;;
+  *) exit 0 ;;
+esac
+shift 2
+echo "$*" >> "NPMLOG"
+for pkg in "$@"; do
+  case "$pkg" in
+    typescript-language-server)
+      mkdir -p "NPMROOT/typescript-language-server/lib"
+      printf '#!/bin/sh\nexit 0\n' > "NPMBIN/typescript-language-server"
+      chmod +x "NPMBIN/typescript-language-server" ;;
+    typescript@6)
+      rm -rf "NPMROOT/typescript"; mkdir -p "NPMROOT/typescript/lib"
+      touch "NPMROOT/typescript/lib/tsc.js" "NPMROOT/typescript/lib/tsserver.js" ;;
+    typescript)
+      rm -rf "NPMROOT/typescript"; mkdir -p "NPMROOT/typescript/lib"
+      touch "NPMROOT/typescript/lib/tsc.js" ;;
+  esac
+done
+exit 0
+'@).Replace('NPMROOT', $root).Replace('NPMLOG', $log).Replace('NPMBIN', $dir)
+        Set-Content -Path (Join-Path $dir 'npm') -Value $npm -NoNewline
+        & chmod +x (Join-Path $dir 'npm')
+        $env:PATH = "$dir$sep$basePath"
+        return @{ Dir = $dir; Root = $root; Log = $log }
+    }
+    function New-Dir { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+
+    # The reported machine: on PATH, global typescript 7 -> throws, installs nothing.
+    $f = New-FakeNpm 'ts-broken'
+    Write-ProbeStub (Join-Path $f.Dir 'typescript-language-server')
+    New-Dir (Join-Path $f.Root 'typescript-language-server'); New-Dir (Join-Path $f.Root 'typescript/lib')
+    Set-Content -Path (Join-Path $f.Root 'typescript/lib/tsc.js') -Value ''
+    $results += "ts-state-no-tsserver:$(Get-TypeScriptLspTsserverState)"
+    $script:Summary.Skipped = 0
+    $threw = $false
+    try { Install-TypeScriptLsp } catch { $threw = ($_.Exception.Message -match 'npm install -g typescript@6') }
+    $results += "ts-broken-throws:$threw skipped=$($script:Summary.Skipped) log=[$(Get-Content -Raw $f.Log)]"
+
+    # On PATH, no typescript at all -> repaired with typescript@6.
+    $f = New-FakeNpm 'ts-absent'
+    Write-ProbeStub (Join-Path $f.Dir 'typescript-language-server')
+    New-Dir (Join-Path $f.Root 'typescript-language-server')
+    $results += "ts-state-absent:$(Get-TypeScriptLspTsserverState)"
+    $script:Summary.Installed = 0
+    Install-TypeScriptLsp
+    $results += "ts-absent-repaired:installed=$($script:Summary.Installed) state=$(Get-TypeScriptLspTsserverState) log=[$("$(Get-Content -Raw $f.Log)".Trim())]"
+    $script:Summary.Skipped = 0
+    Install-TypeScriptLsp
+    $results += "ts-rerun:skipped=$($script:Summary.Skipped)"
+
+    # Fresh machine -> server plus a typescript that ships lib/tsserver.js.
+    $f = New-FakeNpm 'ts-fresh'
+    $script:Summary.Installed = 0
+    # Caught, so that a regression here fails this case rather than the whole harness.
+    try { Install-TypeScriptLsp } catch { $results += "ts-fresh-threw:$($_.Exception.Message)" }
+    $unpinned = [bool]("$(Get-Content -Raw $f.Log)" -match '(?m)(^| )typescript( |$)')
+    $results += "ts-fresh:installed=$($script:Summary.Installed) state=$(Get-TypeScriptLspTsserverState) unpinned=$unpinned"
+
+    # On PATH but not under npm's global root -> unknown, said so, nothing installed.
+    $f = New-FakeNpm 'ts-unknown'
+    Write-ProbeStub (Join-Path $f.Dir 'typescript-language-server')
+    $script:Summary.Skipped = 0
+    Install-TypeScriptLsp
+    $results += "ts-unknown:state=$(Get-TypeScriptLspTsserverState) skipped=$($script:Summary.Skipped) log=[$(Get-Content -Raw $f.Log)]"
+    $env:PATH = $basePath
+}
+
 # --- PSScriptAnalyzer --------------------------------------------------------
 $stubP1 = Join-Path $env:TESTTMP 'psa-none'; New-Item -ItemType Directory -Path $stubP1 -Force | Out-Null
 $env:PATH = "$stubP1$sep$basePath"
@@ -1635,6 +1855,17 @@ PS1EOF
   check ".ps1 Install-Shellcheck: no manager throws"                 "yes" "$(case "$out" in *"shellcheck-no-manager-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-Shellcheck: winget success w/o binary throws"  "yes" "$(case "$out" in *"shellcheck-winget-unverified-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-Shellcheck: winget installs and verifies"      "yes" "$(case "$out" in *"shellcheck-winget-installs:installed=1"*) echo yes;; *) echo no;; esac)"
+  if [ "$(has_text "$out" ts-skipped-on-windows)" = yes ]; then
+    echo "SKIPPED: the .ps1 typescript-language-server cases use /bin/sh stubs and did not run on Windows pwsh."
+  else
+    check ".ps1 tsserver state: global typescript 7 -> no-tsserver"      "yes" "$(has_text "$out" "ts-state-no-tsserver:no-tsserver")"
+    check ".ps1 Install-TypeScriptLsp: on PATH + typescript 7 throws, no skip, installs nothing" "yes" "$(has_text "$out" "ts-broken-throws:True skipped=0 log=[]")"
+    check ".ps1 tsserver state: no typescript -> absent"                 "yes" "$(has_text "$out" "ts-state-absent:absent")"
+    check ".ps1 Install-TypeScriptLsp: on PATH + no typescript installs typescript@6" "yes" "$(has_text "$out" "ts-absent-repaired:installed=1 state=ok log=[typescript@6]")"
+    check ".ps1 Install-TypeScriptLsp: re-run after repair skips"        "yes" "$(has_text "$out" "ts-rerun:skipped=1")"
+    check ".ps1 Install-TypeScriptLsp: fresh machine leaves lib/tsserver.js, never unpinned" "yes" "$(has_text "$out" "ts-fresh:installed=1 state=ok unpinned=False")"
+    check ".ps1 Install-TypeScriptLsp: not under npm's root -> unknown, skip, installs nothing" "yes" "$(has_text "$out" "ts-unknown:state=unknown skipped=1 log=[]")"
+  fi
   check ".ps1 Install-PSScriptAnalyzer: no hosts throws"             "yes" "$(case "$out" in *"psa-no-hosts-throws:True"*) echo yes;; *) echo no;; esac)"
   check ".ps1 Install-PSScriptAnalyzer: one host installs"           "yes" "$(case "$out" in *"psa-one-host-installs:installed=1"*) echo yes;; *) echo no;; esac)"
   unset PS1SCRIPT TESTTMP REALTOOLS_DIR PSES_FIXTURE PSES_FIXTURE_SHA
