@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **ai-connect 0.2.0**: Every session on a machine is online at once. Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the machine's name and every other one sat on standby with no working tools.
-- **bash-lsp, pwsh-lsp and powershell-lsp 0.1.0**: Language-server plugins for Bash and PowerShell. Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **ai-connect 0.1.11**: Installed but not set up, the plugin no longer errors on every prompt, tool call and turn end. `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
