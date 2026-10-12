@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.6] - 2026-10-11
+
+Onboarding in three commands, and the peer-deploy fixes from crew's review (W-0129).
+
+### Added
+- `deploy invite --name N`: a single-use, non-ephemeral, pre-approved `tag:ai-peer` join key as one `aic1.` invite code, written owner-only (`--out`) or shown once
+- `deploy join --invite-file F` (or `--invite` at a hidden prompt, or `--name N --bridge H` for a browser login): preflight, Tailscale installed and joined with the pinned flags, the machine's own token (0600, its directory 0700), the client config, the enrolment hash, and a VPN / port / token summary where an unapproved token is PENDING
+- `deploy approve --name N [--token-sha256 H]`: add-peer, the Bridge restart, and the node's key expiry turned off through the API
+- `deploy remove --name N --yes`: the node off the tailnet, the peer out of the Bridge, the Bridge restarted
+- `deploy list`: every tailnet node (IP, tags, online, key expiry) beside the Bridge's peers, naming any key that still expires
+- `deploy/ONBOARDING.md`: add, remove and rotate a machine, troubleshooting, VPN coexistence
+
+### Changed
+- `vpn/mint-key` mints non-ephemeral keys by default; `--ephemeral` opts in, for throwaway and CI nodes
+- `deploy peer` and `deploy join` install no plugin hooks and register no MCP server unless asked (`--install-hooks` / `--with-hooks`, `--register-mcp [--scope project|user]`), each with a bypass-permissions warning
+- `--dry-run` runs no tool at all and needs no token or key file; `status` runs nothing through `sudo` and no `claude` command
+- The apt install falls back to Tailscale's install script only when the repository does not carry the release; a held dpkg lock or no network stops instead
+- What keeps running is installed outside the checkout: the venv and a copy of the plugin in `~/.local/share/ai-connect` (Windows `%LOCALAPPDATA%\ai-connect`); a rerun from a newer checkout updates the copy and restarts the Bridge, and a scheduled task left pointing elsewhere is registered again
+- `deploy bridge` and `tailnet-setup` turn the Bridge's own node key expiry off; `deploy status` flags a node key that still expires
+
 ## [0.1.5] - 2026-10-11
 
 One-command deployment over Tailscale (W-0129).

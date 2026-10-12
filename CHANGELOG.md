@@ -9,11 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — ai-connect 0.1.5: one-command deployment over Tailscale (W-0129)
+### Added — ai-connect 0.1.6: one-command deployment and onboarding over Tailscale (W-0129)
 
-- **Summary.** `ai-connect` can now be set up with one command per machine: `deploy tailnet-setup` prepares the
-  tailnet through the Tailscale API, `deploy bridge` and `deploy peer` install and connect the machines, and
-  `deploy test` proves the link end to end.
+- **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
+  `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
+  and `deploy remove` show and take machines off.
+- **Onboarding.** An invite is a single-use, non-ephemeral `tag:ai-peer` key in one code; `join` installs and
+  joins Tailscale, makes the machine's own token and config, and prints only the token's hash. `approve` lets it
+  in and turns its node key expiry off. Guide: `plugin/ai-connect/deploy/ONBOARDING.md`.
+- **Safer peers.** A peer gets no plugin hooks and no MCP server unless asked, `--dry-run` runs no tool, the
+  install falls back to Tailscale's script only for a release its repository lacks, and what keeps running
+  lives outside the checkout (`~/.local/share/ai-connect`).
 - **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
   prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
   (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
