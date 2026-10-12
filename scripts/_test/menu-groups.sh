@@ -277,6 +277,81 @@ check "and is not re-added"                     no  "$(logged 'mcp add')"
 check "and the note is printed anyway"          yes "$(saw 'Backs the web-research skill')"
 MCP_LIST=""
 
+echo "9. a piped run survives children that read stdin, and find-skills installs user-level"
+# The documented install is 'curl ... | bash', so the script IS stdin. Two defects met
+# there on 2026-10-12 and the run stopped at find-skills with no summary: community and
+# claude-code-setup never ran, and nothing said so.
+#   a. bash read the script off the pipe a command at a time, so a child that read its
+#      inherited stdin swallowed the rest of the script. The body is now one '{ }'
+#      group, which bash parses whole before running any of it.
+#   b. 'npx skills add' was run without --global, so it wrote ./.claude/skills in the
+#      current directory, exited 0, and the on-disk check failed everywhere but $HOME.
+# Every other end-to-end case here runs 'bash "$SCRIPT"' from a file and so cannot see
+# (a) at all. Both stubs below drain stdin, which is the worst a child can do, and the
+# npx stub creates the skill only when asked for a global, unprompted install - in the
+# directory the script's own check reads (CLAUDE_CONFIG_DIR/skills).
+cat > "$TMP/bin/claude" <<'STUB'
+#!/bin/sh
+cat >/dev/null
+exit 0
+STUB
+cat > "$TMP/bin/npx" <<'STUB'
+#!/bin/sh
+cat >/dev/null
+printf '%s\n' "$*" >> "$NPX_STUB_LOG"
+global=0; yes=0; seen_skills=0
+for a in "$@"; do
+  # npx's own -y comes BEFORE 'skills'; only flags after it reach the skills CLI.
+  if [ "$a" = "skills" ]; then seen_skills=1; continue; fi
+  [ "$seen_skills" -eq 1 ] || continue
+  case "$a" in
+    -g|--global) global=1 ;;
+    -y|--yes)    yes=1 ;;
+  esac
+done
+if [ "$global" -eq 1 ] && [ "$yes" -eq 1 ]; then
+  mkdir -p "$CLAUDE_CONFIG_DIR/skills/find-skills"
+  printf 'stub\n' > "$CLAUDE_CONFIG_DIR/skills/find-skills/SKILL.md"
+fi
+exit 0
+STUB
+chmod +x "$TMP/bin/claude" "$TMP/bin/npx"
+mkdir -p "$TMP/piped-home" "$TMP/piped-cwd"
+: > "$TMP/npx.log"
+# Run from a directory that is neither HOME nor the config root: that is where (b) hid.
+( cd "$TMP/piped-cwd" && cat "$SCRIPT" | HOME="$TMP/piped-home" CLAUDE_CONFIG_DIR="$TMP/piped-cfg" \
+    PATH="$TMP/bin:$PATH" NPX_STUB_LOG="$TMP/npx.log" \
+    bash -s -- --select team,find-skills,community,claude-code-setup --community all \
+    2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$TMP/piped.out" )
+piped_has()   { grep -qF -e "$1" "$TMP/piped.out" && echo yes || echo no; }
+piped_after() {
+  # yes when a line matching $1 appears AFTER the find-skills step header.
+  awk -v want="$1" '/^==> Skill: find-skills/ { seen=1; next } seen && index($0, want) { found=1 }
+       END { print (found ? "yes" : "no") }' "$TMP/piped.out"
+}
+check "the find-skills step is reached"               yes "$(piped_has '==> Skill: find-skills')"
+check "npx is given --global --yes for the skills CLI" \
+  yes "$(grep -qF -e 'skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes' "$TMP/npx.log" && echo yes || echo no)"
+check "find-skills reports ok, in the config root"    yes "$(piped_has "installed find-skills to $TMP/piped-cfg/skills/find-skills")"
+check "and does not report a failure"                 no  "$(piped_has 'find-skills (vercel-labs/skills) failed')"
+check "nothing was written into the current directory" "" "$(ls -A "$TMP/piped-cwd")"
+piped_community="$(awk '/^==> Skill: find-skills/ { seen=1; next } seen && /^==> Plugin:/ { n++ } END { print n+0 }' "$TMP/piped.out")"
+# Community's plugins plus claude-code-setup's one: every '==> Plugin:' step after
+# find-skills. Derived from the catalog for the reason case 7 gives.
+check "every community plugin step and claude-code-setup run after it" \
+  "$(( $(group_count COMMUNITY) + 1 ))" "$piped_community"
+check "claude-code-setup is one of them"              yes "$(piped_after 'claude-code-setup')"
+check "the run reaches its final summary"             yes "$(piped_has 'Installed: ')"
+check "and reports no failed step"                    yes "$(piped_has 'All steps completed.')"
+# The matched pair: the .ps1 cannot run off Windows (ps-install-keys.sh skips there), so
+# its half of (b) is pinned by reading the line. (a) has no .ps1 counterpart - 'irm | iex'
+# hands PowerShell the whole script as one string.
+PS1_SCRIPT="$REPO/scripts/install-prerequisites.ps1"
+check "the .ps1 passes the same flags" \
+  1 "$(grep -cE '^[[:space:]]*npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes[[:space:]]*$' "$PS1_SCRIPT")"
+check "and has no find-skills call without them" \
+  0 "$(grep -E '^[[:space:]]*npx -y skills add ' "$PS1_SCRIPT" | grep -cv -e '--global --yes')"
+
 echo
 if [ "$FAIL" -eq 0 ]; then green "$PASS passed, 0 failed"; exit 0; fi
 red "$PASS passed, $FAIL FAILED"

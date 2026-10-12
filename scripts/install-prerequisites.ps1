@@ -2236,7 +2236,12 @@ if (Test-Selected 'find-skills') {
             Write-Skip "find-skills already installed at $findSkillsDir (-NoUpdate set)"
             return
         }
-        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+        # '--global --yes' go to the skills CLI (the '-y' before 'skills' is npx's own).
+        # Without --global it installs into .\.claude\skills of whatever directory the
+        # script was run from, exits 0, and the check below fails everywhere but the
+        # profile directory; without --yes it prompts. --global follows
+        # CLAUDE_CONFIG_DIR, the same root Get-ClaudeSkillsDir uses.
+        npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes
         if (-not (Test-UserSkillInstalled 'find-skills')) {
             throw "the installer finished but '$findSkillsDir\SKILL.md' was not created - see the output above."
         }

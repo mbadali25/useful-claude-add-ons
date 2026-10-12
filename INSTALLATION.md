@@ -97,7 +97,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs az login or tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
-Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
+Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking. The whole bash script is one `{ … }` group, so bash has read all of it before the first command runs and a step that reads stdin cannot swallow the steps after it.
 
 Run `source ~/.bashrc` (or open a new shell) afterward to pick up the `PATH` change in shells you already had open.
 
@@ -115,7 +115,7 @@ claude plugin install frontend-design@claude-code-plugins
 claude plugin marketplace add lexiaoyao20/excalidraw-generator
 claude plugin install excalidraw-generator@excalidraw-generator
 
-npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code   # prompted
+npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes   # prompted
 
 # Community set, prompted (default Yes). Source repo -> marketplace name is not
 # mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
@@ -139,7 +139,7 @@ Some things are *not* Claude Code plugins and so can't go through `claude plugin
 - **Context7, Playwright CLI, SkillUI, Strix** — ordinary CLI tools; see [Optional: extra tooling](#optional-extra-tooling).
 - **`xlsx` / `mcp-integration`** — these were previously pulled from `aiskillstore/marketplace`, which is the [Skill Store](https://skillstore.io) content repo, **not** a Claude Code marketplace (it has no `.claude-plugin/marketplace.json`). They're no longer installed by the scripts. `anthropic-office-skills@claude-settings` covers the spreadsheet/document ground; if you specifically want the Skill Store versions, install them yourself with `npx skillstore add aiskillstore/xlsx` / `npx skillstore add aiskillstore/mcp-integration`.
 
-`find-skills` is asked about before it runs (default **Yes**). It installs through the `skills` CLI as a plain user-level skill rather than as a Claude Code plugin, so it never shows up in `claude plugin list` — the scripts detect it on disk at `~/.claude/skills/find-skills/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/...`). If it's already there, the prompt changes to offer a re-install for updates instead, and `-NoUpdate` / `--no-update` skips it outright.
+`find-skills` is asked about before it runs (default **Yes**). It installs through the `skills` CLI as a plain user-level skill rather than as a Claude Code plugin, so it never shows up in `claude plugin list`. `--global` is what makes it user-level: without it the `skills` CLI writes `./.claude/skills/find-skills` in whatever directory you ran it from; `--yes` answers its own prompt. The scripts detect it on disk at `~/.claude/skills/find-skills/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/...`). If it's already there, the prompt changes to offer a re-install for updates instead, and `-NoUpdate` / `--no-update` skips it outright.
 
 The first line adds this repo's own skills as an installable marketplace — unlike the external marketplaces above, the scripts **do** auto-install every individual skill from it (see below), since it's this repo's own catalog.
 
