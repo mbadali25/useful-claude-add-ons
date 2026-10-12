@@ -1,0 +1,22 @@
+{
+  "name": "angular-lsp",
+  "version": "0.1.0",
+  "description": "Angular language server (@angular/language-server, ngserver) for code intelligence in Angular HTML templates - definitions, references, hover and template diagnostics. Registers an LSP server only: no hooks, commands, agents or skills. Maps .html only; .ts stays with typescript-lsp. Needs Node.js and a global '@angular/language-server' install; the plugin does not install either.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "license": "GPL-2.0-only",
+  "lspServers": {
+    "angular": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/ngserver-launch.js",
+        "--stdio"
+      ],
+      "extensionToLanguage": {
+        ".html": "html"
+      }
+    }
+  }
+}
