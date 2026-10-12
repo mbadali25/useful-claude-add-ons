@@ -1,0 +1,22 @@
+{
+  "name": "bash-lsp",
+  "version": "0.1.0",
+  "description": "Bash language server (bash-language-server) for code intelligence in .sh and .bash files - diagnostics (through shellcheck when it is on PATH), hover, definitions, references, symbols and completion. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js 20 or newer and a global 'bash-language-server' install; the plugin does not install either.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "license": "GPL-2.0-only",
+  "lspServers": {
+    "bash": {
+      "command": "bash-language-server",
+      "args": [
+        "start"
+      ],
+      "extensionToLanguage": {
+        ".sh": "shellscript",
+        ".bash": "shellscript"
+      }
+    }
+  }
+}

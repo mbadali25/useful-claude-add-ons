@@ -1082,14 +1082,14 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
-    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)" }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
     [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
     [pscustomobject]@{ Key = 'aws-docs-mcp';      Default = $false; Name = 'MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)' }
     [pscustomobject]@{ Key = 'aws-pricing-mcp';   Default = $false; Name = 'MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)' }
     [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
-    [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm' }
+    [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, bash, css, powershell, sql, terraform (this repo), with their language servers' }
     [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)' }
 )
 
@@ -1174,11 +1174,18 @@ foreach ($sk in $script:SkillCatalog) {
 # 'plugin@marketplace|marketplace-source|marketplace-name'.
 $script:PluginCatalog = @(
     [pscustomobject]@{ Key = 'ai-connect'; Selected = $true; Name = 'ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks'; Spec = 'ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'angular-lsp'; Selected = $true; Name = 'angular-lsp             - Angular template language server (ngserver). LSP only, no hooks'; Spec = 'angular-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'bash-lsp'; Selected = $true; Name = 'bash-lsp                - Bash language server (bash-language-server). LSP only, no hooks'; Spec = 'bash-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'css-lsp'; Selected = $true; Name = 'css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks'; Spec = 'css-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'localgpu'; Selected = $true; Name = 'localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks'; Spec = 'localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'powershell-lsp'; Selected = $true; Name = 'powershell-lsp          - PowerShell LSP in Windows PowerShell 5.1. Windows only; not with pwsh-lsp'; Spec = 'powershell-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'pwsh-lsp'; Selected = $true; Name = 'pwsh-lsp                - PowerShell LSP (Editor Services) in PowerShell 7. Not with powershell-lsp'; Spec = 'pwsh-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'rule-of-two'; Selected = $true; Name = 'rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks'; Spec = 'rule-of-two@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'sql-lsp'; Selected = $true; Name = 'sql-lsp                 - SQL language server (sqls); no DB connection shipped. No hooks'; Spec = 'sql-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'terraform-lsp'; Selected = $true; Name = 'terraform-lsp           - Terraform language server (terraform-ls). LSP only, no hooks'; Spec = 'terraform-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
 )
 
 # --- Team plugins (menu item 4) -----------------------------------------------
@@ -1230,7 +1237,7 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw, github)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
-    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >" }
+    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp)  >" }
 )
 
 function Get-Group {
@@ -1308,6 +1315,65 @@ function Expand-GroupSpec {
     }
 }
 
+function Test-IsWindowsHost {
+    # $IsWindows does not exist in Windows PowerShell 5.1; $env:OS does, on every
+    # Windows host, and is unset on Linux and macOS.
+    return ($env:OS -eq 'Windows_NT')
+}
+
+function Get-LspPluginConflict {
+    # Claude Code starts ONE language server per file extension: the first plugin
+    # registered wins and the other gets a warning. Two of this repo's plugins
+    # serve the same extensions, so installing both is never right:
+    #   pwsh-lsp        .ps1 .psm1 .psd1 PowerShell 7 (pwsh), any OS
+    #   powershell-lsp  the same three   Windows PowerShell 5.1, Windows only
+    # $Name is a bare plugin name. Returns why it must not be installed on this
+    # machine, or $null when it may be. A plugin that is ALREADY installed is never
+    # blocked - the choice was made, and blocking it here would only stop its updates.
+    # Every install path asks this: Install-Group (the repo-plugins row, where
+    # both are ticked by default) and the lsp-plugins row. That is what picks one
+    # PowerShell plugin per machine: pwsh-lsp where pwsh resolves, powershell-lsp on
+    # Windows where it does not.
+    param([string]$Name)
+    $installed = Get-ClaudePlugins
+    if ($installed[$Name]) { return $null }
+    $hasPwsh = [bool](Get-Command pwsh -ErrorAction SilentlyContinue)
+    switch ($Name) {
+        'pwsh-lsp' {
+            if ($installed['powershell-lsp']) {
+                return "powershell-lsp is already installed and serves .ps1/.psm1/.psd1; Claude Code runs one server per extension. To switch to PowerShell 7, run 'claude plugin uninstall powershell-lsp@useful-claude-add-ons' and re-run."
+            }
+            if (-not $hasPwsh) {
+                return "pwsh (PowerShell 7) is not on PATH, and this plugin starts it. Install PowerShell 7 (https://aka.ms/powershell) and re-run."
+            }
+        }
+        'powershell-lsp' {
+            if (-not (Test-IsWindowsHost)) {
+                return "it hosts the server in Windows PowerShell 5.1 (powershell.exe), which exists on Windows only. pwsh-lsp is the one for this machine."
+            }
+            if ($hasPwsh) {
+                return "PowerShell 7 (pwsh) is on PATH, so pwsh-lsp is the one for this machine; the two serve the same extensions and must not both be installed."
+            }
+            if ($installed['pwsh-lsp']) {
+                return "pwsh-lsp is already installed and serves .ps1/.psm1/.psd1; Claude Code runs one server per extension."
+            }
+        }
+    }
+    return $null
+}
+
+function Install-ClaudePluginUnlessConflict {
+    # $Spec is 'name@marketplace'. Not installing a plugin whose extensions another
+    # plugin already serves is the correct outcome, not a failed step.
+    param([string]$Spec)
+    $reason = Get-LspPluginConflict ($Spec.Split('@')[0])
+    if ($reason) {
+        Write-Warn2 "not installing '$Spec': $reason"
+        return
+    }
+    Install-ClaudePlugin $Spec
+}
+
 function Install-Group {
     # Install a group's ticked entries. Every sub-picker group goes through here, so the
     # catalog really is the single source it claims to be: the menu label, the picker,
@@ -1337,7 +1403,7 @@ function Install-Group {
     foreach ($entry in $entries) {
         $entryPlugin = ($entry.Spec -split '\|', 3)[0]
         Invoke-Step "Plugin: $entryPlugin" {
-            Install-ClaudePlugin $entryPlugin
+            Install-ClaudePluginUnlessConflict $entryPlugin
         }.GetNewClosure()
     }
 }
@@ -2956,6 +3022,40 @@ if (Test-Selected 'ms-mcp') {
 # lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
 # 'angular' entry - so Angular's language server goes in as a plain npm package
 # instead, the same way skillui's Playwright/Chromium install is above.
+#
+# Six more plugins come from THIS repo's marketplace rather than Anthropic's:
+# angular-lsp (the Angular gap above, closed here), bash-lsp, css-lsp,
+# terraform-lsp, sql-lsp, and ONE of pwsh-lsp / powershell-lsp.
+# css-lsp's server is the npm package vscode-langservers-extracted and
+# bash-lsp's is bash-language-server, installed the same way as the other npm
+# servers here. Python stays on the official pyright-lsp.
+#
+# PowerShell is one plugin per machine, because Claude Code runs one server per
+# file extension and both plugins serve .ps1/.psm1/.psd1: pwsh-lsp where
+# 'pwsh' resolves, powershell-lsp on Windows where only 5.1 exists
+# (Get-LspPluginConflict, next to Install-Group). This script
+# does NOT install PowerShell 7 itself; a Windows machine without it gets
+# powershell-lsp. Both plugins start PowerShell Editor Services, which is not on
+# the PowerShell Gallery or in any package manager here: Install-Pses downloads
+# ONE release zip, pinned by version and sha256 ($script:PsesVersion /
+# $script:PsesSha256, the digest GitHub publishes for that asset), refuses
+# anything that does not match, and unzips it into the directory both plugins'
+# launcher reads (Get-PsesDirectory - keep it equal to scripts/pses-launch.ps1's
+# default).
+# Each registers an LSP server and nothing else, and none of them installs its
+# language server either. Two of those servers have no package this step will
+# fetch unverified, following install_tflint's precedent in step 23:
+#   terraform-ls - Homebrew (hashicorp/tap) or winget (Hashicorp.TerraformLanguageServer,
+#                  present in microsoft/winget-pkgs on 2026-10-12). No Chocolatey
+#                  package exists. Otherwise: stop and name the manual route.
+#   sqls         - not in Homebrew core, Chocolatey or winget on 2026-10-12. With Go
+#                  on PATH it is a version-pinned 'go install', which Go verifies
+#                  against its checksum database. Otherwise: stop and name the
+#                  manual route.
+# Neither of those two functions downloads a release archive itself: that would
+# be this script choosing and trusting a binary on the user's behalf with no
+# pinned checksum. Install-Pses does download one, and pins it.
+# SQLS_VERSION is the one place the sqls pin lives; bumping it is a reviewed edit.
 function Install-LspBinary {
     # $Label for messages, $Probe the command Claude Code will actually run,
     # $Install a scriptblock run directly - never a string that gets invoked.
@@ -2977,6 +3077,151 @@ function Install-LspBinary {
     }
     $script:Summary.Installed++
     Write-Ok "$Label installed at $($cmd.Source)"
+}
+function Install-CssLanguageServer {
+    # Detect the binary BEFORE requiring its prerequisite, as the other npm
+    # servers in this step do: one already on PATH is not a failure without npm.
+    if (-not (Get-Command vscode-css-language-server -ErrorAction SilentlyContinue)) {
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+    }
+    Install-LspBinary -Label 'CSS language server (vscode-css-language-server)' -Probe 'vscode-css-language-server' -Install { npm install -g vscode-langservers-extracted }
+}
+function Install-BashLanguageServer {
+    # Detect the binary BEFORE requiring its prerequisite, as the other npm
+    # servers in this step do: one already on PATH is not a failure without npm.
+    if (-not (Get-Command bash-language-server -ErrorAction SilentlyContinue)) {
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+        # bash-language-server 5.x declares engines.node >= 20. npm only warns
+        # about that and installs anyway, leaving a server that dies on start-up.
+        # A version that cannot be read is left to npm rather than guessed at.
+        $nodeVer = ''
+        if (Get-Command node -ErrorAction SilentlyContinue) { $nodeVer = "$(node -v 2>$null)" -replace '^v', '' }
+        $nodeMajor = ($nodeVer -split '\.')[0]
+        if ($nodeMajor -match '^[0-9]+$' -and [int]$nodeMajor -lt 20) {
+            throw "node v$nodeVer found, but bash-language-server needs Node.js 20 or newer. Install a newer Node yourself and re-run."
+        }
+    }
+    Install-LspBinary -Label 'bash-language-server' -Probe 'bash-language-server' -Install { npm install -g bash-language-server }
+}
+function Install-PowerShellLspPlugin {
+    # Exactly one of the two, chosen by what this machine can run. The conflict
+    # check still applies: a machine that already has the other one keeps it.
+    if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+        Install-ClaudePluginUnlessConflict 'pwsh-lsp@useful-claude-add-ons'
+    } elseif (Test-IsWindowsHost) {
+        Install-ClaudePluginUnlessConflict 'powershell-lsp@useful-claude-add-ons'
+    } else {
+        throw "pwsh (PowerShell 7) not found on PATH - pwsh-lsp starts it, and powershell-lsp is for Windows PowerShell 5.1 only. Install PowerShell 7 (https://aka.ms/powershell) and re-run. This script does not install it."
+    }
+}
+$script:PsesVersion = 'v4.7.0'
+$script:PsesSha256 = '5084f0326cc88539e9d880b08f6c52ce5be4672bb8ecee8921e35f8895a6b9d7'
+function Get-PsesDirectory {
+    # The one directory both plugins' launcher (scripts/pses-launch.ps1) reads.
+    # Same three rules, same order, same conditions as the launcher's own:
+    # PSES_BUNDLE_PATH when set; on Windows %LOCALAPPDATA%\powershell-editor-services,
+    # the per-user data directory there; otherwise
+    # ~/.local/share/powershell-editor-services.
+    if ($env:PSES_BUNDLE_PATH) { return $env:PSES_BUNDLE_PATH }
+    if ($env:OS -eq 'Windows_NT' -and $env:LOCALAPPDATA) {
+        return (Join-Path $env:LOCALAPPDATA 'powershell-editor-services')
+    }
+    return (Join-Path (Join-Path (Join-Path $HOME '.local') 'share') 'powershell-editor-services')
+}
+function Get-PsesArchive {
+    # The download, on its own so the regression suite can replace it. Windows
+    # PowerShell 5.1 negotiates TLS 1.0 by default, which GitHub refuses.
+    param([string]$Url, [string]$OutFile)
+    $ProgressPreference = 'SilentlyContinue'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+}
+function Install-Pses {
+    $dir = Get-PsesDirectory
+    $start = Join-Path (Join-Path $dir 'PowerShellEditorServices') 'Start-EditorServices.ps1'
+    if (Test-Path -LiteralPath $start -PathType Leaf) {
+        Write-Skip "PowerShell Editor Services already installed ($dir)"
+        return
+    }
+    if (-not (Get-Command pwsh -ErrorAction SilentlyContinue) -and -not (Test-IsWindowsHost)) {
+        throw "not installing PowerShell Editor Services: no PowerShell on this machine to host it (pwsh not found on PATH). Install PowerShell 7 (https://aka.ms/powershell) and re-run."
+    }
+    if (Test-Path -LiteralPath $dir) {
+        throw "'$dir' exists but holds no PowerShellEditorServices/Start-EditorServices.ps1 - not overwriting it. Move it aside and re-run."
+    }
+    $url = "https://github.com/PowerShell/PowerShellEditorServices/releases/download/$($script:PsesVersion)/PowerShellEditorServices.zip"
+    $parent = Split-Path -Parent $dir
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    # Unpacked beside the destination, then renamed into place: a download or
+    # unzip that dies half-way never leaves a directory the check above would
+    # later report as "already installed".
+    $tmp = Join-Path $parent (".pses-install." + [System.IO.Path]::GetRandomFileName())
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    try {
+        $zip = Join-Path $tmp 'PowerShellEditorServices.zip'
+        try {
+            Get-PsesArchive -Url $url -OutFile $zip
+        } catch {
+            throw "downloading $url failed: $($_.Exception.Message)"
+        }
+        if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw "downloading $url failed: nothing was written." }
+        $want = $script:PsesSha256.ToLowerInvariant()
+        $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($got -ne $want) {
+            throw "sha256 MISMATCH on PowerShell Editor Services $($script:PsesVersion) - refusing to install it. Expected $want, got $got. Either the pin in this script is stale or what $url served is not what was pinned."
+        }
+        $bundle = Join-Path $tmp 'bundle'
+        Expand-Archive -LiteralPath $zip -DestinationPath $bundle -Force
+        if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $bundle 'PowerShellEditorServices') 'Start-EditorServices.ps1') -PathType Leaf)) {
+            throw "the PowerShell Editor Services archive holds no PowerShellEditorServices/Start-EditorServices.ps1 - not installing it."
+        }
+        Move-Item -LiteralPath $bundle -Destination $dir
+    } finally {
+        Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $script:Summary.Installed++
+    Write-Ok "PowerShell Editor Services $($script:PsesVersion) installed at $dir (sha256 verified)"
+}
+function Install-TerraformLs {
+    $existing = Get-Command terraform-ls -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "terraform-ls already installed ($($existing.Source))"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install -e --id Hashicorp.TerraformLanguageServer --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget install Hashicorp.TerraformLanguageServer failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command terraform-ls -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "terraform-ls installed via winget but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "terraform-ls installed via winget at $($cmd.Source)"
+    } else {
+        throw "terraform-ls has no unpinned auto-install path here (no winget on PATH) - download a release from https://releases.hashicorp.com/terraform-ls/ (verify it against the SHA256SUMS file published beside it, and put the binary on PATH), then re-run."
+    }
+}
+$script:SqlsVersion = 'v0.2.48'
+function Install-Sqls {
+    $existing = Get-Command sqls -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "sqls already installed ($($existing.Source))"
+        return
+    }
+    if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+        throw "sqls has no unpinned auto-install path here (no go on PATH) - install Go and re-run, or download a release from https://github.com/sqls-server/sqls/releases (verify its SHA-256 against the digest GitHub shows for that asset, and put the binary on PATH), then re-run."
+    }
+    # 'go install' writes into GOBIN, or GOPATH\bin when GOBIN is unset, and adds
+    # neither to PATH - put it on this session's PATH before Install-LspBinary's
+    # post-install probe runs.
+    $gobin = (& go env GOBIN | Out-String).Trim()
+    if (-not $gobin) { $gobin = Join-Path ((& go env GOPATH | Out-String).Trim()) 'bin' }
+    $env:PATH = "$gobin$([System.IO.Path]::PathSeparator)$env:PATH"
+    $pinned = "github.com/sqls-server/sqls@$($script:SqlsVersion)"
+    Install-LspBinary -Label 'sqls' -Probe 'sqls' -Install { go install $pinned }
+    Write-Warn2 "sqls is on PATH for this session only - add $gobin to your PATH to keep it there in new shells."
+    Write-Warn2 "sqls ships with no database connection, and this script configures none. Schema-aware completion needs your own ~/.config/sqls/config.yml - see plugin/sql-lsp/README.md before pointing it at any database."
 }
 if (Test-Selected 'lsp-plugins') {
     Invoke-Step "Marketplace: anthropics/claude-plugins-official" {
@@ -3017,7 +3262,13 @@ if (Test-Selected 'lsp-plugins') {
         }
         Install-LspBinary -Label 'typescript-language-server' -Probe 'typescript-language-server' -Install { npm install -g typescript-language-server typescript }
     }
-    Invoke-Step "Angular language server (npm; no official Claude plugin)" {
+    Invoke-Step "Marketplace: mbadali25/useful-claude-add-ons" {
+        Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
+    }
+    Invoke-Step "Plugin: angular-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'angular-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "Angular language server (npm)" {
         if (-not (Get-Command ngserver -ErrorAction SilentlyContinue)) {
             if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
                 throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
@@ -3025,6 +3276,24 @@ if (Test-Selected 'lsp-plugins') {
         }
         Install-LspBinary -Label 'Angular language server (ngserver)' -Probe 'ngserver' -Install { npm install -g '@angular/language-server' }
     }
+    Invoke-Step "Plugin: bash-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'bash-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "bash-language-server (npm)" { Install-BashLanguageServer }
+    Invoke-Step "Plugin: css-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'css-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "CSS language server (npm)" { Install-CssLanguageServer }
+    Invoke-Step "Plugin: pwsh-lsp or powershell-lsp (one per machine)" { Install-PowerShellLspPlugin }
+    Invoke-Step "PowerShell Editor Services (pinned release zip)" { Install-Pses }
+    Invoke-Step "Plugin: terraform-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'terraform-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "terraform-ls (HashiCorp)" { Install-TerraformLs }
+    Invoke-Step "Plugin: sql-lsp@useful-claude-add-ons" {
+        Install-ClaudePlugin 'sql-lsp@useful-claude-add-ons'
+    }
+    Invoke-Step "sqls (pinned go install)" { Install-Sqls }
 }
 
 # --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer - ---

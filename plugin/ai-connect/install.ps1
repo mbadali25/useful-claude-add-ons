@@ -144,6 +144,23 @@ function Uninstall-AIConnect {
     }
     if (Test-Path $Python) {
         Invoke-Native $Python @((Join-Path $Repo 'installer.py'), 'unregister')
+    } else {
+        # No venv (a plugin update left this directory without one): installer.py cannot run, but the
+        # state hooks it wrote into Claude Code's settings would stay and fail on every prompt.
+        # state_hooks.py needs only the standard library, so any Python 3 takes them out.
+        $SysPython = $null
+        foreach ($Candidate in 'python3', 'python', 'py') {
+            $Found = Get-Command $Candidate -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $Found) { continue }
+            & $Found.Source -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>$null
+            if ($LASTEXITCODE -eq 0) { $SysPython = $Found.Source; break }
+        }
+        if ($SysPython) {
+            & $SysPython (Join-Path $Repo 'state_hooks.py') remove
+        } else {
+            [Console]::Error.WriteLine("  No Python 3 found (tried python3, python, py): the AI-Connect state hooks are still in Claude Code's settings.json. Remove the four peer_set_state hooks there by hand.")
+        }
+        Write-Host '  No venv here, so the MCP server was not unregistered: claude mcp remove -s user ai-connect'
     }
     $ConfigDir = Split-Path $ConfigFile
     $DeleteConfig = Read-Host "Delete $ConfigDir with everything in it (config, token, logs, message history)? [y/N]"

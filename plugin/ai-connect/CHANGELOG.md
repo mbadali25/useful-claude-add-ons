@@ -29,9 +29,9 @@ One peer name per project, opt-in, on the same branch as 0.1.12 (PR #614). 0.1.1
 ## [0.1.12] - 2026-10-12
 
 Setup in one run per machine, a firewall step that says when its rule does nothing, and a second peer name
-for a second session. 0.1.9 and 0.1.10 belong to the quiet-when-unconfigured change (PR #610), which is meant
-to merge first. 0.1.11 was this branch's first commit; a test fix changed content after it, so it was never
-published.
+for a second session. The quiet-when-unconfigured change (PR #610) merged first, as 0.1.11 (below). This
+branch's first commit was also numbered 0.1.11 before that; a test fix changed content after it, so that
+number was never published from here.
 
 ### Added
 - `deploy/setup.sh` and `deploy/setup.ps1`, one core (`deploy/peer_setup.py`): `bridge`, `peer` and `session`. A thin layer over `deploy bridge`, `peer`, `join` and `add-peer`, which still make every change. Without `--apply` it prints the plan and changes nothing; `--register-mcp` (off by default) registers the MCP server at user scope
@@ -52,6 +52,31 @@ published.
 - The Windows rule is in the Private profile, and only that profile's state is checked: whether the Tailscale adapter is classified Private on a given machine is not
 - A translated `ufw status` is told on from off through `/etc/ufw/ufw.conf`; with ufw active and translated, the rule list (`ALLOW`) may still not be read, as before
 - The tailnet-policy check reads what `tailnet-setup --apply` leaves on the Bridge machine, not the policy
+
+## [0.1.11] - 2026-10-12
+
+A plugin that is installed but was never set up no longer reports an error on every prompt, tool call and
+turn end. Numbered 0.1.9 on its branch and published under 0.1.11, after the review fixes and a merge of main.
+
+### Fixed
+- `hooks/hooks.json` no longer ships the four `mcp_tool` state hooks (`peer_set_state` on `UserPromptSubmit`, `PostToolUse`, `Notification` and `Stop`). That hook type has no quiet mode, and the MCP server it names exists only once an installer registered it, so `claude plugin install` alone produced `MCP server 'ai-connect' not connected` on each of those events
+- `hooks/watch.sh` and `hooks/watch.ps1` exit 0 and print nothing when AI-Connect was never set up on the machine: no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`. Before, they exited 1 with "no venv" at every session start and turn end
+
+### Changed
+- **The state hooks are written by whatever registers the MCP server, into Claude Code's settings** (`state_hooks.py`). `installer.py claude` (run by `install.sh` / `install.cmd`) writes them to the user's `settings.json`, in `CLAUDE_CONFIG_DIR` when that is set; `installer.py unregister` removes them. `deploy peer` / `deploy join` write them only with both `--install-hooks` (`--with-hooks`) and `--register-mcp`: to the user's settings for `--scope user`, to the project's `.claude/settings.local.json` for `--scope project`, where the server is; `deploy uninstall` removes them from both
+- Writing them never duplicates an entry (the installer runs again after every plugin update), keeps every other hook and key, replaces an entry an older run left in another arrangement, and removes only what matches type `mcp_tool`, server `ai-connect`, tool `peer_set_state`. The full text is built first, written to a temp file and moved into place; a linked `settings.json` stays a link. A settings file that is not valid JSON, or whose `hooks` is not what Claude Code's are, is not touched: the step stops with an error before it registers or removes the MCP server (`deploy uninstall` instead warns and goes on, so the rest is still removed)
+- `install.sh --uninstall` / `install.cmd -Uninstall` without a venv (after a plugin update) still take the state hooks out, with any Python 3 on PATH (`state_hooks.py remove`), and name the `claude mcp remove` command they could not run
+- `installer.py` reads Claude Code's settings from `CLAUDE_CONFIG_DIR` when that is set, also for the token deny rules
+- **Updating from 0.1.8 or earlier: run the installer again** (`install.sh --client` / `install.cmd -Client`, or the same `deploy peer` / `deploy join` command as before). The plugin no longer carries the state hooks, so until then the session reports no busy / idle / waiting state; messages and the MCP tools are not affected. The README already asked for this after every update, because the venv is in the plugin directory
+- With the config present and the venv gone (a plugin update without the installer), the watcher still exits 1 naming the installer to re-run, and the state hooks in the settings still fail with `MCP server 'ai-connect' not connected` until it has run
+
+### Not changed
+- A machine set up with `deploy peer` / `deploy join` has its venv in `~/.local/share/ai-connect`, not in the plugin directory, so with `--install-hooks` the watcher there still exits 1 with "no venv", as in 0.1.8, and names `install.sh --client` as the fix. That is a separate defect
+
+### Tests
+- `tests/test_client_hooks.py`: every command line in `hooks/hooks.json`, run as Claude Code runs it against a throwaway plugin root and HOME, in the three states (never set up: exit 0 and silent; set up: the venv's Python is started on the watcher and its exit 2 comes through; venv lost: exit 1 with the message), and that `hooks.json` holds no `mcp_tool` hook. The PowerShell flavour runs where a PowerShell 7 is found, outside Windows with `OS=Windows_NT` forced: its branches, not Windows itself
+- `tests/test_ops_state_hooks.py`: adding and removing in a fresh file, in a file with foreign hooks, twice, with an older arrangement, with look-alike entries, in invalid files, through a link, and `installer.py claude` / `unregister` as subprocesses against a temp `CLAUDE_CONFIG_DIR` and a fake `claude`
+- `tests/test_ops_deploy.py`: the hooks per scope, neither option alone, the dry run, invalid settings, uninstall. `tests/deploy_box.py` now runs deploy in a throwaway project directory and drops `CLAUDE_CONFIG_DIR`, so no test reads the settings of whoever runs the suite
 
 ## [0.1.8] - 2026-10-12
 

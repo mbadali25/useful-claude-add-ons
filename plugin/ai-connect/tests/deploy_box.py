@@ -106,6 +106,10 @@ class Box:
         self.home.mkdir()
         self.systemd = tmp_path / "systemd"
         self.systemd.mkdir()
+        # The directory deploy is run in: --scope project registers the MCP server and writes the
+        # peer-state hooks for "this project", which must never be the checkout the suite runs from
+        self.project = tmp_path / "project"
+        self.project.mkdir()
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
         self.state_file = tmp_path / "fake-state.json"
@@ -141,7 +145,9 @@ class Box:
                         FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME"):
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME",
+                     # Claude Code's settings are then the fake HOME's, never the real ones of whoever runs this
+                     "CLAUDE_CONFIG_DIR"):
             self.env.pop(name, None)
         # Never the real Tailscale API: a closed loopback port unless a test passes its fake's address
         self.env["TS_API_BASE"] = "http://127.0.0.1:9/api/v2"
@@ -189,6 +195,16 @@ class Box:
         self.log.write_text("", encoding="utf-8")
 
     @property
+    def user_settings(self) -> Path:
+        """Claude Code's user settings on the fake machine."""
+        return self.home / ".claude" / "settings.json"
+
+    @property
+    def project_settings(self) -> Path:
+        """The settings of the project deploy is run in that are this machine's alone."""
+        return self.project / ".claude" / "settings.local.json"
+
+    @property
     def config_file(self) -> Path:
         return self.home / ".config" / "ai-connect" / "config.yaml"
 
@@ -197,11 +213,13 @@ class Box:
 
     def deploy(self, *args: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(DEPLOY), *args], capture_output=True, text=True, check=False,
-                              stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180)
+                              stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180,
+                              cwd=self.project)
 
     def snapshot(self) -> dict:
-        """Every file under the fake machine's HOME and systemd dir, with its bytes."""
-        return {str(p): p.read_bytes() for root in (self.home, self.systemd) for p in sorted(root.rglob("*"))
+        """Every file under the fake machine's HOME, systemd dir and project, with its bytes."""
+        return {str(p): p.read_bytes() for root in (self.home, self.systemd, self.project)
+                for p in sorted(root.rglob("*"))
                 if p.is_file()}
 
 

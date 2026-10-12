@@ -40,7 +40,94 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
   `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
   token, and the client sends it for that name.
-- **Order.** Versioned after PR #610 (0.1.10), which is meant to merge first.
+- **Order.** Versioned after PR #610 (0.1.11), which merged first.
+
+### Fixed — ai-connect 0.1.11: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+
+- **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`
+  on a server that only the plugin's installer registers, and that hook type has no quiet mode. The
+  watcher (`hooks/watch.sh`, `hooks/watch.ps1`) also exited 1 with "no venv" at every session start
+  and turn end.
+- **Fix.** The state hooks left `hooks.json`. Whatever registers the MCP server now writes them into
+  Claude Code's settings next to that registration and removes them with it
+  (`plugin/ai-connect/state_hooks.py`): `installer.py claude` / `unregister` in the user's
+  `settings.json` (`CLAUDE_CONFIG_DIR` honoured), `deploy peer` / `deploy join` with both
+  `--install-hooks` and `--register-mcp` in the settings of the scope the server is in. The write is
+  idempotent, keeps every other hook and key, removes only an exact match on its own entries, goes
+  through a temp file and a rename, and refuses a settings file that is not valid JSON without
+  touching it. The watcher exits 0 silently when there is neither a venv nor
+  `~/.config/ai-connect/config.yaml`, and still exits 1 naming the installer when the config exists
+  and the venv does not (a plugin update without the installer).
+- **Behaviour change.** A machine set up on 0.1.8 or earlier has the server registered but, after
+  this update, no state hooks until the installer (or the same `deploy` command) is run again.
+  Messages and tools keep working meanwhile. With the venv lost, the state hooks in the settings
+  still fail as before, alongside the watcher's message.
+- **Verified.** The three states for every command line in `hooks.json`, both flavours, on Linux;
+  the `.ps1` under PowerShell 7 on Linux with `OS=Windows_NT` forced, which runs its branches and is
+  not a run on Windows. Not run on Windows or under Windows PowerShell 5.1. Whether Claude Code
+  accepts an `mcp_tool` hook from `settings.json` as it does from a plugin was read from its
+  documentation, not observed in a live session.
+- **Not fixed here.** On a machine set up with `deploy` and `--install-hooks`, the watcher looks for
+  a venv in the plugin directory, finds none (deploy's is in `~/.local/share/ai-connect`) and exits
+  1, as in 0.1.8.
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
 
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 

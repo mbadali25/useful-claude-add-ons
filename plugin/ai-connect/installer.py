@@ -10,11 +10,17 @@ with the venv's Python, so it is written once for both:
     installer.py user-token         # Bridge machine: (re)generate the user token
     installer.py add-peer <name>    # Bridge machine: add a peer, print its new token once
     installer.py revoke-peer <name> # Bridge machine: remove a peer's token
-    installer.py claude             # register the MCP server with Claude Code
-    installer.py unregister         # remove it from Claude Code again
+    installer.py claude             # register the MCP server and the state hooks with Claude Code
+    installer.py unregister         # remove both from Claude Code again
 
-The plugin itself (the hooks) comes from the useful-claude-add-ons marketplace:
+The plugin itself (the watcher hooks) comes from the useful-claude-add-ons marketplace:
 claude plugin install ai-connect@useful-claude-add-ons
+
+The state hooks (busy / idle / waiting) are not in the plugin's hooks.json:
+they call the MCP server, which exists only once it is registered here, and
+an mcp_tool hook has no quiet mode. So `claude` writes them into the user's
+Claude Code settings next to the registration, and `unregister` takes them
+out again (state_hooks.py).
 """
 
 import argparse
@@ -31,15 +37,17 @@ from pathlib import Path
 
 import yaml
 
+import state_hooks
 from config_loader import CONFIG_PATH, OBSERVER_TOKEN_PATH, USER_TOKEN_PATH
 
 REPO = Path(__file__).resolve().parent
 CONFIG_EXAMPLE = REPO / "config.yaml.example"
-MCP_SERVER = "ai-connect"
+MCP_SERVER = state_hooks.MCP_SERVER
 PLUGIN = "ai-connect@useful-claude-add-ons"
 # What `claude mcp remove` says when there is nothing to remove
 NOT_REGISTERED = "No MCP server named"
-CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
+# In CLAUDE_CONFIG_DIR when that is set, where Claude Code then keeps its settings
+CLAUDE_SETTINGS = state_hooks.user_settings_path()
 # Reading all traffic and writing as a user are the user's tools: agents run
 # as the same user and could read the token files or run the observer
 # program; these keep Claude Code from doing it by accident (not against an
@@ -294,11 +302,22 @@ def _check(result: subprocess.CompletedProcess, what: str) -> None:
         sys.exit(f"{what} failed:\n{result.stdout}{result.stderr}")
 
 
+def _state_hooks(step):
+    """Run a state_hooks step on the user's settings; a file it will not touch ends the installer."""
+    try:
+        return step(CLAUDE_SETTINGS)
+    except state_hooks.SettingsError as error:
+        sys.exit(str(error))
+
+
 def register_claude() -> None:
-    """Register the MCP server (with this venv's Python) with Claude Code.
+    """Register the MCP server (with this venv's Python) and the state hooks with Claude Code.
 
     The hooks plugin is not installed here: it ships in the
     useful-claude-add-ons marketplace, and this directory is that plugin.
+    The state hooks go into the user's settings only here, once the server
+    they call is registered: without it each of them is an error on every
+    prompt, tool call and turn end.
     """
     claude = _find_claude()
     if claude is None:
@@ -307,6 +326,10 @@ def register_claude() -> None:
             f'    "{os.path.abspath(sys.executable)}" "{REPO / "installer.py"}" claude'
         )
         return
+
+    # Read first: settings this cannot read end the step before anything is
+    # registered, not halfway
+    _state_hooks(state_hooks.read)
 
     # Replace an existing registration, so a moved repository or a new venv
     # takes effect
@@ -320,20 +343,29 @@ def register_claude() -> None:
         "claude mcp add",
     )
     print(f"  MCP server '{MCP_SERVER}' registered: {python}")
-    print(f"  Hooks: claude plugin install {PLUGIN} (if not already installed)")
+    if _state_hooks(state_hooks.add):
+        print(f"  State hooks ({', '.join(state_hooks.STATE_HOOKS)}) written to {CLAUDE_SETTINGS}")
+    else:
+        print(f"  State hooks already in {CLAUDE_SETTINGS}")
+    print(f"  Watcher hooks: claude plugin install {PLUGIN} (if not already installed)")
 
 
 def unregister_claude() -> None:
-    """Remove the MCP server from Claude Code; the plugin is uninstalled separately."""
+    """Remove the MCP server and the state hooks from Claude Code; the plugin is uninstalled separately."""
+    # Read first, as in register_claude. The hooks go whether or not the CLI
+    # is found: they are in a file, and without the server they only fail.
+    _state_hooks(state_hooks.read)
     claude = _find_claude()
     if claude is None:
-        print("  Claude Code not found in PATH, nothing to remove there")
-        return
-    removed = _claude(claude, "mcp", "remove", "-s", "user", MCP_SERVER)
-    if removed.returncode != 0 and NOT_REGISTERED not in removed.stdout + removed.stderr:
-        _check(removed, "claude mcp remove")
-    print("  AI-Connect MCP server removed from Claude Code")
-    print(f"  Hooks: claude plugin uninstall {PLUGIN}")
+        print("  Claude Code not found in PATH, no MCP server to remove there")
+    else:
+        removed = _claude(claude, "mcp", "remove", "-s", "user", MCP_SERVER)
+        if removed.returncode != 0 and NOT_REGISTERED not in removed.stdout + removed.stderr:
+            _check(removed, "claude mcp remove")
+        print("  AI-Connect MCP server removed from Claude Code")
+    if _state_hooks(state_hooks.remove):
+        print(f"  State hooks removed from {CLAUDE_SETTINGS}")
+    print(f"  Watcher hooks: claude plugin uninstall {PLUGIN}")
 
 
 def main() -> None:
@@ -349,8 +381,8 @@ def main() -> None:
     add_peer_parser.add_argument("name", help="peer name, as used in auth.peers and that machine's client.name")
     revoke_peer_parser = steps.add_parser("revoke-peer", help="Bridge machine: remove a peer's token")
     revoke_peer_parser.add_argument("name", help="peer name to remove from auth.peers")
-    steps.add_parser("claude", help="register the MCP server with Claude Code")
-    steps.add_parser("unregister", help="remove the MCP server from Claude Code")
+    steps.add_parser("claude", help="register the MCP server and the state hooks with Claude Code")
+    steps.add_parser("unregister", help="remove the MCP server and the state hooks from Claude Code")
     args = parser.parse_args()
 
     if args.step == "config":

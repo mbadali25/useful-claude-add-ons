@@ -34,6 +34,7 @@ import base64
 import binascii
 import getpass
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -54,6 +55,20 @@ from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, E
                          EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool,
                          has_terminal, interactive, mask, must, no_tools, out, privileged, run, tailscale_ip, tool,
                          ts_prefs, ts_self, tsadmin, venv_python)
+
+
+
+def _plugin_module(name: str):
+    """A module from the plugin's root, loaded by path: the root is not on sys.path here, and putting it
+    there would let its `server` and `client` packages shadow whatever else is imported."""
+    spec = importlib.util.spec_from_file_location(f"ai_connect_{name}", PLUGIN / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The peer-state hooks in a Claude Code settings file; installer.py writes the same ones
+state_hooks = _plugin_module("state_hooks")
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -581,8 +596,26 @@ def mcp_registered(claude: str, scope: str, python: Path) -> bool:
 
 
 HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
-                 "here (SessionStart, Stop, the peer-state hooks). A session in bypass-permissions mode then acts on "
+                 "here (the watcher at SessionStart and Stop; with --register-mcp also the peer-state hooks, where "
+                 "the MCP server is registered). A session in bypass-permissions mode then acts on "
                  "what another peer sends with no prompt in between. Leave it off on a shared machine.")
+STATE_HOOKS_NOTE = ("  note: the peer-state hooks (busy / idle / waiting) call the MCP server, so they are written "
+                    "only with --register-mcp as well. Without it this machine reports no state.")
+
+
+def state_settings(scope: str) -> Path:
+    """Where the peer-state hooks go: beside the MCP server they call. A user-scope server is in every
+    project, so the user's settings; a project-scope one only in this project's .mcp.json, so this project's
+    own settings. In the user's settings they would fail in every other project, which has no such server."""
+    return state_hooks.user_settings_path() if scope == "user" else state_hooks.project_settings_path(Path.cwd())
+
+
+def state_step(step, path: Path):
+    """One state_hooks call; a settings file it will not touch stops the run with its reason."""
+    try:
+        return step(path)
+    except state_hooks.SettingsError as error:
+        raise Failure(str(error)) from error
 MCP_WARNING = ("  WARNING: --register-mcp gives Claude Code sessions ({where}) the ai-connect tools. What other peers "
                "send is untrusted input; in a bypass-permissions session nothing asks before the model acts on it.")
 
@@ -608,6 +641,8 @@ def step_claude(r: Run, args) -> None:
             r.change(f"claude plugin install {PLUGIN_ID}",
                      lambda: must(run([claude, "plugin", "install", PLUGIN_ID]), "claude plugin install"))
     if not args.register_mcp:
+        if args.install_hooks:
+            out(STATE_HOOKS_NOTE)
         return
     where = ("scope user: every project of this user" if args.scope == "user"
              else f"scope project: sessions started in {Path.cwd()}, through its .mcp.json")
@@ -615,30 +650,64 @@ def step_claude(r: Run, args) -> None:
     step_app(r, restart_on_change=False)
     python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
+    # Hooks only when hooks were asked for; --register-mcp alone stays the MCP server and nothing else
+    settings = state_settings(args.scope) if args.install_hooks else None
     if r.dry_run:
         r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
+        if settings:
+            r.change(f"write the peer-state hooks to {settings}, unless they are there", lambda: None)
         return
-    if mcp_registered(claude, args.scope, python):
-        r.already(f"MCP server '{MCP_SERVER}' registered ({where})")
-        return
+    if settings:
+        # Read first: settings this cannot read stop the step before anything is registered, not halfway
+        state_step(state_hooks.read, settings)
 
     def register() -> None:
         # A registration in this scope that points elsewhere (another venv, another checkout) is replaced
         run([claude, "mcp", "remove", "-s", args.scope, MCP_SERVER], timeout=60)
         must(run(argv, timeout=60), "claude mcp add")
-    r.change(f"register MCP server '{MCP_SERVER}' ({where})", register)
+    if mcp_registered(claude, args.scope, python):
+        r.already(f"MCP server '{MCP_SERVER}' registered ({where})")
+    else:
+        r.change(f"register MCP server '{MCP_SERVER}' ({where})", register)
+    if not settings:
+        return
+    if state_step(state_hooks.present, settings):
+        r.already(f"peer-state hooks in {settings}")
+    else:
+        r.change(f"write the peer-state hooks to {settings}", lambda: state_step(state_hooks.add, settings))
 
 
 def remove_claude(r: Run) -> None:
     r.step("Claude Code plugin and MCP server")
-    claude = claude_bin()
-    if claude is None:
-        r.already("Claude Code not found, nothing registered there")
-        return
+    # The peer-state hooks are in files, so they go whether or not the CLI is found: wherever step_claude
+    # may have put them for a run from this directory
+    settings = [state_settings("user"), state_settings("project")]
     if r.dry_run:
         r.change(f"remove MCP server '{MCP_SERVER}' and plugin {PLUGIN_ID} from Claude Code, if registered",
                  lambda: None)
+        r.change(f"remove the peer-state hooks from {' and '.join(map(str, settings))}, if they are there",
+                 lambda: None)
         return
+    # A settings file this cannot read holds up nothing here: the service and the firewall rule are
+    # already gone, and stopping now would leave the MCP server and the plugin behind as well
+    holding = []
+    for path in settings:
+        try:
+            if state_hooks.holds_any(path):
+                holding.append(path)
+        except state_hooks.SettingsError as error:
+            out(f"  WARNING: {str(error).splitlines()[0]} Any peer-state hooks in it are still there: "
+                f"remove them by hand.")
+    claude = claude_bin()
+    if claude is None:
+        r.already("Claude Code not found, nothing registered there")
+    else:
+        remove_registrations(r, claude)
+    for path in holding:
+        r.change(f"remove the peer-state hooks from {path}", lambda path=path: state_step(state_hooks.remove, path))
+
+
+def remove_registrations(r: Run, claude: str) -> None:
     if run([claude, "mcp", "get", MCP_SERVER], timeout=60).returncode == 0:
         r.change(f"remove MCP server '{MCP_SERVER}'",
                  lambda: must(run([claude, "mcp", "remove", MCP_SERVER]), "claude mcp remove"))
