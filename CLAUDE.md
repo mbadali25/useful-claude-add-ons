@@ -60,6 +60,24 @@ may not, and neither may production code or a prompt outside the harness. The fe
 harness format (`SEAM` in the same script) ride along only when a lane commit declares each with a
 `Tooling-seam: <path>` trailer, a claim the reviewer holds the diff to.
 
+## Delegation - the main session stays free to answer
+
+**Every task runs in a subagent, and one manager subagent runs them.** Owner rule, 2026-10-12. The
+main session does not do the work itself: it spawns a single manager in the background, and the
+manager splits the request into tasks, spawns one worker subagent per task, checks what each
+returns against the artifact rather than the summary, and sends back one report. That leaves the
+main session idle on purpose, so the owner can reply, redirect or add work while tasks are running.
+
+- **The main session's job is the conversation.** It briefs the manager, relays progress and
+  results, and passes a mid-run message from the owner on with `SendMessage` instead of starting
+  over. It never waits in the foreground on work a subagent is doing.
+- **A new message while work is running is answered first.** If it changes the work, forward it to
+  the manager; if it is a separate request, it gets its own manager. Then resume, do not restart.
+- **The manager owns the workers.** It gives each a narrow brief with what is already ruled out,
+  keeps two workers off the same files, and reports which tasks finished, which failed and what
+  nobody verified. Check `ListAgents` before spawning a second manager for the same work.
+- **The only exception is an answer that needs no tool calls.** That is conversation, not a task.
+
 ## Stop and ask - the conditions that should halt work
 
 - **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
