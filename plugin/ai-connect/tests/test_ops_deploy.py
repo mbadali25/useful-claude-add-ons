@@ -950,9 +950,10 @@ def test_deploy_sh_syntax():
 
 
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
-def test_deploy_ps1_passes_the_repo_powershell_static_check(tmp_path):
+def test_deploy_ps1_passes_the_repo_powershell_static_check(box, tmp_path):
+    # The fake machine's environment: with the caller's HOME, PowerShell writes into the real ~/.local/share
     checker = PLUGIN.parents[1] / "scripts" / "check-powershell.ps1"
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(checker), "-Path",
                           str(DEPLOY_DIR / "deploy.ps1")], capture_output=True, text=True, check=False,
-                         stdin=subprocess.DEVNULL, env=dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                         stdin=subprocess.DEVNULL, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr

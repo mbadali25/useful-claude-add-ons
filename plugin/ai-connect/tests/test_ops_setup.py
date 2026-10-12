@@ -559,9 +559,19 @@ def test_sh_and_ps1_take_the_same_options_and_print_the_same_text(hub, tmp_path)
 
 
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
-def test_setup_ps1_passes_the_repo_powershell_static_check(tmp_path):
+def test_setup_ps1_passes_the_repo_powershell_static_check(hub, tmp_path):
+    # The fake machine's environment, like every other spawn here: with the caller's HOME, PowerShell
+    # writes its startup directories into the real ~/.local/share/powershell
     checker = PLUGIN.parents[1] / "scripts" / "check-powershell.ps1"
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(checker), "-Path",
                           str(DEPLOY_DIR / "setup.ps1")], capture_output=True, text=True, check=False,
-                         stdin=subprocess.DEVNULL, env=dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                         stdin=subprocess.DEVNULL, env=dict(hub.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
+    assert (hub.home / ".local" / "share" / "powershell").is_dir() or os.name == "nt"   # it went to the fake HOME
+
+
+def test_no_spawn_in_this_suite_inherits_the_callers_environment():
+    """No process this suite starts is handed this process's environment, and with it the caller's HOME: each gets a fake
+    machine's env. (`bash -n` passes none: it reads one file and runs nothing.)"""
+    source = (PLUGIN / "tests" / "test_ops_setup.py").read_text(encoding="utf-8")
+    assert "os." + "environ" not in source
