@@ -1,3 +1,15 @@
+# crew:gitignore:managed - maintained by crew_gitignore.py; crew only ever adds here.
+# Put your own rules below this block; a rule below wins over one in it.
+# os/editor: Windows folder settings
+[Dd]esktop.ini
+# secrets: PKCS#12 key bundles
+*.p12
+# secrets: an SSH private key
+id_rsa
+# secrets: an SSH private key
+id_ed25519
+# crew:gitignore:end
+
 # --- Secrets / credentials --------------------------------------------------
 # Never commit real tokens, keys, or tenant data - see SECURITY.md.
 .env
@@ -403,6 +415,10 @@ graphify-out/*
 # and must run /crew:init itself.
 .crew/.approved-*
 .crew/*.lock
+# crew-setup SKILL.md §3c names two more, documentation-only in the same way:
+# `.crew/*` already ignores both, as `git check-ignore -v` shows.
+.crew/*.local
+.crew/.hook-*
 .work/cache/
 
 # --- localgpu ------------------------------------------------------------
