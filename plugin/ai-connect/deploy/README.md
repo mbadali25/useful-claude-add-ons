@@ -328,5 +328,6 @@ No test calls Tailscale or installs anything.
 `tests/test_ops_setup.py` runs `setup` on the same fake machine: the plan changes nothing
 and runs no tool, both roles end to end, a second session whose token the client then
 sends, per-project names (the name, each fallback with its one stderr line, the watcher
-taking the client's name, and `session --project` with one restart), an inactive ufw, a firewalld that is not running, the Windows profile states, the
+taking the client's name, and `session --project` with one restart, through `setup.sh`
+and `setup.ps1` alike), an inactive ufw, a firewalld that is not running, the Windows profile states, the
 outstanding tailnet policy, and `setup.sh` against `setup.ps1` line for line.

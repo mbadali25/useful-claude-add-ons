@@ -116,9 +116,12 @@ class Box:
             self.add_tool(name)
         pydir = str(Path(sys.executable).parent)
         sysdirs = [r"C:\Windows\System32", r"C:\Windows"] if os.name == "nt" else ["/usr/bin", "/bin"]
+        # No XDG_* of the caller's, and no DOTNET_BUNDLE_EXTRACT_BASE_DIR: pwsh and Python write under those. The
+        # four XDG base directories are set inside the box below, so no lookup falls back to a real default
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("TS_AUTHKEY", "TS_AUTHKEY_FILE", "AI_CONNECT_BRIDGE_HOST", "AI_CONNECT_PEER_TOKEN",
-                                 "AI_CONNECT_INSTALLER", "PYTHONPATH")}
+                                 "AI_CONNECT_INSTALLER", "PYTHONPATH", "DOTNET_BUNDLE_EXTRACT_BASE_DIR")
+                    and not k.startswith("XDG_")}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home),
                         PATH=os.pathsep.join([str(self.bin), pydir, *sysdirs]),
                         FAKE_DEPLOY_STATE=str(self.state_file), FAKE_DEPLOY_LOG=str(self.log),
@@ -126,7 +129,9 @@ class Box:
                         AI_CONNECT_TS_STATE_DIR=str(tmp_path / "ts-state"), AI_CONNECT_DEPLOY_OS=target,
                         AI_CONNECT_DEPLOY_HEALTH_WAIT="3", AI_CONNECT_DEPLOY_STOP_WAIT="1",
                         AI_CONNECT_TSD_WAIT="0",
-                        XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), PYTHONIOENCODING="utf-8",
+                        XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), XDG_CONFIG_HOME=str(tmp_path / "xdg-config"),
+                        XDG_DATA_HOME=str(tmp_path / "xdg-data"), XDG_STATE_HOME=str(tmp_path / "xdg-state"),
+                        PYTHONIOENCODING="utf-8",
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
                         AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),

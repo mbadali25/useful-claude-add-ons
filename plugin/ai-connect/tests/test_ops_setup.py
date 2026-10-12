@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -858,6 +859,50 @@ def test_sh_and_ps1_take_the_same_options_and_print_the_same_text(hub, tmp_path)
     assert hub.mutations() == [] and not hub.config_file.exists()
 
 
+@pytest.mark.skipif(not BASH or not PWSH, reason="needs both bash and pwsh at known paths")
+def test_sh_and_ps1_session_project_print_the_same_steps_and_write_the_same_files(tmp_path, venv):
+    """`session --project` through setup.sh on one fake Bridge machine and setup.ps1 on another: the same steps
+    and text, and the same files (token, .dir, enrolment); only the random token and the paths differ."""
+    runs = {}
+    for flavour, run in (("sh", _sh), ("ps1", lambda b, a: _ps1(b, a, b.tmp))):
+        (tmp_path / flavour).mkdir()
+        box = SetupBox(tmp_path / flavour, venv, NATIVE)
+        api = project(box, "api")
+        with OwnBridge(box) as own:
+            assert Phase(box, *bridge_args(own, "--apply")).res.returncode == 0
+            plan = run(box, ["session", "--project", str(api)])
+            box.clear_log()
+            res = run(box, ["session", "--project", str(api), "--apply"])
+            calls = box.calls()
+        folder = box.config_dir / "session-tokens"
+        token = (folder / "hub-api.token").read_text(encoding="utf-8").strip()
+        assert res.returncode == 0 and res.stderr == "", output(res)
+        assert owner_only(folder / "hub-api.token") and not leaks(token, output(res) + output(plan))
+        assert (folder / "hub-api.dir").read_text(encoding="utf-8") == f"{api}\n"
+        assert box.config()["auth"]["peers"]["hub-api"] == sha(token)
+        assert sorted(p.name for p in folder.iterdir()) == ["hub-api.dir", "hub-api.token"]
+
+        def same(text, box=box):
+            return re.sub(r"\*{4}[0-9a-f]{4}", "****", text.replace(str(box.tmp), "<box>"))
+        runs[flavour] = (same(plan.stdout), same(res.stdout), plan.returncode, [[same(w) for w in c] for c in calls])
+    assert runs["sh"] == runs["ps1"]
+    assert runs["sh"][2] == 0 and "would: make a token for 'hub-api'" in runs["sh"][0]
+
+
+def test_box_env_keeps_home_and_xdg_inside_the_box(tmp_path, venv):
+    """HOME, USERPROFILE and every XDG_* the fake machine hands its processes are inside its root, so nothing a test
+    starts can write the caller's real ~/.local, ~/.config or caches; DOTNET_BUNDLE_EXTRACT_BASE_DIR is not passed."""
+    (tmp_path / "m").mkdir()
+    box = SetupBox(tmp_path / "m", venv, NATIVE)
+    root = box.tmp.resolve()
+    checked = ["HOME", "USERPROFILE"] + sorted(k for k in box.env if k.startswith("XDG_"))
+    assert {"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} <= set(checked)
+    for key in checked:
+        for part in box.env[key].split(os.pathsep):
+            assert Path(part).resolve().is_relative_to(root), (key, part)
+    assert "DOTNET_BUNDLE_EXTRACT_BASE_DIR" not in box.env
+
+
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
 def test_setup_ps1_passes_the_repo_powershell_static_check(hub, tmp_path):
     # The fake machine's environment, like every other spawn here: with the caller's HOME, PowerShell
@@ -867,7 +912,10 @@ def test_setup_ps1_passes_the_repo_powershell_static_check(hub, tmp_path):
                           str(DEPLOY_DIR / "setup.ps1")], capture_output=True, text=True, check=False,
                          stdin=subprocess.DEVNULL, env=dict(hub.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
-    assert (hub.home / ".local" / "share" / "powershell").is_dir() or os.name == "nt"   # it went to the fake HOME
+    # Its startup files went to the XDG cache this test gave it; with every XDG base directory set inside the
+    # box, nothing falls back to a ~/.local default, not even the fake HOME's
+    assert (tmp_path / "xdg-cache" / "powershell").is_dir() or os.name == "nt"
+    assert not (hub.home / ".local").exists() or os.name == "nt"
 
 
 def test_no_spawn_in_this_suite_inherits_the_callers_environment():
