@@ -212,6 +212,17 @@ def backend_state() -> str | None:
     return tsadmin.backend_state(tsadmin.tailscale_bin(), userspace=tsadmin.userspace_socket().exists())
 
 
+def ts_self() -> dict:
+    """This node as `tailscale status --json` shows it (ID; KeyExpiry only while its key expires), or {}."""
+    res = tsadmin.run_ts(tsadmin.tailscale_bin(), ["status", "--json"],
+                         userspace=tsadmin.userspace_socket().exists(), timeout=30)
+    try:
+        me = (json.loads(res.stdout) if res.returncode == 0 else {}).get("Self")
+    except (ValueError, AttributeError):
+        return {}
+    return me if isinstance(me, dict) else {}
+
+
 def ts_prefs() -> dict | None:
     """Tailscale's settings on this machine (RouteAll, ExitNodeID, CorpDNS, ...), or None when unreadable."""
     res = tsadmin.run_ts(tsadmin.tailscale_bin(), ["debug", "prefs"],

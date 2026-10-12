@@ -130,9 +130,11 @@ class Box:
                         AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),
                         PYTHONPATH=str(FAKE_KEYRING), FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
-        for name in ("TS_API_TOKEN", "TS_API_BASE", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
+        for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
                      "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME"):
             self.env.pop(name, None)
+        # Never the real Tailscale API: a closed loopback port unless a test passes its fake's address
+        self.env["TS_API_BASE"] = "http://127.0.0.1:9/api/v2"
         self.target = target
         # Where deploy installs the copy of the plugin the service and the MCP server run from
         self.app = self.home.joinpath(*(("AppData", "Local") if os.name == "nt" else (".local", "share")),
@@ -229,3 +231,19 @@ class Phase:
 
     def changed_nothing(self) -> bool:
         return not (self.mutations or self.files_changed or self.state_changed)
+
+
+class OwnBridge:
+    """A fake Bridge that accepts the peers in the box's own config, for a test that deploys one."""
+
+    def __init__(self, box: Box):
+        def accepted():
+            return set(box.config()["auth"]["peers"].values()) if box.config_file.exists() else set()
+        self.server = FakeBridge(accepted)
+        self.args = ["bridge", "--name", "hub", "--port", str(self.server.port)]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.server.close()

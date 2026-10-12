@@ -296,31 +296,58 @@ def provision_peer_token(name: str, installer: str | None) -> None:
         warn(f"ai-connect peer token: installer exited {res.returncode}; the auth key above is still valid")
 
 
-def cmd_revoke(args) -> int:
-    token = access_token()
+def list_devices(token: str) -> list[dict]:
+    """Every node of the tailnet, as GET /tailnet/-/devices lists it (default fields: no ephemeral flag)."""
     status, payload = http("GET", f"{API_BASE}/tailnet/-/devices", token=token)
     if status != 200:
         raise api_error("device list", status, payload)
-    want = args.name.lower()
-    matches = []
-    for dev in payload.get("devices", []):
-        names = {str(dev.get("hostname", "")).lower(), str(dev.get("name", "")).lower(),
-                 str(dev.get("name", "")).split(".", maxsplit=1)[0].lower()}
-        if want in names and (args.any_tag or args.tag in (dev.get("tags") or [])):
-            matches.append(dev)
+    return [dev for dev in payload.get("devices") or [] if isinstance(dev, dict)]
+
+
+def device_short_name(dev: dict) -> str:
+    return str(dev.get("hostname") or str(dev.get("name", "")).split(".", maxsplit=1)[0])
+
+
+def devices_named(devices: list[dict], name: str, tag: str | None) -> list[dict]:
+    """The nodes called name (host name, full or short MagicDNS name); only those tagged tag unless it is None."""
+    want = name.lower()
+    return [dev for dev in devices
+            if want in {str(dev.get("hostname", "")).lower(), str(dev.get("name", "")).lower(),
+                        str(dev.get("name", "")).split(".", maxsplit=1)[0].lower()}
+            and (tag is None or tag in (dev.get("tags") or []))]
+
+
+def device_id(dev: dict) -> str:
+    return str(dev.get("nodeId") or dev.get("id"))
+
+
+def delete_device(token: str, dev: dict) -> None:
+    status, payload = http("DELETE", f"{API_BASE}/device/{urllib.parse.quote(device_id(dev))}", token=token)
+    if status not in (200, 204):
+        raise api_error(f"delete node {device_id(dev)}", status, payload)
+
+
+def disable_key_expiry(token: str, dev: dict) -> None:
+    """A node joined by a person's login keeps an expiring node key even once tagged; one that joined
+    with a tagged auth key has expiry off already. POST /device/{id}/key turns it off."""
+    status, payload = http("POST", f"{API_BASE}/device/{urllib.parse.quote(device_id(dev))}/key", token=token,
+                           body={"keyExpiryDisabled": True})
+    if status not in (200, 204):
+        raise api_error(f"turning key expiry off for node {device_id(dev)}", status, payload)
+
+
+def cmd_revoke(args) -> int:
+    token = access_token()
+    matches = devices_named(list_devices(token), args.name, None if args.any_tag else args.tag)
     if not matches:
         raise Failure(f"no node named '{args.name}'"
                       + ("" if args.any_tag else f" tagged {args.tag} (pass --any-tag to widen)"))
     if len(matches) > 1 and not args.all:
-        ids = ", ".join(str(d.get("nodeId") or d.get("id")) for d in matches)
+        ids = ", ".join(device_id(d) for d in matches)
         raise Failure(f"{len(matches)} nodes match '{args.name}' ({ids}); pass --all to delete every one")
     for dev in matches:
-        dev_id = dev.get("nodeId") or dev.get("id")
-        status, payload = http("DELETE", f"{API_BASE}/device/{urllib.parse.quote(str(dev_id))}",
-                               token=token)
-        if status not in (200, 204):
-            raise api_error(f"delete node {dev_id}", status, payload)
-        say(f"Deleted node {dev.get('name') or dev.get('hostname')} ({dev_id}); it is off the tailnet now.")
+        delete_device(token, dev)
+        say(f"Deleted node {dev.get('name') or dev.get('hostname')} ({device_id(dev)}); it is off the tailnet now.")
     return EXIT_OK
 
 

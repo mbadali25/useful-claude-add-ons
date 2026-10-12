@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy_box import (AUTH_KEY, BASH, DEPLOY_DIR, NATIVE, PEER_TOKEN, PLUGIN, PWSH, SUBNET, Box, FakeBridge, Phase,
-                        already, leaks, output, steps)
+from deploy_box import (AUTH_KEY, BASH, DEPLOY_DIR, NATIVE, PEER_TOKEN, PLUGIN, PWSH, SUBNET, Box, FakeBridge,
+                        OwnBridge, Phase, already, leaks, output, steps)
 
 # ---------------------------------------------------------------- bridge
 
@@ -105,9 +105,9 @@ def test_bridge_rerun_is_idempotent(bridge):
     assert second.res.returncode == 0, second.text
     assert second.mutations == []
     assert not second.files_changed and not second.state_changed
-    # installed files, deps, Tailscale installed, on the tailnet, its settings pinned, config, peer, service,
-    # firewall; the health check always runs
-    assert len(already(second.res)) == 9, second.out
+    # installed files, deps, Tailscale installed, on the tailnet, its settings pinned, its node key not expiring,
+    # config, peer, service, firewall; the health check always runs
+    assert len(already(second.res)) == 10, second.out
     assert "matches this checkout" in second.out
     assert "would:" not in second.out and "  done: write" not in second.out
 
@@ -258,22 +258,6 @@ def test_a_malformed_config_never_shows_the_token_in_it(box):
     assert status.returncode == 1 and bridge.returncode == 1
     assert "is not valid YAML (line" in status.stderr and "is not valid YAML (line" in bridge.stderr
     assert not leaks(secret, output(status) + output(bridge))
-
-
-class OwnBridge:
-    """A fake Bridge that accepts the peers in the box's own config, for a test that deploys one."""
-
-    def __init__(self, box: Box):
-        def accepted():
-            return set(box.config()["auth"]["peers"].values()) if box.config_file.exists() else set()
-        self.server = FakeBridge(accepted)
-        self.args = ["bridge", "--name", "hub", "--port", str(self.server.port)]
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exc):
-        self.server.close()
 
 
 def test_a_peer_whose_token_cannot_be_written_is_not_left_provisioned(box):

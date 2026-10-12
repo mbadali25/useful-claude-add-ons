@@ -213,8 +213,9 @@ token in the Bridge's log.
 
 ```bash
 deploy/deploy.sh status                    # either machine: what is deployed here
-deploy/deploy.sh add-peer --name desk --token-sha256 ...   # machine 1: another peer, then mint its key
-vpn/revoke.sh --name laptop                # machine 1: remove a peer's node from the tailnet
+deploy/deploy.sh list                      # machine 1: every node, its IP, tags, key expiry, and Bridge peer
+deploy/deploy.sh approve --name desk --token-sha256 ...    # machine 1: let a peer in, restart, key expiry off
+deploy/deploy.sh remove --name laptop --yes                # machine 1: node off the tailnet, peer out of the Bridge
 deploy/deploy.sh uninstall --yes           # either machine; --purge also deletes config, tokens and the installed copy
 ```
 

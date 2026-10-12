@@ -15,15 +15,25 @@ CLIENT_ID = "kCLIENT11CNTRL"
 CLIENT_SECRET = "tskey-client-kCLIENT11CNTRL-OAuthSecretThatMustNotLeak0123"
 OAUTH_ACCESS_TOKEN = "tskey-api-kOAUTH-AccessTokenFromTheExchange0123456789"
 NODE_ID = "nFAKENODE11CNTRL"
+AUTH_KEY_MINTED = "tskey-auth-kMINTED1CNTRL-JoinKeyThatMustNotLeak0123456789"
 DEFAULT_POLICY = '// the tailnet as it was\n{\n\t"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],\n}\n'
+
+
+def device(node_id: str, hostname: str, ip: str, tags: list | None = None, *, expiry_disabled: bool = False,
+           last_seen: str = "2026-10-11T23:00:00Z") -> dict:
+    """A device as GET /tailnet/-/devices lists it."""
+    return {"nodeId": node_id, "id": node_id.removeprefix("n")[:8], "hostname": hostname,
+            "name": f"{hostname}.tail1234.ts.net", "addresses": [ip, "fd7a:115c:a1e0::1"], "tags": list(tags or []),
+            "keyExpiryDisabled": expiry_disabled, "expires": "" if expiry_disabled else "2027-04-09T23:00:00Z",
+            "lastSeen": last_seen, "authorized": True, "os": "linux"}
 
 
 class FakeTailscaleAPI:
     def __init__(self):
         self.policy = DEFAULT_POLICY
         self.version = 1
-        self.devices = {NODE_ID: {"nodeId": NODE_ID, "id": "1001", "hostname": "hub",
-                                  "name": "hub.tail1234.ts.net", "tags": []}}
+        # Only fields the API's default field set has (DeviceDefaultFields): there is no "ephemeral" one
+        self.devices = {NODE_ID: device(NODE_ID, "hub", "100.64.0.1")}
         self.clients = {}  # id -> secret
         self.requests = []
         self.validate_message = None  # a string: the policy is refused with it
@@ -31,6 +41,8 @@ class FakeTailscaleAPI:
         self.race = False  # the policy changes between the read and the write
         self.send_etag = True  # False: the policy is served without an ETag
         self.validate_raw = None  # a string: the validation answers 200 with exactly this body
+        self.issued = set()  # OAuth access tokens handed out by the exchange
+        self.auth_keys = []  # the device-create capabilities of every auth key minted
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -91,10 +103,20 @@ class FakeTailscaleAPI:
             form = parse_qs(body)
             cid, secret = form.get("client_id", [""])[0], form.get("client_secret", [""])[0]
             if self.clients.get(cid) == secret and secret:
+                self.issued.add(OAUTH_ACCESS_TOKEN)
                 return 200, {"access_token": OAUTH_ACCESS_TOKEN, "token_type": "Bearer"}, {}
             return 401, {"message": "invalid client credentials"}, {}
-        if headers.get("Authorization") != f"Bearer {API_TOKEN}":
+        bearer = headers.get("Authorization")
+        oauth = bearer == f"Bearer {OAUTH_ACCESS_TOKEN}" and OAUTH_ACCESS_TOKEN in self.issued
+        if bearer != f"Bearer {API_TOKEN}" and not oauth:
             return 401, {"message": "API token invalid"}, {}
+        if oauth and "/acl" in path:  # the OAuth client has auth_keys and devices:core, not policy_file
+            return 403, {"message": "calling actor does not have enough permissions"}, {}
+        if (method, path) == ("POST", "/tailnet/-/keys") and oauth:
+            create = json.loads(body).get("capabilities", {}).get("devices", {}).get("create", {})
+            self.auth_keys.append(create)
+            return 200, {"id": f"kAUTH{len(self.auth_keys)}", "key": AUTH_KEY_MINTED,
+                         "expires": "2026-10-12T00:00:00Z"}, {}
         if (method, path) == ("POST", "/tailnet/-/acl/validate"):
             if self.validate_raw is not None:
                 return 200, self.validate_raw, {"Content-Type": "text/html"}
@@ -129,6 +151,12 @@ class FakeTailscaleAPI:
                 return 404, {"message": "device not found"}, {}
             if method == "GET" and not verb:
                 return 200, device, {}
+            if method == "DELETE" and not verb:
+                del self.devices[node]
+                return 200, "", {}
+            if method == "POST" and verb == "key":
+                device["keyExpiryDisabled"] = bool(json.loads(body).get("keyExpiryDisabled"))
+                return 200, "", {}
             if method == "POST" and verb == "tags":
                 tags = json.loads(body)["tags"]
                 if "tag:bridge" in tags and "tag:bridge" not in self.policy:

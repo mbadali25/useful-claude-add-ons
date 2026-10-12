@@ -213,13 +213,22 @@ def step_tag(r: Run, args, token: str, tailnet: str, joined: bool) -> None:
     tags = [str(tag) for tag in parsed(text).get("tags") or []]
     if BRIDGE_TAG in tags:
         r.already(f"{label} ({device}) is tagged {BRIDGE_TAG}")
+    else:
+        def tag() -> None:
+            status, _headers, text = call("POST", f"{path}/tags", token, body={"tags": [*tags, BRIDGE_TAG]})
+            if status != 200:
+                raise refusal(f"tagging {label}", status, text)
+        r.change(f"tag {label} ({device}) {BRIDGE_TAG}", tag)
+    # Joined by a login, the node keeps an expiring key once tagged: the Bridge would drop off the tailnet
+    if parsed(text).get("keyExpiryDisabled"):
+        r.already(f"{label}'s node key expiry is off")
         return
 
-    def tag() -> None:
-        status, _headers, text = call("POST", f"{path}/tags", token, body={"tags": [*tags, BRIDGE_TAG]})
+    def no_expiry() -> None:
+        status, _headers, text = call("POST", f"{path}/key", token, body={"keyExpiryDisabled": True})
         if status != 200:
-            raise refusal(f"tagging {label}", status, text)
-    r.change(f"tag {label} ({device}) {BRIDGE_TAG}", tag)
+            raise refusal(f"turning key expiry off for {label}", status, text)
+    r.change(f"turn key expiry off for {label} ({device})", no_expiry)
 
 
 # ---------------------------------------------------------------- OAuth client

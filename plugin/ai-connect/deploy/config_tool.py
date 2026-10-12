@@ -9,6 +9,7 @@ to an owner-only file.
   config_tool.py bridge --host IP --port N --name NAME
   config_tool.py add-peer NAME --out FILE
   config_tool.py enrol NAME --sha256 HEX                       (the peer made its own token; only the hash is here)
+  config_tool.py revoke NAME                                   (take the peer out of auth.peers)
   config_tool.py client --name NAME --bridge HOST --port N     (token in AI_CONNECT_PEER_TOKEN)
   config_tool.py verify
   config_tool.py smoke --bridge HOST --port N --name NAME      (token in AI_CONNECT_PEER_TOKEN, else client.token)
@@ -138,6 +139,16 @@ def cmd_enrol(args) -> dict:
     peers[args.name] = args.sha256
     installer._save_config(config)  # pylint: disable=protected-access
     return {"action": "enrolled"}
+
+
+def cmd_revoke(args) -> dict:
+    """Take a peer out of auth.peers: its token stops working once the Bridge restarts."""
+    if not CONFIG_PATH.exists():
+        raise SystemExit(f"{CONFIG_PATH} missing: this machine is not a Bridge")
+    if args.name not in ((load().get("auth") or {}).get("peers") or {}):
+        return {"action": "absent"}
+    quietly(installer.revoke_peer, args.name)
+    return {"action": "revoked"}
 
 
 def cmd_client(args) -> dict:
@@ -285,6 +296,9 @@ def main() -> int:
     e.add_argument("name")
     e.add_argument("--sha256", required=True)
     e.set_defaults(func=cmd_enrol)
+    v = sub.add_parser("revoke")
+    v.add_argument("name")
+    v.set_defaults(func=cmd_revoke)
     c = sub.add_parser("client")
     c.add_argument("--name", required=True)
     c.add_argument("--bridge", required=True)

@@ -6,6 +6,9 @@
               [--register-mcp [--scope project|user]] [--install-hooks]      both off by default
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
+  deploy approve --name N [--token-sha256 HEX] [--dry-run]  add-peer, the restart, and the node's key expiry off
+  deploy remove --name N --yes [--dry-run]                  the node off the tailnet and out of the Bridge
+  deploy list                                               tailnet nodes beside the Bridge's peers
   deploy status
   deploy uninstall --yes [--purge] [--dry-run]
   deploy tailnet-setup [--apply] [--admin WHO] [--acl FILE] [--device NAME]     (tailnet_setup.py)
@@ -42,7 +45,8 @@ import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
 from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, EXIT_FAILED,  # pylint: disable=import-error
                          EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool, mask,
-                         must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs, tsadmin, venv_python)
+                         must, no_tools, out, privileged, run, tailscale_ip, tool, ts_prefs, ts_self, tsadmin,
+                         venv_python)
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -591,6 +595,40 @@ def coexistence(r: Run, accept_dns: bool) -> None:
     out(f"  {tsadmin.vpn_coexistence('darwin' if ts_install.PLATFORM == 'darwin' else TARGET, accept_dns)}")
 
 
+def step_own_key_expiry(r: Run) -> None:
+    """This machine's node key made non-expiring. A node that joined by a login keeps an expiring key even
+    once tagged (a tagged auth key would have turned expiry off), and drops off the tailnet when it runs out."""
+    if r.dry_run:
+        r.change("turn this machine's node key expiry off (with the stored OAuth client), unless it is off",
+                 lambda: None)
+        return
+    me = ts_self()
+    cid, secret, _source = tsadmin.stored_oauth_credentials()
+    if not (cid and secret):
+        if me.get("KeyExpiry"):
+            out(f"  WARNING: this machine's node key expires {me['KeyExpiry']}, and the tailnet drops it then. "
+                "Run `deploy tailnet-setup --apply` (it turns that off), or turn off key expiry for this machine "
+                "in the admin console")
+        else:
+            r.already("this machine's node key does not expire")
+        return
+    node = str(me.get("ID") or "")
+    try:
+        token = tsadmin.access_token()
+        dev = next((d for d in tsadmin.list_devices(token) if node and node in (d.get("nodeId"), d.get("id"))), None)
+    except tsadmin.Failure as err:
+        # The Bridge works without this; say so loudly rather than fail the whole deploy on it
+        out(f"  WARNING: this machine's node key expiry could not be checked: {err}")
+        return
+    if dev is None:
+        out(f"  WARNING: this machine (node {node or '?'}) is not in the tailnet's device list; key expiry unchecked")
+    elif dev.get("keyExpiryDisabled"):
+        r.already("this machine's node key expiry is off")
+    else:
+        r.change(f"turn this machine's node key expiry off (node {node})",
+                 lambda: tsadmin.disable_key_expiry(token, dev))
+
+
 def bridge_url(host: str, port: int) -> str:
     return f"ws://[{host}]:{port}" if ":" in host else f"ws://{host}:{port}"
 
@@ -609,6 +647,8 @@ def cmd_bridge(args) -> int:
     r.step("Tailscale")
     coexistence(r, args.accept_dns)
     joined = ts_install.step_tailscale(r, not args.no_install_tailscale, args.accept_dns)
+    if joined or r.dry_run:
+        step_own_key_expiry(r)
 
     r.step("Configuration")
     # Only a dry run gets here without a tailnet address: it has said what it would do about that
@@ -694,28 +734,148 @@ def cmd_print_enrolment(args) -> int:
     return EXIT_OK
 
 
-def cmd_add_peer(args) -> int:
-    check_name(args.name, "--name")
-    if not SHA256_RE.match(args.token_sha256):
-        raise Failure("--token-sha256 must be 64 lowercase hex characters (the token_sha256 that "
-                      "`deploy peer --print-enrolment` printed)", EXIT_USAGE)
-    r = Run(args.dry_run, total=2)
-    out(f"=== AI-Connect deploy: add-peer '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
-    r.step("Peer enrolment by token hash")
+def bridge_facts() -> dict:
     facts = inspect_config()
     if not (facts and facts.get("exists")):
         raise Failure(f"{CONFIG_FILE} missing: this machine is not a Bridge yet (run deploy bridge first)")
-    known = (facts.get("peer_sha256") or {}).get(args.name)
-    if known == args.token_sha256:
-        r.already(f"peer '{args.name}' enrolled with this token hash")
+    return facts
+
+
+def check_sha256(text: str | None) -> None:
+    if text is not None and not SHA256_RE.match(text):
+        raise Failure("--token-sha256 must be 64 lowercase hex characters (the token_sha256 that "
+                      "`deploy join` or `deploy peer --print-enrolment` printed)", EXIT_USAGE)
+
+
+def step_enrol(r: Run, name: str, sha256: str | None) -> None:
+    """Let the peer in by its token hash; without a hash it has to be in already."""
+    r.step("Peer enrolment by token hash")
+    known = (bridge_facts().get("peer_sha256") or {}).get(name)
+    if sha256 is None:
+        if not known:
+            raise Failure(f"peer '{name}' is not enrolled on this Bridge: pass --token-sha256, the hash "
+                          "`deploy join` printed on that machine", EXIT_USAGE)
+        r.already(f"peer '{name}' enrolled")
+    elif known == sha256:
+        r.already(f"peer '{name}' enrolled with this token hash")
     elif known:
-        raise Failure(f"peer '{args.name}' is already provisioned with another token; to replace it: "
-                      f"installer.py revoke-peer {args.name}, then run this again")
+        raise Failure(f"peer '{name}' is already provisioned with another token; to replace it: "
+                      f"deploy remove --name {name} --yes (or installer.py revoke-peer {name}), then run this again")
     else:
         owe_restart(r)
-        r.change(f"enrol peer '{args.name}' by its token hash ****{args.token_sha256[-4:]} in {CONFIG_FILE}",
-                 lambda: config_tool("enrol", args.name, "--sha256", args.token_sha256))
+        r.change(f"enrol peer '{name}' by its token hash ****{sha256[-4:]} in {CONFIG_FILE}",
+                 lambda: config_tool("enrol", name, "--sha256", sha256))
+
+
+def cmd_add_peer(args) -> int:
+    check_name(args.name, "--name")
+    check_sha256(args.token_sha256)
+    r = Run(args.dry_run, total=2)
+    out(f"=== AI-Connect deploy: add-peer '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    step_enrol(r, args.name, args.token_sha256)
     step_service(r)
+    return EXIT_OK
+
+
+def step_key_expiry(r: Run, name: str) -> None:
+    """Node key expiry off for the peer's node: a node joined by a login keeps an expiring key even once
+    tagged, and would drop off the tailnet when it runs out (180 days by default)."""
+    r.step("Node key expiry")
+    tag = tsadmin.DEFAULT_TAG
+    if r.dry_run:  # asks the API nothing either
+        r.change(f"turn key expiry off for node '{name}' ({tag}), unless it is off already", lambda: None)
+        return
+    token = tsadmin.access_token()
+    matches = tsadmin.devices_named(tsadmin.list_devices(token), name, tag)
+    if not matches:
+        out(f"  no node '{name}' tagged {tag} on the tailnet yet: run this again once it has joined")
+        return
+    for dev in matches:
+        label = f"node '{name}' ({tsadmin.device_id(dev)})"
+        if dev.get("keyExpiryDisabled"):
+            r.already(f"{label}: key expiry is off")
+        else:
+            r.change(f"turn key expiry off for {label}", lambda dev=dev: tsadmin.disable_key_expiry(token, dev))
+
+
+def cmd_approve(args) -> int:
+    """add-peer, the Bridge restart it needs, and the peer's node key made non-expiring."""
+    check_name(args.name, "--name")
+    check_sha256(args.token_sha256)
+    r = Run(args.dry_run, total=3)
+    out(f"=== AI-Connect deploy: approve '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    step_enrol(r, args.name, args.token_sha256)
+    step_service(r)
+    step_key_expiry(r, args.name)
+    return EXIT_OK
+
+
+def cmd_remove(args) -> int:
+    """The peer's node off the tailnet, its token out of the Bridge, and the Bridge restarted."""
+    check_name(args.name, "--name")
+    if not args.yes and not args.dry_run:
+        raise Failure("remove changes the tailnet and the Bridge: pass --yes (or --dry-run to preview)", EXIT_USAGE)
+    facts = bridge_facts()
+    if args.name == facts.get("name"):
+        raise Failure(f"'{args.name}' is this Bridge's own peer: remove the Bridge with deploy uninstall", EXIT_USAGE)
+    tag = tsadmin.DEFAULT_TAG
+    r = Run(args.dry_run, total=3)
+    out(f"=== AI-Connect deploy: remove '{args.name}'{' (dry run)' if r.dry_run else ''} ===")
+    r.step("Tailnet node")
+    if r.dry_run:
+        r.change(f"delete node '{args.name}' ({tag}) from the tailnet, if it is there", lambda: None)
+    else:
+        token = tsadmin.access_token()
+        matches = tsadmin.devices_named(tsadmin.list_devices(token), args.name, tag)
+        if not matches:
+            r.already(f"no node '{args.name}' tagged {tag} on the tailnet")
+        for dev in matches:
+            r.change(f"delete node {dev.get('name') or args.name} ({tsadmin.device_id(dev)}) from the tailnet",
+                     lambda dev=dev: tsadmin.delete_device(token, dev))
+    r.step("Bridge peer")
+    token_file = TOKEN_DIR / f"{args.name}.token"
+    if args.name in (facts.get("peers") or []):
+        owe_restart(r)
+        r.change(f"revoke peer '{args.name}' in {CONFIG_FILE}", lambda: config_tool("revoke", args.name))
+    else:
+        r.already(f"peer '{args.name}' is not provisioned on this Bridge")
+    if token_file.exists():
+        r.change(f"delete its token file {token_file}", token_file.unlink)
+    step_service(r)
+    return EXIT_OK
+
+
+def cmd_list(_args) -> int:
+    """The tailnet's nodes beside the Bridge's peers. The API lists no ephemeral flag, so none is shown."""
+    token = tsadmin.access_token()
+    devices = tsadmin.list_devices(token)
+    facts = inspect_config() or {}
+    bridge = bool(facts.get("exists") and facts.get("host"))
+    peers, own = set(facts.get("peers") or []), facts.get("name")
+    out("=== AI-Connect deploy: list ===")
+    row = "  {:<20} {:<16} {:<22} {:<28} {:<30} {}"
+    out(row.format("NAME", "IP", "TAGS", "ONLINE", "KEY EXPIRY", "BRIDGE"))
+    expiring, names = [], set()
+    for dev in sorted(devices, key=tsadmin.device_short_name):
+        name = tsadmin.device_short_name(dev)
+        names.add(name)
+        ip = next((a for a in dev.get("addresses") or [] if ":" not in str(a)), "-")
+        online = "yes" if dev.get("connectedToControl") else f"last seen {dev.get('lastSeen') or '?'}"
+        if dev.get("keyExpiryDisabled"):
+            expiry = "disabled"
+        else:
+            expiry = f"ENABLED, expires {dev.get('expires') or '?'}"
+            expiring.append(name)
+        role = ("this Bridge" if name == own else "peer" if name in peers else "not a Bridge peer") if bridge else "-"
+        out(row.format(name, ip, ",".join(dev.get("tags") or []) or "-", online, expiry, role))
+    for name in sorted(peers - names - {own}):
+        out(row.format(name, "-", "-", "-", "-", "peer, not on the tailnet"))
+    if not bridge:
+        out("  (not a Bridge here: its peers are not shown)")
+    if expiring:
+        nodes = "1 node keeps" if len(expiring) == 1 else f"{len(expiring)} nodes keep"
+        out(f"  {nodes} a key that expires: {', '.join(expiring)}. Turn it off: deploy approve --name <peer>, "
+            "or deploy bridge for the Bridge itself")
     return EXIT_OK
 
 
@@ -794,6 +954,11 @@ def cmd_status(args) -> int:
         state = backend_state() or "unknown"
         ip = tailscale_ip() if state == "Running" else "-"
         out(f"  tailscale: {state}, IPv4 {ip}")
+        if state == "Running":
+            expires = ts_self().get("KeyExpiry")
+            out(f"  node key: EXPIRES {expires}, and the tailnet drops this machine then. Turn it off: on the Bridge, "
+                "deploy approve --name <this peer> (deploy bridge, if this is the Bridge)" if expires
+                else "  node key: does not expire")
         prefs = ts_prefs()
         if prefs is None:
             out("  tailscale settings: unknown (tailscale debug prefs did not answer)")
@@ -932,6 +1097,21 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--token-sha256", required=True, help="token_sha256 from `deploy peer --print-enrolment`")
     a.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
     a.set_defaults(func=cmd_add_peer)
+
+    ap = sub.add_parser("approve", help="on the Bridge: let a joined machine in (add-peer, restart, key expiry off)")
+    ap.add_argument("--name", required=True, help="the peer's name")
+    ap.add_argument("--token-sha256", help="token_sha256 that `deploy join` printed (not needed once enrolled)")
+    ap.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
+    ap.set_defaults(func=cmd_approve)
+
+    rm = sub.add_parser("remove", help="on the Bridge: take a peer off the tailnet and out of the Bridge")
+    rm.add_argument("--name", required=True, help="the peer's name")
+    rm.add_argument("--yes", action="store_true", help="really do it")
+    rm.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
+    rm.set_defaults(func=cmd_remove)
+
+    ls = sub.add_parser("list", help="the tailnet's nodes beside this Bridge's peers, and any key that expires")
+    ls.set_defaults(func=cmd_list)
 
     s = sub.add_parser("status", help="show what is deployed here")
     s.set_defaults(func=cmd_status)

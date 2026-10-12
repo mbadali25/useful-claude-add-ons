@@ -62,8 +62,10 @@ def tailscale(args, state):
             sys.stdout.buffer.write(b"\x9d\n")
         return 0
     if args and args[0] == "status":
-        print(json.dumps({"BackendState": state.get("ts_backend", "Running"),
-                          "Self": {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}}))
+        me = {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}
+        if state.get("ts_key_expiry"):  # as tailscale prints it: KeyExpiry only while the key expires
+            me["KeyExpiry"] = state["ts_key_expiry"]
+        print(json.dumps({"BackendState": state.get("ts_backend", "Running"), "Self": me}))
         return 0
     if args[:2] == ["debug", "prefs"]:
         print(json.dumps({"RouteAll": False, "ExitNodeID": "", "CorpDNS": False, **state.get("prefs", {})}))

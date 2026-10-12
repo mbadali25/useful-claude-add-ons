@@ -61,7 +61,7 @@ def no_secret_in(text: str) -> bool:
 def test_preview_changes_nothing_and_shows_the_diff(box, api):
     run = setup(box, api)
     assert run.res.returncode == 0, run.text
-    assert "preview" in run.out and run.out.count("would:") == 3, run.out  # policy, tag, OAuth client
+    assert "preview" in run.out and run.out.count("would:") == 4, run.out  # policy, tag, key expiry, OAuth client
     assert api.writes() == [] and api.policy == DEFAULT_POLICY
     assert run.changed_nothing() and keyring_of(box) == {} and not oauth_file(box).exists()
     assert '+\t\t"tag:bridge":  ["autogroup:admin"],' in run.out  # the diff, with --admin filled in
@@ -80,9 +80,10 @@ def test_apply_backs_up_replaces_tags_and_stores_the_client(box, api):
     assert len(saved) == 1 and saved[0].read_text(encoding="utf-8") == DEFAULT_POLICY
     written = [r["path"] for r in api.writes()]
     # The tag is refused until the policy defines it, so the policy goes first
-    assert written == ["/tailnet/-/acl", f"/device/{NODE_ID}/tags", "/tailnet/-/keys"]
+    # Tagged after a login, the Bridge's node key would still expire: turned off with the tag
+    assert written == ["/tailnet/-/acl", f"/device/{NODE_ID}/tags", f"/device/{NODE_ID}/key", "/tailnet/-/keys"]
     assert api.made("POST", "/tailnet/-/acl")[0]["if_match"] == '"v1"'
-    assert api.devices[NODE_ID]["tags"] == ["tag:bridge"]
+    assert api.devices[NODE_ID]["tags"] == ["tag:bridge"] and api.devices[NODE_ID]["keyExpiryDisabled"] is True
     assert json.loads(api.made("POST", "/keys")[0]["body"]) == {
         "keyType": "client", "scopes": ["auth_keys", "devices:core"], "tags": ["tag:ai-peer"],
         "description": "ai-connect mint-key and revoke"}
@@ -101,8 +102,8 @@ def test_apply_again_is_idempotent(box, api):
     assert again.res.returncode == 0, again.text
     assert api.writes() == []
     assert again.changed_nothing() and len(backups(box)) == 1
-    # installed, on the tailnet, policy, tag, OAuth client
-    assert len(already(again.res)) == 6 and "would:" not in again.out, again.out  # + Tailscale settings pinned
+    # installed, on the tailnet, policy, tag, key expiry, OAuth client
+    assert len(already(again.res)) == 7 and "would:" not in again.out, again.out  # + Tailscale settings pinned
     preview = setup(box, api)
     assert preview.res.returncode == 0 and "would:" not in preview.out and api.writes() == []
     assert no_secret_in(again.text + preview.text)
@@ -147,12 +148,12 @@ def test_json_output_is_one_object_with_no_secret(box, api):
     doc = json.loads(preview.out)
     assert doc["ok"] is True and doc["applied"] is False and doc["oauth_client_id"] is None
     assert [s["step"] for s in doc["steps"]][1:3] == ["Policy file", "Tailnet policy"]
-    assert [res["status"] for s in doc["steps"] for res in s["results"]].count("would") == 3
+    assert [res["status"] for s in doc["steps"] for res in s["results"]].count("would") == 4  # + key expiry
     doc = json.loads(applied.out)
     assert doc["applied"] is True and doc["oauth_client_id"] == CLIENT_ID
     assert doc["oauth_client_stored_in"] == "credential store"
     statuses = [res["status"] for s in doc["steps"] for res in s["results"]]
-    assert statuses.count("done") == 3 and "backup" in statuses and "would" not in statuses
+    assert statuses.count("done") == 4 and "backup" in statuses and "would" not in statuses  # + key expiry
     api.validate_message = "test(s) failed"
     failed = setup(box, api, "--apply", "--json", "--acl", str(PLUGIN / "vpn" / "acl-template.hujson"))
     doc = json.loads(failed.out)
