@@ -56,6 +56,44 @@ claude plugin uninstall ai-connect@useful-claude-add-ons
 
 ---
 
+## `angular-lsp` — Angular template language server
+
+| | |
+|---|---|
+| **Source** | [`angular-lsp/`](angular-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:angular-lsp --> |
+| **Install** | `claude plugin install angular-lsp@useful-claude-add-ons`, plus `npm install -g @angular/language-server` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`angular`, for `.html`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`angular-lsp/README.md`](angular-lsp/README.md) |
+
+Starts the Angular team's own language server, `@angular/language-server`, for
+Angular HTML templates. Anthropic's official marketplace has no Angular entry.
+
+**It runs a launcher, not `ngserver` directly.** `ngserver --stdio` exits before
+reading a request unless `--tsProbeLocations` and `--ngProbeLocations` name a
+directory holding `typescript` and `@angular/language-service`. The server
+bundles both, but a global npm package lives somewhere different on every
+machine, so the path cannot be written into the config.
+`scripts/ngserver-launch.js` finds the package at start-up (an
+`ANGULAR_LANGUAGE_SERVER_DIR` override, then the `ngserver` shim on `PATH`, then
+`npm root -g`) and passes the project directory followed by the bundled copies.
+
+**Only `.html` is mapped.** Claude Code gives an extension to one server and
+`typescript-lsp` owns `.ts`. Inline templates inside a component's `.ts` file
+therefore get no Angular analysis; templates in their own `.html` files do. The
+server also starts for `.html` files in projects with no Angular in them, where
+it has nothing to say.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall angular-lsp@useful-claude-add-ons`.
+
+Not verified: Windows and macOS, and a Claude Code session against a real
+Angular project. The README lists what was measured.
+
+---
+
 ## `crew` — virtual dev team for multi-repo legacy work
 
 | | |
@@ -507,6 +545,42 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 
 ---
 
+## `css-lsp` — CSS, SCSS and Less language server
+
+| | |
+|---|---|
+| **Source** | [`css-lsp/`](css-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:css-lsp --> |
+| **Install** | `claude plugin install css-lsp@useful-claude-add-ons`, plus `npm install -g vscode-langservers-extracted` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`css`, for `.css`, `.scss` and `.less`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`css-lsp/README.md`](css-lsp/README.md) |
+
+Starts `vscode-css-language-server --stdio`, the CSS server from Visual Studio
+Code as repackaged in the npm package
+[`vscode-langservers-extracted`](https://www.npmjs.com/package/vscode-langservers-extracted),
+with `.css` sent as language `css`, `.scss` as `scss` and `.less` as `less`.
+Anthropic's official marketplace has no CSS entry.
+
+**`--stdio` is required.** Run bare, the server throws
+`Connection input stream is not set` and never reads a request. `.sass`, the
+indented syntax, is deliberately not mapped: the server parses SCSS, not
+indented Sass.
+
+The npm package is a community repackaging rather than a Microsoft release, and
+it also puts the HTML, JSON, Markdown and ESLint servers from the same source on
+`PATH`. This plugin starts the CSS one only.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall css-lsp@useful-claude-add-ons`.
+
+Not verified: any request beyond `initialize` and `shutdown`, Windows and macOS,
+and a Claude Code session against a real stylesheet. The README lists what was
+measured.
+
+---
+
 ## `gizmoduck` — Nuclei and a multi-tool scan routine, diffed and triaged into tickets
 
 | | |
@@ -851,3 +925,70 @@ claude plugin uninstall rule-of-two@useful-claude-add-ons
 
 Nothing outside the plugin directory is written, so there is nothing to clean
 up.
+
+---
+
+## `sql-lsp` — SQL language server (sqls), with no connection shipped
+
+| | |
+|---|---|
+| **Source** | [`sql-lsp/`](sql-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:sql-lsp --> |
+| **Install** | `claude plugin install sql-lsp@useful-claude-add-ons`, plus the `sqls` binary on `PATH` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server when Go is present |
+| **Registers** | 1 LSP server (`sqls`, for `.sql`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`sql-lsp/README.md`](sql-lsp/README.md) |
+
+Starts [`sqls`](https://github.com/sqls-server/sqls) for `.sql` files.
+
+**It ships no database connection, DSN, host or credential.** Without one,
+`sqls` gives keyword completion and formatting and nothing schema-aware. It
+does not publish diagnostics, document symbols or references in either mode, so
+with no connection the gain for Claude Code is small. That is stated here so
+nobody installs it expecting more.
+
+**Connecting it is the user's decision.** Schema-aware completion, hover and
+go-to-definition need a `sqls` config the user writes
+(`~/.config/sqls/config.yml`); the README gives a placeholder-only example.
+`sqls` opens a live connection with whatever account it is given and can
+execute queries as that account, so the README says plainly to use a read-only
+account, to keep the file out of every repository, and that pointing it at a
+production database is a choice to make on purpose.
+
+**Nothing runs unless a `.sql` file is opened**, and nothing is written outside
+the plugin directory. Uninstall with
+`claude plugin uninstall sql-lsp@useful-claude-add-ons`; a `sqls` config the
+user created is theirs and is left alone.
+
+Not verified: anything with a database connected, the `go install` route,
+Windows and macOS. The README lists what was measured.
+
+---
+
+## `terraform-lsp` — Terraform language server (terraform-ls)
+
+| | |
+|---|---|
+| **Source** | [`terraform-lsp/`](terraform-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:terraform-lsp --> |
+| **Install** | `claude plugin install terraform-lsp@useful-claude-add-ons`, plus the `terraform-ls` binary on `PATH` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server where Homebrew or `winget` is present |
+| **Registers** | 1 LSP server (`terraform`, for `.tf` and `.tfvars`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`terraform-lsp/README.md`](terraform-lsp/README.md) |
+
+Starts HashiCorp's [`terraform-ls`](https://github.com/hashicorp/terraform-ls)
+as `terraform-ls serve`, with `.tf` sent as language `terraform` and `.tfvars`
+as `terraform-vars`, the IDs the server's own usage guide requires. `.tf.json`,
+`.tfvars.json` and the `*.hcl` family are deliberately not mapped.
+
+Provider-aware answers need the provider schemas, which the server reads from a
+working directory where `terraform init` has run. The server never runs `init`,
+`plan` or `apply`, and the plugin passes it no credentials.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with
+`claude plugin uninstall terraform-lsp@useful-claude-add-ons`.
+
+Not verified: Windows and macOS, and a Claude Code session against a real
+Terraform module. The README lists what was measured.
