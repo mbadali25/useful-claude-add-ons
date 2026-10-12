@@ -15,6 +15,45 @@ from pathlib import Path
 # operating system
 SESSIONS_DIR = Path.home() / ".config" / "ai-connect" / "sessions"
 
+# client.name_mode: "per-project" names each session <client.name>-<project>
+PER_PROJECT = "per-project"
+# vpn/tsadmin.py PEER_NAME_RE: the names deploy and setup enrol, and the only
+# ones config_loader looks a session token up for
+PEER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,62}")
+_NOT_IN_A_NAME = re.compile(r"[^A-Za-z0-9-]+")
+# server/user_send.py is_reserved_name: the Bridge refuses these as peer names
+_RESERVED_NAME = "bridge"
+_RESERVED_PREFIX = "user:"
+
+
+def is_reserved_name(name: str) -> bool:
+    """Names only the Bridge and users have (server/user_send.py); compared without case."""
+    folded = name.casefold()
+    return folded == _RESERVED_NAME or folded.startswith(_RESERVED_PREFIX)
+
+
+def project_dir(environ: Mapping[str, str], cwd: Path) -> Path:
+    """The session's project: CLAUDE_PROJECT_DIR when set, else the working directory; absolute and resolved."""
+    return Path(environ["CLAUDE_PROJECT_DIR"] if environ.get("CLAUDE_PROJECT_DIR") else cwd).resolve()
+
+
+def project_peer_name(base: str, project: Path) -> str | None:
+    """<base>-<project basename> for client.name_mode: per-project, or None if that is no usable peer name.
+
+    The basename is cut down to what a peer name may hold (PEER_NAME_RE): every
+    run of other characters becomes one hyphen and hyphens at either end go, so
+    "My App.v2" gives "My-App-v2". The whole name is cut to 63 characters, again
+    without a trailing hyphen. Two projects can so end up with one name; the
+    <name>.dir file beside the token tells them apart (config_loader).
+    """
+    tail = _NOT_IN_A_NAME.sub("-", project.name).strip("-")
+    if not base or not tail:
+        return None
+    name = f"{base}-{tail}"[:63].rstrip("-")
+    if not PEER_NAME_RE.fullmatch(name) or is_reserved_name(name):
+        return None
+    return name
+
 
 # A session's label is what the Bridge accepts after "<client.name>:" (SESSION_LABEL in
 # server/roles.py: letters, digits, . _ -, at most 64). The label stays shorter, so the
@@ -70,6 +109,21 @@ def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "") -> st
     name = f"{socket.gethostname()}:{_project(environ, cwd)}"
     suffix = environ.get("AI_CONNECT_PEER_SUFFIX")
     return f"{name}-{suffix}" if suffix else name
+
+
+def session_identity(environ: Mapping[str, str], cwd: Path, chosen: str, configured: str) -> tuple[str, dict[str, str]]:
+    """(name, BridgeClient's machine_name argument) of a STDIO session.
+
+    chosen is the name config_loader settled on, configured is client.name.
+    They differ when client.name_mode: per-project found the project's own
+    token: "<client.name>-<project>" is bound to that token and registered as
+    it is, with no fallback and no suffix. Otherwise, also when that mode
+    fell back to client.token, the session is "<client.name>:<project>" on
+    the machine's token (peer_name).
+    """
+    if "AI_CONNECT_PEER_NAME" not in environ and chosen != configured:
+        return chosen, {}
+    return peer_name(environ, cwd, configured), {"machine_name": machine_name(environ, configured)}
 
 
 def machine_name(environ: Mapping[str, str], configured: str = "") -> str:

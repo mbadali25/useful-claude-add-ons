@@ -16,7 +16,7 @@ if str(ROOT / "client") not in sys.path:
     sys.path.append(str(ROOT / "client"))  # last, so client/server.py shadows nothing
 
 from bridge_client import BridgeClient  # noqa: E402  # pylint: disable=import-error,wrong-import-position
-from peer_name import machine_name, peer_name, session_label  # noqa: E402  # pylint: disable=wrong-import-position
+from peer_name import machine_name, peer_name, session_identity, session_label  # noqa: E402  # pylint: disable=wrong-import-position
 from server.roles import SESSION_LABEL  # noqa: E402  # pylint: disable=wrong-import-position
 
 TAKEN = {"type": "error", "code": "name_taken", "error": "held"}
@@ -61,6 +61,26 @@ def test_machine_name_is_the_fallback_only_for_a_derived_session_name():
     # A name given outright is registered as given, and no client.name means the legacy Host:Project
     assert machine_name({"AI_CONNECT_PEER_NAME": "laptop:mine"}, "laptop") == ""
     assert machine_name({}, "") == ""
+
+
+def test_a_per_project_name_with_its_own_token_is_registered_as_it_is(tmp_path):
+    """client.name_mode: per-project (0.1.13) binds "<client.name>-<project>" to a token of its own."""
+    assert session_identity({}, tmp_path / "proj", "laptop-proj", "laptop") == ("laptop-proj", {})
+    # That mode fell back to client.token, or is off: the session's name is under the machine's
+    assert session_identity({}, tmp_path / "proj", "laptop", "laptop") == ("laptop:proj", {"machine_name": "laptop"})
+    env = {"AI_CONNECT_PEER_NAME": "reviewer"}
+    assert session_identity(env, tmp_path / "proj", "laptop", "laptop") == ("reviewer", {"machine_name": ""})
+
+
+def test_the_watcher_sends_the_machines_token_for_a_session_name(tmp_path, monkeypatch):
+    """A session name holds a colon, so no token file is looked up for it."""
+    import config_loader  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(config_loader, "SESSION_TOKEN_DIR", tmp_path / "session-tokens")
+    config = {"client": {"name": "laptop", "token": "t" * 64, "bridge_url": "ws://127.0.0.1:9999"}}
+    for name in ("laptop:proj", "laptop:proj-4242"):
+        settings = config_loader.client_settings(config, environ={}, name=name)
+        assert (settings.name, settings.token) == ("laptop", "t" * 64)
 
 
 @pytest.mark.parametrize("project, label", [

@@ -65,6 +65,15 @@ client:
   # sessions name themselves Host:Project, which only the legacy shared
   # token accepts.
   name: "my-machine"
+  # Opt-in: "per-project" names each Claude Code session
+  # <name>-<project folder name> with that name's own token from
+  # ~/.config/ai-connect/session-tokens/<that name>.token (made by
+  # `deploy/setup.sh session --project <dir>`), so sessions in different
+  # projects are online at once. Without that token, or when the token file is
+  # not owner-only or its <that name>.dir records another project, the session
+  # joins as name with token and says why on stderr. AI_CONNECT_PEER_NAME
+  # still wins. Left out = every session joins as name.
+  # name_mode: "per-project"
   # The token THIS machine presents to the Bridge. `installer.py add-peer
   # <name>`, run on the Bridge machine, creates one and prints it once --
   # paste it here, on that peer's own machine. A --server install fills in

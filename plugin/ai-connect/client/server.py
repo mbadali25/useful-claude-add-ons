@@ -3,6 +3,8 @@
 The session's peer name is "<client.name>:<project>" (see peer_name.py):
 client.name is the machine, whose one token registers every session on it.
 A second session in the same project appends its process id to the name.
+With client.name_mode: per-project and a token for the project, it is
+"<client.name>-<project>" under that token instead (config_loader.py).
 """
 
 import os
@@ -18,11 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config_loader import client_settings, load_config
 from log_setup import setup_logging
 from mcp_app import create_app  # pylint: disable=import-error
-from peer_name import machine_name, peer_name, record_session_name, remove_dead_sessions, session_pid
+from peer_name import record_session_name, remove_dead_sessions, session_identity, session_pid
 
 SESSION_PID = session_pid()
-_configured = client_settings(load_config()).name
-name = peer_name(os.environ, Path.cwd(), _configured)
+# Read once: with client.name_mode per-project the name and token are chosen
+# here, and a fallback says so on stderr once (stdout is the MCP protocol)
+_config = load_config()
+settings = client_settings(_config)
+name, session = session_identity(os.environ, Path.cwd(), settings.name, client_settings(_config, name="").name)
 # STDIO carries the MCP protocol, so logs go to a file only, one per peer:
 # several sessions run at once, and a rotated file must have a single writer
 setup_logging(f"mcp-{name.replace(':', '_')}.log")
@@ -30,9 +35,10 @@ setup_logging(f"mcp-{name.replace(':', '_')}.log")
 # older Bridge): the watcher's file follows the name the Bridge registered
 mcp = create_app(
     name,
-    machine_name=machine_name(os.environ, _configured),
+    settings,
     collision_suffix=str(SESSION_PID),
     on_registered=lambda registered: record_session_name(SESSION_PID, registered),
+    **session,
 )
 
 
