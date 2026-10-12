@@ -9,6 +9,33 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
 ### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
 
 - **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL

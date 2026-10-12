@@ -94,6 +94,41 @@ Angular project. The README lists what was measured.
 
 ---
 
+## `bash-lsp` — Bash language server
+
+| | |
+|---|---|
+| **Source** | [`bash-lsp/`](bash-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:bash-lsp --> |
+| **Install** | `claude plugin install bash-lsp@useful-claude-add-ons`, plus `npm install -g bash-language-server` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`bash`, for `.sh` and `.bash`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`bash-lsp/README.md`](bash-lsp/README.md) |
+
+Starts `bash-language-server start`, from the npm package
+[`bash-language-server`](https://www.npmjs.com/package/bash-language-server),
+with `.sh` and `.bash` both sent as language `shellscript`. Anthropic's official
+marketplace has no Bash entry.
+
+**Diagnostics come from `shellcheck`.** The server runs it on each file when it
+is on `PATH` and works without it, minus the lint findings. `.zsh` and `.ksh`
+are deliberately not mapped: the server parses Bash, and `shellcheck` does not
+support zsh. A script with no extension is not covered, because Claude Code
+picks a server by extension only.
+
+The package needs Node.js 20 or newer. The install scripts refuse on an older
+one instead of installing a server that cannot start.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall bash-lsp@useful-claude-add-ons`.
+
+Not verified: any request beyond `initialize` and `shutdown`, Windows and macOS,
+and a Claude Code session against a real script. The README lists what was
+measured.
+
+---
+
 ## `crew` — virtual dev team for multi-repo legacy work
 
 | | |
@@ -864,6 +899,94 @@ claude plugin uninstall obsidian-vault@useful-claude-add-ons
 
 The hooks go with it. `~/.claude/obsidian/config.json` is left in place;
 delete it by hand for no trace.
+
+---
+
+## `powershell-lsp` — PowerShell language server in Windows PowerShell 5.1
+
+| | |
+|---|---|
+| **Source** | [`powershell-lsp/`](powershell-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:powershell-lsp --> |
+| **Install** | `claude plugin install powershell-lsp@useful-claude-add-ons`, plus an unzipped PowerShell Editor Services release. **Windows only, and never together with `pwsh-lsp`** |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. Ticked there, it is still installed only on Windows without `pwsh`. The `lsp-plugins` row picks between it and `pwsh-lsp` and installs Editor Services |
+| **Registers** | 1 LSP server (`powershell`, for `.ps1`, `.psm1` and `.psd1`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`powershell-lsp/README.md`](powershell-lsp/README.md) |
+
+Starts [PowerShell Editor Services](https://github.com/PowerShell/PowerShellEditorServices)
+inside Windows PowerShell 5.1 (`powershell.exe`), for Windows machines that do
+not have PowerShell 7. Upstream supports 5.1 on a best-effort basis; where
+`pwsh` exists, `pwsh-lsp` is the one to install.
+
+**It serves the same three extensions as `pwsh-lsp`, and Claude Code runs one
+server per extension**, so the two must never both be installed. The install
+scripts enforce that: `powershell-lsp` goes in only on Windows, only where
+`pwsh` does not resolve, and only where `pwsh-lsp` is not already there.
+
+**It starts its server process with `-ExecutionPolicy RemoteSigned`.** Windows
+PowerShell's default policy on a client, `Restricted`, runs no script at all.
+The flag covers that one process and changes no machine or user setting; a
+policy set by Group Policy still wins. The README sets this out.
+
+The launcher, `scripts/pses-launch.ps1`, is the same file `pwsh-lsp` ships. It
+finds Editor Services under `PSES_BUNDLE_PATH` or
+`%LOCALAPPDATA%\powershell-editor-services`, and writes nothing to stdout.
+
+**Nothing runs unless a matching file is opened.** Editor Services is not
+installed by the plugin. Uninstall with
+`claude plugin uninstall powershell-lsp@useful-claude-add-ons`; the unzipped
+release stays where it is until you delete it.
+
+**Not verified: that it starts at all.** No Windows machine was available, so
+this plugin has never been run. The README lists exactly what was and was not
+measured.
+
+---
+
+## `pwsh-lsp` — PowerShell language server in PowerShell 7
+
+| | |
+|---|---|
+| **Source** | [`pwsh-lsp/`](pwsh-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:pwsh-lsp --> |
+| **Install** | `claude plugin install pwsh-lsp@useful-claude-add-ons`, plus `pwsh` on `PATH` and an unzipped PowerShell Editor Services release. **Never together with `powershell-lsp`** |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. Ticked there, it is installed only where `pwsh` resolves. The `lsp-plugins` row picks between it and `powershell-lsp` and installs Editor Services |
+| **Registers** | 1 LSP server (`powershell`, for `.ps1`, `.psm1` and `.psd1`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`pwsh-lsp/README.md`](pwsh-lsp/README.md) |
+
+Starts [PowerShell Editor Services](https://github.com/PowerShell/PowerShellEditorServices)
+inside PowerShell 7 (`pwsh`), on Windows, Linux and macOS, with all three
+extensions sent as language `powershell`. Anthropic's official marketplace has
+no PowerShell entry.
+
+**It serves the same three extensions as `powershell-lsp`, and Claude Code runs
+one server per extension**, so the two must never both be installed. The install
+scripts enforce that in both rows that can install them.
+
+**It ships a launcher**, `scripts/pses-launch.ps1`, for three reasons. Editor
+Services is an unzipped release, not a command, so its location is resolved at
+start-up: `PSES_BUNDLE_PATH`, then `~/.local/share/powershell-editor-services`
+(Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services` (Windows).
+Started bare, Editor Services writes `PowerShellEditorServices.json` into the
+current directory, which is the project; the launcher sends that file to the
+temp directory and removes it on exit. And stdout is the LSP stream, so the
+launcher writes nothing to it: a missing release is one line on stderr and
+exit code 1.
+
+**The install scripts download Editor Services, pinned.** One release zip,
+v4.7.0, checked against a sha256 written in both scripts; a mismatch is refused
+and nothing is unpacked. They do not install PowerShell 7 itself.
+
+**Nothing runs unless a matching file is opened.** Neither `pwsh` nor Editor
+Services is installed by the plugin. Uninstall with
+`claude plugin uninstall pwsh-lsp@useful-claude-add-ons`; the unzipped release
+stays where it is until you delete it.
+
+Not verified: Windows and macOS, any request beyond `initialize` and
+`shutdown`, and a Claude Code session against a real script. The README lists
+what was measured.
+
+---
 
 ## `rule-of-two` — two adversarial reviewers from different model families
 
