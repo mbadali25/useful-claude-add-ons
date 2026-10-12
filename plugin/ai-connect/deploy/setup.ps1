@@ -4,6 +4,7 @@
 #   setup.ps1 bridge [--peer NAME ...] [--enrol NAME=SHA256 ...] [--register-mcp] [--apply]
 #   setup.ps1 peer --name NAME --bridge IP [--token-file F | --invite-file F] [--register-mcp] [--apply]
 #   setup.ps1 session --name NAME [--apply]
+#   setup.ps1 session --project DIR [--project DIR ...] [--apply]
 # It never runs `deploy tailnet-setup` (the owner's step: it replaces the tailnet policy).
 # Run `bridge --apply` from an elevated PowerShell: the scheduled task and the firewall rule need
 # administrator rights.

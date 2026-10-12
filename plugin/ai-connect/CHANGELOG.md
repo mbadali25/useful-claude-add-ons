@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.13] - 2026-10-12
+
+One peer name per project, opt-in, on the same branch as 0.1.12 (PR #614).
+
+### Added
+- `client.name_mode: per-project` (left out = unchanged). A session's name is `<client.name>-<project>`: the project is `CLAUDE_PROJECT_DIR`, else the working directory, resolved; its folder name is cut down to a peer name (every run of characters other than `A-Za-z0-9-` becomes one `-`, hyphens at either end dropped, the whole name cut to 63 characters with no trailing hyphen). Its token is `~/.config/ai-connect/session-tokens/<name>.token`, the directory 0.1.12's `session --name` uses. `AI_CONNECT_PEER_NAME` still wins. Any other `name_mode` value stops the client with a message
+- `session-tokens/<name>.dir`: UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, followed by at most one `\n` (or `\r\n`). Without one, the token is used as it is; with one, only by a session in that directory
+- The session joins as `client.name` with `client.token`, and writes exactly one line starting `ai-connect: client.name_mode per-project:` to stderr (stdout is the MCP protocol), when the folder gives no usable name or `client.name` is empty; the token file is missing or empty; it is not a regular file (symbolic links are not followed) owned by this user with no group or other permission bit; or the `.dir` is unreadable, malformed or records another directory
+- `setup session --project DIR [--project DIR ...]` (setup.sh and setup.ps1): derives each name the same way (`peer_name.project_peer_name`, shared with the client), writes each token owner-only and its `.dir`, and on the Bridge machine enrols every hash with one Bridge restart; elsewhere one `{name, token_sha256}` line per name. It refuses two projects with one name, a name whose `.dir` holds another project, and a project that gives no name; an existing token others may read is written owner-only again, unchanged
+- Tests in `tests/test_ops_setup.py`: name derivation, `AI_CONNECT_PEER_NAME` precedence, each fallback with its stderr line and empty stdout, the `.dir` collision, reserved names, the watcher taking the client's name, and `session --project` with one restart
+
+### Changed
+- `AI_CONNECT_PEER_NAME`'s session token (0.1.12) is now read with the same checks: owner-only regular file, never for `Bridge` or `User:...`. A token file setup did not write may need `chmod 600`
+- `setup session` refuses the names the Bridge keeps for itself (`Bridge`, `User:...`, compared without case), which it accepted before
+- The watcher sends the token of the name the session's client recorded in `sessions/<CLAUDE_PID>` (`client_settings(..., name=peer)`), not of a name it works out from its own environment: a hook's working directory need not be the project
+- The STDIO client reads its settings once and hands them to the MCP app, so a fallback is said once; the HTTP/SSE server ignores `name_mode` (one service for every project)
+
+### Known limitations
+- Not run on Windows. There only the regular-file check applies to a session token: setup writes it with an ACL of the current user alone (0.1.12), and the client does not read that ACL back
+- Peer names hold no `.` or `_` (`vpn/tsadmin.py` `PEER_NAME_RE`, which deploy and setup enrol by), so a folder name's `.` and `_` become `-`; `my.app` and `my_app` give one name, and the `.dir` tells them apart
+- A token with no `.dir` is used by any project with that name; `setup session --project` always writes one
+
 ## [0.1.12] - 2026-10-12
 
 Setup in one run per machine, a firewall step that says when its rule does nothing, and a second peer name

@@ -6,6 +6,7 @@
   setup peer    --name N --bridge HOST [--token-file F | --invite-file F] [--auth-key-file F] [--port N]
                 [--no-install-tailscale] [--register-mcp] [--scope user|project] [--apply]
   setup session --name N [--apply]
+  setup session --project DIR [--project DIR ...] [--apply]
 
 One core behind the setup.sh / setup.ps1 pair, and a thin one: every change is made
 by deploy.py's own steps (deploy bridge, peer, join, add-peer), so nothing is done
@@ -27,14 +28,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import secrets
+import stat
 import sys
+from pathlib import Path
 
 import deploy  # pylint: disable=import-error
 import firewall_state  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
-from deploy_core import (CONFIG_DIR, DEFAULT_PORT, EXIT_FAILED, EXIT_OK, EXIT_USAGE, Failure, Run,  # pylint: disable=import-error
+from deploy_core import (CONFIG_DIR, DEFAULT_PORT, EXIT_FAILED, EXIT_OK, EXIT_USAGE, PLUGIN, Failure, Run,  # pylint: disable=import-error
                          no_tools, out, tailscale_ip, ts_self, tsadmin)
+
+# peer_name.py: the one rule for a per-project name, shared with the client (it needs no PyYAML)
+sys.path.insert(0, str(PLUGIN))
+from peer_name import PER_PROJECT, is_reserved_name, project_peer_name  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 # config_loader.SESSION_TOKEN_DIR: where the client looks for the token of AI_CONNECT_PEER_NAME
 SESSION_TOKEN_DIR = CONFIG_DIR / "session-tokens"
@@ -301,32 +309,80 @@ def cmd_peer(args) -> int:
 # ---------------------------------------------------------------- a second session
 
 
-def cmd_session(args) -> int:
-    """A second peer name on this machine, with a token of its own, for a session started with
-    AI_CONNECT_PEER_NAME: every session shares client.name otherwise, and only one of them is online."""
-    dry = not args.apply
-    name = args.name
-    deploy.check_name(name, "--name")
-    facts = deploy.inspect_config()
-    if not (facts and facts.get("exists") and facts.get("bridge_url")):
-        raise Failure(f"{deploy.CONFIG_FILE} is missing or has no client section: set this machine up first "
-                      f"({SH} bridge or {SH} peer)")
-    if name == facts.get("name"):
-        raise Failure(f"'{name}' is this machine's own peer name (client.name): a second session needs another "
-                      "name", EXIT_USAGE)
-    banner(f"session '{name}'", dry)
-    here = deploy.bridge_here()
-    r = Run(dry, total=3 if here else 2)
+def recorded_dir(name: str) -> str | None:
+    """The project session-tokens/<name>.dir records (config_loader.recorded_project's format), or None."""
+    path = SESSION_TOKEN_DIR / f"{name}.dir"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as err:
+        raise Failure(f"{path} could not be read ({err}): fix or delete it, then run this again") from err
+    return text.removesuffix("\n").removesuffix("\r")
 
+
+def session_names(args, own: str) -> list[tuple[str, Path | None]]:
+    """(peer name, project or None) for each session asked for; every check made before anything changes."""
+    if args.name:
+        wanted = [(args.name, None)]
+    else:
+        if not own:
+            raise Failure("--project names a session <client.name>-<project>, and client.name is empty here",
+                          EXIT_USAGE)
+        wanted = []
+        for given in args.project:
+            project = Path(given).expanduser().resolve()
+            if not project.is_dir():
+                raise Failure(f"--project '{given}' is not a directory", EXIT_USAGE)
+            name = project_peer_name(own, project)
+            if name is None:
+                raise Failure(f"--project '{given}': '{project.name}' gives no usable peer name", EXIT_USAGE)
+            recorded = recorded_dir(name)
+            if recorded is not None and os.path.normcase(recorded) != os.path.normcase(str(project)):
+                raise Failure(f"'{name}' already belongs to {recorded} (session-tokens/{name}.dir), not {project}: "
+                              "two projects with one basename cannot share a name; rename one", EXIT_USAGE)
+            wanted.append((name, project))
+    names = [name for name, _ in wanted]
+    for name, project in wanted:
+        if is_reserved_name(name):
+            raise Failure(f"'{name}' is a name the Bridge keeps for itself (Bridge, User:...): pick another",
+                          EXIT_USAGE)
+        if name == own:
+            raise Failure(f"'{name}' is this machine's own peer name (client.name): a second session needs another "
+                          "name", EXIT_USAGE)
+        if names.count(name) > 1:
+            same = [str(p) for n, p in wanted if n == name]
+            raise Failure(f"{' and '.join(same)} both give '{name}': two projects cannot share a name", EXIT_USAGE)
+    return wanted
+
+
+def owner_only_file(path: Path) -> bool:
+    """A regular file only its owner may read. On Windows the regular-file part only (write_owner_only set the ACL)."""
+    try:
+        st = path.lstat()
+    except OSError:
+        return False
+    if not stat.S_ISREG(st.st_mode):
+        raise Failure(f"{path} is not a regular file: delete it, then run this again")
+    return tsadmin.IS_WINDOWS or (st.st_uid == os.getuid() and not st.st_mode & 0o077)
+
+
+def step_session_token(r: Run, name: str, project: Path | None) -> str | None:
+    """The session's token, made owner-only if missing, and its <name>.dir; returns the token's SHA-256."""
     r.step(f"Token for '{name}'")
     target = SESSION_TOKEN_DIR / f"{name}.token"
     try:
-        token = target.read_text(encoding="utf-8").strip()
+        token = target.read_text(encoding="utf-8").strip() if not target.is_symlink() else ""
     except OSError:
         token = ""
     if token:
         tsadmin.remember_secret(token)
-        r.already(f"'{name}' has its own token in {target}")
+        if owner_only_file(target):
+            r.already(f"'{name}' has its own token in {target}")
+        else:
+            # The client refuses a token others may read: the same token, written owner-only again
+            r.change(f"make {target} owner-only (mode 600); the token stays the same",
+                     lambda: tsadmin.write_owner_only(target, token + "\n"))
     else:
         made = secrets.token_hex(32)
         tsadmin.remember_secret(made)
@@ -336,18 +392,51 @@ def cmd_session(args) -> int:
             tsadmin.private_dir(SESSION_TOKEN_DIR)
             tsadmin.write_owner_only(target, made + "\n")
         r.change(f"make a token for '{name}', owner-only in {target}", write)
-        token = "" if dry else made
-    digest = hashlib.sha256(token.encode()).hexdigest() if token else None
+        token = "" if r.dry_run else made
+    if project is not None:
+        where = SESSION_TOKEN_DIR / f"{name}.dir"
+        if recorded_dir(name) == str(project):
+            r.already(f"{where} records {project}")
+        else:
+            def write_dir() -> None:
+                tsadmin.private_dir(SESSION_TOKEN_DIR)
+                tsadmin.write_owner_only(where, f"{project}\n")
+            r.change(f"record {project} in {where}", write_dir)
+    return hashlib.sha256(token.encode()).hexdigest() if token else None
+
+
+def cmd_session(args) -> int:
+    """A peer name of its own on this machine for another session: --name, started with AI_CONNECT_PEER_NAME,
+    or --project, one name per project for client.name_mode: per-project. Every session shares client.name
+    otherwise, and only one of them is online."""
+    dry = not args.apply
+    if bool(args.name) == bool(args.project):
+        raise Failure("session needs --name N, or one or more --project DIR (not both)", EXIT_USAGE)
+    if args.name:
+        deploy.check_name(args.name, "--name")
+    facts = deploy.inspect_config()
+    if not (facts and facts.get("exists") and facts.get("bridge_url")):
+        raise Failure(f"{deploy.CONFIG_FILE} is missing or has no client section: set this machine up first "
+                      f"({SH} bridge or {SH} peer)")
+    own = facts.get("name") or ""
+    wanted = session_names(args, own)
+    names = [name for name, _ in wanted]
+    banner("session " + ", ".join(f"'{name}'" for name in names), dry)
+    here = deploy.bridge_here()
+    r = Run(dry, total=len(wanted) * (2 if here else 1) + 1)
+
+    digests = [step_session_token(r, name, project) for name, project in wanted]
 
     if here:
-        if digest:
-            deploy.step_enrol(r, name, digest)
-        else:
-            r.step("Peer enrolment by token hash")
-            r.change(f"enrol peer '{name}' by the hash of that token in {deploy.CONFIG_FILE}", lambda: None)
-            deploy.owe_restart(r)
+        for name, digest in zip(names, digests):
+            if digest:
+                deploy.step_enrol(r, name, digest)
+            else:
+                r.step("Peer enrolment by token hash")
+                r.change(f"enrol peer '{name}' by the hash of that token in {deploy.CONFIG_FILE}", lambda: None)
+                deploy.owe_restart(r)
         if r.config_changed:
-            out("  note: the Bridge restart below disconnects every peer that is online, for a moment")
+            out("  note: the one Bridge restart below disconnects every peer that is online, for a moment")
         deploy.step_service(r)
     else:
         r.step("Installed files")
@@ -356,21 +445,33 @@ def cmd_session(args) -> int:
             deploy.step_app(r, restart_on_change=False)
         else:
             r.already(f"no installed copy at {deploy.APP}: the MCP server runs from this directory")
-        if digest:
-            out("")
-            print(json.dumps({"name": name, "token_sha256": digest}), flush=True)
-            out(f"  The token stays here. On the Bridge: {SH} bridge --enrol {name}={digest} --apply "
-                f"(or deploy add-peer --name {name} --token-sha256 {digest})")
-        else:
-            out("  would: print {name, token_sha256} for the Bridge to let it in (deploy add-peer)")
+        for name, digest in zip(names, digests):
+            if digest:
+                out("")
+                print(json.dumps({"name": name, "token_sha256": digest}), flush=True)
+                out(f"  The token stays here. On the Bridge: {SH} bridge --enrol {name}={digest} --apply "
+                    f"(or deploy add-peer --name {name} --token-sha256 {digest})")
+            else:
+                out(f"  would: print {{name, token_sha256}} of '{name}' for the Bridge to let it in (deploy add-peer)")
 
     section("Summary")
-    out(f"  Start the second session with the name in the environment of the `claude` command itself: the "
-        f"MCP server and the watcher both read it there, and send the token of '{name}' instead of client.token.")
-    out(f"    bash:        AI_CONNECT_PEER_NAME={name} claude")
-    out(f"    PowerShell:  $env:AI_CONNECT_PEER_NAME = '{name}'; claude")
-    out(f"  To take it back, on the Bridge: deploy remove --name {name} --yes (needs the stored OAuth client), or "
-        f"installer.py revoke-peer {name} and a Bridge restart; then delete {target}.")
+    if args.name:
+        name = args.name
+        out(f"  Start the second session with the name in the environment of the `claude` command itself: the "
+            f"MCP server and the watcher both read it there, and send the token of '{name}' instead of "
+            "client.token.")
+        out(f"    bash:        AI_CONNECT_PEER_NAME={name} claude")
+        out(f"    PowerShell:  $env:AI_CONNECT_PEER_NAME = '{name}'; claude")
+    else:
+        for name, project in wanted:
+            out(f"  A session in {project} joins as '{name}'.")
+        if facts.get("name_mode") != PER_PROJECT:
+            out(f"  Not in use yet: set client.name_mode: {PER_PROJECT} in {deploy.CONFIG_FILE}; until then every "
+                "session joins as client.name.")
+    for name in names:
+        out(f"  To take '{name}' back, on the Bridge: deploy remove --name {name} --yes (needs the stored OAuth "
+            f"client), or installer.py revoke-peer {name} and a Bridge restart; then delete "
+            f"{SESSION_TOKEN_DIR / name}.token and .dir.")
     closing(dry, "session")
     return EXIT_OK
 
@@ -401,8 +502,11 @@ def build_parser() -> argparse.ArgumentParser:
                                             "is not on the tailnet yet")
     pe.set_defaults(func=cmd_peer)
 
-    s = sub.add_parser("session", help="a second peer name on this machine, for a second Claude Code session")
-    s.add_argument("--name", required=True, help="the second session's peer name")
+    s = sub.add_parser("session", help="a peer name of its own for another Claude Code session on this machine")
+    s.add_argument("--name", help="the second session's peer name (started with AI_CONNECT_PEER_NAME)")
+    s.add_argument("--project", action="append", default=[], metavar="DIR",
+                   help="a project for client.name_mode: per-project: its name <client.name>-<basename>, a token "
+                        "and <name>.dir (repeatable; on the Bridge machine one restart for all)")
     s.set_defaults(func=cmd_session)
 
     for cmd in (b, pe):

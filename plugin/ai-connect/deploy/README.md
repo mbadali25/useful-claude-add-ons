@@ -231,6 +231,7 @@ says `already done`.
 | `setup peer --name N --bridge IP` | `deploy join`: the machine makes its own token and prints `{name, token_sha256}`; the Bridge lets it in with `setup bridge --enrol N=<token_sha256>` |
 | `setup peer --invite-file F` | `deploy join` with an invite from `deploy invite` |
 | `setup session --name N` | A second peer name on this machine, with its own token: see below |
+| `setup session --project DIR [--project DIR ...]` | One peer name per project for `client.name_mode: per-project`, each with its own token and `.dir`; one Bridge restart for all: see below |
 
 `bridge` and `peer` also take `--register-mcp` (off by default; `--scope user`, the
 default, or `project`), `--no-install-tailscale` and `--port`. `setup` installs no plugin
@@ -282,6 +283,28 @@ watcher hook reads it too. To take it back, on the Bridge: `deploy remove --name
 OAuth client), or `installer.py revoke-peer laptop-2` and a Bridge restart; then delete the
 token file.
 
+### One name per project
+
+With `client.name_mode: per-project` in `config.yaml`, a session joins as
+`<client.name>-<project folder name>` (the project is `CLAUDE_PROJECT_DIR`, else the working
+directory; the folder name is cut down to letters, digits and single hyphens, the whole
+name to 63 characters), so every project on the machine can be online at once:
+
+```bash
+deploy/setup.sh session --project ~/src/api --project ~/src/web            # the plan
+deploy/setup.sh session --project ~/src/api --project ~/src/web --apply    # laptop-api, laptop-web
+```
+
+For each project it writes `session-tokens/<name>.token` (owner-only) and
+`session-tokens/<name>.dir`, the project's absolute resolved path on one line (UTF-8, one
+trailing `\n`; a reader also takes it without one, or with `\r\n`). On the Bridge machine
+every hash is enrolled and the Bridge restarted once; elsewhere one `{name, token_sha256}`
+line per name is printed for `setup bridge --enrol`. It refuses two projects with one name,
+a name whose `.dir` holds another project, and `Bridge` / `User:...`. A session falls back
+to `client.name` and `client.token`, with one line on stderr, when its token is missing,
+not a regular file owned by the user with mode 600, or its `.dir` names another directory.
+`AI_CONNECT_PEER_NAME` still wins. The details are in the plugin README, "Details".
+
 ## Afterwards
 
 ```bash
@@ -304,5 +327,6 @@ No test calls Tailscale or installs anything.
 
 `tests/test_ops_setup.py` runs `setup` on the same fake machine: the plan changes nothing
 and runs no tool, both roles end to end, a second session whose token the client then
-sends, an inactive ufw, a firewalld that is not running, the Windows profile states, the
+sends, per-project names (the name, each fallback with its one stderr line, the watcher
+taking the client's name, and `session --project` with one restart), an inactive ufw, a firewalld that is not running, the Windows profile states, the
 outstanding tailnet policy, and `setup.sh` against `setup.ps1` line for line.

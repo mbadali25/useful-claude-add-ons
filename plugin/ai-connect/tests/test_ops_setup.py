@@ -247,7 +247,8 @@ def test_bad_arguments_change_nothing(hub):
     cases = [(["bridge", "--peer", "bad name!", "--apply"], 2), (["bridge", "--enrol", "desk", "--apply"], 2),
              (["bridge", "--enrol", "desk=nothex", "--apply"], 2), (["peer", "--name", "laptop", "--apply"], 2),
              (["peer", "--name", "l", "--bridge", "127.0.0.1", "--token-file", "a", "--invite-file", "b"], 2),
-             (["session", "--name", "bad name!", "--apply"], 2), (["bogus"], 2), ([], 2)]
+             (["session", "--name", "bad name!", "--apply"], 2), (["session", "--apply"], 2),
+             (["session", "--name", "x", "--project", ".", "--apply"], 2), (["bogus"], 2), ([], 2)]
     for args, code in cases:
         phase = Phase(hub, *args)
         assert phase.res.returncode == code, (args, phase.text)
@@ -475,10 +476,12 @@ def test_session_needs_a_machine_that_is_set_up(laptop):
 
 def test_session_token_lookup_takes_only_a_plain_second_name(tmp_path):
     from config_loader import SESSION_TOKEN_DIR, session_token  # pylint: disable=import-outside-toplevel
-    (tmp_path / "second.token").write_text("s" * 64 + "\n", encoding="utf-8")
-    (tmp_path / "empty.token").write_text("\n", encoding="utf-8")
-    (tmp_path.parent / "outside.token").write_text("o" * 64, encoding="utf-8")
+    for path, text in ((tmp_path / "second.token", "s" * 64 + "\n"), (tmp_path / "empty.token", "\n"),
+                       (tmp_path.parent / "outside.token", "o" * 64), (tmp_path / "Bridge.token", "b" * 64)):
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o600)   # the client takes owner-only files only
     assert session_token("second", "hub", tmp_path) == "s" * 64
+    assert session_token("Bridge", "hub", tmp_path) is None         # the Bridge's own name: never a peer's
     assert session_token("second", "second", tmp_path) is None      # client.name keeps client.token
     assert session_token("empty", "hub", tmp_path) is None
     assert session_token("missing", "hub", tmp_path) is None
@@ -487,6 +490,303 @@ def test_session_token_lookup_takes_only_a_plain_second_name(tmp_path):
     # setup writes where the client reads
     assert SESSION_TOKEN_DIR.parts[-3:] == (".config", "ai-connect", "session-tokens")
     assert 'SESSION_TOKEN_DIR = CONFIG_DIR / "session-tokens"' in SETUP.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- client.name_mode: per-project
+
+CLIENT_TOKEN = "c1" * 32
+FALLBACK = "ai-connect: client.name_mode per-project: "
+# client/server.py as Claude Code starts it, up to mcp.run(): the name and token it chose, and the sessions/<pid>
+# file main() writes for the watcher. argv: plugin, out file, session pid. fastmcp is imported first with its
+# import-time warnings recorded, not printed: authlib forces them on ("always"), and they are not the client's lines
+RUN_CLIENT = ("import warnings\nwith warnings.catch_warnings(record=True):\n    import fastmcp\n"
+              "import hashlib, json, pathlib, runpy, sys; root, out, pid = sys.argv[1:4]; "
+              "g = runpy.run_path(root + '/client/server.py', run_name='aic_client'); "
+              "g['record_session_name'](int(pid), g['name']); "
+              "pathlib.Path(out).write_text(json.dumps({'name': g['name'], "
+              "'sha': hashlib.sha256(g['settings'].token.encode()).hexdigest()}), encoding='utf-8')")
+# The watcher of that session: the name it reads from sessions/<CLAUDE_PID> and the token it sends with it
+RUN_WATCHER = ("import asyncio, hashlib, json, pathlib, runpy, sys; root, out, pid = sys.argv[1:4]; "
+               "g = runpy.run_path(root + '/integrations/claude-code/aiconnect_watch.py', run_name='aic_watch'); "
+               "peer = asyncio.run(g['session_peer'](pid)); s = g['peer_settings'](peer); "
+               "pathlib.Path(out).write_text(json.dumps({'name': peer, "
+               "'sha': hashlib.sha256(s.token.encode()).hexdigest()}), encoding='utf-8')")
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def per_project_config(box, name: str = "desk", **client) -> None:
+    """A peer's config.yaml in the box's HOME, written by hand: client.name_mode per-project unless overridden."""
+    box.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    section = {"name": name, "token": CLIENT_TOKEN, "bridge_url": "ws://127.0.0.1:9", "project_dir": "",
+               "name_mode": "per-project", **client}
+    box.config_file.write_text(json.dumps({"client": section, "logging": {"max_megabytes": 1, "backup_count": 1}}),
+                               encoding="utf-8")   # JSON is YAML
+
+
+def session_file(box, name: str, token: str, mode: int = 0o600, project=None) -> None:
+    folder = box.config_dir / "session-tokens"
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = folder / f"{name}.token"
+    path.write_text(token + "\n", encoding="utf-8")
+    path.chmod(mode)
+    if project is not None:
+        (folder / f"{name}.dir").write_text(f"{project}\n", encoding="utf-8")
+
+
+class Ran:
+    """One client (or watcher) start on a box: what it chose, and everything it printed."""
+
+    def __init__(self, box, code: str, cwd, pid: int = 4242, **env):
+        out = box.tmp / f"ran-{pid}.json"
+        out.unlink(missing_ok=True)
+        environ = {k: v for k, v in box.env.items() if k not in ("AI_CONNECT_PEER_NAME", "CLAUDE_PROJECT_DIR")}
+        environ.update({k: str(v) for k, v in env.items()})
+        self.res = subprocess.run([sys.executable, "-c", code, str(PLUGIN), str(out), str(pid)], cwd=str(cwd),
+                                  capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+                                  env=environ, timeout=120)
+        assert self.res.returncode == 0, output(self.res)
+        chose = json.loads(out.read_text(encoding="utf-8"))
+        self.name, self.sha = chose["name"], chose["sha"]
+        self.stderr_lines = self.res.stderr.splitlines()
+
+
+def client(box, cwd, **env) -> Ran:
+    return Ran(box, RUN_CLIENT, cwd, **env)
+
+
+def project(box, name: str):
+    path = box.tmp / "src" / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
+def assert_fell_back(ran: Ran, why: str) -> None:
+    """Joined as client.name with client.token, said so in exactly one stderr line, and nothing on stdout."""
+    assert (ran.name, ran.sha) == ("desk", sha(CLIENT_TOKEN)), ran.res.stderr
+    assert ran.res.stdout == "", ran.res.stdout
+    assert len(ran.stderr_lines) == 1 and ran.stderr_lines[0].startswith(FALLBACK), ran.res.stderr
+    assert why in ran.stderr_lines[0], ran.res.stderr
+    assert "joining as client.name 'desk' with client.token" in ran.stderr_lines[0]
+
+
+def test_per_project_name_is_sanitised_to_a_peer_name(tmp_path):
+    from peer_name import project_peer_name  # pylint: disable=import-outside-toplevel
+    cases = {"api": "desk-api", "My App.v2": "desk-My-App-v2", "__init__": "desk-init", "a__b..c": "desk-a-b-c",
+             "über": "desk-ber", "-x-": "desk-x", "...": None, "___": None, "ü": None}
+    for base, want in cases.items():
+        assert project_peer_name("desk", tmp_path / base) == want, base
+    long = project_peer_name("desk", tmp_path / ("p" * 60 + "-q" * 10))
+    assert len(long) == 63 and not long.endswith("-") and long.startswith("desk-ppp")
+    assert project_peer_name("desk", tmp_path / ("p" * 57 + "-xyz")) == "desk-" + "p" * 57   # no trailing hyphen
+    assert project_peer_name("", tmp_path / "api") is None
+
+
+def test_reserved_names_match_the_bridge(tmp_path):
+    from peer_name import is_reserved_name  # pylint: disable=import-outside-toplevel
+    from server.user_send import is_reserved_name as bridge_rule  # pylint: disable=import-outside-toplevel
+    for name in ("Bridge", "bridge", "BRIDGE", "User:x", "user:", "Bridges", "desk", "my-user", "desk-bridge"):
+        assert is_reserved_name(name) == bridge_rule(name), name
+
+
+def test_per_project_session_joins_under_its_project_name(laptop):
+    api, web = project(laptop, "api"), project(laptop, "My Web.app")
+    per_project_config(laptop)
+    session_file(laptop, "desk-api", "a1" * 32, project=api)
+    session_file(laptop, "desk-My-Web-app", "b2" * 32, project=web)
+    by_env = client(laptop, laptop.tmp, CLAUDE_PROJECT_DIR=api)
+    by_cwd = client(laptop, web)
+    for ran in (by_env, by_cwd):
+        assert ran.res.stdout == "" and ran.res.stderr == "", output(ran.res)
+    assert (by_env.name, by_env.sha) == ("desk-api", sha("a1" * 32))
+    assert (by_cwd.name, by_cwd.sha) == ("desk-My-Web-app", sha("b2" * 32))
+    # A .dir is not required: a token without one is used as it is
+    (laptop.config_dir / "session-tokens" / "desk-api.dir").unlink()
+    assert client(laptop, api).name == "desk-api"
+
+
+def test_peer_name_env_wins_over_per_project(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop)
+    session_file(laptop, "desk-api", "a1" * 32, project=api)
+    session_file(laptop, "other", "e3" * 32)
+    ran = client(laptop, api, AI_CONNECT_PEER_NAME="other")
+    assert (ran.name, ran.sha) == ("other", sha("e3" * 32)) and ran.res.stdout == "" and ran.res.stderr == ""
+
+
+def test_default_mode_is_unchanged(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop, name_mode=None)
+    session_file(laptop, "desk-api", "a1" * 32, project=api)
+    ran = client(laptop, api)
+    assert (ran.name, ran.sha) == ("desk", sha(CLIENT_TOKEN)) and ran.res.stderr == "" and ran.res.stdout == ""
+    per_project_config(laptop, name_mode="per_project")   # a typo stops the client instead of a silent default
+    res = subprocess.run([sys.executable, "-c", RUN_CLIENT, str(PLUGIN), str(laptop.tmp / "x.json"), "1"],
+                         cwd=str(api), capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+                         env=laptop.env, timeout=120)
+    assert res.returncode != 0 and "client.name_mode must be 'per-project'" in res.stderr and res.stdout == ""
+
+
+def test_missing_token_falls_back_with_one_stderr_line(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop)
+    assert_fell_back(client(laptop, api), "no token for 'desk-api'")
+
+
+POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="mode bits, uid and symlinks: on Windows only the "
+                                                           "regular-file check applies (README)")
+
+
+@POSIX_ONLY
+def test_loose_token_permissions_fall_back(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop)
+    for mode in (0o644, 0o640, 0o604, 0o660):
+        session_file(laptop, "desk-api", "a1" * 32, mode=mode, project=api)
+        ran = client(laptop, api)
+        assert_fell_back(ran, f"has mode {mode:o}, not 600")
+        assert not leaks("a1" * 32, ran.res.stderr)
+
+
+@POSIX_ONLY
+def test_token_that_is_not_a_regular_file_falls_back(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop)
+    folder = laptop.config_dir / "session-tokens"
+    session_file(laptop, "elsewhere", "a1" * 32)
+    (folder / "desk-api.token").symlink_to(folder / "elsewhere.token")
+    assert_fell_back(client(laptop, api), "not a regular file")
+    (folder / "desk-api.token").unlink()
+    (folder / "desk-api.token").mkdir()
+    assert_fell_back(client(laptop, api), "not a regular file")
+
+
+@POSIX_ONLY
+def test_token_of_another_user_falls_back(tmp_path, monkeypatch):
+    # chown needs root: the owner check is driven with another uid for this process instead
+    import config_loader  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "desk-api.token"
+    path.write_text("a1" * 32, encoding="utf-8")
+    path.chmod(0o600)
+    assert config_loader.read_session_token("desk-api", tmp_path) == ("a1" * 32, "")
+    monkeypatch.setattr(config_loader.os, "getuid", lambda: os.stat(path).st_uid + 1)
+    token, why = config_loader.read_session_token("desk-api", tmp_path)
+    assert token is None and "not owned by this user" in why
+
+
+def test_basename_collision_falls_back(laptop):
+    mine = project(laptop, "api")
+    theirs = laptop.tmp / "other" / "api"
+    theirs.mkdir(parents=True)
+    per_project_config(laptop)
+    session_file(laptop, "desk-api", "a1" * 32, project=theirs.resolve())
+    assert_fell_back(client(laptop, mine), f"'desk-api' belongs to {theirs.resolve()}, not {mine}")
+    assert client(laptop, theirs).name == "desk-api"
+    # An unreadable or malformed .dir is not taken as a match
+    (laptop.config_dir / "session-tokens" / "desk-api.dir").write_text("relative/api\n", encoding="utf-8")
+    assert_fell_back(client(laptop, theirs), "does not hold one absolute directory")
+
+
+def test_no_usable_name_falls_back(laptop):
+    per_project_config(laptop)
+    assert_fell_back(client(laptop, project(laptop, "...")), "gives no usable peer name")
+    per_project_config(laptop, name="")
+    ran = client(laptop, project(laptop, "api"))
+    assert ran.sha == sha(CLIENT_TOKEN) and len(ran.stderr_lines) == 1 and "it needs client.name" in ran.res.stderr
+
+
+def test_watcher_uses_the_name_and_token_the_client_chose(laptop):
+    api = project(laptop, "api")
+    per_project_config(laptop)
+    session_file(laptop, "desk-api", "a1" * 32, project=api)
+    chosen = client(laptop, laptop.tmp, CLAUDE_PROJECT_DIR=api)
+    # The hook runs elsewhere, without CLAUDE_PROJECT_DIR: it still finds the client's name by CLAUDE_PID
+    watcher = Ran(laptop, RUN_WATCHER, laptop.home, CLAUDE_PID=4242)
+    assert (watcher.name, watcher.sha) == (chosen.name, chosen.sha) == ("desk-api", sha("a1" * 32))
+    assert (laptop.config_dir / "sessions" / "4242").read_text(encoding="utf-8") == "desk-api"
+
+
+def test_session_projects_on_the_bridge_machine_one_restart(hub):
+    restart = ["schtasks", "/Run"] if NATIVE == "windows" else ["systemctl", "restart", "ai-connect"]
+    api, web = project(hub, "api"), project(hub, "My Web.app")
+    with OwnBridge(hub) as own:
+        assert Phase(hub, *bridge_args(own, "--apply")).res.returncode == 0
+        own_hash = hub.config()["auth"]["peers"]["hub"]
+        plan = Phase(hub, "session", "--project", str(api), "--project", str(web))
+        first = Phase(hub, "session", "--project", str(api), "--project", str(web), "--apply")
+        again = Phase(hub, "session", "--project", str(api), "--project", str(web), "--apply")
+    folder = hub.config_dir / "session-tokens"
+    assert plan.res.returncode == 0 and plan.changed_nothing() and plan.calls == [], plan.text
+    assert first.res.returncode == 0, first.text
+    peers = hub.config()["auth"]["peers"]
+    tokens = {}
+    for name, where in (("hub-api", api), ("hub-My-Web-app", web)):
+        tokens[name] = (folder / f"{name}.token").read_text(encoding="utf-8").strip()
+        assert len(tokens[name]) == 64 and owner_only(folder / f"{name}.token")
+        assert (folder / f"{name}.dir").read_text(encoding="utf-8") == f"{where}\n"
+        assert peers[name] == sha(tokens[name])
+        assert not any(leaks(tokens[name], p.text) for p in (plan, first, again))
+    assert peers["hub"] == own_hash and len(peers) == 3
+    restarts = [c for c in first.calls if restart in (c[-len(restart):], c[:len(restart)])]
+    assert len(restarts) == 1, first.calls
+    assert "Not in use yet: set client.name_mode: per-project" in first.out
+    assert again.res.returncode == 0 and again.mutations == [] and not again.files_changed, again.text
+    # The client in that project now sends that project's token
+    config = hub.config()
+    config["client"]["name_mode"] = "per-project"
+    hub.config_file.write_text(json.dumps(config), encoding="utf-8")
+    ran = client(hub, web)
+    assert (ran.name, ran.sha) == ("hub-My-Web-app", peers["hub-My-Web-app"]) and ran.res.stderr == ""
+
+
+def test_session_projects_on_a_client_print_one_hash_each(hub, laptop):
+    api, web = project(laptop, "api"), project(laptop, "web")
+    with OwnBridge(hub) as own:
+        port = str(own.server.port)
+        assert Phase(hub, *bridge_args(own, "--peer", "laptop", "--apply")).res.returncode == 0
+        token_file = hub.config_dir / "peer-tokens" / "laptop.token"
+        assert Phase(laptop, "peer", "--name", "laptop", "--bridge", "127.0.0.1", "--port", port, "--token-file",
+                     str(token_file), "--apply").res.returncode == 0
+        session = Phase(laptop, "session", "--project", str(api), "--project", str(web), "--apply")
+    assert session.res.returncode == 0 and session.mutations == [], session.text
+    printed = [json.loads(line) for line in session.out.splitlines() if line.startswith("{")]
+    folder = laptop.config_dir / "session-tokens"
+    assert printed == [{"name": name, "token_sha256": sha((folder / f"{name}.token").read_text(encoding="utf-8").strip())}
+                       for name in ("laptop-api", "laptop-web")]
+    assert (folder / "laptop-web.dir").read_text(encoding="utf-8") == f"{web}\n"
+
+
+def test_session_refuses_collisions_and_reserved_names(hub):
+    with OwnBridge(hub) as own:
+        assert Phase(hub, *bridge_args(own, "--apply")).res.returncode == 0
+        one, two = project(hub, "api"), hub.tmp / "elsewhere" / "api"
+        two.mkdir(parents=True)
+        same_basename = Phase(hub, "session", "--project", str(one), "--project", str(two), "--apply")
+        reserved = [Phase(hub, "session", "--name", name, "--apply") for name in ("Bridge", "bridge")]
+        assert Phase(hub, "session", "--project", str(one), "--apply").res.returncode == 0
+        taken = Phase(hub, "session", "--project", str(two), "--apply")
+        missing = Phase(hub, "session", "--project", str(hub.tmp / "nope"), "--apply")
+    assert same_basename.res.returncode == 2 and "both give 'hub-api'" in same_basename.res.stderr
+    assert same_basename.changed_nothing(), same_basename.text
+    for phase in reserved:
+        assert phase.res.returncode == 2 and "keeps for itself" in phase.res.stderr and phase.changed_nothing()
+    assert taken.res.returncode == 2 and f"already belongs to {one}" in taken.res.stderr and taken.changed_nothing()
+    assert missing.res.returncode == 2 and "is not a directory" in missing.res.stderr
+
+
+@POSIX_ONLY
+def test_session_makes_a_loose_existing_token_owner_only(hub):
+    api = project(hub, "api")
+    with OwnBridge(hub) as own:
+        assert Phase(hub, *bridge_args(own, "--apply")).res.returncode == 0
+        session_file(hub, "hub-api", "a1" * 32, mode=0o644)
+        fixed = Phase(hub, "session", "--project", str(api), "--apply")
+    target = hub.config_dir / "session-tokens" / "hub-api.token"
+    assert fixed.res.returncode == 0 and "make " in fixed.out and "owner-only (mode 600)" in fixed.out, fixed.text
+    assert owner_only(target) and target.read_text(encoding="utf-8").strip() == "a1" * 32
+    assert hub.config()["auth"]["peers"]["hub-api"] == sha("a1" * 32)
 
 
 # ---------------------------------------------------------------- the setup.sh / setup.ps1 pair
@@ -508,7 +808,7 @@ def usage_lines(name: str) -> list[str]:
 
 def test_the_pair_documents_the_same_commands_in_the_same_order():
     sh, ps1 = usage_lines("setup.sh"), usage_lines("setup.ps1")
-    assert sh == ps1 and [line.split()[1] for line in sh] == ["bridge", "peer", "session"]
+    assert sh == ps1 and [line.split()[1] for line in sh] == ["bridge", "peer", "session", "session"]
     for name in ("setup.sh", "setup.ps1"):
         text = (DEPLOY_DIR / name).read_text(encoding="utf-8")
         assert "peer_setup.py" in text and "never runs `deploy tailnet-setup`" in text

@@ -5,6 +5,7 @@
 #   ./setup.sh bridge [--peer NAME ...] [--enrol NAME=SHA256 ...] [--register-mcp] [--apply]
 #   ./setup.sh peer --name NAME --bridge IP [--token-file F | --invite-file F] [--register-mcp] [--apply]
 #   ./setup.sh session --name NAME [--apply]
+#   ./setup.sh session --project DIR [--project DIR ...] [--apply]
 # It never runs `deploy tailnet-setup` (the owner's step: it replaces the tailnet policy).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
