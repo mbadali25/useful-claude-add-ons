@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **ai-connect 0.1.6**: One-command deployment and onboarding over Tailscale. `ai-connect` can now be set up with one command per machine, and a new machine joins in three: `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list` and `deploy remove` show and take machines off.
-- **crew 1.2.30**: The Stop gate says when it checked nothing, and names CI for rules too big for its budget. `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED, deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
+- **ai-connect 0.1.5**: The firewall test is hermetic and no longer runs the host's real firewall tools. `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

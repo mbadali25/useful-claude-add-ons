@@ -2,7 +2,9 @@
 
 ## [0.1.6] - 2026-10-11
 
-Onboarding in three commands, and the peer-deploy fixes from crew's review (W-0129).
+One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's
+review (W-0129). The deployment was numbered 0.1.5 on its branch and never published under that number:
+the 0.1.5 below is L-0790's test fix, which reached main first.
 
 ### Added
 - `deploy invite --name N`: a single-use, non-ephemeral, pre-approved `tag:ai-peer` join key as one `aic1.` invite code, written owner-only (`--out`) or shown once
@@ -20,11 +22,7 @@ Onboarding in three commands, and the peer-deploy fixes from crew's review (W-01
 - What keeps running is installed outside the checkout: the venv and a copy of the plugin in `~/.local/share/ai-connect` (Windows `%LOCALAPPDATA%\ai-connect`); a rerun from a newer checkout updates the copy and restarts the Bridge, and a scheduled task left pointing elsewhere is registered again
 - `deploy bridge` and `tailnet-setup` turn the Bridge's own node key expiry off; `deploy status` flags a node key that still expires
 
-## [0.1.5] - 2026-10-11
-
-One-command deployment over Tailscale (W-0129).
-
-### Added
+### Added (the deployment)
 - `deploy/deploy.sh` and `deploy/deploy.ps1`, one core (`deploy/deploy.py`): `bridge`, `peer`, `add-peer`, `status`, `uninstall`, `tailnet-setup` and `test`. Every step is idempotent, `--dry-run` prints each change and command and makes none, and no secret is printed or put on a command line. Runbook: `deploy/README.md`
 - `deploy tailnet-setup` (admin, once per tailnet), through the Tailscale API with a one-time access token: validates `vpn/acl-template.hujson`, shows a diff against the current policy, and with `--apply` backs the policy up, replaces it (`If-Match`), tags the Bridge machine `tag:bridge` and creates the OAuth client `mint-key` and `revoke` use (`POST /tailnet/-/keys`, `keyType: "client"`). The client goes to the OS credential store through `keyring`, or to an owner-only file without it; when the API refuses, the admin-console steps are printed. Never waits without a terminal: `--yes`, the token from `TS_API_TOKEN` or the credential store, `--json` for one JSON object with no secret in it
 - Enrolment by hash: `deploy peer --print-enrolment` makes the peer's own token and prints `{name, token_sha256}`; `deploy add-peer --name N --token-sha256 HEX` lets it in on the Bridge. No long-lived secret crosses machines
@@ -33,7 +31,7 @@ One-command deployment over Tailscale (W-0129).
 - `server.max_unread_per_peer` and `server.max_unread_bytes_per_peer` in `config.yaml` (the offline queue caps)
 - A CI workflow that runs the plugin's suites; until now no workflow did
 
-### Changed
+### Changed (the deployment)
 - `tailscale up` (`vpn/vpn-up` and deploy) passes `--accept-dns=false`: Tailscale no longer takes over the machine's DNS unless `--accept-dns` is given, because MagicDNS collides with a VPN client or DNS hook that is already there. Reach the Bridge by its `100.x.y.z` address
 - `vpn/tsadmin.py` also finds the `tailscale` command in the directory a fresh install uses, before a new shell has it on `PATH`, and reads the OAuth client as a whole pair from one source: the environment, the credential store, then `~/.config/ai-connect/tailscale-oauth.json`
 
@@ -46,6 +44,18 @@ One-command deployment over Tailscale (W-0129).
 - A Bridge on macOS is refused (no launchd service); a peer there works
 - firewalld keeps the old rule when `--vpn-subnet` is narrowed on a rerun; ufw and Windows Firewall replace it. A Windows rule is compared by subnet and port only
 - `deploy.ps1` does not raise its own UAC prompt: `bridge` and `uninstall` need an elevated shell
+
+## [0.1.5] - 2026-10-11
+
+A test-only fix (L-0790). Nothing the plugin installs or runs changes. Verified on Linux as a non-root user; not run on Windows.
+
+### Fixed
+- `tests/test_ops_firewall.py` could run the host's real `sudo ufw allow` (or `firewall-cmd --add-rich-rule`): it put its fake tools in front of the caller's whole `PATH`, and its fake `sudo` ran whatever that `PATH` resolved. Run as root, or by a user with passwordless sudo, on a host with ufw, the suite added the bridge's allow rule to the real firewall configuration. The child now gets a `PATH` of two directories the test creates (the fakes, and wrappers for `grep` and `cat`), the fake `sudo` runs only a file inside the fake directory and refuses anything else, and the harness sets the euid the function sees (a normal user unless the test says otherwise) instead of inheriting the caller's. Every child also checks, before the code under test, that `sudo`, `ufw` and `firewall-cmd` resolve to a fake or to nothing, and stops if not
+- New tests fail if the harness can reach a real `ufw`, `firewall-cmd` or `sudo` again, using canary tools planted on the caller's `PATH`, so they do not depend on what the host has installed
+- The module skips, with the reason, when the real euid is 0 unless `AI_CONNECT_TEST_ALLOW_ROOT=1` says the caller is sandboxed, and when `bash` is Windows' WSL launcher (`System32\bash.exe`), whose shell takes neither the test's `PATH` nor its fakes
+
+### If you ran the suite before 0.1.5
+- As root or with passwordless sudo on a Linux or WSL host with ufw or firewalld: check for a rule allowing TCP 9999 from `100.64.0.0/10` that you did not add (ufw's carries the comment `AI-Connect Bridge`; firewalld's rich rule has no comment) (`sudo ufw status`, or `sudo firewall-cmd --permanent --list-rich-rules`), and delete it if the bridge is not meant to listen there
 
 ## [0.1.4] - 2026-10-11
 
