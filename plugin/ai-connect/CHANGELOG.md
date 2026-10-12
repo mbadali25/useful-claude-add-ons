@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.16] - 2026-10-12
+
+- 0.1.16: test line lengths for pylint
+
 ## [0.1.15] - 2026-10-12
 
 One peer name per project, opt-in, on the same branch as 0.1.12 (PR #614). 0.1.13 was the feature's commit
