@@ -9,6 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — ai-connect 0.2.0: every session on a machine is online at once
+
+- **Summary.** Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under
+  its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the
+  machine's name and every other one sat on standby with no working tools.
+- **Addressing.** `laptop:repo` reaches that session. `laptop` alone reaches every online session of that
+  machine, and waits for the first to join when none is online. Two sessions in one project: the second
+  appends its process id.
+- **No extra enrolment.** Auth stays per machine: no per-session token, no change to `auth.peers`, no Bridge
+  restart per session. A machine's token registers and watches names under its own name only, compared with
+  the separator and by the longest enrolled name; the legacy shared token can no longer take a name under an
+  enrolled one.
+- **Updating.** Update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session
+  per machine. A 0.2.0 session against a 0.1.8 Bridge falls back to the machine's name and says so in
+  `peer_read`.
+- **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
+  must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
+  names, and both mixed-version pairings. Nine mutations of the guard, the fan-out and the replay claim each
+  turn the suites red. Not run against a live Bridge.
+
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
