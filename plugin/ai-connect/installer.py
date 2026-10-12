@@ -156,16 +156,31 @@ def _bridge_url(host: str, port: int) -> str:
     return f"ws://{host}:{port}"
 
 
+def _private_dir(path: Path) -> None:
+    """The directory a secret file goes in. AI-Connect's own config directory is closed to everyone but its
+    owner, new or already there (vpn/tsadmin.py private_dir: 0700, on Windows an ACL of this user alone);
+    any other directory is the caller's, and is only made when missing."""
+    if path != CONFIG_PATH.parent:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return
+    sys.path.append(str(REPO / "vpn"))
+    import tsadmin  # pylint: disable=import-error,import-outside-toplevel
+    try:
+        tsadmin.private_dir(path)
+    except tsadmin.Failure as err:
+        sys.exit(str(err))
+
+
 def _write_private(path: Path, text: str) -> None:
     """Write a secret file whole, readable by its owner only from the first byte.
 
     mkstemp creates the temp file 0600 on POSIX whatever the umask, and
     os.replace moves it into place atomically, so the secret never sits in a
     file others may open (a reader that opens it early keeps its descriptor
-    after a later chmod). On Windows the file inherits the directory's ACL:
-    the config directory lives in the user's profile.
+    after a later chmod). On Windows the file inherits the directory's ACL,
+    and the config directory's is the user's alone.
     """
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _private_dir(path.parent)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:

@@ -7,9 +7,13 @@ import pytest
 from config_loader import (
     DEFAULT_HISTORY_DAYS,
     DEFAULT_MAX_MESSAGE_BYTES,
+    DEFAULT_MAX_UNREAD_BYTES_PER_PEER,
+    DEFAULT_MAX_UNREAD_PER_PEER,
     DEFAULT_SERVER_HOST,
     server_settings,
 )
+from server.limits import Limits
+from server.main import build_server
 from server.roles import token_sha256
 
 ALICE_HASH = token_sha256(h.ALICE_TOKEN)
@@ -79,11 +83,39 @@ def test_history_days_falls_back_to_bridge_section():
 
 @pytest.mark.parametrize(
     "server",
-    [{"history_days": 0}, {"max_message_bytes": 0}, {"rate_per_second": -1}, {"port": "x"}, {"rate_burst": 0}],
+    [
+        {"history_days": 0}, {"max_message_bytes": 0}, {"rate_per_second": -1}, {"port": "x"}, {"rate_burst": 0},
+        # 0 is not "no cap" for the queue caps: count + 1 <= 0 would refuse every offline message
+        {"max_unread_per_peer": 0}, {"max_unread_per_peer": True}, {"max_unread_per_peer": 2.5},
+        {"max_unread_bytes_per_peer": 0}, {"max_unread_bytes_per_peer": "8MiB"},
+        # A queue that cannot hold one message of the largest allowed size refuses it outright
+        {"max_message_bytes": 1000, "max_unread_bytes_per_peer": 999},
+    ],
 )
 def test_invalid_numbers_rejected(server):
     with pytest.raises(ValueError):
         server_settings({"server": {"port": 1, **server}})
+
+
+def test_queue_caps_default_to_the_limits_defaults():
+    settings = server_settings({"server": {"port": 1}})
+    assert settings.max_unread_per_peer == DEFAULT_MAX_UNREAD_PER_PEER == Limits().max_unread_per_peer == 500
+    assert settings.max_unread_bytes_per_peer == DEFAULT_MAX_UNREAD_BYTES_PER_PEER == 8 * 1024 * 1024
+    assert DEFAULT_MAX_UNREAD_BYTES_PER_PEER == Limits().max_unread_bytes_per_peer
+
+
+def test_queue_caps_override_and_reach_the_bridge(tmp_path):
+    settings = server_settings(
+        {"server": {"port": 1, "max_unread_per_peer": 3, "max_unread_bytes_per_peer": 70_000}}
+    )
+    assert (settings.max_unread_per_peer, settings.max_unread_bytes_per_peer) == (3, 70_000)
+    limits = build_server(settings, db_path=str(tmp_path / "m.db")).limits
+    assert (limits.max_unread_per_peer, limits.max_unread_bytes_per_peer) == (3, 70_000)
+
+
+def test_invalid_queue_cap_names_the_key():
+    with pytest.raises(ValueError, match="server.max_unread_per_peer"):
+        server_settings({"server": {"port": 1, "max_unread_per_peer": -5}})
 
 
 def test_peers_must_be_a_mapping():

@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.32**: Every crew test runs under a home of its own. `crew` 1.2.32: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
-- **ai-connect 0.1.5**: The firewall test is hermetic and no longer runs the host's real firewall tools. `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
+- **ai-connect 0.1.8**: One-command deployment and onboarding over Tailscale. `ai-connect` can now be set up with one command per machine, and a new machine joins in three: `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list` and `deploy remove` show and take machines off.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
