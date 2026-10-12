@@ -754,8 +754,9 @@ def test_session_projects_on_a_client_print_one_hash_each(hub, laptop):
     assert session.res.returncode == 0 and session.mutations == [], session.text
     printed = [json.loads(line) for line in session.out.splitlines() if line.startswith("{")]
     folder = laptop.config_dir / "session-tokens"
-    assert printed == [{"name": name, "token_sha256": sha((folder / f"{name}.token").read_text(encoding="utf-8").strip())}
-                       for name in ("laptop-api", "laptop-web")]
+    assert printed == [
+        {"name": name, "token_sha256": sha((folder / f"{name}.token").read_text(encoding="utf-8").strip())}
+        for name in ("laptop-api", "laptop-web")]
     assert (folder / "laptop-web.dir").read_text(encoding="utf-8") == f"{web}\n"
 
 
@@ -919,7 +920,7 @@ def test_setup_ps1_passes_the_repo_powershell_static_check(hub, tmp_path):
 
 
 def test_no_spawn_in_this_suite_inherits_the_callers_environment():
-    """No process this suite starts is handed this process's environment, and with it the caller's HOME: each gets a fake
-    machine's env. (`bash -n` passes none: it reads one file and runs nothing.)"""
+    """No process this suite starts is handed this process's environment, and with it the caller's HOME: each gets a
+    fake machine's env. (`bash -n` passes none: it reads one file and runs nothing.)"""
     source = (PLUGIN / "tests" / "test_ops_setup.py").read_text(encoding="utf-8")
     assert "os." + "environ" not in source
