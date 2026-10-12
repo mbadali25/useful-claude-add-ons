@@ -94,6 +94,23 @@ do_uninstall() {
 
     if [[ -x "$PYTHON" ]]; then
         "$PYTHON" "$SCRIPT_DIR/installer.py" unregister
+    else
+        # No venv (a plugin update left this directory without one): installer.py cannot run, but the
+        # state hooks it wrote into Claude Code's settings would stay and fail on every prompt.
+        # state_hooks.py needs only the standard library, so any Python 3 takes them out.
+        SYS_PYTHON=""
+        for CANDIDATE in python3 python py; do
+            if command -v "$CANDIDATE" >/dev/null 2>&1 && "$CANDIDATE" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+                SYS_PYTHON="$CANDIDATE"
+                break
+            fi
+        done
+        if [[ -n "$SYS_PYTHON" ]]; then
+            "$SYS_PYTHON" "$SCRIPT_DIR/state_hooks.py" remove
+        else
+            echo -e "  ${RED}No Python 3 found (tried python3, python, py): the AI-Connect state hooks are still in Claude Code's settings.json. Remove the four peer_set_state hooks there by hand.${NC}" >&2
+        fi
+        echo "  No venv here, so the MCP server was not unregistered: claude mcp remove -s user ai-connect"
     fi
 
     read -p "Delete the config ($CONFIG_DIR) too? [y/N]: " DELETE_CONFIG

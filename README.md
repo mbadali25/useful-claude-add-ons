@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **ai-connect 0.1.11**: Installed but not set up, the plugin no longer errors on every prompt, tool call and turn end. `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
 - **bash-lsp, pwsh-lsp and powershell-lsp 0.1.0**: Language-server plugins for Bash and PowerShell. Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
-- **terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0**: Four language-server plugins. Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
