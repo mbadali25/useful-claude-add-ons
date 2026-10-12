@@ -190,7 +190,7 @@ Danach den Assistenten neu starten, damit er den MCP-Server lädt.
 
 ## Deploy
 
-`deploy/deploy.sh` (Linux, und macOS für einen Peer) und `deploy/deploy.ps1` (Windows) erledigen die ganze Einrichtung oben über Tailscale, ein Befehl pro Rechner. Beide reichen direkt an `deploy/deploy.py` weiter, führen also dieselben Schritte in derselben Reihenfolge aus und geben denselben Text aus. [`deploy/README.md`](deploy/README.md) ist das Runbook für zwei Rechner, von Anfang bis Ende (englisch).
+`deploy/deploy.sh` (Linux, und macOS für einen Peer) und `deploy/deploy.ps1` (Windows) erledigen die ganze Einrichtung oben über Tailscale, ein Befehl pro Rechner. Beide reichen direkt an `deploy/deploy.py` weiter, führen also dieselben Schritte in derselben Reihenfolge aus und geben denselben Text aus. [`deploy/README.md`](deploy/README.md) ist das Runbook für zwei Rechner, von Anfang bis Ende (englisch). **Einen Rechner hinzufügen** sind danach drei Befehle (`invite` auf der Bridge, `join` auf dem neuen Rechner, `approve` auf der Bridge), und `list` / `remove` zeigen Rechner an und nehmen sie heraus: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md) (englisch).
 
 ```bash
 # Rechner 1, einmal pro Tailnet (Admin): erst die Vorschau, dann anwenden

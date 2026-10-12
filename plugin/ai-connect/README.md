@@ -190,7 +190,7 @@ Then restart the assistant so it loads the MCP server.
 
 ## Deploy
 
-`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish.
+`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is three commands (`invite` on the Bridge, `join` on the new machine, `approve` on the Bridge), and `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
 
 ```bash
 # Machine 1, once per tailnet (admin): preview, then apply

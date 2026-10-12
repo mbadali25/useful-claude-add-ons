@@ -135,6 +135,9 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
+The short way is three commands, `invite`, `join` and `approve`:
+[ONBOARDING.md](ONBOARDING.md). The steps below are the same flow by hand.
+
 **Machine 2** makes its own token and prints only its hash:
 
 ```bash
