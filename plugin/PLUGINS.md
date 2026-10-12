@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.1.8<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.1.11<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine) |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
-| **Registers** | Hooks on 5 events: `mcp_tool` state hooks, and a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest |
+| **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
 | **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |
 | **Upstream guide** | [`ai-connect/README.md`](ai-connect/README.md) |
 
@@ -26,14 +26,21 @@ This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-
 
 | Hook | Event | What it does |
 |---|---|---|
+| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
+
+The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1.
+
+**Until the installer has run, the plugin is silent.** With no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there), it exits 1 with a stderr line naming the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+
+**The installer writes four more hooks into your settings, outside this plugin.** `installer.py claude` (run by `install.sh` / `install.cmd`) registers the MCP server and, next to it, these `mcp_tool` hooks in `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set); `deploy peer` / `deploy join` write them only with both `--install-hooks` and `--register-mcp`, into the user's settings for `--scope user` and the project's `.claude/settings.local.json` for `--scope project`. They are not in `hooks/hooks.json` because an `mcp_tool` hook has no quiet mode: where its server is not registered it is an error on every event, which is what 0.1.8 did on a machine that had only installed the plugin.
+
+| Hook | Event | What it does |
+|---|---|---|
 | `mcp_tool` → `peer_set_state` | `UserPromptSubmit`, `PostToolUse` | Sets this session's state to `busy` on the bridge. Sends the state word only, never the prompt or tool text |
 | `mcp_tool` → `peer_set_state` | `Notification` (`permission_prompt`) | Sets `waiting`. The permission-prompt text is deliberately not sent |
 | `mcp_tool` → `peer_set_state` | `Stop` | Sets `idle`, so `peer_notify_when_idle` can tell another session this one finished |
-| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
 
-The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1. The `mcp_tool` hooks run no shell, so they are registered once.
-
-**Until the installer has run, the hooks have nothing to talk to.** The state hooks name an MCP server called `ai-connect` that only `installer.py claude` registers, and the watcher exits 1 with a stderr line naming the missing venv. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+Writing them is idempotent, keeps every other hook and key in the file, refuses a file that is not valid JSON without touching it, and goes through a temp file and a rename. `installer.py unregister` and `deploy uninstall` remove exactly these (type `mcp_tool`, server `ai-connect`, tool `peer_set_state`) and nothing else. With the venv lost to a plugin update they keep failing with `MCP server 'ai-connect' not connected` until the installer is re-run, alongside the watcher's own error. **Updating from 0.1.8 or earlier, re-run the installer once:** the plugin no longer carries these hooks, so until then the session reports no state.
 
 **Never run a woken session in bypass or auto-approve mode.** A peer message resumes the session's turn; with confirmations off, whatever the message asks would run. The untrusted framing and the bundled behaviour rules (`integrations/claude-code/CLAUDE.md`, which you `@`-import into your own `CLAUDE.md`) tell the model to show peer requests to you and confirm before acting — that is a prompt, not an enforcement mechanism.
 

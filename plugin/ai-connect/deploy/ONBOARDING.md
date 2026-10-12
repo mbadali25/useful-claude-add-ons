@@ -77,7 +77,9 @@ it without showing it. Automation can set `AI_CONNECT_INVITE` from its secret st
 invite never goes on a command line, where any user could read it in the process list. Claude Code gets nothing by default; `--register-mcp` adds the MCP server
 and `--with-hooks` the plugin's hooks for every session on the machine. Each prints a
 warning: in a bypass-permissions session, what another peer sends is acted on with no
-prompt in between.
+prompt in between. The peer-state hooks (busy / idle / waiting) need both: they call the
+MCP server, so `join` writes them only with both options, into the settings of the scope
+the server is registered in (`deploy/README.md`).
 
 **3. On the Bridge**, approve with the hash the new machine printed:
 
