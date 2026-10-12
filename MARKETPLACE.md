@@ -123,7 +123,9 @@ claude plugin install ppt-master@ppt-master
 # find-skills - lets Claude discover and install skills from the community index on demand.
 # Not a plugin: the 'skills' CLI drops it in ~/.claude/skills/, so there's no marketplace to
 # add. The install scripts prompt before running this, and detect it on disk first.
-npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+# --global is what puts it there: without it the CLI writes ./.claude/skills/ in the
+# current directory. --yes answers the CLI's own prompt.
+npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes
 
 # Supabase - project, database and edge-function tooling. Off by default; ships in the
 # same official marketplace the community and claude-code-setup rows already register.

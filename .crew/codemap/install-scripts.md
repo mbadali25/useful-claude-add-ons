@@ -351,7 +351,62 @@ through their own package managers.
   note's scope) explains the replacement: `obsidian-vault`'s portable
   `obsidian-memory-contract` profiles.
 
+- **The bash script's whole body is one brace group (`{` to `}`); no code
+  may sit outside it.** Added 2026-10-12 on `fix/install-piped-find-skills`, read from
+  that branch's tree, not from the `anchor:` commit above, which predates it.
+  The group opens at `scripts/install-prerequisites.sh:67`, directly above
+  `set -uo pipefail` (`scripts/install-prerequisites.sh:68`), and closes on the
+  file's last line (`scripts/install-prerequisites.sh:3548`); the comment
+  stating the rule is `scripts/install-prerequisites.sh:58-66`, and `:3547`
+  says nothing may follow the closing brace. DERIVED. Why: under the documented
+  `curl ... | bash` the script is bash's stdin, and bash reads a script off a
+  pipe one command at a time, so a child that reads its inherited stdin
+  swallows every line bash has not read yet and the run stops there with no
+  summary and no failed-step list. A group has to be parsed to its closing
+  brace before any of it runs, so the whole script is in memory first.
+  `scripts/install-prerequisites.ps1` has no counterpart and needs none
+  (`irm | iex` hands PowerShell the script as one string). The check is
+  `scripts/_test/menu-groups.sh:280-345`, case 9: the script piped into
+  `bash -s` with stub `claude` and `npx` that drain stdin. DERIVED, read; the
+  suite was run by the fix's author, not at this pass. JUDGEMENT: code added
+  after the closing brace would run only after the whole group has finished
+  and, on the piped path, would again be read a command at a time, so the
+  defect returns for exactly that code and no existing case would notice
+  unless it also spawns a stdin reader.
+
+- **A child that could read stdin on the piped path gets `</dev/null`.** Two
+  sites carry it, both read on the same branch: the `find-skills` install,
+  `npx -y skills add ... --global --yes </dev/null`
+  (`scripts/install-prerequisites.sh:2593`, inside `install_find_skills` at
+  `:2580`, comment at `:2588-2592`), and each skill's `preflight.py`
+  (`scripts/install-prerequisites.sh:2506`, comment at `:2503`). DERIVED. The
+  prompts themselves read the terminal on fd 3 and never fd 0
+  (`scripts/install-prerequisites.sh:70-86`), which is the same rule from the
+  other side. DERIVED. JUDGEMENT: with the brace group in place this is the
+  second layer, not the first - once the group is parsed nothing of the script
+  is left on the pipe to lose - but it also stops a child blocking on a
+  terminal's stdin when the script is run from a file, and it is the layer
+  that still holds if the group is ever broken. No other child process in the
+  script was audited for stdin reads at this pass (see Unverified).
+  `--global --yes` on the same line is a separate rule: without `--global` the
+  `skills` CLI writes `./.claude/skills/find-skills` under the current
+  directory and exits 0, and `user_skill_installed`
+  (`scripts/install-prerequisites.sh:1085`) then fails everywhere but `$HOME`.
+  The PowerShell twin is `scripts/install-prerequisites.ps1:2244`, pinned by
+  text only at `scripts/_test/menu-groups.sh:350-353`.
+
 ## Unverified
+
+- **The two 2026-10-12 Landmines bullets (the brace group, `</dev/null`) were
+  written by reading the branch's working tree, and this note's `anchor:` was
+  not moved for them.** `scripts/install-prerequisites.sh` gained 17 lines on
+  that branch (10 of them above `set -uo pipefail`), so every older
+  `scripts/install-prerequisites.sh:<line>` citation in this note is now off
+  by 10 or more and was NOT re-derived; `scripts/install-prerequisites.ps1`
+  gained 5 at `:2239`. The `.ps1` change was never executed (no Windows host;
+  `scripts/_test/ps-install-keys.sh` skips off Windows). Only the two
+  `</dev/null` sites named above were looked at; whether any other child the
+  script spawns reads stdin was not audited.
 
 - **The task that produced this pass stated "4 cited paths gone" for this
   note; this pass could not reproduce that finding and does not repeat it as
