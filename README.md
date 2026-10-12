@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.11**: Installed but not set up, the plugin no longer errors on every prompt, tool call and turn end. `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
-- **bash-lsp, pwsh-lsp and powershell-lsp 0.1.0**: Language-server plugins for Bash and PowerShell. Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
+- **ai-connect 0.1.15**: One peer name per project, opt-in. With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
