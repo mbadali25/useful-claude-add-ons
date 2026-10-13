@@ -90,10 +90,29 @@ def is_secret_name(name):
 _PROC_RE = re.compile(r"/proc/[^/\s]*/(?:task/[^/\s]*/)?([^/\s]*)$")
 
 
+_DOT_SEGMENT_RE = re.compile(r"/\.(?=/|$)")
+_UP_SEGMENT_RE = re.compile(r"/[^/]+/\.\.(?=/|$)")
+
+
+def _normal_path(text):
+    """`text` with `//`, `/./` and `seg/..` folded, as the kernel reads them
+    (`/proc/self//environ`, `/proc/1/../self/environ`)."""
+    text = re.sub(r"/{2,}", "/", text)
+    text = _DOT_SEGMENT_RE.sub("", text)
+    while True:
+        folded = _UP_SEGMENT_RE.sub("", text, count=1)
+        if folded == text:
+            return text
+        text = folded
+
+
 def _is_environ_path(glob_text):
     """`glob_text` names a `/proc/<pid>/environ` (or a task's), with the last
     segment matched as a glob so `env*`, `e?viron` and `*` count."""
-    if not glob_text or "/proc/" not in glob_text:
+    if not glob_text or "/proc" not in glob_text:
+        return False
+    glob_text = _normal_path(glob_text)
+    if "/proc/" not in glob_text:
         return False
     at = glob_text.find("/proc/")
     while at != -1:
@@ -150,6 +169,22 @@ _LANG_RULES = {
 }
 
 
+# A single-name read whose name is not a string literal (`os.environ[name]`,
+# `process.env[k]`, `$ENV{$k}`): the name may be a credential's, so it is
+# could-not-tell rather than a use.
+_NONLITERAL_READS = {
+    "python": re.compile(r"\bos\s*\.\s*(?:environb?\s*(?:\[|\.\s*get\s*\()"
+                         r"|getenvb?\s*\()\s*(?![\s'\"\])])"),
+    "node": re.compile(r"\b(?:process|Bun)\s*\.\s*env\s*\[\s*(?![\s'\"`\]])"
+                       r"|\bDeno\s*\.\s*env\s*\.\s*get\s*\(\s*(?![\s'\"`)])"),
+    "perl": re.compile(r"\$ENV\s*\{\s*(?=[$@&(])"),
+    "ruby": re.compile(r"(?<![\w$:.])ENV\s*(?:\[|\.\s*fetch\s*\()\s*(?![\s'\"\])])"),
+    "php": re.compile(r"\bgetenv\s*\(\s*(?![\s'\")])|\$_(?:ENV|SERVER)\s*\[\s*(?![\s'\"\]])"),
+    "awk": re.compile(r"\bENVIRON\s*\[\s*(?![\s\"\]])"),
+    "jq": re.compile(r"(?:\$ENV|(?<![\w$.])env)\s*\[\s*(?![\s\"\]])"),
+}
+
+
 def _scan_code(code, lang, ctx):
     """Inline interpreter code: a whole-environment read, or a credential
     name read. `lang` "any" applies every language's rules (a program named
@@ -159,9 +194,11 @@ def _scan_code(code, lang, ctx):
         dumps, reads = _LANG_RULES[name]
         if any(rule.search(code) for rule in dumps):
             ctx.add(f"env-dump:{name}")
+        if _NONLITERAL_READS[name].search(code):
+            ctx.add(f"could-not-tell:code-name:{name}")
         for rule in reads:
             for match in rule.finditer(code):
-                if is_secret_name(match.group(match.lastindex or 1)):
+                if ctx.secret(match.group(match.lastindex or 1)):
                     ctx.add(f"secret-read:{name}")
 
 
@@ -212,7 +249,8 @@ class Word:
             if part[0] == "lit":
                 out.append(part[1])
             elif part[0] == "var":
-                out.append("${" + part[1] + "}")
+                out.append("${" + part[1] + (part[2] if len(part) > 2 else "")
+                           + "}")
             else:
                 out.append("__SUB__")
         return "".join(out)
@@ -257,6 +295,13 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
 _ANSI_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b",
                  "e": "\x1b", "E": "\x1b", "f": "\f", "v": "\v", "\\": "\\",
                  "'": "'", '"': '"', "?": "?"}
+
+
+def _arith_has_no_command(text):
+    """`(( ))` and `$(( ))` are skipped unread, so a command substitution
+    inside one (`(( $(env >&2; echo 1) ))`) is could-not-tell."""
+    if "$(" in text[1:] or "`" in text:
+        raise Unparsed("arith-substitution")
 
 
 class _BashReader:
@@ -354,6 +399,7 @@ class _BashReader:
             j + 1 < self.n and self.s[j + 1] == "(")
 
     def _skip_arith_command(self):
+        start = self.i
         depth = 0
         while self.i < self.n:
             c = self.s[self.i]
@@ -363,6 +409,7 @@ class _BashReader:
                 depth -= 1
                 if depth == 0:
                     self.i += 1
+                    _arith_has_no_command(self.s[start:self.i])
                     return
             self.i += 1
         raise Unparsed("unterminated-arithmetic")
@@ -486,12 +533,37 @@ class _BashReader:
                     out.append(_ANSI_ESCAPES[nxt])
                     self.i += 2
                     continue
+                if nxt == "x" and self.s.startswith("{", self.i + 2):
+                    # `\x{HH...}`: `$'\x{65}nv'` is `env` (bash 5.3).
+                    match = re.match(r"\{([0-9A-Fa-f]+)\}", self.s[self.i + 2:])
+                    if not match or int(match.group(1), 16) > 0x10FFFF:
+                        raise Unparsed("bad-escape")
+                    out.append(chr(int(match.group(1), 16)))
+                    self.i += 2 + len(match.group(0))
+                    continue
                 if nxt == "x":
                     match = re.match(r"[0-9A-Fa-f]{1,2}", self.s[self.i + 2:])
                     if match:
                         out.append(chr(int(match.group(0), 16)))
                         self.i += 2 + len(match.group(0))
                         continue
+                if nxt in "uU":
+                    # `\uHHHH`, `\UHHHHHHHH`: `$'\u0065nv'` is `env`.
+                    width = 4 if nxt == "u" else 8
+                    match = re.match(r"[0-9A-Fa-f]{1,%d}" % width,
+                                     self.s[self.i + 2:])
+                    if match:
+                        code = int(match.group(0), 16)
+                        if code > 0x10FFFF:
+                            raise Unparsed("bad-escape")
+                        out.append(chr(code))
+                        self.i += 2 + len(match.group(0))
+                        continue
+                if nxt == "c" and self.i + 2 < self.n:
+                    # `\cX`: the control character, as bash makes it.
+                    out.append(chr(ord(self.s[self.i + 2]) & 0x1F))
+                    self.i += 3
+                    continue
                 if nxt in "01234567":
                     match = re.match(r"[0-7]{1,3}", self.s[self.i + 1:])
                     out.append(chr(int(match.group(0), 8)))
@@ -534,6 +606,7 @@ class _BashReader:
     def _dollar(self, word, lit):
         nxt = self._peek(1)
         if nxt == "(" and self._peek(2) == "(":
+            start = self.i
             self.i += 3
             depth = 2
             while self.i < self.n and depth:
@@ -544,6 +617,7 @@ class _BashReader:
                 self.i += 1
             if depth:
                 raise Unparsed("unterminated-arithmetic")
+            _arith_has_no_command(self.s[start:self.i])
             word.parts.append(("arith",))
             return
         if nxt == "(":
@@ -565,7 +639,9 @@ class _BashReader:
                 name, rest = body[0], body[1:]
             else:
                 raise Unparsed("bad-substitution")
-            word.parts.append(("var", name))
+            # The text after the name (`:-env`, `/a/b`, `:0:4`) rides along
+            # as part[2]: in command position it can BE the program.
+            word.parts.append(("var", name, rest) if rest else ("var", name))
             if rest and ("$" in rest or "`" in rest):
                 inner = _BashReader('"' + rest.replace('"', '\\"') + '"')
                 inner.nest = self.nest
@@ -893,6 +969,12 @@ class _Ctx:
     def __init__(self):
         self.found = []
         self.assigned = {}  # name -> literal value, or None (not literal)
+        self.tainted = set()  # names assigned from a credential's value
+
+    def secret(self, name):
+        """`name` is credential-named, or was assigned from one in this
+        command (`T="$API_TOKEN"; echo "$T"`, `env T="$API_TOKEN" printenv T`)."""
+        return is_secret_name(name) or name in self.tainted
 
     def add(self, label):
         if label not in self.found:
@@ -954,12 +1036,36 @@ def _bash_cmd(cmd, depth, ctx):
     _argv(cmd.words, cmd, depth, ctx)
 
 
+def _is_glob_word(text):
+    """`text` holds a glob or a brace expansion: `*`, `?`, a `[...]`, or a
+    `{a,b}` / `{a..b}`. Plain scans, not one regular expression: a regex
+    over a word of repeated `[` was quadratic."""
+    if "*" in text or "?" in text:
+        return True
+    at = text.find("[")
+    if at != -1 and "]" in text[at + 1:]:
+        return True
+    at = text.find("{")
+    if at != -1:
+        end = text.find("}", at + 1)
+        inner = text[at + 1:] if end == -1 else text[at + 1:text.rfind("}")]
+        return end != -1 and ("," in inner or ".." in inner)
+    return False
+
+
 _RESERVED = frozenset(("!", "{", "}", "do", "then", "else", "elif", "if",
                        "while", "until", "done", "fi", "esac", "in", "[[", "]]",
                        "coproc"))
 _SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "mksh", "ash",
                      "busybox-sh"))
 _PY_RE = re.compile(r"^(?:python[0-9.]*|pypy[0-9.]*|py)$")
+# Options that take the next word, per interpreter: without them the word
+# after `-W`, `-r`, `-I` reads as the script and the `-c`/`-e` code after it
+# is never scanned (`node -r dotenv/config -e ...`).
+_PY_WITH_ARG = ("-W", "-X", "-Q")
+_NODE_WITH_ARG = ("-r", "--require", "--import", "--loader",
+                  "--experimental-loader", "-C", "--conditions", "--input-type",
+                  "--env-file", "--title")
 _PRINTERS = frozenset(("echo", "printf", "print"))
 _GREPS = frozenset(("grep", "egrep", "fgrep", "zgrep", "rg", "ag"))
 
@@ -978,6 +1084,10 @@ def _record_assignment(word, ctx):
     eq = raw.index("=")
     value = word.literal[eq + 1:] if word.literal is not None else None
     ctx.assigned[name] = value
+    if any(ctx.secret(var) for var in word.vars):
+        ctx.tainted.add(name)
+    elif not raw[:eq].endswith("+"):
+        ctx.tainted.discard(name)  # `T+=x` appends: T keeps what it held
 
 
 def _is_assignment(word):
@@ -995,6 +1105,21 @@ def _lits(words):
     return out
 
 
+def _option_width(text, with_arg):
+    """How many words the option word `text` spans: 2 when it takes the
+    next word as its value, else 1. A short cluster is read letter by letter
+    (`sudo -iu USER`, `ssh -tp 22`): the first letter that takes a value
+    takes the rest of the word, or the next word when it ends the cluster."""
+    if text in with_arg:
+        return 2
+    if text.startswith("--") or len(text) <= 2:
+        return 1
+    for index in range(1, len(text)):
+        if "-" + text[index] in with_arg:
+            return 2 if index == len(text) - 1 else 1
+    return 1
+
+
 def _skip_options(words, with_arg, start=1, stop_at_operand=True):
     """Index of the first operand after options; options in `with_arg` take
     the next word."""
@@ -1007,10 +1132,7 @@ def _skip_options(words, with_arg, start=1, stop_at_operand=True):
             return i + 1
         if not text.startswith("-") or text == "-":
             return i
-        if "=" not in text and text in with_arg:
-            i += 2
-            continue
-        i += 1
+        i += _option_width(text, with_arg)
     return i
 
 
@@ -1025,10 +1147,12 @@ def _stdin_bodies(cmd):
 
 def _argv(words, cmd, depth, ctx, shell="bash"):
     """Judge one simple command's words."""
-    while words and _is_assignment(words[0]):
-        _record_assignment(words[0], ctx)
-        words = words[1:]
-    while words and words[0].literal in _RESERVED:
+    # Assignments and reserved words, in whatever order they lead the
+    # command (`do T=$X cmd`, `T=1 if ...`).
+    while words and (_is_assignment(words[0])
+                     or words[0].literal in _RESERVED):
+        if _is_assignment(words[0]):
+            _record_assignment(words[0], ctx)
         words = words[1:]
     if not words:
         return
@@ -1049,11 +1173,16 @@ def _argv(words, cmd, depth, ctx, shell="bash"):
     if head.literal is None:
         _program_from_variable(words, cmd, depth, ctx)
         return
+    if _is_glob_word(head.literal):
+        # `/usr/bin/en?`, `/usr/bin/e*v`, `{/usr/bin/env,}`: the shell may
+        # expand the name to a program this guard would refuse.
+        ctx.add("could-not-tell:program-glob")
+        return
     name = _head_name(head.literal)
     lower = name.lower()
     handler = _HANDLERS.get(name) or _HANDLERS.get(lower)
     if handler is None and _PY_RE.match(lower):
-        handler = _interp("python", ("-c",), cluster="c")
+        handler = _interp("python", ("-c",), cluster="c", with_arg=_PY_WITH_ARG)
     if handler is not None:
         if handler(words, cmd, depth, ctx) is not False:
             return
@@ -1063,6 +1192,11 @@ def _argv(words, cmd, depth, ctx, shell="bash"):
 def _program_from_variable(words, cmd, depth, ctx):
     head = words[0]
     var = head.simple_var
+    if any(part[0] == "var" and len(part) > 2 for part in head.parts):
+        # `${UNSET:-env}`, `${X/a/env}`: the expansion can supply its own
+        # program name, so the session's value is no answer.
+        ctx.add("could-not-tell:program-expansion")
+        return
     if var is None:
         ctx.add("could-not-tell:program")
         return
@@ -1109,8 +1243,21 @@ def _operands_check(name, words, ctx):
     elif lower in _GREPS:
         mention |= _grep_pattern(words, 1)
     for i, word in enumerate(words[1:], start=1):
-        if i not in mention and _is_environ_path(word.glob):
+        if i in mention:
+            continue
+        if _is_environ_path(word.glob):
             ctx.add("env-dump:proc-environ")
+        elif word.literal is None and _may_be_environ_path(word.glob):
+            ctx.add("could-not-tell:environ-path")
+
+
+def _may_be_environ_path(glob_text):
+    """A non-literal path whose last segment could be `environ` and has
+    literal text of its own (`$d/environ`, `"$P"/env*`), not a bare `$f`."""
+    if "/" not in glob_text:
+        return False
+    last = glob_text.rsplit("/", 1)[-1]
+    return bool(last.strip("*?")) and fnmatch.fnmatchcase("environ", last)
 
 
 def _grep_pattern(words, start):
@@ -1143,15 +1290,19 @@ def _grep_pattern(words, start):
 def _h_env(words, cmd, depth, ctx):
     i = 1
     ignore = False
+    assigned = []
     while i < len(words):
         word = words[i]
         text = word.literal
         if _is_assignment(word):
             _record_assignment(word, ctx)
+            assigned.append(word)
             i += 1
             continue
         if text is None:
             break
+        if text in ("--help", "--version"):
+            return True
         if text in ("-i", "--ignore-environment", "-"):
             ignore = True
             i += 1
@@ -1183,11 +1334,16 @@ def _h_env(words, cmd, depth, ctx):
             break
     while i < len(words) and _is_assignment(words[i]):
         _record_assignment(words[i], ctx)
+        assigned.append(words[i])
         i += 1
     rest = words[i:]
     if not rest:
         if not ignore:
             ctx.add("env-dump:env")
+        # `env -i T="$GITHUB_TOKEN"` prints what it was handed.
+        elif any(ctx.secret(name) for word in assigned
+                 for name in word.vars):
+            ctx.add("secret-read:env")
         return True
     _argv(rest, cmd, depth, ctx)
     return True
@@ -1195,13 +1351,15 @@ def _h_env(words, cmd, depth, ctx):
 
 def _h_printenv(words, cmd, depth, ctx):
     del cmd, depth
+    if any(w.literal in ("--help", "--version") for w in words[1:]):
+        return True
     operands = [w for w in words[1:] if not (w.literal or "x").startswith("-")]
     if not operands:
         ctx.add("env-dump:printenv")
     for word in operands:
         if word.literal is None:
             ctx.add("could-not-tell:printenv-name")
-        elif is_secret_name(word.literal):
+        elif ctx.secret(word.literal):
             ctx.add("secret-read:printenv")
     return True
 
@@ -1235,7 +1393,7 @@ def _declare_like(form, words, ctx, functions_ok=True):
         if "p" in letters:
             if word.literal is None:
                 ctx.add("could-not-tell:declare-name")
-            elif is_secret_name(word.literal):
+            elif ctx.secret(word.literal):
                 ctx.add(f"secret-read:{form}")
     return True
 
@@ -1321,13 +1479,15 @@ def _h_printer(words, cmd, depth, ctx):
             (w.literal or "").startswith("-v") for w in words[1:2]):
         return True
     for word in words[1:]:
-        if any(is_secret_name(v) for v in word.vars):
+        if any(ctx.secret(v) for v in word.vars):
             ctx.add(f"secret-read:{_head_name(words[0].literal)}")
     return True
 
 
 def _h_eval(words, cmd, depth, ctx):
     del cmd
+    if len(words) > 1 and words[1].literal == "--":
+        words = words[1:]
     texts = _lits(words[1:])
     if texts is None:
         ctx.add("could-not-tell:eval")
@@ -1349,8 +1509,65 @@ def _h_alias(words, cmd, depth, ctx):
     return True
 
 
+_MISSING = object()
+_STDIN_FILES = frozenset(("/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"))
+
+
+def _script_is_a_stream(word):
+    """The script operand is not a file this reader could ever be shown:
+    a process substitution (`bash <(echo env)`) or stdin by name."""
+    if word.has("sub"):
+        return True
+    return word.literal is not None \
+        and _normal_path(word.literal) in _STDIN_FILES
+
+
 def _h_source(words, cmd, depth, ctx):
-    del words, cmd, depth, ctx
+    del cmd, depth
+    i = 2 if len(words) > 1 and words[1].literal == "--" else 1
+    if len(words) > i and _script_is_a_stream(words[i]):
+        ctx.add("could-not-tell:stdin-code")
+    return True
+
+
+def _h_trap(words, cmd, depth, ctx):
+    """`trap CODE SIGNAL...`: the code runs later, in this shell."""
+    del cmd
+    i = _skip_options(words, ())
+    if i >= len(words) - 1:
+        return True
+    # Variables are written back as `${NAME}` (`trap "rm -f $tmp" EXIT`):
+    # the shell that runs the trap expands them, as ssh's remote one does.
+    if words[i].has("sub") or words[i].simple_var is not None:
+        ctx.add("could-not-tell:code")  # `trap "$X" EXIT`, as `eval "$X"`
+        return True
+    code = words[i].dollar
+    if code not in ("", "-") and _deeper(depth, ctx):
+        _bash_text(code, depth + 1, ctx)
+    return True
+
+
+def _h_su(words, cmd, depth, ctx):
+    """`su [user] -c CODE`: the code runs in the target user's shell."""
+    del cmd
+    for i, word in enumerate(words[1:], start=1):
+        text = word.literal
+        if text is None:
+            if word.glob.startswith("--command="):
+                ctx.add("could-not-tell:code")
+            continue
+        code = _MISSING
+        if text in ("-c", "--command") or (
+                text.startswith("-") and not text.startswith("--")
+                and text.endswith("c") and len(text) > 2):
+            # `-c CODE`, and a cluster ending in it (`su -lc CODE`).
+            code = words[i + 1].literal if i + 1 < len(words) else None
+        elif text.startswith("--command="):
+            code = text.split("=", 1)[1]
+        if code is None:
+            ctx.add("could-not-tell:code")
+        elif code is not _MISSING and _deeper(depth, ctx):
+            _bash_text(code, depth + 1, ctx)
     return True
 
 
@@ -1366,21 +1583,38 @@ def _shell(words, cmd, depth, ctx):
         if text == "--":
             operand = i + 1 if i + 1 < len(words) else None
             break
-        if text in ("-o", "+o", "-O", "+O"):
+        if text in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
             i += 2
             continue
+        if text == "-":
+            # `bash -`: the script is stdin, and the rest are its arguments.
+            break
         if text.startswith("-") and len(text) > 1 and not text.startswith("--"):
+            if "s" in text[1:] and "c" not in text[1:]:
+                # `bash -s [args]`: the script is stdin.
+                break
             if "c" in text[1:]:
                 code_mode = True
+                # `bash -c'env'` is one word, `-cenv`: bash reads the letters
+                # after `c` as more options, but they are scanned as code too,
+                # so a cluster cannot carry a dump past this reader.
+                attached = text[1:].split("c", 1)[1]
+                if attached and _deeper(depth, ctx):
+                    _bash_text(attached, depth + 1, ctx)
             i += 1
             continue
         if text.startswith("--"):
             i += 1
             continue
+        if text.startswith("+") and len(text) > 1:
+            i += 1  # `bash +x -c CODE`: an option turned off
+            continue
         operand = i
         break
     if code_mode:
         if operand is None or operand >= len(words):
+            # `xargs bash -c`: the code is appended by whoever runs this.
+            ctx.add("could-not-tell:code")
             return True
         code = words[operand].literal
         if code is None:
@@ -1389,11 +1623,27 @@ def _shell(words, cmd, depth, ctx):
             _bash_text(code, depth + 1, ctx)
         return True
     if operand is None:
-        for body in _stdin_bodies(cmd):
+        bodies = _stdin_bodies(cmd)
+        for body in bodies:
             if body is None:
                 ctx.add("could-not-tell:code")
             elif _deeper(depth, ctx):
                 _bash_text(body, depth + 1, ctx)
+        if not bodies:
+            # A shell with no script, no `-c` and no body this reader was
+            # handed runs whatever its stdin carries: `echo env | bash`,
+            # `bash < f`, and the same shell nested in `bash -c bash`, a
+            # `( )` group or a loop, where no pipe is in sight.
+            ctx.add("could-not-tell:stdin-code")
+    elif operand < len(words) and _script_is_a_stream(words[operand]):
+        bodies = _stdin_bodies(cmd) if not words[operand].has("sub") else []
+        for body in bodies:
+            if body is None:
+                ctx.add("could-not-tell:code")
+            elif _deeper(depth, ctx):
+                _bash_text(body, depth + 1, ctx)
+        if not bodies:
+            ctx.add("could-not-tell:stdin-code")
     return True
 
 
@@ -1407,6 +1657,8 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
     single-dash cluster ending in a letter of `cluster`), the first operand
     when `program_operand` (awk, jq), and stdin bodies when no script."""
     with_arg = set(with_arg)
+    letters = cluster or "".join(f[1] for f in flags
+                                 if len(f) == 2 and f[0] == "-")
 
     def handler(words, cmd, depth, ctx):
         del depth
@@ -1431,9 +1683,14 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
             matched = False
             for flag in flags:
                 if text == flag:
-                    codes.append(words[i + 1].literal if i + 1 < len(words)
-                                 else "")
-                    i += 2
+                    nxt = words[i + 1].literal if i + 1 < len(words) else ""
+                    if nxt is not None and _is_code_flag(nxt, flags, letters):
+                        # `node -p -e CODE`: `-p` here only says "print";
+                        # the next flag carries the code.
+                        i += 1
+                    else:
+                        codes.append(nxt)
+                        i += 2
                     matched = True
                     break
                 if flag.startswith("--") and text.startswith(flag + "="):
@@ -1443,10 +1700,27 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
                     break
             if matched:
                 continue
-            if cluster and text.startswith("-") and not text.startswith("--") \
-                    and len(text) > 2 and text[-1] in cluster:
-                codes.append(words[i + 1].literal if i + 1 < len(words) else "")
-                i += 2
+            at = _code_letter_at(text, letters)
+            if at is not None:
+                # `-cCODE`, `-eCODE`, `-neCODE`: the code is the rest of the
+                # word; `-Bc CODE`, `-le CODE`, `-pe CODE`: it is the next
+                # word. A run of code letters (`-pe`, `-peCODE`) is read
+                # every way it could split: the rest after each letter of the
+                # run is scanned, and the next word too when the run ends the
+                # word. The next word is scanned but not skipped, so a word
+                # misread as a cluster cannot hide the real code flag after it.
+                end = at
+                while end < len(text) and text[end] in letters:
+                    if end - at >= _CODE_RUN_LIMIT:
+                        # No real cluster is this long; reading every split
+                        # of a huge one is quadratic (a hook timeout).
+                        ctx.add("could-not-tell:code-cluster")
+                        break
+                    codes.append(text[end + 1:])
+                    end += 1
+                if end == len(text) and i + 1 < len(words):
+                    codes.append(words[i + 1].literal)
+                i += 1
                 continue
             if text in ("-f", "--from-file"):
                 explicit_file = True
@@ -1463,11 +1737,19 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
                 operand = i
                 if program_operand and not explicit_file and not codes:
                     codes.append(text)
-            if not program_operand:
-                break
+            # Not a stop: a word read as the script may be the value of an
+            # option this table does not list (`node --disable-warning X -p
+            # CODE`), so any code flag after it is still read.
             i += 1
         if not codes and (operand is None or words[operand].literal == "-"):
             codes.extend(_stdin_bodies(cmd))
+            if not codes and not program_operand:
+                # `echo 'print(os.environ)' | python3`, `python3 < f`: the
+                # code is whatever stdin carries, wherever the pipe is.
+                ctx.add("could-not-tell:stdin-code")
+        elif not program_operand and operand is not None \
+                and _script_is_a_stream(words[operand]):
+            ctx.add("could-not-tell:stdin-code")
         for code in codes:
             if code is None:
                 ctx.add("could-not-tell:code")
@@ -1479,11 +1761,40 @@ def _interp(lang, flags, cluster="", program_operand=False, with_arg=(),
     return handler
 
 
+_CODE_RUN_LIMIT = 6
+
+
+def _is_code_flag(text, flags, letters):
+    """`text` is itself a code flag (`-e`, `--eval`, `--eval=...`, `-pe`),
+    so it cannot be the code another flag was waiting for."""
+    if text in flags:
+        return True
+    if any(flag.startswith("--") and text.startswith(flag + "=")
+           for flag in flags):
+        return True
+    return text.startswith("-") and text != "-" \
+        and _code_letter_at(text, letters) is not None
+
+
+def _code_letter_at(text, letters):
+    """The index of the first code-flag letter in a single-dash option word
+    (`-c`, `-Bc`, `-cCODE`, `-neCODE`), or None."""
+    if not letters or not text.startswith("-") or text.startswith("--") \
+            or len(text) < 2:
+        return None
+    for index, char in enumerate(text[1:], start=1):
+        if char in letters:
+            return index
+    return None
+
+
 def _h_cmd(words, cmd, depth, ctx):
     del cmd, depth
     for i, word in enumerate(words[1:], start=1):
         text = (word.literal or "").lower()
-        if text in ("/c", "/k", "/r"):
+        # `//c` is how Git Bash spells `/c` (MSYS rewrites a lone `/c` into
+        # a path), so both reach cmd.exe as the same switch.
+        if text in ("/c", "/k", "/r", "//c", "//k", "//r"):
             rest = _lits(words[i + 1:])
             if rest is None:
                 ctx.add("could-not-tell:code")
@@ -1510,23 +1821,89 @@ def _cmd_text(text, ctx):
                     ctx.add("secret-read:cmd-echo")
 
 
+_PS_OPTION_RE = re.compile(r"^-[A-Za-z]+$")
+
+
+def _ps_option(word):
+    """A pwsh/powershell option word, lowercased, or None for anything
+    else."""
+    text = word.literal
+    if text is None or not _PS_OPTION_RE.match(text):
+        return None
+    return text.lower()
+
+
+def _ps_is(option, full, shortest):
+    """`option` abbreviates `full` (PowerShell takes any unambiguous
+    prefix), down to `shortest`."""
+    return len(option) >= len(shortest) and full.startswith(option)
+
+
 def _h_pwsh(words, cmd, depth, ctx):
-    del cmd
+    # Every option word is read before any positional one: an option's
+    # value (`-ExecutionPolicy Bypass`, `-Version 5.1`) is not where the
+    # options end, so `-Command` or `-EncodedCommand` after it still counts.
     for i, word in enumerate(words[1:], start=1):
-        text = (word.literal or "").lower()
-        if text in ("-encodedcommand", "-enc", "-ec", "-e", "-en", "-encoded"):
+        option = _ps_option(word)
+        if option is None:
+            continue
+        if option in ("-e", "-ec") or _ps_is(option, "-encodedcommand", "-en"):
             ctx.add("could-not-tell:encoded-command")
             return True
-        if text.startswith("-") and len(text) > 1 and "-command".startswith(text):
-            rest = _lits(words[i + 1:])
-            if rest is None:
-                ctx.add("could-not-tell:code")
-            elif _deeper(depth, ctx):
-                _ps_text(" ".join(rest), depth + 1, ctx)
+        if _ps_is(option, "-command", "-c") or option in ("-commandwithargs",
+                                                          "-cwa"):
+            rest = words[i + 1:]
+            if len(rest) == 1 and rest[0].literal == "-":
+                _pwsh_stdin(cmd, depth, ctx)
+            else:
+                _pwsh_code(rest, depth, ctx)
             return True
-        if text in ("-file", "-f"):
+        if _ps_is(option, "-file", "-f"):
+            if i + 1 < len(words) and words[i + 1].literal == "-":
+                _pwsh_stdin(cmd, depth, ctx)
             return True
+    operands = [i for i, word in enumerate(words[1:], start=1)
+                if word.literal is None or _ps_option(word) is None]
+    if not operands:
+        # No command, no file: the code is whatever stdin carries.
+        _pwsh_stdin(cmd, depth, ctx)
+        return True
+    if words[operands[0]].literal == "-":
+        _pwsh_stdin(cmd, depth, ctx)  # `powershell -`: commands from stdin
+        return True
+    if _head_name(words[0].literal or "").lower() != "powershell":
+        return True  # pwsh 7: the first positional is a script file
+    # Windows PowerShell 5.1 reads its first positional argument as
+    # `-Command`. Which word that is depends on which options take a value,
+    # so the command is read from every word it could start at.
+    if len(operands) > _PS_POSITIONAL_LIMIT:
+        ctx.add("could-not-tell:code")
+        return True
+    for i in operands:
+        _pwsh_code(words[i:], depth, ctx)
     return True
+
+
+_PS_POSITIONAL_LIMIT = 12
+
+
+def _pwsh_stdin(cmd, depth, ctx):
+    bodies = _stdin_bodies(cmd)
+    for body in bodies:
+        if body is None:
+            ctx.add("could-not-tell:code")
+        elif _deeper(depth, ctx):
+            _ps_text(body, depth + 1, ctx)
+    if not bodies:
+        ctx.add("could-not-tell:stdin-code")
+
+
+def _pwsh_code(words, depth, ctx):
+    rest = _lits(words)
+    if rest is None:
+        ctx.add("could-not-tell:code")
+    elif _deeper(depth, ctx):
+        _ps_text(" ".join(rest), depth + 1, ctx)
 
 
 def _h_ssh(words, cmd, depth, ctx):
@@ -1625,7 +2002,7 @@ def _wrapper(with_arg=(), positional=0, lookup=()):
                 i += 1
                 break
             if text.startswith("-") and len(text) > 1:
-                i += 2 if text in with_arg else 1
+                i += _option_width(text, with_arg)
                 continue
             break
         while i < len(words) and _is_assignment(words[i]):
@@ -1684,6 +2061,8 @@ _HANDLERS = {
     "printf": _h_printer,
     "print": _h_printer,
     "eval": _h_eval,
+    "trap": _h_trap,
+    "su": _h_su,
     "alias": _h_alias,
     "source": _h_source,
     ".": _h_source,
@@ -1697,8 +2076,13 @@ _HANDLERS = {
     "wsl": _h_wsl,
     "find": _h_find,
     "watch": _h_watch,
+    # Every sudo option that takes a value (sudo(8)), so none of them can
+    # hand its value over as the program (`sudo -T 5 env`).
     "sudo": _wrapper(("-u", "-g", "-C", "-h", "-p", "-r", "-t", "-U", "-D",
-                      "-R", "--user", "--group")),
+                      "-R", "-T", "--user", "--group", "--close-from",
+                      "--host", "--prompt", "--role", "--type",
+                      "--other-user", "--chdir", "--chroot",
+                      "--command-timeout")),
     "doas": _wrapper(("-u", "-C")),
     "command": _wrapper(lookup=("-v", "-V")),
     "builtin": _wrapper(),
@@ -1711,12 +2095,16 @@ _HANDLERS = {
     "xargs": _wrapper(("-I", "-n", "-P", "-d", "-E", "-L", "-s", "-a",
                        "--max-args", "--max-procs", "--delimiter",
                        "--arg-file", "--max-lines", "--max-chars")),
-    "node": _interp("node", ("-e", "--eval", "-p", "--print")),
-    "bun": _interp("node", ("-e", "--eval", "-p", "--print")),
+    "node": _interp("node", ("-e", "--eval", "-p", "--print"),
+                    with_arg=_NODE_WITH_ARG),
+    "bun": _interp("node", ("-e", "--eval", "-p", "--print"),
+                   with_arg=_NODE_WITH_ARG),
     "deno": _interp("node", ("--eval",), subcommand="eval"),
-    "perl": _interp("perl", ("-e", "-E"), cluster="eE"),
-    "ruby": _interp("ruby", ("-e",), cluster="e"),
-    "php": _interp("php", ("-r",)),
+    "perl": _interp("perl", ("-e", "-E"), cluster="eE",
+                    with_arg=("-I", "-M", "-m")),
+    "ruby": _interp("ruby", ("-e",), cluster="e",
+                    with_arg=("-I", "-r", "-C", "-E", "-F")),
+    "php": _interp("php", ("-r",), with_arg=("-d", "-c", "-z")),
     "awk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
     "gawk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
     "mawk": _interp("awk", (), program_operand=True, with_arg=("-F", "-v")),
@@ -1751,6 +2139,11 @@ _PS_GETENVS_RE = re.compile(
 _PS_GETENV_RE = re.compile(
     r"\[\s*(?:System\s*\.\s*)?Environment\s*\]\s*::\s*GetEnvironmentVariable\s*"
     r"\(\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
+# `GetEnvironmentVariable($n)`: a name that is not a string literal may be a
+# credential's, so printing it is could-not-tell.
+_PS_GETENV_NONLITERAL_RE = re.compile(
+    r"\[\s*(?:System\s*\.\s*)?Environment\s*\]\s*::\s*GetEnvironmentVariable\s*"
+    r"\(\s*(?![\s'\")])", re.IGNORECASE)
 _PS_STARTINFO_RE = re.compile(r"\.\s*StartInfo\s*\.\s*Environment(?:Variables)?\b",
                               re.IGNORECASE)
 _PS_ASSIGN_OPS = frozenset(("=", "+=", "-=", "*=", "/=", "%=", "??="))
@@ -1803,6 +2196,9 @@ def _ps_elem(words, first, depth, ctx):
     if raw.startswith(("$", "[", "(", '"', "'", "@")) or raw[:1].isdigit():
         if first and not assigned and any(_ps_word_secrets(w) for w in words):
             ctx.add("secret-read:env-var")
+        elif first and not assigned and any(
+                _PS_GETENV_NONLITERAL_RE.search(w.raw) for w in words):
+            ctx.add("could-not-tell:env-name")
         return
     if head.literal in ("&", "."):
         rest = words[1:]
@@ -1881,7 +2277,7 @@ def findings(text, shell="bash"):
             _ps_text(text, 0, ctx)
         else:
             _bash_text(text, 0, ctx)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         ctx.add(f"could-not-tell:internal-error:{type(exc).__name__}")
     return list(ctx.found)
 
@@ -1911,22 +2307,47 @@ def _crude_armed(root):
     try:
         import crew_common  # pylint: disable=import-outside-toplevel
         crew_dir, source, _ = crew_common.repo_config_dir(root)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
         return True
     if source == crew_common.SOURCE_UNKNOWN:
         return True
     home = os.path.expanduser("~")
     for path in (os.path.join(crew_dir, "config.json"),
                  os.path.join(home, ".claude", "crew", "config.json")):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                text = handle.read()
-        except OSError:
-            continue
-        match = re.search(r'"envGuard"\s*:\s*([^,}]*)', text)
-        if match and match.group(1).strip().strip('"').strip() != "off":
+        if _layer_arms(path):
             return True
     return False
+
+
+def _layer_arms(path):
+    """Whether one config file arms the guard, for `_crude_armed`: absent
+    does not; a file that cannot be read or parsed, is not an object, or has
+    a `guards` that is not an object does (a corrupt layer blocks); otherwise
+    any `guards.envGuard` other than "off" does. An explicit `null` arms
+    too: only an absent key means off (`crew_guards.NULL_IS_MALFORMED`)."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        # Could not look (an unreadable parent): not proof of absent.
+        return True
+    try:
+        with open(path, encoding="utf-8", errors="strict") as handle:
+            parsed = json.loads(handle.read())
+    except (OSError, ValueError):
+        return True
+    if not isinstance(parsed, dict):
+        return True
+    if "guards" not in parsed:
+        return False
+    guards = parsed["guards"]
+    if not isinstance(guards, dict):
+        return True
+    if "envGuard" not in guards:
+        return False
+    value = guards["envGuard"]
+    return not (isinstance(value, str) and value.strip().lower() == "off")
 
 
 def _log(root, row):
@@ -1965,7 +2386,10 @@ def _read_input():
         return {}, None, "malformed-input"
     if not isinstance(data, dict):
         return {}, None, "malformed-input"
-    if data.get("tool_name") not in ("Bash", "PowerShell"):
+    tool = data.get("tool_name")
+    if not isinstance(tool, str) or not tool:
+        return {}, None, "malformed-input"
+    if tool not in ("Bash", "PowerShell"):
         return None, None, ""
     tool_input = data.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) \
@@ -2020,7 +2444,7 @@ def main():
     root = root if isinstance(root, str) else "."
     try:
         mode, note = resolve_mode(root)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         if not _crude_armed(root):
             sys.stderr.write(f"env-guard: could not read guards.envGuard "
                              f"({type(exc).__name__}); no config arms it, "

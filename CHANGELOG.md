@@ -272,6 +272,46 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
   plugin's `ruff.toml` extends the root config instead of replacing it.
 
+### Fixed — crew, next version: the environment guard's review fixes (L-0772)
+
+- **Summary.** The environment guard no longer misses attached code (`bash -c'env'`, `node -pe`), a
+  globbed program name, or an armed config when python is missing; an explicit `null` arms it.
+- **Attached code.** `-cCODE`, `-eCODE` and `-neCODE` are scanned, and a run of code letters
+  (`node -pe 'process.env'`) is read every way it could split. A globbed or brace-expanded program
+  name (`/usr/bin/en?`, `e{n,}v`) and a non-literal name in inline code (`os.environ[name]`) are
+  could-not-tell. `env --help`, `env --version` and `printenv --help` are allowed.
+- **No-python fallbacks.** `env-guard.ps1` and `env_guard.py`'s emergency reader parse the layer;
+  `env-guard.sh` reads every `envGuard`, not the first. A layer that is unreadable, a directory, not
+  a JSON object, has a non-object `guards`, or (shell) holds a `\u` escape arms the guard.
+- **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off`
+  (`crew_guards.NULL_IS_MALFORMED`). `roleWrites` and `cloudGuard` are unchanged.
+- **Security pass.** `$'\u0065nv'` decodes to `env`; an option that takes an argument (`node -r
+  dotenv/config`, `python3 -W x`, `perl -I lib`, `php -d`) no longer hides the `-c`/`-e` code after
+  it; `powershell 'gci env:'` (5.1's positional `-Command`) and `pwsh -cwa` are judged;
+  `/proc/self//environ`, `/./` and `/../` spellings are folded (also for `guards.prodServer: read`);
+  `env -i T="$TOKEN"` is a secret read; a program from `${X:-env}`, a shell or interpreter left to
+  read its code from stdin (`echo env | bash`, `bash < f`), a command substitution inside `(( ))`,
+  a non-literal `.../environ` path and `GetEnvironmentVariable($n)` are could-not-tell; a code-letter
+  run longer than six is could-not-tell instead of a quadratic read.
+- **Review round 2.** A name assigned from a credential is a credential for the rest of the command
+  (`env T="$TOKEN" printenv T`, `T=$TOKEN; echo $T`). `env-guard.sh` checks the layer is one strict
+  JSON object with awk, so `{"guards":{bad}}` arms it; all three fallbacks and `plugin-hooks:` treat
+  a path they were refused a look at as could-not-tell, not absent. `trap CODE` and `su -c CODE` are
+  read; a script that is a stream (`bash <(...)`, `source /dev/stdin`) and a `-c` with no code are
+  could-not-tell.
+- **Security pass 2.** `powershell` and `pwsh` read every option before any positional word, so
+  `-Command` or `-EncodedCommand` after `-ExecutionPolicy Bypass` or `-Version 5.1` still counts
+  (a regression in this entry's first fix); option prefixes (`-enco`) and code from stdin are
+  read. `node -p -e CODE`: a code flag is not another flag's code, and a code flag after a word read
+  as the script is still read. A short-option cluster gives its last letter the next word
+  (`sudo -iu USER env`, `ssh -tp 22`), and sudo's value options are all listed. `cmd //c set` (Git
+  Bash's spelling) is `cmd /c set`. Also `$'\x{65}nv'`, `bash +x -c`, `eval --`, `su -lc`, a wholly
+  non-literal `trap`, `T+=x` keeping its taint, and the shell fallback arming when grep is missing
+  or the file holds a NUL byte.
+- **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
+- **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as
+  could-not-verify, never a zero or a crash.
+
 ### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
 
 - **Summary.** crew can now refuse a command that would print the whole environment, or a

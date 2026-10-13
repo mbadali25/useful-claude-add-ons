@@ -4,6 +4,13 @@
 # TOOL that ran it. Off unless `guards.envGuard` is `report` or `block`.
 # Nothing here prints the command or the environment.
 
+# Resolve-CrewPython below is the byte-identical copy every crew .ps1 carries
+# (test_ps1_python_probe.py asserts it), and its best-effort cleanup catches
+# are empty by design. The suppression is script-wide because PSScriptAnalyzer
+# reads it only from a param block, as promote-gate.ps1 does (L-0703).
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingEmptyCatchBlock', '', Justification = 'Resolve-CrewPython copy: best-effort cleanup catches')]
+param()
+
 # Flavour guard. Both flavours are registered for the event, so on a host that
 # has BOTH interpreters both would otherwise run. Stand down only when we can
 # positively prove this is not Windows. `$env:OS` is 'Windows_NT' on BOTH
@@ -239,9 +246,13 @@ function Get-CrewRepoConfigDir([string]$Root) {
 }
 
 function Test-EnvGuardArmed {
-  # Only consulted when python could not judge. Any `envGuard` value other
-  # than "off", in the repo config or the machine-global one, counts as armed,
-  # so a value this cannot parse fails closed. The twin of env-guard.sh's
+  # Only consulted when python could not judge. The file is parsed as JSON:
+  # a file that exists but cannot be read or parsed, is not an object, or has
+  # a `guards` that is not an object counts as armed (python calls that layer
+  # corrupt, and a corrupt layer blocks), and so does any guards.envGuard
+  # value other than "off" (an explicit null included: only an absent key
+  # is off), so a value this cannot parse fails closed. The
+  # twin of env-guard.sh's
   # `_env_guard_armed`. The repo file is the resolved one (T-0096): a lane
   # reads the main checkout's, and `unknown` counts as armed.
   $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { '.' }
@@ -250,13 +261,40 @@ function Test-EnvGuardArmed {
   $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
   foreach ($cfg in @((Join-Path $repo.Dir 'config.json'),
                      (Join-Path $userHome '.claude/crew/config.json'))) {
-    if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { continue }
-    $text = Get-Content -LiteralPath $cfg -Raw -ErrorAction SilentlyContinue
-    if (-not $text) { continue }
-    $m = [regex]::Match($text, '"envGuard"\s*:\s*([^,}]*)')
-    if (-not $m.Success) { continue }
-    $value = $m.Groups[1].Value -replace '["\s]', ''
-    if ($value -and $value -ne 'off') { return $true }
+    # Get-Item, not Test-Path: Test-Path answers $false for a path it was
+    # not allowed to look at, which is not proof the file is absent.
+    $item = $null
+    try {
+      $item = Get-Item -LiteralPath $cfg -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+      $item = $null
+    } catch {
+      return $true
+    }
+    if ($null -eq $item) { continue }
+    if ($item.PSIsContainer) { return $true }
+    try {
+      $text = [System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8)
+      # PowerShell 7's ConvertFrom-Json accepts a trailing comma and comments,
+      # which python refuses (a corrupt layer blocks), so read it strictly
+      # first where System.Text.Json exists, and refuse the shapes regardless.
+      if ($text -match ',\s*[\]}]|/\*|(^|[\s,{\[])//') { return $true }
+      $strict = 'System.Text.Json.JsonDocument' -as [type]
+      if ($strict) { $strict::Parse($text).Dispose() }
+      $parsed = $text | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      return $true
+    }
+    if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) { return $true }
+    $guardsProp = $parsed.PSObject.Properties['guards']
+    if ($null -eq $guardsProp) { continue }
+    $guards = $guardsProp.Value
+    if ($null -eq $guards -or $guards -isnot [System.Management.Automation.PSCustomObject]) { return $true }
+    $prop = $guards.PSObject.Properties['envGuard']
+    if ($null -eq $prop) { continue }
+    if ($null -eq $prop.Value) { return $true }
+    if ($prop.Value -isnot [string]) { return $true }
+    if ($prop.Value.Trim().ToLowerInvariant() -ne 'off') { return $true }
   }
   return $false
 }

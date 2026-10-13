@@ -61,6 +61,49 @@ REPORT = {"guards": {"envGuard": "report"}}
 
 # Bash forms that print the whole environment, or a credential-named variable.
 BLOCK_BASH = [
+    # review round 1: attached code flags (`-cCODE`, `-eCODE`, `-neCODE`)
+    "python3 -c'print(os.environ)'", "node -e'console.log(process.env)'",
+    "perl -ne'print %ENV'", "ruby -e'p ENV'", "bash -c'env'",
+    "perl -I/x/e -e 'print %ENV'",
+    # review round 2 prep: a run of code letters (`-pe`) read every way
+    "node -pe 'process.env'", "node -pe'process.env'", "node -ep 'process.env'",
+    # security pass (L-0772-fix): ANSI-C unicode names, options that take an
+    # argument before the code, powershell.exe's positional -Command, pwsh
+    # -cwa, folded /proc spellings, env -i handed a secret
+    "$'\\u0065nv'", "$'\\u0070rintenv'", "$'\\U00000065nv'",
+    "node -r dotenv/config -e 'console.log(process.env)'",
+    "node --require dotenv/config -p process.env",
+    "python3 -W ignore -c 'import os;print(os.environ)'",
+    "perl -I lib -e 'print %ENV'", "ruby -I lib -e 'p ENV'",
+    "php -d x=1 -r 'print_r($_ENV);'",
+    "powershell 'Get-ChildItem env:'", "powershell -NoProfile \"gci env:\"",
+    "pwsh -cwa 'gci env:'",
+    "cat /proc/self//environ", "cat /proc/./self/environ",
+    "cat /proc/1/../self/environ", "env -i T=\"$FAKE_GITHUB_TOKEN\"",
+    "bash --rcfile /dev/null -c env", "bash -s -- a <<< env", "bash - <<< env",
+    # review round 2: a credential handed on under another name
+    "env -i T=\"$FAKE_TOKEN\" printenv T", "env T=\"$FAKE_TOKEN\" printenv T",
+    "T=$FAKE_GITHUB_TOKEN; echo $T",
+    # pre-round-3 self-review: code that runs later or as another user
+    "trap env EXIT", "su -c env", "su - bob -c 'printenv'",
+    "bash /dev/stdin <<< env",
+    # security pass 2 (owner decision 2026-10-11): -Command after an option
+    # that takes a value; a code flag before another code flag; sudo clusters
+    # and value options; Git Bash's `cmd //c`
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Variable\"",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command '$env:FAKE_TOKEN'",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command 'cmd /c set'",
+    "powershell -Version 5.1 -Command 'gci env:'",
+    "powershell -Version 2 \"gci env:\"", "pwsh <<< 'gci env:'",
+    "node -p -e process.env", "node -p --eval 'console.log(process.env)'",
+    "node --print -e process.env", "bun -p -e process.env",
+    "node --disable-warning X -p process.env",
+    "sudo -iu x env", "sudo -Hu x printenv", "sudo -Eu x env",
+    "sudo -T 5 env", "sudo --chdir /tmp env", "ssh -tp 22 h env",
+    "cmd //c set", "cmd.exe //c \"set\"",
+    "$'\\x{65}nv'", "bash +x -c env", "eval -- env", "su -lc env",
+    "T=$FAKE_TOKEN; T+=x; echo $T", "bash /dev/./stdin <<< env",
+    "T=\"$FAKE_TOKEN\" python3 -c 'import os; print(os.environ[\"T\"])'",
     "env", "env -0", "env --null", "env -u FAKE_X", "env FAKE_A=1",
     "printenv", "printenv -0", "set", "export", "export -p",
     "declare", "declare -p", "declare -x", "typeset -p", "typeset -x",
@@ -145,6 +188,29 @@ ALLOW_BASH = [
     "ruby -e 'puts ENV[\"HOME\"]'", "$EDITOR f", "\"$PY\" script.py",
     "PY=python3; \"$PY\" -c 'print(1)'", "echo $SSH_AUTH_SOCK",
     "echo $XDG_SESSION_TYPE",
+    # review round 1: help is not a dump; globs elsewhere are not program names
+    "printenv --help", "env --help", "env --version", "ls *.txt", "[ -f x ]",
+    "echo {a,b}", "python3 -Bc 'print(1)'", "python3 -W ignore -c 'print(1)'",
+    "python3 -c 'import os; print(os.getenv(\"HOME\"))'",
+    "perl -e 'print $ENV{HOME}'",
+    # security pass: what the new could-not-tell rules must leave alone
+    "cat $f", "cat $dir/*.txt", "cat $dir/environ.bak", "echo $((1+2))",
+    "(( x = 1 ))", "ls | bash x.sh", "cat f | python3 script.py",
+    "echo 1 | jq .", "env -i PATH=$PATH", "powershell -File x.ps1",
+    "powershell -NoProfile -Command Get-Date", "\"$PY\" -W ignore script.py",
+    # review round 2: a name assigned from a non-credential, or reassigned
+    "T=$HOME; echo $T", "T=$FAKE_TOKEN; T=x; echo $T", "env T=1 printenv T",
+    "trap \"rm -f $tmp\" EXIT", "trap - EXIT", "trap 'echo done' INT TERM",
+    "su -c ls bob", "source ./x.sh", "bash script.sh",
+    # security pass 2: the neighbours of each new must-block
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Date\"",
+    "powershell -ExecutionPolicy Bypass Get-Date",
+    "pwsh -ExecutionPolicy Bypass -File x.ps1", "pwsh ./x.ps1",
+    "node -p -e '1+1'", "node -p '1+1'", "node script.js -e foo",
+    "sudo -iu x ls", "sudo --chdir /tmp ls", "sudo -T 5 ls", "ssh -tp 22 h ls",
+    "cmd //c \"echo hi\"", "cmd //c \"set X=1\"", "cmd /c dir",
+    "T=a; T+=b; echo $T", "bash +x script.sh", "su - bob",
+    "$'\\x{6c}s'", "eval -- ls", "ls [ab]",
 ]
 
 ALLOW_PS = [
@@ -159,9 +225,34 @@ ALLOW_PS = [
 CNT_BASH = [
     "env '", "eval \"$(ssh-agent -s)\"", "eval \"$X\"", "bash -c \"$CMD\"",
     "X=$(echo env); $X", "echo \"${!n}\"", "echo $(env", "cat <<EOF\nno end",
+    # review round 1: a globbed or brace-expanded program name, a non-literal
+    # name read in inline code
+    "/usr/bin/en?", "e{n,}v", "sudo /usr/bin/e*",
+    "python3 -c 'import os; print(os.environ[name])'",
+    "node -e 'console.log(process.env[k])'", "perl -e 'print $ENV{$k}'",
+    # security pass: a default-supplying expansion as the program, a
+    # command substitution inside arithmetic, code fed through a pipe, a
+    # non-literal path to an environ file, an over-long code-letter run
+    "${UNSET_X:-env}", "${UNSET_X-printenv}", "sudo ${UNSET_X:-env}",
+    "(( $(env >&2; echo 1) ))", "echo $(( $(env >&2; echo 1) ))",
+    "echo env | bash", "printf printenv | sh",
+    "echo 'import os;print(os.environ)' | python3",
+    # review round 2: the same shell with no pipe in sight of it
+    "echo env | bash -c bash", "echo env | ( bash )", "echo env | { :; bash; }",
+    "bash < f.sh", "python3 < f.py", "echo env | sudo bash",
+    # pre-round-3 self-review: a script that is a stream, a `-c` with no code
+    "bash <(echo env)", "source <(echo env)", ". <(echo env)",
+    "python3 /dev/stdin", "echo env | xargs bash -c",
+    # security pass 2
+    "powershell -ExecutionPolicy Bypass -enc AAAA", "pwsh -enco AAAA",
+    "echo 'gci env:' | pwsh", "powershell -", "/usr/bin/[e]nv",
+    "trap \"$X\" EXIT", "su --command=\"$X\"", "source -- /dev/stdin",
+    "echo env | bash +x",
+    "d=/proc/self; cat $d/environ", "cat \"$P\"/environ",
+    "python3 -" + "c" * 4000 + " 0",
 ]
 CNT_PS = ["iex $s", "& $cmd", "Invoke-Expression $code", "Write-Output 'x",
-          "gci env: | Out-String )"]
+          "gci env: | Out-String )", "[Environment]::GetEnvironmentVariable($n)"]
 
 
 def _ids(cases):
@@ -184,7 +275,13 @@ def _scrubbed_env(tmp_path, driver=None, extra=None):
     fake marker."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    # The running python's directory first: the drivers are tested with a
+    # python they can find. On Windows, Git Bash's PATH can hold only the
+    # WindowsApps Store stubs, which crew_py_strict probes and skips, so the
+    # driver would (correctly) fail closed and the parity cases would test
+    # the no-python path instead (win-repo-2, a7f25e1f9).
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    env = {"PATH": os.path.dirname(sys.executable) + os.pathsep + path,
            "HOME": str(home), "USERPROFILE": str(home),
            "CLAUDE_PROJECT_DIR": str(tmp_path / "repo"),
            "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
@@ -382,6 +479,27 @@ def test_latency_bound():
     assert per_call < 0.150, per_call
 
 
+@pytest.mark.parametrize("word", ["x" + "[a" * 100000, "x" + "[" * 100000,
+                                  "x" + "{a" * 100000],
+                         ids=["open-brackets-with-text", "open-brackets",
+                              "open-braces"])
+def test_latency_bound_on_a_huge_program_word(word):
+    """Security pass 2: the glob test on the program word was one regular
+    expression, quadratic on repeated `[` (13 s for 200 KB)."""
+    start = time.perf_counter()
+    env_guard.findings(word, "bash")
+    assert time.perf_counter() - start < 2.0
+
+
+def test_latency_bound_on_a_huge_code_cluster():
+    """Security pass: reading every split of a code-letter run was quadratic,
+    24 s for a 28,000-letter cluster, past the 15 s hook timeout."""
+    start = time.perf_counter()
+    labels = env_guard.findings("python3 -" + "c" * 28000 + " 0; env", "bash")
+    assert time.perf_counter() - start < 2.0
+    assert "could-not-tell:code-cluster" in labels
+
+
 # --- the python driver: main(), every case -------------------------------------------
 
 
@@ -422,8 +540,10 @@ def test_could_not_tell_denies_in_block_and_logs_in_report(
 
 
 @pytest.mark.parametrize("raw", [b"", b"not json", b"[1]",
-                                 b'{"tool_name":"Bash","tool_input":{}}'],
-                         ids=["empty", "not-json", "not-object", "no-command"])
+                                 b'{"tool_name":"Bash","tool_input":{}}',
+                                 b"{}", b'{"tool_name":123}'],
+                         ids=["empty", "not-json", "not-object", "no-command",
+                              "no-tool-name", "non-string-tool-name"])
 def test_malformed_input_is_could_not_tell(monkeypatch, capsys, tmp_path, raw):
     _fixture(tmp_path, ARMED)
     decision, reason = run_main(monkeypatch, capsys, tmp_path, "Bash", "",
@@ -503,9 +623,10 @@ _SWITCH_SAMPLE = [("Bash", "env"), ("Bash", "printenv"), ("Bash", "set"),
                   ("Bash", "eval \"$X\"")]
 
 
-@pytest.mark.parametrize("cfg", [None, {"guards": {}}, {"guards": {"envGuard": "off"}},
-                                 {"guards": {"envGuard": None}}],
-                         ids=["no-config", "absent-key", "off", "null"])
+# An explicit `null` is not here: since the round-1 review it is malformed,
+# the floor (`test_malformed_value_blocks[explicit-null]`).
+@pytest.mark.parametrize("cfg", [None, {"guards": {}}, {"guards": {"envGuard": "off"}}],
+                         ids=["no-config", "absent-key", "off"])
 @pytest.mark.parametrize("tool,command", _SWITCH_SAMPLE)
 def test_off_and_absent_allow_everything_silently(monkeypatch, capsys, tmp_path,
                                                   cfg, tool, command):
@@ -523,7 +644,8 @@ def test_report_allows_and_logs(monkeypatch, capsys, tmp_path, tool, command):
                         for r in rows), rows
 
 
-@pytest.mark.parametrize("value", ["blok", 1, True, ["block"]])
+@pytest.mark.parametrize("value", ["blok", 1, True, ["block"], None],
+                         ids=["typo", "int", "bool", "list", "explicit-null"])
 def test_malformed_value_blocks(monkeypatch, capsys, tmp_path, value):
     _fixture(tmp_path, {"guards": {"envGuard": value}})
     assert run_main(monkeypatch, capsys, tmp_path, "Bash", "env")[0] == "deny"
@@ -688,6 +810,160 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
                                extra=_NO_PYTHON)
     assert code == (2 if armed else 0), out
     assert MARKER not in out
+
+
+# Review round 1: the crude readers judge every layer the way python would --
+# an unrelated `envGuard` key cannot hide the guard's, a value on the next line
+# is still read, and a file that exists but is not a JSON object is armed.
+_FALLBACK_LAYERS = [
+    ("decoy-off-before-block",
+     '{"metadata": {"envGuard": "off"}, "guards": {"envGuard": "block"}}', True),
+    ("value-on-next-line", '{"guards": {"envGuard":\n  "block"}}', True),
+    ("malformed-json", "{ this is not json", True),
+    ("not-an-object", '["envGuard", "off"]', True),
+    ("explicit-null", '{"guards": {"envGuard": null}}', True),
+    ("escaped-key", '{"guards": {"env\\u0047uard": "block"}}', True),
+    ("guards-not-object", '{"guards": "off"}', True),
+    ("empty-file", "", True),
+    ("case-variant-decoy",
+     '{"guards": {"EnvGuard": "off", "envGuard": "block"}}', True),
+    ("decoy-off-only", '{"metadata": {"envGuard": "off"}}', False),
+    ("malformed-object-without-the-key", '{"guards":{bad}}', True),
+    ("value-with-a-comma", '{"guards": {"envGuard": "off,block"}}', True),
+    ("nul-byte", '{"guards": {"envGuard": "off"}, "x": "a\x00b"}', True),
+    ("bare-word-value", '{"x": nope, "guards": {"envGuard": "off"}}', True),
+    ("trailing-comma", '{"guards": {"envGuard": "off"},}', True),
+    ("comment", '{"guards": {"envGuard": "off"} /* x */}', True),
+    ("url-is-not-a-comment",
+     '{"notify": {"url": "https://example.invalid/x"}, "guards": {"envGuard": "off"}}',
+     False),
+    ("guards-off", '{"guards": {"envGuard": "off"}}', False),
+    ("no-envGuard", '{"guards": {"forcePush": "block"}}', False),
+]
+
+
+def _raw_fixture(tmp_path, text):
+    repo = _fixture(tmp_path)
+    (repo / ".crew" / "config.json").write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_python_crude_reader_judges_the_layer(tmp_path, text, armed):
+    path = tmp_path / "config.json"
+    path.write_text(text, encoding="utf-8")
+    assert env_guard._layer_arms(str(path)) is armed  # pylint: disable=protected-access
+
+
+def test_python_crude_reader_a_layer_it_cannot_look_at_is_armed(tmp_path,
+                                                               monkeypatch):
+    """Review round 2: a refused `lstat` (an unsearchable parent) is not
+    proof the layer is absent; only FileNotFoundError is."""
+    def refused(path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+    monkeypatch.setattr(env_guard.os, "lstat", refused)
+    assert env_guard._layer_arms(str(tmp_path / "config.json")) is True  # pylint: disable=protected-access
+
+
+def test_python_crude_reader_an_absent_layer_is_not_armed(tmp_path):
+    assert env_guard._layer_arms(str(tmp_path / "nope" / "config.json")) is False  # pylint: disable=protected-access
+
+
+_IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+needs_mode_bits = pytest.mark.skipif(
+    _IS_ROOT or os.name == "nt",
+    reason="mode bits do not refuse root, and are not Windows ACLs: the "
+           "unsearchable-directory case cannot be built here")
+
+
+def _unsearchable_layer(tmp_path):
+    crew = _fixture(tmp_path) / ".crew"
+    (crew / "config.json").write_text(json.dumps(ARMED), encoding="utf-8")
+    crew.chmod(0)
+    return crew
+
+
+@needs_bash
+@needs_mode_bits
+def test_bash_wrapper_without_python_a_layer_it_cannot_look_at_is_armed(tmp_path):
+    crew = _unsearchable_layer(tmp_path)
+    try:
+        _, _, code, out = run_hook("bash", tmp_path, "Bash", "env",
+                                   extra=_NO_PYTHON)
+    finally:
+        crew.chmod(0o755)
+    assert code == 2, out
+
+
+@needs_pwsh
+@needs_mode_bits
+def test_pwsh_wrapper_without_python_a_layer_it_cannot_look_at_is_armed(tmp_path):
+    crew = _unsearchable_layer(tmp_path)
+    try:
+        _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                                   extra=_NO_PYTHON)
+    finally:
+        crew.chmod(0o755)
+    assert code == 2, out
+
+
+def test_python_crude_reader_a_directory_is_armed(tmp_path):
+    (tmp_path / "config.json").mkdir()
+    assert env_guard._layer_arms(str(tmp_path / "config.json")) is True  # pylint: disable=protected-access
+
+
+@needs_bash
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_bash_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
+    _raw_fixture(tmp_path, text)
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
+    assert code == (2 if armed else 0), out
+
+
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="builds a PATH of symlinks")
+def test_bash_wrapper_without_python_or_grep_is_armed(tmp_path):
+    """Security pass 2: with no grep the fallback's reads all fail, and a
+    failed read must not be the answer "off"."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    _fixture(tmp_path, ARMED)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("bash", "sh", "awk", "sed", "tr", "wc", "git", "dirname",
+                 "basename", "cat", "head", "tail", "uname", "readlink",
+                 "timeout", "sleep", "rm", "mktemp", "date"):
+        found = shutil.which(tool)
+        if found:
+            (bindir / tool).symlink_to(found)
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env",
+                               extra={"PATH": str(bindir)})
+    assert code == 2, out
+
+
+@needs_bash
+def test_bash_wrapper_without_python_a_directory_is_armed(tmp_path):
+    (_fixture(tmp_path) / ".crew" / "config.json").mkdir()
+    _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
+    assert code == 2, out
+
+
+@needs_pwsh
+def test_pwsh_wrapper_without_python_a_directory_is_armed(tmp_path):
+    (_fixture(tmp_path) / ".crew" / "config.json").mkdir()
+    _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                               extra=_NO_PYTHON)
+    assert code == 2, out
+
+
+@needs_pwsh
+@pytest.mark.parametrize("text, armed", [c[1:] for c in _FALLBACK_LAYERS],
+                         ids=[c[0] for c in _FALLBACK_LAYERS])
+def test_pwsh_wrapper_without_python_judges_the_layer(tmp_path, text, armed):
+    _raw_fixture(tmp_path, text)
+    _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
+                               extra=_NO_PYTHON)
+    assert code == (2 if armed else 0), out
 
 
 # --- 9: registration -----------------------------------------------------------------

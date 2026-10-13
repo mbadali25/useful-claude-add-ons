@@ -1701,8 +1701,9 @@ flavours call exactly that CLI — see "one resolver, two flavours" below.
 
 `off` *(default)* judges nothing; `report` writes the refusal it would make to
 `.crew/guard.log` (rule, mode, decision and a fixed label, never the command or
-a value) and refuses nothing; `block` refuses. A malformed value is `block`;
-the narrower layer wins. There are no per-rule keys behind it, and the
+a value) and refuses nothing; `block` refuses. A malformed value is `block`,
+and so is an explicit `null`: only an absent key is `off` (unlike `roleWrites`
+and `cloudGuard`, which still read `null` as absent). The narrower layer wins. There are no per-rule keys behind it, and the
 credential-name pattern is fixed in `env_guard.py`. What it refuses and why:
 README "Environment guard".
 

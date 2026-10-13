@@ -337,19 +337,21 @@ re-measured against the pre-1.0 checkout — there is no reason to, since the
 whole config module changed under the redesign — so "up from 103/60/43" is
 deliberately not claimed here.
 
-**Guards now come in four name-groups, not three, all still ranked through
-one ratchet table.** `plugin/crew/hooks/scripts/crew_guards.py`:
+**Guards now come in five name-groups, all still ranked through one ratchet
+table.** `plugin/crew/hooks/scripts/crew_guards.py`:
 
 | Group | Names | Vocabulary | Line |
 |---|---|---|---|
-| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:411`) | `:105-106` |
+| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow` (7) | `block`/`ask`/`allow`, `guard_policy_rank` (`:411`) | `:105-106` |
 | `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:440`) | `:127` |
 | `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:476`) | `:150` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:189` |
-| `ENV_GUARD_NAMES` | `envGuard` (1) — L-0772 | same vocabulary and functions as `roleWrites` (`guard_tiers` `:518`); switches `env_guard.py` | `:206` |
+| `ENV_GUARD_NAMES` | `envGuard` (1) — L-0772 | same vocabulary and functions as `roleWrites` (`guard_tiers` `:526`); switches `env_guard.py` | `:206` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`) is the
-concatenation of all four — **ten** guard names in total.
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:221-222`) is the
+concatenation of all five — **twelve** guard names in total (measured by import on
+L-0772-fix). An explicit `null` at `guards.envGuard` is the floor, not the default
+(`NULL_IS_MALFORMED`, `plugin/crew/hooks/scripts/crew_guards.py:214`).
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
 is: a switch, not a policy — turning it on is what makes the six
 `GUARD_NAMES` policies (which existed and ratcheted but governed nothing

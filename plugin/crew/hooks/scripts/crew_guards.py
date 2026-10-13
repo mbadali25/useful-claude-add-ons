@@ -205,6 +205,14 @@ CLOUD_GUARD_NAMES = ("cloudGuard",)
 # Absent means `off`; a malformed value means `block`, the floor.
 ENV_GUARD_NAMES = ("envGuard",)
 
+# The ratcheted keys at which an explicit JSON `null` is a malformed value,
+# the floor, rather than an absent key (L-0772 review): only a key that is not
+# there at all defaults to `off`. `crew_config.resolve_ratcheted` reads a
+# layer's raw value, so it can tell `null` from absent; `normalise_role_writes`
+# alone cannot, because both reach it as `None`. `roleWrites` and `cloudGuard`
+# predate this rule and still read `null` as absent.
+NULL_IS_MALFORMED = frozenset(f"guards.{_name}" for _name in ENV_GUARD_NAMES)
+
 # Every guard, in declaration order: the seven policy guards, the two
 # production ones, the role-write guard, the cloud guard's switch, then the
 # environment-dump guard's.
