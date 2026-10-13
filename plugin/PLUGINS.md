@@ -141,7 +141,7 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.31<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.32<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
@@ -504,7 +504,9 @@ Per phase, what it produces and what going wrong looks like:
   appended to — never regenerated), and the context/handoff settings. **Gated
   by a script:** `claude-md-audit.sh` compares the repo's `CLAUDE.md` against
   the template section by section, and the phase does not close while it still
-  reports a missing section or an unfilled placeholder. Wrong
+  reports a missing section or an unfilled placeholder. A placeholder is one of
+  the template's own blanks, read from the template on each run; a metavariable
+  in a command the repo documents (`git checkout -- <path>`) is not one. Wrong
   looks like a repo ending up crew-managed with no promotion discipline and
   no stop-and-ask list because missing `CLAUDE.md` sections were silently
   skipped, or `pm.authority` resolving to something other than what was just

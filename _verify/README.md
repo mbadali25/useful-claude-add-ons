@@ -13,7 +13,7 @@ copies drift.
 
 | Script | Covers | Budget | Run it when |
 |---|---|---|---|
-| `smoke.sh` | 10 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract | **14s** (cap 90s) | every change; this is the Stop-gate default |
+| `smoke.sh` | 12 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract and its placeholder count, the localgpu console script on the persistent PATH, every copy of a plugin's version agreeing, `claude plugin validate --strict` | **14s** (cap 90s) | every change; this is the Stop-gate default |
 | `run-all.sh` | everything in smoke **plus** the version-drift walk, the full install-script menu contract, and localgpu's 87 engine tests | ~6 min | before pushing; before a promotion |
 | `run-all.sh --with-hooks` | additionally forces crew's blocking-guard suite, which **hangs** here | +240s to hang | only when debugging that hang |
 | `cases/` | fixtures. Empty — every check builds its own throwaway state | — | — |
@@ -52,6 +52,7 @@ defect reintroduced, and whether the suite went red.
 | hook commands | single-quoted `${CLAUDE_PLUGIN_ROOT}` in a PowerShell hook | yes | 2026-09-05 |
 | powershell | appended `Invoke-TotallyMadeUpCmdlet` to the **untracked** `plugin/localgpu/bootstrap.ps1` | yes — **only after a fix**, see below | 2026-09-05 |
 | crew-setup round-trip | reverted `canon()`'s `commands*` wildcard | yes | 2026-09-05 |
+| crew-setup placeholder count (check 8b) | put the whole-file regex back in `claude-md-audit.sh` | yes — 27 of 50 checks red, in a container (the 51st, this repo's own CLAUDE.md, skips in the copy) | 2026-10-12 |
 | ruff (`**/*.py`) | added an unused `import xml.etree.ElementTree` (F401 — not in the ignore list) | yes | 2026-09-05 |
 | mcp-servers (`npm test`) | changed one assertion in `packages/core/test/jwt.test.ts` from `DeviceManagementManagedDevices.Read.All` to `SABOTAGE.Wrong.Role` | yes | 2026-09-05 |
 | versions (check 10) | set `pyproject.toml` back to `0.1.0` against `0.1.2` in both manifests | yes | 2026-09-05 |
