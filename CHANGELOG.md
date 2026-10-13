@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.31: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+### Fixed — crew 1.2.34: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
-- **Summary.** `crew` 1.2.31 lets the review harness rebuild a round's bundle after its reviewed head
+- **Summary.** `crew` 1.2.34 lets the review harness rebuild a round's bundle after its reviewed head
   has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
   `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
   itself, so `/crew:review` stops rather than reporting "nothing to review".
@@ -24,6 +24,228 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
   its fork point still gets HEAD.
 - **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
+### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
+
+- **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since
+  L-0527: `/crew:review` launches Kimi as a reviewer.
+- `plugin/crew/skills/crew-providers/SKILL.md` said "`/crew:review` does not launch Kimi yet" and
+  that the launch gate leaves Kimi ineligible; `review_run.LAUNCHED` has named `kimi` since L-0527,
+  so `crew_config.review_launchable()` makes it eligible in the `qa.order` walk (step 2e).
+  `kimi_probe.py`'s docstring made the same claim. Text only; no behaviour changes.
+
+### Fixed — crew 1.2.32: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
+
+- **Summary.** `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
+  unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **Defect.** The count was one regex over the whole file (any `<word>`, any `...`, `OWNER_`,
+  `YYYY-MM-DD`). On this repository's CLAUDE.md it reported 8 lines, all of them command metavariables
+  or code: `Docs: none - <why>`, `plugin-version:<name>`, `Tooling-seam: <path>`,
+  `/crew:onboard --refresh <subsystem>`, two `git diff --name-only <anchor>..HEAD` lines,
+  `open(...)` and `git checkout -- <path>`. Phase 1 is done on "no remaining placeholders", so it could
+  not close. The same regex missed three real blanks of the template: `<bash | powershell>` and its
+  two neighbours are not `<[a-z-]+>`.
+- **Now.** The blanks are read from `skills/crew-setup/repo-claude-template.md` on every run, so the
+  list cannot drift from the template. A blank is an angle-bracket token standing where a value goes:
+  outside a code span, or the whole content of one (or of a fenced line). A token that shares its code
+  span or fenced line with other text is a command's metavariable, in the template
+  (`/crew:promote <env>`) and in the audited file, and is not counted. An untouched template reports 10
+  lines (it was 8: one command line too many, three blanks too few).
+- **Could not tell.** With no `awk`, no readable template, or a template with no blanks, the audit
+  prints `Placeholder check NOT RUN: <which of the three>` instead of staying silent, which read as
+  zero. Every other line of the report and both exit codes are unchanged.
+- **Not counted, by design.** A blank that was edited but not replaced (`<linux | windows>`) is no
+  longer the template's text. A template blank quoted in prose outside a code span (`the <path>
+  element`) is counted. An indented code block is read as ordinary text.
+- **Tests.** `skills/crew-setup/scripts/_test/placeholders.sh`: 51 checks, each fixture under the
+  suite's own `mktemp` directory, run by `_verify/smoke.sh` (check 8b, so by CI), `_verify/run-all.sh`
+  and a new `.crew/verify.json` rule for the audit script and the template. Sabotage, in a copy where
+  50 of them run: with the old script put back, 27 go red; six single-rule mutations of the new awk
+  each turn at least one red. Run in containers under bash 5.2 and bash 3.2, with mawk, gawk, BusyBox
+  awk and the BSD `original-awk`, LF and CRLF fixtures. Not run on Windows Git Bash or macOS.
+
+### Added — crew 1.2.31: explorer, researcher and security can run on Kimi K3 (L-0777)
+
+- **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
+  "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
+  and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **Why a dispatcher.** Claude Code's subagent `model` field accepts Claude models only, and
+  `ANTHROPIC_BASE_URL` moves a whole session. So each agent's first step is one Bash call to the new
+  `hooks/scripts/crew_kimi_agent.py`, and it relays the answer. Line 1 is the contract: `KIMI OK` (exit
+  0), `KIMI UNAVAILABLE: <state>` (exit 3, the agent does the task on Claude and says so), or `KIMI
+  CHANGED THE TREE` / `KIMI TREE UNKNOWN` (exit 8, the agent stops).
+- **Read-only.** `/crew:review` step 2e's controls, reused: a per-role Kimi agent file with no Bash, Write
+  or Edit, an empty skills directory, the probe first, and the working tree fingerprinted before the
+  probe, after it and after the run. A write outside the repository is not seen.
+- **Security is family-guarded.** `crew_state.REVIEWING_DEV_ROLES` puts `dev.roles.security` under
+  `resolve_role`'s family guard: a pin in the author's family is BARRED, as a `qa` pin is, and
+  `/crew:model` shows it. With a Kimi developer, `security` on Kimi is the same family as the author, so
+  cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
+- **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
+  instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+- **Review round 1 (Codex).** The dispatchers make up a fresh heredoc delimiter per call, so a line of
+  the task cannot end it and run as a command; a line starting `crew-kimi-agent:` (exit 2, e.g. an
+  unreadable config layer, now refused rather than read as defaults) stops them instead of falling back;
+  security passes only the author families its caller names, and a dispatch record of unknown family is
+  `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
+  a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
+- **Review round 2 (Codex), under a successor plan (owner 3-round cap).** The security dispatcher hands
+  Kimi the change with `--diff-base '<base>'`, the same committed, staged, unstaged and untracked bundle
+  `/crew:review` builds, and quotes every value; `--authors` names are normalised (`Kimi` is `kimi`) and a
+  non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
+  group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
+  wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
+- **Review round 3 (Codex), round 4 granted by the owner past the 3-round cap.** A `--diff-base` outside a
+  strict ref charset (letters, digits, `/ . _ -`) is refused by the dispatcher before the shell and by the
+  script before git; a failed probe settles and re-checks the tree before the fallback; `--authors` takes
+  only `claude`, `gpt`, `kimi` and `gemini`; an unsearchable config parent and an `OSError` building the
+  bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
+  `KIMI OK`.
+
+### Changed — ai-connect 0.2.0: every session on a machine is online at once
+
+- **Summary.** Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under
+  its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the
+  machine's name and every other one sat on standby with no working tools.
+- **Addressing.** `laptop:repo` reaches that session. `laptop` alone reaches every online session of that
+  machine, and waits for the first to join when none is online. Two sessions in one project: the second
+  appends its process id.
+- **No extra enrolment.** Auth stays per machine: no per-session token, no change to `auth.peers`, no Bridge
+  restart per session. A machine's token registers and watches names under its own name only, compared with
+  the separator and by the longest enrolled name; the legacy shared token can no longer take a name under an
+  enrolled one.
+- **Updating.** Update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session
+  per machine. A 0.2.0 session against a 0.1.8 Bridge falls back to the machine's name and says so in
+  `peer_read`.
+- **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
+  must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
+  names, both mixed-version pairings, two sessions replaying the machine's backlog at once, and a replay whose
+  connection breaks. Thirteen mutations of the guard, the fan-out, the replay lock and the fallback each turn
+  the suites red. Not run against a live Bridge.
+
+### Changed — ai-connect 0.1.16: test line lengths for pylint
+
+- 0.1.16: test line lengths for pylint
+
+### Added — ai-connect 0.1.15: one peer name per project, opt-in
+
+- **Summary.** With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as
+  `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one
+  machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
+- **Fallback.** Without an owner-only token for that name (a regular file of this user, mode 600), or when
+  `session-tokens/<name>.dir` records another directory, the session joins as `client.name` with
+  `client.token` and says why in one stderr line. `AI_CONNECT_PEER_NAME` still wins.
+- **`.dir` format.** UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, at most
+  one trailing newline.
+- **Watcher.** It sends the token of the name the session's client recorded, not one it works out itself.
+- **Setup.** `setup session --project DIR [--project DIR ...]` writes each token and `.dir`, and on the Bridge
+  machine enrols every hash with one restart. `Bridge` and `User:...` are refused as session names.
+
+### Added — ai-connect 0.1.12: setup in one run per machine, and a firewall rule that is checked
+
+- **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
+  installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now
+  says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real
+  firewall: the suite drives fakes).
+- **Setup.** `setup bridge [--peer NAME] [--enrol NAME=SHA256]`, `setup peer --name N --bridge IP
+  [--token-file F]` and `setup session --name N` are a thin layer over `deploy bridge`, `peer`, `join` and
+  `add-peer`, which still make every change. `--register-mcp` is off by default and registers at user scope.
+  `setup` never runs `tailnet-setup`; it says when that step looks outstanding.
+- **Firewall.** `ufw allow` succeeds on an inactive ufw and `ufw status` then lists no rule, so `deploy bridge`
+  called the rule done while it filtered nothing, and added it again on every run. It now asks whether ufw,
+  firewalld or the Windows Firewall's Private profile is on, answers on, off or could not tell, and never turns
+  a firewall on.
+- **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
+  `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
+  token, and the client sends it for that name.
+- **Order.** Versioned after PR #610 (0.1.11), which merged first.
+
+### Fixed — ai-connect 0.1.11: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+
+- **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`
+  on a server that only the plugin's installer registers, and that hook type has no quiet mode. The
+  watcher (`hooks/watch.sh`, `hooks/watch.ps1`) also exited 1 with "no venv" at every session start
+  and turn end.
+- **Fix.** The state hooks left `hooks.json`. Whatever registers the MCP server now writes them into
+  Claude Code's settings next to that registration and removes them with it
+  (`plugin/ai-connect/state_hooks.py`): `installer.py claude` / `unregister` in the user's
+  `settings.json` (`CLAUDE_CONFIG_DIR` honoured), `deploy peer` / `deploy join` with both
+  `--install-hooks` and `--register-mcp` in the settings of the scope the server is in. The write is
+  idempotent, keeps every other hook and key, removes only an exact match on its own entries, goes
+  through a temp file and a rename, and refuses a settings file that is not valid JSON without
+  touching it. The watcher exits 0 silently when there is neither a venv nor
+  `~/.config/ai-connect/config.yaml`, and still exits 1 naming the installer when the config exists
+  and the venv does not (a plugin update without the installer).
+- **Behaviour change.** A machine set up on 0.1.8 or earlier has the server registered but, after
+  this update, no state hooks until the installer (or the same `deploy` command) is run again.
+  Messages and tools keep working meanwhile. With the venv lost, the state hooks in the settings
+  still fail as before, alongside the watcher's message.
+- **Verified.** The three states for every command line in `hooks.json`, both flavours, on Linux;
+  the `.ps1` under PowerShell 7 on Linux with `OS=Windows_NT` forced, which runs its branches and is
+  not a run on Windows. Not run on Windows or under Windows PowerShell 5.1. Whether Claude Code
+  accepts an `mcp_tool` hook from `settings.json` as it does from a plugin was read from its
+  documentation, not observed in a live session.
+- **Not fixed here.** On a machine set up with `deploy` and `--install-hooks`, the watcher looks for
+  a venv in the plugin directory, finds none (deploy's is in `~/.local/share/ai-connect`) and exits
+  1, as in 0.1.8.
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
 
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 

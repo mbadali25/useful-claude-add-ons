@@ -2666,8 +2666,12 @@ def model_report(root, which=None, stale=False):
         every = list(names) + [r for r in pinned if r not in names]
         out = []
         for role in every:
-            row = crew_state.resolve_role(cfg, kind, role,
-                                          author=author_for_guard)
+            # A `dev` role that reviews (`security`, L-0777) is judged
+            # against the author families like a `qa` one, so this report
+            # shows the bar `crew_kimi_agent.py` will apply.
+            guard = (authors if kind == "dev" and role in crew_state.REVIEWING_DEV_ROLES
+                     else author_for_guard)
+            row = crew_state.resolve_role(cfg, kind, role, author=guard)
             row["display"] = (crew_state.display_model(row["model"])
                               or ("n/a (subagent)" if row["provider"] == "claude"
                                   else "(cli default)"))

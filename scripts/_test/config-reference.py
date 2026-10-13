@@ -91,6 +91,23 @@ def _one_byte(tmp):
     edit(tmp, REFERENCE, "## Coming (not in code yet)", "## Coming (not in code yet).")
 
 
+def _crlf(tmp):
+    """Both outputs as a `core.autocrlf=true` checkout holds them: the same text,
+    every line ending CRLF. The committed blobs are LF, so this is a checkout
+    artefact and never a stale reference."""
+    for rel in (REFERENCE, CONFIG_MD):
+        path = os.path.join(tmp, rel)
+        with open(path, encoding="utf-8", newline="") as fh:
+            text = fh.read().replace("\r\n", "\n").replace("\n", "\r\n")
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+
+def _crlf_one_byte(tmp):
+    _crlf(tmp)
+    _one_byte(tmp)
+
+
 def _default_changed(tmp):
     edit(tmp, os.path.join(SCRIPTS, "crew_state.py"), '"quietLines": 8,', '"quietLines": 9,')
 
@@ -112,6 +129,8 @@ def _import_raises(tmp):
 # (name, sabotage, expected exit, text the generator must print, text the gate must print)
 MUST_BLOCK = [
     ("reference edited by one byte", _one_byte, 1,
+     "stale: docs/guides/crew/src/configuration-reference.md", "configuration-reference.md"),
+    ("a CRLF checkout of the reference edited by one byte", _crlf_one_byte, 1,
      "stale: docs/guides/crew/src/configuration-reference.md", "configuration-reference.md"),
     ("a default changed in crew_state.py", _default_changed, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
@@ -151,6 +170,7 @@ def run():
                                 f"gate {gate!r}")
 
     for name, change in (("an unchanged copy", _unchanged),
+                         ("an unchanged copy checked out with CRLF line endings", _crlf),
                          ("an edit to CONFIG.md prose outside the block", _prose_edit)):
         with tempfile.TemporaryDirectory() as tmp:
             build(tmp)
