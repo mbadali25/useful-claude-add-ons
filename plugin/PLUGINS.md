@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.2.0<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.2.1<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
@@ -26,11 +26,11 @@ This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-
 
 | Hook | Event | What it does |
 |---|---|---|
-| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
+| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the venv this machine was set up with (see "Where the venv lives" below), which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
 
 The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1.
 
-**Until the installer has run, the plugin is silent.** With no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there), it exits 1 with a stderr line naming the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+**Until the installer has run, the plugin is silent.** With no venv in any of the places below and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there, and deploy made no venv either), it exits 1 with a stderr line naming the places it looked and the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
 
 **The installer writes four more hooks into your settings, outside this plugin.** `installer.py claude` (run by `install.sh` / `install.cmd`) registers the MCP server and, next to it, these `mcp_tool` hooks in `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set); `deploy peer` / `deploy join` write them only with both `--install-hooks` and `--register-mcp`, into the user's settings for `--scope user` and the project's `.claude/settings.local.json` for `--scope project`. They are not in `hooks/hooks.json` because an `mcp_tool` hook has no quiet mode: where its server is not registered it is an error on every event, which is what 0.1.8 did on a machine that had only installed the plugin.
 
@@ -44,9 +44,17 @@ Writing them is idempotent, keeps every other hook and key in the file, refuses 
 
 **Never run a woken session in bypass or auto-approve mode.** A peer message resumes the session's turn; with confirmations off, whatever the message asks would run. The untrusted framing and the bundled behaviour rules (`integrations/claude-code/CLAUDE.md`, which you `@`-import into your own `CLAUDE.md`) tell the model to show peer requests to you and confirm before acting — that is a prompt, not an enforcement mechanism.
 
-### The venv lives in the plugin directory
+### Where the venv lives
 
-The installer creates `venv/` next to `installer.py`, and the hooks look for it there. The plugin cache directory changes with every version, so **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path.
+The watcher hooks use the first venv that is there, in this order (`watch.sh` and `watch.ps1` alike):
+
+1. `AI_CONNECT_VENV`, when it is set and holds a venv.
+2. `venv/` in the plugin directory, next to `installer.py`, where `install.sh` / `install.cmd` create it.
+3. Deploy's venv, outside the plugin directory, where `deploy/deploy.sh` / `deploy/setup.sh` and their `.ps1` twins create it: `~/.local/share/ai-connect/venv` on Linux and macOS, `%USERPROFILE%\AppData\Local\ai-connect\venv` on Windows, or `$AI_CONNECT_HOME/venv` when that variable is set. With this venv the watcher script is run from deploy's copy of the plugin beside it (`.../ai-connect/app`) when there is one, and from the plugin directory otherwise (`deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy).
+
+Up to 0.2.0 only the second place was looked at, so on a machine set up with deploy the watcher exited 1 on every event and no session was woken by a message.
+
+The plugin cache directory changes with every version, so with `install.sh`'s layout, **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path. Deploy's venv is outside that directory and survives an update.
 
 ### Testing
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.1] - 2026-10-13
+
+### Fixed
+- The watcher hooks (`hooks/watch.sh`, `hooks/watch.ps1`) looked for a venv only in the plugin directory, where `install.sh` / `install.cmd` create it. `deploy/deploy.sh bridge|peer` and `deploy/setup.sh` (and their `.ps1` twins) install outside it (`deploy_core.py`'s `APP_HOME`), so on a machine they set up the watcher exited 1 at every SessionStart and Stop with `no venv at <plugin directory>/venv`, and no session was ever woken by a message. Seen on a Linux Bridge machine
+- Both wrappers now use the first venv that is there: `AI_CONNECT_VENV` (the variable `deploy_core.py` reads); the plugin directory's own `venv/`, as before; then deploy's, `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows `%USERPROFILE%\AppData\Local\ai-connect\venv` (`Path.home()` joined with `AppData\Local`, as `deploy_core.py` spells it, not `%LOCALAPPDATA%`). With deploy's venv the watcher script is run from deploy's copy of the plugin (`.../ai-connect/app`) when that holds it, and from the plugin directory otherwise: `deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy
+- An `AI_CONNECT_VENV` that holds no venv is passed over, not an error by itself
+
+### Changed
+- With a config and no venv in any of the places, the error names each place looked at and both ways to get one (`install.sh --client`, or `deploy/deploy.sh peer`; `install.cmd -Client` / `deploy\deploy.ps1 peer` on Windows). With no config and no venv the hooks stay silent (0.1.11), whatever the two variables say
+
+### Tests
+- `tests/test_client_hooks.py`: one case per place and per order, for both events and both flavours: deploy's venv with and without the copy, `AI_CONNECT_HOME`, the plugin's own venv before deploy's, `AI_CONNECT_VENV` first, an `AI_CONNECT_VENV` without a venv, the error naming all three, and silence with both variables set on a machine never set up. One case asks `deploy_core.py`, on the deploy suite's fake machine (`tests/deploy_box.py`), where it installs for that HOME and puts the stub venv exactly there; the Windows spelling is held by a text tripwire on `deploy_core.py` instead. With the 0.2.0 wrapper put back (unchanged since 0.1.9), 15 cases fail per flavour
+
+### Known limitations
+- Not run on Windows. `watch.ps1` was run with PowerShell 7 on Linux with `OS=Windows_NT` forced, against a stub `python.exe`: its branches, not Windows, and not Windows PowerShell 5.1
+
 ## [0.2.0] - 2026-10-12
 
 Every session on an enrolled machine is online at once. In 0.1.8 all sessions of a machine registered under its one
