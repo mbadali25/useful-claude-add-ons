@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **ai-connect 0.2.1**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
-- **crew 1.2.31**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
