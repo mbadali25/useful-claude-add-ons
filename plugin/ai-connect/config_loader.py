@@ -284,8 +284,11 @@ def session_token(name: str | None, configured: str = "", directory: Path | None
 
 
 def _fall_back(why: str, configured: str) -> None:
-    """The one line per-project mode says when it joins as client.name: stderr, as stdout is the MCP protocol."""
-    print(f"ai-connect: client.name_mode per-project: {why}; joining as client.name "
+    """The one line per-project mode says when it joins under client.name: stderr, as stdout is the MCP protocol.
+
+    Under, not as: since 0.2.0 the session is then "<client.name>:<project>" (peer_name.py).
+    """
+    print(f"ai-connect: client.name_mode per-project: {why}; joining under client.name "
           f"'{configured}' with client.token", file=sys.stderr, flush=True)
 
 

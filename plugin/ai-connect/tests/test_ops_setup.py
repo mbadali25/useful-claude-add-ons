@@ -21,6 +21,7 @@ from deploy_box import (BASH, DEPLOY_DIR, NATIVE, PLUGIN, PWSH, SUBNET, Box, Own
 SETUP = DEPLOY_DIR / "peer_setup.py"
 OAUTH_SECRET = "tskey-client-kSETUP123-OAuthSecretThatMustNotLeak0123"
 sys.path.insert(0, str(DEPLOY_DIR))
+from peer_name import session_label  # noqa: E402  pylint: disable=wrong-import-position
 import firewall_state  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 
@@ -564,13 +565,14 @@ def project(box, name: str):
     return path.resolve()
 
 
-def assert_fell_back(ran: Ran, why: str) -> None:
-    """Joined as client.name with client.token, said so in exactly one stderr line, and nothing on stdout."""
-    assert (ran.name, ran.sha) == ("desk", sha(CLIENT_TOKEN)), ran.res.stderr
+def assert_fell_back(ran: Ran, why: str, name: str = "desk:api") -> None:
+    """Joined under client.name with client.token (0.2.0: as "<client.name>:<project>"), said so in exactly
+    one stderr line, and nothing on stdout."""
+    assert (ran.name, ran.sha) == (name, sha(CLIENT_TOKEN)), ran.res.stderr
     assert ran.res.stdout == "", ran.res.stdout
     assert len(ran.stderr_lines) == 1 and ran.stderr_lines[0].startswith(FALLBACK), ran.res.stderr
     assert why in ran.stderr_lines[0], ran.res.stderr
-    assert "joining as client.name 'desk' with client.token" in ran.stderr_lines[0]
+    assert "joining under client.name 'desk' with client.token" in ran.stderr_lines[0]
 
 
 def test_per_project_name_is_sanitised_to_a_peer_name(tmp_path):
@@ -617,12 +619,13 @@ def test_peer_name_env_wins_over_per_project(laptop):
     assert (ran.name, ran.sha) == ("other", sha("e3" * 32)) and ran.res.stdout == "" and ran.res.stderr == ""
 
 
-def test_default_mode_is_unchanged(laptop):
+def test_default_mode_ignores_a_per_project_token(laptop):
+    """Without name_mode the session is "<client.name>:<project>" on client.token (0.2.0), token file or not."""
     api = project(laptop, "api")
     per_project_config(laptop, name_mode=None)
     session_file(laptop, "desk-api", "a1" * 32, project=api)
     ran = client(laptop, api)
-    assert (ran.name, ran.sha) == ("desk", sha(CLIENT_TOKEN)) and ran.res.stderr == "" and ran.res.stdout == ""
+    assert (ran.name, ran.sha) == ("desk:api", sha(CLIENT_TOKEN)) and ran.res.stderr == "" and ran.res.stdout == ""
     per_project_config(laptop, name_mode="per_project")   # a typo stops the client instead of a silent default
     res = subprocess.run([sys.executable, "-c", RUN_CLIENT, str(PLUGIN), str(laptop.tmp / "x.json"), "1"],
                          cwd=str(api), capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
@@ -692,7 +695,9 @@ def test_basename_collision_falls_back(laptop):
 
 def test_no_usable_name_falls_back(laptop):
     per_project_config(laptop)
-    assert_fell_back(client(laptop, project(laptop, "...")), "gives no usable peer name")
+    # Not "...": Windows drops it from a path, so the project was the parent folder there
+    odd = project(laptop, "___")
+    assert_fell_back(client(laptop, odd), "gives no usable peer name", name=f"desk:{session_label({}, odd)}")
     per_project_config(laptop, name="")
     ran = client(laptop, project(laptop, "api"))
     assert ran.sha == sha(CLIENT_TOKEN) and len(ran.stderr_lines) == 1 and "it needs client.name" in ran.res.stderr
