@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.33**: The docs no longer say `/crew:review` cannot launch Kimi. The crew-providers skill and `kimi_probe.py` now say what has been true since L-0527: `/crew:review` launches Kimi as a reviewer.
 - **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
-- **crew 1.2.31**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
