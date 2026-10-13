@@ -1519,6 +1519,19 @@ hook that can block defaults off. Set it to `report` first: every decision it
 *would* make goes to `.crew/guard.log` and nothing is refused. `block` enforces.
 A repo cannot turn off a machine-global `block`.
 
+**What a row holds.** Each row is time, rule, policy, decision, target and the
+command, and since 1.2.34 the command is never written as typed: it is
+`sha256:<12 hex>` of a redacted form, then that form cut to 200 characters
+(`hooks/scripts/guard_log_redact.py`). Values after `-p`, `-P`, `-pw`,
+`--password`/`--token`/`--api-key`-style flags, `-u user:pass`, the password in
+`scheme://user:pass@`, `Authorization:`/`Bearer`/`Cookie`/`X-*-Key` headers,
+`NAME=value` where the name contains `SECRET`, `TOKEN`, `PASS`, `PWD`, `AUTH`,
+`CREDENTIAL`, `API_KEY`, `ACCESS_KEY` or `PRIVATE_KEY`, and well-known token shapes (`ghp_`, `AKIA`, `xox*-`, JWTs)
+become `***`; the target field gets the same redaction. It is a denylist, so a
+secret in a shape it does not name still reaches the log. Rows written by 1.2.33
+and earlier hold the command as typed: if the guard was on, review and delete
+old `.crew/guard.log` files and rotate anything found in them.
+
 When on, it reads each command into the simple commands it actually runs —
 through `&&`, `;`, `|`, `sudo`, `env X=Y`, `bash -c`, `pwsh -Command`, `$( )`,
 heredocs and PowerShell script blocks — and judges only those. A word inside an

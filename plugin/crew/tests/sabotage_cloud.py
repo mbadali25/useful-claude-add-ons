@@ -1749,3 +1749,43 @@ CLOUD_GUARD_MUTATIONS += (
      '_WORKFLOW_UNSEEN\n',
      _ED + "test_r6_a_printable_workflow_name_still_reads"),
 )
+
+# crew 1.2.34: `.crew/guard.log` no longer holds the command line raw
+# (`guard_log_redact.py`). Each entry was applied by hand on 2026-10-13, its
+# aimed test run, the file restored and compared by sha256: all red. The
+# first one is the defect itself -- the writer handed the row unredacted.
+REDACT = os.path.join(SCRIPTS, "guard_log_redact.py")
+_R = "tests/test_cloud_guard_log_redact.py::"
+_RD = _R + "test_a_refused_command_leaves_no_secret_in_the_log"
+_RA = _R + "test_an_allowed_command_with_a_finding_leaves_no_secret_in_the_log"
+GUARD_LOG_MUTATIONS = (
+    ("guard.log: the row written raw, the command included", REDACT,
+     '"\\r", " ").replace("\\n", " ") for f in log_row(row)]',
+     '"\\r", " ").replace("\\n", " ") for f in row]', _RD + "[mysql-attached-p]"),
+    ("guard.log: the target field no longer redacted", REDACT,
+     "        row[4] = log_text(row[4])\n", "        row[4] = row[4]\n",
+     _R + "test_log_redacts_target_and_command_at_the_writer"),
+    ("guard.log: the hash taken of the raw line (a guessing oracle)", REDACT,
+     'sha = hashlib.sha256(flat.encode("utf-8", "replace"))',
+     'sha = hashlib.sha256(text.encode("utf-8", "replace"))',
+     _R + "test_log_text_hashes_the_redacted_text_and_caps_it"),
+    ("guard.log: mysql -p<pw> no longer masked", REDACT,
+     '(re.compile(_AT_WORD + r"(-p)(?!w\\s)(?=\\S)" + _VALUE), r"\\1" + MASK),',
+     '(re.compile(r"(?!x)x"), ""),', _RA + "[mysql-attached-p]"),
+    ("guard.log: Authorization header no longer masked", REDACT,
+     '                r"digest|token|negotiate)\\s+)?)[^\\s\'\\"]+", re.I),',
+     '                r"digest|token|negotiate)\\s+)?)(?!)", re.I),',
+     _RD + "[authorization-basic]"),
+    ("guard.log: NAME=value secrets no longer masked", REDACT,
+     '+ r"[A-Za-z0-9_]*\\s*=\\s*)" + _VALUE, re.I), r"\\1" + MASK),',
+     '+ r"[A-Za-z0-9_]*\\s*=\\s*)(?!)" + _VALUE, re.I), r"\\1" + MASK),',
+     _RD + "[aws-secret-env]"),
+    ("guard.log: user:password@ in a URL no longer masked", REDACT,
+     '    (re.compile(r"(\\b[a-z][a-z0-9+.-]*://',
+     '    (re.compile(r"(?!)(\\b[a-z][a-z0-9+.-]*://', _RD + "[url-userinfo]"),
+    ("guard.log: curl -u user:pass no longer masked", REDACT,
+     'r"[^\\s:\'\\"]*:)[^\\s\'\\"]+", re.I), r"\\1" + MASK),',
+     'r"[^\\s:\'\\"]*:)(?!)", re.I), r"\\1" + MASK),',
+     _RD + "[curl-user-colon-pass]"),
+)
+CLOUD_GUARD_MUTATIONS += GUARD_LOG_MUTATIONS

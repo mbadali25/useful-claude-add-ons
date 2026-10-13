@@ -50,7 +50,11 @@ tools. **It ships off.** Turn it on per machine or per repo:
 same as a message, and refuses nothing — it answers with **no** permission
 decision, so your normal prompts run exactly as they would without it (it never
 answers `allow`). Run it for a few days first. `block` enforces. A repo can
-never turn off a machine-global `block` (the `guards` ratchet).
+never turn off a machine-global `block` (the `guards` ratchet). Since 1.2.34 a
+row never holds the command as typed: inline passwords, tokens, auth headers
+and `user:pass@` are masked, the text is capped and led by a short sha256
+(`hooks/scripts/guard_log_redact.py`; README, "What a row holds"). Rows from
+1.2.33 and earlier may hold credentials in clear.
 
 What each recognised command gets is the existing per-rule key, `block` by
 default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,

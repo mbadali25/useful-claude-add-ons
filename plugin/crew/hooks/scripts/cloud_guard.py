@@ -130,6 +130,7 @@ import time
 import crew_common
 import crew_config
 import crew_state
+import guard_log_redact
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
@@ -3210,19 +3211,9 @@ def resolve_mode(root):
     return mode, ""
 
 
-def _log(root, row):
-    """One row to `.crew/guard.log`. Never raises, never creates `.crew/` --
-    `crew_config._log_guard`'s two rules, for its two reasons."""
-    try:
-        path = os.path.join(root, crew_state.GUARD_LOG_PATH)
-        if not os.path.isdir(os.path.dirname(path)):
-            return
-        flat = ["-" if not f else str(f).replace("\t", " ").replace(
-            "\r", " ").replace("\n", " ") for f in row]
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write("\t".join(flat) + "\n")
-    except OSError:
-        pass
+# The one `.crew/guard.log` writer. Since 1.2.34 it lives beside the
+# redaction it applies, so no row can carry the command line raw.
+_log = guard_log_redact.append_row
 
 
 def _emit(decision, reason, message=""):
