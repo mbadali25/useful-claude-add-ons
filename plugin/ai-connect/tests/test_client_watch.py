@@ -50,8 +50,12 @@ def test_wake_notice_keeps_sender_inside_the_block():
 
 
 def test_hooks_do_not_broadcast_permission_prompt_text():
+    """Neither the plugin's own hooks nor the state hooks an installer writes into the settings
+    (state_hooks.py; hooks.json ships none, see test_client_hooks.py)."""
     hooks = json.loads(HOOKS.read_text(encoding="utf-8"))
-    for entries in hooks["hooks"].values():
+    sys.path.insert(0, str(ROOT))
+    import state_hooks  # pylint: disable=import-outside-toplevel
+    for entries in (*hooks["hooks"].values(), *([group] for group in state_hooks.STATE_HOOKS.values())):
         for entry in entries:
             for hook in entry["hooks"]:
                 assert "${message}" not in json.dumps(hook)

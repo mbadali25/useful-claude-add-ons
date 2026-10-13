@@ -47,6 +47,181 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
   `KIMI OK`.
 
+### Changed — ai-connect 0.1.16: test line lengths for pylint
+
+- 0.1.16: test line lengths for pylint
+
+### Added — ai-connect 0.1.15: one peer name per project, opt-in
+
+- **Summary.** With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as
+  `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one
+  machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
+- **Fallback.** Without an owner-only token for that name (a regular file of this user, mode 600), or when
+  `session-tokens/<name>.dir` records another directory, the session joins as `client.name` with
+  `client.token` and says why in one stderr line. `AI_CONNECT_PEER_NAME` still wins.
+- **`.dir` format.** UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, at most
+  one trailing newline.
+- **Watcher.** It sends the token of the name the session's client recorded, not one it works out itself.
+- **Setup.** `setup session --project DIR [--project DIR ...]` writes each token and `.dir`, and on the Bridge
+  machine enrols every hash with one restart. `Bridge` and `User:...` are refused as session names.
+
+### Added — ai-connect 0.1.12: setup in one run per machine, and a firewall rule that is checked
+
+- **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
+  installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now
+  says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real
+  firewall: the suite drives fakes).
+- **Setup.** `setup bridge [--peer NAME] [--enrol NAME=SHA256]`, `setup peer --name N --bridge IP
+  [--token-file F]` and `setup session --name N` are a thin layer over `deploy bridge`, `peer`, `join` and
+  `add-peer`, which still make every change. `--register-mcp` is off by default and registers at user scope.
+  `setup` never runs `tailnet-setup`; it says when that step looks outstanding.
+- **Firewall.** `ufw allow` succeeds on an inactive ufw and `ufw status` then lists no rule, so `deploy bridge`
+  called the rule done while it filtered nothing, and added it again on every run. It now asks whether ufw,
+  firewalld or the Windows Firewall's Private profile is on, answers on, off or could not tell, and never turns
+  a firewall on.
+- **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
+  `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
+  token, and the client sends it for that name.
+- **Order.** Versioned after PR #610 (0.1.11), which merged first.
+
+### Fixed — ai-connect 0.1.11: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+
+- **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`
+  on a server that only the plugin's installer registers, and that hook type has no quiet mode. The
+  watcher (`hooks/watch.sh`, `hooks/watch.ps1`) also exited 1 with "no venv" at every session start
+  and turn end.
+- **Fix.** The state hooks left `hooks.json`. Whatever registers the MCP server now writes them into
+  Claude Code's settings next to that registration and removes them with it
+  (`plugin/ai-connect/state_hooks.py`): `installer.py claude` / `unregister` in the user's
+  `settings.json` (`CLAUDE_CONFIG_DIR` honoured), `deploy peer` / `deploy join` with both
+  `--install-hooks` and `--register-mcp` in the settings of the scope the server is in. The write is
+  idempotent, keeps every other hook and key, removes only an exact match on its own entries, goes
+  through a temp file and a rename, and refuses a settings file that is not valid JSON without
+  touching it. The watcher exits 0 silently when there is neither a venv nor
+  `~/.config/ai-connect/config.yaml`, and still exits 1 naming the installer when the config exists
+  and the venv does not (a plugin update without the installer).
+- **Behaviour change.** A machine set up on 0.1.8 or earlier has the server registered but, after
+  this update, no state hooks until the installer (or the same `deploy` command) is run again.
+  Messages and tools keep working meanwhile. With the venv lost, the state hooks in the settings
+  still fail as before, alongside the watcher's message.
+- **Verified.** The three states for every command line in `hooks.json`, both flavours, on Linux;
+  the `.ps1` under PowerShell 7 on Linux with `OS=Windows_NT` forced, which runs its branches and is
+  not a run on Windows. Not run on Windows or under Windows PowerShell 5.1. Whether Claude Code
+  accepts an `mcp_tool` hook from `settings.json` as it does from a plugin was read from its
+  documentation, not observed in a live session.
+- **Not fixed here.** On a machine set up with `deploy` and `--install-hooks`, the watcher looks for
+  a venv in the plugin directory, finds none (deploy's is in `~/.local/share/ai-connect`) and exits
+  1, as in 0.1.8.
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
+
+### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
+
+- **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
+  `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
+  and `deploy remove` show and take machines off.
+- **Onboarding.** An invite is a single-use, non-ephemeral `tag:ai-peer` key in one code; `join` installs and
+  joins Tailscale, makes the machine's own token and config, and prints only the token's hash. `approve` lets it
+  in and turns its node key expiry off. Guide: `plugin/ai-connect/deploy/ONBOARDING.md`.
+- **Safer peers.** A peer gets no plugin hooks and no MCP server unless asked, `--dry-run` runs no tool, the
+  install falls back to Tailscale's script only for a release its repository lacks, and what keeps running
+  lives outside the checkout (`~/.local/share/ai-connect`).
+- **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
+  prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
+  (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
+- **Tailnet.** `tailnet-setup` validates and diffs the policy, and with `--apply` backs it up, replaces it, tags
+  the Bridge and creates the OAuth client, stored in the OS credential store. `--yes` and `--json` make it
+  usable without a terminal.
+- **Enrolment.** A peer makes its own token and prints only its SHA-256; `deploy add-peer` lets it in by that
+  hash, so no long-lived secret crosses machines.
+- **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
+- **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
+  matches `README.md` again, and CI now runs the plugin's suites.
+- **Secrets.** `~/.config/ai-connect` is the deploying user's alone whichever step makes it (0700; on Windows
+  an ACL without inherited entries or broad groups). `deploy invite` warns that an invite is password-equivalent,
+  single use, and good until its expiry; `deploy join` deletes a used invite file.
+- **Tests.** No test may open a socket that leaves the machine: a guard refuses it, in the test and in every
+  Python it starts, and fails the test. It caught one real DNS query.
+- **Live test.** On one real tailnet: an Ubuntu laptop joined as a permanent node and passed `deploy test` 5 of 5
+  with its AWS VPN routes unchanged; a Windows 11 machine joined with routes and DNS unchanged, 9 ms direct to
+  the Bridge. Everything else is verified against fakes only.
+- **Numbering.** The deployment was 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them;
+  the 0.1.5 below (L-0790) reached main first.
+
+### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
+
+- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
+- **Cause.** `plugin/ai-connect/tests/test_ops_firewall.py` put its fake tools in front of the caller's
+  whole `PATH` and its fake `sudo` ran whatever that `PATH` resolved, so a test that wrote no fake
+  `ufw` found the real one. On 2026-10-11 a root run added the bridge's allow rule (TCP 9999 from
+  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules` while ufw was inactive; the entry was deleted
+  by hand.
+- **Fix.** The child's `PATH` is two directories the test creates, the fake `sudo` runs only a file
+  inside the fake directory, the harness sets the euid the function sees, and every child stops
+  before the code under test if `sudo`, `ufw` or `firewall-cmd` resolves to anything but a fake.
+  The module skips as root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`, and when `bash` is Windows' WSL
+  launcher. New tests plant canary `ufw`, `firewall-cmd` and `sudo` on the caller's `PATH` and
+  fail if any of them runs.
+- **If you ran the suite before 0.1.5** as root or with passwordless sudo on a host with ufw or
+  firewalld, check for that rule; `plugin/ai-connect/CHANGELOG.md` has the commands.
+- Nothing the plugin installs or runs changes. `install.sh` is untouched.
+
 ### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
 
 - **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer

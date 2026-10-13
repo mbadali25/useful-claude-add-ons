@@ -5,7 +5,9 @@
 >
 > In short: per-peer tokens stored as SHA-256 with no name takeover, a read-only observer role, message size and rate limits, peer content framed as untrusted data, file sharing confined to the project, a loopback default listen address with a VPN-scoped firewall rule, and exact dependency pins.
 >
-> Install differs from upstream below: `claude plugin install ai-connect@useful-claude-add-ons` installs the hooks (`hooks/hooks.json`; `hooks/watch.sh` on Linux/macOS and `hooks/watch.ps1` on Windows). Then run `install.sh` / `install.cmd` from the installed plugin directory to create the venv, write the config and register the MCP server; `installer.py claude` no longer adds a marketplace or installs a plugin. The venv lives inside the plugin directory, so re-run the installer after each plugin update. Until the MCP server is registered the state hooks have no server to call and the watcher exits with an error naming the missing venv.
+> Install differs from upstream below: `claude plugin install ai-connect@useful-claude-add-ons` installs the watcher hooks (`hooks/hooks.json`; `hooks/watch.sh` on Linux/macOS and `hooks/watch.ps1` on Windows). Then run `install.sh` / `install.cmd` from the installed plugin directory to create the venv, write the config, register the MCP server and write the state hooks (busy / idle / waiting) into Claude Code's user settings; `installer.py claude` no longer adds a marketplace or installs a plugin. The venv lives inside the plugin directory, so re-run the installer after each plugin update.
+>
+> **Installed but never set up, the plugin is silent** (since 0.1.11): with no venv and no `~/.config/ai-connect/config.yaml` the watcher exits 0 and prints nothing, and there are no state hooks until the installer writes them. Up to 0.1.8 the state hooks shipped in `hooks/hooks.json` and failed with `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end. **Set up, then the venv lost to a plugin update** (the config exists, the venv does not): the watcher exits 1 naming the installer to re-run, and the state hooks in your settings still report the server as not connected, until you re-run it. **Updating from 0.1.8 or earlier: re-run the installer once**, or the session reports no state; the state hooks are no longer in the plugin, and only the installer writes them.
 
 Let AI coding assistants message each other — across machines, across people, across accounts. One small self-hosted Bridge in your own network; no cloud service and no shared subscription needed.
 
@@ -105,7 +107,7 @@ It asks for the listen address: give the machine's VPN address (Tailscale, WireG
 
 #### VPN (Tailscale)
 
-[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, ephemeral, tagged auth key per peer (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's port 9999 and nothing else. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
+[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, tagged auth key per peer (not ephemeral: the machine stays; `--ephemeral` for throwaway nodes) (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's port 9999 and nothing else. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
 
 ### 2. Client (every other machine)
 
@@ -149,7 +151,7 @@ Until then the old `bridge:` keys are still read, with a deprecation warning in 
 
 ### 3. Claude Code and other MCP clients
 
-**Claude Code:** the installer does it: it registers the MCP server (`claude mcp add`, with this installation's venv) and installs the AI-Connect plugin from the local directory, which brings the hooks that report busy / idle / waiting. Every session joins under its own name `Host:Project`. To repeat this step alone, e.g. after installing Claude Code later: `venv/bin/python installer.py claude`. Behaviour rules and the message watcher: [integrations/claude-code/README.md](integrations/claude-code/README.md).
+**Claude Code:** the installer does it: it registers the MCP server (`claude mcp add`, with this installation's venv) and writes the hooks that report busy / idle / waiting into Claude Code's user settings (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`), next to the registration they depend on; every other hook and key in that file is left as it is, and a file that is not valid JSON is not touched. The plugin with the watcher hooks comes from the marketplace (see the note at the top). Every session joins under its own name `Host:Project`. To repeat this step alone, e.g. after installing Claude Code later: `venv/bin/python installer.py claude`. Behaviour rules and the message watcher: [integrations/claude-code/README.md](integrations/claude-code/README.md).
 
 **Other MCP clients** (VS Code, Cursor, Claude Desktop, …) connect to the HTTP/SSE server (install with `--http`). In VS Code, `~/.config/Code/User/mcp.json` (remote: `~/.vscode-server/data/User/mcp.json`):
 
@@ -187,6 +189,83 @@ To skip tool confirmation dialogs, add to `~/.claude/settings.json`:
 ```
 
 Then restart the assistant so it loads the MCP server.
+
+## Deploy
+
+`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is three commands (`invite` on the Bridge, `join` on the new machine, `approve` on the Bridge), and `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
+
+```bash
+# Machine 1, once per tailnet (admin): preview, then apply
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup
+TS_API_TOKEN=tskey-api-... deploy/deploy.sh tailnet-setup --apply --yes
+# Machine 1: the Bridge (Linux: sudo for systemd and the firewall; Windows: an elevated PowerShell)
+deploy/deploy.sh bridge
+# Machine 2: make its own token; only the printed {name, token_sha256} goes to machine 1
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --print-enrolment
+# Machine 1: let it in by that hash, and mint its one-off Tailscale key
+deploy/deploy.sh add-peer --name laptop --token-sha256 <token_sha256>
+vpn/mint-key.sh --name laptop --expiry 1h --out laptop.key
+# Machine 2: join with the key, then check
+deploy/deploy.sh peer --name laptop --bridge 100.x.y.z --auth-key-file laptop.key
+deploy/deploy.sh test --bridge 100.x.y.z --name laptop
+deploy/deploy.sh status
+deploy/deploy.sh uninstall --yes          # --purge also deletes ~/.config/ai-connect and the installed copy
+```
+
+- **`tailnet-setup`** (admin, once per tailnet): takes a Tailscale API access token from `TS_API_TOKEN` or a prompt, uses it for that run and stores it nowhere. It has Tailscale validate `vpn/acl-template.hujson` (with `--admin`, default `autogroup:admin`, in place of `admin@example.com`), shows a diff against the tailnet's current policy, tags the Bridge machine `tag:bridge` (this machine, or `--device NAME`), and creates the OAuth client `vpn/mint-key` and `vpn/revoke` use (`auth_keys` and `devices:core`, `tag:ai-peer`). Without `--apply` it is a preview and changes nothing. With `--apply` it first writes the current policy to `~/.config/ai-connect/acl-backups/`, then **replaces the whole tailnet policy** with the file. The OAuth client goes into the OS credential store through Python `keyring`; without `keyring` it goes to the owner-only file `~/.config/ai-connect/tailscale-oauth.json`, and a later run moves it. If the API refuses to create the client, the command prints the admin-console steps and stores the client you then give it (`TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET`, or the prompts). The calls are the ones in the [Tailscale API reference](https://tailscale.com/api): policy file validate, get and set, device tags, and key creation with `keyType: "client"`. It never waits for an answer when there is no terminal: the token then comes from `TS_API_TOKEN` or the credential store (`keyring set ai-connect-tailscale api_token`), and `--apply` needs `--yes`. `--json` prints one JSON object on stdout (each step and its result, secrets redacted) and sends the text to stderr.
+- **`peer --print-enrolment`** and **`add-peer`**: the way to add a peer without a long-lived secret crossing machines. The peer generates its own token, keeps it owner-only in `~/.config/ai-connect/own-peer.token` and prints `{"name": ..., "token_sha256": ...}`. On the Bridge, `add-peer --name N --token-sha256 HEX` writes that hash into `auth.peers` and restarts the Bridge. `deploy peer` without `--token-file` then uses the peer's own token. What crosses machines is the hash and the one-off Tailscale key. (`bridge --peer N` still exists: it makes the token on the Bridge and writes a token file to carry over.)
+- **Installed outside the checkout**: the venv goes to `~/.local/share/ai-connect/venv` (Windows: `%LOCALAPPDATA%\ai-connect\venv`), and `bridge` (or `peer --register-mcp`) copies this plugin beside it to `.../ai-connect/app`; the Bridge service and the MCP server run from there. The checkout deploy ran from (a worktree, a clone) can be deleted afterwards. A rerun from a newer checkout updates the copy, says how many files changed, and restarts the Bridge; a scheduled task an older deploy left pointing elsewhere is registered again. `AI_CONNECT_HOME` moves both, `AI_CONNECT_VENV` the venv alone.
+- **`bridge`**: the installed copy, its venv and `requirements.txt`; Tailscale (see below); `config.yaml` with `server.host` set to this machine's `tailscale ip -4` (through `installer.py`, which also creates the observer, user and own peer tokens); one token per `--peer`, written owner-only to `~/.config/ai-connect/peer-tokens/<name>.token`; the Bridge service (`ai-connect.service`, on Windows the `AI-Connect Bridge` scheduled task, the same ones `install.sh` / `install.ps1` create); a firewall rule for the port from `--vpn-subnet` only (default Tailscale's `100.64.0.0/10`; ufw, firewalld or Windows Firewall); then a health check that opens a WebSocket to the Bridge with this machine's own token.
+- **`peer`**: the venv and `requirements.txt`; **no plugin hooks and no MCP server by default**, because a shared machine runs Claude Code sessions in bypass-permissions mode, where what another peer sends is acted on with no prompt in between. `--register-mcp` registers the MCP server (`--scope project`, the default: this directory's `.mcp.json`; `--scope user`: every project of this user), `--install-hooks` installs the plugin with its hooks for every session; each prints a warning saying so. Then Tailscale, then `vpn/vpn-up` with the one-off auth key, skipped when the machine is already on the tailnet; the client config (`client.name`, `client.bridge_url`, `client.token`); then the same WebSocket check, which fails if the Bridge refuses the token.
+- **`test`**: five checks with one `PASS` or `FAIL` line each, and exit code 1 when any fails: Tailscale is up, the Bridge's port answers, the Bridge accepts this machine's token (`--token-file`, `AI_CONNECT_PEER_TOKEN`, else `client.token`), a message sent to `--name` comes back inside the untrusted frame, and a random token is refused. It changes nothing on this machine. The Bridge keeps the one test message in that peer's history and logs the refused token. Run it while no session is online under `--name`: the name is then taken and the round trip fails.
+- **Tailscale is installed when it is missing**: on Debian and Ubuntu from Tailscale's apt repository, with its key in a `signed-by` keyring (`/usr/share/keyrings/tailscale-archive-keyring.gpg`); on other Linux systems, and for a release that repository does not carry, with Tailscale's install script (any other apt failure, such as a held dpkg lock or no network, stops the deploy instead); `winget` on Windows (the MSI when there is no `winget`); Homebrew on macOS. Every command is printed before it runs, and `--dry-run` prints the same list and runs none. As root nothing goes through `sudo`. deploy says what is about to ask for you (sudo's password, the UAC prompt, the browser login on a Bridge), hands the terminal to that tool, and carries on when it returns. `--no-install-tailscale` keeps the old behaviour: exit code 3.
+- **`tailscale up` takes nothing another VPN needs**: no routes, no exit node, no DNS. See [Running alongside other VPNs](#running-alongside-other-vpns).
+- **A peer's firewall is never touched.** Only `bridge` adds a rule, on the Bridge machine.
+- **Idempotent**: every step looks first and prints `already done: ...` instead of repeating itself. A rerun with a new `--peer` adds that peer and restarts the Bridge.
+- **`--dry-run`** (`bridge`, `peer`, `add-peer`, `uninstall`) runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`, `systemctl`, ...) and needs no token or key file: it prints `would: ...` for each step it may change, and reads only files (and `config.yaml` through this plugin's own helper in its venv). `status` runs nothing through `sudo` and no `claude` command. `tailnet-setup` without `--apply` is its dry run.
+- **Secrets** never go on the command line and are never printed: the peer token comes from the peer's own token file, `--token-file` or `AI_CONNECT_PEER_TOKEN`, the auth key from `--auth-key-file` or `TS_AUTHKEY`, the API access token from `TS_API_TOKEN` or a prompt. Output shows a token as `****` plus its last four characters. `~/.config/ai-connect`, where the config and every token are, is the deploying user's alone: mode 0700, on Windows an ACL without inherited entries or broad groups. `invite` prints a warning with each invite: it is password-equivalent, single use, and good until the expiry it names.
+- `--port` (default 9999) and `--name` (the Bridge's own peer name, default the host name) are there when the defaults do not fit. Exit codes: 0 done, 1 a step or a check failed, 2 bad arguments, 3 Tailscale is not installed and could not be.
+
+`deploy.ps1` does not ask through UAC itself: `bridge` and `uninstall` fail at the scheduled task or the firewall rule unless the shell is elevated. On Linux without ufw or firewalld the firewall step prints the rule to add by hand. A Bridge on macOS is not supported (no launchd service); a peer is.
+
+**One run per machine: `deploy/setup.sh` and `deploy/setup.ps1`.** A thin layer over the commands above (one core, `deploy/peer_setup.py`; every change is made by `deploy`'s own steps), for a machine that has the plugin and nothing else. Without `--apply` it prints the plan and changes nothing; with it, it does the work, and either can be run again.
+
+```bash
+deploy/setup.sh bridge --peer laptop --apply      # the Bridge: service, config, firewall rule, a token file for 'laptop'
+deploy/setup.sh peer --name laptop --bridge 100.x.y.z --token-file laptop.token --apply   # the peer, with that file
+deploy/setup.sh peer --name laptop --bridge 100.x.y.z --apply    # or: its own token; prints {name, token_sha256}
+deploy/setup.sh bridge --enrol laptop=<token_sha256> --apply     # ...which the Bridge lets in by the hash
+deploy/setup.sh session --name laptop-2 --apply   # a second peer name here, for a second session on this machine
+deploy/setup.sh session --project ~/src/api --project ~/src/web --apply   # one name per project (name_mode below)
+```
+
+- **The firewall is checked, not only written.** A rule in a firewall that is off filters nothing, and `ufw allow` succeeds on an inactive ufw. `deploy bridge` (and so `setup bridge`) now says `NOT ENFORCED` when ufw, firewalld or the Windows Firewall's Private profile is off, `NOT VERIFIED` when it could not tell, and finds its stored rule on an inactive ufw instead of adding it again. It never turns a firewall on: that changes every port of the machine, an SSH session included. `deploy status` flags the same.
+- **`--register-mcp`** (off by default) registers the MCP server with Claude Code, at user scope unless `--scope project`. No plugin hooks are installed by `setup`.
+- **`session --name N`** makes a second peer name with its own token (`~/.config/ai-connect/session-tokens/N.token`, owner-only). On the Bridge machine it enrols the hash and restarts the Bridge; elsewhere it prints `{name, token_sha256}` for `setup bridge --enrol`. Start that session with `AI_CONNECT_PEER_NAME=N claude` (PowerShell: `$env:AI_CONNECT_PEER_NAME = 'N'; claude`): the MCP server and the watcher then send that token instead of `client.token`.
+- **`session --project DIR [--project DIR ...]`** does the same for `client.name_mode: per-project` (see [Details](#details)), one name per project: `<client.name>-<project folder name>`. For each it writes `session-tokens/<name>.token` (owner-only) and `session-tokens/<name>.dir`; on the Bridge machine it enrols every hash and restarts the Bridge once for all of them, elsewhere it prints one `{name, token_sha256}` line per name. It refuses two projects that give one name, a project whose name another project's `.dir` already holds, and the names the Bridge keeps for itself (`Bridge`, `User:...`, also for `--name`). An existing token that others may read is written owner-only again, unchanged. It does not set `name_mode`; it says when that is still missing.
+- **`tailnet-setup` is never run by `setup`.** It needs the owner's Tailscale API token and replaces the tailnet policy. `setup bridge` reads this machine's tags and looks for the stored OAuth client, and says `OUTSTANDING` with the commands when that step does not look done; `setup peer` says so when the Bridge's port does not answer.
+
+### Running alongside other VPNs
+
+Tailscale shares the machine with whatever VPN clients are already there (AWS VPN Client, OpenVPN, WireGuard, a corporate client), and deploy keeps it out of their way:
+
+- **Every `tailscale up` passes `--accept-routes=false --exit-node= --accept-dns=false`**: the browser login of `bridge` and `tailnet-setup`, and the key join of `peer` and `vpn/vpn-up`. Tailscale takes no routes from the tailnet, sends nothing through an exit node and leaves the resolver alone. `--accept-dns` is the one opt-in, for MagicDNS; peers then still reach the Bridge by its `100.x.y.z` address. Nothing ever passes `--advertise-routes` or `--advertise-exit-node`. A peer's join also sets `--advertise-tags=tag:ai-peer` (the tag the policy lets reach the Bridge) and `--hostname=<--name>`, and tailscale reads the key from an owner-only file (`--auth-key=file:...`), so it is on no command line.
+- **A machine already on the tailnet** (joined by hand, or by an older deploy) gets the same settings through `tailscale set` when its own differ; a rerun says `already done`.
+- **Before Tailscale is touched**, `bridge`, `peer` and `vpn/vpn-up` list the other VPN interfaces that are up, with their routes: on Windows the adapters whose name or description matches VPN, TAP, TUN, Wintun, OpenVPN, WireGuard, AWS, Fortinet, AnyConnect, GlobalProtect or Zscaler; on Linux `tun*`, `tap*`, `wg*` and `ppp*` from `ip`. A route inside Tailscale's `100.64.0.0/10` or `fd7a:115c:a1e0::/48` stops the command before anything changes: that VPN would take the tailnet's traffic. A wider route (a default route, a full tunnel's `0.0.0.0/1`) loses to Tailscale's by longest-prefix match and is fine. Otherwise one line, `vpn-coexistence: {...}`, names the other VPNs, their routes, and what Tailscale takes: nothing. A list that cannot be read is said so (`other_vpns_unknown`), not taken as empty.
+- **`deploy status`** shows `RouteAll`, `ExitNode` and `CorpDNS`, and flags each one that is on with the `tailscale set` command that turns it off.
+
+Why: on a Windows desktop whose Tailscale had `RouteAll` on, connecting the AWS VPN Client to `10.5.0.0/16` cut every connection.
+
+### Live test
+
+Run on a real tailnet in October 2026, with the Bridge on a Windows desktop:
+
+| Machine | OS | Result |
+|---|---|---|
+| `laptop` | Ubuntu | joined as a permanent (non-ephemeral) node; `deploy test` passed 5 of 5; the AWS VPN Client's routes were the same before and after |
+| `dadeush-legion` | Windows 11 | joined; routes and DNS unchanged; a direct connection to the Bridge, 9 ms |
+
+That is two machines on one tailnet, not a compatibility matrix. The test suites cover everything else in this section against fakes only: no test opens a socket that leaves the machine it runs on.
 
 ## Usage
 
@@ -272,7 +351,9 @@ It needs the user token, a third token that may only send as a user. It is kept 
 ## Details
 
 - **Peer names**: the STDIO client and the HTTP/SSE server join as `client.name`, the one name this machine's token may register. `AI_CONNECT_PEER_NAME` overrides it (that name then needs a token of its own). With `client.name: ""` the STDIO client names itself `Host:Project`, which only the legacy shared token accepts.
-- **One session per name**: a live name cannot be taken over. When a second session joins under a name that is already online, the Bridge refuses it (`name_taken`); the client logs why and registers once more on standby: it neither sends nor receives, and takes the name as soon as the first session leaves. The waiting session gets a notice from `Bridge`. Sessions on one machine share `client.name`, so only one is online at a time — close one, or give the second its own name and token with `AI_CONNECT_PEER_NAME`. A token never registers another peer's name.
+- **Per-project names** (opt-in, `client.name_mode: per-project`): each Claude Code session joins as `<client.name>-<project>`, so sessions in different projects on one machine are online at once. The project is `CLAUDE_PROJECT_DIR`, else the working directory, resolved to an absolute path; its folder name is cut down to a peer name: every run of characters other than `A-Z a-z 0-9 -` becomes one `-`, hyphens at either end go, and the whole name is cut to 63 characters without a trailing hyphen (`My Web.app` gives `laptop-My-Web-app`). `AI_CONNECT_PEER_NAME` still wins. The token is `~/.config/ai-connect/session-tokens/<name>.token`, the same directory `session --name` uses. The session joins as `client.name` with `client.token` instead, and writes exactly one line starting `ai-connect: client.name_mode per-project:` to stderr (never stdout, which is the MCP protocol), when: the folder name gives no usable name or `client.name` is empty; the token file is missing or empty; it is not a regular file (a symbolic link is not followed) owned by this user with no group or other permission bits (mode 600); or `<name>.dir` beside it is unreadable, malformed, or records another directory. On Windows only the regular-file part is checked: `setup` writes the file with an ACL of the current user alone, and the client does not read that ACL back. The watcher sends the token of the name the session's client recorded (`sessions/<CLAUDE_PID>`), not a name it works out again. The HTTP/SSE server is one service for every project and ignores `name_mode`.
+- **`<name>.dir`**, beside `<name>.token`: UTF-8 text, one line, the project's absolute path as Python's `Path(dir).resolve()` gives it (symbolic links resolved, no trailing separator), followed by at most one newline (`\n`, or `\r\n`); nothing else. `setup session --project` writes it with one `\n`. Without a `.dir` the token is used as it is; with one, it is used only by a session in that very directory (compared with the platform's case rules), which keeps two projects with one folder name, such as `~/a/api` and `~/b/api`, from sharing a peer.
+- **One session per name**: a live name cannot be taken over. When a second session joins under a name that is already online, the Bridge refuses it (`name_taken`); the client logs why and registers once more on standby: it neither sends nor receives, and takes the name as soon as the first session leaves. The waiting session gets a notice from `Bridge`. Sessions on one machine share `client.name`, so only one is online at a time — close one, or give the second its own name and token: `deploy/setup.sh session --name N` makes both, and the session is started with `AI_CONNECT_PEER_NAME=N`; or turn on per-project names (above), where one session per project is online at once. A token never registers another peer's name.
 - **Offline messages**: direct messages to an offline peer are stored in SQLite on the Bridge and delivered when the peer comes back. Broadcasts (`*`) reach only the peers online at that moment.
 - **History retention**: the Bridge deletes messages older than `server.history_days` (14 in the template), at start and then daily.
 - **Logs**: each STDIO client writes its own file, `~/.config/ai-connect/mcp-<Host>_<Project>.log`, the HTTP/SSE server `mcp-http.log`; both are rotated at `logging.max_megabytes`, keeping `logging.backup_count` old files. The Bridge writes `bridge.log`, rotated the same way, and under systemd also the journal.
@@ -282,11 +363,24 @@ It needs the user token, a third token that may only send as a user. It is kept 
 
 `~/.config/ai-connect/config.yaml` is written by the installer (`installer.py config`); a later run only checks it and names missing keys. Every key is required; a missing file or key stops each service with a message. Annotated template: [config.yaml.example](config.yaml.example).
 
-`server:` and `auth:` are the Bridge's: `server.host` is the address it listens on, the machine's VPN address (never `0.0.0.0`), and `auth.peers` holds the SHA-256 of every peer's token. `client:` is this machine's own peer: `client.name`, `client.token`, `client.bridge_url` (`ws://<Bridge VPN address>:9999`) and `client.project_dir`, the only directory `peer_send`/`peer_context` may share files from (`""` = the session's project directory). The Bridge machine runs a peer of its own Bridge from the same file, so the two never share a token.
+`server:` and `auth:` are the Bridge's: `server.host` is the address it listens on, the machine's VPN address (never `0.0.0.0`), and `auth.peers` holds the SHA-256 of every peer's token. `client:` is this machine's own peer: `client.name`, `client.token`, `client.bridge_url` (`ws://<Bridge VPN address>:9999`), the optional `client.name_mode` (`per-project`, or left out; any other value stops the client with a message) and `client.project_dir`, the only directory `peer_send`/`peer_context` may share files from (`""` = the session's project directory). The Bridge machine runs a peer of its own Bridge from the same file, so the two never share a token.
+
+The Bridge's limits are the exception to "every key is required": each is optional under `server:` and defaults to the value below. A value of the wrong type (a string, a boolean, a fraction where a whole number belongs) or below its minimum stops the Bridge with a message naming the key.
+
+| Key | Default | Minimum | Description |
+|-----|---------|---------|-------------|
+| `server.max_message_bytes` | `65536` | `1` | A frame larger than this is refused (`message_too_large`) |
+| `server.rate_per_second` | `10` | `0.001` | Messages per second one connection may send; a fraction is allowed |
+| `server.rate_burst` | `rate_per_second`, at least 1 | `1` | Messages a connection may send at once before the rate applies |
+| `server.max_stored_per_peer` | `10000` | `0` | Stored messages kept per sender; the oldest are deleted beyond it. `0` = no cap |
+| `server.max_unread_per_peer` | `500` | `1` | Undelivered direct messages queued for one offline recipient; a send past it is refused (`recipient_queue_full`) |
+| `server.max_unread_bytes_per_peer` | `8388608` (8 MiB) | `server.max_message_bytes` | Bytes queued for one offline recipient; a send past it is refused (`recipient_queue_full`) |
+
+The two queue caps have no "off" value: `0` would refuse every message to an offline peer, so it is rejected.
 
 | Environment variable | Description |
 |----------------------|-------------|
-| `AI_CONNECT_PEER_NAME` | Overrides the peer name (`client.name`); the name needs its own token on the Bridge |
+| `AI_CONNECT_PEER_NAME` | Overrides the peer name (`client.name`); the name needs its own token on the Bridge. The client sends `~/.config/ai-connect/session-tokens/<name>.token` for it when that file is there (`deploy/setup.sh session --name <name>` writes it), else `client.token`, which the Bridge refuses under another name. The file must be owner-only (as under per-project names), and `Bridge` or `User:...` never gets one. Wins over `client.name_mode: per-project` |
 | `AI_CONNECT_PROJECT_DIR` | Overrides `client.project_dir`, the only directory files may be shared from |
 | `AI_CONNECT_PEER_SUFFIX` | Only with `client.name: ""` (legacy shared token) — STDIO client: appended with a hyphen, `Host:Project-Suffix`, so several sessions in one project are each reachable. `AI_CONNECT_PEER_NAME` takes precedence |
 
@@ -310,7 +404,7 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 | Timeout | Firewall | Open port 9999 on the Bridge machine for your VPN subnet only |
 | `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `installer.py add-peer <name>`, put the token in `client.token`, restart the Bridge and the client |
 | `may not be registered with this token` | `client.name` is not the name the token was issued for | Set `client.name` to the name given to `add-peer` |
-| `peer_status` shows standby | Another session holds the same name (`name_taken`) | Close one, or give the second its own name and token with `AI_CONNECT_PEER_NAME`; the standby session takes the name once the other one leaves |
+| `peer_status` shows standby | Another session holds the same name (`name_taken`) | Close one, or give the second its own name and token (`deploy/setup.sh session --name N`, then start it with `AI_CONNECT_PEER_NAME=N`); the standby session takes the name once the other one leaves |
 
 ## Limitations
 
@@ -328,7 +422,7 @@ Pull requests are welcome if you find a better approach.
 - **Per-peer tokens.** Every peer gets its own 256-bit token: `installer.py add-peer <name>`, run on the Bridge machine, generates one and prints it once. The Bridge stores only its SHA-256 (`auth.peers`); the raw value exists only in that one printout and in the peer's own `config.yaml`. Losing one peer's token does not expose the others -- revoke it (`installer.py revoke-peer <name>`) and restart the Bridge. The pre-2.3 single shared secret (`auth.token` with `auth.allow_shared_token: true`) still works, for migrating old peers one at a time, but every machine holding that value can act as any peer name without an entry of its own; turn it back off once every peer has its own entry.
 - **Peers are untrusted.** A valid token proves the connection knows a secret, not who is at the keyboard on the other end, and the traffic itself is not authenticated beyond that per-message. Treat a message from another peer -- including an instruction that arrives while your own session is idle -- the way you would treat a message from a stranger who knows a colleague's password.
 - **Never run a woken session in bypass/auto-approve mode.** A message can resume an idle Claude Code session's turn; if that session has tool confirmations disabled, whatever the message says to do runs without anyone looking at it first. Keep normal permission prompts on for any session that has the AI-Connect plugin installed.
-- **Uninstalling does not remove everything by itself.** `installer.py unregister` (run by `--uninstall`) removes the MCP server and plugin registration, but it deliberately leaves two things for you to remove by hand: the deny rules it added to `~/.claude/settings.json` (`permissions.deny`, naming `observer.token`, `user.token` and `observer_client`) and the `@.../integrations/claude-code/CLAUDE.md` import line you added to your own `~/.claude/CLAUDE.md` during setup. Delete both yourself if you are removing AI-Connect for good.
+- **Uninstalling does not remove everything by itself.** `installer.py unregister` (run by `--uninstall`) removes the MCP server and the state hooks it wrote into `~/.claude/settings.json` (those calling `peer_set_state` on the `ai-connect` server, and no other hook), but it deliberately leaves two things for you to remove by hand: the deny rules it added to `~/.claude/settings.json` (`permissions.deny`, naming `observer.token`, `user.token` and `observer_client`) and the `@.../integrations/claude-code/CLAUDE.md` import line you added to your own `~/.claude/CLAUDE.md` during setup. Delete both yourself if you are removing AI-Connect for good.
 
 ## Star History
 

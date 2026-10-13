@@ -24,8 +24,14 @@ server:
   # Messages per second one connection may send; up to rate_burst at once
   rate_per_second: 10
   rate_burst: 10
-  # Stored (unread and history) messages kept per sender at most
+  # Stored (unread and history) messages kept per sender at most; 0 = no cap
   max_stored_per_peer: 10000
+  # Offline queue per recipient: undelivered direct messages waiting for it
+  # to come online, by count and by bytes. A send past either is refused
+  # (recipient_queue_full). Both at least 1 (0 would refuse every offline
+  # message, not lift the cap); the byte cap at least max_message_bytes.
+  max_unread_per_peer: 500
+  max_unread_bytes_per_peer: 8388608
 
 auth:
   # Bridge machine only: SHA-256 of every known peer's token, keyed by peer
@@ -57,6 +63,15 @@ client:
   # standby. AI_CONNECT_PEER_NAME overrides it. "" = Claude Code sessions
   # name themselves Host:Project, which only the legacy shared token accepts.
   name: "my-machine"
+  # Opt-in: "per-project" names each Claude Code session
+  # <name>-<project folder name> with that name's own token from
+  # ~/.config/ai-connect/session-tokens/<that name>.token (made by
+  # `deploy/setup.sh session --project <dir>`), so sessions in different
+  # projects are online at once. Without that token, or when the token file is
+  # not owner-only or its <that name>.dir records another project, the session
+  # joins as name with token and says why on stderr. AI_CONNECT_PEER_NAME
+  # still wins. Left out = every session joins as name.
+  # name_mode: "per-project"
   # The token THIS machine presents to the Bridge. `installer.py add-peer
   # <name>`, run on the Bridge machine, creates one and prints it once --
   # paste it here, on that peer's own machine. A --server install fills in

@@ -2,7 +2,7 @@
 """Tailscale self-join tooling for ai-connect: one core behind the .sh/.ps1 shims.
 
 Subcommands:
-  mint-key  ADMIN  create ONE single-use, ephemeral, pre-authorised, tagged auth key
+  mint-key  ADMIN  create ONE single-use, pre-authorised, tagged auth key (not ephemeral; --ephemeral)
   revoke    ADMIN  delete a joined node by name (revoking a key does not drop a node)
   vpn-up    AGENT  join the tailnet with a key, idempotently, and probe the Bridge
   vpn-down  AGENT  leave the tailnet (and stop a userspace tailscaled we started)
@@ -20,6 +20,7 @@ or from the tailscale CLI passes through redact() before it is printed.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -120,22 +121,49 @@ def api_error(what: str, status: int, payload: dict) -> Failure:
     return Failure(f"{what} failed: HTTP {status}: {message}")
 
 
-def oauth_credentials() -> tuple[str, str]:
-    cid = os.environ.get("TS_OAUTH_CLIENT_ID", "")
-    secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "")
-    if not (cid and secret):
+def oauth_file() -> Path:
+    """Where `deploy tailnet-setup` keeps the OAuth client when no credential store takes it."""
+    return Path(os.environ.get("AI_CONNECT_OAUTH_FILE")
+                or Path.home() / ".config" / "ai-connect" / "tailscale-oauth.json")
+
+
+def stored_oauth_credentials(use_env: bool = True) -> tuple[str, str, str | None]:
+    """(client id, secret, where from) out of the environment, the OS credential store, then the
+    owner-only file; ("", "", None) when no source holds both. use_env=False asks only what is stored."""
+    # A whole pair from one place: an ID from here and a secret from there is not a client
+    cid = os.environ.get("TS_OAUTH_CLIENT_ID", "") if use_env else ""
+    secret = os.environ.get("TS_OAUTH_CLIENT_SECRET", "") if use_env else ""
+    source = "environment" if cid and secret else None
+    if source is None:
         try:
-            import keyring  # pylint: disable=import-error  # optional; the OS credential store
-            cid = cid or (keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or "")
-            secret = secret or (keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or "")
-        except Exception:  # keyring absent or its backend broken: env is then the only source
+            import keyring  # pylint: disable=import-error,import-outside-toplevel  # optional; the OS credential store
+            cid = keyring.get_password(KEYRING_SERVICE, "oauth_client_id") or ""
+            secret = keyring.get_password(KEYRING_SERVICE, "oauth_client_secret") or ""
+            source = "credential store" if cid and secret else None
+        except Exception:  # keyring absent or its backend broken: the other sources still count
             pass
+    if source is None:
+        try:
+            saved = json.loads(oauth_file().read_text(encoding="utf-8"))
+            cid = str(saved.get("oauth_client_id") or "")
+            secret = str(saved.get("oauth_client_secret") or "")
+            source = f"file {oauth_file()}" if cid and secret else None
+        except (OSError, ValueError, AttributeError):
+            pass
+    if source is None:
+        return "", "", None
+    remember_secret(secret)
+    return cid, secret, source
+
+
+def oauth_credentials() -> tuple[str, str]:
+    cid, secret, _source = stored_oauth_credentials()
     if not (cid and secret):
         raise Failure(
-            "no Tailscale OAuth client: set TS_OAUTH_CLIENT_ID and TS_OAUTH_CLIENT_SECRET, or store "
-            f"them with `keyring set {KEYRING_SERVICE} oauth_client_id` / `oauth_client_secret`"
+            "no Tailscale OAuth client: run `deploy tailnet-setup --apply`, or set TS_OAUTH_CLIENT_ID and "
+            f"TS_OAUTH_CLIENT_SECRET, or store them with `keyring set {KEYRING_SERVICE} oauth_client_id` "
+            "/ `oauth_client_secret`"
         )
-    remember_secret(secret)
     return cid, secret
 
 
@@ -160,15 +188,49 @@ def parse_expiry(text: str) -> int:
     return seconds
 
 
-def key_request_body(name: str, tag: str, expiry_seconds: int) -> dict:
+def key_request_body(name: str, tag: str, expiry_seconds: int, ephemeral: bool = False) -> dict:
+    """Not ephemeral unless asked: every machine joined is trusted and stays, and an ephemeral node is
+    removed from the tailnet soon after it goes offline (a sleep, a reboot). --ephemeral is for
+    throwaway and CI nodes. A tagged node already has node-key expiry disabled."""
     # Tailscale allows at most 50 alphanumerics, hyphens and spaces here.
     description = re.sub(r"[^A-Za-z0-9 -]", "-", f"ai-connect peer {name}")[:50]
     return {
         "capabilities": {"devices": {"create": {
-            "reusable": False, "ephemeral": True, "preauthorized": True, "tags": [tag]}}},
+            "reusable": False, "ephemeral": ephemeral, "preauthorized": True, "tags": [tag]}}},
         "expirySeconds": expiry_seconds,
         "description": description,
     }
+
+
+# Everyone, Authenticated Users, Users, SYSTEM, Administrators, OWNER RIGHTS, CREATOR OWNER: by SID, so the
+# Windows display language does not matter. Python's own mkdir(mode=0o700) grants three of them by name
+BROAD_SIDS = ("*S-1-1-0", "*S-1-5-11", "*S-1-5-32-545", "*S-1-5-18", "*S-1-5-32-544", "*S-1-3-4", "*S-1-3-0")
+
+
+def _acl_of_user_alone(path: str, rights: str) -> str:
+    """Windows: path's ACL becomes the current user's entry: nothing inherited, no entry of a broad group.
+    (An entry someone gave another account by name stays: icacls cannot replace an ACL whole.)
+    Why not, or '' when done."""
+    user = os.environ.get("USERNAME", "")
+    icacls = shutil.which("icacls")
+    res = capture([icacls, path, "/inheritance:r", "/grant:r", f"{user}:{rights}", "/remove:g", *BROAD_SIDS]) \
+        if user and icacls else None
+    if res is not None and res.returncode == 0:
+        return ""
+    return ("USERNAME is not set" if not user else "icacls was not found" if not icacls
+            else f"icacls exited {res.returncode}")
+
+
+def private_dir(path: Path) -> None:
+    """path as a directory only its owner may enter, made or already there: 0700, on Windows an ACL of the
+    current user alone that the files in it inherit. Fails closed: it is where a config and its tokens go."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not IS_WINDOWS:
+        path.chmod(0o700)
+        return
+    why = _acl_of_user_alone(str(path), "(OI)(CI)F")
+    if why:
+        raise Failure(f"could not restrict {path} to the current user ({why}); nothing was written there")
 
 
 def write_owner_only(path: Path, text: str) -> None:
@@ -179,13 +241,8 @@ def write_owner_only(path: Path, text: str) -> None:
     try:
         if IS_WINDOWS:
             # Fails closed: a secret is never written where others may read it
-            user = os.environ.get("USERNAME", "")
-            icacls = shutil.which("icacls")
-            res = subprocess.run([icacls, tmp, "/inheritance:r", "/grant:r", f"{user}:F"],
-                                 capture_output=True, text=True, check=False) if user and icacls else None
-            if res is None or res.returncode != 0:
-                why = ("USERNAME is not set" if not user else "icacls was not found" if not icacls
-                       else f"icacls exited {res.returncode}")
+            why = _acl_of_user_alone(tmp, "F")
+            if why:
                 raise Failure(f"could not restrict {path} to the current user ({why}); nothing was "
                               "written. The minted key was not shown and expires unused; retry with "
                               "--out on a local NTFS path, or without --out to print it")
@@ -209,26 +266,32 @@ def find_installer(explicit: str | None) -> Path | None:
     return None
 
 
-def cmd_mint_key(args) -> int:
-    if not PEER_NAME_RE.match(args.name):
-        raise Failure(f"peer name '{args.name}' must be 1-63 letters, digits or hyphens")
-    expiry = parse_expiry(args.expiry)
+def mint_auth_key(name: str, tag: str, expiry_seconds: int, ephemeral: bool = False) -> tuple[str, str]:
+    """One single-use, pre-authorised, tagged auth key through the OAuth client: (key, when it expires)."""
     token = access_token()
     status, payload = http("POST", f"{API_BASE}/tailnet/-/keys", token=token,
-                           body=key_request_body(args.name, args.tag, expiry))
+                           body=key_request_body(name, tag, expiry_seconds, ephemeral))
     key = payload.get("key") if status == 200 else None
     if not key:
         raise api_error("auth key creation", status, payload)
     remember_secret(key)
-    expires = payload.get("expires", f"in {expiry}s")
+    return key, str(payload.get("expires") or f"in {expiry_seconds}s")
+
+
+def cmd_mint_key(args) -> int:
+    if not PEER_NAME_RE.match(args.name):
+        raise Failure(f"peer name '{args.name}' must be 1-63 letters, digits or hyphens")
+    expiry = parse_expiry(args.expiry)
+    key, expires = mint_auth_key(args.name, args.tag, expiry, args.ephemeral)
+    kind = "ephemeral" if args.ephemeral else "not ephemeral"
     if args.out:
         write_owner_only(Path(args.out), key + "\n")
         say(f"Auth key for peer '{args.name}' written to {Path(args.out).resolve()} "
-            f"(single use, ephemeral, {args.tag}, expires {expires}).")
+            f"(single use, {kind}, {args.tag}, expires {expires}).")
         say(f"Hand that file to the peer; it runs: vpn-up --auth-key-file <file> --hostname {args.name}")
     else:
         # The one deliberate secret on stdout: the admin asked for it, shown once.
-        print(f"Auth key for peer '{args.name}' (single use, ephemeral, {args.tag}, "
+        print(f"Auth key for peer '{args.name}' (single use, {kind}, {args.tag}, "
               f"expires {expires}) -- shown once:")
         print(f"  {key}")
         say(f"The peer runs: TS_AUTHKEY=<key> vpn-up --hostname {args.name}")
@@ -265,31 +328,58 @@ def provision_peer_token(name: str, installer: str | None) -> None:
         warn(f"ai-connect peer token: installer exited {res.returncode}; the auth key above is still valid")
 
 
-def cmd_revoke(args) -> int:
-    token = access_token()
+def list_devices(token: str) -> list[dict]:
+    """Every node of the tailnet, as GET /tailnet/-/devices lists it (default fields: no ephemeral flag)."""
     status, payload = http("GET", f"{API_BASE}/tailnet/-/devices", token=token)
     if status != 200:
         raise api_error("device list", status, payload)
-    want = args.name.lower()
-    matches = []
-    for dev in payload.get("devices", []):
-        names = {str(dev.get("hostname", "")).lower(), str(dev.get("name", "")).lower(),
-                 str(dev.get("name", "")).split(".", maxsplit=1)[0].lower()}
-        if want in names and (args.any_tag or args.tag in (dev.get("tags") or [])):
-            matches.append(dev)
+    return [dev for dev in payload.get("devices") or [] if isinstance(dev, dict)]
+
+
+def device_short_name(dev: dict) -> str:
+    return str(dev.get("hostname") or str(dev.get("name", "")).split(".", maxsplit=1)[0])
+
+
+def devices_named(devices: list[dict], name: str, tag: str | None) -> list[dict]:
+    """The nodes called name (host name, full or short MagicDNS name); only those tagged tag unless it is None."""
+    want = name.lower()
+    return [dev for dev in devices
+            if want in {str(dev.get("hostname", "")).lower(), str(dev.get("name", "")).lower(),
+                        str(dev.get("name", "")).split(".", maxsplit=1)[0].lower()}
+            and (tag is None or tag in (dev.get("tags") or []))]
+
+
+def device_id(dev: dict) -> str:
+    return str(dev.get("nodeId") or dev.get("id"))
+
+
+def delete_device(token: str, dev: dict) -> None:
+    status, payload = http("DELETE", f"{API_BASE}/device/{urllib.parse.quote(device_id(dev))}", token=token)
+    if status not in (200, 204):
+        raise api_error(f"delete node {device_id(dev)}", status, payload)
+
+
+def disable_key_expiry(token: str, dev: dict) -> None:
+    """A node joined by a person's login keeps an expiring node key even once tagged; one that joined
+    with a tagged auth key has expiry off already. POST /device/{id}/key turns it off."""
+    status, payload = http("POST", f"{API_BASE}/device/{urllib.parse.quote(device_id(dev))}/key", token=token,
+                           body={"keyExpiryDisabled": True})
+    if status not in (200, 204):
+        raise api_error(f"turning key expiry off for node {device_id(dev)}", status, payload)
+
+
+def cmd_revoke(args) -> int:
+    token = access_token()
+    matches = devices_named(list_devices(token), args.name, None if args.any_tag else args.tag)
     if not matches:
         raise Failure(f"no node named '{args.name}'"
                       + ("" if args.any_tag else f" tagged {args.tag} (pass --any-tag to widen)"))
     if len(matches) > 1 and not args.all:
-        ids = ", ".join(str(d.get("nodeId") or d.get("id")) for d in matches)
+        ids = ", ".join(device_id(d) for d in matches)
         raise Failure(f"{len(matches)} nodes match '{args.name}' ({ids}); pass --all to delete every one")
     for dev in matches:
-        dev_id = dev.get("nodeId") or dev.get("id")
-        status, payload = http("DELETE", f"{API_BASE}/device/{urllib.parse.quote(str(dev_id))}",
-                               token=token)
-        if status not in (200, 204):
-            raise api_error(f"delete node {dev_id}", status, payload)
-        say(f"Deleted node {dev.get('name') or dev.get('hostname')} ({dev_id}); it is off the tailnet now.")
+        delete_device(token, dev)
+        say(f"Deleted node {dev.get('name') or dev.get('hostname')} ({device_id(dev)}); it is off the tailnet now.")
     return EXIT_OK
 
 
@@ -305,20 +395,134 @@ def userspace_socket() -> Path:
     return state_dir() / "tailscaled.sock"
 
 
+def tailscale_dirs() -> list[str]:
+    """Where a fresh install puts the CLI before a new shell has it on PATH."""
+    override = os.environ.get("AI_CONNECT_TAILSCALE_DIRS")
+    if override is not None:
+        return [d for d in override.split(os.pathsep) if d]
+    if IS_WINDOWS:
+        return [str(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale")]
+    return ["/usr/bin", "/usr/sbin", "/usr/local/bin", "/opt/homebrew/bin",
+            "/Applications/Tailscale.app/Contents/MacOS"]
+
+
 def tailscale_bin() -> str:
-    found = shutil.which("tailscale")
+    found = shutil.which("tailscale") or next(
+        (hit for d in tailscale_dirs() for hit in [shutil.which("tailscale", path=d)] if hit), None)
     if not found:
         hint = INSTALL_HINT.get(sys.platform, INSTALL_HINT["linux"])
         raise Failure(f"tailscale is not installed. Install it: {hint}", EXIT_NO_TAILSCALE)
     return found
 
 
+# Set by deploy for a dry run: from then on this process runs no tool at all
+NO_EXEC = [False]
+
+
+def capture(argv: list[str], timeout: float = 60.0) -> subprocess.CompletedProcess:
+    """Run a tool and keep its output as text. Bytes that are not UTF-8 (a localised Windows tool
+    writes its code page) become U+FFFD instead of killing the reader and leaving stdout None."""
+    if NO_EXEC[0]:
+        raise Failure(f"internal: a dry run runs no tool, and {Path(argv[0]).name} was about to run")
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              stdin=subprocess.DEVNULL, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, "", f"{Path(argv[0]).name} timed out")
+
+
 def run_ts(ts: str, args: list[str], *, userspace: bool = False, timeout: float = 60.0):
     argv = [ts] + ([f"--socket={userspace_socket()}"] if userspace else []) + args
+    return capture(argv, timeout=timeout)
+
+
+# ---------------------------------------------------------------- other VPNs on this machine
+
+# Tailscale's own addresses. Another VPN's route inside one of them is as specific as Tailscale's, or
+# more, so it takes traffic meant for the tailnet; a wider route (a default route, 0.0.0.0/1) loses to
+# Tailscale's by longest-prefix match and does not conflict.
+TAILNET_RANGES = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+VPN_NAME_RE = "VPN|TAP|TUN|Wintun|OpenVPN|WireGuard|AWS|Fortinet|AnyConnect|GlobalProtect|PANGP|Zscaler"
+LINUX_VPN_RE = re.compile(r"^(tun|tap|wg|ppp)")
+# Every adapter that is up and looks like a VPN, other than Tailscale's own, with its routes, as JSON
+WINDOWS_VPNS = ("$ErrorActionPreference = 'Stop'; $a = @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and "
+                "($_.Name + ' ' + $_.InterfaceDescription) -match '" + VPN_NAME_RE + "' -and "
+                "($_.Name + ' ' + $_.InterfaceDescription) -notmatch 'Tailscale' } | ForEach-Object { [ordered]@{ "
+                "name = $_.Name; routes = @(Get-NetRoute -InterfaceIndex $_.ifIndex -ErrorAction SilentlyContinue | "
+                "ForEach-Object { $_.DestinationPrefix }) } }); ConvertTo-Json -InputObject $a -Depth 3 -Compress")
+
+
+def parse_linux_vpns(links: str, routes4: str, routes6: str) -> list[dict]:
+    """[{name, routes}] from `ip -j link show up` and `ip -j [-6] route show table all`."""
+    found: dict[str, list[str]] = {link.get("ifname", ""): [] for link in json.loads(links or "[]")
+                                   if LINUX_VPN_RE.match(link.get("ifname", ""))}
+    for text, default in ((routes4, "0.0.0.0/0"), (routes6, "::/0")):
+        for route in json.loads(text or "[]"):
+            if route.get("dev") in found:
+                found[route["dev"]].append(default if route.get("dst") == "default" else str(route.get("dst")))
+    return [{"name": name, "routes": routes} for name, routes in found.items()]
+
+
+def other_vpns(platform: str) -> list[dict]:
+    """Every other VPN interface that is up, with its routes. Raises Failure when that cannot be read."""
+    if platform == "darwin":
+        raise Failure("not checked on macOS")
+    if platform == "windows":
+        powershell = shutil.which("powershell")
+        if not powershell:
+            raise Failure("powershell not found")
+        res = capture([powershell, "-NoProfile", "-NonInteractive", "-Command", WINDOWS_VPNS])
+        if res.returncode != 0:
+            raise Failure(f"Get-NetAdapter failed (exit {res.returncode})")
+        try:
+            return [{"name": str(item.get("name")), "routes": [str(r) for r in item.get("routes") or []]}
+                    for item in json.loads(res.stdout.strip() or "[]")]
+        except (ValueError, AttributeError):
+            raise Failure("Get-NetAdapter printed something that is not the expected JSON") from None
+    ip = shutil.which("ip")
+    if not ip:
+        raise Failure("`ip` (iproute2) not found")
+    def read(*args: str) -> str:
+        res = capture([ip, "-j", *args], timeout=30)
+        if res.returncode != 0:
+            raise Failure(f"`ip -j {' '.join(args)}` failed (exit {res.returncode})")
+        return res.stdout
+    links, routes4, routes6 = read("link", "show", "up"), read("route", "show", "table", "all"), \
+        read("-6", "route", "show", "table", "all")
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
-    except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(argv, 124, "", f"tailscale {args[0]} timed out")
+        return parse_linux_vpns(links, routes4, routes6)
+    except (ValueError, AttributeError):
+        raise Failure("`ip -j` printed something that is not the expected JSON") from None
+
+
+def route_conflicts(vpns: list[dict]) -> list[str]:
+    """Each route of another VPN that lies inside a tailnet range, described."""
+    hits = []
+    for vpn in vpns:
+        for text in vpn["routes"]:
+            try:
+                net = ipaddress.ip_network(text, strict=False)
+            except ValueError:
+                continue
+            hits += [f"'{vpn['name']}' routes {net}, inside Tailscale's {rng}" for rng in TAILNET_RANGES
+                     if net.version == rng.version and net.subnet_of(rng)]
+    return hits
+
+
+def vpn_coexistence(platform: str, accept_dns: bool = False) -> str:
+    """Check that no other VPN here routes Tailscale's addresses. Returns the one structured log line
+    that names the other VPNs; raises Failure on a conflict. An unreadable list is said so, not taken as none."""
+    record: dict = {"other_vpns": None,
+                    "tailscale_takes": {"routes": False, "exit_node": False, "dns": accept_dns}}
+    try:
+        record["other_vpns"] = other_vpns(platform)
+    except Failure as err:
+        record["other_vpns_unknown"] = str(err)
+    hits = route_conflicts(record["other_vpns"] or [])
+    if hits:
+        raise Failure("another VPN routes Tailscale's addresses: " + "; ".join(hits)
+                      + ". Disconnect it or narrow its routes, then run this again")
+    return "vpn-coexistence: " + json.dumps(record, separators=(",", ":"))
 
 
 def backend_state(ts: str, userspace: bool) -> str | None:
@@ -417,8 +621,12 @@ def looks_like_no_tun(text: str) -> bool:
                           r"is tailscaled running", text, re.I))
 
 
-def tailscale_up(ts: str, key: str, args, userspace: bool):
-    up = ["up", f"--auth-key={key}", f"--advertise-tags={args.tag}"]
+def tailscale_up(ts: str, key_file: Path, args, userspace: bool):
+    # Tailscale takes no routes and no exit node, and DNS only when asked for: another VPN on this machine
+    # keeps its own routes and resolver. The key is read from a file by tailscale itself: on the command
+    # line any user could see it in the process list.
+    up = ["up", f"--auth-key=file:{key_file}", f"--advertise-tags={args.tag}", "--accept-routes=false",
+          "--exit-node=", f"--accept-dns={'true' if getattr(args, 'accept_dns', False) else 'false'}"]
     if args.hostname:
         up.append(f"--hostname={args.hostname}")
     if IS_WINDOWS and not userspace:
@@ -430,6 +638,8 @@ def cmd_vpn_up(args) -> int:
     ts = tailscale_bin()
     bridge = args.bridge or os.environ.get("AI_CONNECT_BRIDGE_HOST")
     userspace = args.userspace or userspace_socket().exists()
+    platform = "windows" if IS_WINDOWS else "darwin" if sys.platform == "darwin" else "linux"
+    say(vpn_coexistence(platform, args.accept_dns))
 
     if backend_state(ts, userspace) == "Running":
         code, why = bridge_verdict(bridge, userspace)
@@ -441,13 +651,19 @@ def cmd_vpn_up(args) -> int:
     key, key_path = read_key(args)
     if args.userspace:
         start_userspace_tailscaled()
-    res = tailscale_up(ts, key, args, userspace)
-    if res.returncode != 0 and not userspace and looks_like_no_tun(res.stderr + res.stdout):
-        warn("tailscale up could not use a tun device here: " + (res.stderr or res.stdout).strip())
-        warn("falling back to userspace networking")
-        userspace = True
-        start_userspace_tailscaled()
-        res = tailscale_up(ts, key, args, userspace)
+    # Exactly the key, owner-only, for `--auth-key=file:`; gone again whatever happens
+    key_file = state_dir() / f"auth-key-{os.getpid()}.tmp"
+    write_owner_only(key_file, key + "\n")
+    try:
+        res = tailscale_up(ts, key_file, args, userspace)
+        if res.returncode != 0 and not userspace and looks_like_no_tun(res.stderr + res.stdout):
+            warn("tailscale up could not use a tun device here: " + (res.stderr or res.stdout).strip())
+            warn("falling back to userspace networking")
+            userspace = True
+            start_userspace_tailscaled()
+            res = tailscale_up(ts, key_file, args, userspace)
+    finally:
+        key_file.unlink(missing_ok=True)
     if res.returncode != 0:
         kept = f"; key file {key_path} kept" if key_path else ""
         raise Failure(f"tailscale up failed (exit {res.returncode}): "
@@ -506,6 +722,8 @@ def build_parser() -> argparse.ArgumentParser:
     m = sub.add_parser("mint-key", help="ADMIN: create one single-use auth key for a peer")
     m.add_argument("--name", required=True, help="peer name (becomes its tailnet hostname)")
     m.add_argument("--expiry", default="1d", help="key lifetime: 1d (default), 12h, 30m, 3600")
+    m.add_argument("--ephemeral", action="store_true",
+                   help="make the node ephemeral (removed soon after it goes offline): throwaway or CI nodes only")
     m.add_argument("--tag", default=DEFAULT_TAG)
     m.add_argument("--out", help="write the key to this file (owner-only) instead of printing it")
     m.add_argument("--peer-token", action="store_true",
@@ -525,6 +743,8 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--bridge", help="Bridge host on the tailnet (or AI_CONNECT_BRIDGE_HOST)")
     u.add_argument("--hostname", help="this node's tailnet name (the peer name from mint-key)")
     u.add_argument("--tag", default=DEFAULT_TAG)
+    u.add_argument("--accept-dns", action="store_true",
+                   help="let Tailscale manage this machine's DNS (MagicDNS); off by default")
     u.add_argument("--userspace", action="store_true",
                    help="no admin rights / no tun: run tailscaled in userspace with a SOCKS5 proxy")
     u.set_defaults(func=cmd_vpn_up)
