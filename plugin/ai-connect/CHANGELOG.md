@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.2.0] - 2026-10-12
+
+Every session on an enrolled machine is online at once. In 0.1.8 all sessions of a machine registered under its one
+`client.name`: the first held it, and every other one sat on standby with none of its tools working.
+
+### Changed
+- A machine's token registers its name and every `<name>:<label>` under it (`server/roles.py`). The STDIO client joins as `<client.name>:<project>` (`peer_name.py`): the project directory's name made plain (accents dropped, other characters a hyphen, at most 40 characters, a short hash for a name with nothing plain in it). No second enrolment, no change to `auth.peers`, no Bridge restart per session
+- A message to a machine's name (`laptop`) reaches every online session of that machine except the sender; with none online it waits for the first to register and is delivered once. A message to `laptop:repo` reaches that session only. A peer writing to its own name still gets it back alone, so `deploy test` wakes nobody
+- `peer_history` of a session includes what was sent to its machine's name; asked by a machine's name it is the conversation with all of that machine's sessions. `peer_notify_when_idle` on a machine's name answers for its first session to be done. A session's watcher is woken by messages to the machine's name too
+- Two sessions in one project: the second gets `name_taken` and registers as `<client.name>:<project>-<process id>`, kept for the process's life. Standby stays for a name held twice over and for 0.1.8 clients
+- `AI_CONNECT_PEER_SUFFIX` now applies with `client.name` set (`<client.name>:<project>-<suffix>`); `AI_CONNECT_PEER_NAME` may be any name the machine's token may register
+- The watcher's name file (`~/.config/ai-connect/sessions/<pid>`) is rewritten with the name the Bridge registered, once it differs from the one asked for
+
+### Security
+- The prefix is compared with its separator and by the longest enrolled name: `Mini` does not own `MiniOther:x`, and with both `Host` and `Host:Alice` enrolled, `Host`'s token cannot register under `Host:Alice`. The same rule guards `watch`. Refused with `name_not_bound_to_token` / `watch_not_own_name`
+- A label is letters, digits, `.`, `_`, `-`, at most 64, with no colon (`invalid_session_label`)
+- The legacy shared token can no longer register or watch a name under an enrolled machine's (`laptop:x`); before, only the bare enrolled name was protected
+
+### Fixed
+- One watcher per session was keyed on the session's process id alone, so two machines whose sessions shared a process id turned each other's watcher away; it is keyed on the token as well
+
+### Delivery of what waited
+- One replay per machine at a time (a lock around read, send and mark): two sessions registering together cannot both send the rows that waited for the machine's name, whichever read the store first
+- A replay whose connection breaks hands what still waits for the machine to one of its other online sessions at once, instead of leaving it until the next registration; what waited for the broken session's own name stays for that name
+
+### Compatibility
+- 0.1.8 client, 0.2.0 Bridge: works as before, one session per machine under `client.name`, standby for a second
+- 0.2.0 client, 0.1.8 Bridge: the session name is refused (`name_not_bound_to_token`); the client registers as `client.name` instead, says so once in `peer_read`, and asks for its own name again at every new connection. One session per machine until the Bridge is updated
+- A 0.2.0 Bridge sends the same code for a name another enrolled machine owns (`client.name: Host`, project `Alice`, with `Host:Alice` enrolled) or a wrong `client.name`, and marks every register refusal with `"session_names": true`. The client falls back only when the mark is absent; with it, the session stays offline and `peer_read` names the conflict instead of blaming the Bridge's age
+- Update the Bridge first. Messages already waiting under a machine's name are delivered to its first 0.2.0 session
+- `client.name_mode: per-project` (0.1.13) still names a session `<client.name>-<project>` under that project's own token, registered as it is. Where the mode fell back to `client.name` (no token for the project, a loose or foreign token file, another directory's `.dir`), and with the mode off, the session is now `<client.name>:<project>` on `client.token`; the stderr line reads `joining under client.name` instead of `joining as`. `AI_CONNECT_PEER_NAME` with a session token is unchanged, and the watcher sends `client.token` for a session name
+- `tests/test_ops_setup.py::test_no_usable_name_falls_back` used a project folder named `...`, which Windows drops from a path, so it failed there on main; it uses `___`
+
 ## [0.1.16] - 2026-10-12
 
 - 0.1.16: test line lengths for pylint

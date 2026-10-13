@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from http import HTTPStatus
+from typing import Any
 
 import websockets
 from websockets import ClientConnection
@@ -32,6 +34,17 @@ QUEUE_FULL_NOTICE = (
     "peer_history. Broadcasts missed meanwhile are not in it."
 )
 REFUSED_NOTICE = "The Bridge refused something this session sent ({code}): {error}"
+NAME_NOT_OURS_NOTICE = (
+    "The Bridge refused the name {name} (name_not_bound_to_token), so this session is offline. "
+    "Either client.name in config.yaml ({machine}) is not the name this machine's token was "
+    "enrolled with, or {name} belongs to another enrolled machine: then start this session with "
+    "AI_CONNECT_PEER_SUFFIX set, which gives it a different name."
+)
+OLDER_BRIDGE_NOTICE = (
+    "This Bridge is older than AI-Connect 0.2.0 and knows one name per machine, so this session "
+    "joined as {machine} instead of {session}. Only one session of this machine is online at a "
+    "time until the Bridge is updated; the others wait on standby."
+)
 
 
 class MessageTooLarge(ValueError):
@@ -51,10 +64,29 @@ def max_message_bytes() -> int:
 class BridgeClient:
     """Keeps the connection to the Bridge Server and queues incoming messages."""
 
-    def __init__(self, host: str, port: int, peer_name: str, token: str):
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        host: str,
+        port: int,
+        peer_name: str,
+        token: str,
+        machine_name: str = "",
+        collision_suffix: str = "",
+        on_registered: Callable[[str], None] | None = None,
+    ):
+        """peer_name is the name to join as. For a session named after its machine
+        ("<machine_name>:<label>"), machine_name is what an older Bridge accepts
+        instead, and collision_suffix (the session's process id) what is appended
+        when a sibling session holds the name. on_registered hears the name the
+        Bridge registered, which is only then known for sure."""
         self.host = host
         self.port = port
+        # The name in use; differs from _session_name only after falling back to _machine_name
         self.peer_name = peer_name
+        self._session_name = peer_name
+        self._machine_name = machine_name
+        self._collision_suffix = collision_suffix
+        self._on_registered = on_registered
         self._token = token
 
         self._ws: ClientConnection | None = None
@@ -62,6 +94,13 @@ class BridgeClient:
         self._connected = False
         self._reconnecting = False
         self._should_reconnect = True
+        # The collision suffix is in _session_name: kept for the process's
+        # life, so the name does not change with every reconnect
+        self._suffixed = False
+        # This connection's Bridge refused the session name (it is from before
+        # 0.2.0) and got the machine name instead
+        self._fell_back = False
+        self._older_bridge_noticed = False
         # Another live session holds the name: wait until it is free (the
         # Bridge refuses a takeover with name_taken)
         self._standby = False
@@ -135,6 +174,10 @@ class BridgeClient:
         self._connected = not self._standby
         self._reconnecting = False
         self._standby_retried = False
+        # Every connection asks for the session's own name first: the Bridge
+        # may have been updated since the last one fell back
+        self._fell_back = False
+        self.peer_name = self._session_name
         await self._register()
 
         for task in (self._receive_task, self._ping_task):
@@ -348,9 +391,10 @@ class BridgeClient:
         elif msg_type == "registered":
             if self._standby:
                 self._standby = False
-                self._connected = True
                 logger.info(f"Peer name '{self.peer_name}' free again, registered")
                 self._queue_notice(f"The other session has left; this session is online again as {self.peer_name}.")
+            self._connected = True
+            self._report_registered()
             await self._send_state()
             if self._status:
                 await self._send({"type": "set_status", "status": self._status})
@@ -364,15 +408,75 @@ class BridgeClient:
         elif msg_type == "error" and data.get("code") == "name_taken":
             await self._on_name_taken()
 
+        elif msg_type == "error" and data.get("code") == "name_not_bound_to_token" and self._can_fall_back():
+            # The one code has two causes. A Bridge that knows session names marks
+            # its refusals: there the name really is someone else's
+            if data.get("session_names"):
+                self._on_name_not_ours(data)
+            else:
+                await self._fall_back_to_machine_name()
+
         elif msg_type == "error":
             logger.error(f"Bridge reported an error ({data.get('code')}): {data.get('error')}")
             if data.get("code"):
                 # A send the Bridge refused was reported as sent: say so where the model reads
                 self._queue_notice(REFUSED_NOTICE.format(code=data.get("code"), error=data.get("error")))
 
-    async def _on_name_taken(self) -> None:
-        """Another live session holds the name: wait on standby once, never take it over."""
+    def _report_registered(self) -> None:
+        """Tell on_registered the name; its failure (a file it cannot write) is logged, not raised."""
+        if self._on_registered is None:
+            return
+        try:
+            self._on_registered(self.peer_name)
+        except OSError as e:
+            logger.warning(f"Could not record the peer name '{self.peer_name}': {e}")
+
+    def _can_fall_back(self) -> bool:
+        """Whether the refused name was this session's own under its machine, not yet given up."""
+        return bool(self._machine_name) and not self._fell_back and self.peer_name != self._machine_name
+
+    def _on_name_not_ours(self, data: dict) -> None:
+        """A 0.2.0 Bridge refused the session's name: it is not under this token's enrolled name.
+
+        Not retried under the machine's name: that would join, and hide that
+        client.name is wrong or that the project's name is another machine's.
+        """
         self._connected = False
+        logger.error(f"Bridge refused the name '{self.peer_name}' ({data.get('code')}): {data.get('error')}")
+        self._queue_notice(NAME_NOT_OURS_NOTICE.format(name=self.peer_name, machine=self._machine_name))
+
+    async def _fall_back_to_machine_name(self) -> None:
+        """A Bridge from before 0.2.0 binds the token to the machine name alone: join as that.
+
+        Once per connection, so a Bridge that refuses the machine name too is
+        reported like any other refusal instead of asked again.
+        """
+        self._connected = False
+        self._fell_back = True
+        logger.warning(
+            f"The Bridge refused '{self.peer_name}' (name_not_bound_to_token): it is older than 0.2.0; "
+            f"registering as '{self._machine_name}'"
+        )
+        if not self._older_bridge_noticed:
+            self._older_bridge_noticed = True
+            self._queue_notice(OLDER_BRIDGE_NOTICE.format(machine=self._machine_name, session=self.peer_name))
+        self.peer_name = self._machine_name
+        await self._register()
+
+    async def _on_name_taken(self) -> None:
+        """Another live session holds the name.
+
+        A session named after its machine has a second name to ask for: the
+        same with its own suffix. Otherwise, and if that is taken too, it
+        waits on standby once; it never takes a name over.
+        """
+        self._connected = False
+        if self._machine_name and self._collision_suffix and not self._suffixed and not self._fell_back:
+            self._suffixed = True
+            self._session_name = self.peer_name = f"{self._session_name}-{self._collision_suffix}"
+            logger.info(f"A sibling session holds the name; registering as '{self.peer_name}'")
+            await self._register()
+            return
         if self._standby_retried:
             logger.error(f"Peer name '{self.peer_name}' refused again (name_taken) after the standby retry; not retrying")
             return
@@ -384,8 +488,8 @@ class BridgeClient:
         )
         self._queue_notice(
             f"Another session is online as {self.peer_name}. This session is on standby and cannot "
-            "send or receive until the other one leaves. Sessions with the same client.name share it: "
-            "close one, or start the second with AI_CONNECT_PEER_NAME set to a name with its own token."
+            "send or receive until the other one leaves: close one, or start the second with "
+            "AI_CONNECT_PEER_NAME set to a name of its own that this machine's token may register."
         )
         await self._register()
 
@@ -421,11 +525,12 @@ def get_client() -> BridgeClient | None:
     return _client
 
 
-async def init_client(host: str, port: int, peer_name: str, token: str) -> BridgeClient:
+async def init_client(host: str, port: int, peer_name: str, token: str, **session: Any) -> BridgeClient:
     """Create the Bridge client and connect; if the Bridge is unreachable,
-    keep trying in the background."""
+    keep trying in the background. session: BridgeClient's machine_name,
+    collision_suffix and on_registered."""
     global _client
-    _client = BridgeClient(host=host, port=port, peer_name=peer_name, token=token)
+    _client = BridgeClient(host=host, port=port, peer_name=peer_name, token=token, **session)
     if not await _client.connect():
         _client.start_reconnect()
     return _client

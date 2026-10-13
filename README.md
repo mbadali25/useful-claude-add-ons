@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **ai-connect 0.2.0**: Every session on a machine is online at once. Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the machine's name and every other one sat on standby with no working tools.
 - **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
-- **ai-connect 0.1.15**: One peer name per project, opt-in. With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
