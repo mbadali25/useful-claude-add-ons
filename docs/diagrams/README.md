@@ -31,6 +31,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew brief platform sync](#process-crew-brief-platform-sync) | PASS |
 | [Process crew brief status](#process-crew-brief-status) | PASS |
 | [Process crew brief](#process-crew-brief) | PASS |
+| [Process crew kimi agent](#process-crew-kimi-agent) | PASS |
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
@@ -1028,6 +1029,43 @@ flowchart TB
 - **Source:** `process-crew-brief.mmd`
 - **Drawn from:** `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/handoff-read.sh`, `plugin/crew/hooks/scripts/platform-sync.sh`, `plugin/crew/hooks/scripts/crew-context.sh`
 - **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
+
+## Process crew kimi agent
+
+L-0777: how a crew explorer, researcher or security dispatch runs on Kimi K3 read-only, and the three outcomes the dispatcher agent acts on (relay, fall back to Claude, stop).
+
+```mermaid
+flowchart LR
+    AGENT["<b>crew:explorer / researcher / security</b><br/>Claude dispatcher, one Bash call"]
+    ROUTE{"<b>route()</b><br/>role pinned to kimi,<br/>family not the author's?"}
+    PROBE{"<b>kimi_probe.probe</b><br/>tree unchanged<br/>and state ok?"}
+    LAUNCH["<b>kimi -p</b> read-only<br/>per-role allowlist,<br/>no Bash, Write or Edit"]
+    FP{"tree fingerprint<br/>after the run"}
+    OK(["<b>exit 0</b> KIMI OK<br/>answer relayed, redacted"])
+    UNAV(["<b>exit 3</b> KIMI UNAVAILABLE<br/>agent runs on Claude,<br/>says so on line 1"])
+    TREE(["<b>exit 8</b> KIMI CHANGED THE TREE<br/>or TREE UNKNOWN: agent stops"])
+
+    AGENT --> ROUTE
+    ROUTE -->|not-routed, barred,<br/>author-unknown| UNAV
+    ROUTE -->|routed| PROBE
+    PROBE -->|not ok| UNAV
+    PROBE -->|ok| LAUNCH
+    LAUNCH --> FP
+    FP -->|timed out, failed,<br/>no final message| UNAV
+    FP -->|clean| OK
+    FP -->|changed or unreadable| TREE
+    PROBE -->|probe wrote| TREE
+```
+
+| Box | Details |
+|---|---|
+| `ROUTE` | crew_kimi_agent.route() plugin/crew/hooks/scripts/crew_kimi_agent.py:214 resolves the role through crew_state.resolve_role; security is in REVIEWING_DEV_ROLES (crew_state.py:1198), so a pin in the author's family is barred and an empty author set is author-unknown, never no conflict |
+| `FP` | review_run.tree_fingerprint before the probe, after it and, after a SETTLE_S wait (_settled_problem :253), after the run or a failed probe (crew_kimi_agent.py:304-362); a change is exit 8, a tree that cannot be read after the run is exit 8 (KIMI TREE UNKNOWN) |
+| `LAUNCH` | kimi -p with a per-role agent file (ROLE_TOOLS :91, Write/Edit/Bash disallowed), an empty skills dir, kimi_env(), stdin closed, its own process group, the timeout (DEFAULT_TIMEOUT :68) |
+
+- **Source:** `process-crew-kimi-agent.mmd`
+- **Drawn from:** `plugin/crew/hooks/scripts/crew_kimi_agent.py`, `plugin/crew/agents/explorer.md`, `plugin/crew/hooks/scripts/crew_state.py`
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle approve
 

@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.31**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
 - **ai-connect 0.2.0**: Every session on a machine is online at once. Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the machine's name and every other one sat on standby with no working tools.
-- **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

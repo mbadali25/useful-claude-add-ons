@@ -113,7 +113,7 @@ independent eyes.</p>
 <tr>
 <td><code>explorer</code></td>
 <td>Maps the code a ticket touches</td>
-<td>No Write, Edit or Bash</td>
+<td>No Write or Edit; Bash only to hand its task to Kimi</td>
 </tr>
 <tr>
 <td><code>reviewer</code></td>
@@ -132,6 +132,14 @@ independent eyes.</p>
 </tr>
 </tbody>
 </table>
+<p><strong>Running agents on Kimi.</strong> Claude Code runs subagents on Claude models only,
+so <code>explorer</code>, <code>researcher</code> and <code>security</code> can hand their task to the Kimi Code
+CLI instead. Pin one with
+<code>/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'</code>. Kimi then
+answers read-only, and the agent falls back to Claude when Kimi cannot run. Its
+first line says which one ran. A Kimi <code>security</code> review is refused on code Kimi
+wrote, because the family that wrote a change may not judge it. Nothing is
+pinned until you pin it.</p>
 <p>The session you type into does the implementing. Nothing else is dispatched to
 write. Stack knowledge (Python, Bash, PowerShell, Terraform and others) loads
 on demand as <code>stack-*</code> skills. There is no PM agent, and nothing grows or

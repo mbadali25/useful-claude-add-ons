@@ -141,7 +141,7 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.30<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.31<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
@@ -317,10 +317,10 @@ the crew up or down.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only + Bash (the Kimi dispatch only) | `opus` | 0 | Maps code, returns summaries not contents |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
-| `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
+| `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
 
 All four are read-only — a restricted tool set is one of the three things that
 earns a role its place. `reviewer` runs on `opus` because it shares a model
@@ -329,6 +329,15 @@ tier is the only compensation left. `explorer` also runs on `opus` (owner
 decision, 2026-09-24): it maps unfamiliar code for every other role, and with
 the `localgpu` semantic index disabled or unavailable it has only
 Read/Grep/Glob, so a wrong map is inherited by everything built on it.
+
+**On Kimi (since L-0777).** Claude Code's subagent `model` field takes Claude
+models only, so `explorer`, `researcher` and `security` are thin dispatchers:
+when `dev.roles.<agent>` pins `kimi`, one Bash call hands the task to
+`hooks/scripts/crew_kimi_agent.py`, which runs the Kimi Code CLI read-only (a
+per-role allowlist with no Bash, Write or Edit, and the working tree checked
+before and after) and falls back to the Claude model above when Kimi cannot
+run. Nothing ships pinned. `security` is family-guarded: a Kimi pin is barred
+on Kimi-authored work.
 
 ### Bundled skills — 29
 
