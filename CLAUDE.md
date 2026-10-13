@@ -81,6 +81,12 @@ it by hand before pushing a change to the plugin update path; and the README's i
 **pinned to a commit SHA** — after merging a change to either install script, `git rev-parse HEAD`
 and re-pin both.
 
+## Documentation - HTML/PDF/DOCX for humans, Markdown for the repo, all under docs/
+
+A guide a person reads ships rendered: each guide's folder under `docs/guides/` holds DOCX and
+PDF, most also HTML (crew's are built from `docs/guides/crew/src/` by `build.py`). Markdown is
+right for the repo's own files: READMEs, this file, ADRs in `docs/adr/`, the code map.
+
 ## Reporting - errors verbatim, say what you did NOT verify
 
 Quote failures exactly; never summarise a stack trace. Name which suites ran and which did not.
