@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.34**: A reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch. `crew` 1.2.34 lets the review harness rebuild a round's bundle after its reviewed head has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch itself, so `/crew:review` stops rather than reporting "nothing to review".
 - **crew 1.2.33**: The docs no longer say `/crew:review` cannot launch Kimi. The crew-providers skill and `kimi_probe.py` now say what has been true since L-0527: `/crew:review` launches Kimi as a reviewer.
-- **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

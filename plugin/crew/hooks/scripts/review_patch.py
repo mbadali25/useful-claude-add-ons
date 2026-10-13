@@ -400,7 +400,7 @@ def included_patch(root, a, b, tmp_dir):
     return _run_raw(root, ["diff"] + flags + [a, shown, "--"] + list(INCLUDABLE)), entries
 
 
-def _ticket_base_tree(root, base_sha, working_tree, tmp_dir, head="HEAD"):
+def _ticket_base_tree(root, base_sha, working_tree, tmp_dir, head="HEAD", merged=None):
     """`(tree, merged, dropped, against)`: the tree the bundle diffs from. The
     start commit's tree, unless a merge of main applies; then that tree with
     each path identical to the merged commit in the working state set to its
@@ -408,8 +408,11 @@ def _ticket_base_tree(root, base_sha, working_tree, tmp_dir, head="HEAD"):
     path main changed since the ticket forked from it that the working state
     changes again set to the merged commit's entry -- so main's lines read as
     context and only the ticket's as `+`/`-`. Written from a second temporary
-    index. `dropped` and `against` are those `--raw` entries, sorted by path."""
-    merged = merged_main.resolve(root, base_sha, head)
+    index. `dropped` and `against` are those `--raw` entries, sorted by path.
+    `merged`, when given, is a `merged_main.pinned` answer used in place of
+    `resolve` (L-0770)."""
+    if merged is None:
+        merged = merged_main.resolve(root, base_sha, head)
     base_tree = _run(root, ["rev-parse", base_sha + "^{tree}"]).strip()
     if not merged["applies"]:
         return base_tree, merged, [], []
