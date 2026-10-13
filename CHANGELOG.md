@@ -9,6 +9,33 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Security — crew 1.2.34: the cloud guard no longer writes the command line as typed to `.crew/guard.log`
+
+- **Summary.** With `guards.cloudGuard` on, a credential written inline on a judged command is no
+  longer persisted in clear: guard.log rows now hold a hash and a redacted, capped form of the command.
+- **Defect.** `cloud_guard.py` appended one row per finding, refusals included, and the row's last
+  field was the whole command (`_log(root, (now, rule, policy, decision, target, command))`, plus the
+  internal-error and unpinned-identity rows). The writer flattened only tab, CR and LF. So
+  `mysql -p<pw>`, `curl -u user:pw`, an `Authorization:` header or `AWS_SECRET_ACCESS_KEY=...` on a
+  judged command reached disk in clear, even when the guard refused it. The target field could carry a
+  fragment of the command too (an `xargs`/`parallel` finding, a non-literal terraform word).
+- **Now.** The writer moved to `hooks/scripts/guard_log_redact.py` (`cloud_guard._log` is it) and
+  passes the target and command fields through `log_text`: secret-bearing values are masked to `***`
+  (`-p<x>`, `-P x`, `-pw x`, `--password`/`--token`/`--api-key`-style flags, `-u user:pass`,
+  `user:pass@` in URLs, `Authorization`/`Bearer`/`Cookie`/`X-*-Key` headers, `NAME=value` for
+  secret-looking names including PowerShell `$env:`, and common token shapes), whitespace is
+  flattened, the text is capped at 200 characters with the number cut, and the command is led by
+  `sha256:<12 hex>` of the redacted text. The hash is never of the raw line, which beside the rest of
+  the command would be an offline oracle for the masked value. Rows keep six fields.
+- **Limits.** A denylist: a secret in a shape no pattern names is still written. Over-masking
+  (`mkdir -p***`) is accepted. `crew_config.py --guard <name> --record` writes its own row with the
+  command and is unchanged; no shipped hook calls it with `--record`.
+- **Action for users who ran the guard on 1.2.33 or earlier:** review and delete existing
+  `.crew/guard.log` files, and rotate any credential found in them.
+- Tests: `tests/test_cloud_guard_log_redact.py` (a refused and a report-mode-allowed command per
+  secret shape, a policy `allow`, the unpinned-identity row, the writer itself, the hash and cap).
+  `GUARD_LOG_MUTATIONS` in `tests/sabotage_cloud.py`: 8 mutations, each red on its aimed test.
+
 ### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
 
 - **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since

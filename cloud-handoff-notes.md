@@ -1,5 +1,8 @@
 # Cloud handoff notes
 
+> 2026-10-13: notes left for the `crew-lin` session while it was offline are in
+> [`crew-notes.md`](crew-notes.md) (crew 1.2.34 guard.log redaction, PR #635).
+
 Live log of the cloud session working ALL open PRs #323-#379 (session
 `session_01YVvVmFJquzLKR26dG6oSQS`, branch `ccr-b039f2bb-6jks7g`, which carries only this file and
 merges last). It is pushed after every action: the last log entry is where it stopped. Ticket status

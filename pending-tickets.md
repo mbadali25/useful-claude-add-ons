@@ -1,5 +1,8 @@
 # Pending tickets
 
+> 2026-10-13: notes left for the `crew-lin` session while it was offline are in
+> [`crew-notes.md`](crew-notes.md) (crew 1.2.34 guard.log redaction, PR #635).
+
 Work found while building L-0618 (crew QA standards), waiting for a ticket ID. The owner's ticket
 agent creates each ticket and writes its ID in the **Ticket** column; the implementing session works
 from this file and updates **Status** as work lands.
