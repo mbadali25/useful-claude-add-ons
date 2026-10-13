@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.1] - 2026-10-12
+
+A session is named after its Claude Code session name: `laptop:cross-session` instead of `laptop:my-repo`.
+
+### Changed
+- The label in `<client.name>:<label>` is the session's name in Claude Code when it has one, made plain as the project's name was (accents dropped, other characters a hyphen, at most 40 characters). A session without a usable name, and every other harness, keeps the project's name as in 0.2.0. `AI_CONNECT_PEER_SUFFIX` is appended to either; `AI_CONNECT_PEER_NAME` still replaces the whole name. Unchanged: the legacy `Host:Project` name (no `client.name`) and `client.name_mode: per-project` with a project token
+- The name is read once, when Claude Code starts the MCP server (`client/server.py`), from `~/.claude/sessions/<the session's process id>.json` (`name`; under `CLAUDE_CONFIG_DIR` when set). A `/rename` in a running session takes effect only after ai-connect is reconnected from `/mcp`
+- That file is an internal of Claude Code, not a documented interface. Missing, unreadable, over 64 KB, not a JSON object, or with no text under `name`: the label is the project's and nothing is raised or reported (`peer_name.claude_session_title`). Only that one file is opened and the directory is never listed, so the `<pid>.<hash>.key` files beside it are not read
+- Two sessions with the same session name are told apart as two in one project were: the second gets `name_taken` and registers as `<client.name>:<label>-<process id>`
+- The STDIO client's log file follows the name: `mcp-<client.name>_<session name>.log`
+
+### Compatibility
+- The Bridge is unchanged; only clients need 0.2.1, and they mix freely with 0.2.0 clients
+- A named session no longer joins as `<client.name>:<project>`. Messages already waiting on the Bridge for that name stay there until a session joins under it (an unnamed session in that project); a message to the machine's name reaches every session as before
+- The watcher is unchanged: it reads the name the client recorded in `~/.config/ai-connect/sessions/<pid>` and never works one out. Token lookup is unchanged: a name with a colon uses `client.token`
+
 ## [0.2.0] - 2026-10-12
 
 Every session on an enrolled machine is online at once. In 0.1.8 all sessions of a machine registered under its one

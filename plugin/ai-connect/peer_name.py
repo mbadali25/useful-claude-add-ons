@@ -2,6 +2,7 @@
 """The peer name of a STDIO client: one rule for the client and the watcher."""
 
 import hashlib
+import json
 import os
 import re
 import socket
@@ -76,28 +77,68 @@ def _project(environ: Mapping[str, str], cwd: Path) -> str:
     return (Path(environ["CLAUDE_PROJECT_DIR"]) if "CLAUDE_PROJECT_DIR" in environ else cwd).name
 
 
-def session_label(environ: Mapping[str, str], cwd: Path) -> str:
-    """What tells this session from the others on its machine: its project's name,
-    made plain, with AI_CONNECT_PEER_SUFFIX appended if set.
+# Claude Code keeps one <process id>.json per running session in its sessions directory,
+# with the name the session was given ("name"). The file is an internal of Claude Code,
+# not a documented interface: whatever goes wrong reading it, the label is the project's.
+# A real one is a few hundred bytes; nothing larger is parsed
+_SESSION_FILE_MAX = 64 * 1024
 
-    A name with nothing plain in it (another script, an emoji) gets a short
-    hash of itself instead, so two such projects still differ.
+
+def claude_sessions_dir(environ: Mapping[str, str]) -> Path:
+    """Where Claude Code keeps its session files: under CLAUDE_CONFIG_DIR when set, else ~/.claude."""
+    config_dir = Path(environ["CLAUDE_CONFIG_DIR"]) if environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude"
+    return config_dir / "sessions"
+
+
+def claude_session_title(pid: int, sessions_dir: Path) -> str:
+    """The name Claude Code holds for the session with this process id, or "" for any reason
+    there is none to read: no such file (another harness), unreadable, no JSON object, no
+    text under "name". Never raises.
+
+    Exactly one file is opened, <sessions_dir>/<pid>.json, and the directory is not
+    listed: the <pid>.<hash>.key files beside it hold a secret.
     """
-    project = _project(environ, cwd)
+    try:
+        with (sessions_dir / f"{int(pid)}.json").open("rb") as handle:
+            raw = handle.read(_SESSION_FILE_MAX + 1)
+        if len(raw) > _SESSION_FILE_MAX:
+            return ""
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, TypeError, RecursionError):
+        # ValueError: not UTF-8, not JSON (json.JSONDecodeError), or a pid that is no number
+        return ""
+    title = data.get("name") if isinstance(data, dict) else None
+    return title if isinstance(title, str) else ""
+
+
+def session_label(environ: Mapping[str, str], cwd: Path, title: str = "") -> str:
+    """What tells this session from the others on its machine: the session's own name
+    (title, see claude_session_title) when it has one, else its project's name; made
+    plain, with AI_CONNECT_PEER_SUFFIX appended if set.
+
+    A session name with nothing plain in it counts as none. A project name with
+    nothing plain in it (another script, an emoji) gets a short hash of itself
+    instead, so two such projects still differ.
+    """
     suffix = _plain(environ.get("AI_CONNECT_PEER_SUFFIX", ""), SUFFIX_MAX)
     room = LABEL_MAX - (len(suffix) + 1 if suffix else 0)
-    label = _plain(project, room) or "p-" + hashlib.sha256(project.encode(errors="backslashreplace")).hexdigest()[:8]
+    label = _plain(title, room)
+    if not label:
+        project = _project(environ, cwd)
+        digest = hashlib.sha256(project.encode(errors="backslashreplace")).hexdigest()[:8]
+        label = _plain(project, room) or "p-" + digest
     return f"{label}-{suffix}" if suffix else label
 
 
-def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "") -> str:
+def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "", title: str = "") -> str:
     """AI_CONNECT_PEER_NAME if set, else "<client.name>:<label>" (configured is
-    client.name, see session_label), else the legacy "Host:Project", or
-    "Host:Project-Suffix" with AI_CONNECT_PEER_SUFFIX.
+    client.name, title the session's own name, see session_label), else the legacy
+    "Host:Project", or "Host:Project-Suffix" with AI_CONNECT_PEER_SUFFIX.
 
     client.name is the machine: its token registers that name and every
     "<client.name>:<label>", so each session on the machine has a name of
-    its own. Host:Project is accepted only through the legacy shared token.
+    its own. Host:Project is accepted only through the legacy shared token,
+    and is never the session's name.
 
     The suffix lets a harness give a second session in the same project a
     name it knows beforehand, without building the name itself.
@@ -105,25 +146,28 @@ def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "") -> st
     if "AI_CONNECT_PEER_NAME" in environ:
         return environ["AI_CONNECT_PEER_NAME"]
     if configured:
-        return f"{configured}:{session_label(environ, cwd)}"
+        return f"{configured}:{session_label(environ, cwd, title)}"
     name = f"{socket.gethostname()}:{_project(environ, cwd)}"
     suffix = environ.get("AI_CONNECT_PEER_SUFFIX")
     return f"{name}-{suffix}" if suffix else name
 
 
-def session_identity(environ: Mapping[str, str], cwd: Path, chosen: str, configured: str) -> tuple[str, dict[str, str]]:
+def session_identity(
+    environ: Mapping[str, str], cwd: Path, chosen: str, configured: str, title: str = "",
+) -> tuple[str, dict[str, str]]:
     """(name, BridgeClient's machine_name argument) of a STDIO session.
 
-    chosen is the name config_loader settled on, configured is client.name.
-    They differ when client.name_mode: per-project found the project's own
-    token: "<client.name>-<project>" is bound to that token and registered as
-    it is, with no fallback and no suffix. Otherwise, also when that mode
-    fell back to client.token, the session is "<client.name>:<project>" on
-    the machine's token (peer_name).
+    chosen is the name config_loader settled on, configured is client.name,
+    title the session's own name (claude_session_title), "" when it has none.
+    chosen and configured differ when client.name_mode: per-project found the
+    project's own token: "<client.name>-<project>" is bound to that token and
+    registered as it is, with no fallback, no suffix and no session name.
+    Otherwise, also when that mode fell back to client.token, the session is
+    "<client.name>:<label>" on the machine's token (peer_name).
     """
     if "AI_CONNECT_PEER_NAME" not in environ and chosen != configured:
         return chosen, {}
-    return peer_name(environ, cwd, configured), {"machine_name": machine_name(environ, configured)}
+    return peer_name(environ, cwd, configured, title), {"machine_name": machine_name(environ, configured)}
 
 
 def machine_name(environ: Mapping[str, str], configured: str = "") -> str:
