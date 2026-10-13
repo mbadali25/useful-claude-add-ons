@@ -11,14 +11,14 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.1.17<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.2.1<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
 | **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |
 | **Upstream guide** | [`ai-connect/README.md`](ai-connect/README.md) |
 
-Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Host:Project`), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
+Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Machine:Project` on the machine's one token, so every session on a machine is online at once), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
 
 This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-256 (a token can register and watch only its own name), refuses a takeover of a live name, makes the observer token read-only, caps message size, rate and stored messages, frames every piece of peer text Claude sees as untrusted data with a random-id delimiter, confines `peer_send` / `peer_context` file paths to the project, and pins every dependency exactly. `installer.py claude` here only registers the MCP server; upstream's local-marketplace install of the plugin is gone, because this marketplace installs it.
 
@@ -52,7 +52,7 @@ The watcher hooks use the first venv that is there, in this order (`watch.sh` an
 2. `venv/` in the plugin directory, next to `installer.py`, where `install.sh` / `install.cmd` create it.
 3. Deploy's venv, outside the plugin directory, where `deploy/deploy.sh` / `deploy/setup.sh` and their `.ps1` twins create it: `~/.local/share/ai-connect/venv` on Linux and macOS, `%USERPROFILE%\AppData\Local\ai-connect\venv` on Windows, or `$AI_CONNECT_HOME/venv` when that variable is set. With this venv the watcher script is run from deploy's copy of the plugin beside it (`.../ai-connect/app`) when there is one, and from the plugin directory otherwise (`deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy).
 
-Up to 0.1.16 only the second place was looked at, so on a machine set up with deploy the watcher exited 1 on every event and no session was woken by a message.
+Up to 0.2.0 only the second place was looked at, so on a machine set up with deploy the watcher exited 1 on every event and no session was woken by a message.
 
 The plugin cache directory changes with every version, so with `install.sh`'s layout, **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path. Deploy's venv is outside that directory and survives an update.
 

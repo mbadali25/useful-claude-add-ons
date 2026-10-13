@@ -248,7 +248,7 @@ def test_venv_lost_after_an_update_is_an_error_naming_the_fix(tmp_path, event, h
 # ---------------------------------------------------------------- which venv: three places, in order
 #
 # 1. AI_CONNECT_VENV  2. the plugin directory's own (install.sh / install.cmd)  3. deploy's, outside the
-# plugin directory (deploy.sh / setup.sh and their .ps1 twins). Up to 0.1.16 only the second was looked
+# plugin directory (deploy.sh / setup.sh and their .ps1 twins). Up to 0.2.0 only the second was looked
 # at, so on a machine deploy had set up the watcher exited 1 on every event and no session was ever woken.
 
 

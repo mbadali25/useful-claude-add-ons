@@ -27,6 +27,9 @@ Server
     rejected wherever it would be trusted.
   - A live registered name cannot be taken over by another connection
     (name_taken); "Bridge" and "User" are reserved names.
+  - A per-peer token also registers "<name>:<label>", one name per session of
+    that machine, and nothing under another machine's name; a message to the
+    bare name reaches every session of it (0.2.0).
   - Observer token is read-only (observe, history_all, list_peers, ping).
   - Limits: 64 KiB max message, per-connection rate limit, per-sender stored
     message cap; refusals log one structured line without token or body.

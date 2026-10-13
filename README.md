@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.1.17**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.1.16 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
-- **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
+- **ai-connect 0.2.1**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
+- **ai-connect 0.2.0**: Every session on a machine is online at once. Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the machine's name and every other one sat on standby with no working tools.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

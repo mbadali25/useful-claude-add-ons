@@ -216,7 +216,7 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 | VPN up | Tailscale is stopped or logged out here: run `deploy peer` again |
 | Bridge port reachable | wrong `--bridge`, the Bridge service is down (`deploy status` on machine 1), or the policy does not allow `tag:ai-peer` to reach `tag:bridge:9999` |
 | Bridge accepts this token | the hash given to `add-peer` is not this machine's (run `--print-enrolment` again and compare), or the Bridge was not restarted |
-| Message round trip | `name_taken`: a session is already online as this peer, close it. `name_not_bound_to_token`: `--name` is not the name the token was made for |
+| Message round trip | `name_taken`: a 0.1.8 session (or the HTTP/SSE server) is online under the machine's bare name, close it; 0.2.0 sessions register as `<name>:<project>` and leave it free. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
 
 The test leaves one message in the peer's own history on the Bridge and one refused
@@ -272,8 +272,11 @@ hooks.
 
 ### A second session on one machine
 
-Every session on a machine joins as `client.name` with `client.token`, and a live name
-cannot be taken over, so a second session waits on standby. To have both online:
+Since 0.2.0 every session on a machine is online by itself, as `<client.name>:<project>`
+with `client.token`: nothing to set up ([ONBOARDING.md](ONBOARDING.md#several-sessions-on-one-machine)).
+Before 0.2.0 they all joined as `client.name`, and a live name cannot be taken over, so a
+second session waited on standby. A session that should have a name and a **token of its
+own** (one that can be revoked without the machine's) is still made like this:
 
 ```bash
 deploy/setup.sh session --name laptop-2            # the plan

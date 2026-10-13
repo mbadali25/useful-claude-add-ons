@@ -57,11 +57,13 @@ auth:
   user_token_sha256: ""
 
 client:
-  # This machine's peer name: the name its token is bound to on the Bridge
-  # (`installer.py add-peer <name>`). Claude Code sessions and the HTTP/SSE
-  # server register under it; a second session with the same name waits on
-  # standby. AI_CONNECT_PEER_NAME overrides it. "" = Claude Code sessions
-  # name themselves Host:Project, which only the legacy shared token accepts.
+  # This machine's name: the name its token is bound to on the Bridge
+  # (`installer.py add-peer <name>`). Each Claude Code session registers as
+  # "<name>:<project>", so several sessions on this machine are online at
+  # once; the HTTP/SSE server registers as the name itself.
+  # AI_CONNECT_PEER_NAME replaces a session's whole name. "" = Claude Code
+  # sessions name themselves Host:Project, which only the legacy shared
+  # token accepts.
   name: "my-machine"
   # Opt-in: "per-project" names each Claude Code session
   # <name>-<project folder name> with that name's own token from
