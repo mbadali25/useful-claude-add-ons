@@ -1,8 +1,10 @@
 """AI-Connect MCP server over STDIO — one per Claude Code session.
 
-The session's peer name is client.name, the name its token is bound to
-(see peer_name.py). A second session with the same name waits on standby
-until the name is free.
+The session's peer name is "<client.name>:<project>" (see peer_name.py):
+client.name is the machine, whose one token registers every session on it.
+A second session in the same project appends its process id to the name.
+With client.name_mode: per-project and a token for the project, it is
+"<client.name>-<project>" under that token instead (config_loader.py).
 """
 
 import os
@@ -18,22 +20,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config_loader import client_settings, load_config
 from log_setup import setup_logging
 from mcp_app import create_app  # pylint: disable=import-error
-from peer_name import peer_name, record_session_name, remove_dead_sessions, session_pid
+from peer_name import record_session_name, remove_dead_sessions, session_identity, session_pid
 
+SESSION_PID = session_pid()
 # Read once: with client.name_mode per-project the name and token are chosen
 # here, and a fallback says so on stderr once (stdout is the MCP protocol)
-settings = client_settings(load_config())
-name = peer_name(os.environ, Path.cwd(), settings.name)
+_config = load_config()
+settings = client_settings(_config)
+name, session = session_identity(os.environ, Path.cwd(), settings.name, client_settings(_config, name="").name)
 # STDIO carries the MCP protocol, so logs go to a file only, one per peer:
 # several sessions run at once, and a rotated file must have a single writer
 setup_logging(f"mcp-{name.replace(':', '_')}.log")
-mcp = create_app(name, settings)
+# The name can still change at registration (a sibling in the same project, an
+# older Bridge): the watcher's file follows the name the Bridge registered
+mcp = create_app(
+    name,
+    settings,
+    collision_suffix=str(SESSION_PID),
+    on_registered=lambda registered: record_session_name(SESSION_PID, registered),
+    **session,
+)
 
 
 def main() -> None:
     # The session's watcher finds the name by CLAUDE_PID
     remove_dead_sessions()
-    session_file = record_session_name(session_pid(), name)
+    session_file = record_session_name(SESSION_PID, name)
     def end(*_: object) -> None:
         # Claude Code ends its MCP servers with SIGTERM, which would skip the
         # finally below. Remove the file, then end as SIGTERM would have.

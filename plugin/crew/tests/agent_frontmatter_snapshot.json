@@ -3,7 +3,7 @@
     "explorer.md": {
       "model": "opus",
       "name": "explorer",
-      "tools": "Read, Grep, Glob, Skill, mcp__localgpu__search_code, mcp__localgpu__index_status"
+      "tools": "Read, Grep, Glob, Bash, Skill, mcp__localgpu__search_code, mcp__localgpu__index_status"
     },
     "reviewer.md": {
       "model": "opus",
@@ -13,7 +13,7 @@
     "researcher.md": {
       "model": "sonnet",
       "name": "researcher",
-      "tools": "Read, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, Skill"
+      "tools": "Read, Glob, Bash, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, Skill"
     },
     "security.md": {
       "model": "sonnet",
@@ -21,5 +21,5 @@
       "tools": "Read, Grep, Glob, Bash, Skill"
     }
   },
-  "captured_from": "621d50dc (origin/main, crew 0.19.92)"
+  "captured_from": "621d50dc (origin/main, crew 0.19.92); Bash for explorer and researcher added deliberately by L-0777 (Kimi dispatchers)"
 }

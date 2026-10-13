@@ -26,10 +26,19 @@ independent eyes.
 
 | Role | What it does | What it cannot do |
 |---|---|---|
-| `explorer` | Maps the code a ticket touches | No Write, Edit or Bash |
+| `explorer` | Maps the code a ticket touches | No Write or Edit; Bash only to hand its task to Kimi |
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
+
+**Running agents on Kimi.** Claude Code runs subagents on Claude models only,
+so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
+CLI instead. Pin one with
+`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`. Kimi then
+answers read-only, and the agent falls back to Claude when Kimi cannot run. Its
+first line says which one ran. A Kimi `security` review is refused on code Kimi
+wrote, because the family that wrote a change may not judge it. Nothing is
+pinned until you pin it.
 
 The session you type into does the implementing. Nothing else is dispatched to
 write. Stack knowledge (Python, Bash, PowerShell, Terraform and others) loads

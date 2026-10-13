@@ -29,7 +29,9 @@ import textwrap
 #   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
 #                    | turnfail-secret (the failure message carries a bearer
 #                    token) | write (appends to seed.txt, then answers clean)
-#                    | fail
+#                    | fail | hang (sleeps 60 s) | empty (no assistant text)
+#   FAKE_KIMI_GIT    a JSON list of argv lists; a review call runs `git <argv>`
+#                    for each, in order, after its writes (stage, commit)
 #   FAKE_KIMI_WRITES comma-separated repo-relative paths a review call appends
 #                    to (parent dirs created) before it answers
 #   FAKE_KIMI_PUT    a JSON object {repo-relative path: text}; a review call
@@ -41,6 +43,12 @@ import textwrap
 #   FAKE_KIMI_LATE / FAKE_KIMI_PROBE_LATE  an absolute path that a process the
 #                    review (or probe) call leaves running in its own process
 #                    group appends to LATE_WRITE_S after the call has answered
+#   FAKE_KIMI_DETACHED an absolute path that a process the review call starts in
+#                    a NEW session (out of its process group) appends to after
+#                    FAKE_KIMI_DETACHED_S seconds (default 0.5)
+#   FAKE_KIMI_PROBE_DETACHED  the same, started by the PROBE call
+#   FAKE_KIMI_ANSWER when set, a review call's assistant text, in place of the
+#                    READ lines and verdict
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
 #                    agent_file, skills} as one JSON line to this file --
 #                    `agent_file` is the text --agent-file named AT CALL TIME,
@@ -56,7 +64,13 @@ if dump:
     agent = flag("--agent-file")
     skills = flag("--skills-dir")
     with open(dump, "a", encoding="utf-8") as fh:
+        pointed = None
+        given = flag("-p") or ""
+        if given.startswith("Your complete instructions are in the file "):
+            target = given[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
+            pointed = open(target, encoding="utf-8").read() if os.path.isfile(target) else None
         fh.write(json.dumps({"argv": argv, "stdin": stdin_text, "cwd": os.getcwd(),
+                             "prompt_file": pointed,
                              "agent_file": open(agent, encoding="utf-8").read()
                              if agent and os.path.isfile(agent) else None,
                              "skills": sorted(os.listdir(skills))
@@ -78,8 +92,22 @@ def late(path):
             [sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[2])); "
              "open(sys.argv[1], 'a').write('late fix')", path, "LATE_WRITE_S"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def detached(path):
+    # Leaves the call's process group and session, so stopping the group
+    # cannot reach it: what crew_kimi_agent.SETTLE_S exists to catch.
+    if path:
+        import subprocess
+        extra = ({"creationflags": 0x00000008 | 0x00000200} if os.name == "nt"
+                 else {"start_new_session": True})
+        subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[2])); "
+             "open(sys.argv[1], 'a').write('detached fix')", path,
+             os.environ.get("FAKE_KIMI_DETACHED_S", "0.5")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **extra)
 if prompt == "Reply with exactly: PROBE_OK":
     late(os.environ.get("FAKE_KIMI_PROBE_LATE"))
+    detached(os.environ.get("FAKE_KIMI_PROBE_DETACHED"))
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
     if os.environ.get("FAKE_KIMI_PROBE_WRITE"):
         with open(os.environ["FAKE_KIMI_PROBE_WRITE"], "a", encoding="utf-8") as fh:
@@ -117,9 +145,15 @@ if prompt == "Reply with exactly: PROBE_OK":
     sys.exit(0)
 mode = os.environ.get("FAKE_KIMI_MODE", "clean")
 late(os.environ.get("FAKE_KIMI_LATE"))
+detached(os.environ.get("FAKE_KIMI_DETACHED"))
 if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
+if mode == "hang":
+    time.sleep(60)
+if mode == "empty":
+    say(VERSION, RESUME)
+    sys.exit(0)
 if mode == "write":
     with open("seed.txt", "a", encoding="utf-8") as fh:
         fh.write("fixed it instead of reporting it\n")
@@ -135,6 +169,10 @@ for rel, body in json.loads(os.environ.get("FAKE_KIMI_PUT") or "{}").items():
         os.makedirs(os.path.dirname(rel), exist_ok=True)
     with open(rel, "w", encoding="utf-8") as fh:
         fh.write(body)
+for git_argv in json.loads(os.environ.get("FAKE_KIMI_GIT") or "[]"):
+    import subprocess
+    subprocess.run(["git", *git_argv], check=True, stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 text = prompt
 if prompt.startswith("Your complete instructions are in the file "):
     path = prompt[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
@@ -143,6 +181,7 @@ if prompt.startswith("Your complete instructions are in the file "):
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", text)))
 body = "\n".join("READ|" + p for p in parts)
 body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"
+body = os.environ.get("FAKE_KIMI_ANSWER") or body
 if mode == "turnfail":
     say({"role": "assistant", "content": body},
         {"role": "meta", "type": "turn.failed",

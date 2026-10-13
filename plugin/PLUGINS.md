@@ -11,14 +11,14 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.1.16<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.2.0<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
 | **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |
 | **Upstream guide** | [`ai-connect/README.md`](ai-connect/README.md) |
 
-Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Host:Project`), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
+Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Machine:Project` on the machine's one token, so every session on a machine is online at once), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
 
 This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-256 (a token can register and watch only its own name), refuses a takeover of a live name, makes the observer token read-only, caps message size, rate and stored messages, frames every piece of peer text Claude sees as untrusted data with a random-id delimiter, confines `peer_send` / `peer_context` file paths to the project, and pins every dependency exactly. `installer.py claude` here only registers the MCP server; upstream's local-marketplace install of the plugin is gone, because this marketplace installs it.
 
@@ -141,7 +141,7 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.31<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.32<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
@@ -317,10 +317,10 @@ the crew up or down.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only + Bash (the Kimi dispatch only) | `opus` | 0 | Maps code, returns summaries not contents |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
-| `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
+| `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
 
 All four are read-only — a restricted tool set is one of the three things that
 earns a role its place. `reviewer` runs on `opus` because it shares a model
@@ -329,6 +329,15 @@ tier is the only compensation left. `explorer` also runs on `opus` (owner
 decision, 2026-09-24): it maps unfamiliar code for every other role, and with
 the `localgpu` semantic index disabled or unavailable it has only
 Read/Grep/Glob, so a wrong map is inherited by everything built on it.
+
+**On Kimi (since L-0777).** Claude Code's subagent `model` field takes Claude
+models only, so `explorer`, `researcher` and `security` are thin dispatchers:
+when `dev.roles.<agent>` pins `kimi`, one Bash call hands the task to
+`hooks/scripts/crew_kimi_agent.py`, which runs the Kimi Code CLI read-only (a
+per-role allowlist with no Bash, Write or Edit, and the working tree checked
+before and after) and falls back to the Claude model above when Kimi cannot
+run. Nothing ships pinned. `security` is family-guarded: a Kimi pin is barred
+on Kimi-authored work.
 
 ### Bundled skills — 29
 

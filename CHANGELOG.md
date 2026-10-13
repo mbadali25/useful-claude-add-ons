@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.31: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
+### Fixed — crew 1.2.32: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
 
-- **Summary.** `crew` 1.2.31: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
+- **Summary.** `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
   unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
 - **Defect.** The count was one regex over the whole file (any `<word>`, any `...`, `OWNER_`,
   `YYYY-MM-DD`). On this repository's CLAUDE.md it reported 8 lines, all of them command metavariables
@@ -38,6 +38,65 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   50 of them run: with the old script put back, 27 go red; six single-rule mutations of the new awk
   each turn at least one red. Run in containers under bash 5.2 and bash 3.2, with mawk, gawk, BusyBox
   awk and the BSD `original-awk`, LF and CRLF fixtures. Not run on Windows Git Bash or macOS.
+
+### Added — crew 1.2.31: explorer, researcher and security can run on Kimi K3 (L-0777)
+
+- **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
+  "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
+  and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **Why a dispatcher.** Claude Code's subagent `model` field accepts Claude models only, and
+  `ANTHROPIC_BASE_URL` moves a whole session. So each agent's first step is one Bash call to the new
+  `hooks/scripts/crew_kimi_agent.py`, and it relays the answer. Line 1 is the contract: `KIMI OK` (exit
+  0), `KIMI UNAVAILABLE: <state>` (exit 3, the agent does the task on Claude and says so), or `KIMI
+  CHANGED THE TREE` / `KIMI TREE UNKNOWN` (exit 8, the agent stops).
+- **Read-only.** `/crew:review` step 2e's controls, reused: a per-role Kimi agent file with no Bash, Write
+  or Edit, an empty skills directory, the probe first, and the working tree fingerprinted before the
+  probe, after it and after the run. A write outside the repository is not seen.
+- **Security is family-guarded.** `crew_state.REVIEWING_DEV_ROLES` puts `dev.roles.security` under
+  `resolve_role`'s family guard: a pin in the author's family is BARRED, as a `qa` pin is, and
+  `/crew:model` shows it. With a Kimi developer, `security` on Kimi is the same family as the author, so
+  cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
+- **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
+  instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+- **Review round 1 (Codex).** The dispatchers make up a fresh heredoc delimiter per call, so a line of
+  the task cannot end it and run as a command; a line starting `crew-kimi-agent:` (exit 2, e.g. an
+  unreadable config layer, now refused rather than read as defaults) stops them instead of falling back;
+  security passes only the author families its caller names, and a dispatch record of unknown family is
+  `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
+  a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
+- **Review round 2 (Codex), under a successor plan (owner 3-round cap).** The security dispatcher hands
+  Kimi the change with `--diff-base '<base>'`, the same committed, staged, unstaged and untracked bundle
+  `/crew:review` builds, and quotes every value; `--authors` names are normalised (`Kimi` is `kimi`) and a
+  non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
+  group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
+  wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
+- **Review round 3 (Codex), round 4 granted by the owner past the 3-round cap.** A `--diff-base` outside a
+  strict ref charset (letters, digits, `/ . _ -`) is refused by the dispatcher before the shell and by the
+  script before git; a failed probe settles and re-checks the tree before the fallback; `--authors` takes
+  only `claude`, `gpt`, `kimi` and `gemini`; an unsearchable config parent and an `OSError` building the
+  bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
+  `KIMI OK`.
+
+### Changed — ai-connect 0.2.0: every session on a machine is online at once
+
+- **Summary.** Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under
+  its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the
+  machine's name and every other one sat on standby with no working tools.
+- **Addressing.** `laptop:repo` reaches that session. `laptop` alone reaches every online session of that
+  machine, and waits for the first to join when none is online. Two sessions in one project: the second
+  appends its process id.
+- **No extra enrolment.** Auth stays per machine: no per-session token, no change to `auth.peers`, no Bridge
+  restart per session. A machine's token registers and watches names under its own name only, compared with
+  the separator and by the longest enrolled name; the legacy shared token can no longer take a name under an
+  enrolled one.
+- **Updating.** Update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session
+  per machine. A 0.2.0 session against a 0.1.8 Bridge falls back to the machine's name and says so in
+  `peer_read`.
+- **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
+  must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
+  names, both mixed-version pairings, two sessions replaying the machine's backlog at once, and a replay whose
+  connection breaks. Thirteen mutations of the guard, the fan-out, the replay lock and the fallback each turn
+  the suites red. Not run against a live Bridge.
 
 ### Changed — ai-connect 0.1.16: test line lengths for pylint
 

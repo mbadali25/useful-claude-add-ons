@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ce3c9589e2010f747789271f775364f2e3861a81/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ce3c9589e2010f747789271f775364f2e3861a81/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.31**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.31: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
-- **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
+- **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **crew 1.2.31**: Explorer, researcher and security can run on Kimi K3. Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only, and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

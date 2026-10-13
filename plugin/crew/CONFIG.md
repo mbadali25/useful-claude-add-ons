@@ -894,6 +894,18 @@ crew enumerating role names. A role pin **wins over** the provider block for
 that role — `/crew:review` resolves `review`'s model that way
 (`skills/crew-review/SKILL.md`, the `qm()` helper).
 
+**The agent pins (L-0777).** `dev.roles.explorer`, `dev.roles.researcher` and
+`dev.roles.security` route those agents: a pin that resolves to `kimi` makes
+the agent hand its task to `hooks/scripts/crew_kimi_agent.py`, which runs the
+Kimi Code CLI read-only and falls back to Claude when Kimi cannot run. Nothing
+ships pinned, so every agent stays on Claude until you write one
+(`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`).
+`explorer` and `researcher` joined `crew_state.DEV_ROLE_KINDS` so `/crew:model`
+lists them. `security` is in `crew_state.REVIEWING_DEV_ROLES`: unlike every
+other `dev` role it is judged against the author families, so a pin in the
+family that wrote the change is BARRED, as a `qa` pin is. See the crew README,
+"Agents on Kimi".
+
 ### `qa.fallback` / `dev.fallback` run on their own family's provider (L-0712)
 
 When a pinned model is gone, `crew_state.resolve_role` falls back to the

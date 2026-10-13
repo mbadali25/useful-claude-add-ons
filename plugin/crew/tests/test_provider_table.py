@@ -944,9 +944,12 @@ def test_the_report_names_every_role_with_its_family_and_fallback(tmp_path):
     assert report["authorSource"] == "dispatch"
     assert {r["role"] for r in report["dev"]} >= set(crew_state.DEV_ROLE_KINDS)
     assert {r["role"] for r in report["qa"]} == set(crew_state.QA_ROLE_KINDS)
-    # Guard applied to QA, not to dev: the guard governs who may REVIEW.
+    # Guard applied to QA and to the dev roles that REVIEW (`security`,
+    # L-0777), never to a writer: the guard governs who may REVIEW.
     assert all(r["barred"] for r in report["qa"])
-    assert not any(r["barred"] for r in report["dev"])
+    reviewing = set(crew_state.REVIEWING_DEV_ROLES)
+    assert all(r["barred"] for r in report["dev"] if r["role"] in reviewing)
+    assert not any(r["barred"] for r in report["dev"] if r["role"] not in reviewing)
     assert all(r["fallback"] == "claude-sonnet-5" for r in report["qa"])
 
 
