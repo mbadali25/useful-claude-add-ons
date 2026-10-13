@@ -38,9 +38,9 @@ half and withholds the useful one. The last line of that block is the answer:
 either `-> \`copilot\` answers for any role barred above`, or
 
 > `NO INDEPENDENT REVIEWER` — every candidate is unreachable or speaks as the
-> family that wrote the diff. `/crew:review` falls back to the `reviewer`
-> subagent and **labels the result same-family**. It runs; it does not count as
-> an independent review.
+> family that wrote the diff. `/crew:review` records the round INCOMPLETE and
+> refunds it (L-0712); a same-family `reviewer` read runs only when the operator
+> asks for one, labelled same-family, and never counts as independent.
 
 Say that second one in full whenever it fires. A same-family review that nobody
 flagged is indistinguishable from a real one in the log, and that is exactly
@@ -157,8 +157,8 @@ exactly that way. That failure was unhandled before schema 3.
 **A fallback that fires is announced, never silent.** A review that quietly ran
 on the fallback looks identical to one that ran on the pin, and the difference
 matters most exactly when the pin was chosen to get an independent family onto
-the diff. If the fallback lands on the author's own family, say that too — it
-runs, and it does not count as an independent review.
+the diff. It runs on its family's provider (`gpt-*` on codex, L-0712); one in the
+author's family is skipped for the next cross-family `order` provider, or INCOMPLETE.
 
 ### Setting `qa.copilot.model` turns Copilot ON — check it works first
 
@@ -212,7 +212,7 @@ Say this consequence out loud whenever the QA pins are named:
 > comparatively rarely elsewhere. That may be exactly what you want. It should
 > not be something you discover from a review log.
 
-**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket).
+**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket). Agent pins, offered the same way (L-0777): `dev.roles.explorer`, `dev.roles.researcher` and `dev.roles.security` -> kimi `k3` make those agents dispatch to `crew_kimi_agent.py` (Claude when Kimi cannot run); `security` is family-guarded (`REVIEWING_DEV_ROLES`), so it is BARRED on Kimi-authored work.
 
 Do not silently rewrite `qa.order` or a `roles` pin to enforce this. Tell the
 user what the consequence is and let them decide — a config that quietly

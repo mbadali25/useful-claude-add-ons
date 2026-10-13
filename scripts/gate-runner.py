@@ -162,6 +162,7 @@ TABLE = (
     _py_suite("crew-ignore-policy", "scripts/_test/crew-ignore-policy.py"),
     _py_suite("verifying-doc", "scripts/_test/verifying-doc.py"),
     _py_suite("check-diagram-embeds", "scripts/_test/check-diagram-embeds.py"),
+    _py_suite("plugin-evals-runner", "scripts/_test/plugin-evals-runner.py"),
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
@@ -264,6 +265,8 @@ INCLUDED_WORKFLOWS = ("instruction-budgets.yml", "marketplace.yml", "mcp-servers
                       "pylint.yml", "pytest-crew.yml", "shell-suites.yml")
 EXCLUDED_WORKFLOWS = (
     ("plugin-evals.yml", "real, billed model calls behind a repository secret"),
+    ("pytest-ai-connect.yml", "needs the ai-connect plugin's own pinned dependencies, which the lane's python3 "
+                              "lacks; .crew/verify.json's plugin/ai-connect rule runs the same two commands"),
     ("publish-mcp-servers.yml", "tag-only npm publish; its npm test is mcp-servers.yml's"),
     ("runner-autostart.yml", "dispatches a start of the self-hosted runner host; checks nothing"),
     ("verify-gate.yml", "runs verify-gate.sh --all on the self-hosted pool and uploads its receipt "

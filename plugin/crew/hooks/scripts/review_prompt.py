@@ -131,6 +131,13 @@ def _bundle_block(manifest):
                    + (", ".join(excluded) if excluded else "none"))
     else:
         out.append("  excluded: not recorded by this manifest (unknown)")
+    # L-0739: committed text changes under .work/ or .crew/metrics.md in the
+    # range are appended to the bundle after everything else; say so, or a
+    # reviewer told ".work/ is never in the bundle" skips them.
+    shown = manifest.get("included_excluded")
+    if isinstance(shown, list) and shown:
+        out.append("  shown anyway (committed text changes under an excluded path, appended "
+                   "last; review them like any file): " + ", ".join(str(p) for p in shown))
     out.append(_merged_main_line(manifest.get("merged_main")))
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")

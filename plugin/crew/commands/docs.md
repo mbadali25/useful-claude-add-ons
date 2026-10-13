@@ -34,8 +34,8 @@ unblock. Then run the read-only check:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_docs_check.py --root . --ticket $1
 ```
 
-Act on each `MISSING` line and re-run it. A changed plugin's CHANGELOG line (`` `<name>` `` and its
-new version, under `## [Unreleased]`) has no reason that waives it. `unknown` is a stop: report it.
+Act on each `MISSING` line and re-run it. A changed plugin's CHANGELOG line (`` `<name>` `` or the bare
+name right before its new version, under `## [Unreleased]` or `## [<version>]`) has no reason that waives it. `unknown` is a stop: report it.
 
 ## `--audit`
 
@@ -50,7 +50,9 @@ Report only, change nothing:
 - **CLAUDE.md drift.** Run
   `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/claude-md-audit.sh` and
   report any missing template section, any remaining placeholder, and any breach
-  of the 60-line ceiling. The template gains sections over time and nothing
+  of the 60-line ceiling. A placeholder is one of the template's own blanks; a
+  metavariable in a command the repo documents is not one. Report a
+  `Placeholder check NOT RUN` line as not checked, never as none. The template gains sections over time and nothing
   propagates them into a repo automatically, so this is the only place the drift
   is ever caught. Report it; do not silently append - which sections a repo wants
   is the user's call.

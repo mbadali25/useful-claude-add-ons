@@ -9,9 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-## [1.2.9] - 2026-10-08
-
-### Fixed — crew 1.2.9: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
+### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
 
 - **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since
   L-0527: `/crew:review` launches Kimi as a reviewer.
@@ -19,6 +17,679 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   that the launch gate leaves Kimi ineligible; `review_run.LAUNCHED` has named `kimi` since L-0527,
   so `crew_config.review_launchable()` makes it eligible in the `qa.order` walk (step 2e).
   `kimi_probe.py`'s docstring made the same claim. Text only; no behaviour changes.
+
+### Fixed — crew 1.2.32: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
+
+- **Summary.** `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
+  unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **Defect.** The count was one regex over the whole file (any `<word>`, any `...`, `OWNER_`,
+  `YYYY-MM-DD`). On this repository's CLAUDE.md it reported 8 lines, all of them command metavariables
+  or code: `Docs: none - <why>`, `plugin-version:<name>`, `Tooling-seam: <path>`,
+  `/crew:onboard --refresh <subsystem>`, two `git diff --name-only <anchor>..HEAD` lines,
+  `open(...)` and `git checkout -- <path>`. Phase 1 is done on "no remaining placeholders", so it could
+  not close. The same regex missed three real blanks of the template: `<bash | powershell>` and its
+  two neighbours are not `<[a-z-]+>`.
+- **Now.** The blanks are read from `skills/crew-setup/repo-claude-template.md` on every run, so the
+  list cannot drift from the template. A blank is an angle-bracket token standing where a value goes:
+  outside a code span, or the whole content of one (or of a fenced line). A token that shares its code
+  span or fenced line with other text is a command's metavariable, in the template
+  (`/crew:promote <env>`) and in the audited file, and is not counted. An untouched template reports 10
+  lines (it was 8: one command line too many, three blanks too few).
+- **Could not tell.** With no `awk`, no readable template, or a template with no blanks, the audit
+  prints `Placeholder check NOT RUN: <which of the three>` instead of staying silent, which read as
+  zero. Every other line of the report and both exit codes are unchanged.
+- **Not counted, by design.** A blank that was edited but not replaced (`<linux | windows>`) is no
+  longer the template's text. A template blank quoted in prose outside a code span (`the <path>
+  element`) is counted. An indented code block is read as ordinary text.
+- **Tests.** `skills/crew-setup/scripts/_test/placeholders.sh`: 51 checks, each fixture under the
+  suite's own `mktemp` directory, run by `_verify/smoke.sh` (check 8b, so by CI), `_verify/run-all.sh`
+  and a new `.crew/verify.json` rule for the audit script and the template. Sabotage, in a copy where
+  50 of them run: with the old script put back, 27 go red; six single-rule mutations of the new awk
+  each turn at least one red. Run in containers under bash 5.2 and bash 3.2, with mawk, gawk, BusyBox
+  awk and the BSD `original-awk`, LF and CRLF fixtures. Not run on Windows Git Bash or macOS.
+
+### Added — crew 1.2.31: explorer, researcher and security can run on Kimi K3 (L-0777)
+
+- **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
+  "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
+  and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **Why a dispatcher.** Claude Code's subagent `model` field accepts Claude models only, and
+  `ANTHROPIC_BASE_URL` moves a whole session. So each agent's first step is one Bash call to the new
+  `hooks/scripts/crew_kimi_agent.py`, and it relays the answer. Line 1 is the contract: `KIMI OK` (exit
+  0), `KIMI UNAVAILABLE: <state>` (exit 3, the agent does the task on Claude and says so), or `KIMI
+  CHANGED THE TREE` / `KIMI TREE UNKNOWN` (exit 8, the agent stops).
+- **Read-only.** `/crew:review` step 2e's controls, reused: a per-role Kimi agent file with no Bash, Write
+  or Edit, an empty skills directory, the probe first, and the working tree fingerprinted before the
+  probe, after it and after the run. A write outside the repository is not seen.
+- **Security is family-guarded.** `crew_state.REVIEWING_DEV_ROLES` puts `dev.roles.security` under
+  `resolve_role`'s family guard: a pin in the author's family is BARRED, as a `qa` pin is, and
+  `/crew:model` shows it. With a Kimi developer, `security` on Kimi is the same family as the author, so
+  cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
+- **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
+  instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+- **Review round 1 (Codex).** The dispatchers make up a fresh heredoc delimiter per call, so a line of
+  the task cannot end it and run as a command; a line starting `crew-kimi-agent:` (exit 2, e.g. an
+  unreadable config layer, now refused rather than read as defaults) stops them instead of falling back;
+  security passes only the author families its caller names, and a dispatch record of unknown family is
+  `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
+  a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
+- **Review round 2 (Codex), under a successor plan (owner 3-round cap).** The security dispatcher hands
+  Kimi the change with `--diff-base '<base>'`, the same committed, staged, unstaged and untracked bundle
+  `/crew:review` builds, and quotes every value; `--authors` names are normalised (`Kimi` is `kimi`) and a
+  non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
+  group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
+  wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
+- **Review round 3 (Codex), round 4 granted by the owner past the 3-round cap.** A `--diff-base` outside a
+  strict ref charset (letters, digits, `/ . _ -`) is refused by the dispatcher before the shell and by the
+  script before git; a failed probe settles and re-checks the tree before the fallback; `--authors` takes
+  only `claude`, `gpt`, `kimi` and `gemini`; an unsearchable config parent and an `OSError` building the
+  bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
+  `KIMI OK`.
+
+### Changed — ai-connect 0.2.0: every session on a machine is online at once
+
+- **Summary.** Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under
+  its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the
+  machine's name and every other one sat on standby with no working tools.
+- **Addressing.** `laptop:repo` reaches that session. `laptop` alone reaches every online session of that
+  machine, and waits for the first to join when none is online. Two sessions in one project: the second
+  appends its process id.
+- **No extra enrolment.** Auth stays per machine: no per-session token, no change to `auth.peers`, no Bridge
+  restart per session. A machine's token registers and watches names under its own name only, compared with
+  the separator and by the longest enrolled name; the legacy shared token can no longer take a name under an
+  enrolled one.
+- **Updating.** Update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session
+  per machine. A 0.2.0 session against a 0.1.8 Bridge falls back to the machine's name and says so in
+  `peer_read`.
+- **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
+  must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
+  names, both mixed-version pairings, two sessions replaying the machine's backlog at once, and a replay whose
+  connection breaks. Thirteen mutations of the guard, the fan-out, the replay lock and the fallback each turn
+  the suites red. Not run against a live Bridge.
+
+### Changed — ai-connect 0.1.16: test line lengths for pylint
+
+- 0.1.16: test line lengths for pylint
+
+### Added — ai-connect 0.1.15: one peer name per project, opt-in
+
+- **Summary.** With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as
+  `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one
+  machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
+- **Fallback.** Without an owner-only token for that name (a regular file of this user, mode 600), or when
+  `session-tokens/<name>.dir` records another directory, the session joins as `client.name` with
+  `client.token` and says why in one stderr line. `AI_CONNECT_PEER_NAME` still wins.
+- **`.dir` format.** UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, at most
+  one trailing newline.
+- **Watcher.** It sends the token of the name the session's client recorded, not one it works out itself.
+- **Setup.** `setup session --project DIR [--project DIR ...]` writes each token and `.dir`, and on the Bridge
+  machine enrols every hash with one restart. `Bridge` and `User:...` are refused as session names.
+
+### Added — ai-connect 0.1.12: setup in one run per machine, and a firewall rule that is checked
+
+- **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
+  installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now
+  says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real
+  firewall: the suite drives fakes).
+- **Setup.** `setup bridge [--peer NAME] [--enrol NAME=SHA256]`, `setup peer --name N --bridge IP
+  [--token-file F]` and `setup session --name N` are a thin layer over `deploy bridge`, `peer`, `join` and
+  `add-peer`, which still make every change. `--register-mcp` is off by default and registers at user scope.
+  `setup` never runs `tailnet-setup`; it says when that step looks outstanding.
+- **Firewall.** `ufw allow` succeeds on an inactive ufw and `ufw status` then lists no rule, so `deploy bridge`
+  called the rule done while it filtered nothing, and added it again on every run. It now asks whether ufw,
+  firewalld or the Windows Firewall's Private profile is on, answers on, off or could not tell, and never turns
+  a firewall on.
+- **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
+  `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
+  token, and the client sends it for that name.
+- **Order.** Versioned after PR #610 (0.1.11), which merged first.
+
+### Fixed — ai-connect 0.1.11: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+
+- **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`
+  on a server that only the plugin's installer registers, and that hook type has no quiet mode. The
+  watcher (`hooks/watch.sh`, `hooks/watch.ps1`) also exited 1 with "no venv" at every session start
+  and turn end.
+- **Fix.** The state hooks left `hooks.json`. Whatever registers the MCP server now writes them into
+  Claude Code's settings next to that registration and removes them with it
+  (`plugin/ai-connect/state_hooks.py`): `installer.py claude` / `unregister` in the user's
+  `settings.json` (`CLAUDE_CONFIG_DIR` honoured), `deploy peer` / `deploy join` with both
+  `--install-hooks` and `--register-mcp` in the settings of the scope the server is in. The write is
+  idempotent, keeps every other hook and key, removes only an exact match on its own entries, goes
+  through a temp file and a rename, and refuses a settings file that is not valid JSON without
+  touching it. The watcher exits 0 silently when there is neither a venv nor
+  `~/.config/ai-connect/config.yaml`, and still exits 1 naming the installer when the config exists
+  and the venv does not (a plugin update without the installer).
+- **Behaviour change.** A machine set up on 0.1.8 or earlier has the server registered but, after
+  this update, no state hooks until the installer (or the same `deploy` command) is run again.
+  Messages and tools keep working meanwhile. With the venv lost, the state hooks in the settings
+  still fail as before, alongside the watcher's message.
+- **Verified.** The three states for every command line in `hooks.json`, both flavours, on Linux;
+  the `.ps1` under PowerShell 7 on Linux with `OS=Windows_NT` forced, which runs its branches and is
+  not a run on Windows. Not run on Windows or under Windows PowerShell 5.1. Whether Claude Code
+  accepts an `mcp_tool` hook from `settings.json` as it does from a plugin was read from its
+  documentation, not observed in a live session.
+- **Not fixed here.** On a machine set up with `deploy` and `--install-hooks`, the watcher looks for
+  a venv in the plugin directory, finds none (deploy's is in `~/.local/share/ai-connect`) and exits
+  1, as in 0.1.8.
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
+
+### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
+
+- **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:
+  `deploy invite` on the Bridge, `deploy join` on the new machine, `deploy approve` on the Bridge; `deploy list`
+  and `deploy remove` show and take machines off.
+- **Onboarding.** An invite is a single-use, non-ephemeral `tag:ai-peer` key in one code; `join` installs and
+  joins Tailscale, makes the machine's own token and config, and prints only the token's hash. `approve` lets it
+  in and turns its node key expiry off. Guide: `plugin/ai-connect/deploy/ONBOARDING.md`.
+- **Safer peers.** A peer gets no plugin hooks and no MCP server unless asked, `--dry-run` runs no tool, the
+  install falls back to Tailscale's script only for a release its repository lacks, and what keeps running
+  lives outside the checkout (`~/.local/share/ai-connect`).
+- **Deploy.** `deploy/deploy.sh` and `deploy/deploy.ps1` share one core. Every step is idempotent, `--dry-run`
+  prints each command and change and makes none, and no secret is printed. Tailscale is installed when missing
+  (apt repository with a `signed-by` keyring on Debian and Ubuntu, `winget` or the MSI, Homebrew).
+- **Tailnet.** `tailnet-setup` validates and diffs the policy, and with `--apply` backs it up, replaces it, tags
+  the Bridge and creates the OAuth client, stored in the OS credential store. `--yes` and `--json` make it
+  usable without a terminal.
+- **Enrolment.** A peer makes its own token and prints only its SHA-256; `deploy add-peer` lets it in by that
+  hash, so no long-lived secret crosses machines.
+- **Changed.** `tailscale up` passes `--accept-dns=false` unless `--accept-dns` is given.
+- **Also.** The offline queue caps are configurable, a malformed `history` limit is refused, `README_DE.md`
+  matches `README.md` again, and CI now runs the plugin's suites.
+- **Secrets.** `~/.config/ai-connect` is the deploying user's alone whichever step makes it (0700; on Windows
+  an ACL without inherited entries or broad groups). `deploy invite` warns that an invite is password-equivalent,
+  single use, and good until its expiry; `deploy join` deletes a used invite file.
+- **Tests.** No test may open a socket that leaves the machine: a guard refuses it, in the test and in every
+  Python it starts, and fails the test. It caught one real DNS query.
+- **Live test.** On one real tailnet: an Ubuntu laptop joined as a permanent node and passed `deploy test` 5 of 5
+  with its AWS VPN routes unchanged; a Windows 11 machine joined with routes and DNS unchanged, 9 ms direct to
+  the Bridge. Everything else is verified against fakes only.
+- **Numbering.** The deployment was 0.1.5, then 0.1.6 and 0.1.7, on its branch and published under none of them;
+  the 0.1.5 below (L-0790) reached main first.
+
+### Fixed — ai-connect 0.1.5: the firewall test is hermetic and no longer runs the host's real firewall tools (L-0790)
+
+- **Summary.** `ai-connect` 0.1.5 is a test-only fix: its firewall test could run the host's real `sudo ufw allow` when the suite ran as root or with passwordless sudo, and now resolves fake tools only (verified on Linux as a non-root user, not run on Windows).
+- **Cause.** `plugin/ai-connect/tests/test_ops_firewall.py` put its fake tools in front of the caller's
+  whole `PATH` and its fake `sudo` ran whatever that `PATH` resolved, so a test that wrote no fake
+  `ufw` found the real one. On 2026-10-11 a root run added the bridge's allow rule (TCP 9999 from
+  `100.64.0.0/10`) to a host's `/etc/ufw/user.rules` while ufw was inactive; the entry was deleted
+  by hand.
+- **Fix.** The child's `PATH` is two directories the test creates, the fake `sudo` runs only a file
+  inside the fake directory, the harness sets the euid the function sees, and every child stops
+  before the code under test if `sudo`, `ufw` or `firewall-cmd` resolves to anything but a fake.
+  The module skips as root unless `AI_CONNECT_TEST_ALLOW_ROOT=1`, and when `bash` is Windows' WSL
+  launcher. New tests plant canary `ufw`, `firewall-cmd` and `sudo` on the caller's `PATH` and
+  fail if any of them runs.
+- **If you ran the suite before 0.1.5** as root or with passwordless sudo on a host with ufw or
+  firewalld, check for that rule; `plugin/ai-connect/CHANGELOG.md` has the commands.
+- Nothing the plugin installs or runs changes. `install.sh` is untouched.
+
+### Changed — crew 1.2.30: the Stop gate says when it checked nothing, and names CI for rules too big for its budget (L-0710)
+
+- **Summary.** `crew` 1.2.30 (L-0710's harness half, review plan item 1.2, Phase 1): a Stop turn where no rule ran now says `verify-gate: 0 rules ran` and no longer
+  records the tree as verified, and a rule too slow for the Stop budget is named NOT VERIFIED,
+  deferred to CI, instead of waiting for a `/crew:verify --all` nobody runs.
+- **Zero rules ran.** An empty changed set, or one for which the map selected no command, used to
+  write `.crew/.verify-verified-at` = HEAD - a verified claim about a tree nothing checked. Both
+  flavours now print `verify-gate: 0 rules ran ...` and write neither the marker nor the
+  fingerprint. `review_gate` therefore answers UNVERIFIED for a checkout that ran nothing.
+- **Diff baseline.** That quiet-turn write was also the diff baseline on a default branch with no
+  marker; without it merge-base stays HEAD and a commit made there is never in scope. A quiet turn
+  now records `.crew/.verify-gate.base-at` (HEAD) instead, read only by the base resolution
+  (marker, then base-at, then merge-base, then HEAD) - as is when it is an ancestor of HEAD,
+  through its merge-base with HEAD otherwise - and records the HEAD read before the changed set.
+  A zero-command turn moves it only when nothing committed differs from the base; it is removed
+  when a real pass writes the marker and never read as verified. A baseline that cannot be read,
+  is not a regular file (a FIFO would hang Stop) or names no commit, or a write that fails,
+  refuses the turn.
+- **Chronic rules go to CI.** A rule priced over `verify.stopBudgetSeconds` on its own is still
+  deferred every Stop and never blocks the turn; its notice and record reason now say `deferred to
+  CI (the verify-gate check)` and that `/crew:done` needs its VERIFIED receipt (or a clean
+  `/crew:verify --all`); an old record's reason is re-said that way too. A rule that runs in
+  budget and fails still exits 2, whatever was deferred beside it.
+- **Tests.** `test_verify_gate_stop_fits_budget.py` (both flavours, plus a parity case) and 24
+  sabotage entries in `sabotage_stop_budget.py`, each confirmed red.
+
+### Fixed — ai-connect 0.1.4: Codex QA fixes (W-0121)
+
+- **Summary.** `ai-connect` no longer loses or duplicates a direct message across a dropped socket or a
+  reconnect, tells the model when the Bridge refuses something it sent, and keeps every secret file it
+  writes private from the first byte.
+- **Framing.** The warning in front of a peer's message is constant; the sender's peer-controlled name
+  appears only inside the untrusted block, in `peer_read`, `peer_history` and the watcher's wake notice.
+- **Client.** The inbound queue is capped (500 messages, 8 MiB) with one notice when it fills. A coded
+  refusal from the Bridge is queued as a notice for `peer_read`; a frame over the Bridge's limit is
+  refused before sending, and the default file cap drops from 256 KiB to 48 KiB. An IPv6 `bridge_url`
+  is bracketed. `peer_history`/`peer_list` requests carry a `request_id` the Bridge echoes, so a late
+  answer cannot reach the wrong caller.
+- **Bridge.** A direct message is marked delivered only after its send returns; a registration replay
+  skips a message in flight, and a send that fails across a reconnect goes to the new holder once.
+  `notify_when_idle` is capped at 32 per peer and ends when the subscriber leaves.
+- **Secrets.** The installer writes `config.yaml` and the token files 0600 from the first byte (POSIX).
+  `vpn` `mint-key --out` on Windows writes nothing when `icacls` cannot restrict the file.
+- **CI.** The `vpn/` `.ps1` shims no longer dot-source `_common.ps1`, which `scripts/check-powershell.ps1`
+  cannot follow; that checker exempts `install.ps1`'s NetSecurity/NetTCPIP cmdlets (scoped to that file)
+  and two more ScheduledTasks names, with must-block and must-allow cases in its suite. `.pylintrc`
+  ignores the module name `server`, which is both localgpu's `mcp/server.py` and ai-connect's package.
+  `tsadmin.py` resolves `icacls`/`taskkill` with `shutil.which`, and the shim tests give every `pwsh`
+  their own `XDG_CACHE_HOME`. 0.1.2 and 0.1.3 were set on the branch and never released.
+
+### Fixed — ai-connect 0.1.1: two review-fix rounds and Tailscale self-join tooling
+
+- **Summary.** `ai-connect` closes a file-sharing race, a name-registration race and an offline-queue
+  overflow that lost messages, lets peers reply to `User:<name>` again, and ships `vpn/` scripts that put
+  a machine on a Tailscale tailnet with a single-use key.
+- **Client round.** `peer_send`/`peer_context` open the file first and judge the handle (regular file,
+  final path inside the project, at most the cap), so a symlink or junction swapped in after the name
+  check is refused. `peer_list` puts every peer-set field in one untrusted block; `peer_read` and
+  `peer_history` put the sender and time line inside each message's block. Malformed peer fields render
+  escaped instead of raising, and `peer_read` drops messages only after they render.
+- **Server round.** `PeerRegistry.register` inserts the new holder before closing the dead one, so two
+  connections can no longer hold one name. A peer may message `User:<name>`; registering or watching one
+  stays refused. Each recipient's unread queue is capped (500 messages, 8 MiB) with the error code
+  `recipient_queue_full`, and unread messages go out in frames of at most 1 MiB, each marked delivered
+  only after its send. `observer_client.cli send` prints the Bridge's error for a refused recipient and
+  exits 1 instead of reporting it as waiting.
+- **VPN tooling.** `plugin/ai-connect/vpn/`: `mint-key`, `revoke`, `vpn-up`, `vpn-down` (one stdlib
+  `tsadmin.py` behind `.sh`/`.ps1` shims) and an ACL template allowing `tag:ai-peer` to reach
+  `tag:bridge:9999` only. `mint-key --peer-token` runs `installer.py add-peer` under the venv beside the
+  installer. `.crew/verify.json` runs `vpn/tests` as a second pytest run of the ai-connect entry.
+
+### Added — ai-connect 0.1.0: peer messaging between Claude Code sessions
+
+- **Summary.** New plugin `ai-connect`: Claude Code sessions on different machines can message each
+  other through a self-hosted bridge, with hooks that publish each session's state and wake an idle
+  session when a message arrives.
+- **Source.** A squashed, hardened fork of [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect)
+  at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55` (MIT; notice and upstream licence kept in
+  `plugin/ai-connect/NOTICE`): per-peer tokens, no name takeover, a read-only observer role, size and
+  rate limits, untrusted framing of peer text, project-confined file sharing, a VPN-scoped listener and
+  exact pins.
+- **Packaging.** Upstream's `integrations/claude-code/plugin/` became `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`; the watcher is registered once per flavour (`watch.sh` / `watch.ps1`, each standing
+  down on the other's platform, the PowerShell entry re-raising exit 2). `installer.py claude` now only
+  registers the MCP server. Menu row 19 (`repo-plugins`) stays off by default.
+- **Lint.** `.pylintrc` ignores `aiosqlite`, `fastmcp` and `websockets` as CI-absent modules; the
+  plugin's `ruff.toml` extends the root config instead of replacing it.
+
+### Added — crew 1.2.26: an environment-dump guard, off by default (L-0772)
+
+- **Summary.** crew can now refuse a command that would print the whole environment, or a
+  credential, into the agent's context; it ships off, so turn on `guards.envGuard: report` first.
+- **`env-guard.sh` / `env-guard.ps1` -> `env_guard.py`**, a `PreToolUse` hook on Bash and PowerShell,
+  registered once per flavour (the PowerShell entry with `shell: "powershell"`; 36 hook entries).
+  It refuses `env` with nothing to run, `printenv`, bare `set`, `export -p`, `declare -p`,
+  `/proc/<pid>/environ`, `ps eww`, inline interpreter code reading `os.environ`/`process.env`/`%ENV`/
+  `ENV`/`getenv()`/`ENVIRON`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`,
+  `Get-Variable`, `cmd /c set`, and a credential-named variable in a printing form (`echo
+  "$GITHUB_TOKEN"`, `$env:API_KEY`), through `bash -c`, `eval`, `$( )`, pipes, loops and the usual
+  wrappers. What it cannot read is refused as could-not-tell. A refusal names a fixed label
+  (`env-dump:`, `secret-read:`, `could-not-tell:`) and never a value or the command, in the reason
+  and in `.crew/guard.log`.
+- **`guards.envGuard`**: `off` (default) / `report` / `block`, both layers, narrower wins; a malformed
+  value reads as `block`. Without a usable python both wrappers refuse (exit 2) only when a config file
+  arms it.
+- **BREAKING (narrowing): production reads.** `printenv` left `PROD_READ_COMMANDS`, bare `env` is a
+  write, and any remote command the env guard flags is a write, so `ssh prod printenv`, `ssh prod env`
+  and `ssh prod cat /proc/1/environ` are refused at `guards.prodServer: read`. `full` is unchanged.
+- **`plugin-hooks:<name>`**, a new self-claim marker: `check_self_claims` counts the command entries in
+  a plugin's `hooks/hooks.json`.
+- Follow-ups: L-0773 (the committed sabotage entries, a harness change) and L-0776 (keep credentials
+  out of the agent's environment, the stronger control).
+
+### Fixed — crew 1.2.20: a merged ticket closes with `/crew:done` without a refresh PR (L-0753)
+
+- **Summary.** `/crew:done` no longer refuses a merged ticket for what other PRs brought in. Checks 4
+  and 5 judge only the ticket's own changes, check 5 finds the ticket's CHANGELOG entry wherever it
+  ended up, and check 2 accepts the verify-gate run of the PR head that a merge on main landed.
+- **One changed set for checks 4 and 5 (`crew_refresh_check.own_changes`).** Before the ticket lands,
+  this is the completion audit's own set: paths identical to merged main are main's. After it lands,
+  close from a branch at `origin/main`. The set is then what the ticket's landing merge brought to main,
+  found from the review receipt's head: the first commit on main's first-parent line that contains it.
+  When either cannot be shown (`merged_main` cannot tell, no receipt, the head is not in the history, the
+  landing is not a merge), every path since the base is judged and the top line says why. A workflow
+  another PR merged in no longer makes SECURITY.md owed, and a code map another PR made stale is no
+  longer this ticket's. The ticket's own workflow edit and its own stale artifacts still refuse.
+- **CHANGELOG (check 5).** The check reads the lines the ticket added over its own range (after
+  landing: the merge's first parent to the merge). A line counts under `## [Unreleased]` or
+  `## [<version>]` when it names the plugin at the version that range ends on. A later release does not
+  move that version. The bare `crew 1.2.20` form this file's headings use counts as well as
+  `` `crew` 1.2.20 ``.
+- **Check 2 (`ci_receipt.py`).** When HEAD's sha has no verify-gate run at all, as on a merge commit
+  (the workflow never runs on main), the newest run of a parent whose tree is exactly HEAD's is judged
+  the same way. Its receipt must bind HEAD's tree, map and gate digest. A run for HEAD itself, failed
+  or pending, is never passed over. A merge that changes a receipt-producer path is refused, because
+  that run vouched for its own producer. Could not tell (the lookup fails, or a tree cannot be read)
+  stays UNKNOWN.
+- **Tests.** `test_done_own_changes.py` covers each part before landing, after landing and after a
+  later release: must-allow, must-block, and four could-not-tell cases. The new
+  `test_ci_receipt.py` cases cover the same-tree parent. Eight mutations were each seen red by hand.
+  Their sabotage entries go to a follow-up tooling PR, because the sabotage files are review harness.
+
+### Fixed — crew 1.2.19: the promote-gate review tests' PowerShell cases run serially (L-0759)
+
+- **Summary.** `crew` 1.2.19 runs every default-set PowerShell case in
+  `plugin/crew/tests/test_promote_gate_review.py` in the serial `wallclock` step, so CI's `-n 16`
+  step no longer fails them on time. The gate is unchanged.
+- **Why.** `promote-gate.ps1` keeps a 16s deadline counted from process start, so it fits the 20s
+  hook timeout (L-0703). With 16 workers on a 4-vCPU hosted runner, PowerShell start-up used most of
+  that budget, and `test (3.11)` and `test (3.13)` failed in run 38033960181 with "the gate's
+  deadline passed before the review check could finish". The deadline is not raised.
+- **What moved.** The ps1 param of `FLAVOURS_DEFAULT` and the two ps1-only tests
+  (`test_ps1_refuses_a_map_that_is_not_a_regular_file`, `test_ps1_without_python_blocks_a_declared_deploy`)
+  are marked `wallclock`: 40 cases, about 51s serially on a local run. The `slow` ps1 param of
+  `FLAVOURS` stays in the slow job, because `-m wallclock` never selects `slow` tests.
+
+### Changed — crew 1.2.17: the config data-flow diagram and the code graph re-anchored after L-0733 (L-0733 follow-up)
+
+- **Summary.** `crew` 1.2.17 re-anchors `docs/diagrams/data-flow-crew-config.mmd` to `a7fb104b` (CONFIG.md
+  gained L-0733's verify-gate paragraphs and an L-0712 sentence, no heading moved, no node or edge changed) and rebuilds the code
+  graph with `graphify update .`. No behaviour changed.
+
+### Fixed — crew 1.2.16: a committed `.work/` note no longer makes a review receipt permanently stale (L-0739)
+
+- **Summary.** In a repository that commits `.work/` notes, a release whose reviewed range changed
+  one can now be reviewed and promoted: the review bundle shows the committed text change, and the
+  receipt check refuses only what the bundle cannot show.
+- **Bundle (`review_patch.py`).** Committed text changes under `.work/` and `.crew/metrics.md` from
+  the base to HEAD - status A, M or D, mode 100644, not binary, not matched by the repository's own
+  ignore rules - are appended after the rest of the bundle, read from the commit trees only, so an
+  untracked `review.json` or a metrics row never moves the hash. The manifest lists them as
+  `included_excluded`; the prompt prints them as `shown anyway`. A range with none builds the same
+  bytes as before, so existing receipts stay valid.
+- **Check E (`review_delta.py`).** The receipt base -> reviewed head range passes those changes only
+  when the receipt's bundle carried them; an older receipt says `outside the bundle; re-review so it
+  is included`. A binary, executable, symlink or gitlink file, a force-added ignored file or a
+  `graphify-out/` file there says `outside the bundle, which cannot show it (<why>); restore it in a
+  new commit, then re-review`. Reviewed head -> HEAD and -> index are unchanged: any excluded-path
+  change after the review is still stale. The delta gate's rebuild and interdiff carry the same
+  section.
+- **Tests.** Must-block and must-allow cases in `test_review_delta.py`, `test_review_patch.py` and
+  promote-gate's review suite (sh and ps1); eight new sabotage entries in `sabotage_review.py` and
+  three check E entries re-anchored, each seen red.
+
+### Changed — crew 1.2.15: no reviewer is INCOMPLETE and refunded; a same-family review is opt-in (L-0712, harness half)
+
+- **Summary.** When no reviewer from another model family can run, `/crew:review` now records the
+  round INCOMPLETE and refunds it instead of quietly handing Claude's work to Claude, and a
+  same-family review runs only when you ask for one, labelled as such.
+- **Ledger (`review_ledger.py`).** `--no-reviewer --reason <why>` (`no_reviewer`) appends an
+  INCOMPLETE, refunded entry to the ticket's `unreviewed` list and changes nothing else: no round,
+  no budget, no state, no receipt. `reserve(..., same_family=<reason>)` labels the row
+  `same_family`; a CLEAN round's receipt, or an owner's `--accept` of its FINDINGS, carries the label, and a labelled round is never
+  auto-accepted. An unreadable ledger, or an `unreviewed` that is not a list, refuses.
+- **Review run (`review_run.py`).** `--authors "$AUTHORS"` refuses, with exit 2 and nothing
+  reserved, a reviewer of the author's family or of a family it cannot tell (an empty `--authors`
+  is could-not-tell). `--same-family "<reason>"` is the operator's explicit choice: the round runs
+  and is labelled in the ledger and review.json. `--author-source unknown` is could-not-tell too;
+  `--probe` asks the guard first; without `--authors` a Claude or unknown-family reservation is
+  refused unless `--same-family` labels it (`--round` beside `--reserve-only` exempts nothing), and
+  any other reviewer runs with stderr saying the guard was not applied. `review_ledger.py --reserve`
+  asks the same guard (`--authors`, `--author-source`, `--same-family`; a bad reason is a handled
+  refusal, never a traceback). A Codex limit marker is spent by a no-reviewer outcome recorded after it,
+  so the next probe calls Codex live instead of answering limited forever. A same-family round's
+  metrics row says `same-family: operator choice`. A null `unreviewed` record reads as unreadable on
+  `/crew:status`.
+  A Codex usage limit now names the next cross-family provider, not the Claude reviewer.
+- **`/crew:review`.** A failed Codex probe on a codex-pinned `review` role is `resolve_role`'s
+  `available`: `$FALLBACK` names the fallback on its family's provider (a `gpt-6.1-sol` fallback
+  runs on Codex), else the next cross-family `qa.order` provider, else `INCOMPLETE`, and sets
+  `QA_MODEL` / `QA_KIMI_MODEL` from it; step 2a launches `$RUN_PROVIDER` / `$RUN_MODEL` (codex on a
+  probe ok, the fallback's provider, else empty, which the runner refuses), never Codex regardless. A limit (5) or no answer (7) takes all of Codex out, its
+  gpt fallback too; only a failed call (6) is that model alone; any other exit falls back to nothing. An empty
+  `$ELIGIBLE`, or a Codex limit with nothing cross-family left, is `--no-reviewer`; step 2c on the author's family runs only on `SAME_FAMILY`. The owner's
+  2026-09-28 "codex limit -> Claude" practice becomes that explicit choice.
+- **`/crew:status`** (declared seam). A ticket line with no-reviewer outcomes says
+  `N with no reviewer (INCOMPLETE, refunded)`.
+- **Sabotage.** Thirty-one L-0712 entries in `sabotage_review.py`, each red on its named test: the
+  feature half's four (fallback to claude, the author skip, an unasked same-family walk, the status
+  share's model family) and twenty-seven here (the guard, the limit marker spent by a no-reviewer outcome (two), the ledger CLI's single module, a Claude reservation with no `--authors`, `--round` exempting one, the ledger CLI's guard and label, the metrics label, an empty `--authors`, an unknown author
+  source, the probe's guard, review.md's fallback probe, its limit reading, its probe-exit filter,
+  its model hand-off and step 2a's launch of the resolved provider and model (three), a no-reviewer outcome written as a round, the reservation label, both
+  receipt labels, the auto-accept bar, the status count, a malformed status record and a null one).
+
+### Added — crew 1.2.14: sabotage entries for the 1.0 scope reader (L-0711, harness half)
+
+- **Summary.** Crew's mutation suite now proves the Stop's scope line reads the crew 1.0 Touch and
+  that `/crew:done` refuses a `sed -i` write outside it: fifteen new entries, each red on its test.
+- **Entries (`sabotage_scope.py`).** The report reading the pre-1.0 `.work/tickets/<id>.md` again,
+  passing a pre-1.0 ticket as no ticket, judging an unapproved Touch, and matching with the old
+  fnmatch matcher instead of `crew_ticket.in_touch`, its own changed list or merged main counted
+  instead of the audit's list; and `completion_audit.py --check` exiting 0
+  on a refusal (the `|| true` shape on `/crew:done`'s refusal path).
+- **Review round 3 entries.** The gate's list keeping main's changes after a merge, all of `.crew/`
+  or `TODO.md` dropped as bookkeeping again, an `INDEX.md` ticket with no folder read as "no open
+  ticket", and `verify-gate.sh` exiting 2 after the scope line. Two round-1 entries re-anchored on
+  `ticket_changes`'s new `kept` line, one on the pre-1.0 file check.
+- **Review round 4 entries.** An unreadable `INDEX.md` read as "no open ticket", merged main's
+  could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
+
+### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
+
+
+- **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
+  redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
+  file is missing.
+- **Reader.** `scope_report.py` takes the active ticket from `crew_ticket.resolve_active`, Touch
+  from `crew_ticket.accepted` (`.work/tickets/<id>/spec.md ## Touch`), membership from
+  `crew_ticket.in_touch`, the changed list from `completion_audit.changed_paths` (both rename
+  ends; merged-main-identical paths not counted) and refresh artifacts through the completion
+  audit's own admission, so it names what `/crew:done` check 3 refuses. The gate's own list loses
+  the merged-main-identical paths too before it joins the ticket-wide one; when merged main is
+  could-not-tell (a detached HEAD, no integration ref) the line says so, as the audit does; and
+  every path is printed escaped, so a file name cannot add a line. It read the pre-1.0 `- touch:` line in
+  `.work/tickets/<id>.md` / `.work/cache/<id>.md` before.
+- **Could not tell.** No spec.md, no `## Touch`, an unapproved or stale Touch, a broken
+  active-ticket pointer, a pre-1.0 ticket, an `INDEX.md` open ticket with no
+  `.work/tickets/<id>/` folder, an `INDEX.md` that exists but cannot be read, and a non-repository
+  each print
+  `outside-scope: (could not tell - <why>)`; a pre-1.0 ticket is never judged in scope.
+- **Unchanged.** The line stays report-only (the gates' exit status is untouched). `/crew:done`
+  check 3 already refused a `sed -i` write outside Touch on a 1.0 ticket; L-0711 adds the test
+  that proves it (`test_check_refuses_a_sed_i_write_outside_touch`).
+- **Changed: bookkeeping.** The line leaves out only what the audit leaves out (`.work/` and
+  `crew_ticket.CREW_BOOKKEEPING_PATHS`), so a `TODO.md` or tracked `.crew/` write outside Touch
+  is named, as `/crew:done` check 3 refuses it. It used to drop all of `.crew/` and `TODO.md`
+  (owner ruling 2026-10-08: report/audit agreement wins over the spec's frozen exclusion).
+- **Tests.** `hooks/scripts/_test/run-tests.sh`'s verify-gate scope cases now build a 1.0 ticket
+  (activated, approved through the approval hook) instead of the pre-1.0 `.work/tickets/<id>.md`.
+
+## [1.2.12] - 2026-10-09
+
+Crew 1.2.12: L-0749, the documentation half of L-0733 (crew 1.2.11). Version is a placeholder; the
+lead reassigns it at merge.
+
+### Changed — crew 1.2.12: /crew:verify says the record is per checkout (L-0749)
+
+- **Summary.** `/crew:verify` now says that the verify record belongs to one checkout: `--all`
+  clears only the record of the checkout it runs in, and `--ci` never prunes it.
+- **Docs.** `commands/verify.md`, in "The per-rule record replaces the single marker": every orphan
+  and `NOT VERIFIED` line names its record by absolute path, an orphan an edited rule replaced is
+  dropped (L-0733), and `verify_record.py forget-orphans` drops the rest by name without running
+  anything. Split from PR #587 by the tooling-PR rule (T-0087).
+
+
+## [1.2.11] - 2026-10-08
+
+Crew 1.2.11: L-0733 (the Stop gate's undeclared-reach wall, and the record's orphans). Version is a
+placeholder; the lead reassigns it at merge.
+
+### Fixed — crew 1.2.11: the Stop gate says once how to declare `reach`, edited rules stop orphaning their obligations, and a "No such file" failure still blocks (L-0733)
+
+- **Summary.** A repo whose verify map predates `reach` gets one notice naming
+  `/crew:verify --stamp-reach` instead of a wall of per-rule lines on every Stop; editing a rule in
+  place no longer leaves an orphan that freezes the verified marker; and a rule that fails with
+  `No such file or directory` can no longer be waved through by Claude Code as a missing hook.
+- **Once per map, then one line.** The first Stop that defers a rule with no `reach` prints one
+  notice: how many rules matched, how many in `.crew/verify.json` have no `reach`, and
+  `/crew:verify --stamp-reach` (dry run, `--apply`, `--set N=local|network|host`), then each
+  rule's reason. It is shown once per map content (`.crew/.verify-gate.reach-notice`); every
+  later Stop, quiet turns included, prints `NOT VERIFIED ON THIS TREE - N rule(s) with no `reach`
+  not run on Stop: rules[...]`. `--ci` keeps its per-rule lines. The deferral is unchanged.
+- **Superseded orphans.** Obligations are keyed by a content hash, so adding `reach` or `seconds`
+  re-keyed every rule (TSS PR #1143 left 17 orphans). An entry whose rule was edited in place - a
+  new rule on the same `paths` that did not sit beside it - is now dropped as superseded, with a
+  `dropped the obligation of rules[N]` line. One nothing replaced (removed, or `paths` changed)
+  stays: an undeclared-reach orphan is counted but no longer holds `.crew/.verify-verified-at`; any
+  other still does, and its line names `verify_record.py forget-orphans`, which drops orphans by
+  name and runs nothing. Entries now carry `pathsKey` and `peers`; ones recorded earlier are never
+  superseded.
+- **Every exit 2 writes stdout.** Claude Code 2.1.293 reads a Stop hook that exits 2 with empty
+  stdout and a `no such file`/`can't open` stderr as a missing script and does not block (TSS rule
+  32, rc 127). Both flavours now print `VERIFY GATE: BLOCKED (exit 2)` on every exit 2.
+- **Which record.** Orphan and `NOT VERIFIED` lines end `[record: <absolute path>]`: the record is
+  per checkout, `--all` clears only its own checkout's, and `--ci` never prunes it.
+- Reported from TheSelectSource on crew 1.2.1 and 1.2.5. Harness-only PR (T-0087);
+  `commands/verify.md` gets the per-checkout note in a separate feature PR.
+
+
+### Changed — crew 1.2.10: the diagrams L-0713 left stale re-drawn against the code (L-0713 follow-up)
+
+- **Summary.** `crew` 1.2.10 brings the diagrams up to date with what landed in L-0710, L-0712 and L-0713:
+  the `/crew:done` diagram now draws all five checks (check 5, the documents a change owes, and check 2
+  needing the gate settled for HEAD), and the `/crew:status`, config data-flow, lifecycle overview and QA
+  diagrams are re-cited and re-anchored. No behaviour changed.
+- **The QA page.** `docs/qa/` and the three `process-qa-*` diagrams were regenerated with `qa_doc.py --write`
+  (94 verify rules now, 3 audit GAPs). The code graph was rebuilt with `graphify update .`.
+
+## [1.2.9] - 2026-10-08
+
+### Fixed — crew 1.2.9: one true quickstart (L-0713)
+
+- **Summary.** A new repository set up with `/crew:init` no longer gets told to run
+  `/crew:migrate`: every crew document now says the same thing, that `.crew/config.json` is the
+  repo config and `/crew:migrate` is only for a repository crew 0.20 set up.
+- **The status line.** `/crew:status` printed `config   .crew/config.json schema 7 - run
+  /crew:migrate` for the config `/crew:init` had just written. It now asks for migrate only when
+  that file still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md`
+  files, a PM journal); a current config reads `config   .crew/config.json schema 7`. A `schema`
+  that is not an integer, a `roles` that is not a list, or a `.crew/` or `.work/tickets/` it
+  cannot list, prints `could not tell whether /crew:migrate is needed (<why>)` instead of either
+  answer.
+  `test_quickstart_fresh_repo.py` replays the quickstart in a throwaway repo and HOME and asserts
+  the status comes back clean.
+- **One story in the docs.** The quickstart, guide, troubleshooting and memory guides, the plugin
+  README, `CONFIG.md` §1, `/crew:init`, `/crew:migrate` and `/crew:status` agree: init writes
+  `.crew/config.json`; migrate writes `.crew/crew.json` as a record and leaves `config.json` in use
+  (its preview's `retireable` label on that file is wrong, and the docs say to keep it). The
+  config-file diagram's "open authority question" now records the answer.
+- **Evals for deleted roles removed.** The four `pm-*` and `developer-*` cases and the
+  `pm-does-not-write-code` known-failure exemption are gone. `scripts/run-plugin-evals.{sh,ps1}`
+  discover cases instead of naming them, and say `no eval cases` (exit 0, not a pass) when there
+  are none (an `EVAL_PLUGIN_DIR` that does not exist, or an `evals/` or a case folder they cannot
+  list, exits 2); the CI job skips its billed steps with that notice. `scripts/_test/plugin-evals-runner.py`
+  runs both runners against a stub `claude` in `marketplace.yml` and the gate runner.
+  `qa-reviewer-stays-read-only` is a harness path and goes in its own PR.
+- **A release-time consistency check.** `scripts/check-marketplace.py` gains three claim kinds:
+  `crew-config-file:<name>` (a marked statement must name only the file
+  `crew_common.repo_config_file` opens), `plugin-command-table:<plugin>` (a marked command table must list exactly the commands
+  shipped) and `eval-roster:<plugin>` (a marked eval roster must match `evals/` and name agents
+  that exist). It found `/crew:debug` and `/crew:split` missing from the README's command table and
+  `/crew:graph` missing from `PLUGINS.md`'s, now added; `PLUGINS.md`'s command count read 37.
+
+## [1.2.8] - 2026-10-08
+
+Crew 1.2.8: L-0710's feature half (review plan item 1.2, Phase 1). The harness half is #582.
+
+### Changed — crew 1.2.8: `/crew:done` needs the verify gate settled for HEAD, by a local pass or the CI receipt (L-0710)
+
+- **Summary.** `/crew:done` now closes only when HEAD itself passed every verify rule, here or in
+  the `verify-gate` CI workflow, because a Stop turn that exits 0 may have deferred a rule to CI or
+  run no rule at all.
+- **Check 2.** It passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED` or exit 4
+  `NO_GATE`, or on a record with nothing outstanding (`verify   no rules recorded`: a clean pass
+  empties it) together with `GATE VERIFIED` from `review_gate.gate_state`, which also compares the
+  working tree's fingerprint with the clean pass's: a marker at HEAD alone survives an uncommitted
+  edit. A `chronic` rule (deferred to CI), `skipped`, `unverified`, `fail`, no gate record, or
+  `GATE UNVERIFIED`/`UNKNOWN` refuses the close. `test_done_check2_gate.py` runs the command
+  `done.md` prints on a throwaway repository and goes red if check 2 reverts to the marker alone. A record of old passes no longer
+  closes a ticket whose HEAD the gate never verified, and the old "run smoke yourself" tail, which
+  read as an alternative to the receipt, is gone.
+- **Docs.** `commands/verify.md` names the `deferred to CI` and `0 rules ran` lines;
+  `verify-gate.yml`'s header says it is the CI home for rules the Stop budget never fits and that
+  making it a required check is a branch-protection setting. README, CONFIG §19, PLUGINS.md, the
+  daily-workflow and troubleshooting guides (rebuilt) and the crew code map follow.
+
+## [1.2.5] - 2026-10-08
+
+### Changed — crew 1.2.5: a gone pin falls back across families, never to Claude by default (L-0712, feature half)
+
+- **Summary.** When a pinned reviewer model is gone, crew now falls back to a reviewer from another
+  model family instead of always handing the review to Claude, and `/crew:status` shows how many
+  review rounds were same-family.
+- **Resolution (`crew_state.resolve_role`).** The hard-coded `provider = "claude"` is gone. The
+  `fallback` model runs on the provider that serves its family (`provider_for_model`: a
+  `gpt-6.1-sol` fallback dispatches to Codex, the 2026-10-08 fleet-swap case). A fallback in the
+  author's family is skipped for the next provider in `qa.order` (`dev.order`, else the shipped
+  order, for the dev kind) that is not the author's family and answers, on its own model and effort.
+  None left is `incomplete` (the round is recorded INCOMPLETE and refunded, by the harness half);
+  `same_family_ok` is the operator's explicit choice, labelled `sameFamily`. New result keys:
+  `fallbackVia`, `incomplete`, `sameFamily`.
+- **`/crew:status`.** One `review   same-family: N of M completed rounds (P%)` line over every
+  ledger, and `same-family round` on a ticket's line. A round with no provider is could-not-tell,
+  never counted independent. The target is under 5%.
+- **Docs.** README, CONFIG.md, `/crew:model`, `/crew:status`, crew-providers, the Codex guide and
+  the configuration reference (`qa.fallback` / `dev.fallback` summaries in `crew_keys.py`).
+  `/crew:review`'s dispatch, the ledger's no-reviewer refund and the review-run guard land in the
+  harness half (crew 1.2.6), per the tooling-PR rule.
 
 ## [1.2.1] - 2026-10-08
 

@@ -3,7 +3,7 @@ title: crew quickstart
 subtitle: From install to your first ticket in ten minutes, on Windows or Linux
 guide: 1 of 5
 produced-by: T2 (this page), T4 (first-ticket commands), T8 (size budgets)
-status: current for crew 1.0 - every step below uses a shipped command
+status: current for the crew 1.x layout - every step below uses a shipped command
 ---
 
 # crew quickstart
@@ -18,8 +18,8 @@ can write to. Every step says how to check that it worked before you move on.
 |---|---|---|---|
 | 1 | Install Claude Code and the marketplace | `claude --version` prints a version | 3 |
 | 2 | Install the `crew` plugin | `/crew:status` answers | 1 |
-| 3 | Set up the repository with `/crew:init` | `/crew:status` shows a `config` line | 3 |
-| 4 | Existing 0.20 or older repos: `/crew:migrate` | `/crew:status` shows `crew.json schema 1` | 1 |
+| 3 | Set up the repository with `/crew:init` | `/crew:status` shows `config   .crew/config.json schema 7` | 3 |
+| 4 | Only a repository crew 0.20 or older set up: `/crew:migrate` | `/crew:status` no longer says `run /crew:migrate` | 1 |
 | 5 | First ticket | a ticket directory under `.work/tickets/` | 2 |
 
 ## 1. Install Claude Code and the marketplace
@@ -80,17 +80,21 @@ Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
 `/crew:init` picks up where it left off.
 
-Check: `/crew:status` now shows a `config` line naming a schema, and a
-`gitignore current` line: init added the ignore patterns for the languages it
-found, inside one `# crew:gitignore:managed` block at the top of `.gitignore`,
-without touching your own lines.
+Init writes the repository's crew config to `.crew/config.json`.<!-- claim: crew-config-file:config.json -->
+That is the one file crew reads its repo settings from: `/crew:config` edits it, every gate and
+guard reads it, and nothing needs migrating afterwards.
 
-Today `/crew:init` still writes the 0.20 `.crew/config.json`. Run step 4
-straight after it until init writes `.crew/crew.json` itself.
+Check: `/crew:status` now shows `config   .crew/config.json schema 7` with no
+`run /crew:migrate` after it, and a `gitignore current` line: init added the
+ignore patterns for the languages it found, inside one
+`# crew:gitignore:managed` block at the top of `.gitignore`, without touching
+your own lines. A new repository skips step 4.
 
-## 4. Existing repositories: migrate once
+## 4. Repositories crew 0.20 set up: migrate once
 
-If the repository already used crew 0.20 or earlier (an older config is upgraded in the same run), or you just ran `/crew:init`:
+Only when `/crew:status` ends its `config` line with `run /crew:migrate`: the
+repository still holds a crew 0.20 (or older) setup - a role 1.0 removed, a
+schema older than 7, ticket files in `.work/tickets/`, or a PM journal. Then:
 
 ```text
 /crew:migrate
@@ -98,11 +102,13 @@ If the repository already used crew 0.20 or earlier (an older config is upgraded
 
 It previews first and writes nothing until you agree. The preview lists:
 
-- the files it will create (`.crew/crew.json`, `.crew/metrics.jsonl`, one
-  directory per ticket under `.work/tickets/`);
+- the files it will create (`.crew/crew.json`, a schema-1 record of the old
+  config; `.crew/metrics.jsonl`; one directory per ticket under `.work/tickets/`);
 - any config key it did not recognise, which is kept under `unmapped`, never
   dropped;
-- the originals it leaves in place and you may retire later.
+- the originals it leaves in place. Keep `.crew/config.json`
+  even though the preview calls it `retireable`: crew still reads its settings
+  from that file, and `crew.json` does not replace it.
 
 Say yes, and it backs up to `.crew/backups/migrate-<time>/`, then applies. The
 line it ends with is your undo:

@@ -83,7 +83,7 @@ the plugin.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**156 keys**: 88 settable in the machine-global file, 68 repo-only.
+**157 keys**: 89 settable in the machine-global file, 68 repo-only.
 
 Columns:
 
@@ -118,7 +118,7 @@ Columns:
 |---|---|---|---|---|---|
 | `qa.provider` | both | `"auto"` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | 0.11.0 or earlier | Who reviews: `auto` walks `qa.order`; a named provider is used as-is. |
 | `qa.order` | both | `["codex", "kimi", "copilot", "claude"]` | list of: `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | The reviewers `auto` tries, in order. A list is one leaf, replaced wholesale. |
-| `qa.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/commands/review.md` (expects model id) | 0.16.6 | Claude model used when no other reviewer is available. |
+| `qa.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/commands/review.md` (expects model id) | 0.16.6 | Model a gone pin falls back to, on its family's provider (L-0712). |
 | `qa.codex.model` | both | `null` | not validated - read by `plugin/crew/commands/review.md` (expects string or null) | 0.14.6 | Codex model for review; null passes no flag. |
 | `qa.codex.reasoningEffort` | both | `null` | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `plugin/crew/commands/review.md`; not validated) | 0.14.6 | Codex reasoning effort for review; null passes no flag. |
 | `qa.copilot.model` | both | `null` | not validated - read by `plugin/crew/commands/review.md` (expects string or null) | 0.14.6 | Copilot model for review; null uses the CLI default. |
@@ -130,7 +130,7 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `dev.provider` | both | `"claude"` | `claude` \| `codex` \| `copilot` \| `kimi` | 0.14.6 | Who implements. |
-| `dev.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects model id) | 0.16.6 | Claude model used when the dev provider is unavailable. |
+| `dev.fallback` | both | `"claude-sonnet-5"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects model id) | 0.16.6 | Model a gone dev pin falls back to, on its family's provider. |
 | `dev.codex.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 0.14.6 | Codex model for implementation. |
 | `dev.codex.reasoningEffort` | both | `null` | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` (listed in `plugin/crew/commands/review.md`; not validated) | 0.14.6 | Codex reasoning effort for implementation. |
 | `dev.copilot.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 0.14.6 | Copilot model for implementation. |
@@ -326,6 +326,7 @@ Columns:
 | `guards.prodServer` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production host crew may reach. |
 | `guards.roleWrites` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 0.19.92 | Enforce each role's write scope. Default `off`; a malformed value reads as `block`. |
 | `guards.cloudGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Whether the cloud guard judges commands at all. Default `off`; `report` logs only. |
+| `guards.envGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.2.26 | Refuse a command that prints the whole environment or a credential-named variable. Default `off`; `report` logs only. |
 
 ### `production`
 

@@ -1,0 +1,55 @@
+name: Pytest (ai-connect plugin)
+
+# Until W-0129 no workflow ran the ai-connect suites: only pylint, ruff and
+# `claude plugin validate` touched the plugin, so a green PR said nothing about
+# its tests. push runs only on main: a feature branch is tested by its
+# pull_request run (the merge result), not twice.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugin/ai-connect/**"
+      - ".github/workflows/pytest-ai-connect.yml"
+  pull_request:
+    paths:
+      - "plugin/ai-connect/**"
+      - ".github/workflows/pytest-ai-connect.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ai-connect:
+    # Always a GitHub-hosted runner, never the self-hosted one: these suites
+    # start a Bridge on loopback ports and drive fake system tools, and a
+    # throwaway machine is where that belongs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: plugin/ai-connect
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the plugin's pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      # Two pytest runs, not one: each directory has its own conftest.py imported
+      # as `conftest`, and one run collects them order-dependently
+      # (.crew/verify.json states the same for the local gate).
+      - name: Run the ai-connect suite
+        # test_ops_firewall.py is left out until L-0790 lands: it puts the real
+        # PATH behind its fakes, so on a machine with sudo and ufw it reaches
+        # them. It is deselected by name so that its absence here is visible.
+        run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/test_ops_firewall.py
+      - name: Run the vpn tooling suite
+        run: python -m pytest vpn/tests -q -p no:cacheprovider

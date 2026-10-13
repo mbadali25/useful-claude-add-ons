@@ -11,8 +11,11 @@ One interactive session owns a ticket through eight phases: brainstorm, spec,
 plan, implement, tests, docs, review, done. Every phase but the light one below
 writes a file under `.work/tickets/<id>/`, and two of them cannot be skipped
 by accident — `/crew:implement` refuses without an approved plan, and
-`/crew:done` refuses without a clean review receipt, a clean verify gate, and
-a passing completion audit.
+`/crew:done` refuses without a clean review receipt, a verify gate settled for
+HEAD, and a passing completion audit. Settled means every rule passed here, or
+the `verify-gate` CI receipt for HEAD is VERIFIED (for a merge on main, the PR
+head's receipt when its tree is exactly the merge's): a rule too big for the Stop
+budget is deferred to CI, and a Stop turn where 0 rules ran proves nothing.
 
 For how the scope guard decides what a ticket may touch and what a report
 looks like when it refuses a write, see
@@ -138,7 +141,7 @@ overlapping lane to merge the base now.
 | When | Hook | Does |
 |---|---|---|
 | Every write | plan-approval + scope guard (`PreToolUse`) | refuses an edit with no approval receipt, or outside the spec's Touch |
-| End of turn | verify gate (`Stop`) | refuses to end the turn on a red check |
+| End of turn | verify gate (`Stop`) | runs the rules for what changed that fit `verify.stopBudgetSeconds`; refuses to end the turn on a red check, never on a deferral (a rule too big for the budget goes to CI) |
 | End of turn | completion scope audit (`Stop`) | diffs the whole tree against the scope base, catches shell-made writes too |
 | Session start | context | brief on branch, open ticket, gate state, codemap freshness |
 

@@ -55,7 +55,16 @@ FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")),
     pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.slow]),
 ]
-FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=_NEEDS_PWSH)]
+# Every default-set ps1 case is `wallclock`, and so are the two ps1-only tests
+# below (test_ps1_refuses_a_map_that_is_not_a_regular_file,
+# test_ps1_without_python_blocks_a_declared_deploy): promote-gate.ps1 holds a
+# 16s deadline from process start (it has to fit the 20s hook timeout, L-0703),
+# and under CI's `-n 16` on a 4-vCPU hosted runner PowerShell start-up alone
+# spent it, so admit cases read "the gate's deadline passed" (run 38033960181,
+# test (3.11) and test (3.13)). They run in the serial wallclock step instead.
+# FLAVOURS' ps1 is `slow`, which `-m wallclock` never selects (conftest), so
+# it stays in the slow job.
+FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.mark.wallclock])]
 _POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="PATH shims are POSIX scripts")
 
 _ROLLBACK = {"rollback": "none", "rollbackReason": "fixture"}
@@ -81,15 +90,15 @@ def _git(cwd, *args):
 class Repo:
     """One checkout on `main`: a base commit B, then the ticket's commit H."""
 
-    def __init__(self, tmp_path, verify, extra=None, base_extra=None):
+    def __init__(self, tmp_path, verify, extra=None, base_extra=None,
+                 ignore=".crew/*\n!.crew/verify.json\n.work/\n"):
         self.root = tmp_path / "main"
         self.root.mkdir(parents=True)
         _git(self.root, "init", "-q", "-b", "main")
         _git(self.root, "config", "user.email", "t@example.invalid")
         _git(self.root, "config", "user.name", "T")
         _git(self.root, "config", "commit.gpgsign", "false")
-        (self.root / ".gitignore").write_text(".crew/*\n!.crew/verify.json\n.work/\n",
-                                               encoding="utf-8")
+        (self.root / ".gitignore").write_text(ignore, encoding="utf-8")
         (self.root / ".crew").mkdir()
         (self.root / ".work").mkdir()
         self.write_map(verify)
@@ -367,6 +376,33 @@ def test_an_excluded_path_change_is_refused(flavour, tmp_path):
     repo.clean_receipt()
     code, err, _ = run_gate(flavour, repo, "deploy-dev")
     _blocked_for_review(code, err)
+
+
+# L-0739: a repository that tracks `.work/` (TSS's shape: only folders under it ignored).
+_TRACKS_WORK = ".crew/*\n!.crew/verify.json\n.work/review/\n.work/PROMOTIONS.md\n"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_committed_work_text_change_in_the_reviewed_range_is_admitted(flavour, tmp_path):
+    """Must-allow: the bundle carried `.work/FINDINGS.md`, so the receipt stands
+    and the clean deploy tree passes (REL-69AB9DD7's shape)."""
+    repo = Repo(tmp_path, REVIEW_MAP, extra={".work/FINDINGS.md": "- a finding\n"},
+                ignore=_TRACKS_WORK)
+    assert repo.clean_receipt()["included_excluded"] == [".work/FINDINGS.md"]
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_committed_binary_work_file_in_the_reviewed_range_is_refused(flavour, tmp_path):
+    repo = Repo(tmp_path, REVIEW_MAP, ignore=_TRACKS_WORK)
+    (repo.root / ".work" / "blob.bin").write_bytes(b"\x00\x01binary\x00")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-q", "-m", "binary")
+    repo.clean_receipt()
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert "outside the bundle" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -727,6 +763,7 @@ def test_sh_refuses_a_map_that_is_not_a_regular_file(with_python, tmp_path):
 
 @_POSIX_ONLY
 @_NEEDS_PWSH
+@pytest.mark.wallclock
 @pytest.mark.parametrize("kind", ["fifo", "link-to-fifo"])
 def test_ps1_refuses_a_map_that_is_not_a_regular_file(kind, tmp_path):
     """The .ps1 runs for the PowerShell tool on any OS; a FIFO map held it past
@@ -788,9 +825,14 @@ def test_sh_without_python_bounds_the_committed_map_read(tmp_path):
 
 
 @_POSIX_ONLY
+@pytest.mark.wallclock
 def test_sh_without_python_scans_a_large_map_quickly(tmp_path):
     """One jq process per map: a fork per string took 20.8s on this repo's
-    own 847-string map, past the hook timeout."""
+    own 847-string map, past the hook timeout.
+
+    `wallclock`: it bounds elapsed time, and under CI's `-n 16` on a 4-vCPU
+    hosted runner the gate's own 16s deadline ran out mid-jq, so the block
+    read "jq could not read it" (run 37984138378, test (3.12))."""
     if shutil.which("jq") is None:
         pytest.skip("no jq on this machine")
     big = {"environments": {f"env{i}": {"deploy": f"deploy-number-{i}", "rollback": "none",
@@ -956,6 +998,7 @@ def test_sh_without_python_passes_an_unrelated_command_on_a_valid_map(case, tmp_
 
 @_POSIX_ONLY
 @_NEEDS_PWSH
+@pytest.mark.wallclock
 def test_ps1_without_python_blocks_a_declared_deploy(tmp_path):
     repo = Repo(tmp_path, REVIEW_MAP)
     code, err, _ = run_gate("ps1", repo, "deploy-dev", path=_path_without_python(tmp_path))

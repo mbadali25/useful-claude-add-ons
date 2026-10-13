@@ -310,6 +310,33 @@ def test_check_refuses_out_of_scope_changes_whatever_the_mode(tmp_path):
     assert (done.returncode, "other/keep.py" in done.stdout) == (1, True)
 
 
+def _sed_i(root, rel):
+    """A real `sed -i`: the shell route the edit guard never sees (L-0711)."""
+    sed = shutil.which("sed")
+    if sed is None:
+        pytest.skip("sed not installed - the shell-route case was NOT run")
+    subprocess.run([sed, "-i", "s/x = 1/x = 2/", rel], cwd=str(root), check=True,
+                   capture_output=True, stdin=subprocess.DEVNULL, timeout=120)
+
+
+def test_check_refuses_a_sed_i_write_outside_touch(repo):
+    """L-0711's done-when: on a 1.0 ticket, a `sed -i` outside `## Touch`
+    refuses `/crew:done` check 3, naming the path."""
+    ready(repo)
+    _sed_i(repo, "other/keep.py")
+
+    done = _check(repo)
+
+    assert (done.returncode, "other/keep.py" in done.stdout) == (1, True)
+
+
+def test_check_passes_a_sed_i_write_inside_touch(repo):
+    ready(repo)
+    _sed_i(repo, "src/app.py")
+
+    assert _check(repo).returncode == 0
+
+
 def test_check_refuses_a_bad_ticket_id(repo):
     assert _check(repo, "../x").returncode == 1
 

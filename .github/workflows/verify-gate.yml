@@ -7,6 +7,13 @@ name: Verify gate receipt (self-hosted)
 # exactly. A local `--all` costs 17-20 minutes and is OOM-killed at the shared
 # box's 6G cap; the pool is idle most of the day.
 #
+# The CI home for what Stop never runs (L-0710). The Stop hook spends
+# `verify.stopBudgetSeconds` and defers a rule priced over it on its own,
+# naming it "NOT VERIFIED ... deferred to CI"; a Stop turn where 0 rules ran
+# writes no verified marker. This job runs the whole map with no budget, and
+# its receipt is the precondition `/crew:done` check 2 reads: VERIFIED for
+# HEAD (or NO_GATE), else a clean local `/crew:verify --all`, else no close.
+#
 # Security. `push` only, never pull_request / pull_request_target: a push
 # event is same-repository by construction, so fork code can never reach the
 # pool (owner 2026-09-30, "No fork PRs", the L-0521 clause). The token is
@@ -16,7 +23,8 @@ name: Verify gate receipt (self-hosted)
 # Opt-in. The job runs only while the runner playbook
 # (mbadali25/github-runner-infra) has CREW_RUNNER=self-hosted set. Unset, the
 # job is skipped, no receipt exists, and every consumer behaves as before
-# (run the gate locally, or refuse). It is not a required check.
+# (run the gate locally, or refuse). It is not a required check on main:
+# making it one is a branch-protection setting the owner applies, not code.
 on:
   push:
     branches: ['L-*', 'T-*', 'W-*']

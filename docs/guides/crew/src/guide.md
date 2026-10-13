@@ -26,10 +26,19 @@ independent eyes.
 
 | Role | What it does | What it cannot do |
 |---|---|---|
-| `explorer` | Maps the code a ticket touches | No Write, Edit or Bash |
+| `explorer` | Maps the code a ticket touches | No Write or Edit; Bash only to hand its task to Kimi |
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
+
+**Running agents on Kimi.** Claude Code runs subagents on Claude models only,
+so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
+CLI instead. Pin one with
+`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`. Kimi then
+answers read-only, and the agent falls back to Claude when Kimi cannot run. Its
+first line says which one ran. A Kimi `security` review is refused on code Kimi
+wrote, because the family that wrote a change may not judge it. Nothing is
+pinned until you pin it.
 
 The session you type into does the implementing. Nothing else is dispatched to
 write. Stack knowledge (Python, Bash, PowerShell, Terraform and others) loads
@@ -87,9 +96,12 @@ reported to you instead (exit 3). `/crew:onboard` and `/crew:onboard
 --refresh` run the same step, `/crew:implement` checks it, and
 `/crew:status` shows it as one `gitignore` line.
 
-`/crew:migrate` moves a crew 0.20 repository to the 1.0 layout, once per
-repository: `--preview` first, then `--apply`, which takes a backup that
-`--rollback` restores. Every historical metric it cannot recover is written
+`/crew:init` writes the repo config to `.crew/config.json`, the file every gate, guard and<!-- claim: crew-config-file:config.json -->
+`/crew:config` reads and writes; a new repository needs nothing else. `/crew:migrate` is only for a
+repository crew 0.20 set up (`/crew:status` says `run /crew:migrate`): it moves the tickets, metrics
+and PM journal to the 1.0 layout and writes `.crew/crew.json` as a record of the old config, once
+per repository: `--preview` first, then `--apply`, which takes a backup that `--rollback` restores.
+`.crew/config.json` stays, and every gate, guard and `/crew:config` keeps reading it; the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files. Every historical metric it cannot recover is written
 `UNKNOWN`, never `0`. A config older than 0.20 (no `schema`, or 1-6) is
 upgraded by `/crew:migrate` itself in the same run; `/crew:upgrade` was removed.
 
@@ -196,14 +208,16 @@ anything itself: a write after review would stale the receipt.
 
 Source: `plugin/crew/hooks/scripts/scope_guard.py`,
 `plugin/crew/hooks/scripts/completion_audit.py`,
-`plugin/crew/hooks/scripts/cloud_guard.py` and
+`plugin/crew/hooks/scripts/cloud_guard.py`,
+`plugin/crew/hooks/scripts/env_guard.py` and
 `plugin/crew/hooks/scripts/promote-gate.sh`.
 
 What is on by default, and what is not:
 
 - **Off until you arm it:** the scope guard (`scope.mode` is `off` unless
-  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`) and
-  the role-write guard (`guards.roleWrites: off`).
+  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`),
+  the environment guard (`guards.envGuard: off`) and the role-write guard
+  (`guards.roleWrites: off`).
 - **`block` by default:** the six policy guards (`guards.terraformApply`,
   `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`,
   `sqlDestructive`) and the two production guards (`prodDatabase`,
@@ -233,6 +247,16 @@ production database or host. Each rule has its own `guards.*` setting. Set
 command hidden in an interpreter (a Python script that calls the cloud SDK),
 a variable or an encoded string. The credentials boundary that would close
 that is T-0044.
+
+**The environment guard** (`guards.envGuard`, default `off`; L-0772) refuses a
+Bash or PowerShell command whose own text prints the whole process environment
+(`env`, `printenv`, bare `set`, `export -p`, `cat /proc/self/environ`,
+`Get-ChildItem env:`) or a credential-named variable (`echo "$GITHUB_TOKEN"`,
+`$env:API_KEY`) into the agent's context, where it would land in the
+transcript. A command it cannot read is refused as could-not-tell. Set
+`report` first. *What it cannot see:* a script or program the command runs, an
+alias defined outside the command, or a renamed binary; keeping credentials out
+of the agent's environment is the stronger control (L-0776).
 
 **The promote gate** runs on a deploy command declared in
 `.crew/verify.json`. Before the deploy it checks that the upstream environment

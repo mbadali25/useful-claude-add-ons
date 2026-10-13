@@ -281,7 +281,7 @@ def _finish_claude(repo, tmp_path, body, before=None, exit_code="0"):
     common = [sys.executable, os.path.join(os.path.dirname(rv.__file__), "review_run.py"),
               "--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
               "--provider", "claude"]
-    subprocess.run(common + ["--reserve-only"], capture_output=True,
+    subprocess.run(common + ["--reserve-only", "--authors", "gpt"], capture_output=True,
                    stdin=subprocess.DEVNULL, check=True, timeout=120)
     result = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
                                       "--exit-code", exit_code, "--work-dir", str(work)],

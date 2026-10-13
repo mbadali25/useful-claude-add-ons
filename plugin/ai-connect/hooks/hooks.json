@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.sh\"", "asyncRewake": true, "timeout": 604800 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.ps1\"; exit $LASTEXITCODE", "asyncRewake": true, "timeout": 604800 }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.sh\"", "asyncRewake": true, "timeout": 604800 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.ps1\"; exit $LASTEXITCODE", "asyncRewake": true, "timeout": 604800 }] }
+    ]
+  }
+}

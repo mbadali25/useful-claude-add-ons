@@ -105,6 +105,21 @@ def test_a_marker_behind_head_is_unverified(tmp_path):
     assert "have not been through the gate" in reason
 
 
+def test_a_marker_at_head_with_only_the_gates_own_file_differing_is_verified(tmp_path):
+    """MUST-ALLOW: the gate's own marker is not material. Here `.crew/` is not
+    ignored, so the marker is itself an untracked path, and no fingerprint
+    exists; counting the marker as a change would refuse this tree forever.
+    L-0710 replaced the real-gate `clean-tree` shape that pinned this (a
+    zero-rules turn no longer writes the marker), so it is pinned here."""
+    root = _repo(tmp_path)
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "everything")
+    (root / ".crew" / ".verify-verified-at").write_text(git(root, "rev-parse", "HEAD") + "\n",
+                                                        encoding="utf-8")
+    state, reason = review_gate.gate_state(str(root))
+    assert state == review_gate.VERIFIED, reason
+
+
 # --- the invariant, against the real gate --------------------------------------
 
 def _modify(root):
@@ -126,8 +141,22 @@ def _commit_all(root):
 
 
 @needs_bash
-@pytest.mark.parametrize("shape", [None, _modify, _stage_new, _delete, _commit_all],
-                         ids=["untracked", "modified", "staged-new", "deleted", "clean-tree"])
+def test_a_gate_exit_0_on_a_clean_tree_where_zero_rules_ran_is_unverified(tmp_path):
+    """L-0710: a clean tree on the default branch has nothing in scope, so
+    the gate exits 0 having run no rule - and records nothing, so nothing
+    here may read it as a pass. This was the `clean-tree` shape below until
+    the gate stopped writing the marker on zero rules."""
+    root = _repo(tmp_path)
+    _commit_all(root)
+    result = _gate(root)
+    assert result.returncode == 0, result.stderr
+    assert "0 rules ran" in result.stderr, result.stderr
+    assert _state(root) == review_gate.UNVERIFIED
+
+
+@needs_bash
+@pytest.mark.parametrize("shape", [None, _modify, _stage_new, _delete],
+                         ids=["untracked", "modified", "staged-new", "deleted"])
 def test_after_the_real_gate_passes_the_tree_is_verified(tmp_path, shape):
     root = _repo(tmp_path)
     if shape:
@@ -323,7 +352,7 @@ def test_an_unverified_tree_is_refused_with_exit_unverified_and_no_round_spent(t
 
 def test_the_claude_reservation_is_refused_the_same_way(tmp_path):
     repo = _repo(tmp_path)
-    result, _ = _review(repo, tmp_path, "--reserve-only", provider="claude")
+    result, _ = _review(repo, tmp_path, "--reserve-only", "--authors", "gpt", provider="claude")
     assert result.returncode == review_run.EXIT_UNVERIFIED
     assert "ROUND=" not in result.stdout
     assert _rounds(repo) == []
@@ -387,7 +416,7 @@ def test_the_claude_path_reports_already_clean_instead_of_a_round(tmp_path):
     repo = _repo(tmp_path, verify_map=False)
     assert _review(repo, tmp_path)[0].returncode == 0
 
-    again, _ = _review(repo, tmp_path, "--reserve-only", provider="claude")
+    again, _ = _review(repo, tmp_path, "--reserve-only", "--authors", "gpt", provider="claude")
 
     assert again.returncode == 0
     assert "ALREADY_CLEAN=1" in again.stdout and "ROUND=" not in again.stdout

@@ -1,7 +1,8 @@
 %% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/cloud-guard.sh
+%% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/cloud-guard.sh, plugin/crew/hooks/scripts/env-guard.sh
+%% Re-drawn for L-0772 on 2026-10-11: the environment guard's fallback (EG1-EG3), read at L-0772-env-guard.
 %% Re-drawn for T-0096 on 2026-10-04: the cloud guard's fallback (CG1-CG3), read at T-0096-build.
-%% Purpose: What two guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout.
+%% Purpose: What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %%  6. role-write-guard.sh's no-python fallback (:301-346) is a NEW, narrower
 %%     contract, not the old policy-reading fallback (removed): without a
@@ -24,6 +25,12 @@
 %%    Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir.
 %% Note CG3: source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse).
 %%    Otherwise exit 0, unjudged.
+%% Note EG1: crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76).
+%% Note EG2: _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when
+%%    the resolver is missing; the repo file is crew_repo_config_dir's. Twins: Test-EnvGuardArmed in env-guard.ps1,
+%%    and env_guard._crude_armed in python when crew's own config readers raise.
+%% Note EG3: source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise
+%%    exit 0, unjudged.
 flowchart LR
 
     subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
@@ -40,4 +47,12 @@ flowchart LR
         CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
         CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
         CG1 --> CG2 --> CG3
+    end
+
+    subgraph EnvNoPython["env-guard's fallback - the same shape (L-0772)"]
+        direction TB
+        EG1["no usable python,<br/>or env_guard.py failed"]
+        EG2["<b>_env_guard_armed</b><br/>resolved repo file +<br/>machine file"]
+        EG3["unknown, or envGuard<br/>not off: REFUSED (exit 2)"]
+        EG1 --> EG2 --> EG3
     end

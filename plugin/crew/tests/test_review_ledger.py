@@ -73,7 +73,7 @@ def test_reserve_budget_cannot_be_reset_or_raised_by_env_or_flag(repo):
 
     flag_budget = _cli(repo, "--ticket", "T1", "--reserve", "--budget", "3", env=env)
     flag_reset = _cli(repo, "--ticket", "T1", "--reserve", "--reset", env=env)
-    plain = _cli(repo, "--ticket", "T1", "--reserve", env=env)
+    plain = _cli(repo, "--ticket", "T1", "--reserve", "--authors", "gpt", env=env)
 
     assert (flag_budget.returncode, flag_reset.returncode) == (2, 2)
     assert plain.returncode == 1 and "budget exhausted" in plain.stderr
@@ -593,3 +593,92 @@ def test_a_source_edit_after_acceptance_still_stales_the_receipt(repo, rel):
     result = _cli(repo, "--ticket", "T1", "--check-receipt")
 
     assert result.returncode == 1 and "stale" in result.stdout, result.stdout + result.stderr
+
+
+# ---- L-0712: no reviewer is INCOMPLETE and refunded; same-family is labelled --
+
+def test_no_reviewer_records_incomplete_refunded_and_spends_nothing(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    before = rl.status(str(repo), "T1")
+
+    entry = rl.no_reviewer(str(repo), "T1", "no cross-family provider answers")
+
+    after = rl.status(str(repo), "T1")
+    assert (entry["verdict"], entry["refunded"], after["unreviewed"][-1]["reason"]) == (
+        "INCOMPLETE", True, "no cross-family provider answers")
+    assert ((after["rounds"], after["rounds_spent"], after["rounds_left"], after["state"],
+             after["receipt"]) == (before["rounds"], before["rounds_spent"],
+                                   before["rounds_left"], before["state"], before["receipt"]))
+
+
+def test_no_reviewer_on_a_fresh_ticket_leaves_both_rounds(repo):
+    rl.no_reviewer(str(repo), "T1", "none left")
+    rl.no_reviewer(str(repo), "T1", "none left again")
+
+    status = rl.status(str(repo), "T1")
+
+    assert (len(status["unreviewed"]), status["rounds_used"], status["rounds_left"]) == (
+        2, 0, rl.BUDGET)
+
+
+def test_no_reviewer_never_blocks_accepting_the_latest_findings_round(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.record(str(repo), "T1", 1, _result("FINDINGS"))
+    rl.no_reviewer(str(repo), "T1", "round 2 had no reviewer")
+
+    latest = rl.status(str(repo), "T1")["rounds"][-1]
+
+    assert (latest["round"], latest["verdict"]) == (1, "FINDINGS")
+
+
+def test_no_reviewer_refuses_an_unreadable_ledger(repo):
+    path = rl.ledger_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+
+    with pytest.raises(rl.LedgerError, match="unreadable"):
+        rl.no_reviewer(str(repo), "T1", "none left")
+
+    with open(path, encoding="utf-8") as fh:
+        assert fh.read() == "{not json"
+
+
+def test_no_reviewer_cli_needs_a_one_line_reason(repo):
+    missing = _cli(repo, "--ticket", "T1", "--no-reviewer")
+    broken = _cli(repo, "--ticket", "T1", "--no-reviewer", "--reason", "a\nb")
+    ok = _cli(repo, "--ticket", "T1", "--no-reviewer", "--reason", "no cross-family provider")
+
+    assert (missing.returncode, broken.returncode, ok.returncode) == (1, 1, 0), ok.stderr
+    assert "INCOMPLETE, refunded" in ok.stdout
+    assert len(rl.status(str(repo), "T1")["unreviewed"]) == 1
+
+
+def test_reserve_same_family_labels_the_row(repo):
+    rl.reserve(str(repo), "T1", "claude", same_family="codex limit")
+
+    row = rl.status(str(repo), "T1")["rounds"][0]
+
+    assert (row["same_family"], row["same_family_reason"]) == (True, "codex limit")
+
+
+def test_reserve_without_same_family_leaves_the_row_unlabelled(repo):
+    rl.reserve(str(repo), "T1", "codex")
+
+    assert "same_family" not in rl.status(str(repo), "T1")["rounds"][0]
+
+
+def test_a_clean_same_family_round_receipt_says_same_family(repo):
+    rl.reserve(str(repo), "T1", "claude", same_family="operator chose it")
+    rl.record(str(repo), "T1", 1, _result("CLEAN", provider="claude"))
+
+    receipt = rl.status(str(repo), "T1")["receipt"]
+
+    assert (receipt["kind"], receipt.get("same_family")) == ("clean", True)
+
+
+def test_a_same_family_labelled_row_is_never_auto_accepted():
+    row = {"round": 2, "provider": "codex", "model_family": "gpt", "same_family": True,
+           "same_family_reason": "operator chose it"}
+
+    assert "labelled same-family" in rl._family_problem(row)  # pylint: disable=protected-access

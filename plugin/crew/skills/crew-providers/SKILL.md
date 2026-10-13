@@ -85,6 +85,13 @@ quietly ran on the fallback is indistinguishable from one that ran on the
 pin, and the difference matters most exactly when the pin was chosen to get
 a different model family onto the diff.
 
+The fallback runs on its family's provider (L-0712, `provider_for_model`):
+`gpt-*` on codex, `kimi-*`/`k3` on kimi, `claude-*` on claude. One in the
+author's family is skipped for the next `qa.order` (or `dev.order`) provider
+whose family did not write the diff and which answers its probe. When none
+answers, the round is INCOMPLETE and refunded; a same-family read runs only
+when the operator asks for one, labelled.
+
 ### The family guard beats every pin above
 
 Evaluation happens in this order, and the order is the whole interlock:
@@ -373,8 +380,8 @@ before the round is reserved, and a working-tree fingerprint catches a reviewer
 that edits instead of reporting. The launch gate, `crew_config.review_launchable()`
 (the one coupling, `review_run.LAUNCHED` plus `claude`), names `kimi`, so Kimi is
 eligible in the `qa.order` walk; a pin to kimi validates and is family-guarded.
-`alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
-route), and a private second opinion on local hardware.
+`alternative-providers.md`: the offered pin table, crew's agents on Kimi (L-0777),
+Kimi through Codex (the API-key route), and a private second opinion on local hardware.
 
 ## Gemini (design second opinion)
 

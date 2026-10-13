@@ -119,7 +119,7 @@ def _run(repo, scratch, fakes, provider, *extra):
                           timeout=120)
 
 
-_PROVIDERS = {"codex": (), "claude": ("--reserve-only",)}
+_PROVIDERS = {"codex": (), "claude": ("--reserve-only", "--authors", "gpt",)}
 
 
 @pytest.mark.parametrize("provider", sorted(_PROVIDERS))
@@ -165,7 +165,7 @@ def test_run_refuses_stale_selfcheck(repo, tmp_path, change):
     fakes = fake_reviewer_bin(tmp_path / "bin")
     before = _ledger_snapshot(repo)
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     assert (result.returncode, _STALE_BY[change] in result.stderr,
             _ledger_snapshot(repo) == before) == (2, True, True), result.stderr
@@ -177,7 +177,7 @@ def test_run_reserves_with_current_selfcheck(repo, tmp_path):
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     seal = cs.read_selfcheck(str(repo), TICKET)[1] or {}
     assert (result.returncode, result.stdout.strip(),
@@ -202,7 +202,7 @@ def test_run_stands_down_in_an_incident_and_logs_the_skip(repo, tmp_path):
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     skips = [row for row in crew_incident.read_skips(str(repo))
              if "standards-selfcheck" in row]
@@ -216,7 +216,7 @@ def test_run_without_an_approval_receipt_says_the_gate_does_not_apply(repo, tmp_
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     assert (result.returncode, result.stdout.strip(),
             "standards self-check not required" in result.stderr) == (0, "ROUND=1", True)
@@ -229,7 +229,7 @@ def test_run_with_a_corrupt_approval_receipt_still_gates(repo, tmp_path):
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     assert (result.returncode, "review-run: self-check" in result.stderr) == (2, True)
 
@@ -246,7 +246,7 @@ def test_run_refuses_an_unreadable_manifest(repo, tmp_path, extra, code):
     (scratch / "manifest.json").write_text("{", encoding="utf-8")
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only", *extra)
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt", *extra)
 
     assert (result.returncode, "manifest" in result.stderr,
             rl.status(str(repo), TICKET)["rounds_used"]) == (code, True, 0)
@@ -277,7 +277,7 @@ def test_run_reserves_after_an_edit_that_keeps_the_record_complete(repo, tmp_pat
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     assert (result.returncode, result.stdout.strip()) == (0, "ROUND=1"), result.stderr
 
@@ -297,7 +297,7 @@ def test_run_refuses_a_broken_effective_set(repo, tmp_path):
     fakes = fake_reviewer_bin(tmp_path / "bin")
     before = _ledger_snapshot(repo)
 
-    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     assert (result.returncode, "review-run: self-check: .crew/standards.md: not UTF-8" in
             result.stderr, _ledger_snapshot(repo) == before) == (2, True, True), result.stderr
@@ -369,7 +369,7 @@ def _in_process(repo, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("PATH", str(fake_reviewer_bin(tmp_path / "bin")) + os.pathsep
                        + os.environ.get("PATH", ""))
     code = review_run.main(["--root", str(repo), "--ticket", TICKET, "--scratch", str(scratch),
-                            "--provider", "claude", "--reserve-only"])
+                            "--provider", "claude", "--reserve-only", "--authors", "gpt"])
     return code, capsys.readouterr().err
 
 

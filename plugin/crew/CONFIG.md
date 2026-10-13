@@ -39,6 +39,15 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 | repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
+**The repo file is `.crew/config.json`** (L-0713). `/crew:init` writes it from<!-- claim: crew-config-file:config.json -->
+`templates/config.template.json`, `/crew:config` and `crew_config.py --repo` edit it, and every
+gate, guard and setting reader opens it (the Python ones through `crew_common.repo_config_file`,
+whose default name is `config.json`). A new repository needs no `/crew:migrate`. `.crew/crew.json` exists only where
+`/crew:migrate` ran on a crew 0.20 setup: a schema-1 record of the old config, with
+`.crew/config.json` left in place and still read. Where it exists, `crew_context`, `crew_resume`,
+`crew_refresh_check`, `crew_diagrams` and `/crew:status` read it before `config.json`, and
+`crew_tracker` reads both and refuses when they disagree; no gate or guard reads it.
+
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
 or non-object global file returns `{}` and is indistinguishable from no file at
 all. That contract is load-bearing — `resolve_config` is reached from a
@@ -189,10 +198,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **88**
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **89**
 leaves, 4 of them the machine-only `unattendedCloud`. `leaf_paths(default_config())`
-yields **148**, so **64** are repo-only.
-For all 148, `filter_global` and `is_global_path` (which `plan_global_write`
+yields **153**, and the union of the two is **157**, so **68** are repo-only.
+(Measured with `leaf_paths` on L-0772's branch, base main c972653a: its
+`guards.envGuard`, in both layers, moves the global count from 88 to 89 and the
+union from 156 to 157. The figures below are older measurements, kept as history.)
+For all of them, `filter_global` and `is_global_path` (which `plan_global_write`
 refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
 on rush/g4-deploy after merging release/1.2.0 (eaeb2f4d), with T-0009's
 `guards.deployWorkflow` (both layers) and repo-only `environments.workflows`;
@@ -762,7 +774,7 @@ The table below is generated from the code (T-0048); the counts it states
 replace the hand-counted ones this heading used to carry.
 
 <!-- generated:config-keys-global begin -->
-88 of 156 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
+89 of 157 keys are settable in the machine-global file (generated; 68 are repo-only, section 11).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -839,6 +851,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `guards.prodServer` | both, ratchet | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | `"none"` |
 | `guards.roleWrites` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
 | `guards.cloudGuard` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
+| `guards.envGuard` | both, ratchet | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | `"off"` |
 | `environments.prodUnattended` | both, ratchet | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | `false` |
 | `change.requester` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
 | `change.implementor` | both | not validated - read by `hooks/scripts/crew_change.py` (expects string or null) | `null` |
@@ -881,6 +894,39 @@ crew enumerating role names. A role pin **wins over** the provider block for
 that role — `/crew:review` resolves `review`'s model that way
 (`skills/crew-review/SKILL.md`, the `qm()` helper).
 
+**The agent pins (L-0777).** `dev.roles.explorer`, `dev.roles.researcher` and
+`dev.roles.security` route those agents: a pin that resolves to `kimi` makes
+the agent hand its task to `hooks/scripts/crew_kimi_agent.py`, which runs the
+Kimi Code CLI read-only and falls back to Claude when Kimi cannot run. Nothing
+ships pinned, so every agent stays on Claude until you write one
+(`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`).
+`explorer` and `researcher` joined `crew_state.DEV_ROLE_KINDS` so `/crew:model`
+lists them. `security` is in `crew_state.REVIEWING_DEV_ROLES`: unlike every
+other `dev` role it is judged against the author families, so a pin in the
+family that wrote the change is BARRED, as a `qa` pin is. See the crew README,
+"Agents on Kimi".
+
+### `qa.fallback` / `dev.fallback` run on their own family's provider (L-0712)
+
+When a pinned model is gone, `crew_state.resolve_role` falls back to the
+`fallback` model **on the provider that serves its family**
+(`crew_state.provider_for_model`: `gpt-*` on codex, `kimi-*` and `k3` on kimi,
+`claude-*` on claude; Copilot hosts several families, so no fallback is sent
+there). Until L-0712 every fallback was dispatched to `claude`, so a
+`gpt-6.1-sol` fallback became a Claude read. A fallback in the author's family is
+skipped for the next provider in `qa.order` (`dev.order`, else the shipped QA
+order, for the dev kind) that is not the author's family and answers its probe,
+on that provider's own model and effort. When none does, the result is
+`incomplete`: the round is recorded INCOMPLETE and refunded rather than spent on
+a same-family read. Only an explicit operator choice (`same_family_ok`) runs the
+fallback same-family, and the result says `sameFamily`. A fallback model whose
+family no provider serves (`gemini-*`) walks the order directly. `/crew:status`
+prints the repo-wide share of same-family rounds. `/crew:review` carries this
+out (crew 1.2.6): an INCOMPLETE with no reviewer is
+`review_ledger.py --no-reviewer --reason <why>` (an `unreviewed` entry, no
+round or budget spent), and `review_run.py --authors "$AUTHORS"` refuses an
+author-family reviewer unless `--same-family "<reason>"` labels the round.
+
 ---
 
 ## 11. Repo-only keys
@@ -894,7 +940,7 @@ neither default, so the generated table, which lists declared keys, cannot
 show it: its default is `60`.
 
 <!-- generated:config-keys-repo begin -->
-68 of 156 keys are repo-only (generated; 88 are global-settable, section 10).
+68 of 157 keys are repo-only (generated; 89 are global-settable, section 10).
 Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from the marketplace repository, whose
 `docs/guides/crew/src/configuration-reference.md` is the full reference
 (summaries and arrival versions). Do not edit the table by hand.
@@ -1649,6 +1695,7 @@ earn its own section: see §18, not the tables immediately below.
 | `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.deployWorkflow` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on); `allow` covers nonProd only |
 | `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
+| `guards.envGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/env-guard.sh`, `.ps1` -> `env_guard.py` (L-0772) |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
@@ -1661,6 +1708,15 @@ earn its own section: see §18, not the tables immediately below.
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
 flavours call exactly that CLI — see "one resolver, two flavours" below.
+
+### `envGuard` — the environment-dump guard's switch (L-0772)
+
+`off` *(default)* judges nothing; `report` writes the refusal it would make to
+`.crew/guard.log` (rule, mode, decision and a fixed label, never the command or
+a value) and refuses nothing; `block` refuses. A malformed value is `block`;
+the narrower layer wins. There are no per-rule keys behind it, and the
+credential-name pattern is fixed in `env_guard.py`. What it refuses and why:
+README "Environment guard".
 
 ### What each value does
 
@@ -1678,7 +1734,7 @@ ratchet.
 | Value | What crew does |
 |---|---|
 | `none` *(default)* | Refuses every command aimed at a declared production target. |
-| `read` | Permits what the guard can **positively classify** as read-only. Everything else — including everything it cannot classify — is refused. |
+| `read` | Permits what the guard can **positively classify** as read-only. Everything else — including everything it cannot classify — is refused. Since L-0772 an environment dump is never read-only: `printenv` left `PROD_READ_COMMANDS`, bare `env` classifies as a write, and any remote command `env_guard.findings` flags (`cat /proc/1/environ`, `ps eww`, `echo $SOME_TOKEN`) is a write (**BREAKING**, by narrowing). |
 | `full` | Permits anything, and appends a row to `.crew/guard.log` for each one. |
 
 **`ask` is not a value here, and its absence is a decision.** The other four
@@ -2914,7 +2970,23 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   marker or the fingerprint. It is recorded as `"chronic"` instead, and the
   gate prints `NOT VERIFIED ON THIS TREE` for it on every subsequent Stop —
   whether or not that rule's own files changed this turn — until
-  `/crew:verify --all` actually runs it clean.
+  `/crew:verify --all` actually runs it clean. Its home is CI (L-0710): the
+  line says `deferred to CI`, the `verify-gate` workflow runs it with no
+  budget, and `/crew:done` refuses until that run's receipt is VERIFIED or
+  `/crew:verify --all` has run it clean here. A
+  deferral alone never exits 2 at Stop; a rule that runs and fails still does.
+- **A turn where zero rules ran records nothing as verified** (L-0710). An
+  empty changed set, or one for which the map selected no command (every
+  match chronic, reach-excluded or unmapped and ignored), prints
+  `verify-gate: 0 rules ran` and writes neither `.crew/.verify-verified-at`
+  nor the fingerprint. It moves only the diff baseline,
+  `.crew/.verify-gate.base-at` (HEAD), when the base did not come from the
+  marker and nothing committed differs from the current base: on a default
+  branch with no marker that is what keeps the next commit in scope. It is
+  read as is when it is an ancestor of HEAD and through its merge-base with
+  HEAD otherwise; one that cannot be read, is not a regular file or names no
+  commit refuses the turn (exit 2), as does a write that fails. Nothing reads `base-at` as
+  verified.
 - A rule that would fit `verify.stopBudgetSeconds` alone but lost to this
   turn's contention (another rule's cost crowded it out) is "acute", not
   chronic, and still blocks the sha marker exactly as before this feature —
@@ -2993,6 +3065,45 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   checkout that ran it. The caches are machine-local and gitignored, so
   another checkout or worktree that pulls the stamped map prices those
   rules afresh: run `/crew:verify --all` once there.
+- **What Stop says about undeclared rules (L-0733).** A map written before
+  `reach` existed used to print a `rules[N] wrapper or inline shell ...` line
+  per matched rule and a `NOT VERIFIED ON THIS TREE - rules[N]` line per
+  record entry on every Stop. Now the first Stop that defers an undeclared
+  rule prints ONE notice: how many rules matched and how many in the map have
+  no `reach`, `/crew:verify --stamp-reach` (dry run, then `--apply`, and
+  `--set N=local|network|host` for a wrapper or shell rule), then each
+  deferred rule's reason once. It is shown once per `.crew/verify.json`
+  content (`.crew/.verify-gate.reach-notice` holds the map's sha256,
+  machine-local bookkeeping); after that every Stop, quiet turns included,
+  says it in one line: `NOT VERIFIED ON THIS TREE - N rule(s) with no
+  `reach` not run on Stop: rules[...]`. The deferral is unchanged, `--ci`
+  keeps a line per rule, and `/crew:status` still counts the entries by kind.
+- **An orphan** is a record entry whose rule was edited or removed since it
+  was recorded (its `rule_key` changed). When the map has a new rule on the
+  same `paths` (the same rule edited: `reach` or `seconds` added, `run`
+  changed), the orphan is **superseded** and dropped, with a
+  `dropped the obligation of rules[N] ... rules[M] on the same paths
+  replaces it` line (L-0733); a rule that already sat beside it on those
+  paths is not its replacement. Each entry carries `pathsKey` and `peers` for
+  this; one recorded before L-0733 has neither, so it is never superseded.
+  An orphan nothing replaced stays in the record, marked
+  `orphaned`, because an edit does not verify anything. An undeclared-reach
+  orphan does not hold the verified marker (L-0733): its live form never
+  did, and `--stamp-reach` in another checkout would otherwise freeze that
+  checkout's marker for good; it is counted in the one-line summary. Any
+  other orphan holds the marker until `/crew:verify --all` runs, or until
+  `python3 hooks/scripts/verify_record.py forget-orphans`, run from the repo
+  root, drops it by name and runs nothing — for a map whose `--all` would
+  reach `network`/`host` targets. The Stop line names that command.
+  The record is per checkout (`.crew/.verify-gate.record.json`): `--all`
+  clears only the record of the checkout it runs in, `--ci` never prunes it,
+  and every orphan and `NOT VERIFIED` line ends `[record: <absolute path>]`.
+- **Every exit 2 writes a line to stdout** (L-0733), `VERIFY GATE: BLOCKED
+  (exit 2) ...`, in both flavours. Claude Code treats a Stop hook that exits 2
+  with empty stdout and a stderr matching `no such file` or `can't open` as a
+  missing hook script and lets the turn through ("Hook script appears to be
+  missing ... Treating as non-blocking"), so a rule failing with
+  `No such file or directory` used to be waved past.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a
@@ -3014,6 +3125,19 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
   not recorded as verified either.
+
+**Who settles what Stop did not check (L-0710).** A `chronic` rule (deferred
+to CI), a `skipped` one, and a Stop turn where `0 rules ran` all leave HEAD
+without a clean pass, and none of them fails the turn. `/crew:done` check 2
+settles them: it passes on `ci_receipt.py check` exit 0 `CI_RECEIPT VERIFIED`
+(the `.github/workflows/verify-gate.yml` job ran the whole map, unbudgeted,
+on exactly that committed tree) or exit 4 `NO_GATE`, or on a record with
+nothing outstanding (`crew_status.py`'s `verify   no rules recorded`: a clean
+pass empties it) together with `review_gate.gate_state` answering `VERIFIED`
+(the marker names HEAD and the working tree still has the fingerprint that
+pass wrote; a marker at HEAD alone survives an uncommitted edit). Anything
+else refuses the close. No config key
+changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 
 **`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
 operator command, never something a hook runs.** `.crew/verify.json` is

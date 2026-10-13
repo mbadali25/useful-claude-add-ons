@@ -409,13 +409,34 @@ _CREW_TEST_TMP+=("$SCOPEFX")
 ' > wandered.txt
 )
 
-# (a) an open ticket that declares paths: the wandering file is NAMED, and the
-#     gate's exit code is unchanged by saying so.
+# (a) an open crew 1.0 ticket whose approved spec.md ## Touch declares paths
+#     (L-0711: the report reads the 1.0 contract, not the pre-1.0 `- touch:`
+#     line): the wandering file is NAMED, and the gate's exit code is
+#     unchanged by saying so. The ticket is activated by crew_ticket.py and
+#     approved through the approval hook, so the fixture is the contract the
+#     report reads, not a hand-copied shape of it.
+SCOPE_PY=$(command -v python3 || command -v python || command -v py)
+if [ -z "$SCOPE_PY" ]; then
+  echo "run-tests.sh: no python3/python/py on PATH - the scope cases cannot build a 1.0 ticket" >&2
+  fail "verify-gate scope cases: no python interpreter found"
+fi
 printf '| T-0001 | scope case | in progress |
 ' > "$SCOPEFX/.work/INDEX.md"
-printf '## Scope
-- touch: in-scope.txt
-' > "$SCOPEFX/.work/tickets/T-0001.md"
+mkdir -p "$SCOPEFX/.work/tickets/T-0001"
+printf 'go\n' > "$SCOPEFX/.work/tickets/T-0001/direction.md"
+printf '# T-0001\n\n## Intent\nScope case.\n\n## Exclusions\nNothing else.\n\n## Evidence\n- tracked.txt:1\n\n## Unknowns\nNone.\n\n## Touch\n- `in-scope.txt`\n\n## Acceptance checks\n- [ ] tests pass\n' \
+  > "$SCOPEFX/.work/tickets/T-0001/spec.md"
+printf '# Plan\n\n### Step 1\nFiles: in-scope.txt\nTest: pytest\nRisk: low\n' \
+  > "$SCOPEFX/.work/tickets/T-0001/plan.md"
+"$SCOPE_PY" "$SCRIPTS/crew_ticket.py" --root "$SCOPEFX" --ticket T-0001 activate >/dev/null 2>&1 \
+  || fail "verify-gate scope cases: crew_ticket.py activate refused the 1.0 fixture"
+# Approved the way the user does: a `/crew:approve` prompt through the
+# approval hook (a cli approval is not accepted as the user's).
+# No `cwd` in the payload: the root comes from CLAUDE_PROJECT_DIR, a path
+# Git Bash converts for a native python, where a JSON string is not.
+printf '{"hook_event_name":"UserPromptSubmit","prompt":"/crew:approve T-0001","session_id":"s-1","prompt_id":"p-1"}' \
+  | CLAUDE_PROJECT_DIR="$SCOPEFX" "$SCOPE_PY" "$SCRIPTS/approval_hook.py" >/dev/null 2>&1 \
+  || fail "verify-gate scope cases: approval_hook.py refused the 1.0 fixture"
 export CLAUDE_PROJECT_DIR="$SCOPEFX"
 OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
 [ "$RC" != "2" ] && pass || fail "verify-gate: the scope report must not block the turn (got $RC)"
@@ -430,14 +451,18 @@ case "$OUT" in
   *) fail "verify-gate: a file outside the ticket's declared paths must be named, got: $OUT" ;;
 esac
 
-# (b) ticket file missing: a DISTINCT sentence, never an empty report.
-rm -f "$SCOPEFX/.work/tickets/T-0001.md"
+# (b) spec.md missing: a DISTINCT could-not-tell sentence naming the file it
+#     looked for, never an empty report.
+rm -f "$SCOPEFX/.work/tickets/T-0001/spec.md"
 OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
-[ "$RC" != "2" ] && pass || fail "verify-gate: a missing ticket file must not block (got $RC)"
+[ "$RC" != "2" ] && pass || fail "verify-gate: a missing spec.md must not block (got $RC)"
 case "$OUT" in
-  *"is missing"*) pass ;;
-  *) fail "verify-gate: a missing ticket file must say so, not report an empty scope, got: $OUT" ;;
+  *"could not tell"*"spec.md"*) pass ;;
+  *) fail "verify-gate: a missing spec.md must say so, not report an empty scope, got: $OUT" ;;
 esac
+"$SCOPE_PY" "$SCRIPTS/crew_ticket.py" --root "$SCOPEFX" --ticket T-0001 deactivate >/dev/null 2>&1 \
+  || fail "verify-gate scope cases: crew_ticket.py deactivate refused T-0001"
+rm -rf "$SCOPEFX/.work/tickets/T-0001"
 
 # (c) no open ticket at all: also its own sentence.
 rm -f "$SCOPEFX/.work/INDEX.md"

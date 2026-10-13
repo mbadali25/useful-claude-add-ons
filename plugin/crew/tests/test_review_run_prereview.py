@@ -30,7 +30,7 @@ _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=pr
 _RUN = os.path.join(_SCRIPTS, "review_run.py")
 _PATCH = os.path.join(_SCRIPTS, "review_patch.py")
 TICKET = "T-1"
-_PROVIDERS = {"codex": (), "claude": ("--reserve-only",)}
+_PROVIDERS = {"codex": (), "claude": ("--reserve-only", "--authors", "gpt",)}
 
 
 @pytest.fixture(name="fake")
@@ -276,7 +276,7 @@ def test_a_record_that_cannot_be_written_is_said_not_fatal(tmp_path, fake):
 
     result = subprocess.run(
         [sys.executable, _RUN, "--root", str(repo), "--ticket", TICKET, "--scratch", str(missing),
-         "--manifest", str(scratch / "manifest.json"), "--provider", "claude", "--reserve-only"],
+         "--manifest", str(scratch / "manifest.json"), "--provider", "claude", "--reserve-only", "--authors", "gpt"],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
 
     assert (result.returncode, "ROUND=1" in result.stdout,

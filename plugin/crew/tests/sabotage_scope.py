@@ -25,6 +25,9 @@ HOOK_SH = os.path.join(_S, "approval-hook.sh")
 MERGED_MAIN = os.path.join(_S, "merged_main.py")
 # T-0061: the ticket base branch (`tickets.baseBranch`).
 SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
+# L-0711: the verify gate's `outside-scope:` line.
+SCOPE_REPORT = os.path.join(_S, "scope_report.py")
+VERIFY_SH = os.path.join(_S, "verify-gate.sh")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
@@ -32,6 +35,7 @@ _CT = "tests/test_crew_ticket.py::"
 _AH = "tests/test_approval_hook.py::"
 _AD = "tests/test_approval_digest.py::"
 _MM = "tests/test_merged_main.py::"
+_SR = "tests/test_scope_report.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -665,4 +669,76 @@ SCOPE_MUTATIONS = (
      '    ".crew/metrics.jsonl",                # crew_metrics.py:139 (`/crew:done` step 2)\n'
      '    ".crew/handoffs/**",\n',
      _CA + "test_a_committed_crew_trust_input_is_out_of_touch[.crew/handoffs/x.md]"),
+    # L-0711: the Stop's scope line reads the crew 1.0 contract, and /crew:done
+    # check 3 refuses a shell-made write outside Touch. Each puts back what
+    # the ticket removed or guards against.
+    ("the scope report reads the pre-1.0 ticket file again", SCOPE_REPORT,
+     '    spec = os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")\n',
+     '    spec = crew_ticket.ticket_dir(top, ticket) + ".md"\n',
+     _SR + "test_a_sed_i_write_outside_touch_is_named"),
+    ("the scope report passes a pre-1.0 ticket as no ticket", SCOPE_REPORT,
+     "        if os.path.isfile(os.path.join(top, rel)):\n",
+     "        if False:\n",
+     _SR + "test_a_pre_1_0_ticket_is_could_not_tell_never_in_scope[tickets]"),
+    ("the scope report judges an unapproved Touch", SCOPE_REPORT,
+     '    if approval["status"] != "approved" or not approval["touch"]:\n'
+     '        return None, None, f"{ticket}\'s ## Touch is not approved ({approval[\'why\']})"\n'
+     '    return approval["touch"], approval, None\n',
+     "    return entries, approval, None\n",
+     _SR + "test_an_unapproved_touch_is_could_not_tell"),
+    ("the scope report drops the audit's matcher", SCOPE_REPORT,
+     "    return [p for p in judged if not crew_ticket.in_touch(p, touch)]\n",
+     "    return [p for p in judged if not any(matches(p, g) for g in touch)]\n",
+     _SR + "test_a_glob_touch_is_matched_by_segments"),
+    ("the scope report counts its own changed list, not the audit's", SCOPE_REPORT,
+     "        kept = completion_audit.changed_paths(top, base, merged)\n",
+     "        kept = scope_base.changed(top, base)\n",
+     _SR + "test_a_rename_into_touch_names_the_old_path"),
+    ("the scope report counts merged main's changes", SCOPE_REPORT,
+     "        kept = completion_audit.changed_paths(top, base, merged)\n",
+     "        kept = completion_audit.changed_paths(top, base)\n",
+     _SR + "test_a_path_identical_to_merged_main_is_not_named"),
+    ("/crew:done check 3 exits 0 on a refusal", AUDIT,
+     '    print("\\n".join(physical(lines)))\n    return 1\n',
+     '    print("\\n".join(physical(lines)))\n    return 0\n',
+     _CA + "test_check_refuses_a_sed_i_write_outside_touch"),
+    # L-0711 review round 3: the report agrees with /crew:done check 3 on the
+    # gate's own list, on bookkeeping and on an INDEX ticket with no folder;
+    # and the gate never blocks on the scope line.
+    ("the scope report keeps main's changes in the gate's list", SCOPE_REPORT,
+     "        changed = [p for p in changed if p not in dropped]\n",
+     "        changed = list(changed)\n",
+     _SR + "test_the_gates_list_loses_paths_identical_to_merged_main"),
+    ("the scope report drops all of .crew/ as bookkeeping again", SCOPE_REPORT,
+     '    return path == ".work" or path.startswith(".work/") or crew_ticket.is_crew_bookkeeping(path)\n',
+     '    return path.startswith((".work/", ".crew/")) or crew_ticket.is_crew_bookkeeping(path)\n',
+     _SR + "test_a_tracked_crew_file_outside_touch_is_named_as_the_audit_refuses"),
+    ("the scope report drops TODO.md as bookkeeping again", SCOPE_REPORT,
+     '    return path == ".work" or path.startswith(".work/") or crew_ticket.is_crew_bookkeeping(path)\n',
+     '    return path.startswith(".work/") or path == "TODO.md" or crew_ticket.is_crew_bookkeeping(path)\n',
+     _SR + "test_the_report_and_the_completion_audit_agree[writes4]"),
+    ("the scope report calls an INDEX ticket with no folder no open ticket", SCOPE_REPORT,
+     "    if not os.path.isdir(folder):\n"
+     "        return (f\".work/INDEX.md names {ticket} as open, but .work/tickets/{ticket}/ \"\n"
+     "                \"does not exist\")\n",
+     "    if not os.path.isdir(folder):\n        return None\n",
+     _SR + "test_an_index_ticket_with_no_ticket_folder_is_could_not_tell"),
+    ("the bash gate blocks on the scope line", VERIFY_SH,
+     ": # keep the scope report from ever deciding this script's status\n",
+     "exit 2\n",
+     _SR + "test_both_gates_print_the_same_scope_line[sh-outside]"),
+    # L-0711 review round 4: an unreadable INDEX, a could-not-tell merged
+    # main and a file name carrying a newline each stay visible on the line.
+    ("the scope report reads an unreadable INDEX as no open ticket", SCOPE_REPORT,
+     "    if os.path.lexists(index) and crew_state.read_text(index) is None:\n",
+     "    if False:\n",
+     _SR + "test_an_unreadable_index_is_could_not_tell"),
+    ("the scope report drops merged main's could-not-tell", SCOPE_REPORT,
+     "        suffix += merged_suffix(merged)\n",
+     "        suffix += \"\"\n",
+     _SR + "test_merged_main_could_not_tell_reaches_the_scope_line"),
+    ("the scope report prints a file name raw", SCOPE_REPORT,
+     '    sys.stderr.write(completion_audit.shown(text) + "\\n")\n',
+     '    sys.stderr.write(text + "\\n")\n',
+     _SR + "test_a_file_name_cannot_forge_a_scope_line"),
 )

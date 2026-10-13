@@ -65,6 +65,19 @@ def test_build_names_the_excluded_paths(repo):
     assert "  excluded: not recorded by this manifest (unknown)" in bare
 
 
+@pytest.mark.parametrize("shown", [[".work/FINDINGS.md"], [], None])
+def test_build_names_the_excluded_paths_the_bundle_shows_anyway(repo, shown):
+    """L-0739: a committed text change under `.work/` is appended to the bundle;
+    the prompt says so, and says nothing when the manifest carries none."""
+    manifest = dict(MANIFEST, excluded=[".work/"])
+    if shown is not None:
+        manifest["included_excluded"] = shown
+    text = rp.build(str(repo), "T9", manifest)
+
+    line = "  shown anyway (committed text changes under an excluded path, appended last"
+    assert (line in text, ".work/FINDINGS.md" in text) == (bool(shown), bool(shown))
+
+
 UNKNOWN_EXCLUDED = "  excluded: not recorded by this manifest (unknown)"
 
 

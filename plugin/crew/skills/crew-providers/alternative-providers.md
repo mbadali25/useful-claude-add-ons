@@ -131,3 +131,12 @@ when asked. The owner's three ids:
 crew launches no automated Kimi dev run - dispatch is the same prose
 `/crew:implement` uses for codex. A Kimi-authored diff bars both `kimi` QA and
 any Copilot `kimi-*` pin, and the reverse.
+
+## Crew's agents on Kimi (L-0777)
+
+A `dev.roles.explorer`, `dev.roles.researcher` or `dev.roles.security` pin to kimi
+`k3` makes that agent dispatch to `hooks/scripts/crew_kimi_agent.py`, which reuses
+`kimi_probe`'s probe, a read-only agent file per role and the review's tree
+fingerprint, and answers `KIMI OK`, `KIMI UNAVAILABLE: <state>` (the agent falls
+back to Claude and says so) or `KIMI CHANGED THE TREE` (it stops). `security` is
+family-guarded like a QA pin. See crew's README, "Agents on Kimi".

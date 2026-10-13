@@ -299,7 +299,10 @@ def test_a_withdrawn_credit_never_clears_the_rule_s_record(flavour, tmp_path):
     assert _log(log) == ["A", "B"], second.stderr
     assert "withdrawn" in second.stderr, second.stderr
     rules = json.loads(record.read_text(encoding="utf-8")).get("rules", {})
-    assert rules.get(verify_record.rule_key(rule_a)) == owed, (
+    # L-0733 stamps pathsKey/peers on every live entry; the obligation is the rest.
+    kept = {k: v for k, v in (rules.get(verify_record.rule_key(rule_a)) or {}).items()
+            if k not in ("pathsKey", "peers")}
+    assert kept == owed, (
         "a withdrawn credit cleared rule A's standing record entry. " + second.stderr)
 
 

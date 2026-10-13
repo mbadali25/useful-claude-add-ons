@@ -1,0 +1,99 @@
+# AI-Connect configuration
+# ./install.sh writes this file. To set it up by hand, copy it to
+# ~/.config/ai-connect/config.yaml and adjust it. All keys are required.
+#
+# Three sections, three owners: server: and auth: are read by the Bridge
+# (Bridge machine only), client: by this machine's own peer (every machine,
+# the Bridge machine included). A Bridge machine runs a peer of its own
+# Bridge from this same file, so the peer's token lives in client:, never in
+# auth:, and the two cannot collide.
+
+server:
+  # Bridge machine only: listen address. Set this to your Tailscale/WireGuard
+  # IP (e.g. 100.x.y.z); never 0.0.0.0 -- that binds every interface this
+  # machine has, including any public one, and AI-Connect encrypts nothing
+  # itself: the VPN is the only thing standing between this traffic and the
+  # network.
+  host: "127.0.0.1"
+  port: 9999
+  # Messages older than this many days are deleted from the history, at
+  # start and then daily
+  history_days: 14
+  # A message larger than this many bytes is refused
+  max_message_bytes: 65536
+  # Messages per second one connection may send; up to rate_burst at once
+  rate_per_second: 10
+  rate_burst: 10
+  # Stored (unread and history) messages kept per sender at most; 0 = no cap
+  max_stored_per_peer: 10000
+  # Offline queue per recipient: undelivered direct messages waiting for it
+  # to come online, by count and by bytes. A send past either is refused
+  # (recipient_queue_full). Both at least 1 (0 would refuse every offline
+  # message, not lift the cap); the byte cap at least max_message_bytes.
+  max_unread_per_peer: 500
+  max_unread_bytes_per_peer: 8388608
+
+auth:
+  # Bridge machine only: SHA-256 of every known peer's token, keyed by peer
+  # name. A token registers (and reads the messages of) its own name only.
+  # installer.py add-peer/revoke-peer maintain this; the raw token is never
+  # written here, only its hash. "{}" = no peer can connect.
+  peers: {}
+  # Bridge machine only: also accept the pre-2.3 single shared secret, set
+  # as auth.token: "<secret>", from any connection claiming any name that
+  # has no entry in peers. Off by default -- every peer should have its own
+  # entry. Turn on only to migrate old peers one at a time, then turn off
+  # again; see the Security model section of README.md first.
+  allow_shared_token: false
+  # Bridge machine only: SHA-256 of the observer token, which lets a tool
+  # read all traffic (observer_client). The token itself is not in this file,
+  # which every agent reads, but in ~/.config/ai-connect/observer.token.
+  # installer.py observer-token writes both; "" on other machines.
+  observer_token_sha256: ""
+  # Bridge machine only: SHA-256 of the user token, with which a person
+  # writes to agents as User:<name> (the send command, Agent-Orc). The token
+  # itself is in ~/.config/ai-connect/user.token; installer.py user-token
+  # writes both. "" = nobody can send as user.
+  user_token_sha256: ""
+
+client:
+  # This machine's name: the name its token is bound to on the Bridge
+  # (`installer.py add-peer <name>`). Each Claude Code session registers as
+  # "<name>:<project>", so several sessions on this machine are online at
+  # once; the HTTP/SSE server registers as the name itself.
+  # AI_CONNECT_PEER_NAME replaces a session's whole name. "" = Claude Code
+  # sessions name themselves Host:Project, which only the legacy shared
+  # token accepts.
+  name: "my-machine"
+  # Opt-in: "per-project" names each Claude Code session
+  # <name>-<project folder name> with that name's own token from
+  # ~/.config/ai-connect/session-tokens/<that name>.token (made by
+  # `deploy/setup.sh session --project <dir>`), so sessions in different
+  # projects are online at once. Without that token, or when the token file is
+  # not owner-only or its <that name>.dir records another project, the session
+  # joins as name with token and says why on stderr. AI_CONNECT_PEER_NAME
+  # still wins. Left out = every session joins as name.
+  # name_mode: "per-project"
+  # The token THIS machine presents to the Bridge. `installer.py add-peer
+  # <name>`, run on the Bridge machine, creates one and prints it once --
+  # paste it here, on that peer's own machine. A --server install fills in
+  # its own. Not kept from this machine's own agents the way
+  # observer.token/user.token are: an agent already acts as this peer.
+  token: "replace-with-a-long-random-string"
+  # The Bridge's VPN address and port, never a public one
+  bridge_url: "ws://127.0.0.1:9999"
+  # The only directory peer_send/peer_context may share files from.
+  # "" = the directory the MCP server started in (for Claude Code, the
+  # session's project). AI_CONNECT_PROJECT_DIR overrides it.
+  project_dir: ""
+
+mcp:
+  # Address of the local HTTP/SSE server for MCP clients
+  host: "127.0.0.1"
+  port: 9998
+
+logging:
+  # Log files of the MCP clients are rotated at this size; this many old
+  # files are kept per log
+  max_megabytes: 5
+  backup_count: 3

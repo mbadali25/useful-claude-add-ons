@@ -160,6 +160,17 @@ It compares the repo's CLAUDE.md against the template section by section and
 prints what is missing, what is extra, the line count against the 60-line
 ceiling, and how many template placeholders are still unfilled.
 
+A placeholder is one of the template's own blanks, read from
+`repo-claude-template.md` on each run: an angle-bracket token standing where a
+value goes, outside a code span (`# <repo-name>`) or alone inside one. A token
+that shares its code span or fenced line with other text is a command's
+metavariable (`/crew:promote <env>`, `git checkout -- <path>`) and is not
+counted, so a CLAUDE.md may document its commands. A blank that was edited but
+not replaced (`<linux | windows>`) is no longer the template's text and is not
+counted either: read the header lines yourself. `Placeholder check NOT RUN`
+means the count could not be taken (no `awk`, or no readable template): it is
+not a zero, and the phase does not close on it.
+
 - **No CLAUDE.md:** create it from `repo-claude-template.md` and fill it in with
   me.
 - **One already exists:** **append the missing sections, never regenerate.** Most
@@ -248,7 +259,7 @@ human line. `tracked` lines name files the new pattern cannot untrack; `needs-ow
 committed secret - report it to me, never untrack or rewrite history; exit 4 is "could not tell".
 
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
-missing sections and no remaining placeholders,
+missing sections and no remaining placeholders (no placeholder line at all; `NOT RUN` is not that),
 and `.gitignore` covers secrets and transcripts, and the managed language block is current
 (`crew_gitignore.py check` exits 0, or 3 with the owner told).
 

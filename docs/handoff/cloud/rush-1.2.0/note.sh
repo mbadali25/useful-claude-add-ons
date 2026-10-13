@@ -2,7 +2,7 @@
 # usage: note.sh "what happened"   -- appends a UTC-stamped line to the rush log, commits, pushes.
 set -u
 R=/home/user/useful-claude-add-ons
-F=$R/cloud-handoff-rush-1.2.0.md
+F=$R/docs/handoff/cloud/rush-1.2.0/cloud-handoff-rush-1.2.0.md
 ts=$(date -u +%Y-%m-%dT%H:%MZ)
 MSG="$*"
 python3 - "$F" "$ts" "$*" <<'P'
