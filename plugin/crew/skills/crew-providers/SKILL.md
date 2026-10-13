@@ -381,8 +381,8 @@ instead of reporting - is crew's review harness, and lands on its own as L-0527.
 Until then the launch gate skips it: `crew_config.review_launchable()` (the one
 coupling, `review_run.LAUNCHED` plus `claude`) leaves Kimi ineligible in the
 `qa.order` walk; a pin to kimi validates and is family-guarded.
-`alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
-route), and a private second opinion on local hardware.
+`alternative-providers.md`: the offered pin table, crew's agents on Kimi (L-0777),
+Kimi through Codex (the API-key route), and a private second opinion on local hardware.
 
 ## Gemini (design second opinion)
 
