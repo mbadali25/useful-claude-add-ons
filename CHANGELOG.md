@@ -9,6 +9,36 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.31: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
+
+- **Summary.** `crew` 1.2.31: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
+  unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **Defect.** The count was one regex over the whole file (any `<word>`, any `...`, `OWNER_`,
+  `YYYY-MM-DD`). On this repository's CLAUDE.md it reported 8 lines, all of them command metavariables
+  or code: `Docs: none - <why>`, `plugin-version:<name>`, `Tooling-seam: <path>`,
+  `/crew:onboard --refresh <subsystem>`, two `git diff --name-only <anchor>..HEAD` lines,
+  `open(...)` and `git checkout -- <path>`. Phase 1 is done on "no remaining placeholders", so it could
+  not close. The same regex missed three real blanks of the template: `<bash | powershell>` and its
+  two neighbours are not `<[a-z-]+>`.
+- **Now.** The blanks are read from `skills/crew-setup/repo-claude-template.md` on every run, so the
+  list cannot drift from the template. A blank is an angle-bracket token standing where a value goes:
+  outside a code span, or the whole content of one (or of a fenced line). A token that shares its code
+  span or fenced line with other text is a command's metavariable, in the template
+  (`/crew:promote <env>`) and in the audited file, and is not counted. An untouched template reports 10
+  lines (it was 8: one command line too many, three blanks too few).
+- **Could not tell.** With no `awk`, no readable template, or a template with no blanks, the audit
+  prints `Placeholder check NOT RUN: <which of the three>` instead of staying silent, which read as
+  zero. Every other line of the report and both exit codes are unchanged.
+- **Not counted, by design.** A blank that was edited but not replaced (`<linux | windows>`) is no
+  longer the template's text. A template blank quoted in prose outside a code span (`the <path>
+  element`) is counted. An indented code block is read as ordinary text.
+- **Tests.** `skills/crew-setup/scripts/_test/placeholders.sh`: 51 checks, each fixture under the
+  suite's own `mktemp` directory, run by `_verify/smoke.sh` (check 8b, so by CI), `_verify/run-all.sh`
+  and a new `.crew/verify.json` rule for the audit script and the template. Sabotage, in a copy where
+  50 of them run: with the old script put back, 27 go red; six single-rule mutations of the new awk
+  each turn at least one red. Run in containers under bash 5.2 and bash 3.2, with mawk, gawk, BusyBox
+  awk and the BSD `original-awk`, LF and CRLF fixtures. Not run on Windows Git Bash or macOS.
+
 ### Changed — ai-connect 0.1.16: test line lengths for pylint
 
 - 0.1.16: test line lengths for pylint

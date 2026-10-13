@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.31**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.31: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
 - **ai-connect 0.1.16**: Test line lengths for pylint. 0.1.16: test line lengths for pylint
-- **ai-connect 0.1.15**: One peer name per project, opt-in. With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

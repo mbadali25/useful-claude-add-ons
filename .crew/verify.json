@@ -366,6 +366,16 @@
       "reach": "local",
       "why": "T-0502: crew-setup's _verify runners show a failing check's output tail and report exit 77 as SKIP, and the ready diagram case passes the --no-sandbox puppeteer config so it renders as root. Every test copies the templates into tmp_path and uses a fake mmdc first on PATH; real mmdc and Chromium are never run. Timed 2026-10-05 on the 4-CPU Linux container under the shared lock: 14 tests in 0.33-0.41s, 17 after review round 1 in 0.61s (pytest start-up on top), declared 10. Sabotage-proven: the case without -p, the runner discarding output, and exit 77 falling through to FAIL each turn a named test red. reach: local - throwaway repos under tmp_path and a fake mmdc; no network." },
 
+    { "paths": ["plugin/crew/skills/crew-setup/scripts/claude-md-audit.sh",
+                "plugin/crew/skills/crew-setup/repo-claude-template.md",
+                "plugin/crew/skills/crew-setup/scripts/_test/placeholders.sh",
+                "plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh"],
+      "seconds": 8,
+      "run": ["bash plugin/crew/skills/crew-setup/scripts/_test/placeholders.sh",
+              "bash plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh"],
+      "reach": "local",
+      "why": "P1-03: claude-md-audit.sh counts unfilled placeholders by reading the blanks out of repo-claude-template.md at run time, so an edit to either file changes the count Phase 1 closes on. placeholders.sh holds the must-flag cases (each blank line of the template, and the untouched template whole) and the must-not-flag cases (the 8 lines of this repo's CLAUDE.md the old whole-file regex reported, the template's own command lines, fenced commands); round-trip.sh is the label()/canon() contract for the same script. Before this rule round-trip.sh ran only inside _verify/smoke.sh and _verify/run-all.sh, which an edit to the audit script did not select. Timed 2026-10-12 in the Linux gate container, both suites together, at 45 placeholder checks: 5.0s, declared 8; the suite has 51 since review and was not re-timed. Sabotage-proven in a copy (where the check of this repo's own CLAUDE.md skips, so 50 run): the pre-P1-03 script put back turns 27 of 50 red, and six single-rule mutations of the new awk each turn at least one red. reach: local - every fixture is under the suite's own mktemp directory; no network." },
+
     { "paths": ["scripts/check-crew-docs.py", "scripts/_test/crew-docs.py"],
       "seconds": 15,
       "run": ["python3 scripts/_test/crew-docs.py"],

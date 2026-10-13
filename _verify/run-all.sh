@@ -119,6 +119,10 @@ fi
 run "crew-setup: CLAUDE.md heading round-trip" 60 \
     bash plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh
 
+# 4b. The audit's placeholder count: the template's own blanks, and only those.
+run "crew-setup: CLAUDE.md placeholder count" 60 \
+    bash plugin/crew/skills/crew-setup/scripts/_test/placeholders.sh
+
 # 5. Every PowerShell artifact, tracked and untracked. See smoke.sh for why the
 #    untracked ones are checked one at a time (param([string]$Path) takes ONE path).
 if [ -n "$PWSH" ]; then
