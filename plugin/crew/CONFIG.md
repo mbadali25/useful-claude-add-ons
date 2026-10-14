@@ -1852,10 +1852,22 @@ the resolver's `reason` field rather than restated in bash and PowerShell.
 **Under `allow` nothing is silent.** The stderr line goes with the session; the
 row in `.crew/guard.log` is the durable half, and it is written for every
 decision rather than only the permissive ones — a log recording half of what a
-guard did is a log you cannot reason from. Tabs and newlines in the command are
-normalised out before the row is written, the same way
-`_common.sh::crew_incident_log` does it, so a crafted command cannot
-forge a row.
+guard did is a log you cannot reason from.
+
+**What a `--record` row holds (crew 1.2.35).** Time, guard, policy, decision
+and target, then `-` where the command would go — the same value
+`env_guard.py` writes in that field. The command line itself is written only
+when the operator adds **`--record-command`** (`record_command=True` on
+`crew_config.guard_decision`), because a command can carry whatever was typed
+inline and `.crew/guard.log` is an ordinary file in the project tree.
+`--record-command` without `--record` exits 2 rather than doing nothing. The
+target field is still derived from the command (a push's branch, a matched
+production host or database), so it is not a redaction of everything the
+command contained. With `--record-command`, tabs and newlines in the command
+are normalised out before the row is written, the same way
+`_common.sh::crew_incident_log` does it, so a crafted command cannot forge a
+row. Rows written before 1.2.35 are not rewritten; review and delete an old
+`.crew/guard.log` if it may hold commands you would not keep.
 
 ### `block` did not preserve everything, and that is stated rather than implied
 

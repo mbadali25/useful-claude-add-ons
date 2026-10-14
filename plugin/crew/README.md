@@ -1482,7 +1482,10 @@ below govern something **only while `guards.cloudGuard` is `report` or
 - **`allow`** runs it, says so, and appends a row to `.crew/guard.log`. **Under
   `allow` nothing is silent.** The stderr line goes with the session; the row
   is the durable half, and it is written for every decision rather than only
-  the permissive ones.
+  the permissive ones. Since 1.2.35 a `crew_config.py --record` row holds the
+  time, guard, policy, decision and target, and `-` for the command; the
+  command line is written only with the opt-in `--record-command` (CONFIG.md,
+  "What a `--record` row holds").
 
 **The two production guards are `none` | `read` | `full`.** `none` refuses
 every command aimed at a declared target; `read` permits only what crew can

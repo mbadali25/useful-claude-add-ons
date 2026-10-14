@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.35**: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given. A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now holds the time, guard, policy, decision and target, with `-` for the command; the full command line is stored only when the operator also passes the new `--record-command`.
 - **crew 1.2.33**: The docs no longer say `/crew:review` cannot launch Kimi. The crew-providers skill and `kimi_probe.py` now say what has been true since L-0527: `/crew:review` launches Kimi as a reviewer.
-- **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
