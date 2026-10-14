@@ -30,7 +30,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `plugin/crew/tests/test_guards.py`: the existing `--record` tests now assert `-` in the
   command field (the forge test opts in, since it is about the opt-in path), plus three new cases
   (default vs opt-in through `guard_decision`, `record_command` alone writes nothing, and the CLI
-  including the exit-2 refusal). Three sabotage entries in `plugin/crew/tests/sabotage_config.py`.
+  including the exit-2 refusal). The existing `sabotage.py` entry for `allow` recording still
+  applies unchanged. Three new mutations were run by hand (each red) and are not added to
+  `tests/sabotage*.py` here, since that is harness and lands in its own PR.
 
 ### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
 

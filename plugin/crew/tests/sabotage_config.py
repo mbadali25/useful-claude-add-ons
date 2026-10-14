@@ -27,7 +27,6 @@ MENU = os.path.join(SCRIPTS, "crew_config_menu.py")
 _C = "tests/test_crew_config.py::"
 _F = "tests/test_config_files.py::"
 _M = "tests/test_config_menu.py::"
-_G = "tests/test_guards.py::"
 
 _REPO_PLAN = ('            crew_config.plan_repo_write(root, updates, global_path, '
               'snapshot=snap,\n'
@@ -731,18 +730,4 @@ CONFIG_MENU_MUTATIONS = (
      '            where = ("was moved back there" if _same(path, ident) else\n',
      '            where = ("was moved back there" if True else\n',
      _M + "test_delete_move_back_displaced_by_a_replaced_path_does_not_say_moved_back"),
-    # crew 1.2.35 (--record-command): `--record` writes the decision row, and
-    # the command line goes into it only on the operator's opt-in.
-    ("guard row writes the command without --record-command", CONFIG,
-     '    flat = "-"\n    if record_command and command:\n',
-     '    flat = "-"\n    if command:\n',
-     _G + "test_the_row_holds_the_command_only_when_asked"),
-    ("guard CLI drops --record-command on the floor", CONFIG,
-     '                             record_command=args.record_command)\n',
-     '                             record_command=True)\n',
-     _G + "test_the_cli_records_the_command_only_with_record_command"),
-    ("guard CLI accepts --record-command alone", CONFIG,
-     '        if args.record_command and not args.record:\n',
-     '        if False:\n',
-     _G + "test_the_cli_records_the_command_only_with_record_command"),
 )

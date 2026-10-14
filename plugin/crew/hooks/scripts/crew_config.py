@@ -1733,10 +1733,11 @@ def _maybe_log(root, record, decision, name, policy, target, command,
     """
     if not record:
         return
+    # Tabs and newlines in a command would forge a row. Same normalisation
+    # `crew_incident_log` (`_common.sh:104`) applies, and for the same reason.
+    # It runs only on the opt-in; the default field is the literal `-`.
     flat = "-"
     if record_command and command:
-        # Tabs and newlines in a command would forge a row. Same normalisation
-        # `crew_incident_log` (`_common.sh:104`) applies, for the same reason.
         flat = command
         for char in ("\t", "\r", "\n"):
             flat = flat.replace(char, " ")

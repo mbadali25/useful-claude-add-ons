@@ -412,16 +412,14 @@ MUTATIONS = (
         # in the same function. This file's header forbids re-anchoring a
         # mutation whose CODE was deleted onto whatever is nearest; the code
         # this one mutates was not deleted, only the line it was written next
-        # to. crew 1.2.35 (--record-command) moved that comment inside the
-        # opt-in branch, so the anchor now ends at `flat = "-"`, again the
-        # nearest line that still follows the early return; same mutation.
+        # to.
         "under `allow` the guard stops recording what it let through",
         CONFIG,
         "    if not record:\n        return\n"
-        "    flat = \"-\"\n",
+        "    # Tabs and newlines in a command would forge a row.",
         "    if not record:\n        return\n"
         "    if decision == \"allow\":\n        return\n"
-        "    flat = \"-\"\n",
+        "    # Tabs and newlines in a command would forge a row.",
         "tests/test_guards.py::test_under_allow_nothing_is_silent",
     ),
     (
