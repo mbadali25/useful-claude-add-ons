@@ -9,6 +9,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.35: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given
+
+- **Summary.** A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now
+  holds the time, guard, policy, decision and target, with `-` for the command; the full command
+  line is stored only when the operator also passes the new `--record-command`.
+- **Before.** `--record` (`crew_config._maybe_log`) wrote the whole command line, as typed, into the
+  row's last field. A command can carry whatever was typed inline, and `.crew/guard.log` is an
+  ordinary file in the project tree, so keeping the full line is now the operator's choice rather
+  than the default. `-` is what `env_guard.py` already writes in that field, so every row keeps six
+  fields.
+- **Now.** `--record-command` (`record_command=True` on `crew_config.guard_decision`) restores the
+  full line, still with tabs and newlines flattened so a command cannot forge a row.
+  `--record-command` without `--record` exits 2. The target field is unchanged and is still derived
+  from the command (a push's branch, a matched production host or database).
+- **Scope.** This is the `crew_config.py` writer only. No shipped hook, command or skill passes
+  `--record` today (found by grep); the cloud guard's own writer (`cloud_guard._log`) is a separate
+  path and is not changed here. Rows already in a `.crew/guard.log` are not rewritten: review and
+  delete an old file if it may hold commands you would not keep.
+- **Tests.** `plugin/crew/tests/test_guards.py`: the existing `--record` tests now assert `-` in the
+  command field (the forge test opts in, since it is about the opt-in path), plus three new cases
+  (default vs opt-in through `guard_decision`, `record_command` alone writes nothing, and the CLI
+  including the exit-2 refusal). Three sabotage entries in `plugin/crew/tests/sabotage_config.py`.
+
 ### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
 
 - **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since

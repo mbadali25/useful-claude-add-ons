@@ -731,7 +731,7 @@ CONFIG_MENU_MUTATIONS = (
      '            where = ("was moved back there" if _same(path, ident) else\n',
      '            where = ("was moved back there" if True else\n',
      _M + "test_delete_move_back_displaced_by_a_replaced_path_does_not_say_moved_back"),
-    # crew 1.2.34 (--record-command): `--record` writes the decision row, and
+    # crew 1.2.35 (--record-command): `--record` writes the decision row, and
     # the command line goes into it only on the operator's opt-in.
     ("guard row writes the command without --record-command", CONFIG,
      '    flat = "-"\n    if record_command and command:\n',
