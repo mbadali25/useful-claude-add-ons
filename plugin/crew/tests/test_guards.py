@@ -615,7 +615,71 @@ def test_under_allow_nothing_is_silent(tmp_path):
     with open(log, encoding="utf-8") as handle:
         row = handle.read().strip().split("\t")
     assert row[1:5] == ["forcePush", "allow", "allow", "main"]
-    assert row[5] == _TRIPS["forcePush"]
+    assert row[5] == "-"
+
+
+def test_the_row_holds_the_command_only_when_asked(tmp_path):
+    """`--record` writes the decision; the command line itself is the
+    operator's opt-in (`record_command`), never the default. A command can
+    carry anything typed inline, and `.crew/guard.log` is a plain file in the
+    project tree. The made-up value below must not reach the file by default,
+    and must reach it when asked for, so the test fails if either half
+    regresses."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+    log = os.path.join(root, crew_state.GUARD_LOG_PATH)
+    command = f"NOTE=NOT-A-REAL-VALUE-1234 {_PUSH} --force origin main"
+
+    crew_config.guard_decision(root, "forcePush", command, path, record=True)
+    crew_config.guard_decision(root, "forcePush", command, path, record=True,
+                               record_command=True)
+
+    with open(log, encoding="utf-8") as handle:
+        rows = [line.split("\t") for line in handle.read().splitlines()]
+    assert len(rows) == 2
+    assert all(len(row) == 6 for row in rows)
+    assert rows[0][1:6] == ["forcePush", "allow", "allow", "main", "-"]
+    assert "NOT-A-REAL-VALUE-1234" not in "\t".join(rows[0])
+    assert rows[1][5] == command
+
+
+def test_record_command_without_record_writes_nothing(tmp_path):
+    """The opt-in widens a row; it is not a second way to write one."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+
+    crew_config.guard_decision(root, "forcePush", _TRIPS["forcePush"], path,
+                               record_command=True)
+
+    assert not os.path.exists(os.path.join(root, crew_state.GUARD_LOG_PATH))
+
+
+def test_the_cli_records_the_command_only_with_record_command(tmp_path,
+                                                              capsys):
+    """The same rule through `crew_config.py --guard`, the entry point the
+    flag belongs to, plus the refusal of `--record-command` on its own."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+    log = os.path.join(root, crew_state.GUARD_LOG_PATH)
+    command = f"NOTE=NOT-A-REAL-VALUE-5678 {_PUSH} --force origin main"
+    base = ["--root", root, "--global-path", path, "--guard", "forcePush",
+            "--command", command]
+
+    assert crew_config.main(base + ["--record"]) == 0
+    with open(log, encoding="utf-8") as handle:
+        assert "NOT-A-REAL-VALUE-5678" not in handle.read()
+
+    assert crew_config.main(base + ["--record", "--record-command"]) == 0
+    with open(log, encoding="utf-8") as handle:
+        rows = handle.read().splitlines()
+    assert len(rows) == 2
+    assert rows[1].split("\t")[5] == command
+
+    capsys.readouterr()
+    assert crew_config.main(base + ["--record-command"]) == 2
+    assert "--record-command needs --record" in capsys.readouterr().err
+    with open(log, encoding="utf-8") as handle:
+        assert len(handle.read().splitlines()) == 2
 
 
 def test_a_logged_command_cannot_forge_a_row(tmp_path):
@@ -627,7 +691,8 @@ def test_a_logged_command_cannot_forge_a_row(tmp_path):
     path = _global_file(tmp_path, guards={"forcePush": "allow"})
     nasty = f"{_PUSH} --force\torigin\nblock\tblock\tfaked"
 
-    crew_config.guard_decision(root, "forcePush", nasty, path, record=True)
+    crew_config.guard_decision(root, "forcePush", nasty, path, record=True,
+                               record_command=True)
 
     with open(os.path.join(root, crew_state.GUARD_LOG_PATH),
               encoding="utf-8") as handle:
@@ -916,7 +981,10 @@ def test_full_allows_everything_and_logs_it(tmp_path, command):
     log = os.path.join(root, crew_state.GUARD_LOG_PATH)
     assert os.path.isfile(log)
     with open(log, encoding="utf-8") as handle:
-        assert command.replace("\t", " ") in handle.read()
+        row = handle.read().rstrip("\n").split("\t")
+    # The decision is logged; the command is not, unless asked for.
+    assert row[1] == _guard_for(command) and row[3] == "allow", command
+    assert row[5] == "-", command
 
 
 def test_a_repo_cannot_widen_the_production_level(tmp_path):

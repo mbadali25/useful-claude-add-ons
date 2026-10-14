@@ -1711,8 +1711,17 @@ def _guard_row(name, policy, decision, reason, marker, target, resolved):
     }
 
 
-def _maybe_log(root, record, decision, name, policy, target, command):
+def _maybe_log(root, record, decision, name, policy, target, command,
+               record_command=False):
     """Append the decision row. Every decision, allow and refusal alike.
+
+    The sixth field is `-` unless `record_command` is set (`--record-command`
+    on the CLI). The row says what the guard decided about which rule and
+    target; the command line itself is persisted only when the operator asks
+    for it, because a command can carry anything typed inline and
+    `.crew/guard.log` is an ordinary file in the project tree. `-` is what
+    `env_guard._log` writes in the same slot, so the row keeps six fields and
+    every reader of the log sees one shape.
 
     The "unless it is a refusal in a repo with no `.crew/`" rule that used to
     live here was half a fail-safe, and the wrong half: it read as "do not
@@ -1724,16 +1733,19 @@ def _maybe_log(root, record, decision, name, policy, target, command):
     """
     if not record:
         return
-    # Tabs and newlines in a command would forge a row. Same normalisation
-    # `crew_incident_log` (`_common.sh:104`) applies, and for the same reason.
-    flat = command
-    for char in ("\t", "\r", "\n"):
-        flat = flat.replace(char, " ")
+    flat = "-"
+    if record_command and command:
+        # Tabs and newlines in a command would forge a row. Same normalisation
+        # `crew_incident_log` (`_common.sh:104`) applies, for the same reason.
+        flat = command
+        for char in ("\t", "\r", "\n"):
+            flat = flat.replace(char, " ")
     _log_guard(root, (str(int(time.time())), name, policy, decision,
                       target or "-", flat))
 
 
-def guard_decision(root, name, command, path=None, record=False):
+def guard_decision(root, name, command, path=None, record=False,
+                   record_command=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
 
     Returns `{"guard", "policy", "decision", "reason", "marker", "target",
@@ -1761,10 +1773,13 @@ def guard_decision(root, name, command, path=None, record=False):
     **Under `allow` nothing is silent.** `record=True` appends a row to
     `.crew/guard.log` for every decision, not only the permissive ones -- the
     log is then the record of what the guard did, rather than a record of the
-    half somebody thought worth keeping. Consuming the marker is deliberately
-    NOT done here: a `PreToolUse` hook can fire more than once for one command
-    (both shell flavours are registered on Windows), and deleting the marker on
-    the first read would refuse the second. The marker is one-shot in the sense
+    half somebody thought worth keeping. The row holds the time, guard,
+    policy, decision and target; the command line is added only with
+    `record_command=True`, an opt-in (see `_maybe_log`). Consuming the
+    marker is deliberately NOT done here: a `PreToolUse` hook can fire more
+    than once for one command (both shell flavours are registered on
+    Windows), and deleting the marker on the first read would refuse the
+    second. The marker is one-shot in the sense
     that it names one command, and it is the user's to remove.
     """
     resolved = resolve_guard(root, name, path)
@@ -1800,7 +1815,8 @@ def guard_decision(root, name, command, path=None, record=False):
         out = _guard_row(name, policy, decision, reason, "", target, resolved)
         out["access"] = access
         out["declaration"] = declared.state
-        _maybe_log(root, record, decision, name, policy, target, command)
+        _maybe_log(root, record, decision, name, policy, target, command,
+                   record_command)
         return out
 
     if policy == "allow":
@@ -1829,7 +1845,8 @@ def guard_decision(root, name, command, path=None, record=False):
     # `production` block at all, so the honest value is "not applicable" rather
     # than any of the five declaration states.
     out["declaration"] = ""
-    _maybe_log(root, record, decision, name, policy, target, command)
+    _maybe_log(root, record, decision, name, policy, target, command,
+               record_command)
     return out
 
 
@@ -4752,7 +4769,13 @@ def main(argv=None):
                         help="the command being judged, for --guard")
     parser.add_argument("--record", action="store_true",
                         help="with --guard, append the decision to "
-                             + crew_state.GUARD_LOG_PATH)
+                             + crew_state.GUARD_LOG_PATH
+                             + " (time, guard, policy, decision, target; "
+                             "the command field is `-`)")
+    parser.add_argument("--record-command", action="store_true",
+                        help="with --guard --record, also write the command "
+                             "line itself into the row. Off by default: a "
+                             "command can carry anything typed inline")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -4771,8 +4794,14 @@ def main(argv=None):
                   + ", ".join(crew_state.ALL_GUARD_NAMES) + ")",
                   file=sys.stderr)
             return 2
+        if args.record_command and not args.record:
+            # Exit 2 like the unknown name above: a flag that would silently
+            # do nothing reads as a row that was written.
+            print("--record-command needs --record", file=sys.stderr)
+            return 2
         out = guard_decision(args.root, args.guard, args.command,
-                             args.global_path, record=args.record)
+                             args.global_path, record=args.record,
+                             record_command=args.record_command)
         if args.json:
             print(json.dumps(out, indent=2, sort_keys=True))
             return 0
