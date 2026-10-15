@@ -2813,7 +2813,9 @@ def interpreted_on_line(text, stdin):
 # read as interpreter code is: refused when the program can start a process,
 # and the command it starts is always taken as built at run time (awk
 # concatenates strings by juxtaposition, sed runs its pattern space), so the
-# process construct alone refuses. A program crew cannot see (`awk -f f`,
+# process construct alone refuses. An awk construct counts in its code, not
+# in a string, regex constant or comment; an awk program crew cannot read
+# that way counts on any `|`, `@` or `system` (SRL-2308 r5). A program crew cannot see (`awk -f f`,
 # `sed -f f`, `gawk -l ext`) or one made at run time is decided by 1.2.35's
 # rule over the line; a sed script made at run time is refused when the line
 # names the tool (a value could add an `e` flag). On a cleanly readable line
@@ -2821,9 +2823,20 @@ def interpreted_on_line(text, stdin):
 # limit (README, "What the guard does not catch").
 _AWK_NAMES_RE = re.compile(r"^(?:[gmn]?awk|original-awk|goawk|onetrue-?awk)$")
 _SED_NAMES_RE = re.compile(r"^g?sed$")
-_AWK_SPAWN_RE = re.compile(
-    r"\bsystem\s*\(|\|&|\|\s*getline\b|@load\b|@include\b"
-    r"|\bprintf?\b[^;{}\n]*?(?<!\|)\|(?!\|)")
+# Read over the program's CODE only (`_awk_code`: strings, regex constants
+# and comments blanked, backslash-newline joined). awk has no bitwise or, so
+# a lone `|` there is a pipe to or from a command (`print | "cmd"`, `"cmd" |
+# getline`, `|&`); `@` is gawk's `@load`/`@include` or an indirect call
+# (`f = "system"; @f(...)`). SRL-2308 r5 (r4-2, r4-3).
+_AWK_SPAWN_RE = re.compile(r"\bsystem\s*\(|(?<!\|)\|(?!\|)|@")
+# A program `_awk_code` cannot read cleanly is refused when it holds any of
+# these anywhere, strings included (fail closed).
+_AWK_RISK_RE = re.compile(r"[|@]|\bsystem\b")
+# Where a `/` starts a regex constant rather than dividing: after one of
+# these characters, or after `print`/`printf`/`return`. Anywhere else it is
+# read as division, so the text after it is read as code (fail closed).
+_AWK_REGEX_AFTER = frozenset("(,{};!~&|=<>?:[\n")
+_AWK_REGEX_WORDS = frozenset(("print", "printf", "return"))
 _AWK_VALUE_OPTS = frozenset(("-F", "-v", "--field-separator", "--assign"))
 # A program, library or extension from a file; mawk's `-W` (`-W exec f`).
 _AWK_HIDDEN_OPTS = frozenset(("-f", "--file", "-E", "--exec", "-l", "--load",
@@ -2858,6 +2871,98 @@ def _awk_program(words):
     if not codes and index < len(words):
         codes.append((index, words[index]))
     return codes, False
+
+
+def _awk_literal_end(program, pos):  # pylint: disable=too-many-branches
+    """The index after the string (`"`) or regex constant (`/`) opening at
+    `pos` in awk `program`, or None when it is not read cleanly: no end, a
+    newline before it, or in a regex a bracket expression holding a `/` or
+    a newline (awks disagree on where such a regex ends)."""
+    delim, size, bracket = program[pos], len(program), False
+    pos += 1
+    while pos < size:
+        char = program[pos]
+        if char == "\\":
+            if pos + 1 >= size or delim == "/" and program[pos + 1] == "\n":
+                return None
+            pos += 2  # an escape; in a string `\` newline continues it
+        elif char == "\n" or bracket and char == "/":
+            return None
+        elif bracket:
+            if char == "[" and program[pos + 1:pos + 2] in (":", ".", "="):
+                end = program.find(program[pos + 1] + "]", pos + 2)
+                if end == -1 or re.search(r"[/\n]", program[pos:end]):
+                    return None
+                pos = end + 2  # `[:alpha:]` inside a bracket expression
+                continue
+            bracket = char != "]"
+            pos += 1
+        elif char == delim:
+            return pos + 1
+        elif delim == "/" and char == "[":
+            pos += 1
+            pos += program[pos:pos + 1] == "^"
+            pos += program[pos:pos + 1] == "]"  # `[]a]`: a literal `]`
+            bracket = True
+        else:
+            pos += 1
+    return None
+
+
+def _awk_code(program):
+    """awk `program`'s code with each string read as `""`, each regex
+    constant as `//`, comments dropped and backslash-newline joined (awk's
+    line continuation); None when it is not read cleanly: a `\\` anywhere
+    else, or a literal `_awk_literal_end` does not read. A `/` starts a
+    regex only where `_AWK_REGEX_AFTER`/`_AWK_REGEX_WORDS` say."""
+    out, pos, size = [], 0, len(program)
+    while pos < size:
+        char = program[pos]
+        if char == "\\":
+            step = 2 if program[pos + 1:pos + 2] == "\n" else \
+                3 if program[pos + 1:pos + 3] == "\r\n" else 0
+            if not step:
+                return None
+            pos += step
+            continue
+        if char == "#":
+            end = program.find("\n", pos)
+            pos = size if end == -1 else end
+            continue
+        if char == '"' or char == "/" and _awk_regex_here(out):
+            end = _awk_literal_end(program, pos)
+            if end is None:
+                return None
+            out.append(char * 2)
+            pos = end
+            continue
+        out.append(char)
+        pos += 1
+    return "".join(out)
+
+
+def _awk_regex_here(out):
+    """True when a `/` after the code read so far (`out`, a list of
+    pieces) starts a regex constant: rule in `_AWK_REGEX_AFTER`."""
+    index = len(out) - 1
+    while index >= 0 and out[index] in (" ", "\t", "\r"):
+        index -= 1
+    if index < 0 or out[index] in _AWK_REGEX_AFTER:
+        return True
+    start = index
+    while start >= 0 and (out[start].isalnum() or out[start] == "_"):
+        start -= 1
+    return "".join(out[start + 1:index + 1]) in _AWK_REGEX_WORDS
+
+
+def _awk_spawns(program):
+    """The construct by which awk `program` may start a process, or None:
+    `_AWK_SPAWN_RE` over its code (`_awk_code`), or, when the program is
+    not read cleanly, `_AWK_RISK_RE` over all of it (SRL-2308 r5)."""
+    code = _awk_code(program)
+    found = _AWK_RISK_RE.search(program) if code is None \
+        else _AWK_SPAWN_RE.search(code)
+    return None if found is None else found.group(0)
 
 
 def _sed_scripts(words):
@@ -2984,9 +3089,9 @@ def _stream_editor_names(head, raw_words, line, resolved):
     for index, code in codes:
         if awk:
             named = _verb_on_line(line.top) if index in unknown else None
-            found = _AWK_SPAWN_RE.search(code)
+            found = _awk_spawns(code)
             if named is None and found is not None:
-                named = _code_mention(code, line.top) or found.group(0)
+                named = _code_mention(code, line.top) or found
         else:
             named = names_terraform(line.top, "bash") \
                 if index in unknown else None
@@ -3103,6 +3208,165 @@ def _run_time_path(word, resolved):
     return (bases, names) if bases else None
 
 
+# --- a relative program after a directory change (SRL-2308 r5, r4-1) --------
+#
+# `cd "$T"; ./stub apply`: once the line may have changed directory, a
+# command word by relative path (`./x`, `../x`, `x/y`, `$W/x`: not starting
+# `/` or `~`) may name a program the line itself put there. A directory
+# change is any word the line could make that is `cd`, `pushd`, `popd`
+# (bare, `builtin cd`, `command cd`), `-C`/`-D` (`env -C`, `sudo -D`, also
+# attached), `--chdir`, `--working-directory`, find's `-execdir`/`-okdir`,
+# or `eval`/`source`/`.` (which may run a `cd` crew does not see): read over
+# every word, so a quoted mention counts too (fail closed).
+#
+# When every change on the line is placed (`_dir_targets`: `cd`, `pushd`,
+# `-C`, `-D`, `--chdir`, `--working-directory` to ONE literal absolute path,
+# and no `eval`/`source`/`.`), read without its data-only heredoc bodies
+# (`_without_data_heredocs`), the program is read as that literal path
+# would be, as long as (a) none of
+# its operands is a changing verb and (b) the line writes, creates, copies,
+# links or chmods nothing at its name, into a placed directory, at a
+# relative path (which lands in one) or at a path crew cannot spell
+# (`_writes_near`). Otherwise -- any `popd`, a change to a run-time or
+# relative place, `cd -`, a bare `cd` -- the line is decided by 1.2.35's
+# rule over it (`_verb_on_line`).
+_DIR_CHANGE_WORDS = frozenset(("cd", "pushd", "popd", "-C", "-D", "-execdir",
+                               "-okdir", "eval", "source", "."))
+_DIR_ANYWHERE_RE = re.compile(r"(?<![\w.-])(?:cd|pushd|popd)(?![\w-])")
+
+
+def _relative_after_dir_change(word, top):
+    """True when raw command `word` is a program by relative path and line
+    `top` may change directory: the rule in the section comment above."""
+    value = _dequote(word)
+    if "/" not in value or value.startswith(("/", "~")):
+        return False
+    return any(c in _DIR_CHANGE_WORDS or c.startswith(("-C", "-D"))
+               or c.startswith(("--chdir", "--working-directory"))
+               for c in _name_candidates(top, "bash"))
+
+
+def _without_data_heredocs(top):
+    """Line `top` without the heredoc bodies that are data only: a quoted
+    body fed to a bare `cat` at the top level whose output is not piped or
+    substituted (`cat > $S/w.sh <<'EOF'`). Such a body runs nothing on this
+    line. A body that occurs more than once, or a line the splitter does not
+    read, is left in (fail closed)."""
+    splitter = _CommandSplitter(top)
+    try:
+        commands, _subs = splitter.split()
+    except _Unsure:
+        return top
+    for words, meta in zip(commands, splitter.metas):
+        if words != ["cat"] or meta["nest"] != 1 or meta["after"] not in (
+                None, ";", "\n", "&&", "||"):
+            continue
+        for body, quoted in meta["bodies"]:
+            if quoted and body and top.count(body) == 1:
+                top = top.replace(body, "")
+    return top
+
+
+def _literal_dir(raw):
+    """The directory raw word `raw` names when it is one literal absolute
+    path (no expansion, glob, brace, `~` or escape), else None."""
+    if not raw or re.search(r"[$`*?\[{~\\]", raw):
+        return None
+    value = _dequote(raw)
+    return (value.rstrip("/") or "/") if value.startswith("/") else None
+
+
+def _dir_targets(top):  # pylint: disable=too-many-branches
+    """The literal absolute directories line `top` changes into, or None
+    when a change goes anywhere else or is not read here: the rule in the
+    section comment above."""
+    dirs = set()
+    text = top.replace("\\\r\n", "").replace("\\\n", "")
+    for segment in re.split(r"[;&|\n(){}`]", text):
+        raws = _LINE_WORD_RE.findall(segment)
+        values = [_dequote(w) for w in raws]
+        for index, value in enumerate(values):
+            nxt = index + 1
+            if value in ("cd", "pushd"):
+                while nxt < len(values) and re.fullmatch(r"-[LPe@]+|--",
+                                                         values[nxt]):
+                    nxt += 1
+                operand = raws[nxt] if nxt < len(raws) else None
+            elif value in ("-C", "-D", "--chdir", "--working-directory"):
+                operand = raws[nxt] if nxt < len(raws) else None
+            elif value.startswith(("--chdir=", "--working-directory=")):
+                operand = raws[index].split("=", 1)[1]
+            elif re.match(r"-[CD].", value):
+                operand = raws[index][2:]
+            elif value in ("popd", "-execdir", "-okdir", "eval", "source",
+                           ".") or _DIR_ANYWHERE_RE.search(value):
+                return None  # `x=cd`, `'cd "$T"'`, `{cd,"$T"}` too
+            else:
+                continue
+            place = _literal_dir(operand)
+            if place is None:
+                return None
+            dirs.add(place)
+    return dirs or None
+
+
+def _writes_near(top, base, dirs, resolved):
+    """True when line `top` may write, create, copy, move, link or chmod
+    something at name `base`, into one of `dirs`, at a relative path, or at
+    a path crew cannot spell: rule (b) in the section comment above."""
+    def touches(raw):
+        if _last_part(raw) == base:
+            return True
+        for spelling in _resolve_word(raw, resolved) or [None]:
+            if spelling is None or re.search(r"[$`*?\[{~]", spelling):
+                return True
+            value = _dequote(spelling)
+            if not value.startswith("/") or any(
+                    value == d or value.startswith(d.rstrip("/") + "/")
+                    for d in dirs):
+                return True
+        return False
+    for match in _REDIRECT_TARGET_RE.finditer(top):
+        if ">&" in match.group(0) and re.fullmatch(r"\d+|-", match.group(1)):
+            continue  # `2>&1`: a descriptor, not a file
+        if touches(match.group(1)):
+            return True
+    for segment in re.split(r"[;&|\n(){}`]", top):
+        words = _LINE_WORD_RE.findall(segment)
+        while words and (_FALLBACK_ASSIGN_RE.match(words[0])
+                         or _head_name(_dequote(words[0]))
+                         in _FALLBACK_WRAPPERS):
+            words = words[1:]
+            while words and re.match(r"-|\d", words[0]):
+                words = words[1:]
+        head = _head_name(_dequote(words[0])) if words else ""
+        if head not in _LINE_WRITERS or head == "sed" and not any(
+                re.match(r"-[a-zA-Z]*i|--in-place", _dequote(w))
+                for w in words[1:]):
+            continue
+        operands = [w for w in words[1:] if not re.match(r"[-+]", w)]
+        if head in ("chmod", "chown"):
+            operands = operands[1:]  # the mode or owner
+        if any(touches(w) for w in operands):
+            return True
+    return False
+
+
+def _relative_trusted(words, resolved, top):
+    """True when the relative program `words[0]` keeps the trust a literal
+    path has: every directory change on `top` placed, and rules (a) and (b)
+    in the section comment above, read without its data heredocs."""
+    top = _without_data_heredocs(top)
+    dirs = _dir_targets(top)
+    if dirs is None:
+        return False
+    for arg in words[1:]:
+        value = _dequote(arg).lower()
+        if value in _FALLBACK_VERBS or value.startswith("-destroy"):
+            return False
+    return not _writes_near(top, _last_part(words[0]), dirs, resolved)
+
+
 def _fallback_command(words, resolved, line, wrapper=None, meta=None):  # pylint: disable=too-many-return-statements,too-many-branches
     """`(kind, word)` for one simple command of raw words: kind "tool" with
     the word naming terraform, "script" for an interpreter of shell code, or
@@ -3123,6 +3387,11 @@ def _fallback_command(words, resolved, line, wrapper=None, meta=None):  # pylint
         # interpreter or a wrapper, or not one word (`T=ls`, `T=bash`,
         # `T=sudo`, `T=`, `T='a b'`): SRL-2308 r3.
         return _run_time_word(line)
+    if _relative_after_dir_change(words[0], line.top) and \
+            not _relative_trusted(words, resolved, line.top):
+        found = _run_time_word(line)  # `cd "$T"; ./stub apply` (r4-1)
+        if found[0] is not None:
+            return found
     found = _run_time_path(words[0], resolved)
     if found is not None and _word_names_tool(words[0], resolved) is None \
             and not all(_path_program_trusted(words[1:], line.top, base,

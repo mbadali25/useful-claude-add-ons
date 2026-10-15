@@ -2014,6 +2014,221 @@ def test_srl2308_r4_sed_e_is_read_as_a_command(script, runs):
     assert crew_guards._sed_runs(script) is runs, script  # pylint: disable=protected-access
 
 
+# --- SRL-2308 review round 4: fail closed, cycle 5 --------------------------
+#
+# Codex r4 and the gate found the r4 head (5cd547d5) fail-open on two
+# fallback paths: a relative program run after the line changes directory
+# (r4-1) and an awk pipe split by a backslash-newline (r4-2). Every row in
+# SRL2308_R5_REFUSE was ALLOWED by 5cd547d5 through cloud-guard.sh (block)
+# and is a must-refuse control through BOTH entry points. The first four
+# are the review's own rows, verbatim (Codex r4-1, r4-2; gate g09, g10).
+_CD_STUB = "T=$(mktemp -d); "
+SRL2308_R5_REFUSE = [
+    ("r4-1-cd-relative-stub", "Bash",
+     _CD_STUB + "cd \"$T\"; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r4-2-awk-print-pipe-continuation", "Bash",
+     "A=(1); awk 'BEGIN { print \"terraform apply\" \\\n | \"sh\" }'"),
+    ("r4-g09-cd-and-stub", "Bash", _CD_STUB + "cd \"$T\" && ./stub apply"),
+    ("r4-g10-pushd-stub", "Bash",
+     _CD_STUB + "pushd \"$T\" >/dev/null; ./stub apply"),
+    # r4-1's class: every directory change, every relative spelling.
+    ("r5-builtin-cd-stub", "Bash", _CD_STUB + "builtin cd \"$T\"; ./stub apply"),
+    ("r5-command-cd-stub", "Bash", _CD_STUB + "command cd \"$T\"; ./stub apply"),
+    ("r5-popd-stub", "Bash", "A=(1); popd >/dev/null; ./stub apply"),
+    ("r5-cd-subshell-stub", "Bash", _CD_STUB + "(cd \"$T\" && ./stub apply)"),
+    ("r5-cd-parent-stub", "Bash", _CD_STUB + "cd \"$T\"; ../stub apply"),
+    ("r5-cd-sub-path-stub", "Bash", _CD_STUB + "cd \"$T\"; bin/stub apply"),
+    ("r5-cd-quoted-stub", "Bash", _CD_STUB + "cd \"$T\"; \"./stub\" apply"),
+    ("r5-cd-verb-elsewhere", "Bash", _CD_STUB + "cd \"$T\"; ./stub plan # apply"),
+    ("r5-cd-sudo-stub", "Bash", _CD_STUB + "cd \"$T\"; sudo ./stub apply"),
+    ("r5-env-chdir-long-stub", "Bash",
+     _CD_STUB + "env --chdir=\"$T\" ./stub apply"),
+    ("r5-env-chdir-attached-stub", "Bash",
+     _CD_STUB + "env -C\"$T\" ./stub plan # apply"),
+    # A literal absolute directory is placed, but the line writes the
+    # program there (rule (b)) or runs it with a changing verb (rule (a)).
+    ("r5-cd-literal-write-stub", "Bash",
+     "A=(1); cd /lit; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r5-cd-literal-write-stub-T", "Bash",
+     _CD_STUB + "cd /lit; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r5-cd-literal-cp-stub", "Bash",
+     "A=(1); cd /lit && cp x stub && ./stub apply"),
+    ("r5-cd-literal-write-plan", "Bash",
+     "A=(1); cd /lit && printf 'terraform \"$@\"' > bin/stub; bin/stub plan"
+     " # apply"),
+    ("r5-cd-literal-write-into-dir", "Bash",
+     "A=(1); cd /lit; cp ./w.sh /lit/sub/stub; sub/stub fmt # apply"),
+    ("r5-cd-literal-then-runtime", "Bash",
+     _CD_STUB + "cd /lit; cd \"$T\"; ./stub plan # apply"),
+    ("r5-cd-literal-then-popd", "Bash",
+     "A=(1); pushd /lit; popd; ./stub plan # apply"),
+    ("r5-cd-dash", "Bash", "A=(1); cd -; ./stub plan # apply"),
+    ("r5-cd-home", "Bash", "A=(1); cd; ./stub plan # apply"),
+    ("r5-eval-cd", "Bash", _CD_STUB + "eval 'cd \"$T\"'; ./stub plan # apply"),
+    # Only a quoted heredoc fed to a bare `cat` is data; its redirection
+    # still counts, and a body a shell runs is read as code.
+    ("r5-cd-literal-cat-heredoc-stub", "Bash",
+     "A=(1); cd /lit; cat > stub <<'EOF'\n#!/bin/sh\nterraform \"$@\"\nEOF\n"
+     "chmod +x stub; ./stub plan # apply"),
+    ("r5-cd-literal-source", "Bash",
+     "A=(1); cd /lit; source ./env.sh; ./stub plan # apply"),
+    ("r5-eval-run-time", "Bash",
+     "A=(1); X=$(cat f); eval \"$X\"; ./stub apply"),
+    # r4-2's class: awk code split by a continuation, and gawk's indirect
+    # call (`@f(...)` with `f = "system"`).
+    ("r5-awk-printf-pipe-continuation", "Bash",
+     "W=$S/x; awk 'BEGIN { printf \"terraform apply\\n\" \\\n | \"sh\" }'"),
+    ("r5-awk-system-continuation", "Bash",
+     "A=(1); awk 'BEGIN { system \\\n (\"terraform apply\") }'"),
+    ("r5-gawk-indirect-system", "Bash",
+     "A=(1); gawk 'BEGIN { f = \"system\"; @f(\"terraform apply\") }'"),
+]
+
+# Rows 5cd547d5 already refused, kept as controls on the new readers: a
+# division read as division (were it read as a regex, the code between the
+# two slashes would be hidden), an escaped quote, a regex bracket holding
+# `/`, continuations 5cd547d5's pattern happened to span, `env -C`, and the
+# gate's r4 probes that held.
+SRL2308_R5_HELD = [
+    ("r5-awk-getline-continuation", "Bash",
+     "A=(1); awk 'BEGIN { \"terraform apply\" \\\n | getline x }'"),
+    ("r5-awk-coprocess-continuation", "Bash",
+     "A=(1); gawk 'BEGIN { print \"\" \\\n |& \"terraform apply\" }'"),
+    ("r5-env-chdir-stub", "Bash", _CD_STUB + "env -C \"$T\" ./stub apply"),
+    ("r5-cd-literal-bash-heredoc-write", "Bash",
+     "A=(1); cd /lit; bash <<'EOF'\nprintf 'terraform \"$@\"' > stub\n"
+     "chmod +x stub\nEOF\n./stub plan # apply"),
+    ("r5-awk-postfix-division", "Bash",
+     "A=(1); awk 'BEGIN { i++ / 2; print \"terraform apply\" | \"sh\";"
+     " j++ / 3 }'"),
+    ("r5-awk-paren-division", "Bash",
+     "A=(1); awk 'BEGIN { x = (4) / 2; print \"terraform apply\" | \"sh\";"
+     " y = (6) / 3 }'"),
+    ("r5-awk-escaped-quote", "Bash",
+     "A=(1); awk 'BEGIN { print \"a\\\"b\" | \"terraform apply\" }'"),
+    ("r5-awk-bracket-slash", "Bash",
+     "A=(1); awk '/[/]/ { print | \"terraform apply\" }'"),
+    ("r4-g01-gawk-e", "Bash",
+     "A=(1); gawk -e 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g02-gawk-source", "Bash",
+     "A=(1); gawk --source 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g03-awk-environ", "Bash",
+     "A=(1); C='terraform apply' awk 'BEGIN { system(ENVIRON[\"C\"]) }'"),
+    ("r4-g04-awk-v-var", "Bash",
+     "W=$S/x; awk -v c='terraform apply' 'BEGIN { system(c) }'"),
+    ("r4-g05-gawk-include", "Bash",
+     "A=(1); gawk '@include \"/tmp/t.awk\"; BEGIN { f() }' # apply"),
+    ("r4-g06-sed-ew-file", "Bash",
+     "W=$S/x; echo x | sed 's/x/terraform apply/ew /dev/null'"),
+    ("r4-g07-sed-e-cmd", "Bash", "W=$S/x; echo 'terraform apply' | sed -e e"),
+    ("r4-g08-sed-expression-long", "Bash",
+     "W=$S/x; echo x | sed --expression='s/x/terraform apply/e'"),
+    ("r4-g11-install-stdin", "Bash",
+     _CD_STUB + "install -m755 /dev/stdin \"$T/s\" <<< 'terraform \"$@\"';"
+     " \"$T/s\" apply"),
+    ("r4-g12-install-stdin-plan", "Bash",
+     _CD_STUB + "install -m755 /dev/stdin \"$T/s\" <<< 'terraform \"$@\"';"
+     " \"$T/s\" plan # apply"),
+    ("r4-g13-command-mapfile", "Bash",
+     "A=(1); T=/bin/echo; command mapfile \"$N\" <<< terraform; $T apply"),
+    ("r4-g14-builtin-readarray", "Bash",
+     "A=(1); T=/bin/echo; builtin readarray \"$N\" <<< terraform; $T apply"),
+    ("r4-g15-command-p-read", "Bash",
+     "A=(1); T=/bin/echo; command -p read \"$N\" <<< terraform; $T apply"),
+    ("r4-g16-builtin-printf-v", "Bash",
+     "A=(1); T=/bin/echo; builtin printf -v \"$N\" terraform; $T apply"),
+    ("r4-g17-env-awk", "Bash",
+     "A=(1); env awk 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g18-xargs-gawk", "Bash",
+     "W=$S/x; echo | xargs gawk 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g19-awk-getline-cmd", "Bash",
+     "A=(1); awk 'BEGIN { \"terraform apply\" | getline x }'"),
+    ("r4-g20-stub-quoted-verb", "Bash", "W=$S/x; \"$W/stub\" ap''ply"),
+    ("r4-g21-stub-dashdash-verb", "Bash", "W=$S/x; \"$W/stub\" -- apply"),
+]
+
+# What the cycle-5 reading must allow: Codex r4-3 (a string that only reads
+# like a process call), awk strings, regex constants and division holding
+# `|` or `/`, the gate's r4 must-allow rows, a relative program on a line
+# that changes directory but names no changing verb, and a relative program
+# on a line that changes no directory (1.2.36's reading, unchanged).
+SRL2308_R5_ALLOW = [
+    ("r4-3-awk-string-only", "Bash",
+     "A=(1); awk 'BEGIN { print \"system(terraform apply)\" }'"),
+    ("r5-ok-awk-string-pipe", "Bash", "A=(1); awk '{ print \"a|b\" }' f # apply"),
+    ("r5-ok-awk-class-alternation", "Bash",
+     "W=$S/x; awk '/^[[:space:]]*(apply|destroy)/ { n++ } END { print n }' f"),
+    ("r5-ok-awk-division", "Bash", "A=(1); awk '{ print $1 / 2 }' f # apply"),
+    ("r5-ok-awk-continuation", "Bash",
+     "A=(1); awk '{ print $1, \\\n $2 }' f # apply"),
+    ("r5-ok-awk-comment-pipe", "Bash",
+     "A=(1); awk '{ n++ } # a | b\nEND { print n }' f # apply"),
+    ("r4-a01-awk-print", "Bash", "A=(1); awk '{print $1}' f.txt"),
+    ("r4-a02-sed-print", "Bash", "W=$S/x; sed -n '1,5p' f.txt"),
+    ("r4-a03-stub-check", "Bash", "W=$S/x; \"$W/stub.sh\" --check"),
+    ("r4-a04-command-read-r", "Bash",
+     "W=$S/x; command read -r line < f.txt; echo \"$line\""),
+    ("r5-ok-cd-relative-no-verb", "Bash",
+     "W=$S/x; cd \"$W\" && ./run-tests.sh --fast"),
+    # real-25's shape: files written under another literal directory, then
+    # a relative program run, with no changing verb, after a `cd` to a
+    # literal absolute path, on a line whose heredoc text names terraform.
+    ("r5-ok-cd-literal-real-25-shape", "Bash",
+     "S=/tmp/sp/k; cat > $S/w.sh <<'EOF'\n#!/usr/bin/env bash\n"
+     "# wraps the reviewer; never runs terraform apply\nexec \"$@\"\nEOF\n"
+     "chmod +x $S/w.sh\ncd /tmp/sp/wt/k-1; H=$(gh pr view 1 --json headRefOid"
+     " -q .headRefOid); W=$S/w.sh tools/review.sh --spec $S/s.md --sha \"$H\""
+     " --dry-run 2>&1 | tail -8"),
+    ("r5-ok-pushd-literal", "Bash",
+     "A=(1); pushd /opt/repo >/dev/null; ./scripts/check.sh plan # apply"),
+    ("r5-ok-relative-no-cd", "Bash", "W=$S/x; ./scripts/check.sh plan # apply"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R5_REFUSE + SRL2308_R5_HELD,
+                         ids=[c[0] for c in SRL2308_R5_REFUSE
+                              + SRL2308_R5_HELD])
+def test_srl2308_r5_a_fallback_line_that_may_run_terraform_is_refused(
+        tmp_path, driver, case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R5_ALLOW,
+                         ids=[c[0] for c in SRL2308_R5_ALLOW])
+def test_srl2308_r5_a_fallback_line_that_cannot_run_terraform_is_allowed(
+        tmp_path, driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize(("program", "spawns"), [
+    ("BEGIN { print \"x\" \\\n | \"sh\" }", True),
+    ("BEGIN { \"date\" | getline d }", True),
+    ("BEGIN { system(\"date\") }", True),
+    ("BEGIN { f = \"system\"; @f(\"date\") }", True),
+    ("BEGIN { i++ / 2; print | \"sh\"; j++ / 3 }", True),
+    ("/[/]/ { print \"a|b\" }", True),  # not read cleanly, holds a `|`
+    ("/[/]/ { print \"a\" }", False),   # not read cleanly, holds none
+    ("BEGIN { print \"system(x)\" }", False),
+    ("{ print \"a|b\" }", False),
+    ("/a|b/ { n++ }", False),
+    ("$1 ~ /^[[:alpha:]]+|x/ { n++ }", False),
+    ("{ print $1 / 2 }", False),
+    ("{ n++ } # x | y\nEND { print n }", False),
+    ("{ s = \"a\\\"|b\" }", False),
+])
+def test_srl2308_r5_awk_code_is_read_without_its_strings(program, spawns):
+    """`_awk_spawns` reads awk's code, not its strings, regex constants or
+    comments; backslash-newline joins a line; a program it cannot read
+    cleanly counts on any `|`, `@` or `system`."""
+    found = crew_guards._awk_spawns(program)  # pylint: disable=protected-access
+    assert (found is not None) is spawns, (program, found)
+
+
 @pytest.mark.parametrize("text", [
     "A=(1); echo $(( $(terraform apply) + 1 ))",
     "A=(1); echo ${X:-$(terraform apply)}",
