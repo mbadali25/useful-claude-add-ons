@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.36**: The terraform guard's fallbacks no longer refuse a line for mentioning "apply". `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made at run time, it now asks whether a command word on the line could run terraform, terragrunt or tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
 - **crew 1.2.35**: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given. A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now holds the time, guard, policy, decision and target, with `-` for the command; the full command line is stored only when the operator also passes the new `--record-command`.
-- **crew 1.2.33**: The docs no longer say `/crew:review` cannot launch Kimi. The crew-providers skill and `kimi_probe.py` now say what has been true since L-0527: `/crew:review` launches Kimi as a reviewer.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

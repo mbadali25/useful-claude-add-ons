@@ -9,6 +9,35 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.36: the terraform guard's fallbacks no longer refuse a line for mentioning "apply" (SRL-2308)
+
+- **Summary.** `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made
+  at run time, it now asks whether a command word on the line could run terraform, terragrunt or
+  tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
+- **Before.** `crew_guards._bash_trigger`'s give-up path used `names_terraform` (any word on the line
+  naming terraform) and `_TerraformTool.hole` used `_verb_on_line` (that, or any word dequoting to
+  destroy/apply/workspace). A lone `W=$S/wt1863r8` reads as a run-time command word, so
+  `W=$S/x; cd $W && python3 - <<'EOF'` with "apply" in the Python was refused, and so were a send.md
+  heredoc, `B=$W/x.py; sed -n 1,30p $B | grep apply`, `R=$W; python3 -c "...('apply')..."` and an
+  inline `$T/stub apply` test.
+- **Now.** Both ask `crew_guards.command_word_names_tool`: a command word naming the tool directly,
+  by path, behind a wrapper (`env`, `npx`, `sudo`, `timeout`, `xargs`, `npm exec`, ...), through
+  `$(...)` or backquotes, or as a variable whose literal value on the same line names one
+  (`T=terraform; $T apply`); a variable the line never sets followed by a changing verb (`$TF
+  apply`); and the old any-word rule for a line that hands text to a shell (`bash`, `eval`, `ssh`,
+  `source`, `parallel`, an alias or function) or that the new splitter cannot split either. Quoted
+  heredoc bodies and quoted arguments are data. The precise reading, the `xargs` path and
+  PowerShell are unchanged. `$TF apply` on a line the reader gives up on is now gated where it was
+  not before.
+- **Not changed.** `npx terraform apply` on a line the reader reads cleanly is still not gated: the
+  precise path does not know `npx` as a wrapper, before and after this change.
+- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: nine must-allow rows (each red on 1.2.35),
+  twenty-four must-refuse rows through both fallbacks, and a check that each unreadable-line row
+  really is one the reader gives up on. The four cloud-guard test files pass (2,748 with
+  `test_guards.py`, `test_guards_env_dump.py`, `test_crew_tfplan.py` and `test_crew_unattended.py`).
+  Five mutations of the new reading were run by hand, each red; the three `sabotage_cloud.py`
+  anchors this moves and the five new mutations land in their own harness PR.
+
 ### Changed — crew 1.2.35: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given
 
 - **Summary.** A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now
