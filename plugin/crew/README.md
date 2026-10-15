@@ -1594,23 +1594,24 @@ misread into an allow. Unusual quoting on a terraform line is asked about, not
 allowed; spell the line with plain words to have it judged. The rule is about
 the command being run: mentioning terraform in a commit message, a search or a
 file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
-`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
-`$(...)`), and a line crew cannot split with certainty (a `case` arm, an
-array, `$((...))` with a `$` inside), are could not tell only when a COMMAND
-WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
-SRL-2308): written directly or by path, behind a wrapper (`env`, `npx`,
-`sudo`, `timeout`, `xargs`, ...), as `$(command -v terraform)`, as a variable
-whose literal value on the same line names one (`x=terraform; $x destroy` is
-refused), or as a variable crew cannot resolve followed by a changing verb
-(`$TF apply`, `$TF destroy`). A variable is resolved only when every way the
-line sets it is a plain `NAME=literal` (or a `for NAME in` list of literals)
-standing alone, run unconditionally before it is used, outside any block,
-subshell or pipeline; `T=$X`, `T=$1`, `T=$(cat f)`, `T=/opt/tf/t*`,
-`for f in *.exe`, `T+=x`, `read T`, `printf -v T`, `T=x cmd` and a `source` or
-`eval` on the line all leave it unresolved, so `$T apply` is refused. An
-interpreter's code (`python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`,
-a heredoc or here-string fed to one) that names terraform and does more than
-print is refused too. A mere mention no longer counts there:
+`vim terraform.tf`) is not gated. A command word made at run time (`$1`,
+`"$@"`, `$0`, `$SHELL`, `$(...)`, a variable crew cannot resolve) is judged as
+crew 1.2.35 judged it, whatever follows it. A line crew cannot split with
+certainty (a `case` arm, an array, `$((...))` with a `$` inside), or one whose
+only run-time word is an assignment (`W=$S/x`), is could not tell only when a
+COMMAND WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
+SRL-2308): directly or by path, behind a wrapper (`env`, `npx`, `sudo`,
+`timeout`, `xargs`, ...), or as a variable whose value names one
+(`x=terraform; $x destroy` is refused). A variable is a program only when
+every way the line sets it is a plain `NAME=path` (or a `for NAME in` list of
+them) standing alone, run unconditionally before it is used, outside any
+block, subshell or pipeline, naming a program that runs nothing else; a bare
+name (`T=ls`, an inherited function may shadow it), `T=$X`, `T=$1`,
+`T=/opt/tf/t*`, `T+=x`, `read T`, `T=x cmd` or a `source` on the line leave it
+run-time, so `$T apply` is refused. Interpreter code (`python3 -c`, `node -e`,
+`perl -e`, a heredoc or here-string fed to one) that can start a process is
+refused when the line names terraform or the code builds its command
+(`"terra"+"form"`, `sys.argv`). A mere mention no longer counts there:
 `W=$S/wt; python3 - <<'EOF'` with "apply" in the Python, a `sed` range or
 `python3 -c` script on a line with a `$VAR`, a heredoc writing notes, and
 `$T/stub apply` (a stub whose name is literal) all pass, and so does `$EDITOR

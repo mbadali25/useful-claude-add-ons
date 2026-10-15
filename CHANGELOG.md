@@ -48,6 +48,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `print`/`puts`/`console.log`-style calls and plain strings. `python3 -c "print('terraform
   apply')"` still passes; `python3 -c "import os; os.system('terraform apply')"` is refused, which
   1.2.35 allowed on a plain line.
+- **Fail closed (review round 2).** The narrowing only stops a mention from counting; it never
+  decides that a command word crew cannot name is safe. Every command word made at run time
+  (`$1`, `"$@"`, `$*`, `$0`, `$SHELL`, `${BASH:-bash}`, `$(command -v bash)`, a variable the line
+  does not resolve) is gated by 1.2.35's rule whatever follows it, so `set -- terraform apply; $1
+  $2`, `V=apply; $TF $V` and `$SHELL <<< 'terraform apply'` are refused. A resolved variable counts
+  as a program only when its value is a path (`S=$W/stub.sh`) to one that runs nothing else: a bare
+  name (`T=ls`, `T=echo`) may be an inherited function, so `T=ls; $T apply` is refused. A line
+  the fallback reads that changes PATH, `hash` or `enable` (`PATH=/opt/x:$PATH; ls apply`) is
+  decided by 1.2.35's rule, as before. Python code that can start a process is refused when the
+  line names the tool or the code builds its command (`"terra"+"form"`, `"terr" "aform"`,
+  `"\x74erraform"`, `sys.argv`, `" ".join`); perl, ruby, node and deno code with a process API,
+  and PHP code that does more than print, are refused outright, and perl's bundled `-pe`,
+  `-lne` now read the program. Print-only code with a trailing `# comment` passes, and a Python
+  placeholder string such as `"__COUNTS__"` is text, not code. A run-time argument of the literal
+  program `timeout` runs (`timeout 1500 codex exec "$(cat p)"`) is that program's argument, and
+  `[` is the test builtin, not a glob. `R=$W; python3 -c "...print('$R')"` is refused again: a
+  run-time value inside interpreter code is code.
 - **Splitting (review round 1).** The fallback's splitter, and the precise reader for the
   delimiter, give up (the line-wide name rule decides) on a substitution or nested expansion inside
   `$((...))` or `${...}` and on a heredoc delimiter quoted both ways (`<<"'END'"`), instead of
@@ -69,8 +86,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `plugin/crew/tests/fixtures/srl2308_refused_tf.json`, sanitised (this repository is public): host
   names, instance ids, vault names, paths, numbers, hashes, schema, table, module and ticket names
   replaced by stand-ins of the same shape. Each row was re-checked through `cloud_guard.py`: all 26
-  refused by 1.2.30 and by 1.2.35; 1.2.36 allows 25 and refuses `real-24`, the `bash
-  <script named by a variable>` line above.
+  refused by 1.2.30 and by 1.2.35; 1.2.36 allows 24 and refuses `real-24`, the `bash
+  <script named by a variable>` line above, and `real-19`, whose heredoc'd Python calls
+  `subprocess` with an argument it builds (`'origin/development:'+p`), refused since review round 2.
 - **Tests.** `plugin/crew/tests/test_cloud_guard.py`: fifteen must-allow rows (eleven red on 1.2.35;
   the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
   allowed and are pinned), the 25 real rows, thirty-nine must-refuse rows through both fallbacks
@@ -80,7 +98,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (block config): 65 of the 68 were allowed by the round-1 head through `cloud-guard.sh`, the
   other three (Codex's exact `$((...))`, `${...}` and mixed-delimiter forms) were refused there by
   another layer and their splitter defect is pinned directly. The real and earlier rows also run
-  through `cloud-guard.sh` now.
+  through `cloud-guard.sh` now. Review round 2 adds 34 must-refuse and 4 must-allow rows through
+  both entry points: 33 of the 34 were allowed by the round-2 head through `cloud-guard.sh`
+  (Codex's exact `perl -pe` form was refused there by another layer; `perl -lne` is its fail-open
+  twin), as was `real-19`; `r2-6`, print-only code with a comment, was refused there. Three
+  round-1 must-allow rows moved to must-refuse (`T=echo; $T apply`, the `for t in echo printf`
+  loop and `R=$W; python3 -c "...('$R')"`).
   Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
   `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
   tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven

@@ -1460,8 +1460,6 @@ SRL2308_NOT_GATED = [
      "echo $((n+$m))"),
     ("srl2308-c-sed-range", "Bash",
      "B=$W/plugin/crew/hooks/scripts/x.py; sed -n 1,30p $B | grep -n apply"),
-    ("srl2308-c-python-c", "Bash",
-     "R=$W; python3 -c \"import sys; print('apply'); print('$R')\""),
     ("srl2308-c-python-c-unreadable", "Bash",
      "python3 -c \"print('terraform apply')\" $((1+$N))"),
     ("srl2308-d-inline-stub", "Bash",
@@ -1552,7 +1550,8 @@ SRL2308_STILL_GATED = [
 # Real refusals (fixtures/srl2308_refused_tf.json, sanitised; see its
 # `_about`): every `must_allow` row was refused by crew 1.2.30 and 1.2.35,
 # and every one runs no terraform but real-05's `version`. `must_refuse` is
-# real-24, a legitimate could-not-tell (its `why`).
+# real-24, a legitimate could-not-tell, and real-19, whose Python starts a
+# process with a command it builds (review round 2, fail closed; each `why`).
 _REAL = json.loads((pathlib.Path(__file__).parent / "fixtures"
                     / "srl2308_refused_tf.json").read_text(encoding="utf-8"))
 SRL2308_REAL_ALLOW = [(r["id"], "Bash", r["command"])
@@ -1588,9 +1587,9 @@ def test_srl2308_a_real_could_not_tell_stays_refused(tmp_path, case):
 
 
 def test_srl2308_the_real_rows_are_all_there():
-    """25 allowed and real-24 refused: a row dropped from the fixture would
-    otherwise pass silently."""
-    assert len(SRL2308_REAL_ALLOW) == 25 and len(SRL2308_REAL_REFUSE) == 1
+    """24 allowed, real-24 and real-19 refused: a row dropped from the
+    fixture would otherwise pass silently."""
+    assert len(SRL2308_REAL_ALLOW) == 24 and len(SRL2308_REAL_REFUSE) == 2
 
 
 @pytest.mark.parametrize("case", [c for c in SRL2308_STILL_GATED
@@ -1732,9 +1731,6 @@ SRL2308_R2_REFUSE = [
 # whose program name is literal (`S=$W/stub.sh`), and interpreter code that
 # only prints, or names terraform only as a path.
 SRL2308_R2_ALLOW = [
-    ("r2-ok-literal-var", "Bash", "T=echo; $T apply"),
-    ("r2-ok-for-literal", "Bash",
-     "for t in echo printf; do $t apply; done"),
     ("r2-ok-path-var-script", "Bash", "S=$W/stub.sh; bash $S apply"),
     ("r2-ok-python-print", "Bash", "python3 -c \"print('terraform apply')\""),
     ("r2-ok-python-print-u", "Bash",
@@ -1793,6 +1789,109 @@ def test_srl2308_r2_the_allowed_rows_hold_through_the_bash_hook(tmp_path,
 def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
                                                                 case):
     _block("bash", tmp_path, case + ("terraformApply",))
+
+
+# --- SRL-2308 review round 2: fail closed ---------------------------------
+#
+# Codex r2 and the gate found the r1 head (3edc97bf) fail-open: a command
+# word made at run time was gated only before a literal changing verb, a
+# variable holding a bare name (`T=ls`) counted as that program, and
+# interpreter code that builds its command (`"terra"+"form"`, `sys.argv`)
+# passed. Every row below is a must-refuse control run through BOTH entry
+# points; each was ALLOWED by 3edc97bf through cloud-guard.sh (block), except
+# `r2-4-perl-pe-h`, Codex's exact r2-4 form, which another layer refused
+# there -- `r2-4-perl-lne` is its fail-open twin.
+_SET_TF = "set -- terraform apply; "
+SRL2308_R3_REFUSE = [
+    # Codex r2-1..r2-5.
+    ("r2-1-V-apply", "Bash", "V=apply; $TF $V"),
+    ("r2-2-argv-join", "Bash",
+     "W=$S/x; python3 -c 'import os,sys; os.system(\" \".join(sys.argv[1:]))'"
+     " terraform apply"),
+    ("r2-3-concat", "Bash",
+     "W=$S/x; python3 -c 'import os; os.system(\"terra\"+\"form apply\")'"),
+    ("r2-4-perl-pe-h", "Bash", "W=$S/x; perl -pe 'system(\"terraform apply\")'"),
+    ("r2-4-perl-lne", "Bash",
+     "perl -lne 'system(\"terraform apply\")' /dev/null"),
+    ("r2-5-T-ls", "Bash", "T=ls; $T apply"),
+    # The gate's fail-open class: any command word made at run time.
+    ("r3-set-1-2", "Bash", _SET_TF + "$1 $2"),
+    ("r3-set-at", "Bash", _SET_TF + "$@"),
+    ("r3-set-star", "Bash", _SET_TF + "$*"),
+    ("r3-set-quoted-at", "Bash", _SET_TF + "\"$@\""),
+    ("r3-set-at-h", "Bash", "W=$S/x; " + _SET_TF + "\"$@\""),
+    ("r3-set-destroy", "Bash",
+     "set -- terraform destroy -auto-approve; $1 $2 $3"),
+    ("r3-set-env-at", "Bash", _SET_TF + "env \"$@\""),
+    ("r3-set-timeout-env-at", "Bash", _SET_TF + "timeout 30 env \"$@\""),
+    ("r3-dollar0-c", "Bash", "$0 -c 'terraform apply'"),
+    ("r3-dollar0-c-h", "Bash", "W=$S/x; $0 -c 'terraform apply'"),
+    ("r3-bash-default-c", "Bash", "${BASH:-bash} -c 'terraform apply'"),
+    ("r3-shell-c", "Bash", "$SHELL -c 'terraform apply'"),
+    ("r3-subst-bash-c", "Bash", "$(command -v bash) -c 'terraform apply'"),
+    ("r3-unresolved-c", "Bash", "B=$X; $B -c 'terraform apply'"),
+    ("r3-shell-herestring", "Bash", "$SHELL <<< 'terraform apply'"),
+    ("r3-unresolved-heredoc", "Bash",
+     "B=$X; $B <<'EOF'\nterraform apply\nEOF"),
+    ("r3-set-bash-c", "Bash",
+     "set -- bash; $1 -c 'terraform destroy -auto-approve'"),
+    ("r3-unresolved-both", "Bash", "T=$X; V=$Y; $T $V # terraform"),
+    ("r3-T-ls-path", "Bash", "T=ls; PATH=/opt/tf-shim:$PATH; $T apply"),
+    ("r3-path-then-ls", "Bash", "PATH=/opt/tf-shim:$PATH; ls apply"),
+    # Interpreter code that builds its command.
+    ("r3-py-concat", "Bash",
+     "python3 -c 'import os; os.system(\"terra\"+\"form apply\")'"),
+    ("r3-py-adjacent", "Bash",
+     "python3 -c 'import os; print(os.system(\"terr\" \"aform apply\"))'"),
+    ("r3-py-argv", "Bash",
+     "python3 -c 'import os,sys; print(os.system(sys.argv[1]))' "
+     "'terraform apply'"),
+    ("r3-py-hex", "Bash",
+     "python3 -c 'import os; print(os.system(\"\\x74erraform apply\"))'"),
+    ("r3-py-comment-quote", "Bash",
+     "python3 - <<'EOF'\n# it's here\n"
+     "import os; os.system('terra' + 'form apply')\nEOF"),
+    # Allowed by round 1 as must-allow rows, refused now: a variable whose
+    # value is a bare name may be an inherited function (`T=echo`, as
+    # `T=ls`), and a value made at run time inside interpreter code is code
+    # (`print('$R')` with R=`'); os.system('...`). 1.2.35 refused all three.
+    ("r3-bare-name-var", "Bash", "T=echo; $T apply"),
+    ("r3-bare-name-for", "Bash", "for t in echo printf; do $t apply; done"),
+    ("r3-python-c-run-time-value", "Bash",
+     "R=$W; python3 -c \"import sys; print('apply'); print('$R')\""),
+]
+
+# Shapes the fail-closed reading must still allow: print-only code with a
+# comment (r2-6), a run-time argument of the literal program `timeout` runs,
+# the `[` builtin, and a placeholder string in Python that starts nothing.
+SRL2308_R3_ALLOW = [
+    ("r2-6-print-comment", "Bash",
+     "python3 -c 'print(\"terraform apply\") # note'"),
+    ("r3-ok-timeout-program", "Bash",
+     "W=$S/x; timeout 1500 codex exec --skip-git-repo-check "
+     "\"$(cat $W/prompt.txt)\" # apply"),
+    ("r3-ok-test-builtin", "Bash", "W=$S/x; [ -z \"$X\" ] && echo apply"),
+    ("r3-ok-py-placeholder", "Bash",
+     "W=$S/x; python3 - <<'PY'\n"
+     "s = open('a.md').read().replace('__COUNTS__', 'apply')\n"
+     "open('a.md', 'w').write(s)\nPY"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R3_REFUSE,
+                         ids=[c[0] for c in SRL2308_R3_REFUSE])
+def test_srl2308_r3_a_run_time_command_word_is_refused(tmp_path, driver,
+                                                       case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R3_ALLOW,
+                         ids=[c[0] for c in SRL2308_R3_ALLOW])
+def test_srl2308_r3_a_line_that_cannot_run_terraform_is_allowed(tmp_path,
+                                                                driver, case):
+    _allow(driver, tmp_path, case)
 
 
 @pytest.mark.parametrize("text", [

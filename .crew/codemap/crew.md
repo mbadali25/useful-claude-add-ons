@@ -403,10 +403,12 @@ a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreada
 when a command word on the line could run one. That question, and the fallback for anything the
 reader does not read with certainty, is `crew_guards.command_word_names_tool` (SRL-2308, its own
 splitter `_CommandSplitter`, per command `_fallback_command`): a command word naming the tool
-directly, by path, behind a wrapper, or through a variable the line resolves to plain literals
-(`_resolved_vars`: set unconditionally, at the top level, before use, by nothing else); an
-unresolved `$VAR` followed by a changing verb; interpreter code (`python -c`, `node -e`, a heredoc
-into one) that names the tool and does more than print (`_interpreter_names`, which the precise
+directly, by path, behind a wrapper, or through a variable the line resolves to plain literal
+paths (`_resolved_vars`: set unconditionally, at the top level, before use, by nothing else;
+`_known_value`: a path to a program that runs nothing else); any other command word made at run
+time, decided by 1.2.35's `_verb_on_line` whatever follows it (`_made_at_run_time`, fail closed
+since review round 2); interpreter code (`python -c`, `node -e`, a heredoc into one) that can
+start a process and names the tool or builds its command (`_code_verdict`; `_interpreter_names`, which the precise
 path also asks through `_TerraformTool.interpreted`); and Step 8's any-word trigger, `crew_guards.names_terraform`
 (`:1194`), only for a line that hands text to a shell or when the splitter itself gives up. PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
 (`:2380`, per command `_ps_argv_trigger` `:2294`), read with the lexer's `_lex_ps`: `&`, `.`,
