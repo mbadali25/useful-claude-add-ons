@@ -1594,12 +1594,35 @@ misread into an allow. Unusual quoting on a terraform line is asked about, not
 allowed; spell the line with plain words to have it judged. The rule is about
 the command being run: mentioning terraform in a commit message, a search or a
 file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
-`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
-`$(...)`) is could not tell only on a line that names terraform, `destroy`,
-`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
-notes.md` is not. Where crew cannot split a line with certainty — a `case`
-arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
-falls back to the older, wider rule: any word naming terraform.
+`vim terraform.tf`) is not gated. A command word made at run time (`$1`,
+`"$@"`, `$0`, `$SHELL`, `$(...)`, a variable crew cannot resolve) is judged as
+crew 1.2.35 judged it, whatever follows it. A line crew cannot split with
+certainty (a `case` arm, an array, `$((...))` with a `$` inside), or one whose
+only run-time word is an assignment (`W=$S/x`), is could not tell only when a
+COMMAND WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
+SRL-2308): directly or by path, behind a wrapper (`env`, `npx`, `sudo`,
+`timeout`, `xargs`, ...), or as a variable whose value names one
+(`x=terraform; $x destroy` is refused). A variable is a program only when
+every way the line sets it is a plain `NAME=path` (or a `for NAME in` list of
+them) standing alone, run unconditionally before it is used, outside any
+block, subshell or pipeline, naming a program that runs nothing else; a bare
+name (`T=ls`, an inherited function may shadow it), `T=$X`, `T=$1`,
+`T=/opt/tf/t*`, `T+=x`, `read T`, `T=x cmd` or a `source` on the line leave it
+run-time, so `$T apply` is refused. Interpreter code (`python3 -c`, `node -e`,
+`perl -e`, a heredoc or here-string fed to one) that can start a process is
+refused when the line names terraform or the code builds its command
+(`"terra"+"form"`, `sys.argv`); so is an awk program that can start one
+(`system()`, `print | "cmd"`, `"cmd" | getline`, `|&`) and a sed script with
+the `e` command or the `s///e` flag. A program by path under a run-time
+directory (`$T/stub`) keeps its literal name only when no operand is a
+changing verb and the line writes nothing into that directory or at that
+name; otherwise 1.2.35's rule decides, so `T=$(mktemp -d); printf ... >
+"$T/stub"; "$T/stub" apply` is refused. A mere mention no longer counts there:
+`W=$S/wt; python3 - <<'EOF'` with "apply" in the Python, a `sed` range or
+`python3 -c` script on a line with a `$VAR`, a heredoc writing notes, and
+`$T/stub --check` all pass, and so does `$EDITOR notes.md`. A line that hands text to shell code (`bash`, `eval`, `ssh`,
+`source`, `parallel`, a function or alias definition) keeps the older, wider
+rule over the whole line: any word naming terraform.
 
 **A terraform command crew cannot follow is could not tell even in plain
 words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
@@ -1785,8 +1808,18 @@ started some other way. Each of these runs unjudged:
 - BusyBox applets: `busybox env terraform destroy -auto-approve`,
   `busybox timeout 60 terraform destroy -auto-approve`
 - git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
-- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
-- a script file: `bash deploy.sh`
+- an interpreter whose code names the tool only at run time or from a file:
+  `python3 -c "import os; os.system(os.environ['TF'] + ' destroy')"`,
+  `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
+  or fed by a heredoc or here-string, that names terraform and does more than
+  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`
+- awk and sed on a line crew reads cleanly: `awk 'BEGIN{system("terraform
+  destroy")}'`, `echo terraform destroy | sed e` (as in 1.2.35; on a line crew
+  cannot read, or after a run-time assignment, they are refused since crew
+  1.2.36), and a sed script made at run time whose value adds an `e` flag on
+  a line that does not name terraform
+- a script file: `bash deploy.sh`, or a literal path such as `/tmp/x/stub
+  destroy` on a line crew reads cleanly (as in 1.2.35)
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
   `systemd-run terraform destroy`

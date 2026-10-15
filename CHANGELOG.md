@@ -9,6 +9,124 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.36: the terraform guard's fallbacks no longer refuse a line for mentioning "apply" (SRL-2308)
+
+- **Summary.** `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made
+  at run time, it now asks whether a command word on the line could run terraform, terragrunt or
+  tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
+- **Before.** `crew_guards._bash_trigger`'s give-up path used `names_terraform` (any word on the line
+  naming terraform) and `_TerraformTool.hole` used `_verb_on_line` (that, or any word dequoting to
+  destroy/apply/workspace). A lone `W=$S/wt1863r8` reads as a run-time command word, so
+  `W=$S/x; cd $W && python3 - <<'EOF'` with "apply" in the Python was refused, and so were a send.md
+  heredoc, `B=$W/x.py; sed -n 1,30p $B | grep apply`, `R=$W; python3 -c "...('apply')..."` and an
+  inline `$T/stub apply` test.
+- **Now.** Both ask `crew_guards.command_word_names_tool`: a command word naming the tool directly,
+  by path, behind a wrapper (`env`, `npx`, `sudo`, `timeout`, `xargs`, `npm exec`, ...), through
+  `$(...)` or backquotes, or as a variable whose literal value on the same line names one
+  (`T=terraform; $T apply`); a variable the line never sets followed by a changing verb (`$TF
+  apply`); and the old any-word rule for a line that hands text to a shell (`bash`, `eval`, `ssh`,
+  `source`, `parallel`, an alias or function) or that the new splitter cannot split either. Quoted
+  heredoc bodies and quoted arguments are data. The precise reading, the `xargs` path and
+  PowerShell are unchanged. `$TF apply` on a line the reader gives up on is now gated where it was
+  not before.
+- **Variables (review round 1).** A variable counts as resolved only when every way the line sets
+  it is a plain `NAME=literal` (a directory part may hold a variable: `S=$W/stub.sh` runs
+  `stub.sh`) or a `for NAME in` list of literals, standing alone, at the top level, run
+  unconditionally and before the command that uses it. `T=$X`, `T=$1`, `T=$(cat f)`,
+  `T=/opt/tf/t*`, `for f in *.exe`, `T+=x`, `read T`, `printf -v T`, `mapfile T`, `declare -n`,
+  `T=x cmd`, `${T:=x}`, an assignment after `&&`/`||`, in a pipeline, subshell, `if`/`case`/loop
+  body or function, a `source`/`.`/`eval` or an `IFS` on the line all leave it unresolved (and a
+  line making IFS split on more than blanks is refused when it names the tool anywhere), so
+  `$T apply` is refused. `${T/x/o}` and `$(...)` as a command word are made at run time;
+  `T=terra; U=form; $T$U apply` and `T=sudo; $T terraform apply` are read as the command they
+  spell. A script crew cannot name run with a changing verb (`for f in *.ps1; do pwsh -File $f
+  apply; done`) is refused, and so is a `bash -c` or heredoc'd shell script with `$TF apply` in it.
+- **Interpreters (review round 1, on both paths).** `python`/`py`/`pypy`, `node`/`nodejs`/`bun`,
+  `deno eval`, `perl`, `ruby` and `php` code given on the command line (`-c`, `-e`, `-p`, `-r`,
+  `--eval`, ...), or fed by a heredoc, here-string or pipe, is refused when it names terraform,
+  terragrunt or tofu (or a `$VAR` before a changing verb) and does more than print: anything beyond
+  `print`/`puts`/`console.log`-style calls and plain strings. `python3 -c "print('terraform
+  apply')"` still passes; `python3 -c "import os; os.system('terraform apply')"` is refused, which
+  1.2.35 allowed on a plain line.
+- **Fail closed (review round 2).** The narrowing only stops a mention from counting; it never
+  decides that a command word crew cannot name is safe. Every command word made at run time
+  (`$1`, `"$@"`, `$*`, `$0`, `$SHELL`, `${BASH:-bash}`, `$(command -v bash)`, a variable the line
+  does not resolve) is gated by 1.2.35's rule whatever follows it, so `set -- terraform apply; $1
+  $2`, `V=apply; $TF $V` and `$SHELL <<< 'terraform apply'` are refused. A resolved variable counts
+  as a program only when its value is a path (`S=$W/stub.sh`) to one that runs nothing else: a bare
+  name (`T=ls`, `T=echo`) may be an inherited function, so `T=ls; $T apply` is refused. A line
+  the fallback reads that changes PATH, `hash` or `enable` (`PATH=/opt/x:$PATH; ls apply`) is
+  decided by 1.2.35's rule, as before. Python code that can start a process is refused when the
+  line names the tool or the code builds its command (`"terra"+"form"`, `"terr" "aform"`,
+  `"\x74erraform"`, `sys.argv`, `" ".join`); perl, ruby, node and deno code with a process API,
+  and PHP code that does more than print, are refused outright, and perl's bundled `-pe`,
+  `-lne` now read the program. Print-only code with a trailing `# comment` passes, and a Python
+  placeholder string such as `"__COUNTS__"` is text, not code. A run-time argument of the literal
+  program `timeout` runs (`timeout 1500 codex exec "$(cat p)"`) is that program's argument, and
+  `[` is the test builtin, not a glob. `R=$W; python3 -c "...print('$R')"` is refused again: a
+  run-time value inside interpreter code is code.
+- **Fail closed (review round 3).** On a line the fallbacks read, an awk program (`awk`, `gawk`,
+  `mawk`, `nawk`, `busybox awk`) that can start a process (`system()`, `print | "cmd"`,
+  `"cmd" | getline`, `|&`, `@load`/`@include`) is refused, and so is a sed script with the `e`
+  command or the `s///e` flag; `awk -f`/`sed -f` and a program made at run time are decided by
+  1.2.35's rule, and a sed script made at run time is refused when the line names terraform.
+  `read`, `mapfile`, `readarray`, `declare` and `printf -v` behind `command`, `builtin` or another
+  wrapper (`command read "$N"`) now make the line's variables unknown. A program by path under a
+  run-time directory (`$W/stub`, `"$T/stub"`, `S=$W/stub.sh; $S`) keeps its literal name only when
+  no operand is a changing verb (`apply`, `destroy`, `import`, `state`, `-destroy`, ...) and the
+  line writes, copies, moves, links or chmods nothing into that directory or at that name;
+  otherwise 1.2.35's rule decides. On a line the precise reader reads cleanly, plain awk/sed and a
+  literal script path are still not gated, as in 1.2.35.
+- **Splitting (review round 1).** The fallback's splitter, and the precise reader for the
+  delimiter, give up (the line-wide name rule decides) on a substitution or nested expansion inside
+  `$((...))` or `${...}` and on a heredoc delimiter quoted both ways (`<<"'END'"`), instead of
+  skipping text bash runs.
+- **Wildcards (shared name check).** `crew_guards._names_tool` no longer counts a wildcard whose
+  only literal letters are an extension (`*.ps1`, `*.exe`) as naming terraform: it could match
+  `terraform.ps1`, but so could every script on the disk, and a `for f in test/*.ps1` or `cp *.ps1`
+  on a line refused it. The three letters must be the name's own (`terr*`, `*form` still count).
+  This check is shared with the precise path; a wildcard COMMAND word is still gated before a
+  changing verb (`./*.ps1 destroy`).
+- **Read-only.** In the fallbacks, the tool and one read-only subcommand with nothing after it
+  (`$S/bin/terraform version`) is not gated, as on the precise path. Any further word (`-json`,
+  `-chdir=x apply`, `apply`) or a second command that runs terraform keeps the line refused.
+- **Not changed.** `npx terraform apply` on a line the reader reads cleanly is still not gated: the
+  precise path does not know `npx` as a wrapper, before and after this change. A line that sets
+  `T=terraform` and runs `bash <script named by a variable> $T/...` is still refused: crew cannot
+  see what that script runs.
+- **Real refusals.** 26 commands the installed 1.2.30 refused tonight are rows in
+  `plugin/crew/tests/fixtures/srl2308_refused_tf.json`, sanitised (this repository is public): host
+  names, instance ids, vault names, paths, numbers, hashes, schema, table, module and ticket names
+  replaced by stand-ins of the same shape. Each row was re-checked through `cloud_guard.py`: all 26
+  refused by 1.2.30 and by 1.2.35; 1.2.36 allows 24 and refuses `real-24`, the `bash
+  <script named by a variable>` line above, and `real-19`, whose heredoc'd Python calls
+  `subprocess` with an argument it builds (`'origin/development:'+p`), refused since review round 2.
+- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: fifteen must-allow rows (eleven red on 1.2.35;
+  the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
+  allowed and are pinned), the 25 real rows, thirty-nine must-refuse rows through both fallbacks
+  (the read-only allowance's abuse cases among them) plus `real-24`, and a check that each
+  unreadable-line row really is one the reader gives up on. Review round 1 adds 68 must-refuse
+  and 14 must-allow rows, each run through `cloud_guard.py` and the real hook `cloud-guard.sh`
+  (block config): 65 of the 68 were allowed by the round-1 head through `cloud-guard.sh`, the
+  other three (Codex's exact `$((...))`, `${...}` and mixed-delimiter forms) were refused there by
+  another layer and their splitter defect is pinned directly. The real and earlier rows also run
+  through `cloud-guard.sh` now. Review round 2 adds 34 must-refuse and 4 must-allow rows through
+  both entry points: 33 of the 34 were allowed by the round-2 head through `cloud-guard.sh`
+  (Codex's exact `perl -pe` form was refused there by another layer; `perl -lne` is its fail-open
+  twin), as was `real-19`; `r2-6`, print-only code with a comment, was refused there. Three
+  round-1 must-allow rows moved to must-refuse (`T=echo; $T apply`, the `for t in echo printf`
+  loop and `R=$W; python3 -c "...('$R')"`). Review round 3 adds 28 must-refuse and 10 must-allow
+  rows through both entry points, and 16 sed scripts read directly: every must-refuse row,
+  Codex's r3-1..r3-3 and the gate's variants among them, was allowed by the round-3 head through
+  `cloud-guard.sh`. The must-allow `srl2308-d-inline-stub` (a stub written into `$T`, then run
+  with `apply`) moved to must-refuse: it is r3-2's shape.
+  Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
+  `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
+  tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
+  new mutations were run by hand through `sabotage.py`'s apply/restore, each red: five undo one part
+  of the new reading, two put the old rules back. Adding them to `sabotage_cloud.py` is harness and
+  lands in its own PR.
+
 ### Changed — crew 1.2.35: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given
 
 - **Summary.** A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now
