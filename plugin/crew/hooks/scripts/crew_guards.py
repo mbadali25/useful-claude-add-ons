@@ -2117,18 +2117,24 @@ def _sets_unseen(words, rest):
     may set variables in a way `_resolved_vars` does not follow: it touches
     `IFS`, it is `source`/`.`/`eval` (behind a wrapper too), or a builtin
     that sets the variable an expansion names (`read "$N"`,
-    `printf -v "$N"`)."""
+    `printf -v "$N"`) -- behind a wrapper too (SRL-2308 r4, r3-3:
+    `command read "$N"`, `builtin mapfile "$N"`)."""
     if any("IFS" in w for w in words):
         return True
     heads = [_head_name(_dequote(w)) for w in rest
              if not _FALLBACK_ASSIGN_RE.match(w)]
     if not heads:
         return False
+    wrapped = heads[0] in _FALLBACK_WRAPPERS
     if heads[0] in _FALLBACK_OPAQUE_SETTERS or \
-            heads[0] in _FALLBACK_WRAPPERS and \
-            set(heads) & _FALLBACK_OPAQUE_SETTERS:
+            wrapped and set(heads) & _FALLBACK_OPAQUE_SETTERS:
         return True
-    if heads[0] not in _FALLBACK_SETTERS or heads[0] == "printf" and \
+    # Every setter the command may run: its head, or behind a wrapper any
+    # later word (where the wrapped command starts is not parsed here, so
+    # reading every word can only refuse more).
+    setters = set(heads) & _FALLBACK_SETTERS if wrapped else \
+        {heads[0]} & _FALLBACK_SETTERS
+    if not setters or setters == {"printf"} and \
             not any(_dequote(w).startswith("-v") for w in rest[1:]):
         return False
     return any("$" in w or "`" in w for w in rest[1:])
@@ -2799,6 +2805,198 @@ def interpreted_on_line(text, stdin):
     return None
 
 
+# --- awk and sed programs (SRL-2308 r4, r3-1) ---------------------------------
+#
+# awk's `system()`, its pipes to and from a command (`print | "cmd"`,
+# `"cmd" | getline`, gawk's `|&`) and gawk's `@load`/`@include`, and sed's
+# `e` command and `s///e` flag, start a process. On a fallback line they are
+# read as interpreter code is: refused when the program can start a process,
+# and the command it starts is always taken as built at run time (awk
+# concatenates strings by juxtaposition, sed runs its pattern space), so the
+# process construct alone refuses. A program crew cannot see (`awk -f f`,
+# `sed -f f`, `gawk -l ext`) or one made at run time is decided by 1.2.35's
+# rule over the line; a sed script made at run time is refused when the line
+# names the tool (a value could add an `e` flag). On a cleanly readable line
+# the precise reader still lets both through, as 1.2.35 did: a pre-existing
+# limit (README, "What the guard does not catch").
+_AWK_NAMES_RE = re.compile(r"^(?:[gmn]?awk|original-awk|goawk|onetrue-?awk)$")
+_SED_NAMES_RE = re.compile(r"^g?sed$")
+_AWK_SPAWN_RE = re.compile(
+    r"\bsystem\s*\(|\|&|\|\s*getline\b|@load\b|@include\b"
+    r"|\bprintf?\b[^;{}\n]*?(?<!\|)\|(?!\|)")
+_AWK_VALUE_OPTS = frozenset(("-F", "-v", "--field-separator", "--assign"))
+# A program, library or extension from a file; mawk's `-W` (`-W exec f`).
+_AWK_HIDDEN_OPTS = frozenset(("-f", "--file", "-E", "--exec", "-l", "--load",
+                              "-i", "--include", "-W"))
+_AWK_CODE_OPTS = frozenset(("-e", "--source"))
+
+
+def _awk_program(words):
+    """`(codes, hidden)` for awk's argument words (quotes removed): `codes`
+    as `(index, text)`, the program given on the line; `hidden` true when a
+    program, library or extension comes from a file crew does not read."""
+    codes, index = [], 0
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            index += 1
+            break
+        name, equals, given = word.partition("=") if word.startswith("--") \
+            else (word[:2], word[2:] != "", word[2:])
+        if not word.startswith("-") or word == "-":
+            break
+        if name in _AWK_HIDDEN_OPTS:
+            return codes, True
+        if name in _AWK_CODE_OPTS:
+            if not equals:
+                index += 1
+            if index < len(words):
+                codes.append((index, given if equals else words[index]))
+        elif name in _AWK_VALUE_OPTS and not equals:
+            index += 1
+        index += 1
+    if not codes and index < len(words):
+        codes.append((index, words[index]))
+    return codes, False
+
+
+def _sed_scripts(words):
+    """`(scripts, hidden)` for sed's argument words (quotes removed), as
+    `_awk_program` does: `-e`/`--expression`, else the first operand;
+    `hidden` for `-f`/`--file`."""
+    scripts, index, first = [], 0, None
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            first = index + 1 if first is None else first
+            break
+        if word.startswith("--"):
+            name, equals, given = word.partition("=")
+            if name == "--file":
+                return scripts, True
+            if name == "--expression":
+                if not equals:
+                    index += 1
+                    given = words[index] if index < len(words) else ""
+                scripts.append((index, given))
+            elif name == "--line-length" and not equals:
+                index += 1
+        elif word.startswith("-") and len(word) > 1:
+            for pos in range(1, len(word)):
+                letter, tail = word[pos], word[pos + 1:]
+                if letter == "f":
+                    return scripts, True
+                if letter in "el":
+                    if not tail and index + 1 < len(words):
+                        index += 1
+                        tail = words[index]
+                    if letter == "e":
+                        scripts.append((index, tail))
+                    break
+                if letter == "i":
+                    break  # `-i.bak`: the rest is a suffix
+        elif first is None:
+            first = index
+        index += 1
+    if not scripts and first is not None and first < len(words):
+        scripts.append((first, words[first]))
+    return scripts, False
+
+
+def _sed_skip(script, pos, delim):
+    """The index after the next unescaped `delim` in sed `script` from
+    `pos`, or `len(script)`."""
+    while pos < len(script):
+        if script[pos] == "\\":
+            pos += 2
+        elif script[pos] == delim:
+            return pos + 1
+        else:
+            pos += 1
+    return len(script)
+
+
+def _sed_runs(script):  # pylint: disable=too-many-branches
+    """True when sed `script` may run a command: an `e` command or an `s`
+    command with the `e` flag. Anything this reading does not know reads
+    as one (fail closed)."""
+    pos, size = 0, len(script)
+    while pos < size:
+        char = script[pos]
+        if char in " \t\r\n;{}!,~+$" or char.isdigit():
+            pos += 1  # separators, blocks, negation, line addresses
+        elif char == "#":
+            end = script.find("\n", pos)
+            pos = size if end == -1 else end
+        elif char in "/\\":
+            if char == "\\":
+                pos += 1
+                if pos >= size:
+                    return True
+            pos = _sed_skip(script, pos + 1, script[pos])
+            while pos < size and script[pos] in "IM":
+                pos += 1
+        elif char in "sy":
+            if pos + 1 >= size or script[pos + 1] in "\\\n":
+                return True
+            delim = script[pos + 1]
+            pos = _sed_skip(script, _sed_skip(script, pos + 2, delim), delim)
+            while char == "s" and pos < size and script[pos] not in ";\n}#":
+                if script[pos] == "e":
+                    return True
+                if script[pos] in "wW":
+                    end = script.find("\n", pos)
+                    pos = size if end == -1 else end
+                    break
+                pos += 1
+        elif char in "aicrRwWbtT:v":
+            # Text, a file name or a label, to the end of the line (a
+            # label also to a `;`); a text line ending `\` continues.
+            while pos < size and script[pos] != "\n" and not (
+                    char in "btT:v" and script[pos] == ";"):
+                pos += 2 if script[pos] == "\\" else 1
+        elif char in "=dDgGhHnNpPxzFqQlL":
+            pos += 1
+        else:
+            return True  # `e`, or a command this reading does not know
+    return False
+
+
+def _stream_editor_names(head, raw_words, line, resolved):
+    """The word naming why an awk or sed command (`head`, its raw argument
+    words; `busybox awk` too) may run the tool, or None: the rule in the
+    section comment above."""
+    if head == "busybox" and raw_words:
+        head, raw_words = _head_name(_dequote(raw_words[0])), raw_words[1:]
+    awk = bool(_AWK_NAMES_RE.match(head))
+    if not awk and not _SED_NAMES_RE.match(head):
+        return None
+    words, unknown = [], set()
+    for index, raw in enumerate(raw_words):
+        value = _expand_known(raw, resolved)
+        if value is None:
+            unknown.add(index)
+            value = _shell_unquote(raw)
+        words.append(value)
+    codes, hidden = _awk_program(words) if awk else _sed_scripts(words)
+    if hidden:
+        return _verb_on_line(line.top)
+    for index, code in codes:
+        if awk:
+            named = _verb_on_line(line.top) if index in unknown else None
+            found = _AWK_SPAWN_RE.search(code)
+            if named is None and found is not None:
+                named = _code_mention(code, line.top) or found.group(0)
+        else:
+            named = names_terraform(line.top, "bash") \
+                if index in unknown else None
+            if named is None and _sed_runs(code):
+                named = _code_mention(code, line.top) or head
+        if named is not None:
+            return named
+    return None
+
+
 def _run_time_word(line):
     """`(kind, word)` for a command word made at run time: 1.2.35's rule
     over the whole line, whatever follows the word (SRL-2308 r3)."""
@@ -2814,6 +3012,95 @@ def _made_at_run_time(word, resolved):
     if spellings is not None and spellings != [word]:
         return not all(_known_value(s) for s in spellings)
     return _unresolved_head(word, resolved)
+
+
+# --- a program by path under a run-time directory (SRL-2308 r4, r3-2) --------
+#
+# `$W/stub.sh`, `"$T/stub"`, `S=$W/stub.sh; $S` name their program by its
+# literal last part, and stay trusted ONLY when (a) no operand is a changing
+# terraform verb (`_FALLBACK_VERBS`, or `-destroy`) and (b) the same line
+# writes, creates, copies, moves, links or chmods nothing into that
+# directory or at that name. Otherwise the line is gated as 1.2.35 gated
+# it (`_verb_on_line`): what such a program runs is not known.
+_LINE_WRITERS = frozenset((
+    "tee", "cp", "mv", "ln", "link", "install", "chmod", "chown", "touch",
+    "rsync", "dd", "truncate", "mkfifo", "curl", "wget", "tar", "unzip",
+    "patch", "sed"))
+_REDIRECT_TARGET_RE = re.compile(
+    r"(?:\d+|&)?>>?[|&]?\s*(\"[^\"]*\"|'[^']*'|[^\s;&|<>()]+)")
+_LINE_WORD_RE = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'[^']*'|[^\s\"']+")
+
+
+def _refs(word):
+    """The variable names `$NAME`/`${NAME}` in raw `word`."""
+    return {m.group(1) or m.group(2) for m in _FALLBACK_REF_RE.finditer(word)}
+
+
+def _last_part(word):
+    return re.split(r"[/\\=]", _dequote(word).rstrip("/\\"))[-1]
+
+
+def _line_writes_into(top, base, names):
+    """True when line `top` may write, create, copy, move, link or chmod
+    something at name `base` or into a directory the variables `names`
+    spell: a redirection, or an operand of a `_LINE_WRITERS` command (`sed`
+    with `-i`), naming either. With no `names`, any operand made at run
+    time counts (fail closed)."""
+    def touches(word):
+        if _last_part(word) == base:
+            return True
+        return bool(_refs(word) & names) if names else \
+            bool(re.search(r"[$`]", word))
+    if any(touches(m.group(1)) for m in _REDIRECT_TARGET_RE.finditer(top)):
+        return True
+    for segment in re.split(r"[;&|\n(){}`]", top):
+        words = _LINE_WORD_RE.findall(segment)
+        while words and (_FALLBACK_ASSIGN_RE.match(words[0])
+                         or _head_name(_dequote(words[0]))
+                         in _FALLBACK_WRAPPERS):
+            words = words[1:]
+            while words and re.match(r"-|\d", words[0]):
+                words = words[1:]  # the wrapper's options and duration
+        head = _head_name(_dequote(words[0])) if words else ""
+        if head not in _LINE_WRITERS or head == "sed" and not any(
+                re.match(r"-[a-zA-Z]*i|--in-place", _dequote(w))
+                for w in words[1:]):
+            continue
+        if any(touches(w) for w in words[1:]):
+            return True
+    return False
+
+
+def _path_program_trusted(args, top, base, names=frozenset()):
+    """True when a program by path `.../base` under a run-time directory,
+    run with argument words `args`, keeps its literal name's trust: rules
+    (a) and (b) in the section comment. `names`: the variables its own
+    word spells; those spelling `.../base` elsewhere on `top` count too."""
+    for arg in args:
+        value = _dequote(arg).lower()
+        if value in _FALLBACK_VERBS or value.startswith("-destroy"):
+            return False
+    names = set(names)
+    for word in _LINE_WORD_RE.findall(top):
+        if _last_part(word) == base:
+            names |= _refs(word)
+    return not _line_writes_into(top, base, names)
+
+
+def _run_time_path(word, resolved):
+    """`(bases, names)` when raw command `word` is a program by path whose
+    directory holds an expansion (`$W/stub`, or `$S` with `S=$W/stub.sh` or
+    `S=/opt/x/stub`), else None: the literal last part of each spelling,
+    and the variables it and its values spell."""
+    if not re.search(r"[$`]", word):
+        return None
+    spellings = _resolve_word(word, resolved)
+    names = _refs(word)
+    for spelling in spellings or ():
+        names |= _refs(spelling)
+    bases = {_last_part(s) for s in (spellings or [word])
+             if re.search(r"[/\\]", _dequote(s))}
+    return (bases, names) if bases else None
 
 
 def _fallback_command(words, resolved, line, wrapper=None, meta=None):  # pylint: disable=too-many-return-statements,too-many-branches
@@ -2835,6 +3122,13 @@ def _fallback_command(words, resolved, line, wrapper=None, meta=None):  # pylint
         # and a resolved variable whose value is a bare name, a shell, an
         # interpreter or a wrapper, or not one word (`T=ls`, `T=bash`,
         # `T=sudo`, `T=`, `T='a b'`): SRL-2308 r3.
+        return _run_time_word(line)
+    found = _run_time_path(words[0], resolved)
+    if found is not None and _word_names_tool(words[0], resolved) is None \
+            and not all(_path_program_trusted(words[1:], line.top, base,
+                                              found[1]) for base in found[0]):
+        # `"$W/stub" apply`, `printf ... > "$T/stub"; "$T/stub"`: 1.2.35's
+        # rule (SRL-2308 r4, r3-2).
         return _run_time_word(line)
     spellings = _resolve_word(words[0], resolved)
     if spellings is not None and spellings != [words[0]]:
@@ -2859,6 +3153,9 @@ def _fallback_command(words, resolved, line, wrapper=None, meta=None):  # pylint
             return None, None
         return "tool", named
     rest = list(words[1:])
+    named = _stream_editor_names(head, rest, line, resolved)
+    if named is not None:
+        return "tool", named  # awk/sed starting a process (SRL-2308 r4)
     spec = _interp_family(head)
     if spec is not None:
         # `python3 -c`, `node -e`, `perl -e`, a heredoc into `python3 -`:
@@ -3486,8 +3783,10 @@ def _hole_known(argv, top):
     (`command_word_names_tool`). A literal last part under a run-time
     directory (`$W/stub.sh apply`) names its program: the tool (gated but
     for one read-only subcommand), one that runs another (made at run time
-    after all), or any other program (not gated, as a literal path is
-    not)."""
+    after all), or any other program -- not gated only while it keeps the
+    trust `_path_program_trusted` allows (SRL-2308 r4, r3-2: no changing
+    verb among its operands, and nothing written into its directory or at
+    its name on the line); otherwise made at run time too."""
     first = argv[0]
     if len(argv) == 1 and _FALLBACK_ASSIGN_RE.match(first):
         named = command_word_names_tool(top)
@@ -3500,7 +3799,9 @@ def _hole_known(argv, top):
                 and argv[1] in _TF_READ_ONLY:
             return None
         return base, True
-    return False if _runs_other(_head_name(base)) else None
+    if _runs_other(_head_name(base)):
+        return False
+    return None if _path_program_trusted(argv[1:], top, base) else False
 
 
 class _TerraformTool:

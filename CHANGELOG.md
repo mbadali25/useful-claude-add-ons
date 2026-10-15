@@ -65,6 +65,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   program `timeout` runs (`timeout 1500 codex exec "$(cat p)"`) is that program's argument, and
   `[` is the test builtin, not a glob. `R=$W; python3 -c "...print('$R')"` is refused again: a
   run-time value inside interpreter code is code.
+- **Fail closed (review round 3).** On a line the fallbacks read, an awk program (`awk`, `gawk`,
+  `mawk`, `nawk`, `busybox awk`) that can start a process (`system()`, `print | "cmd"`,
+  `"cmd" | getline`, `|&`, `@load`/`@include`) is refused, and so is a sed script with the `e`
+  command or the `s///e` flag; `awk -f`/`sed -f` and a program made at run time are decided by
+  1.2.35's rule, and a sed script made at run time is refused when the line names terraform.
+  `read`, `mapfile`, `readarray`, `declare` and `printf -v` behind `command`, `builtin` or another
+  wrapper (`command read "$N"`) now make the line's variables unknown. A program by path under a
+  run-time directory (`$W/stub`, `"$T/stub"`, `S=$W/stub.sh; $S`) keeps its literal name only when
+  no operand is a changing verb (`apply`, `destroy`, `import`, `state`, `-destroy`, ...) and the
+  line writes, copies, moves, links or chmods nothing into that directory or at that name;
+  otherwise 1.2.35's rule decides. On a line the precise reader reads cleanly, plain awk/sed and a
+  literal script path are still not gated, as in 1.2.35.
 - **Splitting (review round 1).** The fallback's splitter, and the precise reader for the
   delimiter, give up (the line-wide name rule decides) on a substitution or nested expansion inside
   `$((...))` or `${...}` and on a heredoc delimiter quoted both ways (`<<"'END'"`), instead of
@@ -103,7 +115,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (Codex's exact `perl -pe` form was refused there by another layer; `perl -lne` is its fail-open
   twin), as was `real-19`; `r2-6`, print-only code with a comment, was refused there. Three
   round-1 must-allow rows moved to must-refuse (`T=echo; $T apply`, the `for t in echo printf`
-  loop and `R=$W; python3 -c "...('$R')"`).
+  loop and `R=$W; python3 -c "...('$R')"`). Review round 3 adds 28 must-refuse and 10 must-allow
+  rows through both entry points, and 16 sed scripts read directly: every must-refuse row,
+  Codex's r3-1..r3-3 and the gate's variants among them, was allowed by the round-3 head through
+  `cloud-guard.sh`. The must-allow `srl2308-d-inline-stub` (a stub written into `$T`, then run
+  with `apply`) moved to must-refuse: it is r3-2's shape.
   Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
   `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
   tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
