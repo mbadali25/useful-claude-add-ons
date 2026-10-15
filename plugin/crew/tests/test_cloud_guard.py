@@ -1439,7 +1439,8 @@ def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python
 # send.md heredoc, a `sed`/`python3 -c` with a `$VAR`, an inline stub test,
 # a heredoc after `W=...`, a `.ps1` copied into `$W/amut`. Each is a FAILING
 # control on crew 1.2.35 (reverting either fallback turns it red), except the
-# two `-verbatim` rows, which 1.2.35 already allowed. SRL2308_STILL_GATED pins that a real terraform/tofu invocation is still
+# two `-verbatim` rows, which 1.2.35 already allowed. SRL2308_STILL_GATED
+# pins that a real terraform/tofu invocation is still
 # refused, both on a plain line and through each fallback (`A=(1)` makes the
 # reader give up; `X=$W` makes a run-time command word).
 SRL2308_NOT_GATED = [

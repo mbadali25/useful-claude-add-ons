@@ -31,10 +31,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   not before.
 - **Not changed.** `npx terraform apply` on a line the reader reads cleanly is still not gated: the
   precise path does not know `npx` as a wrapper, before and after this change.
-- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: nine must-allow rows (each red on 1.2.35),
+- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: thirteen must-allow rows (eleven red on 1.2.35;
+  the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
+  allowed and are pinned),
   twenty-four must-refuse rows through both fallbacks, and a check that each unreadable-line row
-  really is one the reader gives up on. The four cloud-guard test files pass (2,748 with
-  `test_guards.py`, `test_guards_env_dump.py`, `test_crew_tfplan.py` and `test_crew_unattended.py`).
+  really is one the reader gives up on. The whole crew suite passes (19,844 passed,
+  283 skipped, run before the (e)/(f) rows were added; the guard files re-run after).
   Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
   `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
   tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
