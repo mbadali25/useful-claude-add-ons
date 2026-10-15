@@ -1605,3 +1605,215 @@ def test_srl2308_the_unreadable_fallback_finds_the_command_word(case):
         crew_guards._GateReader(text, 0, []).read()  # pylint: disable=protected-access
     assert crew_guards.command_trigger(
         text, cloud_guard.GATE_HELPERS) is not None, text
+
+
+# --- SRL-2308 review round 1: lines that may run terraform, refused -------
+#
+# Codex r1 and the gate found the new fallback fail-open. Each row below is
+# a must-refuse control, run through BOTH the python entry point and the
+# real hook, `cloud-guard.sh` (block config). Every row marked `allowed@r1`
+# was ALLOWED by the reviewed head 3212cde1 (crew 1.2.36 r1) through
+# cloud-guard.sh; the r1-2/r1-3 rows were already refused end to end there
+# by another layer, and the splitter defect itself is pinned by
+# `test_srl2308_r2_the_splitter_gives_up_where_it_cannot_follow`.
+_OS_TF = "import os; os.system('terraform apply')"
+SRL2308_R2_REFUSE = [
+    # r1-1: a glob as a loop variable or an assigned value (allowed@r1).
+    ("r1-1-for-glob-exe", "Bash",
+     "for f in /opt/tf/*.exe; do $f apply; done"),
+    ("r1-1-for-glob-exe-quoted", "Bash",
+     "for f in *.exe; do \"$f\" destroy; done"),
+    ("r1-1-for-glob-ps1-pwsh", "Bash",
+     "W=$S/x; for f in $W/bin/*.ps1; do pwsh -File $f apply; done"),
+    ("r1-1-var-glob-exe", "Bash", "T=/opt/tf/*.exe; $T apply"),
+    ("r1-1-for-glob-cmd", "Bash",
+     "W=$S/x; for f in /opt/tf/*.cmd; do $f destroy -auto-approve; done"),
+    ("r1-1-for-glob-stem", "Bash", "for f in /opt/tf/t*; do $f apply; done"),
+    # The gate's worse case: a value that is not a literal word counted as
+    # "resolved, not terraform" (allowed@r1).
+    ("r1-v-from-var", "Bash", "T=$X; $T apply"),
+    ("r1-v-from-subst", "Bash", "T=$(cat /tmp/toolname); $T apply"),
+    ("r1-v-from-positional", "Bash", "T=$1; $T destroy -auto-approve"),
+    ("r1-v-assigned-glob", "Bash", "T=/opt/tf/t*; $T apply"),
+    # r1-4: interpreter code that runs terraform (allowed@r1; the plain
+    # `python3 -c` rows were allowed by 1.2.35 as well).
+    ("r1-4-python-c", "Bash", f"python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-c-u", "Bash", f"A=(1); python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-c-h", "Bash", f"W=$S/x; python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-subprocess-h", "Bash",
+     "W=$S/x; python3 -c \"import subprocess; "
+     "subprocess.run(['terraform','apply'])\""),
+    ("r1-4-python-heredoc-h", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nimport os\n"
+     "os.system('terraform apply -auto-approve')\nEOF"),
+    ("r1-4-node-e-h", "Bash",
+     "W=$S/x; node -e \"require('child_process').execSync('terraform "
+     "apply')\""),
+    ("r1-4-perl-e-h", "Bash", "W=$S/x; perl -e 'system(\"terraform apply\")'"),
+    ("r1-4-ruby-e-h", "Bash", "W=$S/x; ruby -e 'system(\"terraform apply\")'"),
+    # r1-2 / r1-3, Codex's exact forms.
+    ("r1-2-arith-subst", "Bash", "A=(1); echo $(( $(terraform apply) + 1 ))"),
+    ("r1-2-param-subst", "Bash", "A=(1); echo ${X:-$(terraform apply)}"),
+    ("r1-3-mixed-delim", "Bash",
+     "A=(1); cat <<\"'END'\"\n'END'\nterraform apply\nEND"),
+    # Found while fixing round 1 (each allowed@r1 unless marked): how else a
+    # variable gets a value the line does not show...
+    ("r2-param-op", "Bash", "T=terrafxrm; ${T/x/o} apply"),
+    ("r2-append", "Bash", "T=terra; T+=form; $T apply"),
+    ("r2-conditional", "Bash", "false && T=echo; $T apply"),
+    ("r2-prefix-only", "Bash", "T=echo $T apply"),
+    ("r2-read", "Bash", "T=echo; read T; $T apply"),
+    ("r2-subshell", "Bash", "(T=echo); $T apply"),
+    ("r2-if-body", "Bash", "if false; then :; T=echo; fi; $T apply"),
+    ("r2-nameref", "Bash", "declare -n T=TF; $T apply"),
+    ("r2-printf-v", "Bash", "T=echo; printf -v T %s terraform; $T apply"),
+    ("r2-printf-v-attached", "Bash",
+     "T=echo; printf -vT %s terraform; $T apply"),
+    ("r2-default-assign", "Bash",
+     "T=echo; unset T; : ${T:=terraform}; $T apply"),
+    ("r2-pipeline", "Bash", "T=echo | true; $T apply"),
+    ("r2-background", "Bash", "T=echo & $T apply"),
+    ("r2-select", "Bash", "select T in echo; do $T apply; done"),
+    ("r2-mapfile", "Bash", "T=echo; mapfile -t T < /tmp/x; $T apply"),
+    ("r2-case-arm", "Bash", "case $X in a) T=echo;; esac; $T apply"),
+    ("r2-function-body", "Bash", "f() { T=echo; }; $T apply"),
+    ("r2-function-keyword", "Bash", "function g { T=echo; }; $T apply"),
+    ("r2-if-fi-as-word", "Bash",
+     "if false; then echo fi; T=echo; fi; $T apply"),
+    ("r2-for-empty-list", "Bash", "for f in; do :; done; $f apply"),
+    ("r2-use-before-assign", "Bash", "W=$S/x; $T apply; T=echo"),
+    ("r2-read-indirect", "Bash", "T=echo; read \"$N\" <<< terraform; $T apply"),
+    ("r2-ifs", "Bash", "IFS=x; T=terraformxapply; $T"),
+    ("r2-ifs-quoted", "Bash", "IFS=\" x\"; T=terraformxapply; $T"),
+    ("r2-subst-command-word", "Bash", "W=$S/x; $(cat /tmp/toolname) apply"),
+    # ...and code handed to an interpreter or a shell.
+    ("r2-python-plain-subprocess", "Bash",
+     "python3 -c \"import subprocess; subprocess.run(['terraform','apply'])\""),
+    ("r2-python-heredoc-plain", "Bash",
+     "python3 - <<'EOF'\nimport os\nos.system('terraform apply -auto-approve')"
+     "\nEOF"),
+    ("r2-python-herestring-h", "Bash", f"W=$S/x; python3 <<< \"{_OS_TF}\""),
+    ("r2-python-pipe-h", "Bash", f"W=$S/x; echo \"{_OS_TF}\" | python3"),
+    ("r2-heredoc-pipe-python", "Bash",
+     "cat <<'EOF' | python3\nimport os\nos.system('terraform apply')\nEOF"),
+    ("r2-php-r-h", "Bash", "W=$S/x; php -r 'system(\"terraform apply\");'"),
+    ("r2-perl-pipe-open-u", "Bash",
+     "A=(1); perl -e 'open(F, \"terraform apply |\"); print <F>'"),
+    ("r2-node-p-u", "Bash",
+     "A=(1); node -p \"require('child_process').execSync('terraform "
+     "apply').toString()\""),
+    ("r2-python-expansion-h", "Bash",
+     "T=terraform; W=$S/x; python3 -c \"import os; os.system('$T apply')\""),
+    ("r2-python-runtime-word-h", "Bash",
+     "W=$S/x; python3 -c 'import os; os.system(\"$TF apply\")'"),
+    ("r2-env-python-h", "Bash", f"W=$S/x; env FOO=1 python3 -c \"{_OS_TF}\""),
+    ("r2-python-Ic-h", "Bash", f"W=$S/x; python3 -Ic \"{_OS_TF}\""),
+    ("r2-python-W-value-h", "Bash",
+     f"W=$S/x; python3 -W ignore -c \"{_OS_TF}\""),
+    ("r2-xargs-python-c-h", "Bash",
+     f"W=$S/x; echo \"{_OS_TF}\" | xargs -0 python3 -c"),
+    ("r2-ruby-interpolation-h", "Bash",
+     "W=$S/x; ruby -e 'puts \"#{system(\"terraform apply\")}\"'"),
+    ("r2-python-fstring-h", "Bash",
+     "W=$S/x; python3 -c \"print(f'{__import__(\\\"os\\\").system("
+     "\\\"terraform apply\\\")}')\""),
+    ("r2-bash-file-glob-h", "Bash",
+     "W=$S/x; for f in /opt/tf/*.sh; do bash $f apply; done"),
+    ("r2-bash-c-runtime-word-u", "Bash", "A=(1); bash -c '$TF apply'"),
+    ("r2-heredoc-bash-runtime-word-u", "Bash",
+     "A=(1); bash <<'EOF'\n$TF destroy\nEOF"),
+    ("r2-node-precise", "Bash",
+     "node -e \"require('child_process').execSync('terraform apply')\""),
+    ("r2-perl-precise", "Bash", "perl -e 'system(\"terraform apply\")'"),
+    ("r2-sudo-python-precise", "Bash", f"sudo python3 -c \"{_OS_TF}\""),
+]
+
+# Shapes the stricter reading must still allow: a literal value, a value
+# whose program name is literal (`S=$W/stub.sh`), and interpreter code that
+# only prints, or names terraform only as a path.
+SRL2308_R2_ALLOW = [
+    ("r2-ok-literal-var", "Bash", "T=echo; $T apply"),
+    ("r2-ok-for-literal", "Bash",
+     "for t in echo printf; do $t apply; done"),
+    ("r2-ok-path-var-script", "Bash", "S=$W/stub.sh; bash $S apply"),
+    ("r2-ok-python-print", "Bash", "python3 -c \"print('terraform apply')\""),
+    ("r2-ok-python-print-u", "Bash",
+     "A=(1); python3 -c \"print('terraform apply')\""),
+    ("r2-ok-python-heredoc-print-h", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nprint('terraform apply -auto-approve')"
+     "\nEOF"),
+    ("r2-ok-node-console-h", "Bash",
+     "W=$S/x; node -e \"console.log('terraform apply')\""),
+    ("r2-ok-perl-print-h", "Bash",
+     "W=$S/x; perl -e 'print \"terraform apply\\n\"'"),
+    ("r2-ok-python-path-h", "Bash",
+     "W=$S/x; python3 -c \"import json; "
+     "print(json.load(open('terraform/x.json')))\""),
+    ("r2-ok-arith-var-h", "Bash", "W=$S/x; echo $((n+$m)) apply"),
+    ("r2-ok-param-default-h", "Bash", "W=$S/x; echo ${X:-$HOME} apply"),
+    ("r2-ok-bash-c-literal-u", "Bash", "A=(1); bash -c 'echo apply'"),
+    ("r2-ok-python-script-h", "Bash", "W=$S/x; python3 $W/tool.py apply"),
+    ("r2-ok-ifs-read-h", "Bash",
+     "W=$S/x; while IFS= read -r l; do echo \"$l\"; done < terraform/x.tf"),
+]
+
+_R2_DRIVERS = [pytest.param("python", id="python"),
+               pytest.param("bash", id="bash", marks=needs_bash)]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R2_REFUSE,
+                         ids=[c[0] for c in SRL2308_R2_REFUSE])
+def test_srl2308_r2_a_line_that_may_run_terraform_is_refused(tmp_path, driver,
+                                                             case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R2_ALLOW,
+                         ids=[c[0] for c in SRL2308_R2_ALLOW])
+def test_srl2308_r2_a_line_that_cannot_run_terraform_is_allowed(tmp_path,
+                                                                driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@needs_bash
+@pytest.mark.parametrize("case", SRL2308_REAL_ALLOW + SRL2308_NOT_GATED,
+                         ids=[c[0] for c in SRL2308_REAL_ALLOW
+                              + SRL2308_NOT_GATED])
+def test_srl2308_r2_the_allowed_rows_hold_through_the_bash_hook(tmp_path,
+                                                                case):
+    _allow("bash", tmp_path, case)
+
+
+@needs_bash
+@pytest.mark.parametrize("case", SRL2308_REAL_REFUSE + SRL2308_STILL_GATED,
+                         ids=[c[0] for c in SRL2308_REAL_REFUSE
+                              + SRL2308_STILL_GATED])
+def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
+                                                                case):
+    _block("bash", tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("text", [
+    "A=(1); echo $(( $(terraform apply) + 1 ))",
+    "A=(1); echo ${X:-$(terraform apply)}",
+    "A=(1); echo ${X:-`terraform apply`}",
+    "A=(1); echo ${X:-${Y:-$(terraform apply)}}",
+    "A=(1); echo $(( `terraform apply` + 1 ))",
+    "W=$S/x; cat <<EOF\n$(( $(terraform apply) + 1 ))\nEOF",
+    "A=(1); cat <<\"'END'\"\n'END'\nterraform apply\nEND",
+])
+def test_srl2308_r2_the_splitter_gives_up_where_it_cannot_follow(text):
+    """r1-2 and r1-3 at the splitter itself: a substitution inside
+    `$((...))` or `${...}`, and a delimiter quoted both ways, make it give up
+    (`_Unsure`) instead of skipping text bash runs."""
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._CommandSplitter(text).split()  # pylint: disable=protected-access
+
+
+def test_srl2308_r2_the_precise_reader_gives_up_on_a_mixed_delimiter():
+    """r1-3 on the precise path: `<<"'END'"` ends at `'END'` in bash."""
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._GateReader(  # pylint: disable=protected-access
+            "cat <<\"'END'\"\n'END'\nterraform apply\nEND", 0, []).read()

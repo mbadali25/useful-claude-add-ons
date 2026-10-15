@@ -1601,8 +1601,16 @@ WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
 SRL-2308): written directly or by path, behind a wrapper (`env`, `npx`,
 `sudo`, `timeout`, `xargs`, ...), as `$(command -v terraform)`, as a variable
 whose literal value on the same line names one (`x=terraform; $x destroy` is
-refused), or as a variable the line never sets followed by a changing verb
-(`$TF apply`, `$TF destroy`). A mere mention no longer counts there:
+refused), or as a variable crew cannot resolve followed by a changing verb
+(`$TF apply`, `$TF destroy`). A variable is resolved only when every way the
+line sets it is a plain `NAME=literal` (or a `for NAME in` list of literals)
+standing alone, run unconditionally before it is used, outside any block,
+subshell or pipeline; `T=$X`, `T=$1`, `T=$(cat f)`, `T=/opt/tf/t*`,
+`for f in *.exe`, `T+=x`, `read T`, `printf -v T`, `T=x cmd` and a `source` or
+`eval` on the line all leave it unresolved, so `$T apply` is refused. An
+interpreter's code (`python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`,
+a heredoc or here-string fed to one) that names terraform and does more than
+print is refused too. A mere mention no longer counts there:
 `W=$S/wt; python3 - <<'EOF'` with "apply" in the Python, a `sed` range or
 `python3 -c` script on a line with a `$VAR`, a heredoc writing notes, and
 `$T/stub apply` (a stub whose name is literal) all pass, and so does `$EDITOR
@@ -1794,7 +1802,11 @@ started some other way. Each of these runs unjudged:
 - BusyBox applets: `busybox env terraform destroy -auto-approve`,
   `busybox timeout 60 terraform destroy -auto-approve`
 - git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
-- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
+- an interpreter whose code names the tool only at run time or from a file:
+  `python3 -c "import os; os.system(os.environ['TF'] + ' destroy')"`,
+  `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
+  or fed by a heredoc or here-string, that names terraform and does more than
+  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`
 - a script file: `bash deploy.sh`
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,

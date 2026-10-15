@@ -10,6 +10,13 @@ be wrong can be closed on evidence.
   a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
   ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
 
+- **Split `plugin/crew/hooks/scripts/crew_guards.py` (over `.pylintrc`'s 3400 lines).** SRL-2308's
+  review round 2 (the command-word fallback's variable and interpreter reading) took it past 3400;
+  it carries a module-level `# pylint: disable=too-many-lines`, as `crew_config.py` and
+  `crew_autopilot.py` do. The natural seam is the SRL-2308 fallback (`_CommandSplitter` through
+  `command_word_names_tool`), which `crew_guards` calls in three places; moving it needs a ticket
+  that also moves its sabotage rows.
+
 - **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
   every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
   read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`

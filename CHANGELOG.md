@@ -29,6 +29,29 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   heredoc bodies and quoted arguments are data. The precise reading, the `xargs` path and
   PowerShell are unchanged. `$TF apply` on a line the reader gives up on is now gated where it was
   not before.
+- **Variables (review round 1).** A variable counts as resolved only when every way the line sets
+  it is a plain `NAME=literal` (a directory part may hold a variable: `S=$W/stub.sh` runs
+  `stub.sh`) or a `for NAME in` list of literals, standing alone, at the top level, run
+  unconditionally and before the command that uses it. `T=$X`, `T=$1`, `T=$(cat f)`,
+  `T=/opt/tf/t*`, `for f in *.exe`, `T+=x`, `read T`, `printf -v T`, `mapfile T`, `declare -n`,
+  `T=x cmd`, `${T:=x}`, an assignment after `&&`/`||`, in a pipeline, subshell, `if`/`case`/loop
+  body or function, a `source`/`.`/`eval` or an `IFS` on the line all leave it unresolved (and a
+  line making IFS split on more than blanks is refused when it names the tool anywhere), so
+  `$T apply` is refused. `${T/x/o}` and `$(...)` as a command word are made at run time;
+  `T=terra; U=form; $T$U apply` and `T=sudo; $T terraform apply` are read as the command they
+  spell. A script crew cannot name run with a changing verb (`for f in *.ps1; do pwsh -File $f
+  apply; done`) is refused, and so is a `bash -c` or heredoc'd shell script with `$TF apply` in it.
+- **Interpreters (review round 1, on both paths).** `python`/`py`/`pypy`, `node`/`nodejs`/`bun`,
+  `deno eval`, `perl`, `ruby` and `php` code given on the command line (`-c`, `-e`, `-p`, `-r`,
+  `--eval`, ...), or fed by a heredoc, here-string or pipe, is refused when it names terraform,
+  terragrunt or tofu (or a `$VAR` before a changing verb) and does more than print: anything beyond
+  `print`/`puts`/`console.log`-style calls and plain strings. `python3 -c "print('terraform
+  apply')"` still passes; `python3 -c "import os; os.system('terraform apply')"` is refused, which
+  1.2.35 allowed on a plain line.
+- **Splitting (review round 1).** The fallback's splitter, and the precise reader for the
+  delimiter, give up (the line-wide name rule decides) on a substitution or nested expansion inside
+  `$((...))` or `${...}` and on a heredoc delimiter quoted both ways (`<<"'END'"`), instead of
+  skipping text bash runs.
 - **Wildcards (shared name check).** `crew_guards._names_tool` no longer counts a wildcard whose
   only literal letters are an extension (`*.ps1`, `*.exe`) as naming terraform: it could match
   `terraform.ps1`, but so could every script on the disk, and a `for f in test/*.ps1` or `cp *.ps1`
@@ -52,7 +75,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
   allowed and are pinned), the 25 real rows, thirty-nine must-refuse rows through both fallbacks
   (the read-only allowance's abuse cases among them) plus `real-24`, and a check that each
-  unreadable-line row really is one the reader gives up on.
+  unreadable-line row really is one the reader gives up on. Review round 1 adds 68 must-refuse
+  and 14 must-allow rows, each run through `cloud_guard.py` and the real hook `cloud-guard.sh`
+  (block config): 65 of the 68 were allowed by the round-1 head through `cloud-guard.sh`, the
+  other three (Codex's exact `$((...))`, `${...}` and mixed-delimiter forms) were refused there by
+  another layer and their splitter defect is pinned directly. The real and earlier rows also run
+  through `cloud-guard.sh` now.
   Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
   `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
   tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven

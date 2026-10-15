@@ -25,6 +25,7 @@ nothing in the suite patches one through `crew_state` -- a string-keyed patch
 there rebinds a copy the reading function never sees, which is a guard failing
 open while wearing the label of a check that happened.
 """
+# pylint: disable=too-many-lines  # over 3400 after SRL-2308 r2; the split is owed (TODO.md)
 import fnmatch
 import os
 import re
@@ -1518,8 +1519,11 @@ class _GateReader:
             self.pos += 1
         raw = "".join(raw)
         # A backslash beside a quote is dequoted differently inside and
-        # outside the quotes (`<<'E\OF'` ends at `E\OF`): not read.
+        # outside the quotes (`<<'E\OF'` ends at `E\OF`), and so is a
+        # delimiter quoted both ways (`<<"'END'"` ends at `'END'`; SRL-2308
+        # r2): not read.
         mixed = "\\" in raw and ("'" in raw or '"' in raw)
+        mixed = mixed or "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
         if not raw or odd or mixed or "$" in raw or "`" in raw:
             raise _Unsure("a heredoc delimiter crew cannot spell")
@@ -1715,7 +1719,26 @@ _FALLBACK_RESERVED = frozenset((
     "until", "for", "in", "case", "esac", "select", "coproc", "[[", "]]"))
 _FALLBACK_ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?"
                                  r"\+?=(.*)$", re.DOTALL)
-_FALLBACK_VAR_RE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)")
+# Reserved words that open and close a block whose body may run never, many
+# times, or later (`f() { T=x; }`): an assignment inside one is not a value
+# crew can rely on (SRL-2308 r2).
+_FALLBACK_OPENERS = frozenset(("if", "while", "until", "for", "select",
+                               "case", "{"))
+_FALLBACK_CLOSERS = frozenset(("fi", "done", "esac", "}"))
+# A variable as written: `$T` or `${T}`, nothing else (`${T/x/o}` is not).
+_FALLBACK_REF_RE = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}"
+                              r"|([A-Za-z_][A-Za-z0-9_]*))")
+# Any other `$` (not `$'...'`/`$"..."`) or a backquote: made at run time.
+_FALLBACK_LOOSE_RE = re.compile(r"`|\$(?!['\"])")
+_FALLBACK_NAME_RE = re.compile(r"(?<![\w$])[A-Za-z_]\w*")
+_FALLBACK_OPS = (";;&", ";;", ";&", "&&", "||", "|&", ";", "&", "|")
+# Commands that set variables in ways this reading does not follow, and
+# builtins that set the variable an argument names (`read "$N"` sets the
+# one N names).
+_FALLBACK_OPAQUE_SETTERS = frozenset(("source", ".", "eval"))
+_FALLBACK_SETTERS = frozenset((
+    "read", "mapfile", "readarray", "declare", "typeset", "local", "export",
+    "readonly", "getopts", "let", "unset", "printf"))
 
 
 class _CommandSplitter:
@@ -1723,37 +1746,59 @@ class _CommandSplitter:
     as far as word, command and heredoc boundaries go. Collects the bodies of
     `$(...)`, backquotes and `<(...)` -- code wherever they sit outside single
     quotes, an unquoted heredoc body included; a `$(...)`'s own commands are
-    also among `commands`. Raises `_Unsure` on anything unclosed."""
+    also among `commands`. `metas[i]` says where `commands[i]` sits: the
+    operator `before` and `after` it, `nest` (1 at the top level, more in a
+    subshell or a substitution), and the heredoc `bodies` (with whether each
+    is quoted) and here-strings (`here`, raw) fed to it. Raises `_Unsure` on
+    anything unclosed, and on what it does not follow (SRL-2308 r2): a
+    substitution or a nested expansion inside `$((...))` or `${...}`, and a
+    heredoc delimiter quoted both ways."""
 
     def __init__(self, text):
         self.text, self.pos = text, 0
-        self.commands, self.subs, self.pending = [], [], []
-        self.depth = 0
+        self.commands, self.metas, self.subs, self.pending = [], [], [], []
+        self.depth = self.parens = 0
 
     def split(self):
         self._read(None)
         return self.commands, self.subs
 
-    def _read(self, closer):
+    @staticmethod
+    def _meta():
+        return {"before": None, "after": None, "nest": 1, "bodies": [],
+                "here": []}
+
+    def _read(self, closer):  # pylint: disable=too-many-branches,too-many-statements
         cmd, word = [], []
-        state = {"target": False}
+        state = {"target": None, "before": None, "meta": self._meta(),
+                 "parens": 0}
         self.depth += 1
         if self.depth > 4 * _GATE_DEPTH:
             raise _Unsure("nested too deep")
 
         def end_word():
             if word:
+                if state["target"] == "here":
+                    state["meta"]["here"].append("".join(word))
                 if state["target"]:
-                    state["target"] = False
+                    state["target"] = None
                 else:
                     cmd.append("".join(word))
             word.clear()
 
-        def end_command():
+        def end_command(op):
             end_word()
             if cmd:
+                state["meta"].update(before=state["before"], after=op,
+                                     nest=self.depth + self.parens)
                 self.commands.append(list(cmd))
+                self.metas.append(state["meta"])
             cmd.clear()
+            state["meta"], state["before"] = self._meta(), op
+
+        def paren(step):
+            state["parens"] += step
+            self.parens += step
 
         text = self.text
         while self.pos < len(text):
@@ -1767,19 +1812,27 @@ class _CommandSplitter:
                 end_word()
                 self.pos += 1
             elif char == "\n":
-                end_command()
+                end_command("\n")
                 self.pos += 1
                 self._bodies()
             elif char == "#" and not word:
                 while self.pos < len(text) and text[self.pos] != "\n":
                     self.pos += 1
+            elif char == "(":
+                end_command("(")
+                self.pos += 1
+                paren(1)
+            elif char == ")" and state["parens"]:
+                end_command(")")
+                self.pos += 1
+                paren(-1)
             elif char == ")" and closer == ")":
-                end_command()
+                end_command(")")
                 self.pos += 1
                 self.depth -= 1
                 return
-            elif char in "()":
-                end_command()
+            elif char == ")":
+                end_command(")")
                 self.pos += 1
             elif char in "<>" and text[self.pos + 1:self.pos + 2] == "(":
                 self.pos += 2
@@ -1787,29 +1840,31 @@ class _CommandSplitter:
                 self._read(")")
                 self.subs.append(text[start:self.pos - 1])
                 word.append("$(...)")
-            elif text.startswith(("<<<",), self.pos):
+            elif text.startswith("<<<", self.pos):
                 end_word()
                 self.pos += 3
-                state["target"] = True
+                state["target"] = "here"
             elif text.startswith("<<", self.pos):
                 end_word()
                 self.pos += 2
                 strip = text[self.pos:self.pos + 1] == "-"
                 self.pos += 1 if strip else 0
-                self.pending.append(self._delimiter(strip))
-            elif char in "<>":
+                self.pending.append(self._delimiter(strip) + (state["meta"],))
+            elif char in "<>" or text.startswith("&>", self.pos):
                 end_word()
                 while self.pos < len(text) and text[self.pos] in "<>&|":
                     self.pos += 1
-                state["target"] = True
+                state["target"] = "file"
             elif char in ";&|":
-                end_command()
-                self.pos += 1
+                op = next(o for o in _FALLBACK_OPS
+                          if text.startswith(o, self.pos))
+                end_command(op)
+                self.pos += len(op)
             else:
                 word.append(self._part())
         if closer is not None:
             raise _Unsure("an unclosed (")
-        end_command()
+        end_command(None)
         if self.pending and closer is None:
             raise _Unsure("a heredoc with no body")
 
@@ -1823,9 +1878,12 @@ class _CommandSplitter:
         raw = self.text[start:self.pos]
         # As `_GateReader._delimiter`: a spelling bash dequotes differently
         # from this reading is not read (`<<'E\\OF'` ends at `E\\OF`).
+        # Quoted both ways (`<<"'END'"` ends at `'END'`): not read either.
         escaped_quote = "\\" in raw and ("'" in raw or '"' in raw)
+        both = "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
-        if not raw or escaped_quote or odd or any(c in raw for c in "$`"):
+        if not raw or escaped_quote or both or odd or \
+                any(c in raw for c in "$`"):
             raise _Unsure("a heredoc delimiter crew cannot spell")
         quoted = any(c in raw for c in "'\"\\")
         delim = re.sub(r"\\(.)", r"\1", raw.replace("'", "").replace('"', ""))
@@ -1833,7 +1891,7 @@ class _CommandSplitter:
 
     def _bodies(self):
         while self.pending:
-            delim, strip, quoted = self.pending.pop(0)
+            delim, strip, quoted, meta = self.pending.pop(0)
             lines = []
             while True:
                 if self.pos >= len(self.text):
@@ -1845,9 +1903,11 @@ class _CommandSplitter:
                 if (line.lstrip("\t") if strip else line) == delim:
                     break
                 lines.append(line)
+            meta["bodies"].append(("\n".join(lines), quoted))
             if not quoted:
                 # Only an unquoted body's substitutions are code. A body fed
-                # to a shell is the whole line's mention rule's (`script`).
+                # to a shell is the whole line's mention rule's (`script`);
+                # one fed to an interpreter is its code (`_interpreter_names`).
                 self.subs.extend(_unquoted_body_subs("\n".join(lines)))
 
     def _part(self):
@@ -1890,10 +1950,7 @@ class _CommandSplitter:
             self.subs.append(text[self.pos + 1:end])
             self.pos = end + 1
         elif text.startswith("$((", self.pos):
-            end = text.find("))", self.pos)
-            if end == -1:
-                raise _Unsure("an unclosed $((")
-            self.pos = end + 2
+            self.pos = _arithmetic_end(text, self.pos)
         elif text.startswith("$(", self.pos):
             self.pos += 2
             start = self.pos
@@ -1903,6 +1960,10 @@ class _CommandSplitter:
             end = text.find("}", self.pos)
             if end == -1:
                 raise _Unsure("an unclosed ${")
+            if re.search(r"[`'\"\\{(]", text[self.pos + 2:end]):
+                # `${X:-$(cmd)}`, `${X:-${Y}}`, `${X:-"}"}`: the first `}`
+                # may not end it, and what is inside may run (SRL-2308 r2).
+                raise _Unsure("a ${...} crew does not split")
             self.pos = end + 1
         elif text.startswith("$'", self.pos):
             match = _ANSI_SPAN_RE.match(text, self.pos)
@@ -1913,6 +1974,19 @@ class _CommandSplitter:
             self.pos += 1
 
 
+def _arithmetic_end(text, pos):
+    """Where the `$((...))` at `pos` ends. `_Unsure` when what is inside
+    could run a command or end it elsewhere (`$(( $(cmd) + 1 ))`, a
+    backquote, a paren or brace) -- this reading would skip it (SRL-2308
+    r2)."""
+    end = text.find("))", pos)
+    if end == -1:
+        raise _Unsure("an unclosed $((")
+    if re.search(r"[`(){}]", text[pos + 3:end]):
+        raise _Unsure("arithmetic crew does not split")
+    return end + 2
+
+
 def _unquoted_body_subs(body):
     """The `$(...)` and backquote bodies of an unquoted heredoc body: the
     only part of it that is code."""
@@ -1921,8 +1995,7 @@ def _unquoted_body_subs(body):
         if body[pos] == "\\":
             pos += 2
         elif body.startswith("$((", pos):
-            end = body.find("))", pos)
-            pos = len(body) if end == -1 else end + 2
+            pos = _arithmetic_end(body, pos)
         elif body[pos] == "`" or body.startswith("$(", pos):
             splitter = _CommandSplitter(body)
             splitter.pos = pos
@@ -1941,11 +2014,202 @@ def _dequote(word):
     return word.replace("'", "").replace('"', "")
 
 
-def _word_names_tool(word, assigned, seen=()):
+def _shell_unquote(word):
+    """Raw `word` after bash's quote removal: `'...'` as written, `"..."`
+    with only its own escapes, `$'...'` decoded. Unlike `_dequote`, quotes
+    inside a quoted run stay (`'print("x")'` is `print("x")`)."""
+    out, pos = [], 0
+    while pos < len(word):
+        char = word[pos]
+        if word.startswith("$'", pos):
+            match = _ANSI_SPAN_RE.match(word, pos)
+            out.append(_ansi_c_decode(match.group(1)))
+            pos = match.end()
+        elif char == "'":
+            end = word.find("'", pos + 1)
+            end = len(word) if end == -1 else end
+            out.append(word[pos + 1:end])
+            pos = end + 1
+        elif char == '"':
+            pos += 1
+            while pos < len(word) and word[pos] != '"':
+                if word[pos] == "\\" and word[pos + 1:pos + 2] in \
+                        ("$", "`", '"', "\\", "\n"):
+                    pos += 1
+                out.append(word[pos:pos + 1])
+                pos += 1
+            pos += 1
+        elif char == "\\":
+            out.append(word[pos + 1:pos + 2])
+            pos += 2
+        else:
+            out.append(char)
+            pos += 1
+    return "".join(out)
+
+
+def _raw_expands(word):
+    """True when raw `word` holds an expansion outside single quotes."""
+    pos, in_dq = 0, False
+    while pos < len(word):
+        char = word[pos]
+        if char == "\\":
+            pos += 2
+            continue
+        if char == "'" and not in_dq:
+            end = word.find("'", pos + 1)
+            pos = len(word) if end == -1 else end + 1
+            continue
+        if char == '"':
+            in_dq = not in_dq
+        elif char == "`" or char == "$" and \
+                re.match(r"[\w{(@*#?!$-]", word[pos + 1:pos + 2]):
+            return True
+        pos += 1
+    return False
+
+
+def _literal_value(raw):
+    """The value of a raw assignment value `raw` when its program name is a
+    plain literal, else None (SRL-2308 r2: `T=$X`, `T=$1`, `T=$(cat f)`,
+    `T=/opt/tf/t*` are not values crew can read). Only a directory part may
+    hold a variable (`S=$W/stub.sh` names `stub.sh`, as `$W/stub.sh` itself
+    does); no substitution, glob, brace list, tilde or quote is left."""
+    if any(c in _FALLBACK_REF_RE.sub("", raw) for c in "$`*?[]{}~()<>|;&!\n"):
+        return None
+    value = _dequote(raw)
+    if any(c in value for c in "'\"\\") or \
+            "$" in re.split(r"[/\\]", value)[-1]:
+        return None
+    return value
+
+
+def _sets_unseen(words, rest):
+    """True when command `words` (`rest`: after its leading reserved words)
+    may set variables in a way `_resolved_vars` does not follow: it touches
+    `IFS`, it is `source`/`.`/`eval` (behind a wrapper too), or a builtin
+    that sets the variable an expansion names (`read "$N"`,
+    `printf -v "$N"`)."""
+    if any("IFS" in w for w in words):
+        return True
+    heads = [_head_name(_dequote(w)) for w in rest
+             if not _FALLBACK_ASSIGN_RE.match(w)]
+    if not heads:
+        return False
+    if heads[0] in _FALLBACK_OPAQUE_SETTERS or \
+            heads[0] in _FALLBACK_WRAPPERS and \
+            set(heads) & _FALLBACK_OPAQUE_SETTERS:
+        return True
+    if heads[0] not in _FALLBACK_SETTERS or heads[0] == "printf" and \
+            not any(_dequote(w).startswith("-v") for w in rest[1:]):
+        return False
+    return any("$" in w or "`" in w for w in rest[1:])
+
+
+def _resolved_vars(commands, metas):  # pylint: disable=too-many-branches
+    """name -> the literal values bash may give it on this line, for each
+    variable crew can rely on (SRL-2308 r2). A variable counts only when
+    EVERY way the line sets it is a plain `NAME=literal` standing alone,
+    or a `for NAME in` list of literals, at the top level and run
+    unconditionally (not after `&&`/`||`/`|`, not in a pipeline, a
+    subshell, a substitution, a block or a function body). Any other use of
+    its name -- `read T`, `printf -vT`, `T+=x`, `declare -n`, `T=x cmd`,
+    `${T:=x}`, `unset T`, `U=T` -- or a `source`/`.`/`eval`, an `IFS`, or a
+    builtin that sets a variable named by an expansion (`read "$N"`)
+    anywhere on the line, and it is not resolved: a command word made from
+    it is decided at run time. Returns one map per command: a variable
+    counts for a command only after its first assignment (`$T x; T=echo`
+    runs the environment's T)."""
+    values, first, tainted, depth = {}, {}, set(), 0
+    scan = []  # (text, own name or None): every word, for other uses
+    for index, (words, meta) in enumerate(zip(commands, metas)):
+        lead, before = 0, depth
+        while lead < len(words) and words[lead] in _FALLBACK_RESERVED:
+            depth += (words[lead] in _FALLBACK_OPENERS) - \
+                (words[lead] in _FALLBACK_CLOSERS)
+            lead += 1
+        if words[0] == "function":
+            depth += words.count("{")  # `function g {`: a body follows
+        rest = words[lead:]
+        if depth < 0 or _sets_unseen(words, rest):
+            return [{} for _ in commands]
+        top = meta["nest"] == 1 and before == 0 and \
+            meta["before"] in (None, ";", "\n")
+        settled = top and depth == 0 and \
+            meta["after"] in (None, ";", "\n", "&&", "||")
+        if lead == 1 and words[0] in ("for", "select") and rest and \
+                re.fullmatch(r"[A-Za-z_]\w*", rest[0]):
+            found = [_literal_value(w) for w in rest[2:]] \
+                if rest[1:2] == ["in"] else []
+            scan.extend((w, None) for w in rest[1:])
+            # `for f in LIST; do`: the `for` opened a block; its own
+            # variable is set before the body runs, when the list is not
+            # empty.
+            if words[0] == "select" or not (top and depth == 1) or \
+                    not found or None in found:
+                tainted.add(rest[0])
+            else:
+                values.setdefault(rest[0], []).extend(found)
+                first.setdefault(rest[0], index)
+            continue
+        if rest and all(_FALLBACK_ASSIGN_RE.match(w) for w in rest):
+            for word in rest:
+                name, raw = _FALLBACK_ASSIGN_RE.match(word).groups()
+                scan.append((raw, name))
+                value = _literal_value(raw) if re.match(
+                    r"^[A-Za-z_]\w*=", word) else None
+                if value is None or lead or not settled:
+                    tainted.add(name)
+                else:
+                    values.setdefault(name, []).append(value)
+                    first.setdefault(name, index)
+            continue
+        scan.extend((w, None) for w in words)
+    for word, _own in scan:
+        bare = _FALLBACK_REF_RE.sub(" ", word)
+        tainted.update(n for n in values
+                       if re.search(re.escape(n) + r"(?!\w)", bare))
+    resolved = {n: v for n, v in values.items() if n not in tainted}
+    while True:
+        # A value naming another resolved variable (`S=$S/x`) is not
+        # followed: every spelling's variables are then unresolved ones.
+        loops = {n for n, vs in resolved.items() for v in vs
+                 for m in _FALLBACK_REF_RE.finditer(v)
+                 if (m.group(1) or m.group(2)) in resolved}
+        if not loops:
+            break
+        for name in loops:
+            del resolved[name]
+    return [{n: v for n, v in resolved.items() if first[n] < index}
+            for index in range(len(commands))]
+
+
+def _resolve_word(word, resolved, limit=64):
+    """Every spelling raw `word` takes once each `$NAME`/`${NAME}` in it is
+    replaced by a value the line resolves it to (`_resolved_vars`): `[word]`
+    when it holds no expansion, None when any expansion in it is not one
+    crew resolves, or past `limit` spellings."""
+    out, pos = [""], 0
+    for match in _FALLBACK_REF_RE.finditer(word):
+        literal = word[pos:match.start()]
+        name = match.group(1) or match.group(2)
+        if _FALLBACK_LOOSE_RE.search(literal) or name not in resolved:
+            return None
+        out = [o + literal + v for o in out for v in resolved[name]]
+        if len(out) > limit:
+            return None
+        pos = match.end()
+    if _FALLBACK_LOOSE_RE.search(word[pos:]):
+        return None
+    return [o + word[pos:] for o in out]
+
+
+def _word_names_tool(word, resolved):
     """The word naming the tool that raw `word` could run as, or None: the
     word itself (`/usr/bin/terraform`, `te""rraform`, `$(which tofu)`,
-    `${T:-terraform}`), or a variable in it whose literal value on the line
-    names one (`T=terraform; $T apply`)."""
+    `${T:-terraform}`), or a spelling of it from the line's resolved
+    variables that names one (`T=terraform; $T apply`,
+    `T=terra; U=form; $T$U apply`)."""
     bare = _dequote(word).strip()
     if not bare or word[:1] in "'\"" and "$" not in word and \
             any(c.isspace() for c in bare):
@@ -1953,32 +2217,234 @@ def _word_names_tool(word, assigned, seen=()):
     named = names_terraform(word, "bash")
     if named is not None:
         return named
-    for var in _FALLBACK_VAR_RE.findall(word):
-        if var in seen:
-            continue
-        for value in assigned.get(var, ()):
-            if _word_names_tool(value, assigned, seen + (var,)) is not None:
-                return word
+    spellings = _resolve_word(word, resolved)
+    if spellings and spellings != [word] and any(
+            names_terraform(s, "bash") is not None for s in spellings):
+        return word
     return None
 
 
-def _unresolved_head(word, assigned):
-    """True when the program raw `word` runs is decided only at run time by
-    a variable the line does not assign: its last path part is an
-    expansion (`$TF`, `$D/$TF`), not a literal name (`$T/stub`)."""
+def _unresolved_head(word, resolved):
+    """True when the program raw `word` runs is decided at run time in a
+    way crew does not follow: a command substitution or a `${...}` with an
+    operator anywhere in it (`$(cat f)`, `${T/x/o}`), a glob or brace list in
+    its last path part (`/usr/bin/t*`, find's `{}`), or a variable there
+    the line does not resolve (`$TF`, `$D/$TF`; SRL-2308 r2: `T=$X`,
+    `for f in *.exe`). A literal last part is a name (`$T/stub`)."""
+    if "`" in word or "$(" in word or \
+            re.search(r"\$\{(?![A-Za-z_][A-Za-z0-9_]*\})", word):
+        return True
     base = re.split(r"[/\\]", word)[-1]
-    if any(c in base for c in "*?[{"):
-        return True  # a glob or a brace list: `/usr/bin/t*`, find's `{}`
-    if "$" not in base and "`" not in base:
+    if any(c in _FALLBACK_REF_RE.sub("", base) for c in "*?[{"):
+        return True
+    if "$" not in base:
         return False
-    names = _FALLBACK_VAR_RE.findall(base)
-    return not names or any(n not in assigned for n in names)
+    return _resolve_word(base, resolved) is None
 
 
-def _fallback_command(words, assigned, nested=False):
+# Interpreters that run code given on their command line, or read from
+# stdin when given no script (SRL-2308 r2). Per family: the option letters
+# that take the code (`-c`, `-e`), that take a value (the rest of the word,
+# or the next word), that take only the rest of the word, and that name a
+# module or file to run instead (`python -m`, `php -f`); long options that
+# take the code or a value; a subcommand that takes the code (`deno eval`).
+_INTERPRETERS = (
+    (re.compile(r"^(?:python|pypy|py)[0-9.]*$"),
+     ("c", "WXQ", "", "m", (), (), None)),
+    (re.compile(r"^(?:node|nodejs|bun)$"),
+     ("ep", "r", "", "", ("--eval", "--print"),
+      ("--require", "--import", "--loader", "--experimental-loader"), None)),
+    (re.compile(r"^perl[0-9.]*$"), ("eE", "", "lI0ixMmCdDV", "", (), (), None)),
+    (re.compile(r"^ruby[0-9.]*$"), ("e", "ICEr", "x0lKTWd", "", (), (), None)),
+    (re.compile(r"^php[0-9.]*$"), ("rBRE", "dczt", "", "f", (), (), None)),
+    (re.compile(r"^deno$"), ("", "", "", "", (), (), "eval")),
+)
+# The tool named in interpreter code: a word or a path's last part, never a
+# directory (`terraform/x`) or a dotted file (`terraform.tfstate`).
+_CODE_MENTION_RE = re.compile(
+    r"(?<![\w.-])(?:terraform|terragrunt|tofu)(?:\.(?:exe|cmd|bat|ps1))?"
+    r"(?![\w.\\/-])", re.IGNORECASE)
+# A shell command word made at run time inside interpreter code, before a
+# changing verb (`os.system("$TF apply")`).
+_CODE_RUNTIME_RE = re.compile(
+    r"\$\{?[A-Za-z_]\w*\}?['\"]?\s+['\"]?(?:apply|destroy|import|state|"
+    r"workspace|taint|untaint|force-unlock|run-all|refresh)\b")
+# Names inert code may use: printing, and nothing that reaches a process,
+# a module, an attribute crew does not know, or evaluation.
+_INERT_NAMES = frozenset((
+    "print", "puts", "p", "pp", "say", "echo", "printf", "console", "log",
+    "info", "warn", "error", "debug", "sys", "stdout", "stderr", "write",
+    "flush", "end", "sep", "STDOUT", "STDERR", "True", "False", "None",
+    "true", "false", "null", "nil", "undefined"))
+_INERT_PUNCT = frozenset(" \t\r\n()[],;:.+-*/%=<>!&|^~?0123456789")
+
+
+def _interp_family(head):
+    """The option table of interpreter `head`, or None."""
+    return next((spec for regex, spec in _INTERPRETERS if regex.match(head)),
+                None)
+
+
+def _interp_codes(spec, words):  # pylint: disable=too-many-branches
+    """`(codes, stdin)` for an interpreter's argument words (quotes
+    removed): `codes` as `(index, text)`, the code an option gives and the
+    word it is in; `stdin` true when it is given no code, script or module,
+    so it runs what it reads from stdin."""
+    code, value, rest, script_letters, long_code, long_value, sub = spec
+    codes, script, index = [], False, 0
+    while index < len(words) and not script:
+        word = words[index]
+        if word in ("-", "--"):
+            break
+        if word.startswith("--"):
+            name, equals, given = word.partition("=")
+            if name in long_code and equals:
+                codes.append((index, given))
+            elif name in long_code and index + 1 < len(words):
+                index += 1
+                codes.append((index, words[index]))
+            elif name in long_value and not equals:
+                index += 1
+        elif word.startswith("-") and len(word) > 1:
+            for pos in range(1, len(word)):
+                letter, tail = word[pos], word[pos + 1:]
+                if letter in code + value + script_letters:
+                    if not tail and index + 1 < len(words):
+                        index += 1
+                        tail = words[index]
+                    elif not tail and letter in code:
+                        # `xargs python3 -c`: the code comes from elsewhere
+                        # on the line; read it as stdin's.
+                        return codes, True
+                    if letter in code:
+                        codes.append((index, tail))
+                    script = letter in script_letters
+                    break
+                if letter in rest:
+                    break
+        elif sub is not None and word == sub:
+            codes.extend((i, w) for i, w in enumerate(words[index + 1:],
+                                                       index + 1)
+                         if not w.startswith("-"))
+            return codes, False
+        else:
+            script = True
+        index += 1
+    return codes, not codes and not script
+
+
+def _code_is_inert(code):
+    """True when interpreter `code` can only print: outside its string
+    literals it uses nothing but `_INERT_NAMES`, numbers and plain
+    punctuation, and no string interpolates (`#{}`, `${}`, `{$`, `@{`, a
+    backquote, an f-string's prefix is a name it does not allow)."""
+    pos = 0
+    while pos < len(code):
+        char = code[pos]
+        if char in "'\"":
+            quote = code[pos:pos + 3] if code[pos:pos + 3] in ("'''", '"""') \
+                else char
+            end = pos + len(quote)
+            while end < len(code) and not code.startswith(quote, end):
+                end += 2 if code[end] == "\\" else 1
+            if end >= len(code) or re.search(r"#\{|\$\{|\{\$|@\{|\$\(",
+                                             code[pos:end]):
+                return False
+            pos = end + len(quote)
+        elif char.isalpha() or char == "_":
+            name = re.match(r"\w+", code[pos:]).group(0)
+            if name not in _INERT_NAMES:
+                return False
+            pos += len(name)
+        elif char in _INERT_PUNCT:
+            pos += 1
+        else:
+            return False
+    return True
+
+
+def _code_names_tool(code, expands, line):
+    """The word naming the tool that interpreter `code` may run, or None:
+    the code names one (or a command word made at run time before a
+    changing verb) and is more than inert printing. When the code holds a
+    shell expansion (`expands`), any value can become code, so the whole
+    `line` naming the tool is enough."""
+    found = _CODE_MENTION_RE.search(code)
+    named = found.group(0) if found else names_terraform(code, "bash")
+    if expands:
+        return named or names_terraform(line, "bash")
+    if _code_is_inert(code):
+        return None
+    if named is None:
+        found = _CODE_RUNTIME_RE.search(code)
+        named = found.group(0) if found else None
+    return named
+
+
+def _interpreter_names(spec, raw_words, meta, text):
+    """The word naming the tool an interpreter command runs, or None: its
+    `-c`/`-e`/... code, a heredoc or here-string fed to it, or -- reading
+    stdin with neither -- the whole line `text` as its code."""
+    words = [_shell_unquote(w) for w in raw_words]
+    codes, stdin = _interp_codes(spec, words)
+    for index, code in codes:
+        named = _code_names_tool(code, _raw_expands(raw_words[index]), text)
+        if named is not None:
+            return named
+    meta = meta or {"bodies": [], "here": []}
+    feeds = [(body, not quoted and _raw_expands(body.replace("'", "")))
+             for body, quoted in meta["bodies"]]
+    feeds += [(_shell_unquote(w), _raw_expands(w)) for w in meta["here"]]
+    for body, expands in feeds:
+        named = _code_names_tool(body, expands, text)
+        if named is not None:
+            return named
+    if stdin and not feeds:
+        return _code_names_tool(text, False, text)
+    return None
+
+
+def interpreted_on_line(text, stdin):
+    """The precise path's question for an interpreter command (SRL-2308 r2):
+    the word naming the tool that an interpreter command in bash `text`
+    runs (`_interpreter_names`), or None. When `stdin` and no interpreter
+    command is found at the top of `text` (it is nested in `bash -c`), the
+    whole `text` is read as its code."""
+    if _GATE_CONTROL_RE.search(text):
+        return names_terraform(text, "bash")
+    splitter = _CommandSplitter(text)
+    try:
+        commands, _subs = splitter.split()
+    except _Unsure:
+        return names_terraform(text, "bash")
+    found = False
+    for words, meta in zip(commands, splitter.metas):
+        while words and (words[0] in _FALLBACK_RESERVED
+                         or _FALLBACK_ASSIGN_RE.match(words[0])):
+            words = words[1:]
+        if not words:
+            continue
+        heads = range(len(words)) if _head_name(_dequote(
+            words[0])) in _FALLBACK_WRAPPERS else range(1)
+        for index in heads:
+            spec = _interp_family(_head_name(_dequote(words[index])))
+            if spec is None:
+                continue
+            found = True
+            named = _interpreter_names(spec, words[index + 1:], meta, text)
+            if named is not None:
+                return named
+    if stdin and not found:
+        return _code_names_tool(text, False, text)
+    return None
+
+
+def _fallback_command(words, resolved, nested=False, meta=None, text=""):  # pylint: disable=too-many-arguments,too-many-return-statements,too-many-branches
     """`(kind, word)` for one simple command of raw words: kind "tool" with
     the word naming terraform, "script" for an interpreter of shell code, or
-    None for neither. `nested`: called by a wrapper's own scan, which reads
+    None for neither. `resolved` is `_resolved_vars`'s; `meta` the
+    splitter's for this command and `text` the whole line, for an
+    interpreter's code. `nested`: called by a wrapper's own scan, which reads
     every later word itself, so a wrapper here does not scan again (a chain
     of wrappers stays linear)."""
     words = list(words)
@@ -1987,10 +2453,20 @@ def _fallback_command(words, assigned, nested=False):
         words = words[1:]
     if not words:
         return None, None
+    spellings = _resolve_word(words[0], resolved)
+    if spellings is not None and spellings != [words[0]]:
+        # A command word from the line's resolved variables: the command as
+        # each value makes it (`T=sudo; $T terraform apply`, `T=; $T x`).
+        for spelling in spellings:
+            found = _fallback_command(spelling.split() + words[1:], resolved,
+                                      nested, meta, text)
+            if found[0] is not None:
+                return found
+        return None, None
     head = _head_name(_dequote(words[0]))
     if head in _FALLBACK_DECLARE:
         return None, None
-    named = _word_names_tool(words[0], assigned)
+    named = _word_names_tool(words[0], resolved)
     if named is not None:
         # The tool and ONE read-only subcommand, nothing after it, is not
         # gated (`$S/bin/terraform version`). Any further word -- an option,
@@ -1999,24 +2475,39 @@ def _fallback_command(words, assigned, nested=False):
                 and words[1] in _TF_READ_ONLY:
             return None, None
         return "tool", named
-    if head in _FALLBACK_SCRIPTS:
-        return "script", words[0]
     rest = list(words[1:])
+    spec = _interp_family(head)
+    if spec is not None:
+        # `python3 -c`, `node -e`, `perl -e`, a heredoc into `python3 -`:
+        # code that names the tool and does more than print (SRL-2308 r2).
+        named = _interpreter_names(spec, rest, meta, text)
+        if named is not None:
+            return "tool", named
+    if spec is not None or head in _FALLBACK_SCRIPTS:
+        # `for f in *.ps1; do pwsh -File $f apply; done`: a script crew
+        # cannot name, run with a changing verb (SRL-2308 r2).
+        for index, word in enumerate(rest):
+            if not word.startswith("-") and _unresolved_head(word, resolved):
+                verb = _first_operand([_dequote(w) for w in rest[index + 1:]])
+                if verb is not None and verb.lower() in _FALLBACK_VERBS:
+                    return "tool", word
+    if head in _FALLBACK_SCRIPTS:
+        return "script", _shell_codes(head, rest, meta)
     if head in _FALLBACK_RUNNERS and rest and \
             _dequote(rest[0]) in _FALLBACK_RUNNERS[head]:
         head, rest = "npx", rest[1:]
     if head == "find":
-        return _fallback_find(words, rest, assigned)
+        return _fallback_find(words, rest, resolved, meta, text)
     if head == "command" and any(
             w[:1] == "-" and w[:2] != "--" and set(w[1:]) & set("vV")
             for w in rest):
         return None, None  # `command -v terraform`: a lookup
     if head in _GATE_COPIERS:
         # `ln -s "$(command -v terraform)" tf; ./tf apply`.
-        named = next((n for n in (_word_names_tool(w, assigned) for w in rest)
+        named = next((n for n in (_word_names_tool(w, resolved) for w in rest)
                       if n is not None), None)
         return (None, None) if named is None else ("tool", named)
-    unresolved = _unresolved_head(words[0], assigned)
+    unresolved = _unresolved_head(words[0], resolved)
     if unresolved:
         verb = _first_operand([_dequote(w) for w in rest])
         if verb is not None and verb.lower() in _FALLBACK_VERBS:
@@ -2031,13 +2522,14 @@ def _fallback_command(words, assigned, nested=False):
         for index, word in enumerate(rest):
             if word.startswith("-") or _FALLBACK_ASSIGN_RE.match(word):
                 continue
-            found = _fallback_command(rest[index:], assigned, nested=True)
+            found = _fallback_command(rest[index:], resolved, True, meta,
+                                      text)
             if found[0] is not None:
                 return found
     return None, None
 
 
-def _fallback_find(words, rest, assigned):
+def _fallback_find(words, rest, resolved, meta, text):  # pylint: disable=too-many-arguments
     """`find ... -exec CMD ... ;`: each command it runs, read as one; the
     found path `{}` as the command word is the tool when find's own words
     name it (`find . -name terraform -exec {} destroy ';'`)."""
@@ -2050,30 +2542,14 @@ def _fallback_find(words, rest, assigned):
                 break
             sub.append(arg)
         if sub and "{}" in sub[0]:
-            named = next((n for n in (_word_names_tool(w, assigned)
+            named = next((n for n in (_word_names_tool(w, resolved)
                                       for w in words) if n is not None), None)
             if named is not None:
                 return "tool", named
-        found = _fallback_command(sub, assigned)
+        found = _fallback_command(sub, resolved, False, meta, text)
         if found[0] is not None:
             return found
     return None, None
-
-
-def _assignments(commands):
-    """Every `NAME=value` on the line -- leading, or after export/declare/
-    local/readonly/typeset/env -- and every `for NAME in WORDS` (`select`
-    too), as name -> raw values."""
-    out = {}
-    for words in commands:
-        if len(words) > 2 and words[0] in ("for", "select") \
-                and words[2] == "in":
-            out.setdefault(words[1], []).extend(words[3:])
-        for word in words:
-            match = _FALLBACK_ASSIGN_RE.match(word)
-            if match:
-                out.setdefault(match.group(1), []).append(match.group(2))
-    return out
 
 
 def command_word_names_tool(text, depth=0):
@@ -2084,17 +2560,28 @@ def command_word_names_tool(text, depth=0):
         # A CR or other control character: bash and the lexer split it
         # differently (`EOF\r` ends a heredoc to one of them only).
         return names_terraform(text, "bash")
+    found = re.search(r"terraform|terragrunt|tofu", text, re.IGNORECASE)
+    if found and _ifs_splits(text):
+        # A line that makes IFS split on more than blanks splits words where
+        # crew cannot see (`IFS=x; T=terraformxapply; $T`): any spelling
+        # counts.
+        return found.group(0)
+    splitter = _CommandSplitter(text)
     try:
-        commands, subs = _CommandSplitter(text).split()
+        commands, subs = splitter.split()
     except _Unsure:
         return names_terraform(text, "bash")
-    assigned = _assignments(commands)
-    for words in commands:
-        kind, word = _fallback_command(words, assigned)
+    resolved = _resolved_vars(commands, splitter.metas)
+    for words, meta, known in zip(commands, splitter.metas, resolved):
+        kind, word = _fallback_command(words, known, meta=meta, text=text)
         if kind == "tool":
             return word
         if kind == "script":
             named = names_terraform(text, "bash")
+            # And the shell code it runs, read the same way (SRL-2308 r2):
+            # `bash -c '$TF apply'` is a command word made at run time.
+            for code in word or ():
+                named = named or command_word_names_tool(code, depth + 1)
             if named is not None:
                 return named
     for sub in subs:
@@ -2102,6 +2589,36 @@ def command_word_names_tool(text, depth=0):
         if named is not None:
             return named
     return None
+
+
+def _ifs_splits(text):
+    """True when bash `text` may make IFS split on something other than
+    blanks: an `IFS=` whose value, quotes removed, is not only spaces, tabs
+    and newlines (`IFS=x`, `IFS=$X`), or any other mention of the name
+    (`read IFS`, `printf -v IFS`). `IFS= read -r` and `IFS=$'\\n'` do not."""
+    for match in re.finditer(
+            r"(?<![\w$])(?<!\$\{)IFS\b(\+?=((?:\$'(?:[^'\\]|\\.)*'|'[^']*'"
+            r"|\"[^\"]*\"|[^\s;&|'\"])*))?", text):
+        if match.group(1) is None:
+            return True
+        value = _shell_unquote(match.group(2))
+        if any(c not in " \t\n" for c in value):
+            return True
+    return False
+
+
+def _shell_codes(head, rest, meta):
+    """The shell code a POSIX shell `head` is handed on this command: its
+    `-c` script (`-c`, `-lc`, `-xc`), and the heredocs and here-strings fed
+    to it. Empty for any other script runner (`eval`, `ssh`, ...), whose
+    text the whole line's mention rule reads."""
+    if head not in _GATE_SHELLS:
+        return []
+    codes = [_shell_unquote(w) for w, flag in zip(rest[1:], rest)
+             if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", _shell_unquote(flag))]
+    meta = meta or {"bodies": [], "here": []}
+    return codes + [body for body, _quoted in meta["bodies"]] + \
+        [_shell_unquote(w) for w in meta["here"]]
 
 
 # Subcommands that change no infrastructure, so a terraform or tofu line
@@ -2553,6 +3070,25 @@ class _TerraformTool:
         return False
 
     @staticmethod
+    def interpreted(head, args, top):
+        """The word naming the tool that interpreter `head` (`python3`,
+        `node`, `perl`, `ruby`, `php`, `deno`) runs as code, or None
+        (SRL-2308 r2): its `-c`/`-e`/... code from `args` (`_HOLE` where an
+        expansion is), then the line's own reading of it -- a heredoc or
+        here-string fed to it, or the whole line when it reads stdin and
+        crew cannot find it at the top of the line."""
+        spec = _interp_family(head)
+        if spec is None:
+            return None
+        codes, stdin = _interp_codes(spec, args)
+        for _index, code in codes:
+            named = _code_names_tool(code.replace(_HOLE, " "), _HOLE in code,
+                                     top)
+            if named is not None:
+                return named
+        return interpreted_on_line(top, stdin)
+
+    @staticmethod
     def verb_on_line(text, shell="bash"):
         """The word naming the tool on a line that also names a verb."""
         return _verb_on_line(text) if shell == "bash" else \
@@ -2663,6 +3199,12 @@ def _argv_trigger(argv, top, helpers, depth, line, tool=_TF_TOOL):
     head = head_name(first)
     if head == "busybox" and args and head_name(args[0]) in _GATE_SHELLS:
         head, args = head_name(args[0]), args[1:]
+    interpreted = getattr(tool, "interpreted", None)
+    named = None if interpreted is None else interpreted(head, args, top)
+    if named is not None:
+        # `python3 -c "import os; os.system('terraform apply')"`: code
+        # that names the tool and does more than print (SRL-2308 r2).
+        return named, True
     if head in _GATE_SHELLS:
         has_c, positional = shell_args(args)
         if has_c and positional and _HOLE not in positional[0]:
