@@ -45,6 +45,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
 import cloud_guard  # noqa: E402  pylint: disable=wrong-import-position
+import crew_guards  # noqa: E402  pylint: disable=wrong-import-position
 import verify_record  # noqa: E402  pylint: disable=wrong-import-position
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -1426,3 +1427,101 @@ def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python
     assert proc.returncode == 0
     doc = json.loads(proc.stdout.decode("utf-8"))
     assert doc["hookSpecificOutput"]["permissionDecision"] == "deny", doc
+
+
+# --- SRL-2308: the two fallbacks read command words, not mentions ------------
+#
+# When the trigger's reader gave up on a line, or read a command word made at
+# run time (a lone `W=$S/x` assignment is one), it used to gate on ANY word
+# naming terraform -- or, for the second, destroy/apply/workspace -- anywhere
+# on the line. Each SRL2308_NOT_GATED row was refused that way in real use (or
+# is the same shape with the unreadable fallback): a Python heredoc, a
+# send.md heredoc, a `sed`/`python3 -c` with a `$VAR`, an inline stub test.
+# Each is a FAILING control on crew 1.2.35: reverting either fallback turns it
+# red. SRL2308_STILL_GATED pins that a real terraform/tofu invocation is still
+# refused, both on a plain line and through each fallback (`A=(1)` makes the
+# reader give up; `X=$W` makes a run-time command word).
+SRL2308_NOT_GATED = [
+    ("srl2308-a-python-heredoc", "Bash",
+     "W=$S/wt1863r8\ncd $W && python3 -I - <<'EOF'\nimport re\n"
+     "# apply the patch, then destroy the temp dir\nresult = apply(p)\n"
+     "print(result)\nEOF"),
+    ("srl2308-a-python-heredoc-unreadable", "Bash",
+     "A=(1 2); cd $W && python3 -I - <<'EOF'\n"
+     "print('terraform apply -auto-approve')\nEOF"),
+    ("srl2308-b-send-md-heredoc", "Bash",
+     "M=$W/send.md; cat > \"$M\" <<'EOF'\nReview round 2: apply the fixes, "
+     "then destroy the old worktree.\nEOF"),
+    ("srl2308-b-send-md-heredoc-unreadable", "Bash",
+     "cat > send.md <<'EOF'\nPlease run terraform apply in staging.\nEOF\n"
+     "echo $((n+$m))"),
+    ("srl2308-c-sed-range", "Bash",
+     "B=$W/plugin/crew/hooks/scripts/x.py; sed -n 1,30p $B | grep -n apply"),
+    ("srl2308-c-python-c", "Bash",
+     "R=$W; python3 -c \"import sys; print('apply'); print('$R')\""),
+    ("srl2308-c-python-c-unreadable", "Bash",
+     "python3 -c \"print('terraform apply')\" $((1+$N))"),
+    ("srl2308-d-inline-stub", "Bash",
+     "T=$(mktemp -d); printf '#!/bin/sh\\necho apply\\n' > $T/stub; "
+     "chmod +x $T/stub; $T/stub apply"),
+    ("srl2308-d-stub-heredoc", "Bash",
+     "S=$W/stub.sh; cat > $S <<EOF\necho \"apply \\$1\"\nEOF\nbash $S apply"),
+]
+
+_TF = "terraform apply"
+SRL2308_STILL_GATED = [
+    ("srl2308-tf-apply", "Bash", _TF),
+    ("srl2308-tofu-destroy", "Bash", "tofu destroy -auto-approve"),
+    ("srl2308-env", "Bash", "env TF_LOG=1 terraform apply"),
+    ("srl2308-abs-path", "Bash", "/usr/local/bin/terraform apply"),
+    ("srl2308-var", "Bash", "T=terraform; $T apply"),
+    ("srl2308-xargs", "Bash", "ls | xargs terraform apply"),
+    # The same through the unreadable-line fallback.
+    ("srl2308-u-tf-apply", "Bash", f"A=(1); {_TF}"),
+    ("srl2308-u-tofu-destroy", "Bash", "A=(1); tofu destroy -auto-approve"),
+    ("srl2308-u-env", "Bash", "A=(1); env TF_LOG=1 terraform apply"),
+    ("srl2308-u-abs-path", "Bash", "A=(1); /usr/local/bin/terraform apply"),
+    ("srl2308-u-npx", "Bash", "A=(1); npx terraform apply"),
+    ("srl2308-u-var", "Bash", "A=(1); T=terraform; $T apply"),
+    ("srl2308-u-xargs", "Bash", "A=(1); ls | xargs terraform apply"),
+    ("srl2308-u-unresolved-var", "Bash", "A=(1); $TF apply"),
+    ("srl2308-u-bash-c", "Bash", "A=(1); bash -c 'terraform apply'"),
+    ("srl2308-u-heredoc-to-bash", "Bash",
+     "A=(1); bash <<'EOF'\nterraform apply\nEOF"),
+    ("srl2308-u-subst", "Bash", "A=(1); echo $(terraform apply)"),
+    ("srl2308-u-backquote", "Bash", "A=(1); echo `terraform apply`"),
+    ("srl2308-u-heredoc-subst", "Bash",
+     "A=(1); cat <<EOF\n$(terraform apply)\nEOF"),
+    # The same through the run-time-command-word fallback.
+    ("srl2308-h-npx", "Bash", "X=$W; npx terraform apply"),
+    ("srl2308-h-var", "Bash", "X=$W; T=terraform; $T apply"),
+    ("srl2308-h-which", "Bash", "$(command -v terraform) apply"),
+    ("srl2308-h-unresolved-var", "Bash", "$TF apply"),
+    ("srl2308-h-sudo", "Bash", "X=$W; sudo -u ops terraform apply"),
+]
+
+
+@pytest.mark.parametrize("case", SRL2308_NOT_GATED,
+                         ids=[c[0] for c in SRL2308_NOT_GATED])
+def test_srl2308_a_mention_is_not_a_terraform_command(tmp_path, case):
+    _allow("python", tmp_path, case)
+    assert cloud_guard._literal_gate("bash", case[2]) is None  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("case", SRL2308_STILL_GATED,
+                         ids=[c[0] for c in SRL2308_STILL_GATED])
+def test_srl2308_a_terraform_command_is_still_refused(tmp_path, case):
+    _block("python", tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("case", [c for c in SRL2308_STILL_GATED
+                                  if c[0].startswith("srl2308-u-")],
+                         ids=lambda c: c[0])
+def test_srl2308_the_unreadable_fallback_finds_the_command_word(case):
+    """Each `-u-` row is one the trigger's reader gives up on, so this pins
+    the unreadable-line fallback itself, not the lexer behind it."""
+    text = case[2]
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._GateReader(text, 0, []).read()  # pylint: disable=protected-access
+    assert crew_guards.command_trigger(
+        text, cloud_guard.GATE_HELPERS) is not None, text

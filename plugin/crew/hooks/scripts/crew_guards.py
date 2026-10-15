@@ -1662,6 +1662,439 @@ def _verb_on_line(top):
                  if c.lower() in _GATE_VERBS), None)
 
 
+# --- the two fallbacks, read by command word (SRL-2308) ----------------------
+#
+# When `_GateReader` gives up on a line (`_Unsure`), or reads a command word
+# made at run time (`$T apply`), the trigger used to fall back to "does any
+# word on the line name terraform -- or, for the second, destroy, apply or
+# workspace". A heredoc of Python, a `python3 -c` script or a `sed` range on a
+# line with one `$VAR` in it then said "apply" and was refused. Both fallbacks
+# now ask whether a COMMAND WORD could run terraform, terragrunt or tofu:
+# directly, by path, behind a wrapper (`env`, `npx`, `sudo`, `timeout`,
+# `xargs`, ...), or as a variable whose literal value on the same line names
+# one (`T=terraform; $T apply`). A command word crew cannot resolve at all
+# (`$TF apply`, TF set elsewhere) is still gated when the word after it is a
+# changing verb. A line that hands text to another interpreter of shell code
+# (`bash`, `eval`, `ssh`, `source`, `parallel`, ...) keeps the old mention
+# rule (`names_terraform`) over the whole line: that text is code there. The
+# precise reading is unchanged; only these two fallbacks moved. If this
+# reading cannot split the text either, it is the old name rule -- never the
+# verb-anywhere rule -- that decides.
+
+# Verbs that change state, for a command word crew cannot resolve.
+_FALLBACK_VERBS = frozenset((
+    "apply", "destroy", "import", "state", "workspace", "taint", "untaint",
+    "force-unlock", "run-all", "run", "refresh"))
+# Command words that run the command named after them, possibly behind
+# options and values crew does not parse here: any later word naming the tool
+# counts. `ln`/`cp`/... put it under another name for a later command.
+_FALLBACK_WRAPPERS = frozenset((
+    "env", "npx", "bunx", "pnpx", "sudo", "doas", "command", "exec", "nohup",
+    "nice", "ionice", "timeout", "stdbuf", "setsid", "time", "builtin",
+    "unbuffer", "aws-vault", "chronic", "xargs", "chroot", "taskset",
+    "caffeinate", "systemd-run", "strace", "ltrace", "gdb", "valgrind",
+    "runuser", "su"))
+# `npm exec terraform`, `pnpm dlx terraform`, `yarn dlx terraform`.
+_FALLBACK_RUNNERS = {"npm": frozenset(("exec", "x")),
+                     "pnpm": frozenset(("exec", "dlx")),
+                     "yarn": frozenset(("exec", "dlx")),
+                     "bun": frozenset(("x", "run"))}
+# Command words whose arguments, stdin or heredoc are shell code crew does
+# not split here: the whole line's mentions decide, as before SRL-2308.
+_FALLBACK_SCRIPTS = (_GATE_SHELLS | _GATE_PWSH | _GATE_OPAQUE | frozenset((
+    "eval", "watch", "parallel", "sem", "xonsh", "nu", "elvish", "rbash",
+    "screen", "tmux", "nsenter", "unshare", "docker", "podman", "kubectl",
+    "dtach", "expect")))
+_FALLBACK_DECLARE = frozenset(("export", "declare", "local", "readonly",
+                               "typeset"))
+_FALLBACK_RESERVED = frozenset((
+    "{", "}", "!", "if", "then", "else", "elif", "fi", "do", "done", "while",
+    "until", "for", "in", "case", "esac", "select", "coproc", "[[", "]]"))
+_FALLBACK_ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?"
+                                 r"\+?=(.*)$", re.DOTALL)
+_FALLBACK_VAR_RE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)")
+
+
+class _CommandSplitter:
+    """`text` as simple commands of RAW words (quotes kept), bash's way only
+    as far as word, command and heredoc boundaries go. Collects the bodies of
+    `$(...)`, backquotes and `<(...)` -- code wherever they sit outside single
+    quotes, an unquoted heredoc body included; a `$(...)`'s own commands are
+    also among `commands`. Raises `_Unsure` on anything unclosed."""
+
+    def __init__(self, text):
+        self.text, self.pos = text, 0
+        self.commands, self.subs, self.pending = [], [], []
+        self.depth = 0
+
+    def split(self):
+        self._read(None)
+        return self.commands, self.subs
+
+    def _read(self, closer):
+        cmd, word = [], []
+        state = {"target": False}
+        self.depth += 1
+        if self.depth > 4 * _GATE_DEPTH:
+            raise _Unsure("nested too deep")
+
+        def end_word():
+            if word:
+                if state["target"]:
+                    state["target"] = False
+                else:
+                    cmd.append("".join(word))
+            word.clear()
+
+        def end_command():
+            end_word()
+            if cmd:
+                self.commands.append(list(cmd))
+            cmd.clear()
+
+        text = self.text
+        while self.pos < len(text):
+            char = text[self.pos]
+            if text.startswith("\\\n", self.pos):
+                self.pos += 2
+            elif char == "\\":
+                word.append(text[self.pos:self.pos + 2])
+                self.pos += 2
+            elif char in " \t":
+                end_word()
+                self.pos += 1
+            elif char == "\n":
+                end_command()
+                self.pos += 1
+                self._bodies()
+            elif char == "#" and not word:
+                while self.pos < len(text) and text[self.pos] != "\n":
+                    self.pos += 1
+            elif char == ")" and closer == ")":
+                end_command()
+                self.pos += 1
+                self.depth -= 1
+                return
+            elif char in "()":
+                end_command()
+                self.pos += 1
+            elif char in "<>" and text[self.pos + 1:self.pos + 2] == "(":
+                self.pos += 2
+                start = self.pos
+                self._read(")")
+                self.subs.append(text[start:self.pos - 1])
+                word.append("$(...)")
+            elif text.startswith(("<<<",), self.pos):
+                end_word()
+                self.pos += 3
+                state["target"] = True
+            elif text.startswith("<<", self.pos):
+                end_word()
+                self.pos += 2
+                strip = text[self.pos:self.pos + 1] == "-"
+                self.pos += 1 if strip else 0
+                self.pending.append(self._delimiter(strip))
+            elif char in "<>":
+                end_word()
+                while self.pos < len(text) and text[self.pos] in "<>&|":
+                    self.pos += 1
+                state["target"] = True
+            elif char in ";&|":
+                end_command()
+                self.pos += 1
+            else:
+                word.append(self._part())
+        if closer is not None:
+            raise _Unsure("an unclosed (")
+        end_command()
+        if self.pending and closer is None:
+            raise _Unsure("a heredoc with no body")
+
+    def _delimiter(self, strip):
+        while self.text[self.pos:self.pos + 1] in (" ", "\t"):
+            self.pos += 1
+        start = self.pos
+        while self.pos < len(self.text) and \
+                self.text[self.pos] not in " \t\n;&|()<>":
+            self.pos += 1
+        raw = self.text[start:self.pos]
+        # As `_GateReader._delimiter`: a spelling bash dequotes differently
+        # from this reading is not read (`<<'E\\OF'` ends at `E\\OF`).
+        mixed = "\\" in raw and ("'" in raw or '"' in raw)
+        odd = raw.count("'") % 2 or raw.count('"') % 2
+        if not raw or mixed or odd or any(c in raw for c in "$`"):
+            raise _Unsure("a heredoc delimiter crew cannot spell")
+        quoted = any(c in raw for c in "'\"\\")
+        delim = re.sub(r"\\(.)", r"\1", raw.replace("'", "").replace('"', ""))
+        return delim, strip, quoted
+
+    def _bodies(self):
+        while self.pending:
+            delim, strip, quoted = self.pending.pop(0)
+            lines = []
+            while True:
+                if self.pos >= len(self.text):
+                    raise _Unsure("a heredoc with no delimiter line")
+                end = self.text.find("\n", self.pos)
+                end = len(self.text) if end == -1 else end
+                line = self.text[self.pos:end]
+                self.pos = min(end + 1, len(self.text))
+                if (line.lstrip("\t") if strip else line) == delim:
+                    break
+                lines.append(line)
+            if not quoted:
+                # Only an unquoted body's substitutions are code. A body fed
+                # to a shell is the whole line's mention rule's (`script`).
+                self.subs.extend(_unquoted_body_subs("\n".join(lines)))
+
+    def _part(self):
+        """One quoted run, substitution or character of a word, raw."""
+        text, start = self.text, self.pos
+        char = text[self.pos]
+        if char == "'":
+            end = text.find("'", self.pos + 1)
+            if end == -1:
+                raise _Unsure("an unclosed '")
+            self.pos = end + 1
+        elif char == '"':
+            self.pos += 1
+            while self.pos < len(text) and text[self.pos] != '"':
+                if text[self.pos] == "\\":
+                    self.pos += 2
+                elif text[self.pos] in "$`":
+                    self._dollar_or_tick()
+                else:
+                    self.pos += 1
+            if self.pos >= len(text):
+                raise _Unsure('an unclosed "')
+            self.pos += 1
+        elif char in "$`":
+            self._dollar_or_tick()
+        else:
+            self.pos += 1
+        if self.pending and "\n" in text[start:self.pos]:
+            raise _Unsure("a quoted newline before a heredoc body")
+        return text[start:self.pos]
+
+    def _dollar_or_tick(self):
+        text = self.text
+        if text[self.pos] == "`":
+            end = self.pos + 1
+            while end < len(text) and text[end] != "`":
+                end += 2 if text[end] == "\\" else 1
+            if end >= len(text):
+                raise _Unsure("an unclosed `")
+            self.subs.append(text[self.pos + 1:end])
+            self.pos = end + 1
+        elif text.startswith("$((", self.pos):
+            end = text.find("))", self.pos)
+            if end == -1:
+                raise _Unsure("an unclosed $((")
+            self.pos = end + 2
+        elif text.startswith("$(", self.pos):
+            self.pos += 2
+            start = self.pos
+            self._read(")")
+            self.subs.append(text[start:self.pos - 1])
+        elif text.startswith("${", self.pos):
+            end = text.find("}", self.pos)
+            if end == -1:
+                raise _Unsure("an unclosed ${")
+            self.pos = end + 1
+        elif text.startswith("$'", self.pos):
+            match = _ANSI_SPAN_RE.match(text, self.pos)
+            if match.end() - match.start() != len(match.group(1)) + 3:
+                raise _Unsure("an unclosed $'")
+            self.pos = match.end()
+        else:
+            self.pos += 1
+
+
+def _unquoted_body_subs(body):
+    """The `$(...)` and backquote bodies of an unquoted heredoc body: the
+    only part of it that is code."""
+    subs, pos = [], 0
+    while pos < len(body):
+        if body[pos] == "\\":
+            pos += 2
+        elif body.startswith("$((", pos):
+            end = body.find("))", pos)
+            pos = len(body) if end == -1 else end + 2
+        elif body[pos] == "`" or body.startswith("$(", pos):
+            splitter = _CommandSplitter(body)
+            splitter.pos = pos
+            splitter._dollar_or_tick()  # pylint: disable=protected-access
+            subs.extend(splitter.subs)
+            pos = splitter.pos
+        else:
+            pos += 1
+    return subs
+
+
+def _dequote(word):
+    """A raw word without its quotes and escapes."""
+    word = _ANSI_SPAN_RE.sub(lambda m: _ansi_c_decode(m.group(1)), word)
+    word = re.sub(r"\\(.)", r"\1", word)
+    return word.replace("'", "").replace('"', "")
+
+
+def _word_names_tool(word, assigned, seen=()):
+    """The word naming the tool that raw `word` could run as, or None: the
+    word itself (`/usr/bin/terraform`, `te""rraform`, `$(which tofu)`,
+    `${T:-terraform}`), or a variable in it whose literal value on the line
+    names one (`T=terraform; $T apply`)."""
+    bare = _dequote(word).strip()
+    if not bare or word[:1] in "'\"" and "$" not in word and \
+            any(c.isspace() for c in bare):
+        return None  # a quoted sentence is an argument, not a program
+    named = names_terraform(word, "bash")
+    if named is not None:
+        return named
+    for var in _FALLBACK_VAR_RE.findall(word):
+        if var in seen:
+            continue
+        for value in assigned.get(var, ()):
+            if _word_names_tool(value, assigned, seen + (var,)) is not None:
+                return word
+    return None
+
+
+def _unresolved_head(word, assigned):
+    """True when the program raw `word` runs is decided only at run time by
+    a variable the line does not assign: its last path part is an
+    expansion (`$TF`, `$D/$TF`), not a literal name (`$T/stub`)."""
+    base = re.split(r"[/\\]", word)[-1]
+    if any(c in base for c in "*?[{"):
+        return True  # a glob or a brace list: `/usr/bin/t*`, find's `{}`
+    if "$" not in base and "`" not in base:
+        return False
+    names = _FALLBACK_VAR_RE.findall(base)
+    return not names or any(n not in assigned for n in names)
+
+
+def _fallback_command(words, assigned, nested=False):
+    """`(kind, word)` for one simple command of raw words: kind "tool" with
+    the word naming terraform, "script" for an interpreter of shell code, or
+    None for neither. `nested`: called by a wrapper's own scan, which reads
+    every later word itself, so a wrapper here does not scan again (a chain
+    of wrappers stays linear)."""
+    words = list(words)
+    while words and (words[0] in _FALLBACK_RESERVED
+                     or _FALLBACK_ASSIGN_RE.match(words[0])):
+        words = words[1:]
+    if not words:
+        return None, None
+    head = _head_name(_dequote(words[0]))
+    if head in _FALLBACK_DECLARE:
+        return None, None
+    named = _word_names_tool(words[0], assigned)
+    if named is not None:
+        return "tool", named
+    if head in _FALLBACK_SCRIPTS:
+        return "script", words[0]
+    rest = list(words[1:])
+    if head in _FALLBACK_RUNNERS and rest and \
+            _dequote(rest[0]) in _FALLBACK_RUNNERS[head]:
+        head, rest = "npx", rest[1:]
+    if head == "find":
+        return _fallback_find(words, rest, assigned)
+    if head == "command" and any(
+            w[:1] == "-" and w[:2] != "--" and set(w[1:]) & set("vV")
+            for w in rest):
+        return None, None  # `command -v terraform`: a lookup
+    if head in _GATE_COPIERS:
+        # `ln -s "$(command -v terraform)" tf; ./tf apply`.
+        named = next((n for n in (_word_names_tool(w, assigned) for w in rest)
+                      if n is not None), None)
+        return (None, None) if named is None else ("tool", named)
+    unresolved = _unresolved_head(words[0], assigned)
+    if unresolved:
+        verb = _first_operand([_dequote(w) for w in rest])
+        if verb is not None and verb.lower() in _FALLBACK_VERBS:
+            return "tool", words[0]
+    if head == "env" and any(_dequote(w).startswith(("-S", "--split-string"))
+                             for w in rest):
+        return "script", words[0]  # `env -S'terraform apply'`
+    if (head in _FALLBACK_WRAPPERS or unresolved) and not nested:
+        # Where the wrapped command starts is not parsed here: from each
+        # word on, read what follows as a command. A command word made at
+        # run time may be empty or a wrapper (`$NOTHING terraform destroy`).
+        for index, word in enumerate(rest):
+            if word.startswith("-") or _FALLBACK_ASSIGN_RE.match(word):
+                continue
+            found = _fallback_command(rest[index:], assigned, nested=True)
+            if found[0] is not None:
+                return found
+    return None, None
+
+
+def _fallback_find(words, rest, assigned):
+    """`find ... -exec CMD ... ;`: each command it runs, read as one; the
+    found path `{}` as the command word is the tool when find's own words
+    name it (`find . -name terraform -exec {} destroy ';'`)."""
+    for index, word in enumerate(rest):
+        if _dequote(word) not in _FIND_EXEC:
+            continue
+        sub = []
+        for arg in rest[index + 1:]:
+            if _dequote(arg) in (";", "+"):
+                break
+            sub.append(arg)
+        if sub and "{}" in sub[0]:
+            named = next((n for n in (_word_names_tool(w, assigned)
+                                      for w in words) if n is not None), None)
+            if named is not None:
+                return "tool", named
+        found = _fallback_command(sub, assigned)
+        if found[0] is not None:
+            return found
+    return None, None
+
+
+def _assignments(commands):
+    """Every `NAME=value` on the line -- leading, or after export/declare/
+    local/readonly/typeset/env -- and every `for NAME in WORDS` (`select`
+    too), as name -> raw values."""
+    out = {}
+    for words in commands:
+        if len(words) > 2 and words[0] in ("for", "select") \
+                and words[2] == "in":
+            out.setdefault(words[1], []).extend(words[3:])
+        for word in words:
+            match = _FALLBACK_ASSIGN_RE.match(word)
+            if match:
+                out.setdefault(match.group(1), []).append(match.group(2))
+    return out
+
+
+def command_word_names_tool(text, depth=0):
+    """The word naming terraform, terragrunt or tofu at a command-word
+    position of bash `text`, or None -- the two fallbacks' question
+    (SRL-2308). See the section comment above."""
+    if depth > _GATE_DEPTH or _GATE_CONTROL_RE.search(text):
+        # A CR or other control character: bash and the lexer split it
+        # differently (`EOF\r` ends a heredoc to one of them only).
+        return names_terraform(text, "bash")
+    try:
+        commands, subs = _CommandSplitter(text).split()
+    except _Unsure:
+        return names_terraform(text, "bash")
+    assigned = _assignments(commands)
+    for words in commands:
+        kind, word = _fallback_command(words, assigned)
+        if kind == "tool":
+            return word
+        if kind == "script":
+            named = names_terraform(text, "bash")
+            if named is not None:
+                return named
+    for sub in subs:
+        named = command_word_names_tool(sub, depth + 1)
+        if named is not None:
+            return named
+    return None
+
+
 # Subcommands that change no infrastructure, so a terraform or tofu line
 # running one is not gated for its quoting (review round 5): the lexer judges
 # it, as it did before Step 8. `workspace` and `state` are read-only only with
@@ -2086,10 +2519,19 @@ class _TerraformTool:
         return _names_tool(word)
 
     @staticmethod
+    def unreadable(text):
+        """The word naming the tool on a bash line the reader gave up on:
+        at a command-word position only (SRL-2308), never a mention."""
+        return command_word_names_tool(text)
+
+    @staticmethod
     def hole(_argv, top, shell="bash"):
-        """`(word, True)` for a command word made at run time, when the line
-        names one of the words a terraform line needs; else None."""
-        named = _verb_on_line(top) if shell == "bash" else _ps_verb_on_line(top)
+        """`(word, True)` for a command word made at run time, when a command
+        word on the line could run the tool (bash, SRL-2308: never a bare
+        mention of a verb), or -- PowerShell, unchanged -- the line names one
+        of the words a terraform line needs; else None."""
+        named = command_word_names_tool(top) if shell == "bash" \
+            else _ps_verb_on_line(top)
         return None if named is None else (named, True)
 
     @staticmethod
@@ -2279,7 +2721,11 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
         cmds = []
         _GateReader(text, depth, cmds).read()
     except _Unsure:
-        named = tool.on_line(text, "bash") or tool.on_line(top, "bash")
+        # T-0009's dispatch tool keeps its own line rule; terraform's reads
+        # command words only (SRL-2308).
+        read = getattr(tool, "unreadable", None) or \
+            (lambda t: tool.on_line(t, "bash"))
+        named = read(text) or read(top)
         return None if named is None else (named, True)
     line = {"copies": set()} if line is None else line
     line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,

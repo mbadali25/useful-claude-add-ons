@@ -1595,11 +1595,20 @@ allowed; spell the line with plain words to have it judged. The rule is about
 the command being run: mentioning terraform in a commit message, a search or a
 file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
 `vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
-`$(...)`) is could not tell only on a line that names terraform, `destroy`,
-`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
-notes.md` is not. Where crew cannot split a line with certainty — a `case`
-arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
-falls back to the older, wider rule: any word naming terraform.
+`$(...)`), and a line crew cannot split with certainty (a `case` arm, an
+array, `$((...))` with a `$` inside), are could not tell only when a COMMAND
+WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
+SRL-2308): written directly or by path, behind a wrapper (`env`, `npx`,
+`sudo`, `timeout`, `xargs`, ...), as `$(command -v terraform)`, as a variable
+whose literal value on the same line names one (`x=terraform; $x destroy` is
+refused), or as a variable the line never sets followed by a changing verb
+(`$TF apply`, `$TF destroy`). A mere mention no longer counts there:
+`W=$S/wt; python3 - <<'EOF'` with "apply" in the Python, a `sed` range or
+`python3 -c` script on a line with a `$VAR`, a heredoc writing notes, and
+`$T/stub apply` (a stub whose name is literal) all pass, and so does `$EDITOR
+notes.md`. A line that hands text to shell code (`bash`, `eval`, `ssh`,
+`source`, `parallel`, a function or alias definition) keeps the older, wider
+rule over the whole line: any word naming terraform.
 
 **A terraform command crew cannot follow is could not tell even in plain
 words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
