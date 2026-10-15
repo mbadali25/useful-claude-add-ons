@@ -1654,12 +1654,11 @@ class _GateReader:
 
 
 def _verb_on_line(top):
-    """The Step 8 name, or a word dequoting to destroy/apply/workspace."""
-    named = names_terraform(top, "bash")
-    if named is not None:
-        return named
-    return next((c for c in _name_candidates(top, "bash")
-                 if c.lower() in _GATE_VERBS), None)
+    """The word naming the tool at a command-word position of bash `top`
+    (SRL-2308, `command_word_names_tool`). It was the Step 8 name, or any
+    word dequoting to destroy/apply/workspace, so a mention of "apply" in a
+    heredoc gated a line with one `$VAR` on it."""
+    return command_word_names_tool(top)
 
 
 # --- the two fallbacks, read by command word (SRL-2308) ----------------------
@@ -1820,9 +1819,9 @@ class _CommandSplitter:
         raw = self.text[start:self.pos]
         # As `_GateReader._delimiter`: a spelling bash dequotes differently
         # from this reading is not read (`<<'E\\OF'` ends at `E\\OF`).
-        mixed = "\\" in raw and ("'" in raw or '"' in raw)
+        escaped_quote = "\\" in raw and ("'" in raw or '"' in raw)
         odd = raw.count("'") % 2 or raw.count('"') % 2
-        if not raw or mixed or odd or any(c in raw for c in "$`"):
+        if not raw or escaped_quote or odd or any(c in raw for c in "$`"):
             raise _Unsure("a heredoc delimiter crew cannot spell")
         quoted = any(c in raw for c in "'\"\\")
         delim = re.sub(r"\\(.)", r"\1", raw.replace("'", "").replace('"', ""))
@@ -2519,19 +2518,12 @@ class _TerraformTool:
         return _names_tool(word)
 
     @staticmethod
-    def unreadable(text):
-        """The word naming the tool on a bash line the reader gave up on:
-        at a command-word position only (SRL-2308), never a mention."""
-        return command_word_names_tool(text)
-
-    @staticmethod
     def hole(_argv, top, shell="bash"):
         """`(word, True)` for a command word made at run time, when a command
         word on the line could run the tool (bash, SRL-2308: never a bare
         mention of a verb), or -- PowerShell, unchanged -- the line names one
         of the words a terraform line needs; else None."""
-        named = command_word_names_tool(top) if shell == "bash" \
-            else _ps_verb_on_line(top)
+        named = _verb_on_line(top) if shell == "bash" else _ps_verb_on_line(top)
         return None if named is None else (named, True)
 
     @staticmethod
@@ -2598,6 +2590,16 @@ class _TerraformTool:
         return set()
 
 
+class _UnreadableTerraform:
+    """What the reader's give-up asks for terraform (SRL-2308): a command
+    word that could run the tool, never a mention."""
+
+    @staticmethod
+    def on_line(text, _shell="bash"):
+        return command_word_names_tool(text)
+
+
+_TerraformTool.unreadable = _UnreadableTerraform()
 _TF_TOOL = _TerraformTool()
 
 
@@ -2721,11 +2723,10 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
         cmds = []
         _GateReader(text, depth, cmds).read()
     except _Unsure:
-        # T-0009's dispatch tool keeps its own line rule; terraform's reads
-        # command words only (SRL-2308).
-        read = getattr(tool, "unreadable", None) or \
-            (lambda t: tool.on_line(t, "bash"))
-        named = read(text) or read(top)
+        # Terraform's give-up reads command words only (SRL-2308); T-0009's
+        # dispatch tool, which has no `unreadable`, keeps its own line rule.
+        tool = getattr(tool, "unreadable", tool)
+        named = tool.on_line(text, "bash") or tool.on_line(top, "bash")
         return None if named is None else (named, True)
     line = {"copies": set()} if line is None else line
     line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,

@@ -35,8 +35,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   twenty-four must-refuse rows through both fallbacks, and a check that each unreadable-line row
   really is one the reader gives up on. The four cloud-guard test files pass (2,748 with
   `test_guards.py`, `test_guards_env_dump.py`, `test_crew_tfplan.py` and `test_crew_unattended.py`).
-  Five mutations of the new reading were run by hand, each red; the three `sabotage_cloud.py`
-  anchors this moves and the five new mutations land in their own harness PR.
+  Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
+  `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
+  tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
+  new mutations were run by hand through `sabotage.py`'s apply/restore, each red: five undo one part
+  of the new reading, two put the old rules back. Adding them to `sabotage_cloud.py` is harness and
+  lands in its own PR.
 
 ### Changed — crew 1.2.35: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given
 
