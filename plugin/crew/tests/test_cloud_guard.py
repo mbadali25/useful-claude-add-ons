@@ -34,6 +34,7 @@ the guard only reads the command text.
 """
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -1484,6 +1485,10 @@ SRL2308_NOT_GATED = [
      "W=$S/wt1863r8; mkdir -p $W/amut && "
      "cp $W/plugin/crew/hooks/scripts/cloud-guard.ps1 $W/amut/ && "
      "ls $W/amut  # then apply the mutant"),
+    # The tool and one read-only subcommand, nothing after it; and a bare
+    # `apply`, which is a program of that name, not terraform.
+    ("srl2308-ro-h-version-only", "Bash", "$S/bin/terraform version"),
+    ("srl2308-ro-u-bare-apply", "Bash", "A=(1); terraform version; apply"),
 ]
 
 _TF = "terraform apply"
@@ -1516,7 +1521,44 @@ SRL2308_STILL_GATED = [
     ("srl2308-h-which", "Bash", "$(command -v terraform) apply"),
     ("srl2308-h-unresolved-var", "Bash", "$TF apply"),
     ("srl2308-h-sudo", "Bash", "X=$W; sudo -u ops terraform apply"),
+    # The read-only allowance (`<tool> version`, two words, nothing after)
+    # cannot be stretched into an apply: on an unreadable line and behind a
+    # run-time command word, any word after the subcommand, or a second
+    # command that runs terraform, keeps the line refused.
+    ("srl2308-ro-and-apply", "Bash", "terraform version && terraform apply"),
+    ("srl2308-ro-semi-apply", "Bash", "terraform version; terraform apply"),
+    ("srl2308-ro-u-and-apply", "Bash",
+     "A=(1); terraform version && terraform apply"),
+    ("srl2308-ro-u-semi-apply", "Bash",
+     "A=(1); terraform version; terraform apply"),
+    ("srl2308-ro-u-chdir-apply", "Bash",
+     "A=(1); terraform version -chdir=x apply"),
+    ("srl2308-ro-u-version-apply", "Bash", "A=(1); terraform version apply"),
+    ("srl2308-ro-u-version-flag", "Bash", "A=(1); terraform version -json"),
+    ("srl2308-ro-h-and-apply", "Bash",
+     "$S/bin/terraform version && $S/bin/terraform apply"),
+    ("srl2308-ro-h-semi-apply", "Bash",
+     "$S/bin/terraform version; $S/bin/terraform apply"),
+    ("srl2308-ro-h-chdir-apply", "Bash",
+     "$S/bin/terraform version -chdir=x apply"),
+    ("srl2308-ro-h-version-apply", "Bash", "$S/bin/terraform version apply"),
+    ("srl2308-ro-h-version-flag", "Bash", "$S/bin/terraform version -json"),
+    ("srl2308-ro-h-version-var", "Bash", "$S/bin/terraform version $X"),
+    # A wildcard command word is still a command word crew cannot name.
+    ("srl2308-glob-ext-command", "Bash", "X=$W; ./*.ps1 destroy"),
+    ("srl2308-glob-stem-command", "Bash", "./terr*.ps1 destroy"),
 ]
+
+# Real refusals (fixtures/srl2308_refused_tf.json, sanitised; see its
+# `_about`): every `must_allow` row was refused by crew 1.2.30 and 1.2.35,
+# and every one runs no terraform but real-05's `version`. `must_refuse` is
+# real-24, a legitimate could-not-tell (its `why`).
+_REAL = json.loads((pathlib.Path(__file__).parent / "fixtures"
+                    / "srl2308_refused_tf.json").read_text(encoding="utf-8"))
+SRL2308_REAL_ALLOW = [(r["id"], "Bash", r["command"])
+                      for r in _REAL["must_allow"]]
+SRL2308_REAL_REFUSE = [(r["id"], "Bash", r["command"])
+                       for r in _REAL["must_refuse"]]
 
 
 @pytest.mark.parametrize("case", SRL2308_NOT_GATED,
@@ -1532,8 +1574,28 @@ def test_srl2308_a_terraform_command_is_still_refused(tmp_path, case):
     _block("python", tmp_path, case + ("terraformApply",))
 
 
+@pytest.mark.parametrize("case", SRL2308_REAL_ALLOW,
+                         ids=[c[0] for c in SRL2308_REAL_ALLOW])
+def test_srl2308_a_real_refusal_that_runs_no_terraform_is_allowed(tmp_path,
+                                                                  case):
+    _allow("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", SRL2308_REAL_REFUSE,
+                         ids=[c[0] for c in SRL2308_REAL_REFUSE])
+def test_srl2308_a_real_could_not_tell_stays_refused(tmp_path, case):
+    _block("python", tmp_path, case + ("terraformApply",))
+
+
+def test_srl2308_the_real_rows_are_all_there():
+    """25 allowed and real-24 refused: a row dropped from the fixture would
+    otherwise pass silently."""
+    assert len(SRL2308_REAL_ALLOW) == 25 and len(SRL2308_REAL_REFUSE) == 1
+
+
 @pytest.mark.parametrize("case", [c for c in SRL2308_STILL_GATED
-                                  if c[0].startswith("srl2308-u-")],
+                                  if c[0].startswith(("srl2308-u-",
+                                                      "srl2308-ro-u-"))],
                          ids=lambda c: c[0])
 def test_srl2308_the_unreadable_fallback_finds_the_command_word(case):
     """Each `-u-` row is one the trigger's reader gives up on, so this pins

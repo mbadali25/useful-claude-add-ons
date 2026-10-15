@@ -1296,7 +1296,11 @@ def _names_tool(word):
     base = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
     if not any(c in base for c in "*?["):
         return base in _TF_NAMES
-    letters = re.sub(r"\[[^\]]*\]|[*?]", "", base)
+    # The three letters must be the name's own, not an extension's: `*.ps1`
+    # or `*.exe` could match `terraform.ps1`, but so could every script on
+    # the disk (SRL-2308).
+    stem = re.sub(r"\.(?:exe|cmd|bat|ps1)$", "", base)
+    letters = re.sub(r"\[[^\]]*\]|[*?]", "", stem)
     return sum(c.isalnum() for c in letters) >= 3 and any(
         fnmatch.fnmatchcase(name, base) for name in _TF_NAMES)
 
@@ -1988,6 +1992,12 @@ def _fallback_command(words, assigned, nested=False):
         return None, None
     named = _word_names_tool(words[0], assigned)
     if named is not None:
+        # The tool and ONE read-only subcommand, nothing after it, is not
+        # gated (`$S/bin/terraform version`). Any further word -- an option,
+        # `-chdir=`, another verb -- keeps the line gated.
+        if len(words) == 2 and _PLAIN_WORD_RE.match(words[1]) \
+                and words[1] in _TF_READ_ONLY:
+            return None, None
         return "tool", named
     if head in _FALLBACK_SCRIPTS:
         return "script", words[0]

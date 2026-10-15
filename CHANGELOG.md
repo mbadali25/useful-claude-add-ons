@@ -29,14 +29,30 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   heredoc bodies and quoted arguments are data. The precise reading, the `xargs` path and
   PowerShell are unchanged. `$TF apply` on a line the reader gives up on is now gated where it was
   not before.
+- **Wildcards (shared name check).** `crew_guards._names_tool` no longer counts a wildcard whose
+  only literal letters are an extension (`*.ps1`, `*.exe`) as naming terraform: it could match
+  `terraform.ps1`, but so could every script on the disk, and a `for f in test/*.ps1` or `cp *.ps1`
+  on a line refused it. The three letters must be the name's own (`terr*`, `*form` still count).
+  This check is shared with the precise path; a wildcard COMMAND word is still gated before a
+  changing verb (`./*.ps1 destroy`).
+- **Read-only.** In the fallbacks, the tool and one read-only subcommand with nothing after it
+  (`$S/bin/terraform version`) is not gated, as on the precise path. Any further word (`-json`,
+  `-chdir=x apply`, `apply`) or a second command that runs terraform keeps the line refused.
 - **Not changed.** `npx terraform apply` on a line the reader reads cleanly is still not gated: the
-  precise path does not know `npx` as a wrapper, before and after this change.
-- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: thirteen must-allow rows (eleven red on 1.2.35;
+  precise path does not know `npx` as a wrapper, before and after this change. A line that sets
+  `T=terraform` and runs `bash <script named by a variable> $T/...` is still refused: crew cannot
+  see what that script runs.
+- **Real refusals.** 26 commands the installed 1.2.30 refused tonight are rows in
+  `plugin/crew/tests/fixtures/srl2308_refused_tf.json`, sanitised (this repository is public): host
+  names, instance ids, vault names, paths, numbers, hashes, schema, table, module and ticket names
+  replaced by stand-ins of the same shape. Each row was re-checked through `cloud_guard.py`: all 26
+  refused by 1.2.30 and by 1.2.35; 1.2.36 allows 25 and refuses `real-24`, the `bash
+  <script named by a variable>` line above.
+- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: fifteen must-allow rows (eleven red on 1.2.35;
   the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
-  allowed and are pinned),
-  twenty-four must-refuse rows through both fallbacks, and a check that each unreadable-line row
-  really is one the reader gives up on. The whole crew suite passes (19,844 passed,
-  283 skipped, run before the (e)/(f) rows were added; the guard files re-run after).
+  allowed and are pinned), the 25 real rows, thirty-nine must-refuse rows through both fallbacks
+  (the read-only allowance's abuse cases among them) plus `real-24`, and a check that each
+  unreadable-line row really is one the reader gives up on.
   Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
   `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
   tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
