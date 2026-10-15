@@ -1436,9 +1436,10 @@ def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python
 # naming terraform -- or, for the second, destroy/apply/workspace -- anywhere
 # on the line. Each SRL2308_NOT_GATED row was refused that way in real use (or
 # is the same shape with the unreadable fallback): a Python heredoc, a
-# send.md heredoc, a `sed`/`python3 -c` with a `$VAR`, an inline stub test.
-# Each is a FAILING control on crew 1.2.35: reverting either fallback turns it
-# red. SRL2308_STILL_GATED pins that a real terraform/tofu invocation is still
+# send.md heredoc, a `sed`/`python3 -c` with a `$VAR`, an inline stub test,
+# a heredoc after `W=...`, a `.ps1` copied into `$W/amut`. Each is a FAILING
+# control on crew 1.2.35 (reverting either fallback turns it red), except the
+# two `-verbatim` rows, which 1.2.35 already allowed. SRL2308_STILL_GATED pins that a real terraform/tofu invocation is still
 # refused, both on a plain line and through each fallback (`A=(1)` makes the
 # reader give up; `X=$W` makes a run-time command word).
 SRL2308_NOT_GATED = [
@@ -1466,6 +1467,22 @@ SRL2308_NOT_GATED = [
      "chmod +x $T/stub; $T/stub apply"),
     ("srl2308-d-stub-heredoc", "Bash",
      "S=$W/stub.sh; cat > $S <<EOF\necho \"apply \\$1\"\nEOF\nbash $S apply"),
+    # (e), (f): two more refused in real use (manager, 2026-10-15). Each as
+    # described -- allowed on 1.2.35 too, pinned so it stays allowed -- and
+    # with "apply" in it, which 1.2.35 refused.
+    ("srl2308-e-python-heredoc-verbatim", "Bash",
+     "W=$S/wt1863r8\ncd $W/plugin/crew && python3 -I - <<'EOF'\nimport json\n"
+     "print(json.load(open('../../.crew/verify.json'))['rules'][0])\nEOF"),
+    ("srl2308-e-python-heredoc-apply", "Bash",
+     "W=$S/wt1863r8\ncd $W/plugin/crew && python3 -I - <<'EOF'\n"
+     "# apply round 8, then check\nprint(open('README.md').read()[:80])\nEOF"),
+    ("srl2308-f-copy-ps1-verbatim", "Bash",
+     "W=$S/wt1863r8; mkdir -p $W/amut && "
+     "cp $W/plugin/crew/hooks/scripts/cloud-guard.ps1 $W/amut/"),
+    ("srl2308-f-copy-ps1-apply", "Bash",
+     "W=$S/wt1863r8; mkdir -p $W/amut && "
+     "cp $W/plugin/crew/hooks/scripts/cloud-guard.ps1 $W/amut/ && "
+     "ls $W/amut  # then apply the mutant"),
 ]
 
 _TF = "terraform apply"
