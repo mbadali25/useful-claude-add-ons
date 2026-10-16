@@ -1212,6 +1212,7 @@ ROLE_TIERS = {
     "security": 1,
     "researcher": 2,
 }
+TRANSPORT_AGENTS = frozenset({"session-relay"})  # L-0797: shipped, not roles
 
 # The tier that is about parallelism rather than about roles -- no role lives
 # here, so `tier_for_roles` can never return it and a config that declares it

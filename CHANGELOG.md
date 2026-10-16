@@ -9,6 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.37: a Haiku 5.5 `session-relay` agent for messages between sessions (L-0797)
+
+- **Summary.** `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5
+  that carries every message between sessions, so peer traffic costs a cheap model and never reaches
+  the main session unread.
+- **What.** `agents/session-relay.md` (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME; tools `SendMessage` and `ListAgents`, no `Read`;
+  inbound `PEER IN from <name>:`, outbound `RELAY OUT to <name>:` as `FROM>TO | TYPE | IDS | NEED:`).
+  It is a model pin on a shipped agent, not a fifth role: `crew_state.TRANSPORT_AGENTS` names it,
+  `ROLE_TIERS` stays at four, and it has no config key and no hook. `validate-prompts.py` gains a
+  named `BRIDGE_ALLOWED` carve-out from the L-0637 bridge-tool rule and a `claude-haiku-5-5` model tier for this agent only;
+  `role_write_guard.py` denies it Write and Edit like every shipped agent.
+- **Tests.** `tests/test_session_relay.py` (model, tools, no write tool, transport-only rules);
+  `tests/test_role_ladder.py` now holds the agent files to the roster plus `TRANSPORT_AGENTS`.
+  Four hand sabotages (model `opus`, `Bash` added, deny-list entry removed, bridge carve-out
+  removed) each go red.
+- **Process.** The crew feature freeze was waived for this ticket by the owner on 2026-10-16.
+
 ### Fixed — crew 1.2.36: the terraform guard's fallbacks no longer refuse a line for mentioning "apply" (SRL-2308)
 
 - **Summary.** `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made

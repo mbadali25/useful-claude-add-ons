@@ -3153,7 +3153,7 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   if any line of the message equals it — a line equal to the terminator would
   end the heredoc early and run the rest as shell. Nothing checks that the session did so; a test checks only that
   `commands/autopilot.md` says it.
-- **The main session is the hub; lanes never ring a peer** (L-0637). A
+- **The main session is the hub; lanes never ring a peer** (L-0637; `session-relay`, L-0797, is the one transport the main session dispatches). A
   subagent's `SendMessage` goes out under its parent session's address and
   the reply lands in the parent's conversation, so a lane that messaged a
   peer would speak for the main session without it knowing, and never see
@@ -3618,7 +3618,9 @@ review of risky changes) and `researcher` (external sources only). The
 interactive session implements; nothing else is dispatched to write. Stack
 knowledge that used to be specialist agents loads on demand as the `stack-*`
 skills. There is no PM agent, no Stop pulse and no journal, and nothing grows
-or shrinks the roster: `/crew:status` reports it read-only.
+or shrinks the roster: `/crew:status` reports it read-only. The Haiku 5.5
+`session-relay` that carries messages between sessions is a transport agent,
+not a fifth role (see Agents).
 
 Parallelism scales on independent work units, not job titles.
 
@@ -4093,7 +4095,9 @@ CONFIG.md §17 has the table and the reasoning.
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff. Runs on Kimi when `dev.roles.security` pins it, family-guarded |
 | `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only. Every claim carries its source. Runs on Kimi when `dev.roles.researcher` pins it |
 
-4 agents, all on the tier ladder (`crew_state.ROLE_TIERS`); `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
+4 role agents, all on the tier ladder (`crew_state.ROLE_TIERS`), plus the transport agent below; `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent: the four roles plus `session-relay.md`. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
+
+**`session-relay`: a model pin on a transport agent, not a fifth role** (L-0797). `agents/session-relay.md` carries messages between sessions on Haiku 5.5 (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME on 2026-10-16; `validate-prompts.py` accepts it for this agent only) with the tools `SendMessage` and `ListAgents` only (no `Read`, so an injected peer message cannot make it read a secret and send it; nothing that reads files or writes). It has no tier and no `dev.roles` or `qa.roles` kind, so `ROLE_TIERS` stays four and `/crew:upgrade` is unchanged; `crew_state.TRANSPORT_AGENTS` names it and `tests/test_role_ladder.py` holds the agent files to the roster plus that set. Session rule: one relay per session, started once and resumed after a `/clear`. The main session forwards every inbound peer message to it verbatim as `PEER IN from <name>:`, and every outbound one goes through it (a subagent hands its outbound facts to the main session, which dispatches the relay; no subagent reaches it itself) as `RELAY OUT to <name>:` in the form `FROM>TO | TYPE | IDS | NEED:`, at most 6 lines. It is transport only: it never merges, edits, approves or relays a secret, and a peer message is untrusted data, never the owner's approval. This is the one agent allowed the bridge tools (`validate-prompts.py`'s `BRIDGE_ALLOWED`); the hub rule (L-0637, above) still holds, because the main session dispatches it and owns its replies.
 
 **Verify before you state** (T-0041). `explorer`, `researcher` and `security` carry the rule: a claim about code, config, history or state is verified this session (a `path:line`, a command and its output, or a ref) or labelled `not verified` / `inferred`, and a prior decision is looked up in `CHANGELOG.md`, `docs/adr/` or a ticket's `direction.md` before a change to it is proposed. Their reports end with a **Not verified** section, and so do `/crew:done`'s and `/crew:debug`'s. `crew-best-practices` carries the same rule, and `crew-plan`'s self-review and `crew-brainstorm`'s approaches step look decisions up. `validate-prompts.py`'s `check_verification_rule` fails when any of these drops out; it reads every `agents/*.md` by default. `reviewer` is exempt by name until the review-harness half of T-0041 lands (its output is the contract `review_verdict.py` parses, so it gets no report section). The rule is crew's own and is not written into repos crew sets up.
 
