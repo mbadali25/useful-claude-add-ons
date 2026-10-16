@@ -3388,3 +3388,16 @@ def test_config_md_global_key_count_is_measured():
     assert stated_global == len(global_leaves) == len(tabled)
     assert stated_total == len(total)
     assert set(tabled) == set(global_leaves)
+
+
+def test_models_lists_coordinator_pin(tmp_path, capsys):
+    root, gpath = _two_layers(
+        tmp_path, {"dev.roles.coordinator": {"provider": "claude", "model": "claude-opus-5-5"}},
+        global_cfg={})
+
+    code = crew_config.main(["--root", str(root), "--global-path", str(gpath), "--models"])
+    rows = [line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("coordinator ")]
+
+    assert (code, len(rows), "role-pin" in rows[0], "claude-opus-5-5" in rows[0]) == (
+        0, 1, True, True)

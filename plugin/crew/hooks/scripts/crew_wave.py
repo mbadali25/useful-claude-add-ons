@@ -778,13 +778,31 @@ def _receipt_mark(top, ticket):
     return [receipt.get("kind"), receipt.get("round"), receipt.get("accepted_at")]
 
 
-def _launch(top, slug, ticket, resume):
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
+
+
+def role_model(top, role):
+    """`(model, warning)` for a `dev.roles.<role>` pin that is a claude pin with a model:
+    what the dispatcher passes as the Agent `model`. `(None, "")` when nothing is pinned
+    or the pin is another provider's (its model is not a claude id); `(None, why)` when
+    the pinned text is not a model id, so an odd value is named, never put on a line."""
+    row = crew_state.resolve_role(crew_config.resolve_config(top), "dev", role)
+    model = row["model"]
+    if row["provider"] != "claude" or not model:
+        return None, ""
+    if not isinstance(model, str) or not MODEL_ID.match(model):
+        return None, f"dev.roles.{role}.model {model!r} is not a model id; no model pinned"
+    return model, ""
+
+
+def _launch(top, slug, ticket, resume, model=None):
     command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
                f"--root {_shell_path(top)} "
                f"--set {slug} --ticket {ticket}")
     if resume is not None:
         command += f" --resume-round {resume}"
-    return f"launch {ticket}: {LAUNCH} prompt: the output of `{command}`"
+    launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
+    return f"launch {ticket}: {launch} prompt: the output of `{command}`"
 
 
 def _valid_receipts(receipts):
@@ -834,6 +852,11 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
+    lane_model, lane_warning = role_model(top, "developer")
+    coordinator, coordinator_warning = role_model(top, "coordinator")
+    lines += [f"warning: {w}" for w in (lane_warning, coordinator_warning) if w]
+    if coordinator:
+        lines.append(f"coordinator: model {coordinator}")
     for ticket in result["wave"]:
         if started and ticket not in started:
             # A relaunch replans from today's approvals, without the lanes already running:
@@ -870,7 +893,7 @@ def start(root, slug):
             write_lane(top, slug, ticket, lane)
         if ticket not in lanes:
             lanes.append(ticket)
-        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
+        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket), lane_model))
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]

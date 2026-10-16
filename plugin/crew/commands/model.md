@@ -50,6 +50,12 @@ the state this design exists to make visible.
 say it that way. The id is a debugging detail, and for Kimi 2.7 the two are not
 the same string — see step 2.
 
+**The coordinator and lane pins (L-0799).** `dev.roles.coordinator` is a model pin on an existing
+role, not a role of its own: a row appears only when it is pinned. `dev.roles.developer` with a
+claude `model` is what `crew_wave.py start` puts on each lane launch. Neither changes the session
+model. Report them like any other row; to set one, `/crew:model dev.roles.coordinator
+'{"provider": "claude", "model": "claude-opus-5-5"}'`.
+
 ### The author family, and how it was decided
 
 The report's first line names the author family and where it came from:

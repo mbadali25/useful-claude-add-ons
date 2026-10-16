@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.38**: The coordinator is a model pin on an existing role, and wave lanes carry the developer model. `crew` 1.2.38 makes `dev.roles.coordinator` a documented model pin (no fifth role, no persona, default unset) and puts `dev.roles.developer`'s claude model on each wave lane launch.
 - **crew 1.2.37**: A Haiku 5.5 `session-relay` agent for messages between sessions. `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5 that carries every message between sessions, so peer traffic costs a cheap model and never reaches the main session unread.
-- **crew 1.2.36**: The terraform guard's fallbacks no longer refuse a line for mentioning "apply". `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made at run time, it now asks whether a command word on the line could run terraform, terragrunt or tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -629,6 +629,73 @@ def test_start_prints_isolated_agent_launch_per_lane(tmp_path):
         2, True, 2, True)
 
 
+def _start_with_roles(tmp_path, roles):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": roles}}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+_PLAIN = "Agent(subagent_type: general-purpose, isolation: worktree) prompt:"
+
+
+def test_launch_line_carries_developer_model(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "claude-sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(
+        "Agent(subagent_type: general-purpose, isolation: worktree, model: claude-sonnet-5-5) prompt:"
+        in line for line in launches)) == (2, True)
+
+
+def test_launch_line_unchanged_without_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            any("model" in line.split(" prompt:")[0] for line in lines)) == (2, True, False)
+
+
+@pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "kimi-code/k3"},
+                                 {"provider": "claude"}])
+def test_launch_line_no_model_for_non_claude_pin(tmp_path, pin):
+    lines = _start_with_roles(tmp_path, {"developer": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches)) == (2, True)
+
+
+def test_launch_line_refuses_an_odd_model_text(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "x) rm -rf /"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            any(line.startswith("warning: dev.roles.developer.model") for line in lines)) == (
+        True, True)
+
+
+def test_start_reports_coordinator_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {"coordinator": {"provider": "claude",
+                                                         "model": "claude-opus-5-5"}})
+
+    assert "coordinator: model claude-opus-5-5" in lines
+
+
+@pytest.mark.parametrize("roles", [{}, {"coordinator": {"provider": "kimi",
+                                                         "model": "kimi-code/k3"}},
+                                   {"coordinator": {"provider": "claude"}}])
+def test_start_silent_without_coordinator_pin(tmp_path, roles):
+    lines = _start_with_roles(tmp_path, roles)
+
+    assert [line for line in lines if line.startswith("coordinator:")] == []
+
+
 def test_start_refuses_when_scope_not_enforcing(tmp_path):
     root = _repo(tmp_path, mode="report")
     _wave(root, [_row("T-1")], [("T-1", ("src/**",))])

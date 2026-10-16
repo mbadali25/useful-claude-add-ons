@@ -2811,6 +2811,18 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 - JUDGEMENT: a peer's `done` decides only whether this side may start. Tests:
   `plugin/crew/tests/test_crew_wave_coord_deps.py`, under the wave rule of `.crew/verify.json`.
 
+## Wave model pins (L-0799)
+
+Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:784` `role_model(top, role)` resolves
+  `dev.roles.<role>` through `crew_state.resolve_role` and returns a model only for a claude pin whose
+  text matches `MODEL_ID` (`:781`); `start` (`:855-856`) reads `developer` and `coordinator`, `_launch`
+  (`:798`) appends `, model: <id>` to the `Agent(...)` line, and a `coordinator: model <id>` line is
+  printed first. No agent file or `ROLE_TIERS` entry exists for the coordinator.
+- JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
+  Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`).
+
 ## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
 
 - DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every

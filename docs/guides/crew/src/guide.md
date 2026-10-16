@@ -33,6 +33,12 @@ independent eyes.
 
 A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).
 
+**The coordinator is a model pin, not a role.** Set `dev.roles.coordinator` (for example
+`{"provider": "claude", "model": "claude-opus-5-5"}`) and `dev.roles.developer` (for example
+`{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
+coordinator pin and puts the developer model on every lane launch. Both default to unset, which
+changes nothing.
+
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
 CLI instead. Pin one with
