@@ -5,6 +5,7 @@ stay is cheap (Haiku), narrow (three tools, none of them a write tool) and
 transport-only (the never-list is in the prompt).
 """
 
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,8 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, os.pardir, "hooks", "scripts"))
 
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures  # noqa: E402  pylint: disable=wrong-import-position
 import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 import role_write_guard  # noqa: E402  pylint: disable=wrong-import-position
 
@@ -56,6 +59,23 @@ def test_the_relay_is_transport_not_a_role():
 
 def test_the_write_guard_denies_the_relay():
     assert "session-relay" in role_write_guard._DENY_ROLES  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("agent_type", ["session-relay", "crew:session-relay"])
+def test_the_write_guard_blocks_a_relay_write(tmp_path, agent_type):
+    root = crew_fixtures.make_repo(tmp_path, config={"guards": {"roleWrites": "block"}})
+    payload = json.dumps({
+        "tool_name": "Write", "cwd": str(root), "agent_type": agent_type,
+        "tool_input": {"file_path": str(root / "TODO.md")},
+    })
+    script = os.path.join(PLUGIN, "hooks", "scripts", "role_write_guard.py")
+
+    proc = subprocess.run(
+        [sys.executable, script], input=payload, capture_output=True, text=True,
+        check=False, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root),
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
 
 
 @pytest.mark.parametrize("phrase", [

@@ -102,9 +102,10 @@ roster fact.** `role_write_guard.py` — the `PreToolUse` `Write|Edit` guard —
 still carries PM-specific logic and a docstring that names removed roles:
 
 - `_DENY_ROLES` (`plugin/crew/hooks/scripts/role_write_guard.py:231-236`) is
-  exactly the four shipped agents (`explorer`, `researcher`, `reviewer`,
-  `security`) — consistent with the roster above, each denied any write
-  because none grants `Write`/`Edit` in its `tools:` line.
+  the four shipped agents (`explorer`, `researcher`, `reviewer`,
+  `security`) plus the transport agent `session-relay` (L-0797, listed at
+  `:236`, not a role) — each denied any write because none grants
+  `Write`/`Edit` in its `tools:` line.
 - `_UNRESTRICTED_ROLES` is `frozenset()` (`:242`) — empty since crew 1.0,
   because no shipped agent writes.
 - `_PM_ROLE = "pm"` (`:244`) and `_PM_ALLOWED_PATTERNS` (`:251-260`,
