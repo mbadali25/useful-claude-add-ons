@@ -106,7 +106,6 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 # no judgement to exercise, pinned to the full id `claude-haiku-5-5` (Haiku 5.5, owner decision 2026-10-16) to keep
 # message passing cheap. The id is accepted for this one agent only: no general `claude-*` pass.
 MODEL_TIER = {"reviewer": "opus", "explorer": "opus", "session-relay": "claude-haiku-5-5"}
-FULL_ID_MODELS = {"session-relay": "claude-haiku-5-5"}
 
 # T-0041: crew verifies before it states. The rule is a phrase every agent and
 # the always-loaded best-practices skill carries, so a prompt rewrite that drops
@@ -284,7 +283,7 @@ def check_agents():
             ok(f"{name}: tools")
 
         model = fields.get("model", "inherit")
-        if model not in ("inherit", "opus", "sonnet", "haiku") and model != FULL_ID_MODELS.get(name[:-3]):
+        if model not in ("inherit", "opus", "sonnet", "haiku") and model != MODEL_TIER.get(name[:-3]):
             bad(f"{name}: unrecognised model '{model}'")
         elif model != MODEL_TIER.get(name[:-3], "sonnet"):
             # The tiering is a design decision, not a default: reviewer is the

@@ -98,7 +98,7 @@ has not landed carries the ticket that brings it, and is listed in
 interactive session implements it, an independent reviewer reads the finished
 change, and deterministic gates block on failure instead of giving an
 opinion.</p>
-<p>crew 1.1 ships four agents. Each one exists because it buys something a
+<p>crew 1.1 ships four agents (plus one transport agent, below). Each one exists because it buys something a
 prompt cannot: an isolated context window, a restricted tool set, or
 independent eyes.</p>
 <table>
@@ -110,11 +110,6 @@ independent eyes.</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>session-relay</code></td>
-<td>Carries messages between sessions on Haiku 5.5; transport only, not a role</td>
-<td>No Write, Edit or Bash; SendMessage, ListAgents, Read</td>
-</tr>
 <tr>
 <td><code>explorer</code></td>
 <td>Maps the code a ticket touches</td>
@@ -137,6 +132,7 @@ independent eyes.</p>
 </tr>
 </tbody>
 </table>
+<p>A fifth file, <code>session-relay</code>, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage, ListAgents, Read; no Write, Edit or Bash).</p>
 <p><strong>Running agents on Kimi.</strong> Claude Code runs subagents on Claude models only,
 so <code>explorer</code>, <code>researcher</code> and <code>security</code> can hand their task to the Kimi Code
 CLI instead. Pin one with

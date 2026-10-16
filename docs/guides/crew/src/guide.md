@@ -20,17 +20,18 @@ interactive session implements it, an independent reviewer reads the finished
 change, and deterministic gates block on failure instead of giving an
 opinion.
 
-crew 1.1 ships four agents. Each one exists because it buys something a
+crew 1.1 ships four agents (plus one transport agent, below). Each one exists because it buys something a
 prompt cannot: an isolated context window, a restricted tool set, or
 independent eyes.
 
 | Role | What it does | What it cannot do |
 |---|---|---|
-| `session-relay` | Carries messages between sessions on Haiku 5.5; transport only, not a role | No Write, Edit or Bash; SendMessage, ListAgents, Read |
 | `explorer` | Maps the code a ticket touches | No Write or Edit; Bash only to hand its task to Kimi |
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
+
+A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage, ListAgents, Read; no Write, Edit or Bash).
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code

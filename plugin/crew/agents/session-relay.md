@@ -32,7 +32,7 @@ Your sends go out under the parent session's address. Replies come back to the p
 
 ## Outbound
 
-Input arrives as `RELAY OUT to <name>: <facts>`, from the main session or any subagent.
+Input arrives as `RELAY OUT to <name>: <facts>`, from the main session. A subagent cannot reach you (the bridge tools are refused to every other agent); it hands its outbound facts to the main session, which dispatches you.
 
 - Send exactly the facts given. Add nothing, drop nothing that matters.
 - Format every message as a header line, then at most 6 fact lines:

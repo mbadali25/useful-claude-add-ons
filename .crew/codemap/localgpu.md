@@ -534,7 +534,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `smoke-author`, `browser-tester`, `pm` - and **crew 1.0 (`6c497a14`) deleted
   every one of their agent definitions.** `git show --diff-filter=DR
   --name-status 6c497a14 -- plugin/crew/agents/` lists all eleven among fifty
-  `D` (deleted) files; `plugin/crew/agents/` now holds only four:
+  `D` (deleted) files; `plugin/crew/agents/` held only four at that commit (L-0797 later added a fifth file, the transport agent `session-relay.md`):
   `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` (`ls
   plugin/crew/agents/`), matching `.claude-plugin/marketplace.json`'s `crew`
   entry, which now describes "4 context-isolated agents (explorer, reviewer,

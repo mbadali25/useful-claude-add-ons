@@ -101,4 +101,5 @@ def test_validator_allows_the_full_id_on_the_relay(tmp_path):
 ])
 def test_validator_blocks_any_other_model_pin(tmp_path, agent, model):
     code, out = _validate_copy(tmp_path, agent, model)
-    assert code == 1 and agent in out
+    assert code == 1
+    assert re.search(rf"{re.escape(agent)}: (unrecognised model|model '[^']*' should be)", out), out
