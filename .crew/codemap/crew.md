@@ -101,14 +101,14 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 roster fact.** `role_write_guard.py` — the `PreToolUse` `Write|Edit` guard —
 still carries PM-specific logic and a docstring that names removed roles:
 
-- `_DENY_ROLES` (`plugin/crew/hooks/scripts/role_write_guard.py:231-236`) is
+- `_DENY_ROLES` (`plugin/crew/hooks/scripts/role_write_guard.py:232-238`) is
   the four shipped agents (`explorer`, `researcher`, `reviewer`,
   `security`) plus the transport agent `session-relay` (L-0797, listed at
-  `:236`, not a role) — each denied any write because none grants
+  `:237`, not a role) — each denied any write because none grants
   `Write`/`Edit` in its `tools:` line.
-- `_UNRESTRICTED_ROLES` is `frozenset()` (`:242`) — empty since crew 1.0,
+- `_UNRESTRICTED_ROLES` is `frozenset()` (`:244`) — empty since crew 1.0,
   because no shipped agent writes.
-- `_PM_ROLE = "pm"` (`:244`) and `_PM_ALLOWED_PATTERNS` (`:251-260`,
+- `_PM_ROLE = "pm"` (`:246`) and `_PM_ALLOWED_PATTERNS` (`:253-261`,
   `.crew/**`, `TODO.md`, `.work/**`, `docs/diagrams/**`) are still live code,
   and `classify` (`:540-593`) still special-cases `role == "pm"` at `:583-590`
   — but nothing in this checkout ever sets `agent_type` to `"pm"` any more:
@@ -1158,7 +1158,7 @@ T-0053-build `4cdf076f`; the T-0053 citations above are T-0053's own).**
 into `none|valid|expired|untrusted`; `at`/`until` must be UTC-aware ISO and are compared in UTC
 (`to_utc`, `:163`, resolves a skipped spring-forward time forward; a naive record is untrusted, review N1); `next_edge` (`:154`) is the next time of
 day strictly after now, the current window's end inside it and the next window's end outside;
-`MANUAL_SLEEP_HOURS` (`:57`), `MANUAL_FILE` (`:54`), and the caps `MANUAL_MAX` (24 wall-clock hours, measured by `_wall`, `:174`) and `MANUAL_MAX_REAL` (25 real, `:61-62`). `resolve` (`:242`) takes the record and
+`MANUAL_SLEEP_HOURS` (`:57`), `MANUAL_FILE` (`:54`), and the caps `MANUAL_MAX` (24 wall-clock hours, measured by `_wall`, `:174`) and `MANUAL_MAX_REAL` (25 real, `:61-62`). `resolve` (`:244`) takes the record and
 `sleep_allowed`: untrusted is `unknown` (source manual), expired is the schedule with a warning, a
 manual asleep without the gate is `unknown`, a manual asleep outside the window and a manual awake
 over an asleep or unknown schedule carry `tightenOnly` (owner decision 2026-10-04, review B1: a

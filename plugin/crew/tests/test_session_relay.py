@@ -1,7 +1,7 @@
 """agents/session-relay.md: the Haiku 5.5 relay is a pin on a transport agent (L-0797).
 
 It is not a fifth role: no tier, no `dev.roles`/`qa.roles` kind. What it must
-stay is cheap (Haiku), narrow (three tools, none of them a write tool) and
+stay is cheap (Haiku), narrow (two tools, none of them a read or write tool) and
 transport-only (the never-list is in the prompt).
 """
 
@@ -17,7 +17,7 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, os.pardir, "hooks", "scripts"))
 
-import context  # noqa: F401  pylint: disable=unused-import
+import context  # noqa: F401,E402  pylint: disable=unused-import
 import crew_fixtures  # noqa: E402  pylint: disable=wrong-import-position
 import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 import role_write_guard  # noqa: E402  pylint: disable=wrong-import-position
@@ -43,11 +43,11 @@ def test_the_relay_is_pinned_to_haiku_5_5():
 
 def test_the_relay_holds_exactly_the_transport_tools():
     tools = {t.strip() for t in _field("tools").split(",")}
-    assert tools == {"SendMessage", "ListAgents", "Read"}
+    assert tools == {"SendMessage", "ListAgents"}
 
 
-@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit", "Bash", "PowerShell", "NotebookEdit"])
-def test_the_relay_holds_no_write_or_shell_tool(tool):
+@pytest.mark.parametrize("tool", ["Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "NotebookEdit"])
+def test_the_relay_holds_no_read_write_or_shell_tool(tool):
     assert tool not in {t.strip() for t in _field("tools").split(",")}
 
 

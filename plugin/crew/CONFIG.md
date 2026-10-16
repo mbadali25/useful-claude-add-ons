@@ -892,7 +892,7 @@ hand-edited JSON file and an unguarded comparison against a string is a
 frontmatter line `model: claude-haiku-5-5` (the full id, probed accepted in a scratch HOME on 2026-10-16), which plugin frontmatter fixes at ship
 time, so there is **no** `relay.model` key and nothing in `qa.roles` or `dev.roles` for it: it is not
 a role, and `/crew:model` reports roles only. To run a relay on another model, pass `model` when
-dispatching it. `tests/test_session_relay.py` pins the model, the three tools and the transport-only
+dispatching it. `tests/test_session_relay.py` pins the model, the two tools (no `Read`) and the transport-only
 rules.
 
 ### The provider keys are also where `roles` pins live

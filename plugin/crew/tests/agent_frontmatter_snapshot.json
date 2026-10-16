@@ -23,7 +23,7 @@
     "session-relay.md": {
       "model": "claude-haiku-5-5",
       "name": "session-relay",
-      "tools": "SendMessage, ListAgents, Read"
+      "tools": "SendMessage, ListAgents"
     }
   },
   "captured_from": "621d50dc (origin/main, crew 0.19.92); Bash for explorer and researcher added deliberately by L-0777 (Kimi dispatchers)"

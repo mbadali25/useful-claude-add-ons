@@ -103,8 +103,9 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 # on it -- see CHANGELOG.md's 1.0.9 entry and README's model-tiers section.
 #
 # `session-relay` (L-0797) is the other direction: a transport-only relay with
-# no judgement to exercise, pinned to the full id `claude-haiku-5-5` (Haiku 5.5, owner decision 2026-10-16) to keep
-# message passing cheap. The id is accepted for this one agent only: no general `claude-*` pass.
+# no judgement to exercise, pinned to the full id `claude-haiku-5-5` (Haiku 5.5,
+# owner decision 2026-10-16) to keep message passing cheap. The id is accepted for
+# this one agent only: no general `claude-*` pass.
 MODEL_TIER = {"reviewer": "opus", "explorer": "opus", "session-relay": "claude-haiku-5-5"}
 
 # T-0041: crew verifies before it states. The rule is a phrase every agent and

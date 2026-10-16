@@ -14,7 +14,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Summary.** `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5
   that carries every message between sessions, so peer traffic costs a cheap model and never reaches
   the main session unread.
-- **What.** `agents/session-relay.md` (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME; tools `SendMessage`, `ListAgents`, `Read`;
+- **What.** `agents/session-relay.md` (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME; tools `SendMessage` and `ListAgents`, no `Read`;
   inbound `PEER IN from <name>:`, outbound `RELAY OUT to <name>:` as `FROM>TO | TYPE | IDS | NEED:`).
   It is a model pin on a shipped agent, not a fifth role: `crew_state.TRANSPORT_AGENTS` names it,
   `ROLE_TIERS` stays at four, and it has no config key and no hook. `validate-prompts.py` gains a
