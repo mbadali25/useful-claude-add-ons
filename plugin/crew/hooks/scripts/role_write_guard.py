@@ -233,6 +233,7 @@ _DENY_ROLES = frozenset({
     "researcher",
     "reviewer",
     "security",
+    "session-relay",
 })
 
 # Every remaining role whose tools line grants BOTH Write and Edit, minus

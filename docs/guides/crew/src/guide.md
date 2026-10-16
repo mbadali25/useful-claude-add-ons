@@ -26,6 +26,7 @@ independent eyes.
 
 | Role | What it does | What it cannot do |
 |---|---|---|
+| `session-relay` | Carries messages between sessions on Haiku 5.5; transport only, not a role | No Write, Edit or Bash; SendMessage, ListAgents, Read |
 | `explorer` | Maps the code a ticket touches | No Write or Edit; Bash only to hand its task to Kimi |
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |

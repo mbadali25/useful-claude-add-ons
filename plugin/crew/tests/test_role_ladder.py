@@ -47,13 +47,20 @@ def test_every_ladder_role_has_an_agent_definition():
 def test_every_agent_definition_is_a_role_crew_knows():
     """The file -> code direction. An `agents/<name>.md` nobody registered
     dispatches nothing, and `/crew:upgrade` would call it unrecognised."""
-    for name in sorted(_agent_files()):
+    for name in sorted(_agent_files() - set(crew_state.TRANSPORT_AGENTS)):
         assert crew_state.known_role(name) is True, (
             f"agents/{name}.md is not in ROLE_TIERS, so nothing dispatches it")
 
 
-def test_the_agent_files_are_exactly_the_roster():
-    assert _agent_files() == set(ROSTER_1_0)
+def test_the_agent_files_are_exactly_the_roster_plus_transport_agents():
+    assert _agent_files() == set(ROSTER_1_0) | set(crew_state.TRANSPORT_AGENTS)
+
+
+def test_the_transport_agents_are_not_roles():
+    assert crew_state.TRANSPORT_AGENTS == frozenset({"session-relay"})
+    for name in crew_state.TRANSPORT_AGENTS:
+        assert name not in crew_state.ROLE_TIERS
+        assert crew_state.known_role(name) is False
 
 
 def test_there_are_no_specialists_in_1_0():

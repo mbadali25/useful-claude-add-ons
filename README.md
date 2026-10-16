@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.37**: A Haiku 5.5 `session-relay` agent for messages between sessions. `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5 that carries every message between sessions, so peer traffic costs a cheap model and never reaches the main session unread.
 - **crew 1.2.36**: The terraform guard's fallbacks no longer refuse a line for mentioning "apply". `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made at run time, it now asks whether a command word on the line could run terraform, terragrunt or tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
-- **crew 1.2.35**: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given. A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now holds the time, guard, policy, decision and target, with `-` for the command; the full command line is stored only when the operator also passes the new `--record-command`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

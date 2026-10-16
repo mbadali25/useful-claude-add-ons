@@ -886,6 +886,15 @@ The three numeric `pm.*` keys are coerced with `int_or` once, in
 hand-edited JSON file and an unguarded comparison against a string is a
 `TypeError` that takes out every session in the repo.
 
+### The session relay is pinned in its agent file, not in config
+
+`agents/session-relay.md` (L-0797) carries messages between sessions on Haiku 5.5. Its model is the
+frontmatter line `model: claude-haiku-5-5` (the full id, probed accepted in a scratch HOME on 2026-10-16), which plugin frontmatter fixes at ship
+time, so there is **no** `relay.model` key and nothing in `qa.roles` or `dev.roles` for it: it is not
+a role, and `/crew:model` reports roles only. To run a relay on another model, pass `model` when
+dispatching it. `tests/test_session_relay.py` pins the model, the three tools and the transport-only
+rules.
+
 ### The provider keys are also where `roles` pins live
 
 `qa.roles` and `dev.roles` are open tables, so
