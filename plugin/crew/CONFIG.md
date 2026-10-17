@@ -908,7 +908,11 @@ coordinates, the pin has no effect unless the owner sets the session model.
 
 `dev.roles.developer` with `provider: claude` and a `model` is now used for wave lanes:
 `crew_wave.py start` writes `Agent(subagent_type: general-purpose, isolation: worktree, model: <id>)`.
-Unset, or a non-claude provider, leaves the launch line byte-identical to 1.2.37. The pinned text
+Only an explicit `dev.roles.<role>.model` counts: a `dev.claude.model` block default is not a pin and
+changes nothing. Unset, a non-claude provider, or a model that is not a claude id or alias (`gpt-6`
+under `provider: claude`) leaves the launch line byte-identical to 1.2.37. A role pin with a claude
+model but no `provider`, under a `dev.provider` that is not claude, prints a `warning:` naming the fix
+and pins nothing. The pinned text
 must look like a model id or alias (letters, digits, `.`, `_`, `-`, an optional `[1m]` suffix); anything
 else prints a `warning:` and pins nothing. The value is passed through verbatim, so an alias
 (`sonnet`, `opus`) works wherever an explicit id is refused. Probed 2026-10-16 in a scratch HOME:

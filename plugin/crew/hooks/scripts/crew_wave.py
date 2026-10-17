@@ -781,17 +781,33 @@ def _receipt_mark(top, ticket):
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
 
 
+CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku")
+
+
 def role_model(top, role):
     """`(model, warning)` for a `dev.roles.<role>` pin that is a claude pin with a model:
-    what the dispatcher passes as the Agent `model`. `(None, "")` when nothing is pinned
-    or the pin is another provider's (its model is not a claude id); `(None, why)` when
-    the pinned text is not a model id, so an odd value is named, never put on a line."""
-    row = crew_state.resolve_role(crew_config.resolve_config(top), "dev", role)
-    model = row["model"]
-    if row["provider"] != "claude" or not model:
+    what the dispatcher passes as the Agent `model`. `(None, "")` when no role pin is set
+    (a block default is not a pin), the pin is another provider's, or its model is not a
+    claude model or alias; `(None, why)` when the pinned text is not a model id, so an
+    odd value is named, never put on a line."""
+    cfg = crew_config.resolve_config(top)
+    pin = crew_state.dict_or_empty(crew_state.dict_or_empty(
+        crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))
+    model = pin.get("model")
+    if not model:
+        return None, ""
+    row = crew_state.resolve_role(cfg, "dev", role)
+    if row["provider"] != "claude":
+        if (not pin.get("provider") and isinstance(model, str)
+                and crew_state.family(None, model) in CLAUDE_MODEL_HEADS):
+            return None, (f"dev.roles.{role}.model {model!r} has no provider and "
+                          f"dev.provider is {row['provider']!r}; no model pinned "
+                          f"(set dev.roles.{role}.provider to claude)")
         return None, ""
     if not isinstance(model, str) or not MODEL_ID.match(model):
         return None, f"dev.roles.{role}.model {model!r} is not a model id; no model pinned"
+    if crew_state.family(None, model) not in CLAUDE_MODEL_HEADS:
+        return None, ""
     return model, ""
 
 

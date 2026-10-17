@@ -660,14 +660,44 @@ def test_launch_line_unchanged_without_pin(tmp_path):
             any("model" in line.split(" prompt:")[0] for line in lines)) == (2, True, False)
 
 
-@pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "kimi-code/k3"},
+@pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "k3"},
+                                 {"provider": "codex", "model": "gpt-6.1-sol"},
+                                 {"provider": "claude", "model": "gpt-6"},
+                                 {"provider": "codex", "model": "claude-opus-5-5"},
                                  {"provider": "claude"}])
 def test_launch_line_no_model_for_non_claude_pin(tmp_path, pin):
-    lines = _start_with_roles(tmp_path, {"developer": pin})
+    lines = _start_with_roles(tmp_path, {"developer": pin, "coordinator": pin})
 
     launches = [line for line in lines if line.startswith("launch ")]
 
-    assert (len(launches), all(_PLAIN in line for line in launches)) == (2, True)
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        2, True, [])
+
+
+def _start_with_config(tmp_path, cfg):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, **cfg}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+def test_block_default_model_is_not_a_pin(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"claude": {"model": "opus"}}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        True, [])
+
+
+def test_pin_without_provider_warns_when_block_provider_is_not_claude(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"provider": "codex", "roles": {
+        "coordinator": {"model": "claude-opus-5-5"}}}})
+
+    assert (any(line.startswith("warning: dev.roles.coordinator.model") for line in lines),
+            [line for line in lines if line.startswith("coordinator:")]) == (True, [])
 
 
 def test_launch_line_refuses_an_odd_model_text(tmp_path):
