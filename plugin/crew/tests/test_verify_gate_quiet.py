@@ -225,7 +225,7 @@ def test_ci_all_price_stay_verbose(tmp_path, flag):
 
     assert "verify-gate: env pinned" in result.stderr
     assert "| detail:" not in result.stderr
-    assert not (root / ".crew" / ".verify-gate.log").exists()
+    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
 
 
 def test_unchanged_same_session_prints_one_line_exit_2(tmp_path):
@@ -499,8 +499,9 @@ def test_failed_split_of_the_buffer_prints_everything(tmp_path, tool, pattern):
     assert result.returncode == 2
     assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
     assert "boom" in result.stderr.replace("VERIFY FAILED: echo boom; exit 1", "")
+    assert "@@crew-detail" not in result.stderr
     assert "| detail: unavailable" in result.stderr
-    assert not (root / ".crew" / ".verify-gate.log").exists()
+    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
     assert not (root / ".crew" / ".verify-gate.last-stop").exists()
 
 
@@ -560,3 +561,59 @@ def test_log_and_state_are_private_and_no_buffer_file_is_left_behind(tmp_path):
         assert stat.S_IMODE(os.stat(root / ".crew" / name).st_mode) == 0o600
     assert sorted(p.name for p in (root / ".crew").glob(".verify-gate.*tmp*")) == []
     assert [p.name for p in scratch.glob("crew-gate-*")] == []
+
+
+def test_buffer_that_cannot_be_created_still_says_detail_unavailable(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    shim_tool = shim / "mktemp"
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-out*) exit 1 ;; esac\nexec {shutil.which("mktemp")} "$@"\n',
+                         encoding="utf-8")
+    shim_tool.chmod(0o755)
+
+    result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
+
+    assert result.returncode == 2
+    assert _lines(result)[0].startswith("verify-gate: output buffer unavailable")
+    assert "detail: unavailable" in _lines(result)[0]
+    assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
+
+
+def test_exit_zero_stop_with_nothing_to_check_removes_the_previous_detail_log(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1"), base=False))
+    first = _run(root)
+    assert (root / ".crew" / ".verify-gate.log").exists()
+    _commit_all(root)
+
+    clean = _run(root)
+
+    assert first.returncode == 2
+    assert clean.returncode == 0
+    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
+
+
+def test_state_file_with_a_second_line_prints_the_full_block(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    _run(root)
+    with open(root / ".crew" / ".verify-gate.last-stop", "a", encoding="utf-8") as handle:
+        handle.write("extra line\n")
+
+    second = _run(root)
+
+    assert second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="a read-only file is still writable by root")
+def test_read_only_state_file_prints_the_full_block(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    _run(root)
+    os.chmod(root / ".crew" / ".verify-gate.last-stop", 0o444)
+
+    second = _run(root)
+
+    assert second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr

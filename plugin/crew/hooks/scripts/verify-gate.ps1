@@ -188,6 +188,13 @@ function Get-CrewSha256([string]$Text) {
     return (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)) | ForEach-Object { $_.ToString('x2') }) -join '')
   } finally { $sha.Dispose() }
 }
+# A new file that must not already exist (no predictable name is ever written
+# through): CreateNew fails on an existing path, a link included.
+function Write-CrewNewFile([string]$Path, [string]$Text) {
+  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($Text)
+  $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+  try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+}
 function Invoke-CrewQuietFlush {
   if (-not $script:CrewQuiet) { return }
   $script:CrewQuiet = $false
@@ -203,13 +210,18 @@ function Invoke-CrewQuietFlush {
     [void]$fullLines.Add([string]$entry[1])
     if (-not $entry[0]) { [void]$plainLines.Add([string]$entry[1]) }
   }
-  if ($fullLines.Count -eq 0 -and -not $script:CrewReady) { return }
+  if ($fullLines.Count -eq 0 -and -not $script:CrewReady) {
+    if ($rc -eq 0 -and -not $script:CrewBackedOff -and -not (Test-Path -LiteralPath ".crew/.verify-gate.log" -PathType Container)) {
+      Remove-Item -LiteralPath ".crew/.verify-gate.log" -Force -ErrorAction SilentlyContinue
+    }
+    return
+  }
   $logPath = ".crew/.verify-gate.log"
   $logOk = $false
   if ($script:CrewMayLog -and $fullLines.Count -gt 0 -and (Test-Path -LiteralPath ".crew" -PathType Container) -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
-    $logTmp = ".crew/.verify-gate.log.tmp$PID"
+    $logTmp = ".crew/.verify-gate.log.tmp$PID-$([System.IO.Path]::GetRandomFileName())"
     try {
-      [System.IO.File]::WriteAllText($logTmp, (($fullLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+      Write-CrewNewFile $logTmp (($fullLines -join "`n") + "`n")
       Move-Item -LiteralPath $logTmp -Destination $logPath -Force -ErrorAction Stop
       $logOk = $true
     } catch { Remove-Item -LiteralPath $logTmp -Force -ErrorAction SilentlyContinue }
@@ -218,6 +230,9 @@ function Invoke-CrewQuietFlush {
   $body = if ($logOk) { $plainLines } else { $fullLines }
   if (-not $script:CrewReady) {
     foreach ($line in $fullLines) { [Console]::Error.WriteLine($line) }
+    if (-not $logOk -and $rc -eq 0 -and -not $script:CrewBackedOff -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
+      Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+    }
     if ($logOk) { [Console]::Error.WriteLine("verify-gate: run ended before a verdict; unproven rules are listed above | detail: $logPath") }
     return
   }
@@ -267,7 +282,7 @@ function Invoke-CrewQuietFlush {
     $hash = Get-CrewSha256 ((($plainLines -join "`n")) + "`n`n--nv $reach $over $dirty $defer $skip $other $fail $nvDigest`n")
   }
   $unchanged = $false
-  if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+  if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf) -and -not ([System.IO.File]::GetAttributes($statePath).HasFlag([System.IO.FileAttributes]::ReadOnly))) {
     try {
       $stateParts = ([System.IO.File]::ReadAllText($statePath).TrimEnd("`r", "`n")) -split "`t"
       if ($stateParts.Count -eq 2 -and $stateParts[0] -ceq $script:CrewSession -and $stateParts[1] -ceq $hash) { $unchanged = $true }
@@ -286,9 +301,9 @@ function Invoke-CrewQuietFlush {
   foreach ($line in $body) { [Console]::Error.WriteLine($line) }
   [Console]::Error.WriteLine($hint)
   if ($hash -and (Test-Path -LiteralPath ".crew" -PathType Container)) {
-    $stateTmp = "$statePath.tmp$PID"
+    $stateTmp = "$statePath.tmp$PID-$([System.IO.Path]::GetRandomFileName())"
     try {
-      [System.IO.File]::WriteAllText($stateTmp, "$($script:CrewSession)`t$hash`n", (New-Object System.Text.UTF8Encoding($false)))
+      Write-CrewNewFile $stateTmp "$($script:CrewSession)`t$hash`n"
       Move-Item -LiteralPath $stateTmp -Destination $statePath -Force -ErrorAction Stop
     } catch { Remove-Item -LiteralPath $stateTmp -Force -ErrorAction SilentlyContinue }
   }

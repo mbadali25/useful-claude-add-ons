@@ -209,7 +209,11 @@ _crew_gate_quiet_install() {
   [ "$CI_MODE" -eq 0 ] && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$VERBOSE_ARG" -eq 0 ] || return 0
   [ "${CREW_VERIFY_VERBOSE:-}" = 1 ] && return 0
   local _qi_buf
-  _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || return 0
+  _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || _qi_buf=""
+  if [ -z "$_qi_buf" ]; then
+    printf 'verify-gate: output buffer unavailable, printing everything | detail: unavailable\n' >&2
+    return 0
+  fi
   CREW_GATE_BUF="$_qi_buf"
   CREW_GATE_NONCE="@@crew-detail-$$-${RANDOM}${RANDOM}-$(date +%s)@@"
   # The key must occur exactly once, with a string value, directly inside the
@@ -284,6 +288,15 @@ _crew_gate_verdict_line() {
   if [ "$1" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
   G_VERDICT="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $G_NVTXT item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $2"
 }
+# Print a buffer file: as it is when the split worked, else with the nonce a
+# gate-authored line carries stripped (bash only, so a failed sed cannot matter).
+_crew_gate_emit() {
+  local _l
+  if [ "$_split_ok" -eq 1 ]; then cat "$1"; return; fi
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    printf '%s\n' "${_l#"$CREW_GATE_NONCE"}"
+  done < "$1"
+}
 _crew_gate_quiet_flush() {
   local _rc="${1:-0}"
   CREW_GATE_QUIET=0
@@ -318,6 +331,9 @@ _crew_gate_quiet_flush() {
     _plain="$_buf"; _full="$_buf"
   fi
   if [ ! -s "$_buf" ] && [ "$CREW_GATE_READY" -eq 0 ]; then
+    if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ] && [ ! -d "$_log" ]; then
+      rm -f "$_log" 2>/dev/null
+    fi
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi
@@ -336,7 +352,12 @@ _crew_gate_quiet_flush() {
     # The run ended before the rules were judged: say what it said, in full.
     # The held-back notices (deferred, over-budget, stop budget) are the only
     # record of what this turn never checked, so the whole buffer prints.
-    cat "$_full" >&2
+    _crew_gate_emit "$_full" >&2
+    # A successful early exit wrote no log of its own: the previous run's would
+    # now describe a different tree, so it goes.
+    if [ "$_log_ok" -eq 0 ] && [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ] && [ ! -d "$_log" ]; then
+      rm -f "$_log" 2>/dev/null
+    fi
     [ "$_log_ok" -eq 1 ] && printf 'verify-gate: run ended before a verdict; unproven rules are listed above | detail: %s\n' "$_log" >&2
     rm -f "$_buf" "$_plain" "$_full"
     return 0
@@ -348,7 +369,7 @@ _crew_gate_quiet_flush() {
     rm -f "$_state" 2>/dev/null
     {
       printf '%s\n' "$_verdict"
-      cat "$_body"
+      _crew_gate_emit "$_body"
       [ "$G_NV" -gt 0 ] && printf '%s\n' "$_hint"
     } >&2
     rm -f "$_buf" "$_plain" "$_full"
@@ -363,7 +384,8 @@ _crew_gate_quiet_flush() {
     case "$_hash" in *[!0-9a-f]*) _hash="" ;; esac
     [ "${#_hash}" -eq 64 ] || _hash=""
   fi
-  if [ -n "$_hash" ] && [ -f "$_state" ] && [ ! -L "$_state" ]; then
+  if [ -n "$_hash" ] && [ -f "$_state" ] && [ ! -L "$_state" ] && [ -w "$_state" ] \
+     && [ "$(wc -l < "$_state" 2>/dev/null | tr -d '[:space:]')" = 1 ]; then
     IFS=$'\t' read -r _st_sid _st_hash < "$_state" 2>/dev/null || true
     if [ "$_st_sid" = "$CREW_GATE_SESSION" ] && [ "$_st_hash" = "$_hash" ]; then
       _unchanged=1
@@ -378,7 +400,7 @@ _crew_gate_quiet_flush() {
   else
     {
       printf '%s\n' "$_verdict"
-      cat "$_body"
+      _crew_gate_emit "$_body"
       printf '%s\n' "$_hint"
     } >&2
     if [ -n "$_hash" ] && [ -d .crew ]; then
