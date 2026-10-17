@@ -225,7 +225,7 @@ def test_ci_all_price_stay_verbose(tmp_path, flag):
 
     assert "verify-gate: env pinned" in result.stderr
     assert "| detail:" not in result.stderr
-    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
+    assert not (root / ".crew" / ".verify-gate.log").exists()
 
 
 def test_unchanged_same_session_prints_one_line_exit_2(tmp_path):
@@ -501,7 +501,7 @@ def test_failed_split_of_the_buffer_prints_everything(tmp_path, tool, pattern):
     assert "boom" in result.stderr.replace("VERIFY FAILED: echo boom; exit 1", "")
     assert "@@crew-detail" not in result.stderr
     assert "| detail: unavailable" in result.stderr
-    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
+    assert not (root / ".crew" / ".verify-gate.log").exists()
     assert not (root / ".crew" / ".verify-gate.last-stop").exists()
 
 
@@ -590,7 +590,7 @@ def test_exit_zero_stop_with_nothing_to_check_removes_the_previous_detail_log(tm
 
     assert first.returncode == 2
     assert clean.returncode == 0
-    assert not (root / ".crew" / ".verify-gate.log").exists(), (clean.stderr, (root / ".crew" / ".verify-gate.log").read_text())
+    assert not (root / ".crew" / ".verify-gate.log").exists(), clean.stderr
 
 
 def test_state_file_with_a_second_line_prints_the_full_block(tmp_path):
