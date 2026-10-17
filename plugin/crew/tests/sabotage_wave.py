@@ -95,4 +95,9 @@ WAVE_MUTATIONS = (
      "    data, state = _read_json(crew_common.repo_config_file(top))\n",
      '    data, state = _read_json(os.path.join(top, ".crew", "config.json"))\n',
      _W + "test_scope_enforcing_in_a_linked_worktree_reads_the_main_checkout_config"),
+    # L-0802: a developer pin that never reaches the launch line is documentation only.
+    ("WAVE: the lane launch line drops the developer model", WAVE,
+     '    launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"\n',
+     "    launch = LAUNCH\n",
+     _W + "test_launch_line_carries_developer_model"),
 )
