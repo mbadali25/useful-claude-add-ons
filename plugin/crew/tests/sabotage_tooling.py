@@ -845,7 +845,7 @@ TOOLING_MUTATIONS += (
     (
         "--ci: an unknown argument is ignored",
         GATE_SH,
-        ('      echo "verify-gate: unknown argument \'$CI_ARG\' - the gate accepts --all, --ci, or '
+        ('      echo "verify-gate: unknown argument \'$CI_ARG\' - the gate accepts --all, --ci, --verbose, or '
          '--price as the first argument. Nothing was verified." >&2\n      exit 2 ;;\n'),
         "      : ;;\n",
         _CI + "test_an_unknown_argument_is_a_usage_error[sh--ci]",

@@ -24,6 +24,7 @@ The oracle for "failures are verbatim" is a verbose run of the same fixture.
 import json
 import os
 import re
+import signal
 import subprocess
 import time
 
@@ -46,7 +47,7 @@ _INFO = re.compile(
     r"^(verify-gate: (rules\[\d+\] (priced |declared reach|requires a clean|is permanently)"
     r"|env pinned|COVERED by|PASSED on this exact tree|stop budget|\d+s  |\d+s total across"
     r"|\d+ of them (COVERED|PASSED)|NOT VERIFIED ON THIS TREE - )|deferred to /crew:verify: )")
-_OWED_SUMMARY = re.compile(r"^verify-gate: NOT VERIFIED ON THIS TREE - \d+ obligation\(s\) owed by the record")
+_OWED_SUMMARY = re.compile(r"^verify-gate: NOT VERIFIED ON THIS TREE - \d+ further obligation\(s\) owed by the record")
 
 _BASE_MAP = {
     "version": 1,
@@ -353,3 +354,60 @@ def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):
     elapsed = time.monotonic() - started
     assert result.returncode == 0
     assert elapsed < 6, f"the rule's background sleep held the hook's stderr pipe open for {elapsed:.1f}s"
+
+
+def _commit_all(root):
+    subprocess.run(("git", "add", "-A"), cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+    subprocess.run(("git", "commit", "-q", "-m", "map"), cwd=root, check=True,
+                   capture_output=True, text=True, timeout=_T)
+
+
+@pytest.mark.parametrize("verbose", ["0", "1"])
+def test_own_log_and_state_do_not_defeat_the_fingerprint_skip(tmp_path, verbose):
+    rule = {"paths": ["a.py"], "seconds": 3, "reach": "local", "run": ["echo ok"], "why": "ok"}
+    root = _repo(tmp_path, _map_with(rule, base=False))
+    (root / "a.py").rename(root / "a.py.hold")
+    _commit_all(root)
+    (root / "a.py.hold").rename(root / "a.py")
+
+    runs = [_run(root, verbose=verbose) for _ in range(3)]
+
+    assert [r.returncode for r in runs] == [0, 0, 0]
+    assert "SKIPPED, not re-run" not in runs[0].stderr
+    assert "SKIPPED, not re-run" in runs[1].stderr, runs[1].stderr
+    assert "SKIPPED, not re-run" in runs[2].stderr, runs[2].stderr
+
+
+def test_killed_run_still_names_what_it_never_checked(tmp_path):
+    slow = {"paths": ["a.py"], "seconds": 5, "reach": "local", "run": ["sleep 20"], "why": "slow"}
+    big = {"paths": ["a.py"], "seconds": 90, "reach": "local", "run": ["echo BIG"], "why": "over budget"}
+    outputs = {}
+    for verbose in ("1", "0"):
+        root = _repo(tmp_path / verbose, _map_with(slow, big, base=False))
+        (root / "a.py").rename(root / "a.py.hold")
+        _commit_all(root)
+        (root / "a.py.hold").rename(root / "a.py")
+        env = crew_fixtures.isolated_home_env(root.parent / "home")
+        env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE=verbose)
+        proc = subprocess.Popen([_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, cwd=str(root), env=env, text=True)
+        proc.stdin.write('{"session_id":"s1"}')
+        proc.stdin.close()
+        time.sleep(4)
+        proc.send_signal(signal.SIGTERM)
+        _, err = proc.communicate(timeout=_T)
+        outputs[verbose] = err
+
+    for marker in ("deferred to /crew:verify", "permanently over budget"):
+        assert marker in outputs["1"]
+        assert marker in outputs["0"], outputs["0"]
+
+
+@pytest.mark.parametrize("flag", ["--verbos", "--bogus"])
+def test_unknown_argument_message_names_verbose(tmp_path, flag):
+    root = _repo(tmp_path, _map_with(base=False))
+
+    result = _run(root, flag)
+
+    assert result.returncode == 2
+    assert "--verbose" in result.stderr

@@ -3091,7 +3091,9 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   `--ci`, `--all`/`-All` and `--price` are verbose with no flag, so the CI
   receipt reader and `/crew:verify` see what they always did. Exit codes and
   the `VERIFY GATE: BLOCKED (exit 2)` stdout line are unchanged. Both files are
-  dotted so the `.crew/.verify-gate.*` bookkeeping glob already covers them. The
+  dotted so the `.crew/.verify-gate.*` bookkeeping glob already covers them, and
+  both are named in the fingerprint's gate-owned list (`verify_fingerprint.py`),
+  so an untracked, unignored log never defeats the unchanged-tree skip. The
   PowerShell flavour buffers in memory and flushes in a `finally`, so output
   from a child process it starts (the `outside-scope:` line) is not part of the
   buffer and can print before the verdict.

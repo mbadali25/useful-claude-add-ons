@@ -116,7 +116,7 @@ for CI_ARG in "$@"; do
       echo "verify-gate: --price must be the first argument and cannot be combined with --ci or --all. Nothing was verified." >&2
       exit 2 ;;
     *)
-      echo "verify-gate: unknown argument '$CI_ARG' - the gate accepts --all, --ci, or --price as the first argument. Nothing was verified." >&2
+      echo "verify-gate: unknown argument '$CI_ARG' - the gate accepts --all, --ci, --verbose, or --price as the first argument. Nothing was verified." >&2
       exit 2 ;;
   esac
 done
@@ -185,7 +185,7 @@ _crew_gate_owed_filter() {
       *) printf '%s\n' "$_of_line" >&2 ;;
     esac
   done
-  [ "$_of_n" -eq 0 ] || printf 'verify-gate: NOT VERIFIED ON THIS TREE - %s obligation(s) owed by the record, each listed in the detail log\n' "$_of_n" >&2
+  [ "$_of_n" -eq 0 ] || printf 'verify-gate: NOT VERIFIED ON THIS TREE - %s further obligation(s) owed by the record (not in the NOT VERIFIED item total above), each listed in the detail log\n' "$_of_n" >&2
 }
 # verify_record.py report / sync with stdout on stderr, as before; in quiet
 # mode stdout goes through the filter above. The exit status is the script's.
@@ -279,7 +279,10 @@ _crew_gate_quiet_flush() {
   [ "$_log_ok" -eq 1 ] && { _detail="$_log"; _body="$_plain"; }
   if [ "$CREW_GATE_READY" -eq 0 ]; then
     # The run ended before the rules were judged: say what it said, in full.
-    cat "$_body" >&2
+    # The held-back notices (deferred, over-budget, stop budget) are the only
+    # record of what this turn never checked, so the whole buffer prints.
+    cat "$_full" >&2
+    [ "$_log_ok" -eq 1 ] && printf 'verify-gate: run ended before a verdict; unproven rules are listed above | detail: %s\n' "$_log" >&2
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi

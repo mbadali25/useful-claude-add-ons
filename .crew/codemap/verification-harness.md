@@ -598,7 +598,7 @@ that changed shape or are newly documented here:
   `_crew_gate_quiet_flush` (`:256`, called from `_crew_gate_exit_line` at `:12`, so from both EXIT traps) splits the buffer,
   rewrites `.crew/.verify-gate.log` by temp file then `mv`, prints the verdict line and the untagged lines, and keeps the
   per-session repeat state in `.crew/.verify-gate.last-stop`. `CREW_GATE_READY=1` is set after the run loop (`:2623`): an exit
-  before it prints the buffer with no verdict. The `.ps1` twin buffers in memory (`Write-CrewErr` / `Write-CrewDetail`,
+  before it prints the WHOLE buffer (held-back deferral, over-budget and stop-budget notices included) and a pointer to the log, with no verdict. The `.ps1` twin buffers in memory (`Write-CrewErr` / `Write-CrewDetail`,
   `verify-gate.ps1:118`) and flushes in the `finally` that wraps the script from `Start-CrewQuiet` (`Invoke-CrewQuietFlush`,
   `:173`). The saved stderr pipe is fd 4 (`exec 4>&2` in `_crew_gate_quiet_install`); the rule subshell launch closes it (`4>&-`), because a rule that backgrounds a process would otherwise hold the hook's stderr pipe open until it exits. The verdict counts FAILED/PASSED in commands and NOT VERIFIED in rules. The record's `NOT VERIFIED ON THIS TREE` lines from `verify_record.py report|sync` go through
   `_crew_gate_owed_filter` (one counted line stays). The suites that assert the per-rule text get `CREW_VERIFY_VERBOSE=1`

@@ -157,7 +157,7 @@ function Write-CrewOwedLines($Lines) {
       Write-CrewErr $text
     }
   }
-  if ($owed -gt 0) { Write-CrewErr "verify-gate: NOT VERIFIED ON THIS TREE - $owed obligation(s) owed by the record, each listed in the detail log" }
+  if ($owed -gt 0) { Write-CrewErr "verify-gate: NOT VERIFIED ON THIS TREE - $owed further obligation(s) owed by the record (not in the NOT VERIFIED item total above), each listed in the detail log" }
 }
 function Start-CrewQuiet {
   if ($All -or $Ci -or $Verbose -or $env:CREW_VERIFY_VERBOSE -eq '1') { return }
@@ -195,7 +195,8 @@ function Invoke-CrewQuietFlush {
   $detail = if ($logOk) { $logPath } else { "unavailable" }
   $body = if ($logOk) { $plainLines } else { $fullLines }
   if (-not $script:CrewReady) {
-    foreach ($line in $body) { [Console]::Error.WriteLine($line) }
+    foreach ($line in $fullLines) { [Console]::Error.WriteLine($line) }
+    if ($logOk) { [Console]::Error.WriteLine("verify-gate: run ended before a verdict; unproven rules are listed above | detail: $logPath") }
     return
   }
   $fail = 0; $pass = 0
@@ -580,7 +581,7 @@ function Write-CrewPythonTrail {
 # PowerShell's case-insensitive binder; that is its spelling, not a typo.)
 if ($args.Count -gt 0 -or ($PSBoundParameters.ContainsKey('PriceTarget') -and -not $Price)) {
   $crewBad = if ($args.Count -gt 0) { [string]$args[0] } else { [string]$PriceTarget }
-  Write-CrewErr("verify-gate: unknown argument '$crewBad' - the gate accepts -All, -Ci, or -Price [-PriceTarget path] [-PriceForce]. Nothing was verified.")
+  Write-CrewErr("verify-gate: unknown argument '$crewBad' - the gate accepts -All, -Ci, -Verbose, or -Price [-PriceTarget path] [-PriceForce]. Nothing was verified.")
   Exit-CrewGateBlocked
 }
 
