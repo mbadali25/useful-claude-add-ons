@@ -3053,7 +3053,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
-- **Quiet Stop output** (L-0796, crew 1.2.40). The Stop gate prints one verdict
+- **Quiet Stop output** (L-0796, crew 1.2.41). The Stop gate prints one verdict
   line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach a,
   over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
   budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited

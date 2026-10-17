@@ -46,7 +46,7 @@ _BLOCKED = "VERIFY GATE: BLOCKED (exit 2)"
 _INFO = re.compile(
     r"^(verify-gate: (rules\[\d+\] (priced |declared reach|requires a clean|is permanently)"
     r"|env pinned|COVERED by|PASSED on this exact tree|stop budget|\d+s  |\d+s total across"
-    r"|\d+ of them (COVERED|PASSED)|NOT VERIFIED ON THIS TREE - )|deferred to /crew:verify: )")
+    r"|\d+ of them (COVERED|PASSED)|\d+ command\(s\) passed on this exact tree|NOT VERIFIED ON THIS TREE - )|deferred to /crew:verify: )")
 _OWED_SUMMARY = re.compile(r"^verify-gate: NOT VERIFIED ON THIS TREE - \d+ further obligation\(s\) owed by the record")
 
 _BASE_MAP = {

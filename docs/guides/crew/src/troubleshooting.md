@@ -464,7 +464,7 @@ not errors, and neither blocks the turn:
   diff baseline `.crew/.verify-gate.base-at` moves (when nothing committed differs from the base),
   so a later commit is still in scope. If that file cannot be written the turn exits 2 and says so.
 - **`rules[N] is permanently over budget ... deferred to CI`** and **`NOT VERIFIED ON THIS TREE -
-  ... deferred to CI`** (since crew 1.2.40 the quiet Stop path counts these in the verdict line's
+  ... deferred to CI`** (since crew 1.2.41 the quiet Stop path counts these in the verdict line's
   `over-budget` and `deferred` figures and writes the per-rule text to `.crew/.verify-gate.log`;
   `--verbose` prints it): that rule costs more than the whole budget, so Stop never runs it. The
   `verify-gate` workflow does, and `/crew:done` refuses until its receipt for HEAD is VERIFIED or a local run passes it.
@@ -474,7 +474,7 @@ A rule that runs inside the budget and fails still exits 2, whatever was deferre
 
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
-Since crew 1.2.40 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
+Since crew 1.2.41 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
 exactly as before, and keeps the rest in `.crew/.verify-gate.log`:
 
 ```text
