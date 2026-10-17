@@ -282,3 +282,23 @@ def test_ps1_a_session_id_that_is_not_a_top_level_string_prints_the_full_block(t
     assert second.returncode == 2
     assert "unchanged since last Stop" not in second.stderr
     assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
+
+
+def test_both_flavours_clear_the_repeat_state_and_say_when_they_cannot():
+    assert "could not clear the repeat state" in _read(_SH)
+    assert "could not clear the repeat state" in _read(_PS1)
+    assert "run ended before a verdict; unproven rules are listed below" in _read(_SH)
+    assert "run ended before a verdict; unproven rules are listed below" in _read(_PS1)
+
+
+@_needs_pwsh
+def test_ps1_early_exit_stop_starts_with_the_verdict_line(tmp_path):
+    root = _repo(tmp_path, _FAIL_ONLY)
+    _run("ps1", root)
+    for args in (("add", "-A"), ("commit", "-q", "-m", "map")):
+        subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+
+    clean = _run("ps1", root)
+
+    assert clean.returncode == 0
+    assert clean.stderr.splitlines()[0].startswith("verify-gate: run ended before a verdict")

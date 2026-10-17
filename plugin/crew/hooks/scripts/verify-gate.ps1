@@ -195,6 +195,17 @@ function Write-CrewNewFile([string]$Path, [string]$Text) {
   $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
   try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
 }
+# Clear the repeat state after an exit-0 Stop: removed, else emptied (a state
+# without exactly one line is never trusted), else said out loud.
+function Clear-CrewState([string]$Path) {
+  Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  try {
+    [System.IO.File]::WriteAllText($Path, "")
+    if ((Get-Item -LiteralPath $Path -Force).Length -eq 0) { return }
+  } catch { $null = $_ }
+  [Console]::Error.WriteLine("verify-gate: could not clear the repeat state $Path; the next identical failure may print as unchanged")
+}
 function Invoke-CrewQuietFlush {
   if (-not $script:CrewQuiet) { return }
   $script:CrewQuiet = $false
@@ -202,7 +213,7 @@ function Invoke-CrewQuietFlush {
   # An exit-0 Stop clears the repeat state; a run that only backed off on the
   # lock must not touch the holder's.
   if ($rc -eq 0 -and -not $script:CrewBackedOff) {
-    Remove-Item -LiteralPath ".crew/.verify-gate.last-stop" -Force -ErrorAction SilentlyContinue
+    Clear-CrewState ".crew/.verify-gate.last-stop"
   }
   $plainLines = New-Object System.Collections.ArrayList
   $fullLines = New-Object System.Collections.ArrayList
@@ -229,11 +240,11 @@ function Invoke-CrewQuietFlush {
   $detail = if ($logOk) { $logPath } else { "unavailable" }
   $body = if ($logOk) { $plainLines } else { $fullLines }
   if (-not $script:CrewReady) {
-    foreach ($line in $fullLines) { [Console]::Error.WriteLine($line) }
     if (-not $logOk -and $rc -eq 0 -and -not $script:CrewBackedOff -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
       Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
     }
-    if ($logOk) { [Console]::Error.WriteLine("verify-gate: run ended before a verdict; unproven rules are listed above | detail: $logPath") }
+    [Console]::Error.WriteLine("verify-gate: run ended before a verdict; unproven rules are listed below | detail: $detail")
+    foreach ($line in $fullLines) { [Console]::Error.WriteLine($line) }
     return
   }
   $fail = 0; $pass = 0
@@ -271,7 +282,6 @@ function Invoke-CrewQuietFlush {
   $hint = "verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   $statePath = ".crew/.verify-gate.last-stop"
   if ($rc -eq 0) {
-    Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
     [Console]::Error.WriteLine($verdict)
     foreach ($line in $body) { [Console]::Error.WriteLine($line) }
     if ($nv -gt 0) { [Console]::Error.WriteLine($hint) }
@@ -282,8 +292,9 @@ function Invoke-CrewQuietFlush {
     $hash = Get-CrewSha256 ((($plainLines -join "`n")) + "`n`n--nv $reach $over $dirty $defer $skip $other $fail $nvDigest`n")
   }
   $unchanged = $false
-  if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf) -and -not ([System.IO.File]::GetAttributes($statePath).HasFlag([System.IO.FileAttributes]::ReadOnly))) {
+  if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf)) {
     try {
+      if ([System.IO.File]::GetAttributes($statePath).HasFlag([System.IO.FileAttributes]::ReadOnly)) { throw "read-only state" }
       $stateParts = ([System.IO.File]::ReadAllText($statePath).TrimEnd("`r", "`n")) -split "`t"
       if ($stateParts.Count -eq 2 -and $stateParts[0] -ceq $script:CrewSession -and $stateParts[1] -ceq $hash) { $unchanged = $true }
     } catch { $unchanged = $false }

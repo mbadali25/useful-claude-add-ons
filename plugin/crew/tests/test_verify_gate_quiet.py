@@ -397,6 +397,7 @@ def test_killed_run_still_names_what_it_never_checked(tmp_path):
         env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE=verbose)
         with subprocess.Popen([_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, cwd=str(root), env=env, text=True) as proc:
+            assert proc.stdin is not None
             proc.stdin.write('{"session_id":"s1"}')
             proc.stdin.close()
             time.sleep(4)
@@ -617,3 +618,53 @@ def test_read_only_state_file_prints_the_full_block(tmp_path):
 
     assert second.returncode == 2
     assert "unchanged since last Stop" not in second.stderr
+
+
+def test_failed_cat_of_the_plain_half_still_prints_the_failure_block(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    shim_tool = shim / "cat"
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) exit 1 ;; esac\nexec {shutil.which("cat")} "$@"\n',
+                         encoding="utf-8")
+    shim_tool.chmod(0o755)
+
+    result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
+
+    assert result.returncode == 2
+    assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
+    assert "@@crew-detail" not in result.stderr
+
+
+def test_early_exit_stop_starts_with_the_verdict_line(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1"), base=False))
+    _run(root)
+    _commit_all(root)
+
+    clean = _run(root)
+
+    assert clean.returncode == 0
+    assert _lines(clean)[0].startswith("verify-gate: run ended before a verdict")
+    assert "| detail: " in _lines(clean)[0]
+
+
+def test_pass_whose_state_file_cannot_be_removed_does_not_leave_it_trusted(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1"), base=False))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    shim_tool = shim / "rm"
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *last-stop) exit 1 ;; esac\nexec {shutil.which("rm")} "$@"\n',
+                         encoding="utf-8")
+    shim_tool.chmod(0o755)
+    first = _run(root)
+    _commit_all(root)
+    clean = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
+    (root / "a.py").write_text("x = 2", encoding="utf-8")
+
+    third = _run(root)
+
+    assert first.returncode == 2
+    assert clean.returncode == 0
+    assert third.returncode == 2
+    assert "unchanged since last Stop" not in third.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in third.stderr

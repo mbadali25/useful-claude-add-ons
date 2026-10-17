@@ -18,7 +18,7 @@ trap '_crew_gate_exit_line $?' EXIT
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
 # CDPATH emptied: a match makes `cd` echo the directory into the value.
-GATE_PLUGIN_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
+GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
@@ -288,14 +288,25 @@ _crew_gate_verdict_line() {
   if [ "$1" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
   G_VERDICT="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $G_NVTXT item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $2"
 }
-# Print a buffer file: as it is when the split worked, else with the nonce a
-# gate-authored line carries stripped (bash only, so a failed sed cannot matter).
+# Print a buffer file: as it is when the split worked and cat can read it, else
+# line by line with the nonce a gate-authored line carries stripped (bash only,
+# so a failed cat or sed cannot drop the text: a failure is never silent).
 _crew_gate_emit() {
   local _l
-  if [ "$_split_ok" -eq 1 ]; then cat "$1"; return; fi
+  if [ "$_split_ok" -eq 1 ] && cat "$1"; then return; fi
   while IFS= read -r _l || [ -n "$_l" ]; do
     printf '%s\n' "${_l#"$CREW_GATE_NONCE"}"
   done < "$1"
+}
+# Clear the repeat state after an exit-0 Stop. A state that cannot be removed is
+# emptied (a state without exactly one line is never trusted); one that can be
+# neither removed nor emptied is said out loud, since the next identical failure
+# could otherwise read as "unchanged".
+_crew_gate_clear_state() {
+  rm -f "$1" 2>/dev/null
+  { [ -e "$1" ] || [ -L "$1" ]; } || return 0
+  : > "$1" 2>/dev/null && [ ! -s "$1" ] && return 0
+  printf 'verify-gate: could not clear the repeat state %s; the next identical failure may print as unchanged\n' "$1" >&2
 }
 _crew_gate_quiet_flush() {
   local _rc="${1:-0}"
@@ -304,7 +315,7 @@ _crew_gate_quiet_flush() {
   # An exit-0 Stop (a pass, or a turn with nothing to check) clears the repeat
   # state; a run that only backed off on the lock must not touch the holder's.
   if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ]; then
-    rm -f ".crew/.verify-gate.last-stop" 2>/dev/null
+    _crew_gate_clear_state ".crew/.verify-gate.last-stop"
   fi
   local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _statetmp _state=".crew/.verify-gate.last-stop"
   [ -f "$_buf" ] || return 0
@@ -352,13 +363,13 @@ _crew_gate_quiet_flush() {
     # The run ended before the rules were judged: say what it said, in full.
     # The held-back notices (deferred, over-budget, stop budget) are the only
     # record of what this turn never checked, so the whole buffer prints.
-    _crew_gate_emit "$_full" >&2
     # A successful early exit wrote no log of its own: the previous run's would
     # now describe a different tree, so it goes.
     if [ "$_log_ok" -eq 0 ] && [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ] && [ ! -d "$_log" ]; then
       rm -f "$_log" 2>/dev/null
     fi
-    [ "$_log_ok" -eq 1 ] && printf 'verify-gate: run ended before a verdict; unproven rules are listed above | detail: %s\n' "$_log" >&2
+    printf 'verify-gate: run ended before a verdict; unproven rules are listed below | detail: %s\n' "$_detail" >&2
+    _crew_gate_emit "$_full" >&2
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi
@@ -366,7 +377,6 @@ _crew_gate_quiet_flush() {
   local _nvtxt="$G_NVTXT" _verdict="$G_VERDICT"
   local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   if [ "$_rc" -eq 0 ]; then
-    rm -f "$_state" 2>/dev/null
     {
       printf '%s\n' "$_verdict"
       _crew_gate_emit "$_body"
@@ -406,8 +416,10 @@ _crew_gate_quiet_flush() {
     if [ -n "$_hash" ] && [ -d .crew ]; then
       _statetmp=$(mktemp ".crew/.verify-gate.last-stop.tmpXXXXXX" 2>/dev/null) || _statetmp=""
       if [ -n "$_statetmp" ]; then
-        printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_statetmp" 2>/dev/null \
-          && mv -f "$_statetmp" "$_state" 2>/dev/null || rm -f "$_statetmp" 2>/dev/null
+        if ! { printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_statetmp" 2>/dev/null \
+               && mv -f "$_statetmp" "$_state" 2>/dev/null; }; then
+          rm -f "$_statetmp" 2>/dev/null
+        fi
       fi
     fi
   fi
@@ -519,7 +531,7 @@ fi
 # check removes the marker on success - a job must not consume it.
 if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
   read -r DENV DSHA < .crew/.deploy-in-flight
-  if grep -qE "\|[[:space:]]*$DENV[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
+  if grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
     echo "DEPLOY NOT RECORDED: $DENV was deployed at $DSHA and .work/PROMOTIONS.md has no row for it." >&2
