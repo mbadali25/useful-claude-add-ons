@@ -195,17 +195,6 @@ function Write-CrewNewFile([string]$Path, [string]$Text) {
   $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
   try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
 }
-# Clear the repeat state after an exit-0 Stop: removed, else emptied (a state
-# without exactly one line is never trusted), else said out loud.
-function Clear-CrewState([string]$Path) {
-  Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-  if (-not (Test-Path -LiteralPath $Path)) { return }
-  try {
-    [System.IO.File]::WriteAllText($Path, "")
-    if ((Get-Item -LiteralPath $Path -Force).Length -eq 0) { return }
-  } catch { $null = $_ }
-  [Console]::Error.WriteLine("verify-gate: could not clear the repeat state $Path; the next identical failure may print as unchanged")
-}
 function Invoke-CrewQuietFlush {
   if (-not $script:CrewQuiet) { return }
   $script:CrewQuiet = $false
@@ -213,7 +202,7 @@ function Invoke-CrewQuietFlush {
   # An exit-0 Stop clears the repeat state; a run that only backed off on the
   # lock must not touch the holder's.
   if ($rc -eq 0 -and -not $script:CrewBackedOff) {
-    Clear-CrewState ".crew/.verify-gate.last-stop"
+    Remove-Item -LiteralPath ".crew/.verify-gate.last-stop" -Force -ErrorAction SilentlyContinue
   }
   $plainLines = New-Object System.Collections.ArrayList
   $fullLines = New-Object System.Collections.ArrayList

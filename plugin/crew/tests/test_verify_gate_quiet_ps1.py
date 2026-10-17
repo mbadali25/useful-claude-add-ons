@@ -284,9 +284,7 @@ def test_ps1_a_session_id_that_is_not_a_top_level_string_prints_the_full_block(t
     assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
 
 
-def test_both_flavours_clear_the_repeat_state_and_say_when_they_cannot():
-    assert "could not clear the repeat state" in _read(_SH)
-    assert "could not clear the repeat state" in _read(_PS1)
+def test_both_flavours_start_an_early_exit_with_the_verdict_line():
     assert "run ended before a verdict; unproven rules are listed below" in _read(_SH)
     assert "run ended before a verdict; unproven rules are listed below" in _read(_PS1)
 

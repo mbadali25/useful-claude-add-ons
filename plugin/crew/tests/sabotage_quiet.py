@@ -115,7 +115,7 @@ QUIET_MUTATIONS = (
      _T + "test_failed_split_of_the_buffer_prints_everything"),
     ("quiet gate: an exit-0 Stop leaves the repeat state in place", SH,
      "  if [ \"$_rc\" -eq 0 ] && [ \"$CREW_GATE_BACKED_OFF\" -eq 0 ]; then\n"
-     "    _crew_gate_clear_state \".crew/.verify-gate.last-stop\"\n  fi\n", "",
+     "    rm -f \".crew/.verify-gate.last-stop\" 2>/dev/null\n  fi\n", "",
      _T + "test_exit_zero_stop_clears_the_repeat_state"),
     ("quiet gate: a nested session id is taken as the session", SH,
      "    if [ $((_qi_o - _qi_c)) -eq 1 ] && [ \"$_qi_ao\" = \"$_qi_ac\" ]; then\n",
@@ -123,7 +123,7 @@ QUIET_MUTATIONS = (
      _T + "test_a_session_id_that_is_not_a_top_level_string_prints_the_full_block"),
     ("quiet gate (ps1): an exit-0 Stop leaves the repeat state in place", PS1,
      "  if ($rc -eq 0 -and -not $script:CrewBackedOff) {\n"
-     "    Clear-CrewState \".crew/.verify-gate.last-stop\"\n  }\n", "",
+     "    Remove-Item -LiteralPath \".crew/.verify-gate.last-stop\" -Force -ErrorAction SilentlyContinue\n  }\n", "",
      _TP + "test_ps1_exit_zero_stop_clears_the_repeat_state"),
     ("quiet gate (ps1): a nested session id is taken as the session", PS1,
      "  if ($braces -ne 1 -or $brackets -ne 0) { return \"\" }\n", "",
@@ -133,7 +133,7 @@ QUIET_MUTATIONS = (
      "      _statetmp=\".crew/.verify-gate.last-stop.tmp$$\"\n",
      _T + "test_log_and_state_are_private_and_no_buffer_file_is_left_behind"),
     ("quiet gate: a failed cat of a buffer half drops the failure block", SH,
-     "  if [ \"$_split_ok\" -eq 1 ] && cat \"$1\"; then return; fi\n",
-     "  if [ \"$_split_ok\" -eq 1 ]; then cat \"$1\"; return; fi\n",
+     "  if [ \"$_split_ok\" -eq 1 ] && _out=$(cat \"$1\" && printf x); then\n",
+     "  if [ \"$_split_ok\" -eq 1 ]; then cat \"$1\"; return; fi\n  if false; then\n",
      _T + "test_failed_cat_of_the_plain_half_still_prints_the_failure_block"),
 )

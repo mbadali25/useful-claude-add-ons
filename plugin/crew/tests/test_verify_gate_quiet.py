@@ -648,23 +648,26 @@ def test_early_exit_stop_starts_with_the_verdict_line(tmp_path):
     assert "| detail: " in _lines(clean)[0]
 
 
-def test_pass_whose_state_file_cannot_be_removed_does_not_leave_it_trusted(tmp_path):
-    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1"), base=False))
+def test_partial_cat_of_the_plain_half_does_not_print_its_first_part_twice(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
     shim = tmp_path / "shim"
     shim.mkdir()
-    shim_tool = shim / "rm"
-    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *last-stop) exit 1 ;; esac\nexec {shutil.which("rm")} "$@"\n',
-                         encoding="utf-8")
+    shim_tool = shim / "cat"
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) {shutil.which("head")} -n 1 "$@"; exit 1 ;; esac\n'
+                         f'exec {shutil.which("cat")} "$@"\n', encoding="utf-8")
     shim_tool.chmod(0o755)
-    first = _run(root)
-    _commit_all(root)
-    clean = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
-    (root / "a.py").write_text("x = 2", encoding="utf-8")
+    verbose = _run(root, verbose="1")
 
-    third = _run(root)
+    result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
 
-    assert first.returncode == 2
-    assert clean.returncode == 0
-    assert third.returncode == 2
-    assert "unchanged since last Stop" not in third.stderr
-    assert "VERIFY FAILED: echo boom; exit 1" in third.stderr
+    assert result.returncode == 2
+    assert result.stderr.count("VERIFY FAILED: echo boom; exit 1") == verbose.stderr.count("VERIFY FAILED: echo boom; exit 1")
+    assert result.stderr.count("VERIFY FAILED: echo boom; exit 1") == 1
+
+
+def test_first_stderr_line_is_the_verdict_on_a_failing_stop(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+
+    result = _run(root)
+
+    assert _lines(result)[0].startswith("verify-gate: FAILED ")

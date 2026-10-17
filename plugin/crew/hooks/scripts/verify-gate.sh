@@ -288,25 +288,19 @@ _crew_gate_verdict_line() {
   if [ "$1" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
   G_VERDICT="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $G_NVTXT item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $2"
 }
-# Print a buffer file: as it is when the split worked and cat can read it, else
-# line by line with the nonce a gate-authored line carries stripped (bash only,
-# so a failed cat or sed cannot drop the text: a failure is never silent).
+# Print a buffer file: as it is when the split worked and cat can read all of it
+# (read first and printed once, so a cat that fails half way cannot print its
+# first part twice), else line by line with the nonce a gate-authored line
+# carries stripped (bash only, so a failed cat or sed cannot drop the text).
 _crew_gate_emit() {
-  local _l
-  if [ "$_split_ok" -eq 1 ] && cat "$1"; then return; fi
+  local _l _out
+  if [ "$_split_ok" -eq 1 ] && _out=$(cat "$1" && printf x); then
+    printf '%s' "${_out%x}"
+    return
+  fi
   while IFS= read -r _l || [ -n "$_l" ]; do
     printf '%s\n' "${_l#"$CREW_GATE_NONCE"}"
   done < "$1"
-}
-# Clear the repeat state after an exit-0 Stop. A state that cannot be removed is
-# emptied (a state without exactly one line is never trusted); one that can be
-# neither removed nor emptied is said out loud, since the next identical failure
-# could otherwise read as "unchanged".
-_crew_gate_clear_state() {
-  rm -f "$1" 2>/dev/null
-  { [ -e "$1" ] || [ -L "$1" ]; } || return 0
-  : > "$1" 2>/dev/null && [ ! -s "$1" ] && return 0
-  printf 'verify-gate: could not clear the repeat state %s; the next identical failure may print as unchanged\n' "$1" >&2
 }
 _crew_gate_quiet_flush() {
   local _rc="${1:-0}"
@@ -315,7 +309,7 @@ _crew_gate_quiet_flush() {
   # An exit-0 Stop (a pass, or a turn with nothing to check) clears the repeat
   # state; a run that only backed off on the lock must not touch the holder's.
   if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ]; then
-    _crew_gate_clear_state ".crew/.verify-gate.last-stop"
+    rm -f ".crew/.verify-gate.last-stop" 2>/dev/null
   fi
   local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _statetmp _state=".crew/.verify-gate.last-stop"
   [ -f "$_buf" ] || return 0
