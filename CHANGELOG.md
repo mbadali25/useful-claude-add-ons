@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.41: the Windows skips in test_verify_gate_quiet.py name their real reasons (L-0806)
+
+- **Summary.** `crew` 1.2.41 changes one test file only: the Windows skips now state why they skip, and the backgrounded-process timing test runs serially; the gate itself is unchanged.
+- Test-only change to `plugin/crew/tests/test_verify_gate_quiet.py`. Reproduction on native Windows (win-repo-2) is NOT VERIFIED; follow-up L-0809.
+
 ### Changed — crew 1.2.40: auto wrap-up and auto-clear fire at 40% of the context window (L-0805)
 
 - **Summary.** `crew` 1.2.40 moves the default context threshold from 50% to 40% of the window, so the handoff warning, auto wrap-up and auto-clear all start earlier; an explicit `context.warnAt` is untouched.

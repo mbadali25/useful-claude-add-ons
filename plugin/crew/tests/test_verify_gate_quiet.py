@@ -42,8 +42,15 @@ _BASH = crew_fixtures.resolve_bash()
 _T = crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S
 
 pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
-_posix_shims = pytest.mark.skipif(
-    os.name == "nt", reason="PATH shims and SIGTERM semantics are POSIX; Windows is checked by the .ps1 suite")
+_no_win_sigterm = pytest.mark.skipif(
+    os.name == "nt",
+    reason="SIGTERM on Windows is TerminateProcess on Git's bin/bash.exe launcher; it never reaches the MSYS "
+           "gate, so its trap is not exercised. The signal path is untested on Windows.")
+_no_win_shims = pytest.mark.skipif(
+    os.name == "nt",
+    reason="bin/bash.exe prepends /mingw64/bin:/usr/bin ahead of the PATH it is handed, so a shim dir placed "
+           "first is never reached (see crew_fixtures.resolve_bash_no_prepend). Not attempted on Windows: "
+           "the usr/bin/bash.exe fix is unvalidated there.")
 
 _BLOCKED = "VERIFY GATE: BLOCKED (exit 2)"
 # What the verbose oracle holds that the quiet path is allowed to move to the log.
@@ -353,7 +360,9 @@ def test_verdict_names_its_units(tmp_path):
     assert "NOT VERIFIED 1 item(s) (reach 1," in verdict
 
 
-@_posix_shims
+# wallclock: an elapsed-time bound, so it runs serially, never under -n. The plain gate took
+# 9.6-18.7s under -n auto on Windows CI (run 39036765612); the 6s bound is only meaningful unloaded.
+@pytest.mark.wallclock
 def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):
     root = _repo(tmp_path, _map_with(_fail_rule("(sleep 8 &); true"), base=False))
     started = time.monotonic()
@@ -387,7 +396,7 @@ def test_own_log_and_state_do_not_defeat_the_fingerprint_skip(tmp_path, verbose)
     assert "SKIPPED, not re-run" in runs[2].stderr, runs[2].stderr
 
 
-@_posix_shims
+@_no_win_sigterm
 def test_killed_run_still_names_what_it_never_checked(tmp_path):
     slow = {"paths": ["a.py"], "seconds": 5, "reach": "local", "run": ["sleep 20"], "why": "slow"}
     big = {"paths": ["a.py"], "seconds": 90, "reach": "local", "run": ["echo BIG"], "why": "over budget"}
@@ -490,7 +499,7 @@ def test_ambiguous_session_id_prints_the_full_block_every_time(tmp_path):
     assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
 
 
-@_posix_shims
+@_no_win_shims
 @pytest.mark.parametrize("tool,pattern", [("grep", "-a -v"), ("sed", "s/^@@crew-detail")])
 def test_failed_split_of_the_buffer_prints_everything(tmp_path, tool, pattern):
     root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
@@ -570,7 +579,7 @@ def test_log_and_state_are_private_and_no_buffer_file_is_left_behind(tmp_path):
     assert [p.name for p in scratch.glob("crew-gate-*")] == []
 
 
-@_posix_shims
+@_no_win_shims
 def test_buffer_that_cannot_be_created_still_says_detail_unavailable(tmp_path):
     root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
     shim = tmp_path / "shim"
