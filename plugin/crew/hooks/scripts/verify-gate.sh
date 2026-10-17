@@ -287,7 +287,7 @@ _crew_gate_quiet_flush() {
   local _nvtxt="$G_NV" _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
   if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then _nvtxt="$G_NV+"; _other_txt="unknown"; fi
   if [ "$_rc" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
-  local _verdict="verify-gate: FAILED $_fail_txt | PASSED $G_PASS | NOT VERIFIED $_nvtxt (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
+  local _verdict="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $_nvtxt rule(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
   local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   if [ "$_rc" -eq 0 ]; then
     rm -f "$_state" 2>/dev/null
@@ -318,7 +318,7 @@ _crew_gate_quiet_flush() {
     _first=$(grep -a -m1 '^VERIFY FAILED: ' "$_plain" | sed 's/^VERIFY FAILED: //')
     [ -n "$_first" ] || _first=$(head -n 1 "$_plain")
     local _nfail="$G_FAIL"; [ "$_nfail" -gt 0 ] || _nfail=1
-    printf 'verify-gate: unchanged since last Stop (%s failing, %s NOT VERIFIED): %s\n' "$_nfail" "$_nvtxt" "$_first" >&2
+    printf 'verify-gate: unchanged since last Stop (%s failing, %s NOT VERIFIED): %s | detail: %s | /crew:verify --all runs every rule\n' "$_nfail" "$_nvtxt" "$_first" "$_detail" >&2
   else
     {
       printf '%s\n' "$_verdict"
@@ -2465,7 +2465,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # or 143 for a rule that passed, exited 3, or was ended by KILL or TERM;
     # killing the outer wrapper gives `wait` 137 and no record.
     RULE_IN_FLIGHT="$c"
-    ( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
+    ( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) >"$RULE_OUT_FILE" 2>&1 </dev/null 4>&- &
     RULE_SUBSHELL_PID=$!
     wait "$RULE_SUBSHELL_PID" 2>/dev/null
     RULE_WRAP_RC=$?

@@ -3054,11 +3054,12 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
 - **Quiet Stop output** (L-0796, crew 1.2.39). The Stop gate prints one verdict
-  line first: `verify-gate: FAILED n | PASSED n | NOT VERIFIED n (reach a,
+  line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n rule(s) (reach a,
   over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
-  budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED, credited,
-  deferred and skipped count commands; reach, over-budget and dirty tree count
-  rules. Then come the lines the gate cannot prove are informational, exactly
+  budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited
+  count commands (`cmd`); everything under NOT VERIFIED counts rules (`rule(s)`):
+  reach, over-budget, dirty tree, deferred, skipped and other. The two units are
+  not added together. Then come the lines the gate cannot prove are informational, exactly
   as before: every `VERIFY FAILED:` block with its last 25 lines, `COULD NOT
   TELL`, a rc 77 SKIP, `UNMAPPED CHANGES`, a lock back-off, and any line the
   gate does not recognise. What moves to `.crew/.verify-gate.log` is the text the
@@ -3078,7 +3079,9 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   reported in `.crew/.verify-gate.last-stop` (`session_id`, a SHA-256 of the
   failure text and the NOT VERIFIED counts): the same session still failing
   the same way prints `verify-gate: unchanged since last Stop (N failing, M NOT
-  VERIFIED): <first failing command>` and still exits 2. A different session,
+  VERIFIED): <first failing command> | detail: .crew/.verify-gate.log |
+  /crew:verify --all runs every rule` and still exits 2; the log it names holds
+  that run's full failing output. A different session,
   a changed failure, a payload with no `session_id`, or a missing, unreadable
   or corrupt state file prints the full block; a passing Stop clears it. Run
   with `--verbose` (`-Verbose` in the PowerShell flavour) or

@@ -476,18 +476,22 @@ Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, t
 exactly as before, and keeps the rest in `.crew/.verify-gate.log`:
 
 ```text
-verify-gate: FAILED 1 | PASSED 14 | NOT VERIFIED 5 (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
+verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 rule(s) (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
 ```
 
 - **Where did the pricing, `env pinned`, `PASSED on this exact tree` and per-rule seconds lines go?**
   Into the log, which holds the complete text of the last run. Run the gate with `--verbose`
   (`-Verbose` in the PowerShell flavour) or set `CREW_VERIFY_VERBOSE=1` to get them on screen. `--ci`,
   `--all` and `--price` always print everything, so CI logs and `/crew:verify` look as they did.
+- **Units.** FAILED, PASSED and credited count commands; NOT VERIFIED counts rules, and its
+  breakdown (reach, over-budget, dirty tree, deferred, skipped, other) is in rules too. Do not add the
+  two together.
 - **`NOT VERIFIED` is not `PASSED`.** A deferred, skipped, reach-excluded, over-budget or dirty-tree
   rule is counted under NOT VERIFIED; `other` is a rule the gate could not classify. Run
   `/crew:verify --all` to run them.
-- **`verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): <command>`**: the same
+- **`verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): <command> | detail: <log> | ...`**: the same
   session is failing the same way it reported on the last Stop, so the full block is not repeated.
+  The line names `.crew/.verify-gate.log`, which holds this run's failing output.
   The turn is still blocked (exit 2). A new session, a changed failure, or deleting
   `.crew/.verify-gate.last-stop` prints the full block again.
 - **`detail: unavailable`**: `.crew/.verify-gate.log` could not be written (a directory in its

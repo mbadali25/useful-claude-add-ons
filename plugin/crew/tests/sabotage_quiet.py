@@ -13,6 +13,8 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
+PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
+_TP = "tests/test_verify_gate_quiet_ps1.py::"
 _T = "tests/test_verify_gate_quiet.py::"
 _CREDITED = (
     "    \"verify-gate: \"*\" command(s) passed on this exact tree in an earlier run "
@@ -37,8 +39,8 @@ QUIET_MUTATIONS = (
      "    FAILED=1\n    CMD_STATUS=\"fail\"\n",
      _T + "test_failure_span_identical_to_verbose"),
     ("quiet gate: the unchanged line exits 0 (S3)", SH,
-     "\"$_nfail\" \"$_nvtxt\" \"$_first\" >&2\n",
-     "\"$_nfail\" \"$_nvtxt\" \"$_first\" >&2\n    exit 0\n",
+     "\"$_nfail\" \"$_nvtxt\" \"$_first\" \"$_detail\" >&2\n",
+     "\"$_nfail\" \"$_nvtxt\" \"$_first\" \"$_detail\" >&2\n    exit 0\n",
      _T + "test_unchanged_same_session_prints_one_line_exit_2"),
     ("quiet gate: a missing state file is read as unchanged (S4)", SH,
      "  if [ \"$_unchanged\" -eq 1 ]; then\n",
@@ -56,4 +58,28 @@ QUIET_MUTATIONS = (
      "    if [ \"$_st_sid\" = \"$CREW_GATE_SESSION\" ] && [ \"$_st_hash\" = \"$_hash\" ]; then\n",
      "    if [ \"$_st_hash\" = \"$_hash\" ]; then\n",
      _T + "test_new_session_or_missing_state_prints_full_block"),
+    ("quiet gate: the rule subshell inherits the hook's saved stderr pipe (fd 4)", SH,
+     "</dev/null 4>&- &\n", "</dev/null &\n",
+     _T + "test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open"),
+    ("quiet gate: the unchanged line drops the detail-log pointer", SH,
+     " | detail: %s | /crew:verify --all runs every rule\\n' \"$_nfail\" \"$_nvtxt\" \"$_first\" \"$_detail\"",
+     "\\n' \"$_nfail\" \"$_nvtxt\" \"$_first\"",
+     _T + "test_unchanged_same_session_prints_one_line_exit_2"),
+    ("quiet gate: the verdict drops its units", SH,
+     "NOT VERIFIED $_nvtxt rule(s) (reach", "NOT VERIFIED $_nvtxt (reach",
+     _T + "test_verdict_names_its_units"),
+    ("quiet gate (ps1): every notice reads as informational", PS1,
+     "if ($Line -cmatch $pattern) { return $true } }\n  return $false",
+     "if ($Line -cmatch $pattern) { return $true } }\n  return $true",
+     _TP + "test_ps1_unknown_notice_line_still_prints"),
+    ("quiet gate (ps1): an unwritable log prints nothing instead of the full text", PS1,
+     "$body = if ($logOk) { $plainLines } else { $fullLines }",
+     "$body = if ($logOk) { $plainLines } else { @() }",
+     _TP + "test_ps1_unwritable_log_degrades_to_full_output"),
+    ("quiet gate (ps1): the session id is ignored by the repeat check", PS1,
+     "$stateParts[0] -ceq $script:CrewSession -and ", "",
+     _TP + "test_ps1_other_session_prints_full_block_and_unchanged_names_the_log"),
+    ("quiet gate (ps1): the unchanged line drops the detail-log pointer", PS1,
+     " | detail: $detail | /crew:verify --all runs every rule\")", "\")",
+     _TP + "test_ps1_other_session_prints_full_block_and_unchanged_names_the_log"),
 )

@@ -219,10 +219,10 @@ function Invoke-CrewQuietFlush {
   $budgetTxt = if ($null -eq $budget) { "none" } else { [string][int]$budget }
   $failTxt = [string]$fail
   if ($rc -eq 2 -and $fail -eq 0) { $failTxt = "0 (exit 2, see below)" }
-  $verdict = "verify-gate: FAILED $failTxt | PASSED $pass | NOT VERIFIED $nv (reach $reach, over-budget $over, dirty tree $dirty, deferred $defer, skipped $skip, other $other) | credited $cred | budget ${totalElapsed}s/${budgetTxt}s | detail: $detail"
+  $verdict = "verify-gate: FAILED $failTxt cmd | PASSED $pass cmd | NOT VERIFIED $nv rule(s) (reach $reach, over-budget $over, dirty tree $dirty, deferred $defer, skipped $skip, other $other) | credited $cred | budget ${totalElapsed}s/${budgetTxt}s | detail: $detail"
   $hint = "verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   $statePath = ".crew/.verify-gate.last-stop"
-  if ($rc -ne 2) {
+  if ($rc -eq 0) {
     Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
     [Console]::Error.WriteLine($verdict)
     foreach ($line in $body) { [Console]::Error.WriteLine($line) }
@@ -245,7 +245,7 @@ function Invoke-CrewQuietFlush {
     foreach ($line in (($plainLines -join "`n") -split "\r?\n")) { if ($line.StartsWith("VERIFY FAILED: ")) { $first = $line.Substring(15); break } }
     if (-not $first) { $first = ((($plainLines -join "`n") -split "\r?\n") | Select-Object -First 1) }
     $nfail = if ($fail -gt 0) { $fail } else { 1 }
-    [Console]::Error.WriteLine("verify-gate: unchanged since last Stop ($nfail failing, $nv NOT VERIFIED): $first")
+    [Console]::Error.WriteLine("verify-gate: unchanged since last Stop ($nfail failing, $nv NOT VERIFIED): $first | detail: $detail | /crew:verify --all runs every rule")
     return
   }
   [Console]::Error.WriteLine($verdict)
@@ -2787,6 +2787,8 @@ foreach ($ident in $cmds) {
   Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 }
 $script:CrewReady = $true
+# Not 0 until the one real success exit below: any other way out after the rules were judged is a failing exit, as in verify-gate.sh.
+$script:CrewExitRc = 1
 Write-CrewDetail("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
 if ($unknownCount -gt 0) {
   Write-CrewErr("verify-gate: $unknownCount rule command(s) COULD NOT BE JUDGED - counted as FAILED")
@@ -2985,6 +2987,7 @@ if ($cmds.Count -eq 0) {
 } else {
   Write-CrewErr("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
 }
+$script:CrewExitRc = 0
 exit 0
 } finally {
   Invoke-CrewQuietFlush

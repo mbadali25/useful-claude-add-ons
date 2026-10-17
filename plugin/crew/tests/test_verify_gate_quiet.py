@@ -25,6 +25,7 @@ import json
 import os
 import re
 import subprocess
+import time
 
 import pytest
 
@@ -107,7 +108,7 @@ def test_quiet_stop_prints_one_verdict_line(tmp_path):
     lines = _lines(result)
     assert result.returncode == 0
     assert lines[0].startswith(
-        "verify-gate: FAILED 0 | PASSED 1 | NOT VERIFIED 2 (reach 1, over-budget 1, dirty tree 0, "
+        "verify-gate: FAILED 0 cmd | PASSED 1 cmd | NOT VERIFIED 2 rule(s) (reach 1, over-budget 1, dirty tree 0, "
         "deferred 0, skipped 0, other 0) | credited 0 | budget ")
     assert lines[0].endswith("| detail: .crew/.verify-gate.log")
     assert result.stderr.count(".crew/.verify-gate.log") == 1
@@ -216,8 +217,9 @@ def test_unchanged_same_session_prints_one_line_exit_2(tmp_path):
     third = _run(root)
 
     assert first.returncode == second.returncode == third.returncode == 2
-    assert _lines(first)[0].startswith("verify-gate: FAILED 1 | ")
-    assert _lines(second) == ["verify-gate: unchanged since last Stop (1 failing, 2 NOT VERIFIED): echo boom; exit 1"]
+    assert _lines(first)[0].startswith("verify-gate: FAILED 1 cmd | ")
+    assert _lines(second) == ["verify-gate: unchanged since last Stop (1 failing, 2 NOT VERIFIED): echo boom; exit 1"
+                              " | detail: .crew/.verify-gate.log | /crew:verify --all runs every rule"]
     assert second.stdout.startswith(_BLOCKED)
     assert _lines(third) == _lines(second)
     assert "echo boom; exit 1" in _log(root)
@@ -238,7 +240,7 @@ def test_new_session_or_missing_state_prints_full_block(tmp_path):
 
     for result in (other_session, no_session, no_session_again, state_removed, state_corrupt):
         assert result.returncode == 2
-        assert _lines(result)[0].startswith("verify-gate: FAILED 1 | ")
+        assert _lines(result)[0].startswith("verify-gate: FAILED 1 cmd | ")
         assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
         assert "unchanged since last Stop" not in result.stderr
 
@@ -280,9 +282,9 @@ def test_not_verified_never_counted_as_passed(tmp_path):
 
     verdict = _lines(result)[0]
     assert result.returncode == 0
-    assert "PASSED 1 " in verdict
+    assert "PASSED 1 cmd " in verdict
     assert "skipped 1" in verdict and "reach 1" in verdict and "over-budget 1" in verdict
-    assert "NOT VERIFIED 3 " in verdict
+    assert "NOT VERIFIED 3 rule(s) " in verdict
     passed_lines = [ln for ln in _lines(result) if "PASSED" in ln]
     assert passed_lines == [verdict]
     assert "SKIP (rc 77, environment absent): exit 77" in result.stderr
@@ -314,3 +316,28 @@ def test_exit_codes_and_l0733_line_unchanged(tmp_path, case):
         assert "a.py" in quiet.stderr
     if case == "backoff":
         assert "NOTHING WAS VERIFIED this turn" in quiet.stderr
+
+
+def test_verdict_names_its_units(tmp_path):
+    local_rule = {"paths": ["a.py"], "seconds": 2, "reach": "local",
+                  "run": ["echo l1", "echo l2", "echo l3"], "why": "three"}
+    remote_rule = {"paths": ["a.py"], "seconds": 2, "reach": "network",
+                   "run": ["echo n1", "echo n2", "echo n3"], "why": "net"}
+    root = _repo(tmp_path, _map_with(local_rule, remote_rule, base=False))
+
+    result = _run(root)
+
+    verdict = _lines(result)[0]
+    assert "PASSED 3 cmd " in verdict
+    assert "NOT VERIFIED 1 rule(s) (reach 1," in verdict
+
+
+def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("(sleep 8 &); true"), base=False))
+    started = time.monotonic()
+
+    result = _run(root)
+
+    elapsed = time.monotonic() - started
+    assert result.returncode == 0
+    assert elapsed < 6, f"the rule's background sleep held the hook's stderr pipe open for {elapsed:.1f}s"
