@@ -590,7 +590,7 @@ that changed shape or are newly documented here:
   `rules[9]` as `crew-suite`; with xdist installed its non-wallclock tests run
   in parallel, so a covered subset loses its local serial run.
 
-- **Quiet Stop output (L-0796, crew 1.2.39; DERIVED at `a331639ae`, the anchor above is NOT moved).** On the Stop path
+- **Quiet Stop output (L-0796, crew 1.2.40; DERIVED at `a331639ae`, the anchor above is NOT moved).** On the Stop path
   (`CI_MODE=0`, no `--all`, no `--verbose`, `CREW_VERIFY_VERBOSE` not `1`) `_crew_gate_quiet_install`
   (`verify-gate.sh:206`, called at `:403`) points stderr at a `mktemp` buffer for the rest of the run. Gate-authored
   informational lines go through `gate_detail` (`:149`), which tags them with a per-run nonce; matcher NOTICES are split per
