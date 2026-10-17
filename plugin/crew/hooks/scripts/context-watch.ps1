@@ -456,7 +456,7 @@ if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 $cfg = (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).context
 if ($null -eq $cfg -or $cfg.enabled -eq $false) { exit 0 }
 # $null test, not truthiness: warnAt 0 is a legal "always fire" and 0 is falsy.
-$warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.5 }
+$warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.4 }
 $configured = if ($cfg.budgetTokens) { [long]$cfg.budgetTokens } else { 0 }
 $handoff    = Get-CrewHandoffPath $cfg.handoffPath
 # Absent means TRUE since 0.19.52, so this cannot be a bare `-eq $true`:

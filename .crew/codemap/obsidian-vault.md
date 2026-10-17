@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@0bf364417
+anchor: useful-claude-add-ons@388ceff31
 verified: 2026-10-04
 
 ## Does

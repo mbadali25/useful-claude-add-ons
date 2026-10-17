@@ -1003,7 +1003,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.recall.projects` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of project names) | `[]` |
 | `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
 | `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
-| `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |
+| `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.4` |
 | `context.budgetTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `null` |
 | `context.reserveTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `0` |
 | `context.handoffPath` | repo | not validated - read by `hooks/scripts/crew_autocycle.py` (expects path) | `".work/HANDOFF.md"` |
@@ -1178,6 +1178,18 @@ built-in behaviour fires whenever Claude Code itself decides to; nothing in
 this block, in `context-watch`, or in auto-clear influences when or whether
 it happens. This block only decides what happens *after* a handoff is
 written and verified — whether, and how, to act on it.
+
+### `context.warnAt` defaults to 0.4, and one key drives wrap-up and clear (crew 1.2.40)
+
+`context.warnAt` is the single threshold for the handoff warning,
+`context.autoWrapUp` and `context.autoClear`: the latter two change what
+happens when the hook fires, not when. The default is `0.4` (`0.5` from
+0.19.52 to 1.2.39, `0.8` before), in `crew_state.py`, the config template, both
+`context-watch` flavours and `low_context_note`. Only the unset default moved.
+A `warnAt` set in `~/.claude/crew/config.json` or `.crew/config.json` keeps
+its value and nothing rewrites it. A repo created while the default was `0.5`
+holds a literal `"warnAt": 0.5` copied from the template, so it keeps firing at
+50% until that line is edited or deleted.
 
 ### `context.autoClear` is machine-global by design, and reaches every crew repo
 

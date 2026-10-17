@@ -2604,6 +2604,17 @@ bash, `FileMode::CreateNew` in PowerShell) because on Windows with Git Bash
 installed both flavours really do run on the same `Stop`, and a
 test-then-create lets both through.
 
+### The default is 0.4 (1.2.40), one key for both
+
+`context.warnAt` defaults to `0.4` (it was `0.5` from 0.19.52 to 1.2.39, `0.8` before). It is the single
+threshold for the handoff warning, auto wrap-up and auto-clear: `autoWrapUp` and `autoClear` change what
+happens when it fires, not when. A 1M window therefore warns at 400k.
+
+Only the unset default moved. A `warnAt` you set in `~/.claude/crew/config.json` or `.crew/config.json`
+keeps its value, and there is no auto-migration. A repo created while the default was `0.5` carries a literal
+`"warnAt": 0.5` copied from the template, so it stays at 50% until you edit that line (or delete it to take
+the new default).
+
 ### Two rules, and the later one wins
 
 `warnAt` alone was tuned when every window was 200k, where 0.8 leaves 40k — about

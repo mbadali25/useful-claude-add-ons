@@ -197,7 +197,7 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `context.enabled` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.11.0 or earlier | Run the context watcher. |
-| `context.warnAt` | repo | `0.5` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects number) | 0.11.0 or earlier | Fraction of the budget at which the watcher warns. |
+| `context.warnAt` | repo | `0.4` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects number) | 0.11.0 or earlier | Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept. |
 | `context.budgetTokens` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects integer or null) | 0.11.0 or earlier | Context budget in tokens; null uses the model's. |
 | `context.reserveTokens` | repo | `0` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects integer or null) | 0.11.0 or earlier | Tokens held back from the budget; `null` means off. |
 | `context.handoffPath` | repo | `".work/HANDOFF.md"` | not validated - read by `plugin/crew/hooks/scripts/crew_autocycle.py` (expects path) | 0.11.0 or earlier | Where the handoff is written. |

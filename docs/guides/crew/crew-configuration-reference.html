@@ -695,10 +695,10 @@ the plugin.</p>
 <tr>
 <td><code>context.warnAt</code></td>
 <td>repo</td>
-<td><code>0.5</code></td>
+<td><code>0.4</code></td>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/context-watch.sh</code> (expects number)</td>
 <td>0.11.0 or earlier</td>
-<td>Fraction of the budget at which the watcher warns.</td>
+<td>Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept.</td>
 </tr>
 <tr>
 <td><code>context.budgetTokens</code></td>

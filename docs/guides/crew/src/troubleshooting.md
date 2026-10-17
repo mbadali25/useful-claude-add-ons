@@ -80,7 +80,7 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
 | `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
 | `Stop` | `verify-gate.sh` | runs `.crew/verify.json`'s checks | `verifyGate` (boolean) | `true` |
-| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
+| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.4` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
 - **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the

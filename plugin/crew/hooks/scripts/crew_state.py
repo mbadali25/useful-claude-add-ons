@@ -685,7 +685,7 @@ CONTEXT_DEFAULTS = {
         # overrides an aggressive percentage on a large window --
         # at 0.8/100k a 1M window fired at 900k, and lowering only
         # warnAt would still have fired at 900k. Both had to move.
-        "warnAt": 0.5,
+        "warnAt": 0.4,
         "budgetTokens": None,
         "reserveTokens": 0,
         "handoffPath": ".work/HANDOFF.md",
