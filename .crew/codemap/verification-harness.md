@@ -590,6 +590,23 @@ that changed shape or are newly documented here:
   `rules[9]` as `crew-suite`; with xdist installed its non-wallclock tests run
   in parallel, so a covered subset loses its local serial run.
 
+- **Quiet Stop output (L-0796, crew 1.2.39; DERIVED at `a331639ae`, the anchor above is NOT moved).** On the Stop path
+  (`CI_MODE=0`, no `--all`, no `--verbose`, `CREW_VERIFY_VERBOSE` not `1`) `_crew_gate_quiet_install`
+  (`verify-gate.sh:206`, called at `:403`) points stderr at a `mktemp` buffer for the rest of the run. Gate-authored
+  informational lines go through `gate_detail` (`:149`), which tags them with a per-run nonce; matcher NOTICES are split per
+  line against the prefix allowlist `gate_notice_is_info` (`:161`, default: print); rule output (`$OUT`) is never classified.
+  `_crew_gate_quiet_flush` (`:256`, called from `_crew_gate_exit_line` at `:12`, so from both EXIT traps) splits the buffer,
+  rewrites `.crew/.verify-gate.log` by temp file then `mv`, prints the verdict line and the untagged lines, and keeps the
+  per-session repeat state in `.crew/.verify-gate.last-stop`. `CREW_GATE_READY=1` is set after the run loop (`:2623`): an exit
+  before it prints the buffer with no verdict. The `.ps1` twin buffers in memory (`Write-CrewErr` / `Write-CrewDetail`,
+  `verify-gate.ps1:118`) and flushes in the `finally` that wraps the script from `Start-CrewQuiet` (`Invoke-CrewQuietFlush`,
+  `:173`). The record's `NOT VERIFIED ON THIS TREE` lines from `verify_record.py report|sync` go through
+  `_crew_gate_owed_filter` (one counted line stays). The suites that assert the per-rule text get `CREW_VERIFY_VERBOSE=1`
+  from `crew_fixtures.popen_gate`. JUDGEMENT: the three-line `reach_notice` and the `outside-scope:` line still print
+  (the first is once per map content; the second is a child process writing to stderr, so in the `.ps1` it can precede
+  the verdict).
+
+
 ## `scripts/check-marketplace.py` — the direct gate
 
 **DERIVED, re-read at this anchor; `main()` is unchanged in shape from

@@ -377,6 +377,13 @@ def popen_gate(cmd, **kwargs):
         kwargs.setdefault("creationflags", subprocess.CREATE_NEW_PROCESS_GROUP)
     else:
         kwargs.setdefault("start_new_session", True)
+    # L-0796: the Stop gate is quiet by default. The suites that assert the
+    # per-rule text (priced at, PASSED on this exact tree, env pinned, ...) ask
+    # for the full output once, here; a test of the quiet path sets
+    # CREW_VERIFY_VERBOSE itself (to "0"), and setdefault leaves that alone.
+    gate_env = dict(os.environ if kwargs.get("env") is None else kwargs["env"])
+    gate_env.setdefault("CREW_VERIFY_VERBOSE", "1")
+    kwargs["env"] = gate_env
     proc = subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
     if os.name == "nt":
         # See `_win_job_for`'s docstring for why this replaces a `taskkill

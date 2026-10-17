@@ -9,6 +9,7 @@
 # exit-2 path, the early ones included. The trap installed with the gate's
 # cleanup below calls this too, since a second `trap ... EXIT` replaces this one.
 _crew_gate_exit_line() {
+  [ "${CREW_GATE_QUIET:-0}" -eq 1 ] && _crew_gate_quiet_flush "${1:-0}"
   [ "${1:-0}" -eq 2 ] || return 0
   echo "VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete."
 }
@@ -105,10 +106,12 @@ fi
 # pair would be a guess about what the caller meant.
 CI_MODE=0
 CI_ALL_SEEN=0
+VERBOSE_ARG=0
 for CI_ARG in "$@"; do
   case "$CI_ARG" in
     --ci) CI_MODE=1 ;;
     --all) CI_ALL_SEEN=1 ;;
+    --verbose) VERBOSE_ARG=1 ;;
     --price)
       echo "verify-gate: --price must be the first argument and cannot be combined with --ci or --all. Nothing was verified." >&2
       exit 2 ;;
@@ -121,6 +124,215 @@ if [ "$CI_MODE" -eq 1 ] && [ "$CI_ALL_SEEN" -eq 1 ]; then
   echo "verify-gate: --all and --ci cannot be combined (--all runs every rule and records a pass; --ci excludes network/host rules and never records one). Pass one of them. Nothing was verified." >&2
   exit 2
 fi
+
+# --- quiet Stop output (L-0796) --------------------------------------------
+# On the Stop path (no --ci, --all or --verbose, and CREW_VERIFY_VERBOSE not 1)
+# the gate prints ONE verdict line, then every line that is not gate-authored
+# informational text, byte for byte, and writes the complete verbose text of
+# the run to .crew/.verify-gate.log. Nothing that fails or is unproven is
+# hidden: the classification is by EMITTING SITE, never a filter over the
+# stream. Only a line the gate itself wrote through gate_detail (or a matcher
+# NOTICES line on the prefix allowlist below) is held back; rule output ($OUT)
+# is never classified, and any line this file does not know prints.
+#
+# Mechanism: stderr points at a buffer file for the rest of the run and
+# gate_detail tags its lines with a per-run nonce no rule can know. The EXIT
+# trap splits the buffer on that tag. Exit codes and the L-0733 stdout line
+# are untouched; a gate killed with SIGKILL prints nothing, as it could not
+# have finished anyway.
+CREW_GATE_QUIET=0
+CREW_GATE_READY=0
+CREW_GATE_UNMAPPED_FAILED=0
+CREW_GATE_BUF=""
+CREW_GATE_NONCE=""
+CREW_GATE_SESSION=""
+gate_detail() {
+  local _gd_line
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    while IFS= read -r _gd_line; do
+      printf '%s%s\n' "$CREW_GATE_NONCE" "$_gd_line" >&2
+    done <<< "$1"
+  else
+    printf '%s\n' "$1" >&2
+  fi
+}
+# The matcher's own informational NOTICES lines. A line not matched here
+# prints: a new or unexpected notice is shown, never swallowed.
+gate_notice_is_info() {
+  case "$1" in
+    "verify-gate: rules["*"] priced from a cached measurement"*) return 0 ;;
+    "verify-gate: rules["*"] priced at "*) return 0 ;;
+    "verify-gate: "*'has no `seconds` in verify.json - cost UNSTATED, ran anyway') return 0 ;;
+    "verify-gate: "*"it RAN past the budget; the cost is charged but cannot defer it") return 0 ;;
+    "deferred to /crew:verify: "*) return 0 ;;
+    "verify-gate: rules["*"] is permanently over budget"*) return 0 ;;
+    "verify-gate: stop budget "*) return 0 ;;
+    "verify-gate: rules["*"] declared reach: "*) return 0 ;;
+    "verify-gate: rules["*"] requires a clean working tree"*) return 0 ;;
+    "verify-gate: "*" command(s) passed on this exact tree in an earlier run and are credited"*) return 0 ;;
+  esac
+  return 1
+}
+# The record's standing "NOT VERIFIED ON THIS TREE" lines (verify_record.py:
+# one per owed obligation, every Stop) are gate-authored and counted: quiet
+# mode keeps each in the log and prints one line with the count. Any other
+# line verify_record.py writes prints as it is.
+_crew_gate_owed_filter() {
+  local _of_line _of_n=0
+  while IFS= read -r _of_line || [ -n "$_of_line" ]; do
+    case "$_of_line" in
+      "verify-gate: NOT VERIFIED ON THIS TREE - "*) gate_detail "$_of_line"; _of_n=$((_of_n + 1)) ;;
+      *) printf '%s\n' "$_of_line" >&2 ;;
+    esac
+  done
+  [ "$_of_n" -eq 0 ] || printf 'verify-gate: NOT VERIFIED ON THIS TREE - %s obligation(s) owed by the record, each listed in the detail log\n' "$_of_n" >&2
+}
+# verify_record.py report / sync with stdout on stderr, as before; in quiet
+# mode stdout goes through the filter above. The exit status is the script's.
+gate_record_report() {
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    "$1" "$2" report 2>/dev/null | _crew_gate_owed_filter
+    return "${PIPESTATUS[0]}"
+  fi
+  "$1" "$2" report >&2 2>/dev/null
+}
+gate_record_sync() {
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    "$1" "$2" sync | _crew_gate_owed_filter
+    return "${PIPESTATUS[0]}"
+  fi
+  "$1" "$2" sync >&2
+}
+_crew_gate_quiet_install() {
+  [ "$CI_MODE" -eq 0 ] && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$VERBOSE_ARG" -eq 0 ] || return 0
+  [ "${CREW_VERIFY_VERBOSE:-}" = 1 ] && return 0
+  local _qi_buf
+  _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || return 0
+  CREW_GATE_BUF="$_qi_buf"
+  CREW_GATE_NONCE="@@crew-detail-$$-${RANDOM}${RANDOM}-$(date +%s)@@"
+  CREW_GATE_SESSION=$(printf '%s' "$INPUT" | tr -d '\n\r' | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  exec 4>&2 2>>"$_qi_buf"
+  CREW_GATE_QUIET=1
+}
+# Tallies for the verdict line, from the counters the run already keeps.
+_crew_gate_counts() {
+  local _s _k
+  G_FAIL=0; G_PASS=0
+  for _s in "${STATUS_AT[@]+"${STATUS_AT[@]}"}"; do
+    case "$_s" in
+      fail|unknown) G_FAIL=$((G_FAIL + 1)) ;;
+      pass) G_PASS=$((G_PASS + 1)) ;;
+    esac
+  done
+  [ "$CREW_GATE_UNMAPPED_FAILED" -eq 1 ] && G_FAIL=$((G_FAIL + 1))
+  G_CRED=$((${COVERED_N:-0} + ${TREE_N:-0}))
+  G_REACH=0; G_OVER=0; G_DIRTY=0; G_OTHER=0
+  G_DEFER="${DEFERRED_COUNT:-0}"; G_SKIP="${SKIP_N:-0}"
+  G_OTHER_UNKNOWN=0
+  if [ "${TREE_MOVED:-0}" -ne 0 ]; then
+    G_CRED=${COVERED_N:-0}
+    G_OTHER=$((G_OTHER + ${TREE_N:-0}))
+  fi
+  if [ -n "${EXTRAS:-}" ]; then
+    while IFS= read -r _k; do
+      case "$_k" in
+        normal|"") ;;
+        reach_*) G_REACH=$((G_REACH + 1)) ;;
+        clean_tree_required) G_DIRTY=$((G_DIRTY + 1)) ;;
+        chronic) G_OVER=$((G_OVER + 1)) ;;
+        *) G_OTHER=$((G_OTHER + 1)) ;;
+      esac
+    done <<< "$(printf '%s\n' "$EXTRAS" | grep -o '"kind": "[A-Za-z_]*"' | sed 's/"kind": "\(.*\)"/\1/')"
+    G_BUDGET=$(printf '%s' "$EXTRAS" | sed -n 's/.*"budget": \([0-9][0-9]*\).*/\1/p' | head -1)
+    if [ -z "$G_BUDGET" ]; then
+      case "$EXTRAS" in *'"budget": null'*) G_BUDGET="none" ;; *) G_BUDGET="?" ;; esac
+    fi
+  else
+    G_OTHER_UNKNOWN=1
+    G_BUDGET="?"
+  fi
+  G_NV=$((G_REACH + G_OVER + G_DIRTY + G_DEFER + G_SKIP + G_OTHER))
+}
+_crew_gate_quiet_flush() {
+  local _rc="${1:-0}"
+  CREW_GATE_QUIET=0
+  exec 2>&4 4>&-
+  local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _state=".crew/.verify-gate.last-stop"
+  [ -f "$_buf" ] || return 0
+  _plain="$_buf.plain"; _full="$_buf.full"
+  LC_ALL=C grep -a -v "^$CREW_GATE_NONCE" "$_buf" > "$_plain" 2>/dev/null
+  LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full" 2>/dev/null
+  if [ ! -s "$_buf" ] && [ "$CREW_GATE_READY" -eq 0 ]; then
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  local _log_ok=0
+  if [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
+    _logtmp=".crew/.verify-gate.log.tmp$$"
+    if cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
+      _log_ok=1
+    else
+      rm -f "$_logtmp" 2>/dev/null
+    fi
+  fi
+  local _detail="unavailable" _body="$_full"
+  [ "$_log_ok" -eq 1 ] && { _detail="$_log"; _body="$_plain"; }
+  if [ "$CREW_GATE_READY" -eq 0 ]; then
+    # The run ended before the rules were judged: say what it said, in full.
+    cat "$_body" >&2
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  _crew_gate_counts
+  local _nvtxt="$G_NV" _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
+  if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then _nvtxt="$G_NV+"; _other_txt="unknown"; fi
+  if [ "$_rc" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
+  local _verdict="verify-gate: FAILED $_fail_txt | PASSED $G_PASS | NOT VERIFIED $_nvtxt (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
+  local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
+  if [ "$_rc" -eq 0 ]; then
+    rm -f "$_state" 2>/dev/null
+    {
+      printf '%s\n' "$_verdict"
+      cat "$_body"
+      [ "$G_NV" -gt 0 ] && printf '%s\n' "$_hint"
+    } >&2
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  # A failing run. Dedupe per session: the same failure set, the same session
+  # and a readable state file print one line; anything else prints it all.
+  local _hash="" _st_sid="" _st_hash="" _first _unchanged=0
+  if [ -n "$CREW_GATE_SESSION" ]; then
+    _hash=$( { cat "$_plain"; printf '\n--nv %s %s %s %s %s %s %s\n' "$G_REACH" "$G_OVER" "$G_DIRTY" "$G_DEFER" "$G_SKIP" "$G_OTHER" "$G_FAIL"; } \
+      | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)
+    case "$_hash" in *[!0-9a-f]*) _hash="" ;; esac
+    [ "${#_hash}" -eq 64 ] || _hash=""
+  fi
+  if [ -n "$_hash" ] && [ -f "$_state" ] && [ ! -L "$_state" ]; then
+    IFS=$'\t' read -r _st_sid _st_hash < "$_state" 2>/dev/null || true
+    if [ "$_st_sid" = "$CREW_GATE_SESSION" ] && [ "$_st_hash" = "$_hash" ]; then
+      _unchanged=1
+    fi
+  fi
+  if [ "$_unchanged" -eq 1 ]; then
+    _first=$(grep -a -m1 '^VERIFY FAILED: ' "$_plain" | sed 's/^VERIFY FAILED: //')
+    [ -n "$_first" ] || _first=$(head -n 1 "$_plain")
+    local _nfail="$G_FAIL"; [ "$_nfail" -gt 0 ] || _nfail=1
+    printf 'verify-gate: unchanged since last Stop (%s failing, %s NOT VERIFIED): %s\n' "$_nfail" "$_nvtxt" "$_first" >&2
+  else
+    {
+      printf '%s\n' "$_verdict"
+      cat "$_body"
+      printf '%s\n' "$_hint"
+    } >&2
+    if [ -n "$_hash" ] && [ -d .crew ]; then
+      printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_state.tmp$$" 2>/dev/null \
+        && mv -f "$_state.tmp$$" "$_state" 2>/dev/null || rm -f "$_state.tmp$$" 2>/dev/null
+    fi
+  fi
+  rm -f "$_buf" "$_plain" "$_full"
+  return 0
+}
 
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
 # from .crew/verify.json. Exit 2 = the work is not done.
@@ -187,6 +399,8 @@ if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' "$CREW_REPO_CONFIG" 2>/d
   fi
   exit 0
 fi
+
+_crew_gate_quiet_install
 
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
@@ -492,7 +706,7 @@ if [ -z "$CHANGED" ]; then
   REPORT_PY=$(crew_py 2>/dev/null) || REPORT_PY=""
   REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
-    "$REPORT_PY" "$REPORT_DIR/verify_record.py" report >&2 2>/dev/null || true
+    gate_record_report "$REPORT_PY" "$REPORT_DIR/verify_record.py" || true
   fi
   # L-0710: nothing ran, so nothing is recorded as verified (see BASE_AT).
   echo "verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written." >&2
@@ -627,7 +841,7 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FL
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has
     # not been touched since. Read-only reminder, same fail-safe direction
     # as the empty-CHANGED path above.
-    [ -f "$FP_DIR/verify_record.py" ] && "$FP_PY" "$FP_DIR/verify_record.py" report >&2 2>/dev/null
+    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" "$FP_DIR/verify_record.py"
     exit 0
   fi
 fi
@@ -1721,7 +1935,7 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-_extras = {"matched_rules": matched_rules}
+_extras = {"matched_rules": matched_rules, "budget": budget}
 # --ci only: how many rules and fallback commands the reach filter took out
 # (the pass line says whether any did), and, when nothing is left to run,
 # why - the caller exits 2 on an empty command list and names this reason.
@@ -1849,7 +2063,13 @@ while IFS= read -r TREE_LINE; do
   TREE_AT+=("$TREE_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
 if [ -n "$NOTICES" ]; then
-  printf '%s\n' "$NOTICES" >&2
+  while IFS= read -r NOTICE_LINE; do
+    if gate_notice_is_info "$NOTICE_LINE"; then
+      gate_detail "$NOTICE_LINE"
+    else
+      printf '%s\n' "$NOTICE_LINE" >&2
+    fi
+  done <<< "$NOTICES"
 fi
 
 # --ci: zero commands to run is not a pass. Every matched rule excluded for
@@ -2090,7 +2310,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
   if [ -n "$TREE_PRE" ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
-    echo "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c" >&2
+    gate_detail "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c"
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
     # "tree" LAST, so the withdrawal after the loop can match it at end of line.
@@ -2101,7 +2321,7 @@ $LOG_LINE"
   fi
   GUARD="${COVER_AT[$POS]:-}"
   if [ -n "$GUARD" ] && cover_credit "$GUARD"; then
-    echo "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c" >&2
+    gate_detail "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c"
     STATUS_AT[$POS]="covered"
     COVERED_N=$((COVERED_N + 1))
     LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
@@ -2152,7 +2372,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
       PIN_REPORT="$PIN_REPORT $VAR=unset"
     fi
   done <<< "$ENV_LINES"
-  echo "verify-gate: env pinned -$PIN_REPORT" >&2
+  gate_detail "verify-gate: env pinned -$PIN_REPORT"
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
   RULE_START=$(date +%s)
@@ -2380,7 +2600,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   STATUS_AT[$POS]="$CMD_STATUS"
   RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
   TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
-  echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
+  gate_detail "verify-gate: ${RULE_ELAPSED}s  $c"
   if [ -n "$PY" ]; then
     # $IDENT, not $c: matched_rules[...].cmds carries identities (text+env),
     # so the record-sync classification (which matches THIS log against
@@ -2400,17 +2620,18 @@ $LOG_LINE"
   # finished', so a long run keeps extending while it makes progress.
   lock_extend
 done <<< "$CMDS"
+CREW_GATE_READY=1
 
-echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
-' "$CMDS" | grep -c .) rule command(s)" >&2
+gate_detail "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
+' "$CMDS" | grep -c .) rule command(s)"
 if [ "$UNKNOWN_N" -gt 0 ]; then
   echo "verify-gate: $UNKNOWN_N rule command(s) COULD NOT BE JUDGED - counted as FAILED" >&2
 fi
 if [ "$COVERED_N" -gt 0 ]; then
-  echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
+  gate_detail "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run"
 fi
 if [ "$TREE_N" -gt 0 ]; then
-  echo "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run" >&2
+  gate_detail "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run"
 fi
 # Save what passed, for this tree only, and only when the tree did not move
 # while the rules ran: a rule that edits files, or an edit made meanwhile,
@@ -2438,6 +2659,7 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
   echo "UNMAPPED CHANGES - .crew/verify.json has no rule for:" >&2
   echo "$UNMAPPED" >&2
   echo "Add a rule (or mark it deliberately unchecked) before reporting this complete." >&2
+  CREW_GATE_UNMAPPED_FAILED=1
   FAILED=1
 fi
 
@@ -2517,8 +2739,8 @@ for line in sys.stdin.read().split("\n"):
     except ValueError:
         pass
 print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
-' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
-    SYNC_STATUS=$?
+' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
+    SYNC_STATUS=${PIPESTATUS[2]}
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
   fi

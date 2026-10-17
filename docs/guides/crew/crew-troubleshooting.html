@@ -647,6 +647,26 @@ not errors, and neither blocks the turn:</p>
   Push the branch, or run <code>/crew:verify --all</code> to check it here.</li>
 </ul>
 <p>A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.</p>
+<h2 id="verify-gate-prints-one-line-or-says-unchanged-since-last-stop">Verify Gate Prints One Line, or Says "Unchanged Since Last Stop"</h2>
+<p>Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
+exactly as before, and keeps the rest in <code>.crew/.verify-gate.log</code>:</p>
+<pre><code class="language-text">verify-gate: FAILED 1 | PASSED 14 | NOT VERIFIED 5 (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
+</code></pre>
+<ul>
+<li><strong>Where did the pricing, <code>env pinned</code>, <code>PASSED on this exact tree</code> and per-rule seconds lines go?</strong>
+  Into the log, which holds the complete text of the last run. Run the gate with <code>--verbose</code>
+  (<code>-Verbose</code> in the PowerShell flavour) or set <code>CREW_VERIFY_VERBOSE=1</code> to get them on screen. <code>--ci</code>,
+  <code>--all</code> and <code>--price</code> always print everything, so CI logs and <code>/crew:verify</code> look as they did.</li>
+<li><strong><code>NOT VERIFIED</code> is not <code>PASSED</code>.</strong> A deferred, skipped, reach-excluded, over-budget or dirty-tree
+  rule is counted under NOT VERIFIED; <code>other</code> is a rule the gate could not classify. Run
+  <code>/crew:verify --all</code> to run them.</li>
+<li><strong><code>verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): &lt;command&gt;</code></strong>: the same
+  session is failing the same way it reported on the last Stop, so the full block is not repeated.
+  The turn is still blocked (exit 2). A new session, a changed failure, or deleting
+  <code>.crew/.verify-gate.last-stop</code> prints the full block again.</li>
+<li><strong><code>detail: unavailable</code></strong>: <code>.crew/.verify-gate.log</code> could not be written (a directory in its
+  place, a read-only <code>.crew</code>). The full text is printed instead of a pointer to it.</li>
+</ul>
 <h2 id="verify-gate-says-could-not-tell">Verify Gate Says COULD NOT TELL</h2>
 <p><code>verify-gate.sh</code> / <code>.ps1</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
 <strong>and</strong> left a completion record saying the rule exited 0. Anything else that is not a plain exit

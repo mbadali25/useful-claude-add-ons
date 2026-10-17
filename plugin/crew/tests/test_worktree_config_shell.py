@@ -1121,7 +1121,7 @@ def test_no_hook_script_names_the_own_config_path():
             continue
         found = _executable_mentions(os.path.join(SCRIPTS, name))
         messages = {t: n for t, n in found.items()
-                    if t.startswith("echo ") or "WriteLine(" in t or t.startswith("PY=$(")}
+                    if t.startswith(("echo ", "Write-CrewErr(", "PY=$(")) or "WriteLine(" in t}
         rest = {t: n for t, n in found.items() if t not in messages}
         assert sum(messages.values()) == OWN_PATH_MESSAGES.get(name, 0), (name, messages)
         assert rest == OWN_PATH_ALLOWED.get(name, {}), (name, rest)
