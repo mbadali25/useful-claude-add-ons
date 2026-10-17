@@ -3097,8 +3097,11 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   PowerShell flavour buffers in memory and flushes in a `finally`; the
   `outside-scope:` line from its scope-report child is captured into the same
   buffer. A run that backs off on the lock never writes the log or the state
-  file the lock holder owns, and a payload that carries `session_id` more than
-  once reads as no session (full block). A reach-excluded `always` or `default`
+  file the lock holder owns, and a payload whose `session_id` is not a string
+  directly in the top-level object, or that carries it more than once, reads as
+  no session (full block). An exit-0 Stop clears the repeat state. If the
+  buffer cannot be split, the raw text prints whole and no log or state is
+  kept. A reach-excluded `always` or `default`
   command counts under reach, and the repeat check hashes which rules and
   commands were not run, not only how many.
 - A rule declaring `"reach"` other than `"local"` is recorded as

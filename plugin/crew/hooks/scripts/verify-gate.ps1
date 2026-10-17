@@ -110,6 +110,7 @@ $script:CrewQuiet = $false
 $script:CrewReady = $false
 $script:CrewUnmappedFailed = $false
 $script:CrewMayLog = $false
+$script:CrewBackedOff = $false
 $script:CrewExitRc = 0
 $script:CrewSession = ""
 $script:CrewBuf = New-Object System.Collections.ArrayList
@@ -163,7 +164,23 @@ function Write-CrewOwedLines($Lines) {
 function Start-CrewQuiet {
   if ($All -or $Ci -or $Verbose -or $env:CREW_VERIFY_VERBOSE -eq '1') { return }
   $script:CrewQuiet = $true
-  try { $script:CrewSession = [string](($raw | ConvertFrom-Json).session_id) } catch { $script:CrewSession = "" }
+  $script:CrewSession = Get-CrewTopLevelSession $raw
+}
+# The payload's own session id: the key must occur exactly once, with a string
+# value, directly inside the top-level object. A duplicate, a nested one or one
+# of another type reads as no session (the full block prints), as in the .sh.
+function Get-CrewTopLevelSession([string]$Json) {
+  if (-not $Json) { return "" }
+  $keys = [regex]::Matches($Json, '"session_id"\s*:')
+  if ($keys.Count -ne 1) { return "" }
+  $value = [regex]::Match($Json, '"session_id"\s*:\s*"((?:[^"\\]|\\.)*)"')
+  if (-not $value.Success) { return "" }
+  $prefix = $Json.Substring(0, $keys[0].Index)
+  $bare = [regex]::Replace([regex]::Replace($prefix, '\\.', ''), '"[^"]*"', '')
+  $braces = [regex]::Matches($bare, '\{').Count - [regex]::Matches($bare, '\}').Count
+  $brackets = [regex]::Matches($bare, '\[').Count - [regex]::Matches($bare, '\]').Count
+  if ($braces -ne 1 -or $brackets -ne 0) { return "" }
+  return $value.Groups[1].Value
 }
 function Get-CrewSha256([string]$Text) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -175,6 +192,11 @@ function Invoke-CrewQuietFlush {
   if (-not $script:CrewQuiet) { return }
   $script:CrewQuiet = $false
   $rc = $script:CrewExitRc
+  # An exit-0 Stop clears the repeat state; a run that only backed off on the
+  # lock must not touch the holder's.
+  if ($rc -eq 0 -and -not $script:CrewBackedOff) {
+    Remove-Item -LiteralPath ".crew/.verify-gate.last-stop" -Force -ErrorAction SilentlyContinue
+  }
   $plainLines = New-Object System.Collections.ArrayList
   $fullLines = New-Object System.Collections.ArrayList
   foreach ($entry in $script:CrewBuf) {
@@ -1082,6 +1104,7 @@ $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 # verify-gate.sh: exit 0 on Stop, exit 2 with a named reason under -Ci, where
 # the run that backed off checked nothing.
 function Exit-CrewLockBackOff([string]$Why) {
+  $script:CrewBackedOff = $true
   if ($Ci) {
     Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")
     Exit-CrewGateBlocked
@@ -1332,8 +1355,12 @@ try {
   } elseif (-not (Test-Path $scopeScript)) {
     Write-CrewErr("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
   } else {
-    $scopeOut = $changed -join "`n" | & $scopePy $scopeScript $PWD.Path 2>&1
-    foreach ($scopeLine in @($scopeOut)) { if ($null -ne $scopeLine) { Write-CrewErr ([string]$scopeLine) } }
+    if ($script:CrewQuiet) {
+      $scopeOut = $changed -join "`n" | & $scopePy $scopeScript $PWD.Path 2>&1
+      foreach ($scopeLine in @($scopeOut)) { if ($null -ne $scopeLine) { Write-CrewErr ([string]$scopeLine) } }
+    } else {
+      $changed -join "`n" | & $scopePy $scopeScript $PWD.Path
+    }
   }
 } catch {
   Write-CrewErr("outside-scope: (scope not checked: $_)")

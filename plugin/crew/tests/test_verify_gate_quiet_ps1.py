@@ -93,16 +93,18 @@ def _repo(tmp_path, verify_map=None):
     return root
 
 
-def _run(flavour, root, session="s1"):
+def _run(flavour, root, session="s1", payload=None):
     env = crew_fixtures.isolated_home_env(root.parent / "home")
     env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE="0")
+    if payload is None:
+        payload = json.dumps({"session_id": session})
     if flavour == "ps1":
         env["OS"] = "Windows_NT"
     if flavour == "sh":
         cmd = [_BASH, _SH]
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
-    result = crew_fixtures.run_gate(cmd, input=json.dumps({"session_id": session}), cwd=str(root), env=env,
+    result = crew_fixtures.run_gate(cmd, input=payload, cwd=str(root), env=env,
                                     capture_output=True, text=True, check=False, timeout=_T)
     return result
 
@@ -245,3 +247,38 @@ def test_ps1_repeat_check_follows_which_rules_were_not_run(tmp_path):
     assert "NOT VERIFIED 1 item(s) (reach 1," in _normal(third)[0]
     assert "unchanged since last Stop" not in fourth.stderr
     assert "VERIFY FAILED: echo boom; exit 1" in fourth.stderr
+
+
+@_needs_pwsh
+def test_ps1_exit_zero_stop_clears_the_repeat_state(tmp_path):
+    root = _repo(tmp_path, _FAIL_ONLY)
+    _run("ps1", root)
+    for args in (("add", "-A"), ("commit", "-q", "-m", "map")):
+        subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+    clean = _run("ps1", root)
+    (root / "a.py").write_text("x = 2", encoding="utf-8")
+
+    third = _run("ps1", root)
+
+    assert clean.returncode == 0
+    assert "VERIFY FAILED" not in clean.stderr
+    assert third.returncode == 2
+    assert "unchanged since last Stop" not in third.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in third.stderr
+
+
+@_needs_pwsh
+@pytest.mark.parametrize("payload", [
+    '{"meta":{"session_id":"nested"}}',
+    '{"session_id":{"x":1}}',
+    '{"session_id":"a","session_id":"b"}',
+])
+def test_ps1_a_session_id_that_is_not_a_top_level_string_prints_the_full_block(tmp_path, payload):
+    root = _repo(tmp_path, _FAIL_ONLY)
+
+    _run("ps1", root, payload=payload)
+    second = _run("ps1", root, payload=payload)
+
+    assert second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr

@@ -144,6 +144,7 @@ CREW_GATE_QUIET=0
 CREW_GATE_READY=0
 CREW_GATE_UNMAPPED_FAILED=0
 CREW_GATE_MAY_LOG=0
+CREW_GATE_BACKED_OFF=0
 CREW_GATE_BUF=""
 CREW_GATE_NONCE=""
 CREW_GATE_SESSION=""
@@ -211,13 +212,22 @@ _crew_gate_quiet_install() {
   _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || return 0
   CREW_GATE_BUF="$_qi_buf"
   CREW_GATE_NONCE="@@crew-detail-$$-${RANDOM}${RANDOM}-$(date +%s)@@"
-  # The key must occur exactly once: a payload that carries a second
-  # "session_id" (nested, or inside a string) cannot say which one is the
-  # session, so it reads as no session and prints the full block.
-  local _qi_sid_keys
-  _qi_sid_keys=$(printf '%s' "$INPUT" | tr -d '\n\r' | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | wc -l | tr -d '[:space:]')
-  if [ "$_qi_sid_keys" = 1 ]; then
-    CREW_GATE_SESSION=$(printf '%s' "$INPUT" | tr -d '\n\r' | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  # The key must occur exactly once, with a string value, directly inside the
+  # payload's top-level object: a second "session_id", a nested one, or one of
+  # another type cannot be told from the session, so it reads as no session and
+  # prints the full block.
+  local _qi_in _qi_prefix _qi_bare _qi_o _qi_c _qi_ao _qi_ac
+  _qi_in=$(printf '%s' "$INPUT" | tr -d '\n\r')
+  if [ "$(printf '%s' "$_qi_in" | grep -o '"session_id"[[:space:]]*:' | wc -l | tr -d '[:space:]')" = 1 ]; then
+    _qi_prefix=${_qi_in%%'"session_id"'*}
+    _qi_bare=$(printf '%s' "$_qi_prefix" | sed -e 's/\\.//g' -e 's/"[^"]*"//g')
+    _qi_o=$(printf '%s' "$_qi_bare" | tr -cd '{' | wc -c | tr -d '[:space:]')
+    _qi_c=$(printf '%s' "$_qi_bare" | tr -cd '}' | wc -c | tr -d '[:space:]')
+    _qi_ao=$(printf '%s' "$_qi_bare" | tr -cd '[' | wc -c | tr -d '[:space:]')
+    _qi_ac=$(printf '%s' "$_qi_bare" | tr -cd ']' | wc -c | tr -d '[:space:]')
+    if [ $((_qi_o - _qi_c)) -eq 1 ] && [ "$_qi_ao" = "$_qi_ac" ]; then
+      CREW_GATE_SESSION=$(printf '%s' "$_qi_in" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
   fi
   exec 4>&2 2>>"$_qi_buf"
   CREW_GATE_QUIET=1
@@ -264,21 +274,42 @@ _crew_gate_counts() {
   fi
   G_NV=$((G_REACH + G_OVER + G_DIRTY + G_DEFER + G_SKIP + G_OTHER))
 }
+# The verdict line for a finished run: sets G_VERDICT and G_NVTXT. $1 is the
+# exit code, $2 the detail text.
+_crew_gate_verdict_line() {
+  _crew_gate_counts
+  local _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
+  G_NVTXT="$G_NV"
+  if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then G_NVTXT="$G_NV+"; _other_txt="unknown"; fi
+  if [ "$1" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
+  G_VERDICT="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $G_NVTXT item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $2"
+}
 _crew_gate_quiet_flush() {
   local _rc="${1:-0}"
   CREW_GATE_QUIET=0
   exec 2>&4 4>&-
+  # An exit-0 Stop (a pass, or a turn with nothing to check) clears the repeat
+  # state; a run that only backed off on the lock must not touch the holder's.
+  if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ]; then
+    rm -f ".crew/.verify-gate.last-stop" 2>/dev/null
+  fi
   local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _state=".crew/.verify-gate.last-stop"
   [ -f "$_buf" ] || return 0
   _plain="$_buf.plain"; _full="$_buf.full"
+  # grep -v exits 1 when every line was tagged (nothing plain), which is fine;
+  # 2 or more, or any sed failure, means the split is not trustworthy: then the
+  # raw buffer prints whole, there is no log, and no repeat state is kept.
+  local _split_ok=1
   LC_ALL=C grep -a -v "^$CREW_GATE_NONCE" "$_buf" > "$_plain" 2>/dev/null
-  LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full" 2>/dev/null
+  [ "$?" -le 1 ] || _split_ok=0
+  LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full" 2>/dev/null || _split_ok=0
+  if [ "$_split_ok" -eq 0 ]; then _plain="$_buf"; _full="$_buf"; fi
   if [ ! -s "$_buf" ] && [ "$CREW_GATE_READY" -eq 0 ]; then
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi
   local _log_ok=0
-  if [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
+  if [ "$_split_ok" -eq 1 ] && [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
     _logtmp=".crew/.verify-gate.log.tmp$$"
     if cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
       _log_ok=1
@@ -297,11 +328,8 @@ _crew_gate_quiet_flush() {
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi
-  _crew_gate_counts
-  local _nvtxt="$G_NV" _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
-  if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then _nvtxt="$G_NV+"; _other_txt="unknown"; fi
-  if [ "$_rc" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
-  local _verdict="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $_nvtxt item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
+  _crew_gate_verdict_line "$_rc" "$_detail"
+  local _nvtxt="$G_NVTXT" _verdict="$G_VERDICT"
   local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   if [ "$_rc" -eq 0 ]; then
     rm -f "$_state" 2>/dev/null
@@ -316,7 +344,7 @@ _crew_gate_quiet_flush() {
   # A failing run. Dedupe per session: the same failure set, the same session
   # and a readable state file print one line; anything else prints it all.
   local _hash="" _st_sid="" _st_hash="" _first _unchanged=0
-  if [ -n "$CREW_GATE_SESSION" ]; then
+  if [ -n "$CREW_GATE_SESSION" ] && [ "$_split_ok" -eq 1 ]; then
     _hash=$( { cat "$_plain"; printf '\n--nv %s %s %s %s %s %s %s %s\n' "$G_REACH" "$G_OVER" "$G_DIRTY" "$G_DEFER" "$G_SKIP" "$G_OTHER" "$G_FAIL" "$G_NVD"; } \
       | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)
     case "$_hash" in *[!0-9a-f]*) _hash="" ;; esac
@@ -868,6 +896,7 @@ LOCK=".crew/.verify-gate.lock"
 # off checked nothing, and whichever run holds the lock is not this job's
 # verdict.
 lock_back_off() {
+  CREW_GATE_BACKED_OFF=1
   if [ "$CI_MODE" -eq 1 ]; then
     echo "verify-gate --ci: $1 - this run checked nothing" >&2
     exit 2

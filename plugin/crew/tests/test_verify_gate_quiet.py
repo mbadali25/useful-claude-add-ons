@@ -24,6 +24,7 @@ The oracle for "failures are verbatim" is a verbose run of the same fixture.
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -120,6 +121,7 @@ def test_quiet_stop_prints_one_verdict_line(tmp_path):
         assert noisy not in result.stderr
     assert "env pinned" in _log(root)
     assert "declared reach: network" in _log(root)
+    assert "outside-scope:" in _log(root)
 
 
 def test_failure_span_identical_to_verbose(tmp_path):
@@ -472,6 +474,69 @@ def test_repeat_check_follows_which_rules_were_not_run(tmp_path):
 def test_ambiguous_session_id_prints_the_full_block_every_time(tmp_path):
     root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
     payload = '{"session_id":"s1","meta":{"session_id":"s2"}}'
+
+    first = _run(root, payload=payload)
+    second = _run(root, payload=payload)
+
+    assert first.returncode == second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
+
+
+@pytest.mark.parametrize("tool,pattern", [("grep", "-a -v"), ("sed", "s/^@@crew-detail")])
+def test_failed_split_of_the_buffer_prints_everything(tmp_path, tool, pattern):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    shim_tool = shim / tool
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *"{pattern}"*) exit 2 ;; esac\nexec {shutil.which(tool)} "$@"\n',
+                         encoding="utf-8")
+    shim_tool.chmod(0o755)
+
+    result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
+
+    assert result.returncode == 2
+    assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
+    assert "boom" in result.stderr.replace("VERIFY FAILED: echo boom; exit 1", "")
+    assert "| detail: unavailable" in result.stderr
+    assert not (root / ".crew" / ".verify-gate.log").exists()
+    assert not (root / ".crew" / ".verify-gate.last-stop").exists()
+
+
+def test_exit_zero_stop_clears_the_repeat_state(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    first = _run(root)
+    _commit_all(root)
+    clean = _run(root)
+    (root / "a.py").write_text("x = 2", encoding="utf-8")
+
+    third = _run(root)
+
+    assert first.returncode == 2
+    assert clean.returncode == 0
+    assert "VERIFY FAILED" not in clean.stderr
+    assert third.returncode == 2
+    assert "unchanged since last Stop" not in third.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in third.stderr
+
+
+def test_unwritable_tmpdir_stops_the_turn_instead_of_going_quiet(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+
+    result = _run(root, extra_env={"TMPDIR": str(tmp_path / "no" / "such" / "dir")})
+
+    assert result.returncode == 2
+    assert "VERIFY GATE: cannot create temp file. Verification did NOT run." in result.stderr
+    assert result.stdout.startswith(_BLOCKED)
+
+
+@pytest.mark.parametrize("payload", [
+    '{"meta":{"session_id":"nested"}}',
+    '{"session_id":{"x":1}}',
+    '{"list":[{"session_id":"in-a-list"}]}',
+])
+def test_a_session_id_that_is_not_a_top_level_string_prints_the_full_block(tmp_path, payload):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
 
     first = _run(root, payload=payload)
     second = _run(root, payload=payload)
