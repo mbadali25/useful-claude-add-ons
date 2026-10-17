@@ -1530,14 +1530,14 @@ writable (`:1863-1870`), rather than falling back to the old pipe form.
 
 - **The captured output is capped at 1 MiB (1048576 bytes), read as the
   LAST N bytes (`tail -c`), not the first.** `RULE_OUT_CAP`
-  (`verify-gate.sh:2079`) defaults to 1048576 and is clamped into `[1,
+  (`verify-gate.sh:2103`) defaults to 1048576 and is clamped into `[1,
   1048576]` (`:1677-1683`); a rule that legitimately writes more than that
   before backgrounding something no longer turns a bounded gate into an
   unbounded read. `tail -c`, not `head -c` (`:1850-1860`): what a failing
   rule needs downstream is its actual error, which for noisy output sits at
   the end.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from
-  crew 1.0 entirely**, per the comment at `verify-gate.sh:2023-2034` and
+  crew 1.0 entirely**, per the comment at `verify-gate.sh:2047-2058` and
   CHANGELOG 1.0.21 (both cited in the file itself, `:600-601`): a signalled
   gate no longer TERM/KILLs whatever a rule's own escaped background work
   left running. What remains is only the isolation and prompt-signal
@@ -1599,7 +1599,7 @@ was discarded before the next call regardless.
 **The completion record (T-0082, H2a; DERIVED at the H2a branch head).** The
 same capture now carries a second temp file per rule, the completion record:
 the wrapper writes the rule's exit status there after the rule ends
-(`plugin/crew/hooks/scripts/verify-gate.sh:2325`), and a rule passes only when
+(`plugin/crew/hooks/scripts/verify-gate.sh:2349`), and a rule passes only when
 the wrapper ended 0 and the record says 0. Killed, never-started (`.ps1`) or
 unrecorded is FAILED as `COULD NOT TELL`, status `unknown`, never advancing the
 marker. The full decision table and both flavours' line references are in
@@ -2854,7 +2854,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
   `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1304`). Tests:
   `plugin/crew/tests/test_tmp_hygiene.py`.
-- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:1139`)
+- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:1151`)
   is still removed only on the straight-line path (`:1613`), so a gate killed mid-run leaks it;
   `RULE_OUT_FILE` has since joined the gate's cleanup registry (`:1842-1849`). verify-gate.sh is a
   harness path (`scripts/check-tooling-pr.py`), so registering `CHANGED_FILE` is T-0065's harness
