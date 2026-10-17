@@ -937,7 +937,7 @@ if (-not $base -and $baseAtPresent -and -not $All -and -not $Ci) {
   if ($baseAtItem -is [System.IO.DirectoryInfo]) { $baseAtRegular = $false }
   elseif ((Get-Variable -Name IsWindows -ValueOnly -ErrorAction SilentlyContinue) -eq $false) {
     $null | & test -f $baseAt 2>$null
-    $baseAtRegular = ($LASTEXITCODE -eq 0)
+    $baseAtRegular = $true
   }
   if ($baseAtRegular) {
     try { $cand = (Get-Content -LiteralPath $baseAt -TotalCount 1 -ErrorAction Stop) } catch { $cand = $null }

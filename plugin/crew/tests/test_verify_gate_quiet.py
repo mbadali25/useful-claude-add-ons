@@ -46,7 +46,9 @@ _BLOCKED = "VERIFY GATE: BLOCKED (exit 2)"
 _INFO = re.compile(
     r"^(verify-gate: (rules\[\d+\] (priced |declared reach|requires a clean|is permanently)"
     r"|env pinned|COVERED by|PASSED on this exact tree|stop budget|\d+s  |\d+s total across"
-    r"|\d+ of them (COVERED|PASSED)|\d+ command\(s\) passed on this exact tree|NOT VERIFIED ON THIS TREE - )|deferred to /crew:verify: )")
+    r"|\d+ of them (COVERED|PASSED)|\d+ command\(s\) passed on this exact tree"
+    r"|NOT VERIFIED ON THIS TREE - )"
+    r"|deferred to /crew:verify: )")
 _OWED_SUMMARY = re.compile(r"^verify-gate: NOT VERIFIED ON THIS TREE - \d+ further obligation\(s\) owed by the record")
 
 _BASE_MAP = {
@@ -84,7 +86,7 @@ def _repo(tmp_path, verify_map):
     return root
 
 
-def _run(root, *args, verbose="0", session="s1", extra_env=None):
+def _run(root, *args, verbose="0", session: str | None = "s1", extra_env=None):
     env = crew_fixtures.isolated_home_env(root.parent / "home")
     env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE=verbose)
     env.update(extra_env or {})
@@ -389,13 +391,13 @@ def test_killed_run_still_names_what_it_never_checked(tmp_path):
         (root / "a.py.hold").rename(root / "a.py")
         env = crew_fixtures.isolated_home_env(root.parent / "home")
         env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE=verbose)
-        proc = subprocess.Popen([_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, cwd=str(root), env=env, text=True)
-        proc.stdin.write('{"session_id":"s1"}')
-        proc.stdin.close()
-        time.sleep(4)
-        proc.send_signal(signal.SIGTERM)
-        _, err = proc.communicate(timeout=_T)
+        with subprocess.Popen([_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, cwd=str(root), env=env, text=True) as proc:
+            proc.stdin.write('{"session_id":"s1"}')
+            proc.stdin.close()
+            time.sleep(4)
+            proc.send_signal(signal.SIGTERM)
+            _, err = proc.communicate(timeout=_T)
         outputs[verbose] = err
 
     for marker in ("deferred to /crew:verify", "permanently over budget"):
