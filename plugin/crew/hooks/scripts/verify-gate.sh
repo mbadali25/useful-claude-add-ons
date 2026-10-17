@@ -293,28 +293,41 @@ _crew_gate_quiet_flush() {
   if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ]; then
     rm -f ".crew/.verify-gate.last-stop" 2>/dev/null
   fi
-  local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _state=".crew/.verify-gate.last-stop"
+  local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _statetmp _state=".crew/.verify-gate.last-stop"
   [ -f "$_buf" ] || return 0
-  _plain="$_buf.plain"; _full="$_buf.full"
-  # grep -v exits 1 when every line was tagged (nothing plain), which is fine;
-  # 2 or more, or any sed failure, means the split is not trustworthy: then the
-  # raw buffer prints whole, there is no log, and no repeat state is kept.
-  local _split_ok=1
-  LC_ALL=C grep -a -v "^$CREW_GATE_NONCE" "$_buf" > "$_plain" 2>/dev/null
-  [ "$?" -le 1 ] || _split_ok=0
-  LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full" 2>/dev/null || _split_ok=0
-  if [ "$_split_ok" -eq 0 ]; then _plain="$_buf"; _full="$_buf"; fi
+  # The two halves of the split are their own mktemp files (mode 0600, unguessable
+  # names), never names derived from the buffer's. grep -v exits 1 when every
+  # line was tagged (nothing plain), which is fine; 2 or more, any sed failure,
+  # or a half that is not a regular file means the split is not trustworthy:
+  # then the raw buffer prints whole, there is no log, and no repeat state.
+  local _split_ok=1 _plain_t _full_t
+  _plain_t=$(mktemp "${TMPDIR:-/tmp}/crew-gate-plain.XXXXXX" 2>/dev/null) || _plain_t=""
+  _full_t=$(mktemp "${TMPDIR:-/tmp}/crew-gate-full.XXXXXX" 2>/dev/null) || _full_t=""
+  if [ -n "$_plain_t" ] && [ -n "$_full_t" ]; then
+    LC_ALL=C grep -a -v "^$CREW_GATE_NONCE" "$_buf" > "$_plain_t" 2>/dev/null
+    [ "$?" -le 1 ] || _split_ok=0
+    LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full_t" 2>/dev/null || _split_ok=0
+    { [ -f "$_plain_t" ] && [ ! -L "$_plain_t" ] && [ -f "$_full_t" ] && [ ! -L "$_full_t" ]; } || _split_ok=0
+  else
+    _split_ok=0
+  fi
+  if [ "$_split_ok" -eq 1 ]; then
+    _plain="$_plain_t"; _full="$_full_t"
+  else
+    rm -f "$_plain_t" "$_full_t" 2>/dev/null
+    _plain="$_buf"; _full="$_buf"
+  fi
   if [ ! -s "$_buf" ] && [ "$CREW_GATE_READY" -eq 0 ]; then
     rm -f "$_buf" "$_plain" "$_full"
     return 0
   fi
   local _log_ok=0
   if [ "$_split_ok" -eq 1 ] && [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
-    _logtmp=".crew/.verify-gate.log.tmp$$"
-    if cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
+    _logtmp=$(mktemp ".crew/.verify-gate.log.tmpXXXXXX" 2>/dev/null) || _logtmp=""
+    if [ -n "$_logtmp" ] && cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
       _log_ok=1
     else
-      rm -f "$_logtmp" 2>/dev/null
+      [ -z "$_logtmp" ] || rm -f "$_logtmp" 2>/dev/null
     fi
   fi
   local _detail="unavailable" _body="$_full"
@@ -369,8 +382,11 @@ _crew_gate_quiet_flush() {
       printf '%s\n' "$_hint"
     } >&2
     if [ -n "$_hash" ] && [ -d .crew ]; then
-      printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_state.tmp$$" 2>/dev/null \
-        && mv -f "$_state.tmp$$" "$_state" 2>/dev/null || rm -f "$_state.tmp$$" 2>/dev/null
+      _statetmp=$(mktemp ".crew/.verify-gate.last-stop.tmpXXXXXX" 2>/dev/null) || _statetmp=""
+      if [ -n "$_statetmp" ]; then
+        printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_statetmp" 2>/dev/null \
+          && mv -f "$_statetmp" "$_state" 2>/dev/null || rm -f "$_statetmp" 2>/dev/null
+      fi
     fi
   fi
   rm -f "$_buf" "$_plain" "$_full"

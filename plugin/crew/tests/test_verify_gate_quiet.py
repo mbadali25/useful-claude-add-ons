@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import time
 
@@ -544,3 +545,18 @@ def test_a_session_id_that_is_not_a_top_level_string_prints_the_full_block(tmp_p
     assert first.returncode == second.returncode == 2
     assert "unchanged since last Stop" not in second.stderr
     assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_log_and_state_are_private_and_no_buffer_file_is_left_behind(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    scratch = tmp_path / "tmpdir"
+    scratch.mkdir()
+
+    result = _run(root, extra_env={"TMPDIR": str(scratch)})
+
+    assert result.returncode == 2
+    for name in (".verify-gate.log", ".verify-gate.last-stop"):
+        assert stat.S_IMODE(os.stat(root / ".crew" / name).st_mode) == 0o600
+    assert sorted(p.name for p in (root / ".crew").glob(".verify-gate.*tmp*")) == []
+    assert [p.name for p in scratch.glob("crew-gate-*")] == []

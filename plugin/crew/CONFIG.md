@@ -3101,7 +3101,8 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   directly in the top-level object, or that carries it more than once, reads as
   no session (full block). An exit-0 Stop clears the repeat state. If the
   buffer cannot be split, the raw text prints whole and no log or state is
-  kept. A reach-excluded `always` or `default`
+  kept. The buffer, its two halves, the log and the state file are `mktemp`
+  files (mode 0600), never names derived from a process id. A reach-excluded `always` or `default`
   command counts under reach, and the repeat check hashes which rules and
   commands were not run, not only how many.
 - A rule declaring `"reach"` other than `"local"` is recorded as
