@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.39**: The Stop gate prints one verdict line and keeps the rest in a log. `crew` 1.2.39 makes the Stop verify gate quiet: one verdict line, then each failure exactly as before, with the pricing, reach, deferral, tree-credit, env-pin and timing lines moved to `.crew/.verify-gate.log`.
 - **crew 1.2.38**: The coordinator is a model pin on an existing role, and wave lanes carry the developer model. `crew` 1.2.38 makes `dev.roles.coordinator` a documented model pin (no fifth role, no persona, default unset) and puts `dev.roles.developer`'s claude model on each wave lane launch.
-- **crew 1.2.37**: A Haiku 5.5 `session-relay` agent for messages between sessions. `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5 that carries every message between sessions, so peer traffic costs a cheap model and never reaches the main session unread.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

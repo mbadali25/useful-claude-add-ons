@@ -464,11 +464,41 @@ not errors, and neither blocks the turn:
   diff baseline `.crew/.verify-gate.base-at` moves (when nothing committed differs from the base),
   so a later commit is still in scope. If that file cannot be written the turn exits 2 and says so.
 - **`rules[N] is permanently over budget ... deferred to CI`** and **`NOT VERIFIED ON THIS TREE -
-  ... deferred to CI`**: that rule costs more than the whole budget, so Stop never runs it. The
+  ... deferred to CI`** (since crew 1.2.39 the quiet Stop path counts these in the verdict line's
+  `over-budget` and `deferred` figures and writes the per-rule text to `.crew/.verify-gate.log`;
+  `--verbose` prints it): that rule costs more than the whole budget, so Stop never runs it. The
   `verify-gate` workflow does, and `/crew:done` refuses until its receipt for HEAD is VERIFIED or a local run passes it.
   Push the branch, or run `/crew:verify --all` to check it here.
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
+
+## Verify gate prints one line, or says "unchanged since last Stop"
+
+Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
+exactly as before, and keeps the rest in `.crew/.verify-gate.log`:
+
+```text
+verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 item(s) (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
+```
+
+- **Where did the pricing, `env pinned`, `PASSED on this exact tree` and per-rule seconds lines go?**
+  Into the log, which holds the complete text of the last run. Run the gate with `--verbose`
+  (`-Verbose` in the PowerShell flavour) or set `CREW_VERIFY_VERBOSE=1` to get them on screen. `--ci`,
+  `--all` and `--price` always print everything, so CI logs and `/crew:verify` look as they did.
+- **Units.** FAILED, PASSED and credited count commands; NOT VERIFIED counts items: a rule for
+  reach, over-budget, dirty tree and deferred, but a command for skipped (exit 77) and for credits
+  withdrawn because the tree moved (under other). Do not add the two units together.
+- **`NOT VERIFIED` is not `PASSED`.** A deferred, skipped, reach-excluded, over-budget or dirty-tree
+  rule is counted under NOT VERIFIED; `other` is a rule the gate could not classify. Run
+  `/crew:verify --all` to run them.
+- **`verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): <command> | detail: <log> | ...`**: the same
+  session is failing the same way it reported on the last Stop, so the full block is not repeated.
+  The line names `.crew/.verify-gate.log`, which holds this run's full output. If that log
+  cannot be written the gate never prints this line: it prints the full block instead.
+  The turn is still blocked (exit 2). A new session, a changed failure, or deleting
+  `.crew/.verify-gate.last-stop` prints the full block again.
+- **`detail: unavailable`**: `.crew/.verify-gate.log` could not be written (a directory in its
+  place, a read-only `.crew`). The full text is printed instead of a pointer to it.
 
 ## Verify gate says COULD NOT TELL
 

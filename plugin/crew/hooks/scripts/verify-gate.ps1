@@ -38,6 +38,10 @@ param(
   # --all.
   [switch]$All,
 
+  # Restores the full per-rule text on the Stop path (the twin of verify-gate.sh's
+  # --verbose and of CREW_VERIFY_VERBOSE=1). -All and -Ci are verbose already.
+  [switch]$Verbose,
+
   # The gate as a consumer repo's CI job runs it on a pull request. The twin
   # of verify-gate.sh's --ci, where the full rationale lives: the WHOLE map
   # like -All (no budget, no fingerprint skip), Stop's reach exclusion (a
@@ -86,9 +90,223 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 # waved past. Every `exit 2` in this file goes through here (the twin of
 # verify-gate.sh's EXIT trap); `exit` in a function ends the script.
 function Exit-CrewGateBlocked {
+  $script:CrewExitRc = 2
   [Console]::Out.WriteLine("VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete.")
   [Console]::Out.Flush()
   exit 2
+}
+
+# --- quiet Stop output (L-0796), the twin of the block in verify-gate.sh ----
+# On the Stop path (no -Ci, -All or -Verbose, CREW_VERIFY_VERBOSE not 1) the
+# gate prints ONE verdict line, then every line that is not gate-authored
+# informational text, unchanged, and writes the whole verbose text to
+# .crew/.verify-gate.log. The classification is by EMITTING SITE: only
+# Write-CrewDetail callers and matcher NOTICES lines on the allowlist are held
+# back; rule output is never classified and any line this file does not know
+# prints. The flush runs in the `finally` that wraps the rest of the script, so
+# every `exit` path reaches it. Exit codes and the L-0733 stdout line are
+# untouched. verify-gate.sh holds the full rationale.
+$script:CrewQuiet = $false
+$script:CrewReady = $false
+$script:CrewUnmappedFailed = $false
+$script:CrewMayLog = $false
+$script:CrewBackedOff = $false
+$script:CrewExitRc = 0
+$script:CrewSession = ""
+$script:CrewBuf = New-Object System.Collections.ArrayList
+function Write-CrewErr([string]$Text) {
+  if ($script:CrewQuiet) { [void]$script:CrewBuf.Add(@($false, $Text)) } else { [Console]::Error.WriteLine($Text) }
+}
+function Write-CrewDetail([string]$Text) {
+  if ($script:CrewQuiet) { [void]$script:CrewBuf.Add(@($true, $Text)) } else { [Console]::Error.WriteLine($Text) }
+}
+# The matcher's own informational NOTICES lines. A line not matched here prints.
+$script:CrewInfoNotice = @(
+  '^verify-gate: rules\[\d+\] priced from a cached measurement',
+  '^verify-gate: rules\[\d+\] priced at ',
+  '^verify-gate: .* has no `seconds` in verify\.json - cost UNSTATED, ran anyway$',
+  '^verify-gate: .*it RAN past the budget; the cost is charged but cannot defer it$',
+  '^deferred to /crew:verify: ',
+  '^verify-gate: rules\[\d+\] is permanently over budget',
+  '^verify-gate: stop budget ',
+  '^verify-gate: rules\[\d+\] declared reach: ',
+  '^verify-gate: rules\[\d+\] requires a clean working tree',
+  '^verify-gate: \d+ command\(s\) passed on this exact tree in an earlier run and are credited'
+)
+function Test-CrewInfoNotice([string]$Line) {
+  foreach ($pattern in $script:CrewInfoNotice) { if ($Line -cmatch $pattern) { return $true } }
+  return $false
+}
+function Write-CrewNotices($Notices) {
+  foreach ($notice in @($Notices)) {
+    foreach ($line in ([string]$notice -split "\r?\n")) {
+      if (Test-CrewInfoNotice $line) { Write-CrewDetail $line } else { Write-CrewErr $line }
+    }
+  }
+}
+# The record's standing "NOT VERIFIED ON THIS TREE" lines: one per owed
+# obligation, every Stop. Quiet mode keeps each in the log and prints one line
+# with the count; any other line verify_record.py writes prints as it is.
+function Write-CrewOwedLines($Lines) {
+  $owed = 0
+  foreach ($line in @($Lines)) {
+    if ($null -eq $line) { continue }
+    $text = [string]$line
+    if ($script:CrewQuiet -and $text.StartsWith('verify-gate: NOT VERIFIED ON THIS TREE - ')) {
+      Write-CrewDetail $text
+      $owed++
+    } else {
+      Write-CrewErr $text
+    }
+  }
+  if ($owed -gt 0) { Write-CrewErr "verify-gate: NOT VERIFIED ON THIS TREE - $owed further obligation(s) owed by the record (not in the NOT VERIFIED item total above), each listed in the detail log" }
+}
+function Start-CrewQuiet {
+  if ($All -or $Ci -or $Verbose -or $env:CREW_VERIFY_VERBOSE -eq '1') { return }
+  $script:CrewQuiet = $true
+  $script:CrewSession = Get-CrewTopLevelSession $raw
+}
+# The payload's own session id: the key must occur exactly once, with a string
+# value, directly inside the top-level object. A duplicate, a nested one or one
+# of another type reads as no session (the full block prints), as in the .sh.
+function Get-CrewTopLevelSession([string]$Json) {
+  if (-not $Json) { return "" }
+  $keys = [regex]::Matches($Json, '"session_id"\s*:')
+  if ($keys.Count -ne 1) { return "" }
+  $value = [regex]::Match($Json, '"session_id"\s*:\s*"((?:[^"\\]|\\.)*)"')
+  if (-not $value.Success) { return "" }
+  $prefix = $Json.Substring(0, $keys[0].Index)
+  $bare = [regex]::Replace([regex]::Replace($prefix, '\\.', ''), '"[^"]*"', '')
+  $braces = [regex]::Matches($bare, '\{').Count - [regex]::Matches($bare, '\}').Count
+  $brackets = [regex]::Matches($bare, '\[').Count - [regex]::Matches($bare, '\]').Count
+  if ($braces -ne 1 -or $brackets -ne 0) { return "" }
+  return $value.Groups[1].Value
+}
+function Get-CrewSha256([string]$Text) {
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    return (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)) | ForEach-Object { $_.ToString('x2') }) -join '')
+  } finally { $sha.Dispose() }
+}
+# A new file that must not already exist (no predictable name is ever written
+# through): CreateNew fails on an existing path, a link included.
+function Write-CrewNewFile([string]$Path, [string]$Text) {
+  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($Text)
+  $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+  try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+}
+function Invoke-CrewQuietFlush {
+  if (-not $script:CrewQuiet) { return }
+  $script:CrewQuiet = $false
+  $rc = $script:CrewExitRc
+  # An exit-0 Stop clears the repeat state; a run that only backed off on the
+  # lock must not touch the holder's.
+  if ($rc -eq 0 -and -not $script:CrewBackedOff) {
+    Remove-Item -LiteralPath ".crew/.verify-gate.last-stop" -Force -ErrorAction SilentlyContinue
+  }
+  $plainLines = New-Object System.Collections.ArrayList
+  $fullLines = New-Object System.Collections.ArrayList
+  foreach ($entry in $script:CrewBuf) {
+    [void]$fullLines.Add([string]$entry[1])
+    if (-not $entry[0]) { [void]$plainLines.Add([string]$entry[1]) }
+  }
+  if ($fullLines.Count -eq 0 -and -not $script:CrewReady) {
+    if ($rc -eq 0 -and -not $script:CrewBackedOff -and -not (Test-Path -LiteralPath ".crew/.verify-gate.log" -PathType Container)) {
+      Remove-Item -LiteralPath ".crew/.verify-gate.log" -Force -ErrorAction SilentlyContinue
+    }
+    return
+  }
+  $logPath = ".crew/.verify-gate.log"
+  $logOk = $false
+  if ($script:CrewMayLog -and $fullLines.Count -gt 0 -and (Test-Path -LiteralPath ".crew" -PathType Container) -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
+    $logTmp = ".crew/.verify-gate.log.tmp$PID-$([System.IO.Path]::GetRandomFileName())"
+    try {
+      Write-CrewNewFile $logTmp (($fullLines -join "`n") + "`n")
+      Move-Item -LiteralPath $logTmp -Destination $logPath -Force -ErrorAction Stop
+      $logOk = $true
+    } catch { Remove-Item -LiteralPath $logTmp -Force -ErrorAction SilentlyContinue }
+  }
+  $detail = if ($logOk) { $logPath } else { "unavailable" }
+  $body = if ($logOk) { $plainLines } else { $fullLines }
+  if (-not $script:CrewReady) {
+    if (-not $logOk -and $rc -eq 0 -and -not $script:CrewBackedOff -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
+      Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+    }
+    [Console]::Error.WriteLine("verify-gate: run ended before a verdict; unproven rules are listed below | detail: $detail")
+    foreach ($line in $fullLines) { [Console]::Error.WriteLine($line) }
+    return
+  }
+  $fail = 0; $pass = 0
+  foreach ($status in $statusAt.Values) {
+    if ($status -eq "fail" -or $status -eq "unknown") { $fail++ } elseif ($status -eq "pass") { $pass++ }
+  }
+  if ($script:CrewUnmappedFailed) { $fail++ }
+  $cred = $coveredN + $treeN
+  $reach = 0; $over = 0; $dirty = 0; $other = 0
+  $skip = $skipCount; $defer = $deferredCount
+  if ($treeMoved) { $cred = $coveredN; $other += $treeN }
+  $nvIds = New-Object System.Collections.ArrayList
+  $reach += $(if ($null -ne $fallbackNotices) { $fallbackNotices.Count } else { 0 })
+  foreach ($rule in @($extrasObj.matched_rules)) {
+    $kind = [string]$rule.kind
+    if ($kind -eq "normal" -or $kind -eq "") { continue }
+    elseif ($kind.StartsWith("reach_")) { $reach++ }
+    elseif ($kind -eq "clean_tree_required") { $dirty++ }
+    elseif ($kind -eq "chronic") { $over++ }
+    else { $other++ }
+    [void]$nvIds.Add("$($rule.key)|$kind")
+  }
+  foreach ($fn in $fallbackNotices) { [void]$nvIds.Add([string]$fn) }
+  foreach ($n in $notices) {
+    $nt = [string]$n
+    if ($nt.StartsWith('deferred to /crew:verify: ') -or $nt.Contains(' is permanently over budget') -or $nt.Contains(' declared reach: ') -or $nt.Contains(' requires a clean working tree')) { [void]$nvIds.Add($nt) }
+  }
+  $nvIds.Sort([StringComparer]::Ordinal)
+  $nvDigest = Get-CrewSha256 ($nvIds -join "`n")
+  $nv = $reach + $over + $dirty + $defer + $skip + $other
+  $budgetTxt = if ($null -eq $budget) { "none" } else { [string][int]$budget }
+  $failTxt = [string]$fail
+  if ($rc -eq 2 -and $fail -eq 0) { $failTxt = "0 (exit 2, see below)" }
+  $verdict = "verify-gate: FAILED $failTxt cmd | PASSED $pass cmd | NOT VERIFIED $nv item(s) (reach $reach, over-budget $over, dirty tree $dirty, deferred $defer, skipped $skip, other $other) | credited $cred | budget ${totalElapsed}s/${budgetTxt}s | detail: $detail"
+  $hint = "verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
+  $statePath = ".crew/.verify-gate.last-stop"
+  if ($rc -eq 0) {
+    [Console]::Error.WriteLine($verdict)
+    foreach ($line in $body) { [Console]::Error.WriteLine($line) }
+    if ($nv -gt 0) { [Console]::Error.WriteLine($hint) }
+    return
+  }
+  $hash = ""
+  if ($script:CrewSession) {
+    $hash = Get-CrewSha256 ((($plainLines -join "`n")) + "`n`n--nv $reach $over $dirty $defer $skip $other $fail $nvDigest`n")
+  }
+  $unchanged = $false
+  if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+    try {
+      if ([System.IO.File]::GetAttributes($statePath).HasFlag([System.IO.FileAttributes]::ReadOnly)) { throw "read-only state" }
+      $stateParts = ([System.IO.File]::ReadAllText($statePath).TrimEnd("`r", "`n")) -split "`t"
+      if ($stateParts.Count -eq 2 -and $stateParts[0] -ceq $script:CrewSession -and $stateParts[1] -ceq $hash) { $unchanged = $true }
+    } catch { $unchanged = $false }
+  }
+  if (-not $logOk) { $unchanged = $false }
+  if ($unchanged) {
+    $first = ""
+    foreach ($line in (($plainLines -join "`n") -split "\r?\n")) { if ($line.StartsWith("VERIFY FAILED: ")) { $first = $line.Substring(15); break } }
+    if (-not $first) { $first = ((($plainLines -join "`n") -split "\r?\n") | Select-Object -First 1) }
+    $nfail = if ($fail -gt 0) { $fail } else { 1 }
+    [Console]::Error.WriteLine("verify-gate: unchanged since last Stop ($nfail failing, $nv NOT VERIFIED): $first | detail: $detail | /crew:verify --all runs every rule")
+    return
+  }
+  [Console]::Error.WriteLine($verdict)
+  foreach ($line in $body) { [Console]::Error.WriteLine($line) }
+  [Console]::Error.WriteLine($hint)
+  if ($hash -and (Test-Path -LiteralPath ".crew" -PathType Container)) {
+    $stateTmp = "$statePath.tmp$PID-$([System.IO.Path]::GetRandomFileName())"
+    try {
+      Write-CrewNewFile $stateTmp "$($script:CrewSession)`t$hash`n"
+      Move-Item -LiteralPath $stateTmp -Destination $statePath -Force -ErrorAction Stop
+    } catch { Remove-Item -LiteralPath $stateTmp -Force -ErrorAction SilentlyContinue }
+  }
 }
 
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
@@ -398,7 +616,7 @@ function Write-CrewPythonTrail {
   if ($script:CrewPythonTrailShown) { return }
   $script:CrewPythonTrailShown = $true
   foreach ($crewTrailLine in @($script:CrewPythonTrail)) {
-    if ($crewTrailLine) { [Console]::Error.WriteLine($crewTrailLine) }
+    if ($crewTrailLine) { Write-CrewErr($crewTrailLine) }
   }
 }
 
@@ -410,14 +628,14 @@ function Write-CrewPythonTrail {
 # PowerShell's case-insensitive binder; that is its spelling, not a typo.)
 if ($args.Count -gt 0 -or ($PSBoundParameters.ContainsKey('PriceTarget') -and -not $Price)) {
   $crewBad = if ($args.Count -gt 0) { [string]$args[0] } else { [string]$PriceTarget }
-  [Console]::Error.WriteLine("verify-gate: unknown argument '$crewBad' - the gate accepts -All, -Ci, or -Price [-PriceTarget path] [-PriceForce]. Nothing was verified.")
+  Write-CrewErr("verify-gate: unknown argument '$crewBad' - the gate accepts -All, -Ci, -Verbose, or -Price [-PriceTarget path] [-PriceForce]. Nothing was verified.")
   Exit-CrewGateBlocked
 }
 
 # -Ci is a gate run and -Price is not one, so the pair is refused before
 # either starts - the twin of the same check in verify-gate.sh.
 if ($Price -and $Ci) {
-  [Console]::Error.WriteLine("verify-gate: -Price and -Ci cannot be combined (-Price times the map and writes it; -Ci is a gate run). Pass one of them. Nothing was verified.")
+  Write-CrewErr("verify-gate: -Price and -Ci cannot be combined (-Price times the map and writes it; -Ci is a gate run). Pass one of them. Nothing was verified.")
   Exit-CrewGateBlocked
 }
 
@@ -429,9 +647,9 @@ if ($Price) {
   $py0 = Resolve-CrewPython
   if (-not $py0) {
     if ($script:CrewPythonOutcome -eq 'timed-out') {
-      [Console]::Error.WriteLine("verify-gate -Price: the python probe timed out")
+      Write-CrewErr("verify-gate -Price: the python probe timed out")
     } else {
-      [Console]::Error.WriteLine("verify-gate -Price: no python available")
+      Write-CrewErr("verify-gate -Price: no python available")
     }
     Write-CrewPythonTrail
     exit 1
@@ -461,7 +679,7 @@ if ($PrintPython) {
 # rather than resolved by a precedence the caller would have to guess - the
 # twin of the same check in verify-gate.sh. Before the stdin read below.
 if ($All -and $Ci) {
-  [Console]::Error.WriteLine("verify-gate: -All and -Ci cannot be combined (-All runs every rule and records a pass; -Ci excludes network/host rules and never records one). Pass one of them. Nothing was verified.")
+  Write-CrewErr("verify-gate: -All and -Ci cannot be combined (-All runs every rule and records a pass; -Ci excludes network/host rules and never records one). Pass one of them. Nothing was verified.")
   Exit-CrewGateBlocked
 }
 
@@ -619,7 +837,7 @@ $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 if ($Ci) {
   try { Set-Location $root -ErrorAction Stop }
   catch {
-    [Console]::Error.WriteLine("verify-gate --ci: cannot cd into $root - nothing was checked")
+    Write-CrewErr("verify-gate --ci: cannot cd into $root - nothing was checked")
     Exit-CrewGateBlocked
   }
 } else {
@@ -644,12 +862,15 @@ if (Test-Path -LiteralPath $repoConfig) {
     # Under -Ci a disabled gate is a failure: a CI job that checked nothing
     # must not report green (the twin of verify-gate.sh).
     if ($Ci) {
-      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job.")
+      Write-CrewErr("verify-gate --ci: verifyGate is false in .crew/config.json - the gate is off, so nothing was checked. Turn it on or remove the CI job.")
       Exit-CrewGateBlocked
     }
     exit 0
   }
 }
+
+Start-CrewQuiet
+try {
 
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
@@ -661,7 +882,7 @@ if (Test-Path -LiteralPath $repoConfig) {
 # and the rules run.
 if ($Ci) {
   if (Test-Path .crew/incident.json) {
-    [Console]::Error.WriteLine("verify-gate --ci: .crew/incident.json is present - the emergency lane stands down only the Stop gate, so --ci runs the rules anyway")
+    Write-CrewErr("verify-gate --ci: .crew/incident.json is present - the emergency lane stands down only the Stop gate, so --ci runs the rules anyway")
   }
 } elseif (Test-CrewIncidentActive) {
   $n = @(
@@ -701,18 +922,18 @@ function Write-CrewBase {
     } catch {
       # The twin of refuse_base_write in verify-gate.sh: a baseline that
       # could not be written refuses the turn (L-0710 review round 1).
-      [Console]::Error.WriteLine("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
+      Write-CrewErr("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
       Exit-CrewGateBlocked
     }
   } else {
-    [Console]::Error.WriteLine("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
+    Write-CrewErr("verify-gate: could not write the diff baseline ($baseAt) - without it a commit made on this branch next would be out of the gate's scope. Make that path a writable file and re-run.")
     Exit-CrewGateBlocked
   }
 }
 
 # The twin of zero_rules_line in verify-gate.sh.
 function Write-ZeroRulesLine {
-  [Console]::Error.WriteLine("verify-gate: 0 rules ran on $(@($changed).Count) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written.")
+  Write-CrewErr("verify-gate: 0 rules ran on $(@($changed).Count) changed file(s) - nothing was checked this turn (any deferred rule is named above), so the verified marker (.crew/.verify-verified-at) was not written.")
 }
 
 # SCOPE. Mirrors verify-gate.sh exactly; the long rationale lives there. In
@@ -782,7 +1003,7 @@ if (-not $base -and $baseAtPresent -and -not $All -and -not $Ci) {
     }
   }
   if (-not $base) {
-    [Console]::Error.WriteLine("verify-gate: the diff baseline ($baseAt) cannot be read or names no commit shared with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file.")
+    Write-CrewErr("verify-gate: the diff baseline ($baseAt) cannot be read or names no commit shared with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file.")
     Exit-CrewGateBlocked
   }
 }
@@ -840,7 +1061,7 @@ if (-not $changed) {
   # work tree, or git refused) or there are none: nothing was checked - the
   # twin of verify-gate.sh.
   if ($Ci) {
-    [Console]::Error.WriteLine("verify-gate --ci: no tracked files found in $((Get-Location).Path) (not a git work tree, git failed - e.g. refused a dubious-ownership checkout - or nothing is tracked) - nothing was checked")
+    Write-CrewErr("verify-gate --ci: no tracked files found in $((Get-Location).Path) (not a git work tree, git failed - e.g. refused a dubious-ownership checkout - or nothing is tracked) - nothing was checked")
     Exit-CrewGateBlocked
   }
   # A turn that changed nothing still owes a reminder for any rule this
@@ -850,11 +1071,11 @@ if (-not $changed) {
     $reportPy = Resolve-CrewPython
     $reportScript = Join-Path $PSScriptRoot 'verify_record.py'
     if ($reportPy -and (Test-Path $reportScript)) {
-      & $reportPy $reportScript report 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
+      Write-CrewOwedLines @(& $reportPy $reportScript report 2>$null)
     }
   } catch { }
   # L-0710: nothing ran, so nothing is recorded as verified (see $baseAt).
-  [Console]::Error.WriteLine("verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written.")
+  Write-CrewErr("verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written.")
   if (-not $baseFromMarker) { Write-CrewBase }
   exit 0
 }
@@ -898,8 +1119,9 @@ $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 # verify-gate.sh: exit 0 on Stop, exit 2 with a named reason under -Ci, where
 # the run that backed off checked nothing.
 function Exit-CrewLockBackOff([string]$Why) {
+  $script:CrewBackedOff = $true
   if ($Ci) {
-    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")
+    Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")
     Exit-CrewGateBlocked
   }
   exit 0
@@ -996,14 +1218,14 @@ if (-not $All -and -not $Ci) {
       $fingerprint = $fingerprint.Trim()
       if ($fingerprint -and (Test-Path $fpFile) -and
           ((Get-Content -Raw $fpFile).Trim() -eq $fingerprint)) {
-        [Console]::Error.WriteLine("verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $fingerprint) - checks were SKIPPED, not re-run. Edit a file, or run the gate with -All, to force them.")
+        Write-CrewErr("verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $fingerprint) - checks were SKIPPED, not re-run. Edit a file, or run the gate with -All, to force them.")
         # The fingerprint only proves nothing changed; it says nothing about
         # a rule that was chronic/skipped/reach-excluded on a PRIOR run and
         # has not been touched since. Read-only reminder.
         try {
           $reportScript2 = Join-Path $PSScriptRoot 'verify_record.py'
           if (Test-Path $reportScript2) {
-            & $fpPy $reportScript2 report 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
+            Write-CrewOwedLines @(& $fpPy $reportScript2 report 2>$null)
           }
         } catch { }
         exit 0
@@ -1023,7 +1245,7 @@ try {
   New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
 } catch {
   if (-not (Test-Path $lock -PathType Container)) {
-    [Console]::Error.WriteLine("VERIFY GATE: could not create the lock at $lock and nothing is holding it (is .crew a file, read-only, or is the lock path not a directory?). No other gate can be waited for, so the checks are running WITHOUT the lock - at worst they run twice this turn.")
+    Write-CrewErr("VERIFY GATE: could not create the lock at $lock and nothing is holding it (is .crew a file, read-only, or is the lock path not a directory?). No other gate can be waited for, so the checks are running WITHOUT the lock - at worst they run twice this turn.")
     $unlocked = $true
   } else {
     $holderAt = $null
@@ -1036,7 +1258,7 @@ try {
     if (-not (Test-Path $ageSrc)) { $ageSrc = $lock }
     try { $holderAt = (Get-Item $ageSrc -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
     if ($null -eq $holderAt) {
-      [Console]::Error.WriteLine("VERIFY GATE: a lock directory is present at $lock but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist.")
+      Write-CrewErr("VERIFY GATE: a lock directory is present at $lock but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist.")
       $unlocked = $true
     } else {
       $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
@@ -1061,7 +1283,7 @@ try {
       $nowEpoch = [int][double]::Parse((Get-Date -UFormat %s))
       if ($holdDeadline -gt 0 -and $nowEpoch -lt $holdDeadline) {
         $held = try { (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'token')).Trim() } catch { 'an unreadable token' }
-        [Console]::Error.WriteLine(
+        Write-CrewErr(
           "verify-gate: backed off, lock held by $held (holder declared it may run for another $($holdDeadline - $nowEpoch)s); NOTHING WAS VERIFIED this turn.")
         Exit-CrewLockBackOff "backed off: the lock at $lock is held by another gate run"
       }
@@ -1071,7 +1293,7 @@ try {
         # (474ms, rc=0, no output) and line 216 above for the 2026-09-13
         # observation of the same thing in another repo.
         $held = try { (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'token')).Trim() } catch { 'an unreadable token' }
-        [Console]::Error.WriteLine(
+        Write-CrewErr(
           "verify-gate: backed off, lock held by $held ($([int]$age)s old, ttl ${lockTtl}s); NOTHING WAS VERIFIED this turn.")
         Exit-CrewLockBackOff "backed off: the lock at $lock is held by another gate run"
       }
@@ -1108,6 +1330,8 @@ if (-not $unlocked) {
   }
 }
 
+$script:CrewMayLog = $true
+
 # MOVED HERE from before the lock, in lockstep with verify-gate.sh.
 # Before the lock it printed on every Stop including the backing-off
 # flavour, so one Stop emitted two scope reports and the lock suite's
@@ -1138,18 +1362,23 @@ try {
   $scopeScript = Join-Path $PSScriptRoot 'scope_report.py'
   if (-not $scopePy) {
     if ($script:CrewPythonOutcome -eq 'timed-out') {
-      [Console]::Error.WriteLine('outside-scope: (python probe timed out; scope not checked)')
+      Write-CrewErr('outside-scope: (python probe timed out; scope not checked)')
     } else {
-      [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+      Write-CrewErr('outside-scope: (no python; scope not checked)')
     }
     Write-CrewPythonTrail
   } elseif (-not (Test-Path $scopeScript)) {
-    [Console]::Error.WriteLine("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
+    Write-CrewErr("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
   } else {
-    $changed -join "`n" | & $scopePy $scopeScript $PWD.Path
+    if ($script:CrewQuiet) {
+      $scopeOut = $changed -join "`n" | & $scopePy $scopeScript $PWD.Path 2>&1
+      foreach ($scopeLine in @($scopeOut)) { if ($null -ne $scopeLine) { Write-CrewErr ([string]$scopeLine) } }
+    } else {
+      $changed -join "`n" | & $scopePy $scopeScript $PWD.Path
+    }
   }
 } catch {
-  [Console]::Error.WriteLine("outside-scope: (scope not checked: $_)")
+  Write-CrewErr("outside-scope: (scope not checked: $_)")
 }
 $global:LASTEXITCODE = 0
 
@@ -1163,19 +1392,19 @@ if (-not (Test-Path .crew/verify.json)) {
       # exist) - refuse the smoke check by name rather than invoking a bare
       # 'bash' that PowerShell would only re-resolve to the same rejected
       # candidate and hang on.
-      [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
-      [Console]::Error.WriteLine("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim")
+      Write-CrewErr("Smoke FAILED. Work is not complete.")
+      Write-CrewErr("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim")
       Exit-CrewGateBlocked
     }
     $out = $null | & $bashExe $smoke 2>&1
     if ($LASTEXITCODE -ne 0) {
-      [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
-      [Console]::Error.WriteLine("bash: $bashExe")
-      $out | Select-String -Pattern '^(FAIL|SMOKE:)' | ForEach-Object { [Console]::Error.WriteLine($_) }
+      Write-CrewErr("Smoke FAILED. Work is not complete.")
+      Write-CrewErr("bash: $bashExe")
+      $out | Select-String -Pattern '^(FAIL|SMOKE:)' | ForEach-Object { Write-CrewErr($_) }
       Exit-CrewGateBlocked
     }
   } elseif ($Ci) {
-    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no _verify/smoke.sh - nothing to verify, so nothing was checked")
+    Write-CrewErr("verify-gate --ci: no .crew/verify.json and no _verify/smoke.sh - nothing to verify, so nothing was checked")
     Exit-CrewGateBlocked
   }
   exit 0
@@ -1196,8 +1425,8 @@ function Test-CrewPath([string]$Path, [string]$Pattern) {
 try {
   $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json -ErrorAction Stop
 } catch {
-  [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete.")
-  [Console]::Error.WriteLine($_.Exception.Message)
+  Write-CrewErr("VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete.")
+  Write-CrewErr($_.Exception.Message)
   Exit-CrewGateBlocked
 }
 
@@ -1246,8 +1475,8 @@ foreach ($r in @($vm.rules)) {
 if ($null -eq $bad) { $bad = Get-CrewUnrepresentable $vm.always "always" }
 if ($null -eq $bad) { $bad = Get-CrewUnrepresentable $vm.default "default" }
 if ($null -ne $bad) {
-  [Console]::Error.WriteLine($bad)
-  [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json names a command crew cannot represent (see the PARSE_ERROR above for which one and why). Verification did NOT run. Work is not complete.")
+  Write-CrewErr($bad)
+  Write-CrewErr("VERIFY GATE: .crew/verify.json names a command crew cannot represent (see the PARSE_ERROR above for which one and why). Verification did NOT run. Work is not complete.")
   Exit-CrewGateBlocked
 }
 
@@ -1492,12 +1721,12 @@ try {
     }
   }
   if ($classWhy) {
-    [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($classWhy) - every changed path is judged")
+    Write-CrewErr("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($classWhy) - every changed path is judged")
   }
 } catch {
   $crewArtifacts.Clear()
   $crewBookkeeping.Clear()
-  [Console]::Error.WriteLine("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($_) - every changed path is judged")
+  Write-CrewErr("verify-gate: could not tell crew's bookkeeping and refresh artifacts from other changes ($_) - every changed path is judged")
 }
 $global:LASTEXITCODE = 0
 $changed = @($changed | Where-Object { -not $crewBookkeeping.Contains([string]$_) })
@@ -1914,7 +2143,7 @@ if ($coverPlanned) {
 }
 # Printed BEFORE the run, so a turn killed part-way still says what it was
 # never going to check.
-foreach ($n in $notices) { [Console]::Error.WriteLine($n) }
+Write-CrewNotices $notices
 
 # -Ci: zero commands to run is not a pass - the twin of verify-gate.sh's
 # check, with the same named reasons. $ciExcludedN feeds the pass line.
@@ -1933,7 +2162,7 @@ if ($Ci) {
     if ($fallbackNotices.Count -gt 0) {
       $ciNothing += " ($($fallbackNotices.Count) ``always``/``default`` command(s) excluded for reach)"
     }
-    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - nothing was checked")
+    Write-CrewErr("verify-gate --ci: zero commands to run - $ciNothing - nothing was checked")
     Exit-CrewGateBlocked
   }
 }
@@ -2028,16 +2257,16 @@ if ($bashExe) {
     $shimPy = Resolve-CrewPython
     if (-not $shimPy) {
       if ($script:CrewPythonOutcome -eq 'timed-out') {
-        [Console]::Error.WriteLine("verify-gate: the python probe timed out before python3, python or py was proved; no python3 shim, so a rule hardcoding python3 may fail with 'command not found'")
+        Write-CrewErr("verify-gate: the python probe timed out before python3, python or py was proved; no python3 shim, so a rule hardcoding python3 may fail with 'command not found'")
       } else {
-        [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+        Write-CrewErr("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
       }
       Write-CrewPythonTrail
     } elseif ($shimPy -notmatch '^([A-Za-z]:[\\/]|[\\/][\\/]?)') {
       # Defensive: Resolve-CrewPython is documented to return an absolute
       # path (sys.executable); refuse to shim from anything else rather
       # than trust a relative path into a single-quoted exec line.
-      [Console]::Error.WriteLine("verify-gate: the resolved python ($shimPy) is not an absolute path - refusing to build a shim from it")
+      Write-CrewErr("verify-gate: the resolved python ($shimPy) is not an absolute path - refusing to build a shim from it")
     } else {
       try {
         $candidateDir = Join-Path ([System.IO.Path]::GetTempPath()) ("crew-py-shim-" + [System.Guid]::NewGuid().ToString("N"))
@@ -2063,7 +2292,7 @@ if ($bashExe) {
         $global:LASTEXITCODE = 0
         $chmodOut = $null | & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
         if ($LASTEXITCODE -ne 0) {
-          [Console]::Error.WriteLine("verify-gate: could not make the python3 shim executable: $chmodOut")
+          Write-CrewErr("verify-gate: could not make the python3 shim executable: $chmodOut")
         } else {
           # PROBE before PATH - run it once and check it actually behaves
           # like python, through the same bash rule commands use.
@@ -2072,11 +2301,11 @@ if ($bashExe) {
           if ($LASTEXITCODE -eq 0) {
             $shimDir = $candidateDir
           } else {
-            [Console]::Error.WriteLine("verify-gate: the python3 shim did not pass its own probe (python3 -c 'import sys') - not installing it on PATH: $probeOut")
+            Write-CrewErr("verify-gate: the python3 shim did not pass its own probe (python3 -c 'import sys') - not installing it on PATH: $probeOut")
           }
         }
       } catch {
-        [Console]::Error.WriteLine("verify-gate: could not build the python3 shim: $_")
+        Write-CrewErr("verify-gate: could not build the python3 shim: $_")
       }
     }
   }
@@ -2193,7 +2422,7 @@ foreach ($ident in $cmds) {
   # subprocess round-trip the way bash's read loop does).
   $c = Get-CrewIdentityText $ident
   if ($treePre -and $treeCached.ContainsKey($ident)) {
-    [Console]::Error.WriteLine("verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c")
+    Write-CrewDetail("verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c")
     $statusAt[$pos] = "covered"
     $treeN++
     [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = "covered"; elapsed = 0; tree = $true })
@@ -2217,13 +2446,13 @@ foreach ($ident in $cmds) {
         $coverState = "ok"
       } else {
         $coverState = "off"
-        [Console]::Error.WriteLine("verify-gate: the working tree changed during this run, or its snapshot could not be read - declared coverage NOT applied, every remaining subset rule runs")
+        Write-CrewErr("verify-gate: the working tree changed during this run, or its snapshot could not be read - declared coverage NOT applied, every remaining subset rule runs")
       }
     }
     if ($coverState -ne "ok") { $credit = $false }
   }
   if ($credit) {
-    [Console]::Error.WriteLine("verify-gate: COVERED by rules[" + (@($guard.rules) -join ',') + "] (passed this run): $c")
+    Write-CrewDetail("verify-gate: COVERED by rules[" + (@($guard.rules) -join ',') + "] (passed this run): $c")
     $statusAt[$pos] = "covered"
     $coveredN++
     [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = "covered"; elapsed = 0 })
@@ -2257,7 +2486,7 @@ foreach ($ident in $cmds) {
       $pinned += "$v=unset"
     }
   }
-  [Console]::Error.WriteLine("verify-gate: env pinned - " + ($pinned -join ' '))
+  Write-CrewDetail("verify-gate: env pinned - " + ($pinned -join ' '))
 
   $ruleStart = Get-Date
   if (-not $bashExe) { $bashExe = Resolve-CrewBash }
@@ -2433,7 +2662,7 @@ foreach ($ident in $cmds) {
         $rc = $LASTEXITCODE
       } catch {
         # `$rc` stays $null from the reset at the top of this rule.
-        [Console]::Error.WriteLine("verify-gate: the rule's shell could not be started: $($_.Exception.Message)")
+        Write-CrewErr("verify-gate: the rule's shell could not be started: $($_.Exception.Message)")
       }
       if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
       if ($null -eq $prevRuleOut) { Remove-Item Env:\CREW_VERIFY_RULE_OUT -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_OUT = $prevRuleOut }
@@ -2580,28 +2809,28 @@ foreach ($ident in $cmds) {
   $cmdStatus = "pass"
   if ($ruleWhy) {
     # Could not tell (T-0082): `VERIFY FAILED` first, then the reason.
-    [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    [Console]::Error.WriteLine("verify-gate: COULD NOT TELL (${ruleWhy}): $c")
-    [Console]::Error.WriteLine("bash: $bashExe")
-    $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
+    Write-CrewErr("VERIFY FAILED: $c")
+    Write-CrewErr("verify-gate: COULD NOT TELL (${ruleWhy}): $c")
+    Write-CrewErr("bash: $bashExe")
+    $out | Select-Object -Last 25 | ForEach-Object { Write-CrewErr($_) }
     $failed = $true
     $unknownCount++
     $cmdStatus = "unknown"
   } elseif ($rc -eq 77) {
-    [Console]::Error.WriteLine("verify-gate: SKIP (rc 77, environment absent): $c")
+    Write-CrewErr("verify-gate: SKIP (rc 77, environment absent): $c")
     $cmdStatus = "skip77"
     $anySkipped = $true
     $skipCount++
   } elseif ($rc -ne 0) {
-    [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    [Console]::Error.WriteLine("bash: $bashExe")
-    $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
+    Write-CrewErr("VERIFY FAILED: $c")
+    Write-CrewErr("bash: $bashExe")
+    $out | Select-Object -Last 25 | ForEach-Object { Write-CrewErr($_) }
     $failed = $true
     $cmdStatus = "fail"
   }
   $ruleElapsed = [int]((Get-Date) - $ruleStart).TotalSeconds
   $totalElapsed += $ruleElapsed
-  [Console]::Error.WriteLine("verify-gate: ${ruleElapsed}s  $c")
+  Write-CrewDetail("verify-gate: ${ruleElapsed}s  $c")
   # $ident, not $c: matched_rules[...].cmds carries identities, so the
   # record-sync classification (matching THIS log against those lists) has
   # to key on the same thing, or two rules sharing command text under
@@ -2614,23 +2843,26 @@ foreach ($ident in $cmds) {
   # heartbeat is here: it means 'measured from the last rule that finished'.
   Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 }
-[Console]::Error.WriteLine("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
+$script:CrewReady = $true
+# Not 0 until the one real success exit below: any other way out after the rules were judged is a failing exit, as in verify-gate.sh.
+$script:CrewExitRc = 1
+Write-CrewDetail("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
 if ($unknownCount -gt 0) {
-  [Console]::Error.WriteLine("verify-gate: $unknownCount rule command(s) COULD NOT BE JUDGED - counted as FAILED")
+  Write-CrewErr("verify-gate: $unknownCount rule command(s) COULD NOT BE JUDGED - counted as FAILED")
 }
 if ($coveredN -gt 0) {
-  [Console]::Error.WriteLine("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
+  Write-CrewDetail("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
 }
 Set-Location $root
 if ($treeN -gt 0) {
-  [Console]::Error.WriteLine("verify-gate: $treeN of them PASSED on this exact tree in an earlier run - not re-run")
+  Write-CrewDetail("verify-gate: $treeN of them PASSED on this exact tree in an earlier run - not re-run")
 }
 if ($matchPy -and (Test-Path $verifyRecordScript)) {
   try {
     $treePost = Get-CrewStableSnapshot
     if ($treePre -and $treePre -eq $treePost) {
       $logLines = @($cmdLog | ForEach-Object { ConvertTo-Json -Compress -Depth 5 -InputObject $_ }) -join "`n"
-      $logLines | & $matchPy $verifyRecordScript passes-save $treePre 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+      $logLines | & $matchPy $verifyRecordScript passes-save $treePre 2>&1 | ForEach-Object { Write-CrewErr($_) }
     } else {
       $null | & $matchPy $verifyRecordScript passes-clear *> $null
       if ($treeN -gt 0) {
@@ -2645,13 +2877,14 @@ if ($matchPy -and (Test-Path $verifyRecordScript)) {
 if ($treeMoved) {
   # .Contains, not $_.tree: a missing key is a throw under Set-StrictMode.
   $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })
-  [Console]::Error.WriteLine("verify-gate: the tree changed during this run, so the $treeN command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on")
+  Write-CrewErr("verify-gate: the tree changed during this run, so the $treeN command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on")
 }
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
-  [Console]::Error.WriteLine("UNMAPPED CHANGES - .crew/verify.json has no rule for:")
-  $unmapped | ForEach-Object { [Console]::Error.WriteLine($_) }
-  [Console]::Error.WriteLine("Add a rule (or mark it deliberately unchecked) before reporting this complete.")
+  Write-CrewErr("UNMAPPED CHANGES - .crew/verify.json has no rule for:")
+  $unmapped | ForEach-Object { Write-CrewErr($_) }
+  Write-CrewErr("Add a rule (or mark it deliberately unchecked) before reporting this complete.")
+  $script:CrewUnmappedFailed = $true
   $failed = $true
 }
 
@@ -2719,13 +2952,14 @@ try {
     }
     $payloadJson = ConvertTo-Json -InputObject $payload -Depth 10 -Compress
     $global:LASTEXITCODE = 0
-    $payloadJson | & $syncPy $syncScript sync 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
+    $syncOut = @($payloadJson | & $syncPy $syncScript sync 2>$null)
     $syncStatus = $LASTEXITCODE
+    Write-CrewOwedLines $syncOut
   } else {
-    [Console]::Error.WriteLine("verify-gate: could not sync the record (python or verify_record.py not found); NOT advancing the marker")
+    Write-CrewErr("verify-gate: could not sync the record (python or verify_record.py not found); NOT advancing the marker")
   }
 } catch {
-  [Console]::Error.WriteLine("verify-gate: could not sync the record ($_); NOT advancing the marker")
+  Write-CrewErr("verify-gate: could not sync the record ($_); NOT advancing the marker")
 }
 
 # A FAILED turn stops here, after its own evidence (and every passing
@@ -2741,11 +2975,11 @@ try {
 # Stop-only.
 if ($Ci) {
   if ($skipCount -gt 0) {
-    [Console]::Error.WriteLine("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - a skip is not a pass in CI")
+    Write-CrewErr("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - a skip is not a pass in CI")
     $failed = $true
   }
   if ($deferredCount -gt 0) {
-    [Console]::Error.WriteLine("verify-gate --ci: $deferredCount rule(s) deferred - not every check ran")
+    Write-CrewErr("verify-gate --ci: $deferredCount rule(s) deferred - not every check ran")
     $failed = $true
   }
 }
@@ -2756,9 +2990,9 @@ if ($failed) { Exit-CrewGateBlocked }
 # including which reason the line gives.
 if ($Ci) {
   if ($ciExcludedN -ne 0) {
-    [Console]::Error.WriteLine("verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - reach-excluded rules did not run")
+    Write-CrewErr("verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - reach-excluded rules did not run")
   } else {
-    [Console]::Error.WriteLine("verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - --ci never writes them, by design")
+    Write-CrewErr("verify-gate --ci: passed; the verified baseline (.crew/.verify-verified-at) and the fingerprint were NOT advanced - --ci never writes them, by design")
   }
   exit 0
 }
@@ -2803,11 +3037,15 @@ if ($cmds.Count -eq 0) {
 } elseif ($syncStatus -ne 0) {
   # verify_record.py already printed why, on stderr, above.
 } elseif ($anySkipped) {
-  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
+  Write-CrewErr("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
 } elseif ($treeMoved) {
   $alsoDeferred = if ($deferredCount -gt 0) { "; $deferredCount rule command(s) were also deferred" } else { "" }
-  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $treeN credited command(s) were not checked against it$alsoDeferred.")
+  Write-CrewErr("verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $treeN credited command(s) were not checked against it$alsoDeferred.")
 } else {
-  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
+  Write-CrewErr("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
 }
+$script:CrewExitRc = 0
 exit 0
+} finally {
+  Invoke-CrewQuietFlush
+}

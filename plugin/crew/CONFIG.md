@@ -3053,6 +3053,58 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
+- **Quiet Stop output** (L-0796, crew 1.2.39). The Stop gate prints one verdict
+  line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach a,
+  over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
+  budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited
+  count commands (`cmd`); NOT VERIFIED counts items (`item(s)`): one per rule for
+  reach, over-budget, dirty tree and other, one per deferred rule, and one per
+  command for skipped (exit 77) and for credits withdrawn because the tree moved
+  (counted under other). On a multi-command rule the item count can therefore exceed
+  the rule count. The two units are not added together. Then come the lines the gate cannot prove are informational, exactly
+  as before: every `VERIFY FAILED:` block with its last 25 lines, `COULD NOT
+  TELL`, a rc 77 SKIP, `UNMAPPED CHANGES`, a lock back-off, and any line the
+  gate does not recognise. What moves to `.crew/.verify-gate.log` is the text the
+  gate itself writes about a rule that did not fail: the pricing and
+  measurement lines, declared reach and clean-tree exclusions, `deferred to
+  /crew:verify`, the stop budget summary, `PASSED on this exact tree`, `COVERED
+  by`, `env pinned`, the per-rule seconds and the totals, and the record's
+  standing `NOT VERIFIED ON THIS TREE` lines (one line with their count stays).
+  The classification is by the site that wrote the line, so a failing rule's
+  own output is never classified: a test that prints `PASSED on this exact
+  tree` is still shown. An unknown never reads as a pass: a deferred, skipped,
+  reach-excluded or over-budget rule is counted under NOT VERIFIED, and a rule
+  the gate cannot classify counts as `other`. The log is rewritten every run
+  (temp file, then move) and holds the complete text of that run; if it cannot
+  be written the gate prints the full text on stderr and the verdict says
+  `detail: unavailable`, and a repeat Stop is never collapsed to the unchanged line while the log is unwritable. The Stop gate also remembers, per session, what it last
+  reported in `.crew/.verify-gate.last-stop` (`session_id`, a SHA-256 of the
+  failure text and the NOT VERIFIED counts): the same session still failing
+  the same way prints `verify-gate: unchanged since last Stop (N failing, M NOT
+  VERIFIED): <first failing command> | detail: .crew/.verify-gate.log |
+  /crew:verify --all runs every rule` and still exits 2; the log it names holds
+  that run's full failing output. A different session,
+  a changed failure, a payload with no `session_id`, or a missing, unreadable
+  or corrupt state file prints the full block; a passing Stop clears it. Run
+  with `--verbose` (`-Verbose` in the PowerShell flavour) or
+  `CREW_VERIFY_VERBOSE=1` to get the whole text on stderr as before;
+  `--ci`, `--all`/`-All` and `--price` are verbose with no flag, so the CI
+  receipt reader and `/crew:verify` see what they always did. Exit codes and
+  the `VERIFY GATE: BLOCKED (exit 2)` stdout line are unchanged. Both files are
+  dotted so the `.crew/.verify-gate.*` bookkeeping glob already covers them, and
+  both are named in the fingerprint's gate-owned list (`verify_fingerprint.py`),
+  so an untracked, unignored log never defeats the unchanged-tree skip. The
+  PowerShell flavour buffers in memory and flushes in a `finally`; the
+  `outside-scope:` line from its scope-report child is captured into the same
+  buffer. A run that backs off on the lock never writes the log or the state
+  file the lock holder owns, and a payload whose `session_id` is not a string
+  directly in the top-level object, or that carries it more than once, reads as
+  no session (full block). An exit-0 Stop clears the repeat state. If the
+  buffer cannot be split, the raw text prints whole and no log or state is
+  kept. The buffer, its two halves, the log and the state file are `mktemp`
+  files (mode 0600), never names derived from a process id. A reach-excluded `always` or `default`
+  command counts under reach, and the repeat check hashes which rules and
+  commands were not run, not only how many.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
