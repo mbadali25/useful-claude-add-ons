@@ -902,8 +902,8 @@ The coordinator is **a model pin on an existing role**, not a fifth role: `dev.r
 **unset**, so nothing changes for anyone who sets nothing. No agent file, persona or roster entry
 backs it, and `crew_config.py --models` / `/crew:model` list it as a `role-pin` row like any pin.
 `crew_wave.py start` prints `coordinator: model <id>` when the pin is a claude pin with a model;
-the dispatcher passes that as `model` when it launches a coordinator Agent or Workflow
-`agent({model})`. A plugin cannot change the session model, so where the main session itself
+the dispatcher prints it as-is: wave launches no coordinator, so the line reports the pin and
+launches nothing. A plugin cannot change the session model, so where the main session itself
 coordinates, the pin has no effect unless the owner sets the session model.
 
 `dev.roles.developer` with `provider: claude` and a `model` is now used for wave lanes:

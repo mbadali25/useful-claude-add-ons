@@ -662,7 +662,6 @@ def test_launch_line_unchanged_without_pin(tmp_path):
 
 @pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "k3"},
                                  {"provider": "codex", "model": "gpt-6.1-sol"},
-                                 {"provider": "claude", "model": "gpt-6"},
                                  {"provider": "codex", "model": "claude-opus-5-5"},
                                  {"provider": "claude"}])
 def test_launch_line_no_model_for_non_claude_pin(tmp_path, pin):
@@ -1753,3 +1752,25 @@ def test_models_lists_coordinator_pin(tmp_path, capsys):
 
     assert (code, len(rows), "role-pin" in rows[0], "claude-opus-5-5" in rows[0]) == (
         0, 1, True, True)
+
+
+@pytest.mark.parametrize("pin,fragment", [
+    ({"provider": "claude", "model": "gpt-6"}, "is not a claude model"),
+    ({"provider": "Claude", "model": "claude-sonnet-5-5"}, "is not 'claude'")])
+def test_unusable_claude_pin_is_named(tmp_path, pin, fragment):
+    lines = _start_with_roles(tmp_path, {"developer": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+    warnings = [line for line in lines if line.startswith("warning:")]
+
+    assert (all(_PLAIN in line for line in launches), len(warnings),
+            fragment in warnings[0]) == (True, 1, True)
+
+
+def test_pinned_model_is_lowercased_on_the_launch_line(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "Claude-Sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert all("model: claude-sonnet-5-5)" in line for line in launches)

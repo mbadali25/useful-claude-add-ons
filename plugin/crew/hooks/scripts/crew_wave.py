@@ -784,31 +784,37 @@ MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
 CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku")
 
 
-def role_model(top, role):
+def role_model(top, role, cfg=None):
     """`(model, warning)` for a `dev.roles.<role>` pin that is a claude pin with a model:
     what the dispatcher passes as the Agent `model`. `(None, "")` when no role pin is set
-    (a block default is not a pin), the pin is another provider's, or its model is not a
-    claude model or alias; `(None, why)` when the pinned text is not a model id, so an
-    odd value is named, never put on a line."""
-    cfg = crew_config.resolve_config(top)
+    (a block default is not a pin) or the pin is another provider's; `(None, why)` when the
+    pin cannot be honoured (not a model id, no provider under a non-claude block, a
+    miscased provider, a claude provider with a non-claude model), so an odd value is named,
+    never put on a line. `cfg` is a resolved config, so one caller reads the layers once."""
+    if cfg is None:
+        cfg = crew_config.resolve_config(top)
     pin = crew_state.dict_or_empty(crew_state.dict_or_empty(
         crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))
     model = pin.get("model")
     if not model:
         return None, ""
+    where = f"dev.roles.{role}"
+    named = pin.get("provider")
+    if isinstance(named, str) and named != "claude" and named.strip().lower() == "claude":
+        return None, f"{where}.provider {named!r} is not 'claude' (case matters); no model pinned"
     row = crew_state.resolve_role(cfg, "dev", role)
     if row["provider"] != "claude":
-        if (not pin.get("provider") and isinstance(model, str)
+        if (not named and isinstance(model, str)
                 and crew_state.family(None, model) in CLAUDE_MODEL_HEADS):
-            return None, (f"dev.roles.{role}.model {model!r} has no provider and "
+            return None, (f"{where}.model {model!r} has no provider and "
                           f"dev.provider is {row['provider']!r}; no model pinned "
-                          f"(set dev.roles.{role}.provider to claude)")
+                          f"(set {where}.provider to claude)")
         return None, ""
     if not isinstance(model, str) or not MODEL_ID.match(model):
-        return None, f"dev.roles.{role}.model {model!r} is not a model id; no model pinned"
+        return None, f"{where}.model {model!r} is not a model id; no model pinned"
     if crew_state.family(None, model) not in CLAUDE_MODEL_HEADS:
-        return None, ""
-    return model, ""
+        return None, f"{where}.model {model!r} is not a claude model; no model pinned"
+    return model.lower(), ""
 
 
 def _launch(top, slug, ticket, resume):
@@ -869,8 +875,9 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
-    _, lane_warning = role_model(top, "developer")
-    coordinator, coordinator_warning = role_model(top, "coordinator")
+    cfg = crew_config.resolve_config(top)
+    _, lane_warning = role_model(top, "developer", cfg)
+    coordinator, coordinator_warning = role_model(top, "coordinator", cfg)
     lines += [f"warning: {w}" for w in (lane_warning, coordinator_warning) if w]
     if coordinator:
         lines.append(f"coordinator: model {coordinator}")

@@ -3624,7 +3624,7 @@ not a fifth role (see Agents).
 
 The coordinator is a model pin on an existing role (L-0799), not a fifth role:
 `dev.roles.coordinator` (default unset) is printed by `crew_wave.py start` as
-`coordinator: model <id>` for the dispatcher to pass when it launches a coordinator;
+`coordinator: model <id>`, a report of the pin (wave launches no coordinator);
 CONFIG.md has the details.
 
 Parallelism scales on independent work units, not job titles.
