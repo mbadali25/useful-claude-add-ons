@@ -795,7 +795,8 @@ def role_model(top, role):
     return model, ""
 
 
-def _launch(top, slug, ticket, resume, model=None):
+def _launch(top, slug, ticket, resume):
+    model, _ = role_model(top, "developer")
     command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
                f"--root {_shell_path(top)} "
                f"--set {slug} --ticket {ticket}")
@@ -852,7 +853,7 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
-    lane_model, lane_warning = role_model(top, "developer")
+    _, lane_warning = role_model(top, "developer")
     coordinator, coordinator_warning = role_model(top, "coordinator")
     lines += [f"warning: {w}" for w in (lane_warning, coordinator_warning) if w]
     if coordinator:
@@ -893,7 +894,7 @@ def start(root, slug):
             write_lane(top, slug, ticket, lane)
         if ticket not in lanes:
             lanes.append(ticket)
-        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket), lane_model))
+        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]

@@ -18,9 +18,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   one. Unset or non-claude pins leave the output byte-identical to 1.2.37; a pinned value that is
   not a model id prints a `warning:` and pins nothing. Docs: CONFIG.md, the crew README,
   `commands/autopilot.md`, `commands/model.md`, the guide.
-- **Tests.** New cases in `tests/test_crew_wave.py` and one in `tests/test_crew_config.py`
-  (`--models` lists the coordinator as `role-pin`); a `sabotage_wave.py` mutation drops the model from
-  the launch line and the pinned-launch test goes red.
+- **Tests.** New cases in `tests/test_crew_wave.py` (launch line with, without and with a non-claude
+  pin, an odd model text, the coordinator line, and `--models` listing the coordinator as
+  `role-pin`). The sabotage was run by hand (drop the model from the launch line: the pinned-launch
+  test goes red, restored it goes green); its permanent entry in `sabotage_wave.py` is harness work
+  and goes in a separate tooling PR.
 - **Process.** The crew feature freeze was waived for this ticket by the owner on 2026-10-16. The
   measured Opus 5.5 vs Sonnet 5.5 comparison was waived by the same decision. Not verified: that the
   in-session `Agent` tool accepts explicit model ids (aliases are the fallback).

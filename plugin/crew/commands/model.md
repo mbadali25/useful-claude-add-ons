@@ -19,7 +19,7 @@ can be different models from different families, and a block-level row hides
 that completely — the same argument that already forced one row per QA
 candidate rather than a single line reading `auto / (cli default)`, applied one
 level down. The command reads the layered config (`~/.claude/crew/config.json`
-under `.crew/config.json`), so the values it prints are the effective ones.
+under `.crew/config.json`), so the values it prints are the effective ones. A `dev.roles.coordinator` pin (L-0799; a model pin, not a role, shown only when set) and a claude `dev.roles.developer` model, which `crew_wave.py start` puts on lane launches, appear as ordinary rows.
 
 Read out all five things it reports, and do not summarise any of them away:
 
@@ -49,12 +49,6 @@ the state this design exists to make visible.
 **Model names, not wire ids.** The report writes `Kimi 2.7 (kimi-k2.7-code)`;
 say it that way. The id is a debugging detail, and for Kimi 2.7 the two are not
 the same string — see step 2.
-
-**The coordinator and lane pins (L-0799).** `dev.roles.coordinator` is a model pin on an existing
-role, not a role of its own: a row appears only when it is pinned. `dev.roles.developer` with a
-claude `model` is what `crew_wave.py start` puts on each lane launch. Neither changes the session
-model. Report them like any other row; to set one, `/crew:model dev.roles.coordinator
-'{"provider": "claude", "model": "claude-opus-5-5"}'`.
 
 ### The author family, and how it was decided
 

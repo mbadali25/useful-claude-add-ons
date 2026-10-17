@@ -20,6 +20,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_config
 import crew_ticket
 import crew_wave
 import review_ledger
@@ -1709,3 +1710,16 @@ def test_route_cli_prints_wave_fields(tmp_path):
                           stdin=subprocess.DEVNULL)
 
     assert done.stdout.strip() == "sub=wave stop=0 ticket= set= tickets=T-1,T-2 reason="
+
+
+def test_models_lists_coordinator_pin(tmp_path, capsys):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": {
+        "coordinator": {"provider": "claude", "model": "claude-opus-5-5"}}}}))
+
+    code = crew_config.main(["--root", str(root), "--global-path", str(tmp_path / "none.json"),
+                             "--models"])
+    rows = [line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("coordinator ")]
+
+    assert (code, len(rows), "role-pin" in rows[0], "claude-opus-5-5" in rows[0]) == (
+        0, 1, True, True)

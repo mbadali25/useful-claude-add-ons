@@ -2817,8 +2817,8 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
 
 - DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:784` `role_model(top, role)` resolves
   `dev.roles.<role>` through `crew_state.resolve_role` and returns a model only for a claude pin whose
-  text matches `MODEL_ID` (`:781`); `start` (`:855-856`) reads `developer` and `coordinator`, `_launch`
-  (`:798`) appends `, model: <id>` to the `Agent(...)` line, and a `coordinator: model <id>` line is
+  text matches `MODEL_ID` (`:781`); `start` (`:856-857`) reads the `developer` warning and the `coordinator` pin, `_launch`
+  (`:798`, which asks `role_model` for `developer`) appends `, model: <id>` to the `Agent(...)` line, and a `coordinator: model <id>` line is
   printed first. No agent file or `ROLE_TIERS` entry exists for the coordinator.
 - JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
   Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`).
