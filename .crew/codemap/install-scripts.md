@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@0bf364417
+anchor: useful-claude-add-ons@388ceff31
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-01
 
