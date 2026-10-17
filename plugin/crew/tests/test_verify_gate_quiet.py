@@ -653,15 +653,14 @@ def test_partial_cat_of_the_plain_half_does_not_print_its_first_part_twice(tmp_p
     shim = tmp_path / "shim"
     shim.mkdir()
     shim_tool = shim / "cat"
-    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) {shutil.which("head")} -n 1 "$@"; exit 1 ;; esac\n'
+    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) echo PARTIAL-MARK; exit 1 ;; esac\n'
                          f'exec {shutil.which("cat")} "$@"\n', encoding="utf-8")
     shim_tool.chmod(0o755)
-    verbose = _run(root, verbose="1")
 
     result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
 
     assert result.returncode == 2
-    assert result.stderr.count("VERIFY FAILED: echo boom; exit 1") == verbose.stderr.count("VERIFY FAILED: echo boom; exit 1")
+    assert "PARTIAL-MARK" not in result.stderr
     assert result.stderr.count("VERIFY FAILED: echo boom; exit 1") == 1
 
 
