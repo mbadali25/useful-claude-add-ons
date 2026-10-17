@@ -778,13 +778,54 @@ def _receipt_mark(top, ticket):
     return [receipt.get("kind"), receipt.get("round"), receipt.get("accepted_at")]
 
 
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
+
+
+CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku")
+
+
+def role_model(top, role, cfg=None):
+    """`(model, warning)` for a `dev.roles.<role>` pin that is a claude pin with a model:
+    what the dispatcher passes as the Agent `model`. `(None, "")` when no role pin is set
+    (a block default is not a pin) or the pin is another provider's; `(None, why)` when the
+    pin cannot be honoured (not a model id, no provider under a non-claude block, a
+    miscased provider, a claude provider with a non-claude model), so an odd value is named,
+    never put on a line. `cfg` is a resolved config, so one caller reads the layers once."""
+    if cfg is None:
+        cfg = crew_config.resolve_config(top)
+    pin = crew_state.dict_or_empty(crew_state.dict_or_empty(
+        crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))
+    model = pin.get("model")
+    if not model:
+        return None, ""
+    where = f"dev.roles.{role}"
+    named = pin.get("provider")
+    if isinstance(named, str) and named != "claude" and named.strip().lower() == "claude":
+        return None, f"{where}.provider {named!r} is not 'claude' (case matters); no model pinned"
+    row = crew_state.resolve_role(cfg, "dev", role)
+    if row["provider"] != "claude":
+        if (not named and isinstance(model, str)
+                and crew_state.family(None, model) in CLAUDE_MODEL_HEADS):
+            return None, (f"{where}.model {model!r} has no provider and "
+                          f"dev.provider is {row['provider']!r}; no model pinned "
+                          f"(set {where}.provider to claude)")
+        return None, ""
+    if not isinstance(model, str) or not MODEL_ID.match(model):
+        return None, f"{where}.model {model!r} is not a model id; no model pinned"
+    if crew_state.family(None, model) not in CLAUDE_MODEL_HEADS:
+        return None, f"{where}.model {model!r} is not a claude model; no model pinned"
+    return model.lower(), ""
+
+
 def _launch(top, slug, ticket, resume):
+    model, _ = role_model(top, "developer")
     command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
                f"--root {_shell_path(top)} "
                f"--set {slug} --ticket {ticket}")
     if resume is not None:
         command += f" --resume-round {resume}"
-    return f"launch {ticket}: {LAUNCH} prompt: the output of `{command}`"
+    launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
+    return f"launch {ticket}: {launch} prompt: the output of `{command}`"
 
 
 def _valid_receipts(receipts):
@@ -834,6 +875,12 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
+    cfg = crew_config.resolve_config(top)
+    _, lane_warning = role_model(top, "developer", cfg)
+    coordinator, coordinator_warning = role_model(top, "coordinator", cfg)
+    lines += [f"warning: {w}" for w in (lane_warning, coordinator_warning) if w]
+    if coordinator:
+        lines.append(f"coordinator: model {coordinator}")
     for ticket in result["wave"]:
         if started and ticket not in started:
             # A relaunch replans from today's approvals, without the lanes already running:

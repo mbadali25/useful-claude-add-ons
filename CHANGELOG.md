@@ -9,6 +9,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.38: the coordinator is a model pin on an existing role, and wave lanes carry the developer model (L-0799)
+
+- **Summary.** `crew` 1.2.38 makes `dev.roles.coordinator` a documented model pin (no fifth role, no
+  persona, default unset) and puts `dev.roles.developer`'s claude model on each wave lane launch.
+- **What.** `crew_wave.py start` adds `model: <id>` to each `launch` line when `dev.roles.developer`
+  is a claude pin with a model, and prints `coordinator: model <id>` when `dev.roles.coordinator` is
+  one. Unset or non-claude pins leave the output byte-identical to 1.2.37; a pinned value that is
+  not a model id prints a `warning:` and pins nothing. Docs: CONFIG.md, the crew README,
+  `commands/autopilot.md`, `commands/model.md`, the guide.
+- **Tests.** New cases in `tests/test_crew_wave.py` (launch line with, without and with a non-claude
+  pin, an odd model text, the coordinator line, and `--models` listing the coordinator as
+  `role-pin`). The sabotage was run by hand (drop the model from the launch line: the pinned-launch
+  test goes red, restored it goes green); its permanent entry in `sabotage_wave.py` is harness work
+  and goes in a separate tooling PR.
+- **Process.** The crew feature freeze was waived for this ticket by the owner on 2026-10-16. The
+  measured Opus 5.5 vs Sonnet 5.5 comparison was waived by the same decision. Not verified: that the
+  in-session `Agent` tool accepts explicit model ids (aliases are the fallback).
+
 ### Added — crew 1.2.37: a Haiku 5.5 `session-relay` agent for messages between sessions (L-0797)
 
 - **Summary.** `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5

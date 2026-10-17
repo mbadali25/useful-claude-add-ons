@@ -133,6 +133,11 @@ independent eyes.</p>
 </tbody>
 </table>
 <p>A fifth file, <code>session-relay</code>, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).</p>
+<p><strong>The coordinator is a model pin, not a role.</strong> Set <code>dev.roles.coordinator</code> (for example
+<code>{"provider": "claude", "model": "claude-opus-5-5"}</code>) and <code>dev.roles.developer</code> (for example
+<code>{"provider": "claude", "model": "claude-sonnet-5-5"}</code>) in <code>/crew:model</code>. A wave prints the
+coordinator pin and puts the developer model on every lane launch. Both default to unset, which
+changes nothing.</p>
 <p><strong>Running agents on Kimi.</strong> Claude Code runs subagents on Claude models only,
 so <code>explorer</code>, <code>researcher</code> and <code>security</code> can hand their task to the Kimi Code
 CLI instead. Pin one with

@@ -895,6 +895,30 @@ a role, and `/crew:model` reports roles only. To run a relay on another model, p
 dispatching it. `tests/test_session_relay.py` pins the model, the two tools (no `Read`) and the transport-only
 rules.
 
+### The coordinator and lane model pins (L-0799)
+
+The coordinator is **a model pin on an existing role**, not a fifth role: `dev.roles.coordinator`
+(`{"provider": "claude", "model": "claude-opus-5-5"}`) in the open `dev.roles` table, default
+**unset**, so nothing changes for anyone who sets nothing. No agent file, persona or roster entry
+backs it, and `crew_config.py --models` / `/crew:model` list it as a `role-pin` row like any pin.
+`crew_wave.py start` prints `coordinator: model <id>` when the pin is a claude pin with a model;
+the dispatcher prints it as-is: wave launches no coordinator, so the line reports the pin and
+launches nothing. A plugin cannot change the session model, so where the main session itself
+coordinates, the pin has no effect unless the owner sets the session model.
+
+`dev.roles.developer` with `provider: claude` and a `model` is now used for wave lanes:
+`crew_wave.py start` writes `Agent(subagent_type: general-purpose, isolation: worktree, model: <id>)`.
+Only an explicit `dev.roles.<role>.model` counts: a `dev.claude.model` block default is not a pin and
+changes nothing. Unset, a non-claude provider, or a model that is not a claude id or alias (`gpt-6`
+under `provider: claude`) leaves the launch line byte-identical to 1.2.37. A role pin with a claude
+model but no `provider`, under a `dev.provider` that is not claude, prints a `warning:` naming the fix
+and pins nothing. The pinned text
+must look like a model id or alias (letters, digits, `.`, `_`, `-`, an optional `[1m]` suffix); anything
+else prints a `warning:` and pins nothing. The value is passed through verbatim, so an alias
+(`sonnet`, `opus`) works wherever an explicit id is refused. Probed 2026-10-16 in a scratch HOME:
+`claude -p --model` accepts `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` and `sonnet`,
+and refuses `no-such-model-xyz`. Whether the in-session `Agent` tool accepts explicit ids was not probed.
+
 ### The provider keys are also where `roles` pins live
 
 `qa.roles` and `dev.roles` are open tables, so

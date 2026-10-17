@@ -2811,6 +2811,22 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 - JUDGEMENT: a peer's `done` decides only whether this side may start. Tests:
   `plugin/crew/tests/test_crew_wave_coord_deps.py`, under the wave rule of `.crew/verify.json`.
 
+## Wave model pins (L-0799)
+
+Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:787` `role_model(top, role, cfg=None)` resolves
+  `dev.roles.<role>` through `crew_state.resolve_role` and returns a lowercased model only for a pin
+  whose provider is exactly `claude`, whose text matches `MODEL_ID` (`:781`) and whose family is a
+  claude one; a provider-less pin under a non-claude block, a miscased provider, a non-claude model on
+  a claude provider and a non-id model each return `(None, warning)`. `start` (`:878-880`) resolves
+  the config once for the `developer` warning and the `coordinator` pin, `_launch` (`:820-821`, which
+  asks `role_model` for `developer` itself) appends `, model: <id>` to the `Agent(...)` line, and the
+  `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
+  pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
+- JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
+  Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`).
+
 ## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
 
 - DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every
