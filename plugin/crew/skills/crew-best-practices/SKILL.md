@@ -37,7 +37,7 @@ Claiming these as gaps wastes a session. Each is checked, with where it lives:
 | Practice | Crew |
 |---|---|
 | Plan before coding | `/crew:plan`, with an approval receipt before edits |
-| Aggressive context clearing | `context-watch` hook, `context.warnAt` 0.5 since 0.19.52 |
+| Aggressive context clearing | `context-watch` hook, `context.warnAt` 0.4 (0.5 from 0.19.52, 0.4 from 1.2.40) |
 | "Document & Clear" pattern | `handoff-write` (PreCompact) + `handoff-read` (SessionStart) |
 | Quality-gate hooks | `verify-gate` on Stop, over `.crew/verify.json` |
 | Multi-instance review | `/crew:review` — prefers a different model family, not a clone |
@@ -62,7 +62,7 @@ Do not re-open them from the source document alone.
 Full detail in `references/practices.md`. The short form:
 
 1. **Clear context early.** The document says 60k tokens or 30%; crew's default
-   is now `warnAt: 0.5` with `reserveTokens: 0`. Waiting for the limit is the
+   is now `warnAt: 0.4` with `reserveTokens: 0`. Waiting for the limit is the
    mistake.
 2. **Avoid `/compact`.** Automatic compaction is opaque and poorly optimised.
    Prefer writing a handoff and clearing — which is what crew's hooks do.

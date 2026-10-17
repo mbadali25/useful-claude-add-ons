@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.40: auto wrap-up and auto-clear fire at 40% of the context window (L-0805)
+
+- **Summary.** `crew` 1.2.40 moves the default context threshold from 50% to 40% of the window, so the handoff warning, auto wrap-up and auto-clear all start earlier; an explicit `context.warnAt` is untouched.
+- **What.** `context.warnAt` default `0.5` -> `0.4` in `crew_state.py`, `config.template.json`, both `context-watch` flavours (fallback and comments) and `low_context_note` in `crew_context.py`. One shared key, as before: auto wrap-up and auto-clear change what happens at the threshold, not when. A 1M window now warns at 400k (`reserveTokens` default 0, so the percentage rules). Precedent: crew 0.19.52 moved `0.8` -> `0.5` the same way.
+- **Existing repos.** Only the unset default moved. A `warnAt` in `~/.claude/crew/config.json` or `.crew/config.json` keeps its value; there is no auto-migration. A repo created from the template while the default was `0.5` carries a literal `"warnAt": 0.5` and stays at 50% until that line is edited or deleted. This repo's own `.crew/config.json` was moved to `0.4` by hand.
+- **Tests.** `test_context_warnat_default.py` pins the default in the state dict, the template, both hook flavours and `low_context_note`. Manual sabotage (default put back to 0.5) was run and went red; recorded in the PR.
+- **Docs.** CONFIG.md, the crew README, the best-practices and setup skills, the configuration reference and troubleshooting guide (rebuilt HTML, DOCX, PDF). Not fixed here: `low_context_note` defaults `reserveTokens` to 100000 while every other site uses 0 (L-0807).
+- **Process.** The crew feature freeze was waived by the owner on 2026-10-17.
+
 ### Changed — crew 1.2.39: the Stop gate prints one verdict line and keeps the rest in a log (L-0796)
 
 - **Summary.** `crew` 1.2.39 makes the Stop verify gate quiet: one verdict line, then each failure exactly as before, with the pricing, reach, deferral, tree-credit, env-pin and timing lines moved to `.crew/.verify-gate.log`.

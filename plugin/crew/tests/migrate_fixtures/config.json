@@ -124,7 +124,7 @@
   "verifyGate": true,
   "context": {
     "enabled": true,
-    "warnAt": 0.5,
+    "warnAt": 0.4,
     "budgetTokens": null,
     "reserveTokens": 0,
     "handoffPath": ".work/HANDOFF.md",
