@@ -181,7 +181,6 @@ function Invoke-CrewQuietFlush {
     if (-not $entry[0]) { [void]$plainLines.Add([string]$entry[1]) }
   }
   if ($fullLines.Count -eq 0 -and -not $script:CrewReady) { return }
-  $nl = [Environment]::NewLine
   $logPath = ".crew/.verify-gate.log"
   $logOk = $false
   if ($fullLines.Count -gt 0 -and (Test-Path -LiteralPath ".crew" -PathType Container) -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
