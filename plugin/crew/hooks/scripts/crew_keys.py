@@ -211,7 +211,9 @@ KEY_META = {
     # --- context
     "context.enabled": _unv("Run the context watcher.", FIRST, _S + "context-watch.sh",
                             "boolean"),
-    "context.warnAt": _unv("Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept.", FIRST,
+    "context.warnAt": _unv("Fraction of the budget at which the watcher warns, wraps up and "
+                           "auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit "
+                           "value is kept.", FIRST,
                            _S + "context-watch.sh", "number"),
     "context.budgetTokens": _unv("Context budget in tokens; null uses the model's.", FIRST,
                                  _S + "context-watch.sh", "integer or null"),
