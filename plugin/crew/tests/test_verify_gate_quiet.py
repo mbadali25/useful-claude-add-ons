@@ -569,8 +569,9 @@ def test_buffer_that_cannot_be_created_still_says_detail_unavailable(tmp_path):
     shim = tmp_path / "shim"
     shim.mkdir()
     shim_tool = shim / "mktemp"
-    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-out*) exit 1 ;; esac\nexec {shutil.which("mktemp")} "$@"\n',
-                         encoding="utf-8")
+    shim_tool.write_text(
+        f'#!/bin/sh\ncase "$*" in *crew-gate-out*) exit 1 ;; esac\nexec {shutil.which("mktemp")} "$@"\n',
+        encoding="utf-8")
     shim_tool.chmod(0o755)
 
     result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
@@ -625,8 +626,9 @@ def test_failed_cat_of_the_plain_half_still_prints_the_failure_block(tmp_path):
     shim = tmp_path / "shim"
     shim.mkdir()
     shim_tool = shim / "cat"
-    shim_tool.write_text(f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) exit 1 ;; esac\nexec {shutil.which("cat")} "$@"\n',
-                         encoding="utf-8")
+    shim_tool.write_text(
+        f'#!/bin/sh\ncase "$*" in *crew-gate-plain*) exit 1 ;; esac\nexec {shutil.which("cat")} "$@"\n',
+        encoding="utf-8")
     shim_tool.chmod(0o755)
 
     result = _run(root, extra_env={"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
