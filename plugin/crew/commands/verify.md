@@ -38,7 +38,9 @@ no map, because the gate turns green and everyone relaxes.
 
 **Running the whole map, unbudgeted.** The Stop gate spends a budget
 (`verify.stopBudgetSeconds`, default 60) cheapest-first and DEFERS what does
-not fit, printing `deferred to /crew:verify: <cmd> (<n>s)` for each one. Those
+not fit, counting each under `deferred` in the verdict line and listing its
+`deferred to /crew:verify: <cmd> (<n>s)` line in `.crew/.verify-gate.log` (on screen
+with `--verbose` or `CREW_VERIFY_VERBOSE=1`). Those
 were not checked. A rule over the budget alone is `NOT VERIFIED ... deferred to CI`, never a block;
 a turn that ran no rule says `verify-gate: 0 rules ran` and writes no verified marker (L-0710).
 

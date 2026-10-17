@@ -219,7 +219,7 @@ function Invoke-CrewQuietFlush {
   $budgetTxt = if ($null -eq $budget) { "none" } else { [string][int]$budget }
   $failTxt = [string]$fail
   if ($rc -eq 2 -and $fail -eq 0) { $failTxt = "0 (exit 2, see below)" }
-  $verdict = "verify-gate: FAILED $failTxt cmd | PASSED $pass cmd | NOT VERIFIED $nv rule(s) (reach $reach, over-budget $over, dirty tree $dirty, deferred $defer, skipped $skip, other $other) | credited $cred | budget ${totalElapsed}s/${budgetTxt}s | detail: $detail"
+  $verdict = "verify-gate: FAILED $failTxt cmd | PASSED $pass cmd | NOT VERIFIED $nv item(s) (reach $reach, over-budget $over, dirty tree $dirty, deferred $defer, skipped $skip, other $other) | credited $cred | budget ${totalElapsed}s/${budgetTxt}s | detail: $detail"
   $hint = "verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   $statePath = ".crew/.verify-gate.last-stop"
   if ($rc -eq 0) {
@@ -240,6 +240,7 @@ function Invoke-CrewQuietFlush {
       if ($stateParts.Count -eq 2 -and $stateParts[0] -ceq $script:CrewSession -and $stateParts[1] -ceq $hash) { $unchanged = $true }
     } catch { $unchanged = $false }
   }
+  if (-not $logOk) { $unchanged = $false }
   if ($unchanged) {
     $first = ""
     foreach ($line in (($plainLines -join "`n") -split "\r?\n")) { if ($line.StartsWith("VERIFY FAILED: ")) { $first = $line.Substring(15); break } }

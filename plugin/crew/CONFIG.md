@@ -3054,12 +3054,14 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
 - **Quiet Stop output** (L-0796, crew 1.2.39). The Stop gate prints one verdict
-  line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n rule(s) (reach a,
+  line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach a,
   over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
   budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited
-  count commands (`cmd`); everything under NOT VERIFIED counts rules (`rule(s)`):
-  reach, over-budget, dirty tree, deferred, skipped and other. The two units are
-  not added together. Then come the lines the gate cannot prove are informational, exactly
+  count commands (`cmd`); NOT VERIFIED counts items (`item(s)`): one per rule for
+  reach, over-budget, dirty tree and other, one per deferred rule, and one per
+  command for skipped (exit 77) and for credits withdrawn because the tree moved
+  (counted under other). On a multi-command rule the item count can therefore exceed
+  the rule count. The two units are not added together. Then come the lines the gate cannot prove are informational, exactly
   as before: every `VERIFY FAILED:` block with its last 25 lines, `COULD NOT
   TELL`, a rc 77 SKIP, `UNMAPPED CHANGES`, a lock back-off, and any line the
   gate does not recognise. What moves to `.crew/.verify-gate.log` is the text the
@@ -3075,7 +3077,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   the gate cannot classify counts as `other`. The log is rewritten every run
   (temp file, then move) and holds the complete text of that run; if it cannot
   be written the gate prints the full text on stderr and the verdict says
-  `detail: unavailable`. The Stop gate also remembers, per session, what it last
+  `detail: unavailable`, and a repeat Stop is never collapsed to the unchanged line while the log is unwritable. The Stop gate also remembers, per session, what it last
   reported in `.crew/.verify-gate.last-stop` (`session_id`, a SHA-256 of the
   failure text and the NOT VERIFIED counts): the same session still failing
   the same way prints `verify-gate: unchanged since last Stop (N failing, M NOT
@@ -3093,7 +3095,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   PowerShell flavour buffers in memory and flushes in a `finally`, so output
   from a child process it starts (the `outside-scope:` line) is not part of the
   buffer and can print before the verdict.
-- A rule declaring `"reach" other than `"local"` is recorded as
+- A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
   inspection at all; that is the human saying so, and the gate takes the word

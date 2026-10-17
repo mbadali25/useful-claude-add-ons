@@ -129,7 +129,7 @@ def test_ps1_matches_sh_verdict_failure_and_unchanged_lines(tmp_path):
     assert sh_second.returncode == ps1_second.returncode == 2
     sh_lines, ps1_lines = _normal(sh_first), _normal(ps1_first)
     assert sh_lines[0] == ps1_lines[0]
-    assert "FAILED 1 cmd | PASSED 1 cmd | NOT VERIFIED 2 rule(s) " in sh_lines[0]
+    assert "FAILED 1 cmd | PASSED 1 cmd | NOT VERIFIED 2 item(s) " in sh_lines[0]
     assert [ln for ln in sh_lines if ln.startswith("VERIFY FAILED") or ln in ("boom", "second")] == \
         [ln for ln in ps1_lines if ln.startswith("VERIFY FAILED") or ln in ("boom", "second")]
     assert _normal(sh_second) == _normal(ps1_second)
@@ -168,6 +168,19 @@ def test_ps1_unwritable_log_degrades_to_full_output(tmp_path):
     assert _normal(result)[0].endswith("| detail: unavailable")
     assert "verify-gate: env pinned" in result.stderr
     assert "VERIFY FAILED: echo boom; exit 1" in result.stderr
+
+
+@_needs_pwsh
+def test_ps1_unchanged_repeat_with_unwritable_log_prints_failure_in_full(tmp_path):
+    root = _repo(tmp_path, _FAIL_ONLY)
+    (root / ".crew" / ".verify-gate.log").mkdir()
+
+    _run("ps1", root)
+    second = _run("ps1", root)
+
+    assert second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
 
 
 @_needs_pwsh

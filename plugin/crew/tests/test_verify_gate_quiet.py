@@ -108,7 +108,7 @@ def test_quiet_stop_prints_one_verdict_line(tmp_path):
     lines = _lines(result)
     assert result.returncode == 0
     assert lines[0].startswith(
-        "verify-gate: FAILED 0 cmd | PASSED 1 cmd | NOT VERIFIED 2 rule(s) (reach 1, over-budget 1, dirty tree 0, "
+        "verify-gate: FAILED 0 cmd | PASSED 1 cmd | NOT VERIFIED 2 item(s) (reach 1, over-budget 1, dirty tree 0, "
         "deferred 0, skipped 0, other 0) | credited 0 | budget ")
     assert lines[0].endswith("| detail: .crew/.verify-gate.log")
     assert result.stderr.count(".crew/.verify-gate.log") == 1
@@ -174,6 +174,18 @@ def test_unwritable_log_degrades_to_full_output(tmp_path):
     assert "verify-gate: env pinned" in result.stderr
     assert "VERIFY FAILED: exit 1" in result.stderr
     assert result.stderr.count("VERIFY FAILED: exit 1") == 1
+
+
+def test_unchanged_repeat_with_unwritable_log_prints_failure_in_full(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    (root / ".crew" / ".verify-gate.log").mkdir()
+
+    first = _run(root)
+    second = _run(root)
+
+    assert first.returncode == second.returncode == 2
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr
+    assert "unchanged since last Stop" not in second.stderr
 
 
 def test_verbose_env_and_flag_restore_baseline_output(tmp_path):
@@ -284,7 +296,7 @@ def test_not_verified_never_counted_as_passed(tmp_path):
     assert result.returncode == 0
     assert "PASSED 1 cmd " in verdict
     assert "skipped 1" in verdict and "reach 1" in verdict and "over-budget 1" in verdict
-    assert "NOT VERIFIED 3 rule(s) " in verdict
+    assert "NOT VERIFIED 3 item(s) " in verdict
     passed_lines = [ln for ln in _lines(result) if "PASSED" in ln]
     assert passed_lines == [verdict]
     assert "SKIP (rc 77, environment absent): exit 77" in result.stderr
@@ -329,7 +341,7 @@ def test_verdict_names_its_units(tmp_path):
 
     verdict = _lines(result)[0]
     assert "PASSED 3 cmd " in verdict
-    assert "NOT VERIFIED 1 rule(s) (reach 1," in verdict
+    assert "NOT VERIFIED 1 item(s) (reach 1," in verdict
 
 
 def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):

@@ -116,7 +116,7 @@ function Resolve-CrewPython {
         $script:CrewPythonMemoResult = ''
         return ''
       }
-      $crewPythonWaitMs = 600000
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
       $real = $null
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo

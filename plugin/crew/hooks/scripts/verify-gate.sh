@@ -287,7 +287,7 @@ _crew_gate_quiet_flush() {
   local _nvtxt="$G_NV" _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
   if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then _nvtxt="$G_NV+"; _other_txt="unknown"; fi
   if [ "$_rc" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
-  local _verdict="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $_nvtxt rule(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
+  local _verdict="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $_nvtxt item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $_detail"
   local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
   if [ "$_rc" -eq 0 ]; then
     rm -f "$_state" 2>/dev/null
@@ -314,6 +314,7 @@ _crew_gate_quiet_flush() {
       _unchanged=1
     fi
   fi
+  [ "$_log_ok" -eq 1 ] || _unchanged=0
   if [ "$_unchanged" -eq 1 ]; then
     _first=$(grep -a -m1 '^VERIFY FAILED: ' "$_plain" | sed 's/^VERIFY FAILED: //')
     [ -n "$_first" ] || _first=$(head -n 1 "$_plain")
