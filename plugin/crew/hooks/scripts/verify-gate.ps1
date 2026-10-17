@@ -109,6 +109,7 @@ function Exit-CrewGateBlocked {
 $script:CrewQuiet = $false
 $script:CrewReady = $false
 $script:CrewUnmappedFailed = $false
+$script:CrewMayLog = $false
 $script:CrewExitRc = 0
 $script:CrewSession = ""
 $script:CrewBuf = New-Object System.Collections.ArrayList
@@ -183,7 +184,7 @@ function Invoke-CrewQuietFlush {
   if ($fullLines.Count -eq 0 -and -not $script:CrewReady) { return }
   $logPath = ".crew/.verify-gate.log"
   $logOk = $false
-  if ($fullLines.Count -gt 0 -and (Test-Path -LiteralPath ".crew" -PathType Container) -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
+  if ($script:CrewMayLog -and $fullLines.Count -gt 0 -and (Test-Path -LiteralPath ".crew" -PathType Container) -and -not (Test-Path -LiteralPath $logPath -PathType Container)) {
     $logTmp = ".crew/.verify-gate.log.tmp$PID"
     try {
       [System.IO.File]::WriteAllText($logTmp, (($fullLines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
@@ -207,6 +208,8 @@ function Invoke-CrewQuietFlush {
   $reach = 0; $over = 0; $dirty = 0; $other = 0
   $skip = $skipCount; $defer = $deferredCount
   if ($treeMoved) { $cred = $coveredN; $other += $treeN }
+  $nvIds = New-Object System.Collections.ArrayList
+  $reach += $(if ($null -ne $fallbackNotices) { $fallbackNotices.Count } else { 0 })
   foreach ($rule in @($extrasObj.matched_rules)) {
     $kind = [string]$rule.kind
     if ($kind -eq "normal" -or $kind -eq "") { continue }
@@ -214,7 +217,15 @@ function Invoke-CrewQuietFlush {
     elseif ($kind -eq "clean_tree_required") { $dirty++ }
     elseif ($kind -eq "chronic") { $over++ }
     else { $other++ }
+    [void]$nvIds.Add("$($rule.key)|$kind")
   }
+  foreach ($fn in $fallbackNotices) { [void]$nvIds.Add([string]$fn) }
+  foreach ($n in $notices) {
+    $nt = [string]$n
+    if ($nt.StartsWith('deferred to /crew:verify: ') -or $nt.Contains(' is permanently over budget') -or $nt.Contains(' declared reach: ') -or $nt.Contains(' requires a clean working tree')) { [void]$nvIds.Add($nt) }
+  }
+  $nvIds.Sort([StringComparer]::Ordinal)
+  $nvDigest = Get-CrewSha256 ($nvIds -join "`n")
   $nv = $reach + $over + $dirty + $defer + $skip + $other
   $budgetTxt = if ($null -eq $budget) { "none" } else { [string][int]$budget }
   $failTxt = [string]$fail
@@ -231,7 +242,7 @@ function Invoke-CrewQuietFlush {
   }
   $hash = ""
   if ($script:CrewSession) {
-    $hash = Get-CrewSha256 ((($plainLines -join "`n")) + "`n`n--nv $reach $over $dirty $defer $skip $other $fail`n")
+    $hash = Get-CrewSha256 ((($plainLines -join "`n")) + "`n`n--nv $reach $over $dirty $defer $skip $other $fail $nvDigest`n")
   }
   $unchanged = $false
   if ($hash -and (Test-Path -LiteralPath $statePath -PathType Leaf)) {
@@ -1281,6 +1292,8 @@ if (-not $unlocked) {
   }
 }
 
+$script:CrewMayLog = $true
+
 # MOVED HERE from before the lock, in lockstep with verify-gate.sh.
 # Before the lock it printed on every Stop including the backing-off
 # flavour, so one Stop emitted two scope reports and the lock suite's
@@ -1319,7 +1332,8 @@ try {
   } elseif (-not (Test-Path $scopeScript)) {
     Write-CrewErr("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
   } else {
-    $changed -join "`n" | & $scopePy $scopeScript $PWD.Path
+    $scopeOut = $changed -join "`n" | & $scopePy $scopeScript $PWD.Path 2>&1
+    foreach ($scopeLine in @($scopeOut)) { if ($null -ne $scopeLine) { Write-CrewErr ([string]$scopeLine) } }
   }
 } catch {
   Write-CrewErr("outside-scope: (scope not checked: $_)")

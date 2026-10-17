@@ -3053,7 +3053,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
-- **Quiet Stop output** (L-0796, crew 1.2.41). The Stop gate prints one verdict
+- **Quiet Stop output** (L-0796, crew 1.2.39). The Stop gate prints one verdict
   line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach a,
   over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
   budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited
@@ -3094,9 +3094,13 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   dotted so the `.crew/.verify-gate.*` bookkeeping glob already covers them, and
   both are named in the fingerprint's gate-owned list (`verify_fingerprint.py`),
   so an untracked, unignored log never defeats the unchanged-tree skip. The
-  PowerShell flavour buffers in memory and flushes in a `finally`, so output
-  from a child process it starts (the `outside-scope:` line) is not part of the
-  buffer and can print before the verdict.
+  PowerShell flavour buffers in memory and flushes in a `finally`; the
+  `outside-scope:` line from its scope-report child is captured into the same
+  buffer. A run that backs off on the lock never writes the log or the state
+  file the lock holder owns, and a payload that carries `session_id` more than
+  once reads as no session (full block). A reach-excluded `always` or `default`
+  command counts under reach, and the repeat check hashes which rules and
+  commands were not run, not only how many.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO

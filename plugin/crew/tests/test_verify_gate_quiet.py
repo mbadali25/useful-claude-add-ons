@@ -86,11 +86,12 @@ def _repo(tmp_path, verify_map):
     return root
 
 
-def _run(root, *args, verbose="0", session: str | None = "s1", extra_env=None):
+def _run(root, *args, verbose="0", session: str | None = "s1", extra_env=None, payload: str | None = None):
     env = crew_fixtures.isolated_home_env(root.parent / "home")
     env.update(CLAUDE_PROJECT_DIR=str(root), CREW_VERIFY_VERBOSE=verbose)
     env.update(extra_env or {})
-    payload = json.dumps({"session_id": session}) if session is not None else "{}"
+    if payload is None:
+        payload = json.dumps({"session_id": session}) if session is not None else "{}"
     return crew_fixtures.run_gate([_BASH, _SH, *args], input=payload, cwd=str(root), env=env,
                                   capture_output=True, text=True, check=False, timeout=_T)
 
@@ -413,3 +414,68 @@ def test_unknown_argument_message_names_verbose(tmp_path, flag):
 
     assert result.returncode == 2
     assert "--verbose" in result.stderr
+
+
+def test_backed_off_run_leaves_the_lock_holders_log_alone(tmp_path):
+    root = _repo(tmp_path, _map_with())
+    (root / ".crew" / ".verify-gate.lock").mkdir()
+    (root / ".crew" / ".verify-gate.log").write_text("HOLDER-LOG\n", encoding="utf-8")
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert "backed off, lock held by" in result.stderr
+    assert _log(root) == "HOLDER-LOG\n"
+
+
+def _with_always(verify_map, *commands):
+    return dict(verify_map, always=list(commands))
+
+
+def test_reach_excluded_always_command_counts_as_not_verified(tmp_path):
+    root = _repo(tmp_path, _with_always(_map_with(base=False), "curl https://example.invalid/a"))
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert "NOT VERIFIED 1 item(s) (reach 1," in _lines(result)[0]
+
+
+def _git(root, *args):
+    subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+
+
+def test_repeat_check_follows_which_rules_were_not_run(tmp_path):
+    net_a = {"paths": ["a.py"], "seconds": 5, "reach": "network", "run": ["echo RAN-a"], "why": "a"}
+    net_b = {"paths": ["b.py"], "seconds": 5, "reach": "network", "run": ["echo RAN-b"], "why": "b"}
+    fail = _fail_rule("echo boom; exit 1", paths=["*.py"])
+    root = _repo(tmp_path, _map_with(net_a, net_b, fail, base=False))
+    (root / "b.py").write_text("y = 1", encoding="utf-8")
+    _commit_all(root)
+
+    def touch(name):
+        _git(root, "checkout", "--", "a.py", "b.py")
+        (root / name).write_text("z = 2", encoding="utf-8")
+        return _run(root)
+
+    touch("a.py")
+    touch("b.py")
+    third = touch("a.py")
+    fourth = touch("b.py")
+
+    assert third.returncode == fourth.returncode == 2
+    assert "NOT VERIFIED 1 item(s) (reach 1," in _lines(third)[0]
+    assert "unchanged since last Stop" not in fourth.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in fourth.stderr
+
+
+def test_ambiguous_session_id_prints_the_full_block_every_time(tmp_path):
+    root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
+    payload = '{"session_id":"s1","meta":{"session_id":"s2"}}'
+
+    first = _run(root, payload=payload)
+    second = _run(root, payload=payload)
+
+    assert first.returncode == second.returncode == 2
+    assert "unchanged since last Stop" not in second.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in second.stderr

@@ -108,10 +108,8 @@ def _run(flavour, root, session="s1"):
 
 
 def _normal(result):
-    # "bash: <path>" is the .ps1's own failure-header line; "outside-scope:" is
-    # scope_report.py's, written by the child process straight to stderr, so
-    # it is not in the quiet buffer and lands wherever the child ran.
-    lines = [ln for ln in result.stderr.splitlines() if not ln.startswith(("bash: ", "outside-scope:"))]
+    # "bash: <path>" is the .ps1's own failure-header line.
+    lines = [ln for ln in result.stderr.splitlines() if not ln.startswith("bash: ")]
     return [re.sub(r"budget \d+s/", "budget Ns/", ln) for ln in lines]
 
 
@@ -197,3 +195,53 @@ def test_ps1_other_session_prints_full_block_and_unchanged_names_the_log(tmp_pat
     assert other.returncode == 2
     assert "unchanged since last Stop" not in other.stderr
     assert "VERIFY FAILED: echo boom; exit 1" in other.stderr
+
+
+@_needs_pwsh
+def test_ps1_backed_off_run_leaves_the_lock_holders_log_alone(tmp_path):
+    root = _repo(tmp_path, _FAIL_ONLY)
+    (root / ".crew" / ".verify-gate.lock").mkdir()
+    (root / ".crew" / ".verify-gate.log").write_text("HOLDER-LOG\n", encoding="utf-8")
+
+    result = _run("ps1", root)
+
+    assert result.returncode == 0
+    assert "backed off, lock held by" in result.stderr
+    assert _read(os.path.join(str(root), ".crew", ".verify-gate.log")) == "HOLDER-LOG\n"
+
+
+@_needs_pwsh
+def test_ps1_reach_excluded_always_command_counts_as_not_verified(tmp_path):
+    root = _repo(tmp_path, dict(_FAIL_ONLY, rules=[], always=["curl https://example.invalid/a"]))
+
+    result = _run("ps1", root)
+
+    assert result.returncode == 0
+    assert "NOT VERIFIED 1 item(s) (reach 1," in _normal(result)[0]
+
+
+@_needs_pwsh
+def test_ps1_repeat_check_follows_which_rules_were_not_run(tmp_path):
+    net_a = {"paths": ["a.py"], "seconds": 5, "reach": "network", "run": ["echo RAN-a"], "why": "a"}
+    net_b = {"paths": ["b.py"], "seconds": 5, "reach": "network", "run": ["echo RAN-b"], "why": "b"}
+    fail = dict(_FAIL_ONLY["rules"][0], paths=["*.py"])
+    root = _repo(tmp_path, dict(_FAIL_ONLY, rules=[net_a, net_b, fail]))
+    (root / "b.py").write_text("y = 1", encoding="utf-8")
+    for args in (("add", "-A"), ("commit", "-q", "-m", "map")):
+        subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+
+    def touch(name):
+        subprocess.run(("git", "checkout", "--", "a.py", "b.py"), cwd=root, check=True, capture_output=True,
+                       text=True, timeout=_T)
+        (root / name).write_text("z = 2", encoding="utf-8")
+        return _run("ps1", root)
+
+    touch("a.py")
+    touch("b.py")
+    third = touch("a.py")
+    fourth = touch("b.py")
+
+    assert third.returncode == fourth.returncode == 2
+    assert "NOT VERIFIED 1 item(s) (reach 1," in _normal(third)[0]
+    assert "unchanged since last Stop" not in fourth.stderr
+    assert "VERIFY FAILED: echo boom; exit 1" in fourth.stderr

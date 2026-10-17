@@ -143,6 +143,7 @@ fi
 CREW_GATE_QUIET=0
 CREW_GATE_READY=0
 CREW_GATE_UNMAPPED_FAILED=0
+CREW_GATE_MAY_LOG=0
 CREW_GATE_BUF=""
 CREW_GATE_NONCE=""
 CREW_GATE_SESSION=""
@@ -210,7 +211,14 @@ _crew_gate_quiet_install() {
   _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || return 0
   CREW_GATE_BUF="$_qi_buf"
   CREW_GATE_NONCE="@@crew-detail-$$-${RANDOM}${RANDOM}-$(date +%s)@@"
-  CREW_GATE_SESSION=$(printf '%s' "$INPUT" | tr -d '\n\r' | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  # The key must occur exactly once: a payload that carries a second
+  # "session_id" (nested, or inside a string) cannot say which one is the
+  # session, so it reads as no session and prints the full block.
+  local _qi_sid_keys
+  _qi_sid_keys=$(printf '%s' "$INPUT" | tr -d '\n\r' | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | wc -l | tr -d '[:space:]')
+  if [ "$_qi_sid_keys" = 1 ]; then
+    CREW_GATE_SESSION=$(printf '%s' "$INPUT" | tr -d '\n\r' | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  fi
   exec 4>&2 2>>"$_qi_buf"
   CREW_GATE_QUIET=1
 }
@@ -228,7 +236,7 @@ _crew_gate_counts() {
   G_CRED=$((${COVERED_N:-0} + ${TREE_N:-0}))
   G_REACH=0; G_OVER=0; G_DIRTY=0; G_OTHER=0
   G_DEFER="${DEFERRED_COUNT:-0}"; G_SKIP="${SKIP_N:-0}"
-  G_OTHER_UNKNOWN=0
+  G_OTHER_UNKNOWN=0; G_NVD=""
   if [ "${TREE_MOVED:-0}" -ne 0 ]; then
     G_CRED=${COVERED_N:-0}
     G_OTHER=$((G_OTHER + ${TREE_N:-0}))
@@ -243,6 +251,9 @@ _crew_gate_counts() {
         *) G_OTHER=$((G_OTHER + 1)) ;;
       esac
     done <<< "$(printf '%s\n' "$EXTRAS" | grep -o '"kind": "[A-Za-z_]*"' | sed 's/"kind": "\(.*\)"/\1/')"
+    G_FB=$(printf '%s' "$EXTRAS" | sed -n 's/.*"fallback_excluded": \([0-9][0-9]*\).*/\1/p' | head -1)
+    G_REACH=$((G_REACH + ${G_FB:-0}))
+    G_NVD=$(printf '%s' "$EXTRAS" | sed -n 's/.*"nv_digest": "\([0-9a-f]*\)".*/\1/p' | head -1)
     G_BUDGET=$(printf '%s' "$EXTRAS" | sed -n 's/.*"budget": \([0-9][0-9]*\).*/\1/p' | head -1)
     if [ -z "$G_BUDGET" ]; then
       case "$EXTRAS" in *'"budget": null'*) G_BUDGET="none" ;; *) G_BUDGET="?" ;; esac
@@ -267,7 +278,7 @@ _crew_gate_quiet_flush() {
     return 0
   fi
   local _log_ok=0
-  if [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
+  if [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
     _logtmp=".crew/.verify-gate.log.tmp$$"
     if cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
       _log_ok=1
@@ -306,7 +317,7 @@ _crew_gate_quiet_flush() {
   # and a readable state file print one line; anything else prints it all.
   local _hash="" _st_sid="" _st_hash="" _first _unchanged=0
   if [ -n "$CREW_GATE_SESSION" ]; then
-    _hash=$( { cat "$_plain"; printf '\n--nv %s %s %s %s %s %s %s\n' "$G_REACH" "$G_OVER" "$G_DIRTY" "$G_DEFER" "$G_SKIP" "$G_OTHER" "$G_FAIL"; } \
+    _hash=$( { cat "$_plain"; printf '\n--nv %s %s %s %s %s %s %s %s\n' "$G_REACH" "$G_OVER" "$G_DIRTY" "$G_DEFER" "$G_SKIP" "$G_OTHER" "$G_FAIL" "$G_NVD"; } \
       | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)
     case "$_hash" in *[!0-9a-f]*) _hash="" ;; esac
     [ "${#_hash}" -eq 64 ] || _hash=""
@@ -1060,6 +1071,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
     fi
   fi
 fi
+CREW_GATE_MAY_LOG=1
 # --- shared cleanup registry -----------------------------------------
 # Every exit-path cleanup from here on (this lock's own release when a lock
 # is actually held, and the python3 shim's temp dir below) registers a
@@ -1940,6 +1952,18 @@ for _ri in rule_order:
         "unknown": bool(truly_unknown.get(_ri)),
     })
 _extras = {"matched_rules": matched_rules, "budget": budget}
+# Quiet Stop (L-0796): reach-excluded `always`/`default` commands are
+# NOT VERIFIED items too, and the repeat check hashes the IDENTITIES of what
+# was not run (rule keys by kind, fallback commands, deferred and reach
+# notice lines), not just their counts.
+import hashlib as _nvh
+_extras["fallback_excluded"] = len(fallback_notices)
+_nv_ids = (sorted(m["key"] + "|" + m["kind"] for m in matched_rules if m["kind"] != "normal")
+           + sorted(fallback_notices)
+           + sorted(n for n in notices if n.startswith("deferred to /crew:verify: ")
+                    or " is permanently over budget" in n or " declared reach: " in n
+                    or " requires a clean working tree" in n))
+_extras["nv_digest"] = _nvh.sha256("\n".join(_nv_ids).encode("utf-8", "replace")).hexdigest()
 # --ci only: how many rules and fallback commands the reach filter took out
 # (the pass line says whether any did), and, when nothing is left to run,
 # why - the caller exits 2 on an empty command list and names this reason.

@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.41**: The Stop gate prints one verdict line and keeps the rest in a log. `crew` 1.2.41 makes the Stop verify gate quiet: one verdict line, then each failure exactly as before, with the pricing, reach, deferral, tree-credit, env-pin and timing lines moved to `.crew/.verify-gate.log`.
+- **crew 1.2.39**: The Stop gate prints one verdict line and keeps the rest in a log. `crew` 1.2.39 makes the Stop verify gate quiet: one verdict line, then each failure exactly as before, with the pricing, reach, deferral, tree-credit, env-pin and timing lines moved to `.crew/.verify-gate.log`.
 - **crew 1.2.38**: The coordinator is a model pin on an existing role, and wave lanes carry the developer model. `crew` 1.2.38 makes `dev.roles.coordinator` a documented model pin (no fifth role, no persona, default unset) and puts `dev.roles.developer`'s claude model on each wave lane launch.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
