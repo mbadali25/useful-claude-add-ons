@@ -1004,3 +1004,79 @@ def test_upgrade_command_is_a_removal_stub():
             "/crew:migrate" in text, "crew_upgrade.py" in text, "```" in text,
             re.search(r"^allowed-tools: Read$", text, re.M) is not None) == (
         True, True, True, False, False, True)
+
+
+def _stray_backups(repo):
+    backups = os.path.join(repo, ".crew", "backups")
+    os.makedirs(backups, exist_ok=True)
+    stray = os.path.join(backups, "config.json.20260926-224458.bak")
+    with open(stray, "w", encoding="utf-8") as fh:
+        fh.write("stray\n")
+    return stray
+
+
+def _symlinked_manifest_backup(repo):
+    folder = os.path.join(repo, ".crew", "backups", "migrate-20260925T101700Z")
+    os.makedirs(folder)
+    target = os.path.join(repo, "real-manifest.json")
+    with open(target, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"state": "applied"}))
+    try:
+        os.symlink(target, os.path.join(folder, "manifest.json"))
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    return folder
+
+
+def test_scan_backups_absent_dir_is_clean(repo):
+    assert crew_migrate.scan_backups(repo) == (None, [])
+
+
+def test_scan_backups_returns_interrupted_and_unknown_separately(repo):
+    _stray_backups(repo)
+    _symlinked_manifest_backup(repo)
+
+    interrupted, unknown = crew_migrate.scan_backups(repo)
+
+    assert interrupted is None
+    assert len(unknown) == 1
+    assert unknown[0].startswith(".crew/backups/migrate-20260925T101700Z: ")
+
+
+def test_preview_ignores_a_stray_file(repo, capsys):
+    _stray_backups(repo)
+
+    code = crew_migrate.main(["--root", repo])
+
+    assert (code, "CONFLICT" in capsys.readouterr().out) == (0, False)
+
+
+def test_preview_conflicts_on_could_not_tell(repo, capsys):
+    _symlinked_manifest_backup(repo)
+
+    code = crew_migrate.main(["--root", repo])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "CONFLICT  could not tell whether an apply was interrupted: .crew/backups/migrate-20260925T101700Z" in out
+
+
+def test_preview_conflicts_when_backups_is_not_a_directory(repo, capsys):
+    with open(os.path.join(repo, ".crew", "backups"), "w", encoding="utf-8") as fh:
+        fh.write("file\n")
+
+    code = crew_migrate.main(["--root", repo])
+
+    assert (code, "could not tell whether an apply was interrupted: .crew/backups" in capsys.readouterr().out) == (1, True)
+
+
+def test_rollback_refuses_a_stray_file(repo, capsys):
+    stray = _stray_backups(repo)
+
+    code = crew_migrate.main(["--root", repo, "--rollback", stray])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "is not a migrate backup" in err
+    assert len(err.strip().splitlines()) == 1
+    assert _load(repo, stray) == "stray\n"
