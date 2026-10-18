@@ -9,6 +9,21 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
+
+- **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
+  file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
+- **Cause.** `crew_migrate.find_interrupted` opened `<entry>/manifest.json` for every name in
+  `.crew/backups/`; for a regular file that raised `NotADirectoryError`, which nothing caught, and it
+  also returned "nothing interrupted" on any listing error. `/crew:migrate --rollback <file>` crashed the same way.
+- **Fix.** `crew_migrate.scan_backups(root)` replaces it and sorts each entry into three outcomes: not a
+  backup (a file, or a folder with no manifest: skipped), an interrupted or unparseable backup (reported
+  as before), or could not tell (a symlinked or unreadable manifest, an unlistable `.crew/backups`: named
+  with the reason). Only an absent `.crew/backups/` means clean. `/crew:status` prints
+  `migrate  could not tell - <path>: <why>` and carries on; the migrate preview lists a conflict;
+  `--rollback` of a non-directory is refused in one line. Nothing `/crew:migrate --apply` writes changes.
+- **Docs.** `status.md` migrate row and note, the quickstart troubleshooting row, the status diagram's line anchors.
+
 ### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
 - **Summary.** `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head
