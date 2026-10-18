@@ -2007,11 +2007,13 @@ REVIEW_FIX_MUTATIONS = (
      '        if False:\n            sys.stderr.write(f"scope-base: {empty}\\n")\n',
      _SB + "test_cli_base_on_the_default_branch_with_no_record_is_could_not_tell"),
     ("L-0770: scope_base --base refuses a ticket branch at its fork point", SCOPE_BASE,
-     '    if branch and _branch_name(branch, remotes, local=True) != _branch_name(ref, remotes):\n        return None\n',
+     '    if branch and _branch_name(branch, remotes, local=True) != '
+     '_branch_name(ref, remotes):\n        return None\n',
      '',
      _SB + "test_cli_base_on_a_ticket_branch_at_its_fork_point_is_still_head"),
     ("L-0770: scope_base reads refs/heads/<base> as another branch", SCOPE_BASE,
-     '    ref = ref.removeprefix("refs/heads/")\n    if local:\n        return ref\n    ref = ref.removeprefix("refs/remotes/")\n',
+     '    ref = ref.removeprefix("refs/heads/")\n    if local:\n        return ref\n'
+     '    ref = ref.removeprefix("refs/remotes/")\n',
      '',
      _SB + "test_cli_base_on_the_configured_base_branch_in_any_spelling_is_could_not_tell[main]"),
     ("L-0770: scope_base reads another remote's base branch as a ticket branch", SCOPE_BASE,
