@@ -1067,7 +1067,8 @@ def test_preview_conflicts_when_backups_is_not_a_directory(repo, capsys):
 
     code = crew_migrate.main(["--root", repo])
 
-    assert (code, "could not tell whether an apply was interrupted: .crew/backups" in capsys.readouterr().out) == (1, True)
+    out = capsys.readouterr().out
+    assert (code, "could not tell whether an apply was interrupted: .crew/backups" in out) == (1, True)
 
 
 def test_rollback_refuses_a_stray_file(repo, capsys):
@@ -1080,3 +1081,46 @@ def test_rollback_refuses_a_stray_file(repo, capsys):
     assert "is not a migrate backup" in err
     assert len(err.strip().splitlines()) == 1
     assert _load(repo, stray) == "stray\n"
+
+
+def test_scan_backups_dangling_backups_link_is_could_not_tell(repo):
+    try:
+        os.symlink(os.path.join(repo, "missing-target"), os.path.join(repo, ".crew", "backups"))
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+
+    interrupted, unknown = crew_migrate.scan_backups(repo)
+
+    assert (interrupted, len(unknown)) == (None, 1)
+    assert unknown[0].startswith(".crew/backups: ")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is not portable to Windows")
+def test_scan_backups_escapes_control_characters_in_an_entry_name(repo):
+    folder = _symlinked_manifest_backup(repo)
+    forged = os.path.join(os.path.dirname(folder), "migrate-x\nmigrate  INTERRUPTED apply at forged")
+    os.rename(folder, forged)
+
+    _, unknown = crew_migrate.scan_backups(repo)
+
+    assert len(unknown) == 1
+    assert "\n" not in unknown[0]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_scan_backups_fifo_manifest_is_could_not_tell_and_never_blocks(repo):
+    folder = os.path.join(repo, ".crew", "backups", "migrate-20260925T101700Z")
+    os.makedirs(folder)
+    os.mkfifo(os.path.join(folder, "manifest.json"))
+
+    interrupted, unknown = crew_migrate.scan_backups(repo)
+
+    assert (interrupted, len(unknown)) == (None, 1)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_read_regular_refuses_a_fifo_without_blocking(tmp_path):
+    fifo = str(tmp_path / "manifest.json")
+    os.mkfifo(fifo)
+
+    assert crew_migrate._read_regular(fifo) is None  # pylint: disable=protected-access

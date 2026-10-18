@@ -611,10 +611,14 @@ def build_plan(root):
     if os.path.isdir(codemap):
         count = sum(len(files) for _, _, files in os.walk(codemap))
         plan["untouched"].append(f".crew/codemap/ ({count} files, anchors unchanged)")
-    interrupted = find_interrupted(root)
+    interrupted, unknown = scan_backups(root)
     if interrupted:
         plan["conflicts"].append(
             f"interrupted apply at {interrupted} - run --rollback {interrupted} first")
+    for entry in unknown:
+        plan["conflicts"].append(
+            f"could not tell whether an apply was interrupted: {entry}"
+            " - fix or remove it, then preview again")
     return plan
 
 
@@ -706,24 +710,92 @@ def _manifest_path(backup):
     return os.path.join(backup, "manifest.json")
 
 
-def find_interrupted(root):
-    """Relative path of a backup whose apply never finished, else None."""
+def _escape(text):
+    """One printable line: control characters in a file name are escaped."""
+    return "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in str(text))
+
+
+def _why(exc):
+    return _escape(exc.strerror or exc)
+
+
+def _read_regular(path):
+    """The bytes of a regular file, or None when `path` is not one at open time.
+
+    Opened non-blocking and without following a link, then checked with `fstat`
+    on the descriptor itself: a manifest swapped for a FIFO after the `lstat`
+    can neither block the report nor be followed."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags | getattr(os, "O_BINARY", 0))
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            return None
+        return fh.read()
+
+
+def _classify_backup(root, folder, name):
+    """One `.crew/backups` entry: ("skip"|"interrupted"|"unknown", detail)."""
+    path = os.path.join(folder, name)
+    rel = _escape(_rel(root, path))
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        return "unknown", f"{rel}: {_why(exc)}"
+    if stat.S_ISREG(info.st_mode):
+        return "skip", ""
+    if stat.S_ISLNK(info.st_mode) or _is_link(path):
+        return "unknown", f"{rel}: symlink or junction, not a backup folder"
+    if not stat.S_ISDIR(info.st_mode):
+        return "unknown", f"{rel}: not a regular file or directory"
+    manifest = _manifest_path(path)
+    try:
+        minfo = os.lstat(manifest)
+    except FileNotFoundError:
+        return "skip", ""
+    except OSError as exc:
+        return "unknown", f"{rel}: {_why(exc)}"
+    if not stat.S_ISREG(minfo.st_mode) or _is_link(manifest):
+        return "unknown", f"{rel}: manifest.json is a symlink or not a regular file"
+    try:
+        data = _read_regular(manifest)
+    except OSError as exc:
+        return "unknown", f"{rel}: manifest.json {_why(exc)}"
+    if data is None:
+        return "unknown", f"{rel}: manifest.json is not a regular file"
+    try:
+        state = json.loads(data).get("state")
+    except (ValueError, AttributeError):
+        return "interrupted", rel
+    if state not in ("applied", "rolled-back"):
+        return "interrupted", rel
+    return "skip", ""
+
+
+def scan_backups(root):
+    """Walk `.crew/backups`. Returns (interrupted, unknown): the relative path
+    of the first backup whose write never finished (else None), and a list of
+    "<path>: <why>" for every entry that could not be read. A file or a folder
+    without a manifest is not a backup and is skipped; only an absent
+    `.crew/backups` means "nothing here". An entry that cannot be read is never
+    reported as "nothing interrupted"."""
     folder = os.path.join(root, BACKUP_DIR)
     try:
         names = sorted(os.listdir(folder))
-    except OSError:
-        return None
+    except FileNotFoundError:
+        if os.path.lexists(folder):
+            return None, [f"{BACKUP_DIR}: a link to a missing target"]
+        return None, []
+    except OSError as exc:
+        return None, [f"{BACKUP_DIR}: {_why(exc)}"]
+    interrupted = None
+    unknown = []
     for name in names:
-        data = _read_bytes(_manifest_path(os.path.join(folder, name)))
-        if data is None:
-            continue
-        try:
-            state = json.loads(data).get("state")
-        except (ValueError, AttributeError):
-            return _rel(root, os.path.join(folder, name))
-        if state not in ("applied", "rolled-back"):
-            return _rel(root, os.path.join(folder, name))
-    return None
+        verdict, detail = _classify_backup(root, folder, name)
+        if verdict == "interrupted" and interrupted is None:
+            interrupted = detail
+        elif verdict == "unknown":
+            unknown.append(detail)
+    return interrupted, unknown
 
 
 def _new_backup_dir(root):
@@ -942,7 +1014,12 @@ def rollback(root, backup):
     if real_backup == backups or not _within(real_backup, backups):
         raise MigrateError(f"{backup} is not a backup under {BACKUP_DIR}; refused")
     contained(root, _rel(root, backup))
-    data = _read_bytes(_manifest_path(backup))
+    if not os.path.isdir(real_backup):
+        raise MigrateError(f"{backup} is not a migrate backup (not a directory); refused")
+    try:
+        data = _read_bytes(_manifest_path(backup))
+    except OSError as exc:
+        raise MigrateError(f"cannot read {_manifest_path(backup)}: {_why(exc)}") from exc
     if data is None:
         raise MigrateError(f"no manifest.json in {backup}")
     try:
