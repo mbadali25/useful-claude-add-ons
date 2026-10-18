@@ -85,7 +85,7 @@ def _run(argv, cwd):
     if exe is None:
         return 127, "", f"{argv[0]} is not on PATH"
     try:
-        proc = subprocess.Popen([exe, *argv[1:]], cwd=cwd, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen([exe, *argv[1:]], cwd=cwd, stdin=subprocess.DEVNULL,  # pylint: disable=consider-using-with
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding="utf-8", errors="replace",
                                 start_new_session=os.name != "nt")
