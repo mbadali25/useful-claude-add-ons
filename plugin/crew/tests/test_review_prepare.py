@@ -76,7 +76,9 @@ def test_prepare_matches_pre_cut_goldens(tmp_path, env, scenario):
 
     assert done.returncode == 0, done.stderr
     scratch = root / fx.PREPARE_SCRATCH
-    norm = lambda text: fx.normalise_root(text, root)  # noqa: E731
+    def norm(text):
+        return fx.normalise_root(text, root)
+
     assert _read(scratch / "changed.txt") == _golden(scenario, "changed.txt")
     assert _read(scratch / "context.txt") == _golden(scenario, "context.txt")
     assert norm(_read(scratch / "manifest.json")) == _golden(scenario, "manifest.json")
@@ -718,6 +720,7 @@ def test_a_child_that_gives_no_answer_is_exit_124_never_a_pass():
     assert (code, out) == (124, b"")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows closes an inherited pipe on its own schedule")
 def test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open(monkeypatch):
     monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 1)
     script = ("import subprocess, sys, time\n"

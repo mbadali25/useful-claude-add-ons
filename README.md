@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.46**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.46: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
-- **crew 1.2.43**: Every crew test runs under a home of its own. `crew` 1.2.43: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
+- **crew 1.2.48**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.48: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **crew 1.2.47**: A reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch. `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch itself, so `/crew:review` stops rather than reporting "nothing to review".
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

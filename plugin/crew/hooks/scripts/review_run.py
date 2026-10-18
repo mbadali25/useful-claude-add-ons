@@ -2128,21 +2128,20 @@ def _bounded(argv, cwd, env, timeout, stderr=None):
     pipe open after the kill gets one more bounded wait, then the pipe is
     closed (PYTHON-07: the post-kill read is bounded too)."""
     try:
-        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=stderr)
+        with subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=stderr) as proc:
+            try:
+                out, _ = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.communicate(timeout=POST_KILL_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    pass
+                return EXIT_TOOL_TIMEOUT, b""
+            return proc.returncode, out
     except OSError:
         return 127, b""
-    try:
-        out, _ = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        try:
-            proc.communicate(timeout=POST_KILL_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            if proc.stdout:
-                proc.stdout.close()
-        return EXIT_TOOL_TIMEOUT, b""
-    return proc.returncode, out
 
 
 def _git(root, *argv):
@@ -2535,9 +2534,9 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     ticket, why = (args.ticket, None) if args.ticket else active_ticket(root)
     if ticket is None:
         if why in ("absent", "none", "many"):
-            _err("no ticket id and no single active ticket "
-                 f"({'.work/INDEX.md does not exist' if why == 'absent' else 'no active row' if why == 'none' else 'several active rows'})"
-                 " - stop and ask\n")
+            said = {"absent": ".work/INDEX.md does not exist", "none": "no active row"}.get(
+                why, "several active rows")
+            _err(f"no ticket id and no single active ticket ({said}) - stop and ask\n")
             return EXIT_USAGE
         return _unknown(f"which ticket is active (.work/INDEX.md: {why})")
     review_ledger.check_ticket(ticket)
@@ -2565,7 +2564,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
         return _unknown(f"when the review base {base} was committed")
     base_at = int(stamped.strip())
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")[1].strip()
-    stale = stamp > 0 and base_at > 0 and stamp < base_at
+    stale = 0 < stamp < base_at
     _out(f"BASE={base}")
     _out(f"RECORD=record={stamp} base={base_at} branch={branch}")
     _out(f"STALE={1 if stale else 0}")

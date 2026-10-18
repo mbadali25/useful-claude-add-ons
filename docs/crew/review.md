@@ -151,7 +151,7 @@ for the same reason `$SCRATCH` is carried:
 > leave out paths byte-identical to merged main (T-0100: manifest `merged_main`, stderr
 > `merged-main=`; could-not-tell leaves nothing out). With no usable record scope_base.py falls
 > back to the merge-base with tickets.baseBranch (default origin/HEAD) and says "(fallback)";
-> repeat it in the verdict. Exit 3 = could not tell: stop.
+> repeat it in the verdict. Exit 3 = could not tell (also: no record on the base branch): stop.
 > scope_base.py did not run at all (no python3). The stated fallback:
 > the merge-base. `... | sed ... || echo main` does NOT work: the || binds
 > to the whole pipeline and sed exits 0 even when symbolic-ref failed, so
