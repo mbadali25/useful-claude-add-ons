@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -695,7 +696,8 @@ def test_report_problem_names_a_misshaped_models_report(report):
 
 def test_report_problem_accepts_the_shape_crew_config_writes():
     report = {"authorFamilies": ["claude"], "authorSource": "config",
-              "qa": [{"role": "review"}], "qaFallThrough": [{"provider": "codex"}],
+              "qa": [{"role": "review"}],
+              "qaFallThrough": [{"provider": "codex", "eligible": True}],
               "qaProviders": {"codex": {"model": None}}}
 
     assert review_run.report_problem(report) is None
@@ -706,18 +708,26 @@ def test_a_misshaped_models_report_is_could_not_tell_not_an_empty_list(tmp_path)
 
     report, problem = review_run.load_report(str(tmp_path))
 
-    assert report is None and "not a list of rows" in problem
+    assert report is None and "well-formed rows" in problem
 
 
-def test_a_sibling_tool_that_gives_no_answer_is_exit_124_never_a_pass(monkeypatch, capsys):
-    def hang(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired("tool", 1)
-    monkeypatch.setattr(review_run.subprocess, "run", hang)
-
-    code, out = review_run._run_tool("review_patch.py")  # pylint: disable=protected-access
+def test_a_child_that_gives_no_answer_is_exit_124_never_a_pass():
+    code, out = review_run._bounded(  # pylint: disable=protected-access
+        [sys.executable, "-c", "import time; time.sleep(30)"], None, None, 1)
 
     assert (code, out) == (124, b"")
-    assert "gave no answer within" in capsys.readouterr().err
+
+
+def test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open(monkeypatch):
+    monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 1)
+    script = ("import subprocess, sys, time\n"
+              "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(8)'])\n"
+              "time.sleep(30)\n")
+    started = time.monotonic()
+
+    code, _ = review_run._bounded([sys.executable, "-c", script], None, None, 1)  # pylint: disable=protected-access
+
+    assert code == 124 and time.monotonic() - started < 6
 
 
 def test_a_scope_base_that_gives_no_answer_stops_the_review_base(monkeypatch):
@@ -729,8 +739,116 @@ def test_a_scope_base_that_gives_no_answer_stops_the_review_base(monkeypatch):
 
 
 def test_git_that_gives_no_answer_is_124(monkeypatch):
-    def hang(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired("git", 1)
-    monkeypatch.setattr(review_run.subprocess, "run", hang)
+    monkeypatch.setattr(review_run, "_bounded", lambda *a, **k: (124, b""))
 
     assert review_run._git(".", "status") == (124, "")  # pylint: disable=protected-access
+
+
+# --- review round 1: pinned provider, malformed rows, unreadable inputs ---------
+
+
+def _pin(root, config):
+    _write(root / ".crew" / "config.json", json.dumps(config))
+
+
+def test_prepare_follows_a_pinned_provider_not_qa_order(tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _pin(root, {"qa": {"provider": "kimi", "order": ["codex", "kimi"]}})
+
+    out = _prepare(root, env).stdout
+
+    assert _keys(out)["PINNED"] == ["kimi"]
+    assert _next_lines(out)[0].startswith("next: run python3 ")
+    assert "--provider kimi" in _next_lines(out)[0] and "--provider codex" not in out
+
+
+def test_prepare_a_pinned_provider_that_may_not_run_is_an_error_not_a_fallback(tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _pin(root, {"qa": {"provider": "claude"}})
+
+    out = _prepare(root, env).stdout
+
+    assert "qa.provider pins claude, which is not eligible" in _next_lines(out)[0]
+    assert "not a cue to fall back" in _next_lines(out)[0]
+
+
+def test_a_pinned_provider_that_fails_is_not_walked_past(paths, capsys, monkeypatch):
+    repo, scratch = paths
+    report = json.loads((scratch / "models.json").read_text(encoding="utf-8"))
+    report["qa"] = [{"role": "review", "provider": "codex"}]
+    (scratch / "models.json").write_text(json.dumps(report), encoding="utf-8")
+    _says(monkeypatch, 2, "review-run: codex is not on PATH (not-installed); nothing launched")
+
+    _, out = _main_in_process(_argv((repo, scratch)), capsys)
+
+    assert "qa.provider pins codex" in _lines(out)[-1] and "--provider kimi" not in out
+
+
+@pytest.mark.parametrize("report", [
+    {"qaFallThrough": [{"provider": "codex", "eligible": "false"}]},
+    {"qaFallThrough": [{"eligible": True}]},
+    {"qaFallThrough": [{"provider": 3, "eligible": True}]},
+    {"qa": [{"provider": "codex"}]},
+])
+def test_a_models_row_that_is_not_well_formed_is_not_eligible_and_not_a_crash(report):
+    assert review_run.report_problem(report)
+    assert review_run.eligible(report) == []
+
+
+def test_prepare_a_verify_rule_that_is_not_an_object_is_could_not_tell(tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _write(root / ".crew" / "verify.json", '{"rules": [42]}')
+
+    done = _prepare(root, env)
+
+    assert (done.returncode, "could not tell the specialists" in done.stderr) == (11, True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs a symlink")
+def test_prepare_a_dispatch_record_that_cannot_be_read_as_a_regular_file_is_could_not_tell(
+        tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _write(tmp_path / "elsewhere.json", "{}")
+    os.symlink(tmp_path / "elsewhere.json", root / ".work" / "dispatch.json")
+
+    done = _prepare(root, env)
+
+    assert (done.returncode, "could not tell the dispatch record" in done.stderr) == (11, True)
+
+
+def test_prepare_a_codemap_that_cannot_be_listed_is_could_not_tell_not_no_landmines(
+        tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _write(root / ".crew" / "codemap", "not a directory")
+
+    done = _prepare(root, env)
+
+    assert (done.returncode, "could not tell the changed files or the codemap" in done.stderr) \
+        == (11, True)
+
+
+def test_a_failed_scope_base_with_an_answer_is_not_a_base(monkeypatch):
+    monkeypatch.setattr(review_run, "_run_tool", lambda *a, **k: (1, b"deadbeef\n"))
+
+    base, refused = review_run.review_base(".", "/nowhere", "T1")
+
+    assert (base, refused) == (None, review_run.EXIT_UNKNOWN)
+
+
+def test_prepare_a_scratch_that_cannot_be_created_is_could_not_tell_not_a_traceback(
+        tmp_path, env):
+    root = _repo(tmp_path, "committed-only")
+    _write(root / ".work" / "review", "a file where the directory should be")
+
+    done = _prepare(root, env, scratch=None)
+
+    assert (done.returncode, "could not tell the scratch directory" in done.stderr) == (11, True)
+    assert "Traceback" not in done.stderr and len(_next_lines(done.stdout)) == 1
+
+
+def test_review_md_quotes_the_plugin_root_everywhere():
+    text = _review_text()
+    bare = [m.start() for m in re.finditer(r"\$\{CLAUDE_PLUGIN_ROOT\}", text)
+            if text[m.start() - 1] != '"']
+
+    assert bare == []

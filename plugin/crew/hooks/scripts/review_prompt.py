@@ -60,7 +60,6 @@ provider reads.
 CLI: --root <repo> --ticket <id> --manifest <json> --out <file>
 """
 import argparse
-import glob
 import json
 import os
 import re
@@ -525,9 +524,15 @@ def gather_landmines(root, changed):
     an unread note and a note with nothing to say look the same in a prompt."""
     needles = [path.encode("utf-8") for path in changed if path]
     context = b""
-    pattern = os.path.join(glob.escape(os.path.join(root, ".crew", "codemap")), "*.md")
-    for note in sorted(glob.glob(pattern)):
-        if os.path.basename(note) == "INDEX.md" or not os.path.exists(note):
+    folder = os.path.join(root, ".crew", "codemap")
+    try:
+        names = sorted(os.listdir(folder))
+    except FileNotFoundError:
+        names = []
+    for name in names:
+        note = os.path.join(folder, name)
+        if (not name.endswith(".md") or name.startswith(".") or name == "INDEX.md"
+                or not os.path.exists(note)):
             continue
         with open(note, "rb") as handle:
             data = handle.read()

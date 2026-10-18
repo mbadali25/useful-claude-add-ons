@@ -2121,34 +2121,49 @@ def _script(name):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
 
+def _bounded(argv, cwd, env, timeout, stderr=None):
+    """(exit code, stdout bytes) of one child with its stdout captured and its
+    stderr passed through (or `stderr`). A child that has not answered in `timeout` seconds
+    is killed and reported as EXIT_TOOL_TIMEOUT; a descendant that kept the
+    pipe open after the kill gets one more bounded wait, then the pipe is
+    closed (PYTHON-07: the post-kill read is bounded too)."""
+    try:
+        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=stderr)
+    except OSError:
+        return 127, b""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.communicate(timeout=POST_KILL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            if proc.stdout:
+                proc.stdout.close()
+        return EXIT_TOOL_TIMEOUT, b""
+    return proc.returncode, out
+
+
 def _git(root, *argv):
     """(exit code, stdout text) of git, found through the resolver (class a:
     never from the current directory); 127 when git cannot be found."""
     exe = review_checks.resolve_executable("git")
     if not exe:
         return 127, ""
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
-    try:
-        done = subprocess.run([exe, *argv], cwd=root, stdin=subprocess.DEVNULL, env=env,
-                              capture_output=True, text=True, check=False,
-                              timeout=SNAPSHOT_GIT_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        return EXIT_TOOL_TIMEOUT, ""
-    return done.returncode, done.stdout
+    code, out = _bounded([exe, *argv], root, dict(os.environ, GIT_OPTIONAL_LOCKS="0"),
+                         SNAPSHOT_GIT_TIMEOUT, stderr=subprocess.DEVNULL)
+    return code, out.decode("utf-8", errors="replace")
 
 
 def _run_tool(name, *argv):
     """(exit code, stdout bytes) of a sibling hook script. Its stderr goes
     through unchanged; its stdout is returned, never printed, so the KEY=VALUE
     contract on ours stays ours."""
-    try:
-        done = subprocess.run([sys.executable, _script(name)] + list(argv),
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, check=False,
-                              timeout=TOOL_TIMEOUT)
-    except subprocess.TimeoutExpired:
+    code, out = _bounded([sys.executable, _script(name)] + list(argv), None, None, TOOL_TIMEOUT)
+    if code == EXIT_TOOL_TIMEOUT:
         _err(f"review-prepare: {name} gave no answer within {TOOL_TIMEOUT}s\n")
-        return EXIT_TOOL_TIMEOUT, b""
-    return done.returncode, done.stdout
+    return code, out
 
 
 def _unknown(what):
@@ -2222,7 +2237,9 @@ def specialists(root, changed):
         return "unknown", {}, f"{path}: `rules` is not a list"
     out = {}
     for number, rule in enumerate(rules, 1):
-        if not isinstance(rule, dict) or "agents" not in rule:
+        if not isinstance(rule, dict):
+            return "unknown", {}, f"{path}: rule {number} is not an object"
+        if "agents" not in rule:
             continue
         agents, paths = rule["agents"], rule.get("paths", [])
         if (not isinstance(agents, list) or not isinstance(paths, list)
@@ -2258,6 +2275,8 @@ def dispatch_stamp(root):
                  os.path.join(root, ".work", "dispatch.d")):
         try:
             stamps.append(os.path.getmtime(path))
+            if os.path.isfile(path):
+                review_checks.read_regular(path, os.path.dirname(path))
         except FileNotFoundError:
             continue
         except OSError as exc:
@@ -2268,12 +2287,15 @@ def dispatch_stamp(root):
             except OSError as exc:
                 return None, f"{path}: {exc.__class__.__name__}"
             for name in names:
+                entry = os.path.join(path, name)
                 try:
-                    stamps.append(os.path.getmtime(os.path.join(path, name)))
+                    stamps.append(os.path.getmtime(entry))
+                    if os.path.isfile(entry):
+                        review_checks.read_regular(entry, path)
                 except FileNotFoundError:
                     continue
                 except OSError as exc:
-                    return None, f"{os.path.join(path, name)}: {exc.__class__.__name__}"
+                    return None, f"{entry}: {exc.__class__.__name__}"
     return (int(max(stamps)) if stamps else 0), None
 
 
@@ -2287,6 +2309,9 @@ def review_base(root_arg, root, ticket):
         return None, 3
     if code == EXIT_TOOL_TIMEOUT:
         return None, _unknown("the review base (scope_base.py gave no answer in time)")
+    if base and code != 0:
+        return None, _unknown(f"the review base (scope_base.py exit {code} with an answer "
+                              "that cannot be trusted)")
     if base:
         return base, None
     code, branch = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
@@ -2313,18 +2338,19 @@ def qm(report, want, field="model"):
 def report_problem(report):
     """None when `report` is shaped as `crew_config.py --models --json`
     writes it, else why not (PYTHON-10: checked before anything is indexed)."""
-    def rows(key):
+    def rows(key, **kinds):
         value = report.get(key)
-        return value is None or (isinstance(value, list) and all(isinstance(r, dict)
-                                                                 for r in value))
+        return value is None or (isinstance(value, list) and all(
+            isinstance(r, dict) and all(isinstance(r.get(k), t) for k, t in kinds.items())
+            for r in value))
     families = report.get("authorFamilies")
     if not (families is None or (isinstance(families, list)
                                  and all(isinstance(f, str) for f in families))):
         return "`authorFamilies` is not a list of names"
     if not isinstance(report.get("authorSource") or "", str):
         return "`authorSource` is not a string"
-    if not (rows("qa") and rows("qaFallThrough")):
-        return "`qa` or `qaFallThrough` is not a list of rows"
+    if not (rows("qa", role=str) and rows("qaFallThrough", provider=str, eligible=bool)):
+        return "`qa` or `qaFallThrough` is not a list of well-formed rows"
     providers = report.get("qaProviders")
     if not (providers is None or (isinstance(providers, dict)
                                   and all(isinstance(v, dict) or v is None
@@ -2339,7 +2365,8 @@ def eligible(report, warn=None):
     minus any `review_run.py` cannot launch (named through `warn`, never
     tried). `qa.order` itself is the report's, so this and `/crew:model`
     cannot disagree."""
-    ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
+    ok = [c["provider"] for c in report.get("qaFallThrough") or []
+          if isinstance(c, dict) and c.get("eligible") is True and isinstance(c.get("provider"), str)]
     for provider in ok:
         if provider not in PROVIDERS and warn:
             warn(f"review: {provider} is eligible but has no review runner - skipped\n")
@@ -2374,6 +2401,25 @@ class Context:
         self.models = {"codex": qm(report, "codex"), "copilot": qm(report, "copilot"),
                        "kimi": qm(report, "kimi")}
         self.eligible = eligible(report)
+        row = next((r for r in report.get("qa") or [] if r.get("role") == "review"), {})
+        self.pinned = row.get("provider") if row.get("provider") in PROVIDERS else None
+        self.report = report
+
+    def order(self):
+        """The providers to try, in order: the pinned one alone (a pinned
+        provider that cannot run is an error, not a cue to fall back), else
+        ELIGIBLE."""
+        return [self.pinned] if self.pinned else list(self.eligible)
+
+    def refusal(self):
+        """Why the pinned provider may not run, or None."""
+        if not self.pinned or self.pinned in self.eligible:
+            return None
+        why = next((c.get("why") for c in self.report.get("qaFallThrough") or []
+                    if isinstance(c, dict) and c.get("provider") == self.pinned), None)
+        return (f"qa.provider pins {self.pinned}, which is not eligible ({why or 'not in qa.order'}): "
+                "that is an error, not a cue to fall back; stop and tell me, or a same-family "
+                "read (step 2c) only on my word")
 
     def command(self, *flags, tool="review_run.py", with_family=True):
         base = ["python3", _script(tool), "--root", self.root_arg, "--ticket", self.ticket,
@@ -2468,6 +2514,9 @@ def resolve_run(args):
         _out("next: " + context.walk([provider]))
     elif fallback == "INCOMPLETE":
         _out("next: " + context.walk([]))
+    elif context.pinned:
+        _out(f"next: qa.provider pins {context.pinned} and the probe gave exit {status}: that is "
+             "an error, not a cue to fall back; quote PROBE_DETAIL and stop")
     else:
         rest = [p for p in context.eligible if p != "codex"] if status in (5, 6, 7) \
             else context.eligible
@@ -2496,9 +2545,12 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     ledger = review_ledger.status(root, ticket)
     if ledger.get("state") == review_ledger.UNKNOWN:
         return _unknown(f"the review ledger of {ticket} ({ledger.get('path')} will not parse)")
-    scratch = args.scratch_arg or claim_scratch(root_arg, root)
-    args.scratch = os.path.abspath(scratch)
-    os.makedirs(args.scratch, exist_ok=True)
+    try:
+        scratch = args.scratch_arg or claim_scratch(root_arg, root)
+        args.scratch = os.path.abspath(scratch)
+        os.makedirs(args.scratch, exist_ok=True)
+    except OSError as exc:
+        return _unknown(f"the scratch directory ({exc.__class__.__name__}: {exc})")
     _out(f"TICKET={ticket}")
     _out(f"SCRATCH={scratch}")
 
@@ -2537,6 +2589,8 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     context = Context(root_arg, ticket, scratch, report, authors, source)
     context.eligible = eligible(report, _err)
     _out("ELIGIBLE=" + " ".join(context.eligible))
+    if context.pinned:
+        _out(f"PINNED={context.pinned}")
     _out(f"ROUNDS_LEFT={ledger.get('rounds_left')}")
 
     manifest = os.path.join(scratch, "manifest.json")
@@ -2583,7 +2637,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
         _out(f"SPECIALIST={agent} {gaps[agent]} files={','.join(matched)}")
 
     lead = "step 1: dispatch the SPECIALISTS agents on their files, then " if wanted else ""
-    _out("next: " + lead + context.walk(context.eligible))
+    _out("next: " + lead + (context.refusal() or context.walk(context.order())))
     return EXIT_CLEAN
 
 
@@ -2649,7 +2703,10 @@ def _walk_on(args, why):
     """`next:` for a provider that cannot run: the command for the one after it."""
     context = getattr(args, "context", None)
     if context is None:
-        return why + ": walk to the next provider in ELIGIBLE"
+        return why + ": walk to the next provider in ELIGIBLE (unless qa.provider pins this one)"
+    if context.pinned:
+        return (why + f"; qa.provider pins {context.pinned}, so this is an error, not a cue to "
+                "fall back: stop and quote it")
     order = context.eligible
     rest = order[order.index(args.provider) + 1:] if args.provider in order else \
         [p for p in order if p != args.provider]
