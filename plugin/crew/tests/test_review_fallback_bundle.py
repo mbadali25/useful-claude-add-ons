@@ -73,7 +73,7 @@ def test_step_2c_hands_reviewer_the_manifest_built_patch():
         "step 2c no longer tells qa-reviewer to review ONLY the handed "
         "patch, which leaves room for it to fall back to its own git diff"
     )
-    assert "must not re-derive its own diff with `git diff`" in section, (
+    assert "must not run its own `git diff`" in section, (
         "step 2c no longer forbids qa-reviewer re-deriving its own diff, "
         "which is exactly the committed-range-only mistake review_patch.py "
         "exists to fix"

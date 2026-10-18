@@ -10,7 +10,6 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
-import crew_fixtures
 import review_fixtures
 import review_ledger as rl
 from review_fixtures import env_with_path, fake_reviewer_bin, init_repo
@@ -244,65 +243,32 @@ def test_status_shows_a_no_reviewer_outcome_on_the_ticket_line(setup):
     assert "1 with no reviewer (INCOMPLETE, refunded)" in _status_line(setup[0])
 
 
-# ---- review.md's fallback line: the probe is resolve_role's `available` -----
-
-_REVIEW_MD = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
-
-
-def _fallback_line():
-    with open(_REVIEW_MD, encoding="utf-8") as fh:
-        return next(line for line in fh if line.startswith('case "$PROBE_STATUS" in'))
+# ---- `--resolve-run`: the probe is resolve_role's `available` ----------------
+# (Until L-0726 this ran review.md's one-line `python3 -c` in bash.)
 
 
-def _launch_lines():
-    """Step 2a's own launch command, both lines, as review.md writes it."""
-    with open(_REVIEW_MD, encoding="utf-8") as fh:
-        lines = fh.readlines()
-    at = next(i for i, line in enumerate(lines) if '--provider "$RUN_PROVIDER"' in line)
-    return lines[at - 1] + lines[at]
-
-
-_BASH = crew_fixtures.resolve_bash()
-needs_bash = pytest.mark.skipif(_BASH is None, reason="runs review.md's bash lines")
-
-
-def _python3_shim(directory):
-    """A `python3` on PATH that is this interpreter: Git Bash ships none, and a
-    bare `bash` on a Windows runner is the WSL stub (CLAUDE.md, Landmines)."""
-    directory.mkdir(parents=True, exist_ok=True)
-    shim = directory / "python3"
-    shim.write_text('#!/bin/sh\nexec "%s" "$@"\n' % sys.executable.replace("\\", "/"),
-                    encoding="utf-8", newline="\n")
-    shim.chmod(0o755)
-    return str(directory)
-
-
-def _fallback(tmp_path, qa, probe_status, authors="claude"):
+def _resolve(tmp_path, qa, probe_status, authors="claude"):
+    """(parsed KEY=VALUE lines, completed process) of `review_run.py --resolve-run`."""
     repo = init_repo(tmp_path / "fb")
     (repo / ".crew").mkdir(exist_ok=True)
     (repo / ".crew" / "config.json").write_text(json.dumps({"qa": qa}), encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    # A stand-in plugin root whose review_run.py prints the provider and model step 2a
-    # launched, so a launch line that ignores the resolved fallback goes red here.
-    fake = tmp_path / "fakeroot" / "hooks" / "scripts"
-    fake.mkdir(parents=True, exist_ok=True)
-    (fake / "review_run.py").write_text(
-        "import sys\na = sys.argv\nprint('LAUNCH=[%s %s]' % (a[a.index('--provider') + 1], "
-        "a[a.index('--model') + 1]))\nsys.exit(2 if not a[a.index('--provider') + 1] else 0)\n",
-        encoding="utf-8")
-    script = (f'PROBE_STATUS={probe_status}; QA_MODEL=gpt-6-astra; QA_KIMI_MODEL=; '
-              f'AUTHORS="{authors}"\n' + _fallback_line()
-              + f'CLAUDE_PLUGIN_ROOT="{(tmp_path / "fakeroot").as_posix()}"\n' + _launch_lines()
-              + 'printf "FALLBACK=[%s] QA_MODEL=[%s] QA_KIMI_MODEL=[%s]\\n" "$FALLBACK" '
-              '"$QA_MODEL" "$QA_KIMI_MODEL"\n')
-    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
-               PATH=_python3_shim(tmp_path / "shim") + os.pathsep + os.environ.get("PATH", ""),
-               CLAUDE_PLUGIN_ROOT=context._ROOT)  # pylint: disable=protected-access
-    result = subprocess.run([_BASH, "-c", script], cwd=str(repo), capture_output=True,
-                            text=True, stdin=subprocess.DEVNULL, check=False, env=env,
-                            timeout=60)
-    return result.stdout.rsplit("FALLBACK=", 1)[-1].strip(), result
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "models.json").write_text(json.dumps({
+        "qaProviders": {"codex": {"model": "gpt-6-astra"}, "kimi": {"model": "k3"}},
+        "qaFallThrough": []}), encoding="utf-8")
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+    result = subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+         "--resolve-run", "--probe-status", str(probe_status), "--model", "gpt-6-astra",
+         "--authors", authors, "--author-source", "config"],
+        cwd=str(repo), capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        env=env, timeout=60)
+    keys = dict(line.split("=", 1) for line in result.stdout.splitlines()
+                if "=" in line and line.split("=", 1)[0].isupper())
+    return keys, result
 
 
 def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
@@ -314,45 +280,51 @@ def _qa(fallback, order=("codex", "kimi", "copilot", "claude")):
 _ALL = ("codex", "kimi", "copilot", "claude")
 
 
-@needs_bash
-@pytest.mark.parametrize("fallback,order,probe,expected", [
-    ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol] QA_MODEL=[gpt-6.1-sol] QA_KIMI_MODEL=[]"),
-    ("claude-sonnet-5", _ALL, 6, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
-    ("claude-sonnet-5", ("codex", "claude"), 6,
-     "[INCOMPLETE] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[]"),
+@pytest.mark.parametrize("fallback,order,probe,fell,provider,model", [
+    ("gpt-6.1-sol", _ALL, 6, "codex gpt-6.1-sol", "codex", "gpt-6.1-sol"),
+    ("claude-sonnet-5", _ALL, 6, "kimi k3", "kimi", "k3"),
+    ("claude-sonnet-5", ("codex", "claude"), 6, "INCOMPLETE", "", ""),
     # A limit (5) or no answer (7) is all of codex: a gpt fallback never lands on it.
-    ("gpt-6.1-sol", _ALL, 5, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
-    ("gpt-6.1-sol", _ALL, 7, "[kimi k3] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[k3]"),
+    ("gpt-6.1-sol", _ALL, 5, "kimi k3", "kimi", "k3"),
+    ("gpt-6.1-sol", _ALL, 7, "kimi k3", "kimi", "k3"),
 ])
-def test_review_md_dispatches_the_resolved_fallback(tmp_path, fallback, order, probe, expected):
-    got, result = _fallback(tmp_path, _qa(fallback, order), probe)
+def test_resolve_run_dispatches_the_resolved_fallback(tmp_path, fallback, order, probe, fell,
+                                                      provider, model):
+    keys, result = _resolve(tmp_path, _qa(fallback, order), probe)
 
-    assert got == expected, result.stdout + result.stderr
+    assert (keys["FALLBACK"], keys["RUN_PROVIDER"], keys["RUN_MODEL"]) == (
+        fell, provider, model), result.stdout + result.stderr
 
 
-@needs_bash
 @pytest.mark.parametrize("fallback,order,probe,launched", [
-    ("gpt-6.1-sol", _ALL, 6, "[codex gpt-6.1-sol]"),
-    ("claude-sonnet-5", _ALL, 6, "[kimi k3]"),
-    ("gpt-6.1-sol", _ALL, 5, "[kimi k3]"),
-    ("gpt-6.1-sol", _ALL, 0, "[codex gpt-6-astra]"),
-    # No 2a reviewer (INCOMPLETE, or a probe error): the launch is refused, never Codex.
-    ("claude-sonnet-5", ("codex", "claude"), 6, "[ ]"),
-    ("gpt-6.1-sol", _ALL, 1, "[ ]"),
+    ("gpt-6.1-sol", _ALL, 6, "codex gpt-6.1-sol"),
+    ("claude-sonnet-5", _ALL, 6, "kimi k3"),
+    ("gpt-6.1-sol", _ALL, 5, "kimi k3"),
+    ("gpt-6.1-sol", _ALL, 0, "codex gpt-6-astra"),
+    # No 2a reviewer (INCOMPLETE, or a probe error): nothing is launched, never Codex.
+    ("claude-sonnet-5", ("codex", "claude"), 6, ""),
+    ("gpt-6.1-sol", _ALL, 1, ""),
 ])
-def test_review_md_step_2a_launches_the_resolved_provider(tmp_path, fallback, order, probe,
-                                                          launched):
-    _, result = _fallback(tmp_path, _qa(fallback, order), probe)
+def test_resolve_run_launches_the_resolved_provider(tmp_path, fallback, order, probe, launched):
+    keys, result = _resolve(tmp_path, _qa(fallback, order), probe)
 
-    assert f"LAUNCH={launched}" in result.stdout, result.stdout + result.stderr
+    got = f"{keys['RUN_PROVIDER']} {keys['RUN_MODEL']}".strip()
+    nxt = [line for line in result.stdout.splitlines() if line.startswith("next:")]
+    assert got == launched, result.stdout + result.stderr
+    assert len(nxt) == 1
+    if launched:
+        provider, model = launched.split()
+        assert f"--provider {provider} --model {model} " in nxt[0]
+    else:
+        assert "--provider codex" not in nxt[0] and "--no-reviewer" in nxt[0]
 
 
-@needs_bash
 @pytest.mark.parametrize("probe", [0, 1, 2])
-def test_review_md_names_no_fallback_unless_the_probe_said_unavailable(tmp_path, probe):
-    got, result = _fallback(tmp_path, _qa("gpt-6.1-sol"), probe)
+def test_resolve_run_names_no_fallback_unless_the_probe_said_unavailable(tmp_path, probe):
+    keys, result = _resolve(tmp_path, _qa("gpt-6.1-sol"), probe)
 
-    assert got == "[] QA_MODEL=[gpt-6-astra] QA_KIMI_MODEL=[]", result.stdout + result.stderr
+    assert "FALLBACK" not in keys, result.stdout + result.stderr
+    assert keys["RUN_PROVIDER"] == ("codex" if probe == 0 else "")
 
 
 @pytest.mark.parametrize("entries", [

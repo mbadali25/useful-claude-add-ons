@@ -2532,7 +2532,7 @@ def test_model_report_surfaces_provider_problems_from_a_hand_edited_config(
         tmp_path):
     """Task 1, item 1: `provider_problems` gets a real caller. A config
     `/crew:model` never wrote -- pinning `qa.roles.review` to `localgpu` by
-    hand -- must be named in the report `commands/review.md` step 1 actually
+    hand -- must be named in the report `review_run.py --prepare` actually
     reads, not left to a reporter nobody calls."""
     cfg = {"qa": {"roles": {"review": {"provider": "localgpu",
                                        "model": "qwen2.5-coder:7b"}}}}
@@ -2661,26 +2661,18 @@ def test_qa_kimi_reasoning_effort_is_absent_not_declared_none(tmp_path):
 
 
 def test_review_qm_prints_the_kimi_review_pin(tmp_path):
-    """review.md's `qm kimi model` answers from the `review` role row when it
-    is pinned to kimi. Runs the snippet exactly as review.md carries it."""
+    """`review_run.qm` (was review.md's `qm kimi model`) answers from the
+    `review` role row when it is pinned to kimi."""
+    import review_run  # pylint: disable=import-outside-toplevel
     root = crew_fixtures.make_repo(
         tmp_path / "repo",
         config={"qa": {"roles": {"review": {"provider": "kimi", "model": "k3"}}}},
         git=False)
-    report_path = tmp_path / "models.json"
-    report_path.write_text(json.dumps(crew_config.model_report(
-        str(root), which=lambda _n: None)), encoding="utf-8")
-    review = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "commands", "review.md")
-    with open(review, encoding="utf-8") as fh:
-        text = fh.read()
-    snippet = text.split("qm() { python3 -c '", 1)[1].split("' \"$REPORT\"", 1)[0]
+    report = crew_config.model_report(str(root), which=lambda _n: None)
 
-    out = subprocess.run(
-        [sys.executable, "-c", snippet, str(report_path), "kimi", "model"],
-        capture_output=True, text=True, check=True, stdin=subprocess.DEVNULL)
-
-    assert out.stdout.strip() == "k3"
+    assert review_run.qm(report, "kimi", "model") == "k3"
+    assert review_run.qm(report, "codex", "model") == (
+        report["qaProviders"]["codex"].get("model") or "")
 
 
 def test_kimi_display_names_render_the_owner_ids():

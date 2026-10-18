@@ -2254,11 +2254,11 @@ MUTATIONS = (
         # every fresh clone hits. Merging the two leaves a step 0b that still
         # runs, still reports, and silently reviews less.
         "an absent verification map is no longer its own outcome",
-        REVIEW_DOC,
-        "| `.crew/verify.json` does not exist | `no verification map",
-        "| `.crew/verify.json` is missing or matches nothing | `no specialist",
-        ("tests/test_verify_absent_and_diagram_kind.py::"
-         "test_review_distinguishes_absent_from_matched_nothing"),
+        REVIEW_RUN,
+        '    except FileNotFoundError:\n        return "absent", {}, None',
+        '    except FileNotFoundError:\n        return "read", {}, None',
+        ("tests/test_review_prepare.py::"
+         "test_prepare_absent_valid_empty_and_unmatched_maps_are_three_outputs"),
     ),
     (
         # Drop the exit-status check on the pre-deploy verdict. The remaining

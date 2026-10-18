@@ -2118,6 +2118,17 @@ def _script(name):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
 
+def _git(root, *argv):
+    """(exit code, stdout text) of git, found through the resolver (class a:
+    never from the current directory); 127 when git cannot be found."""
+    exe = review_checks.resolve_executable("git")
+    if not exe:
+        return 127, ""
+    done = subprocess.run([exe, *argv], cwd=root, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, check=False)
+    return done.returncode, done.stdout
+
+
 def _run_tool(name, *argv):
     """(exit code, stdout bytes) of a sibling hook script. Its stderr goes
     through unchanged; its stdout is returned, never printed, so the KEY=VALUE
@@ -2140,8 +2151,8 @@ def active_ticket(root):
     field of the one row whose second field was an active status."""
     path = os.path.join(root, ".work", "INDEX.md")
     try:
-        with open(path, "rb") as handle:
-            text = handle.read().decode("utf-8", errors="replace")
+        text = review_checks.read_regular(path, os.path.join(root, ".work")).decode(
+            "utf-8", errors="replace")
     except FileNotFoundError:
         return None, "absent"
     except OSError as exc:
@@ -2160,9 +2171,8 @@ def claim_scratch(root_arg, root):
     `A-Za-z0-9._-` as `-`; the newline `git` ends its answer with counts, so
     the name ends `--`). Returned as the caller will quote it: relative to the
     root as given."""
-    done = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root,
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-    prefix = re.sub(r"[^A-Za-z0-9._-]", "-", done.stdout if done.returncode == 0 else "") + "-"
+    code, branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    prefix = re.sub(r"[^A-Za-z0-9._-]", "-", branch if code == 0 else "") + "-"
     parent = os.path.join(root, ".work", "review")
     os.makedirs(parent, exist_ok=True)
     name = os.path.basename(tempfile.mkdtemp(prefix=prefix, dir=parent))
@@ -2187,8 +2197,8 @@ def specialists(root, changed):
     are not shaped as the gate reads them)."""
     path = os.path.join(root, ".crew", "verify.json")
     try:
-        with open(path, "rb") as handle:
-            data = json.loads(handle.read().decode("utf-8-sig"))
+        data = json.loads(review_checks.read_regular(path, os.path.join(root, ".crew")).decode(
+            "utf-8-sig"))
     except FileNotFoundError:
         return "absent", {}, None
     except (OSError, ValueError) as exc:
@@ -2263,15 +2273,12 @@ def review_base(root_arg, root, ticket):
         return None, 3
     if base:
         return base, None
-    done = subprocess.run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-                          cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                          check=False)
-    branch = done.stdout.strip() if done.returncode == 0 else ""
+    code, branch = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    branch = branch.strip() if code == 0 else ""
     branch = (branch[len("origin/"):] if branch.startswith("origin/") else branch) or "main"
-    done = subprocess.run(["git", "merge-base", "HEAD", branch], cwd=root,
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-    base = done.stdout.strip()
-    if done.returncode != 0 or not base:
+    code, base = _git(root, "merge-base", "HEAD", branch)
+    base = base.strip()
+    if code != 0 or not base:
         return None, _unknown(f"the review base: scope_base.py gave none and the merge-base "
                               f"with {branch} failed")
     _err(f"review base: merge-base with {branch} (fallback - scope_base.py did not run)\n")
@@ -2305,8 +2312,7 @@ def load_report(scratch):
     is not the object `crew_config.py --models --json` wrote."""
     path = os.path.join(scratch, "models.json")
     try:
-        with open(path, "rb") as handle:
-            report = json.loads(handle.read().decode("utf-8"))
+        report = json.loads(review_checks.read_regular(path, scratch).decode("utf-8"))
     except (OSError, ValueError) as exc:
         return None, f"{path}: {exc.__class__.__name__}"
     return (report, None) if isinstance(report, dict) else (None, f"{path} is not an object")
@@ -2460,14 +2466,11 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     stamp, problem = dispatch_stamp(root)
     if stamp is None:
         return _unknown(f"the dispatch record ({problem})")
-    done = subprocess.run(["git", "log", "-1", "--format=%ct", base], cwd=root,
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-    if done.returncode != 0 or not done.stdout.strip().isdigit():
+    code, stamped = _git(root, "log", "-1", "--format=%ct", base)
+    if code != 0 or not stamped.strip().isdigit():
         return _unknown(f"when the review base {base} was committed")
-    base_at = int(done.stdout.strip())
-    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root,
-                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                            check=False).stdout.strip()
+    base_at = int(stamped.strip())
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")[1].strip()
     stale = stamp > 0 and base_at > 0 and stamp < base_at
     _out(f"BASE={base}")
     _out(f"RECORD=record={stamp} base={base_at} branch={branch}")
@@ -2498,7 +2501,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     code, out = _run_tool("review_patch.py", "--root", root_arg, "--base", base, "--out",
                           f"{scratch}/diff.txt", "--manifest", manifest)
     if out:
-        sys.stderr.write(out.decode("utf-8", errors="replace"))
+        _err(out.decode("utf-8", errors="replace"))
     if code == 2:
         _out("NOTHING_TO_REVIEW=1")
         _out(f"nothing to review since {base}: review-patch's line above says why")
@@ -2511,17 +2514,17 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     code, out = _run_tool("review_prompt.py", "--root", root_arg, "--ticket", ticket,
                           "--manifest", manifest, "--out", f"{scratch}/contract.txt")
     if out:
-        sys.stderr.write(out.decode("utf-8", errors="replace"))
+        _err(out.decode("utf-8", errors="replace"))
     if code != 0:
         return _unknown(f"the ticket contract (review_prompt.py exit {code})")
     try:
-        with open(os.path.join(args.scratch, "manifest.json"), "rb") as handle:
-            files = review_prompt.changed_files(json.loads(handle.read().decode("utf-8")))
+        files = review_prompt.changed_files(json.loads(review_checks.read_regular(
+            os.path.join(args.scratch, "manifest.json"), args.scratch).decode("utf-8")))
         _write_bytes(os.path.join(args.scratch, "changed.txt"),
                      "".join(f + "\n" for f in files).encode("utf-8"))
         context_bytes = review_prompt.gather_landmines(root, files)
-        with open(os.path.join(args.scratch, "contract.txt"), "rb") as handle:
-            contract = handle.read()
+        contract = review_checks.read_regular(os.path.join(args.scratch, "contract.txt"),
+                                              args.scratch)
     except (OSError, ValueError) as exc:
         return _unknown(f"the changed files or the codemap ({exc.__class__.__name__}: {exc})")
     _write_bytes(os.path.join(args.scratch, "context.txt"), context_bytes)
@@ -2537,7 +2540,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     for agent, matched in sorted(wanted.items()):
         _out(f"SPECIALIST={agent} {gaps[agent]} files={','.join(matched)}")
 
-    lead = f"step 1: dispatch the SPECIALISTS agents on their files, then " if wanted else ""
+    lead = "step 1: dispatch the SPECIALISTS agents on their files, then " if wanted else ""
     _out("next: " + lead + context.walk(context.eligible))
     return EXIT_CLEAN
 
@@ -2661,10 +2664,8 @@ class _Parser(argparse.ArgumentParser):
     """argparse's `error` ends with the one `next:` line every exit has."""
 
     def error(self, message):
-        self.print_usage(sys.stderr)
-        sys.stderr.write(f"{self.prog}: error: {message}\n")
-        sys.stdout.write("next: " + next_action("usage", EXIT_USAGE, None) + "\n")
-        sys.stdout.flush()
+        _err(f"review-run: error: {message} (review_run.py --help lists the flags)\n")
+        _out("next: " + next_action("usage", EXIT_USAGE, None))
         raise SystemExit(EXIT_USAGE)
 
 
