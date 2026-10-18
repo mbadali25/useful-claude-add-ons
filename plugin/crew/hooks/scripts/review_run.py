@@ -2274,7 +2274,7 @@ def review_base(root_arg, root, ticket):
     if done.returncode != 0 or not base:
         return None, _unknown(f"the review base: scope_base.py gave none and the merge-base "
                               f"with {branch} failed")
-    _out(f"review base: merge-base with {branch} (fallback - scope_base.py did not run)")
+    _err(f"review base: merge-base with {branch} (fallback - scope_base.py did not run)\n")
     return base, None
 
 
@@ -2476,7 +2476,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     report_path = os.path.join(args.scratch, "models.json")
     code, report_bytes = _run_tool("crew_config.py", "--root", root_arg, "--models", "--json",
                                    *(["--author-stale"] if stale else []))
-    _write_atomic(report_path, report_bytes.decode("utf-8", errors="replace"))
+    _write_bytes(report_path, report_bytes)
     report, problem = load_report(args.scratch)
     if code != 0 or report is None:
         return _unknown(f"the models report (crew_config.py --models --json exit {code}"
@@ -2486,7 +2486,7 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     _out(f"AUTHORS={authors}")
     _out(f"AUTHOR_SOURCE={source}")
     dispatch = report.get("dispatch") or {}
-    _out("AUTHOR=" + (f"{report.get('authorFamily')} ({source})"))
+    _out(f"AUTHOR={report.get('authorFamily') or 'unknown'} ({source or 'unknown'})")
     if dispatch:
         _out("DISPATCH=" + "/".join(str(dispatch.get(k)) for k in ("role", "provider", "model")))
     context = Context(root_arg, ticket, scratch, report, authors, source)
@@ -2517,15 +2517,14 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     try:
         with open(os.path.join(args.scratch, "manifest.json"), "rb") as handle:
             files = review_prompt.changed_files(json.loads(handle.read().decode("utf-8")))
-        _write_atomic(os.path.join(args.scratch, "changed.txt"),
-                      "".join(f + "\n" for f in files))
+        _write_bytes(os.path.join(args.scratch, "changed.txt"),
+                     "".join(f + "\n" for f in files).encode("utf-8"))
         context_bytes = review_prompt.gather_landmines(root, files)
         with open(os.path.join(args.scratch, "contract.txt"), "rb") as handle:
             contract = handle.read()
     except (OSError, ValueError) as exc:
         return _unknown(f"the changed files or the codemap ({exc.__class__.__name__}: {exc})")
-    _write_atomic(os.path.join(args.scratch, "context.txt"),
-                  context_bytes.decode("utf-8", errors="replace"))
+    _write_bytes(os.path.join(args.scratch, "context.txt"), context_bytes)
     _write_bytes(os.path.join(args.scratch, "prompt.txt"),
                  review_prompt.prompt_text(scratch, contract, context_bytes))
     _out(f"CHANGED={len(files)}")

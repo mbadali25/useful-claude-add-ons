@@ -651,7 +651,7 @@ def test_cited_step_labels_exist():
     text = _review_text()
     headings = re.findall(r"^(?:\d+\. )?\*\*(?:Step )?(\d[a-z]?(?:\.\d)?)\b", text, re.M)
 
-    for label in ("2a", "2b", "2c", "2d", "2e", "3.3", "3.4"):
+    for label in ("2a", "2b", "2c", "2d", "2e", "3.2", "3.3", "3.4", "3.5"):
         assert label in headings, (label, headings)
     assert len(headings) == len(set(headings))
 
@@ -675,4 +675,4 @@ def test_every_step_label_other_files_cite_is_in_review_md():
     with open(os.path.join(fx.PLUGIN_ROOT, "commands", "autopilot.md"), encoding="utf-8") as fh:
         autopilot = fh.read()
     assert "step 2d" in autopilot and "step 3.3" in autopilot
-    assert "`review.md` step 3.4's notification" in autopilot
+    assert "`review.md` step 3.5's notification" in autopilot
