@@ -1095,6 +1095,48 @@ def test_scan_backups_dangling_backups_link_is_could_not_tell(repo):
     assert unknown[0].startswith(".crew/backups: ")
 
 
+def test_scan_backups_dangling_link_with_a_windows_oserror_is_could_not_tell(repo, monkeypatch):
+    try:
+        os.symlink(os.path.join(repo, "missing-target"), os.path.join(repo, ".crew", "backups"))
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    real_listdir = os.listdir
+
+    def windows_listdir(path):
+        if os.path.basename(str(path)) == "backups":
+            raise OSError(22, "The directory name is invalid")
+        return real_listdir(path)
+
+    monkeypatch.setattr(crew_migrate.os, "listdir", windows_listdir)
+
+    interrupted, unknown = crew_migrate.scan_backups(repo)
+
+    assert (interrupted, unknown) == (None, [".crew/backups: a link to a missing target"])
+
+
+def test_scan_backups_names_the_folder_with_forward_slashes_when_the_constant_has_a_backslash(
+        repo, monkeypatch):
+    shown = ".crew\\backups"
+    with open(os.path.join(repo, shown), "w", encoding="utf-8") as fh:
+        fh.write("file\n")
+    monkeypatch.setattr(crew_migrate, "BACKUP_DIR", shown)
+
+    _, unknown = crew_migrate.scan_backups(repo)
+
+    assert len(unknown) == 1
+    assert unknown[0].startswith(".crew/backups: ")
+
+
+def test_rollback_refusal_names_the_backups_folder_with_forward_slashes(repo, monkeypatch, capsys):
+    monkeypatch.setattr(crew_migrate, "BACKUP_DIR", ".crew\\backups")
+
+    code = crew_migrate.main(["--root", repo, "--rollback", repo])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "is not a backup under .crew/backups; refused" in err
+
+
 @pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is not portable to Windows")
 def test_scan_backups_escapes_control_characters_in_an_entry_name(repo):
     folder = _symlinked_manifest_backup(repo)

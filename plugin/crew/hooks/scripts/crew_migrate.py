@@ -171,6 +171,8 @@ UPGRADE_DIR = os.path.normpath(os.path.join(
     "skills", "crew-graph", "scripts"))
 UPGRADE_NOTE_PREFIX = "config.json upgraded from schema "
 BACKUP_DIR = os.path.join(".crew", "backups")
+# The same folder as the user reads it: forward slashes on every platform, as `_rel` prints.
+BACKUP_DIR_SHOWN = ".crew/backups"
 TMP_SUFFIX = ".crew-migrate.tmp"
 
 # Every path apply may write, and so every path rollback may remove. A
@@ -781,12 +783,13 @@ def scan_backups(root):
     folder = os.path.join(root, BACKUP_DIR)
     try:
         names = sorted(os.listdir(folder))
-    except FileNotFoundError:
-        if os.path.lexists(folder):
-            return None, [f"{BACKUP_DIR}: a link to a missing target"]
-        return None, []
     except OSError as exc:
-        return None, [f"{BACKUP_DIR}: {_why(exc)}"]
+        # Windows raises WinError 267, not FileNotFoundError, for a dangling link.
+        if os.path.lexists(folder) and not os.path.exists(folder):
+            return None, [f"{BACKUP_DIR_SHOWN}: a link to a missing target"]
+        if isinstance(exc, FileNotFoundError):
+            return None, []
+        return None, [f"{BACKUP_DIR_SHOWN}: {_why(exc)}"]
     interrupted = None
     unknown = []
     for name in names:
@@ -1012,7 +1015,7 @@ def rollback(root, backup):
     backups = os.path.realpath(os.path.join(root, BACKUP_DIR))
     real_backup = os.path.realpath(backup)
     if real_backup == backups or not _within(real_backup, backups):
-        raise MigrateError(f"{backup} is not a backup under {BACKUP_DIR}; refused")
+        raise MigrateError(f"{backup} is not a backup under {BACKUP_DIR_SHOWN}; refused")
     contained(root, _rel(root, backup))
     if not os.path.isdir(real_backup):
         raise MigrateError(f"{backup} is not a migrate backup (not a directory); refused")

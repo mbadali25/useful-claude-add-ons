@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.49: migrate backup messages name `.crew/backups` the same on Windows (L-0782)
+
+- **Summary.** `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
+- **Cause.** `scan_backups` and `--rollback` interpolated `BACKUP_DIR` (`.crew\backups` on Windows) into messages while every other path went through `_rel`; and Windows raises `WinError 267` rather than `FileNotFoundError` for a dangling link, so the "link to a missing target" wording was never reached.
+- **Fix.** Messages use `BACKUP_DIR_SHOWN` (`.crew/backups`); the dangling-link check runs before the generic `OSError` wording. Three tests simulate the backslash constant and the `WinError` on Linux.
+- **Docs.** none - no document quotes the changed wording.
+
 ### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
 
 - **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
