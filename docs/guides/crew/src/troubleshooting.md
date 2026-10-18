@@ -176,7 +176,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   `REVIEW_GATE ALLOW` (exit 0) means the authoring host published a `crew/review` success with `blocks=0` for
   that exact head; `BLOCK` (1) and `COULD_NOT_TELL` (2) both refuse. On the authoring host, push, then
-  `review_status.py post --root . --ticket <id>`; it posts only when the receipt stands on HEAD at 0 BLOCK, and
+  `review_status.py post --root . --ticket <id>`; it posts only from a clean tree when the receipt stands on HEAD at 0 BLOCK, and
   again after a merge of main or a version bump (`kept-by-delta`). A status attests, it does not prove, and
   `gh pr merge --admin` bypasses a required check.
 

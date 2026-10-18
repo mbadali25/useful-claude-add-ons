@@ -55,10 +55,26 @@ EXIT = {ALLOW: 0, BLOCK: 1, UNKNOWN: 2}
 EXIT_REFUSED, EXIT_POST_FAILED = 1, 2
 GH_TIMEOUT = 60
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_BLOCKS_RE = re.compile(r"(?:^|\s)blocks=(\d+)(?:\s|$)")
+_BLOCKS_RE = re.compile(r"(?<!\S)blocks=(\d+)(?!\S)")
 _SLUG_RE = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 DESCRIPTION_MAX = 140
+
+
+def _one_line(text, limit=300):
+    """`text` as a single printable line: every control character, including a
+    newline, becomes a space, so an API-supplied string can never forge a second
+    REVIEW_GATE line."""
+    return re.sub(r"[\x00-\x1f\x7f\u0085\u2028\u2029]+", " ", str(text)).strip()[:limit]
+
+
+def _tree_dirty(root):
+    """True / False, or None when git cannot say. A published status covers a
+    committed sha only; edits in the working tree are not in it."""
+    code, out, _ = _run(["git", "status", "--porcelain", "--untracked-files=normal"], root)
+    if code != 0:
+        return None
+    return bool(out.strip())
 
 
 def _run(argv, cwd):
@@ -135,16 +151,17 @@ def lookup(root, repo, sha):
     description = rows[0].get("description")
     description = description if isinstance(description, str) else ""
     if state in ("failure", "error"):
-        return BLOCK, f"{CONTEXT} is {state} on {sha[:12]}: {description}"
+        return BLOCK, f"{CONTEXT} is {state} on {sha[:12]}: {_one_line(description)}"
     if state != "success":
-        return UNKNOWN, f"{CONTEXT} is {state!r} on {sha[:12]}, not success: {description}"
-    match = _BLOCKS_RE.search(description)
-    if not match:
-        return UNKNOWN, (f"{CONTEXT} success on {sha[:12]} does not report blocks=<n> "
-                         f"({description!r}): could not tell")
-    if int(match.group(1)) != 0:
-        return BLOCK, f"{CONTEXT} success on {sha[:12]} reports {match.group(1)} BLOCK: {description}"
-    return ALLOW, f"{CONTEXT} success on {sha[:12]}: {description}"
+        return UNKNOWN, f"{CONTEXT} is {_one_line(state)!r} on {sha[:12]}, not success: {_one_line(description)}"
+    found = _BLOCKS_RE.findall(description)
+    if len(found) != 1:
+        return UNKNOWN, (f"{CONTEXT} success on {sha[:12]} must report blocks=<n> exactly once "
+                         f"({_one_line(description)!r}): could not tell")
+    if int(found[0]) != 0:
+        return BLOCK, (f"{CONTEXT} success on {sha[:12]} reports {found[0]} BLOCK: "
+                       f"{_one_line(description)}")
+    return ALLOW, f"{CONTEXT} success on {sha[:12]}: {_one_line(description)}"
 
 
 def _counts(latest):
@@ -196,15 +213,31 @@ def post(root, ticket, repo=None):
     slug, why = repo_slug(root, repo)
     if slug is None:
         return EXIT_POST_FAILED, [f"{why}; nothing posted"]
+    dirty = _tree_dirty(root)
+    if dirty is not False:
+        return EXIT_REFUSED, [f"{CONTEXT} not posted for {head[:12]}: the working tree "
+                              + ("has uncommitted changes" if dirty else "could not be read")
+                              + "; a status covers the committed sha only (commit, then post)"]
     ok, text = describe(root, ticket)
     if not ok:
         return EXIT_REFUSED, [f"{CONTEXT} not posted for {head[:12]}: {text}"]
+    if head_of(root) != head:
+        return EXIT_REFUSED, [f"{CONTEXT} not posted: HEAD moved from {head[:12]} while the "
+                              "receipt was checked; run post again"]
     code, out, err = _run(["gh", "api", "-X", "POST", f"repos/{slug}/statuses/{head}",
                            "-f", "state=success", "-f", f"context={CONTEXT}",
                            "-f", f"description={text}"], root)
     if code != 0:
         return EXIT_POST_FAILED, [f"{CONTEXT} could not be posted for {head[:12]}: "
-                                  f"{(err or out).strip()[:200]}"]
+                                  f"{_one_line((err or out), 200)}"]
+    try:
+        reply = json.loads(out)
+    except ValueError:
+        reply = None
+    if (not isinstance(reply, dict) or reply.get("state") != "success"
+            or reply.get("context") != CONTEXT):
+        return EXIT_POST_FAILED, [f"{CONTEXT} post for {head[:12]} exited 0 but GitHub did not "
+                                  "return the created success status; not reported as posted"]
     return 0, [f"{CONTEXT} success posted on {head} ({slug}): {text}"]
 
 
@@ -223,6 +256,10 @@ def verdict_for(root, head, ticket=None, repo=None):
         note = ("no review ledger for " + ticket + " on this host (ledgers are host-local)"
                 if state == "absent" else
                 f"HEAD {str(local)[:12]} is not the head asked about")
+    if not ticket and head_of(root) == head and _tree_dirty(root) is not False:
+        return UNKNOWN, ("no --ticket, and this working tree has uncommitted changes (or git could "
+                         "not say): a published status covers the committed sha only, so a local "
+                         "ledger might disagree; pass --ticket where the ledger lives, or commit")
     slug, why = repo_slug(root, repo)
     if slug is None:
         return UNKNOWN, f"{why}; {note}".rstrip("; ")
@@ -245,7 +282,7 @@ def check(root, ticket=None, repo=None, pr=None, head=None):
         if head is None:
             return EXIT[UNKNOWN], [f"REVIEW_GATE {UNKNOWN} head=? could not read HEAD"]
     verdict, why = verdict_for(root, head, ticket, slug or repo)
-    return EXIT[verdict], [f"REVIEW_GATE {verdict} head={head} {why}"]
+    return EXIT[verdict], [f"REVIEW_GATE {verdict} head={head} {_one_line(why, 600)}"]
 
 
 def main(argv):
@@ -260,7 +297,11 @@ def main(argv):
     target.add_argument("--head")
     args = parser.parse_args(argv)
     if args.ticket:
-        review_ledger.check_ticket(args.ticket)
+        try:
+            review_ledger.check_ticket(args.ticket)
+        except review_ledger.LedgerError as exc:
+            print(f"review_status: {exc}", file=sys.stderr)
+            return 2
     if args.action == "post":
         if not args.ticket:
             parser.error("post needs --ticket")

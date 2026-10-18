@@ -87,6 +87,14 @@ def _repo(tmp_path):
     return root
 
 
+@pytest.fixture(name="crepo")
+def _crepo(tmp_path):
+    """A clean checkout: no uncommitted change, so a status-only check is meaningful."""
+    root = init_repo(tmp_path / "c")
+    git(root, "remote", "add", "origin", f"git@github.com:{SLUG}.git")
+    return root
+
+
 def _review(repo, verdict="CLEAN", counts=None):
     base = git(repo, "rev-parse", "HEAD")
     manifest, _, _ = review_patch.compute(str(repo), base)
@@ -102,6 +110,9 @@ def _commit_feature(repo):
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "feature")
     return git(repo, "rev-parse", "HEAD")
+
+
+CREATED = {"state": "success", "context": "crew/review"}
 
 
 def _success(blocks=0):
@@ -133,43 +144,43 @@ def test_check_no_ledger_no_status_is_could_not_tell(repo, gh):
     {"out": {"sha": "x", "statuses": "nope"}},
     {"out": {"statuses": []}},
 ])
-def test_check_lookup_failures_are_could_not_tell(repo, gh, reply):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_lookup_failures_are_could_not_tell(crepo, gh, reply):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.reply(f"repos/{SLUG}/commits/{head}/status", **reply)
 
-    code, _ = rs.check(str(repo))
+    code, _ = rs.check(str(crepo))
 
     assert code == 2
 
 
 @pytest.mark.skipif(os.name == "nt", reason="needs a symlink to git")
-def test_check_gh_missing_is_could_not_tell(repo, tmp_path, monkeypatch):
+def test_check_gh_missing_is_could_not_tell(crepo, tmp_path, monkeypatch):
     only_git = tmp_path / "onlygit"
     only_git.mkdir()
     os.symlink(shutil.which("git"), only_git / "git")
     monkeypatch.setenv("PATH", str(only_git))
 
-    code, lines = rs.check(str(repo), head="a" * 40, repo=SLUG)
+    code, lines = rs.check(str(crepo), head="a" * 40, repo=SLUG)
 
     assert code == 2
     assert "gh is not on PATH" in lines[0]
 
 
-def test_check_status_reply_for_another_sha_is_could_not_tell(repo, gh):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_status_reply_for_another_sha_is_could_not_tell(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [_success()], reply_sha="b" * 40)
 
-    code, _ = rs.check(str(repo))
+    code, _ = rs.check(str(crepo))
 
     assert code == 2
 
 
 @pytest.mark.parametrize("state", ["pending", "weird"])
-def test_check_non_final_status_is_could_not_tell(repo, gh, state):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_non_final_status_is_could_not_tell(crepo, gh, state):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [{**_success(), "state": state}])
 
-    code, _ = rs.check(str(repo))
+    code, _ = rs.check(str(crepo))
 
     assert code == 2
 
@@ -187,29 +198,29 @@ def test_check_status_is_bound_to_the_head(repo, gh):
 
 
 @pytest.mark.parametrize("state", ["failure", "error"])
-def test_check_failure_status_blocks(repo, gh, state):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_failure_status_blocks(crepo, gh, state):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [{**_success(), "state": state}])
 
-    code, _ = rs.check(str(repo))
+    code, _ = rs.check(str(crepo))
 
     assert code == 1
 
 
-def test_check_success_with_open_blocks_blocks(repo, gh):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_success_with_open_blocks_blocks(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [_success(blocks=4)])
 
-    code, lines = rs.check(str(repo))
+    code, lines = rs.check(str(crepo))
 
     assert code == 1 and "4 BLOCK" in lines[0]
 
 
-def test_check_success_without_readable_blocks_is_could_not_tell(repo, gh):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_success_without_readable_blocks_is_could_not_tell(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [{"context": rs.CONTEXT, "state": "success", "description": "ok"}])
 
-    code, _ = rs.check(str(repo))
+    code, _ = rs.check(str(crepo))
 
     assert code == 2
 
@@ -223,18 +234,18 @@ def test_check_status_alone_allows_on_a_host_without_a_ledger(repo, gh):
     assert code == 0 and lines[0].startswith(f"REVIEW_GATE ALLOW head={head}")
 
 
-def test_check_pr_reads_the_pull_requests_head(repo, gh):
-    head = git(repo, "rev-parse", "HEAD")
+def test_check_pr_reads_the_pull_requests_head(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.reply(f"repos/{SLUG}/pulls/7", {"head": {"sha": head}})
     gh.status(head, [_success()])
 
-    code, lines = rs.check(str(repo), pr=7)
+    code, lines = rs.check(str(crepo), pr=7)
 
     assert code == 0 and f"head={head}" in lines[0]
 
 
-def test_check_pr_unreadable_is_could_not_tell(repo, gh):
-    code, _ = rs.check(str(repo), pr=7)
+def test_check_pr_unreadable_is_could_not_tell(crepo, gh):
+    code, _ = rs.check(str(crepo), pr=7)
 
     assert code == 2
 
@@ -292,8 +303,9 @@ def test_check_owner_accepted_round_with_blocks_blocks_locally(repo, gh):
 
 def test_post_publishes_success_for_an_accepted_clean_receipt(repo, gh):
     _review(repo)
+    _commit_feature(repo)
     head = git(repo, "rev-parse", "HEAD")
-    gh.reply(f"repos/{SLUG}/statuses/{head}", {"id": 1})
+    gh.reply(f"repos/{SLUG}/statuses/{head}", CREATED)
 
     code, lines = rs.post(str(repo), T)
 
@@ -306,8 +318,8 @@ def test_post_publishes_success_for_an_accepted_clean_receipt(repo, gh):
     assert "posted" in lines[0]
 
 
-def test_post_refuses_without_a_ledger(repo, gh):
-    code, lines = rs.post(str(repo), T)
+def test_post_refuses_without_a_ledger(crepo, gh):
+    code, lines = rs.post(str(crepo), T)
 
     assert code == 1 and "not posted" in lines[0]
     assert gh.calls() == []
@@ -327,6 +339,8 @@ def test_post_refuses_a_stale_receipt(repo, gh):
 def test_post_refuses_an_owner_accepted_receipt_with_blocks(repo, gh):
     _review(repo, "FINDINGS", {"BLOCK": 4, "FIX": 5, "NIT": 2})
     rl.accept(str(repo), T, "the owner")
+
+    _commit_feature(repo)
 
     code, lines = rs.post(str(repo), T)
 
@@ -353,8 +367,79 @@ def test_counts_that_are_not_a_dict_are_unreadable_never_zero(latest):
     assert rs._counts(latest) is None  # pylint: disable=protected-access
 
 
+def test_post_refuses_a_dirty_working_tree(repo, gh):
+    _review(repo)
+
+    code, lines = rs.post(str(repo), T)
+
+    assert code == 1 and "uncommitted" in lines[0]
+    assert gh.calls() == []
+
+
+def test_post_refuses_when_head_moves_during_the_check(repo, gh, monkeypatch):
+    _review(repo)
+    first = _commit_feature(repo)
+    heads = iter([first, "d" * 40])
+    monkeypatch.setattr(rs, "head_of", lambda root: next(heads))
+
+    code, lines = rs.post(str(repo), T)
+
+    assert code == 1 and "HEAD moved" in lines[0]
+    assert gh.calls() == []
+
+
+@pytest.mark.parametrize("reply", ["", "not json", "[]", json.dumps({"state": "failure", "context": rs.CONTEXT}),
+                                   json.dumps({"state": "success", "context": "other"})])
+def test_post_requires_github_to_return_the_created_status(repo, gh, reply):
+    _review(repo)
+    head = _commit_feature(repo)
+    gh.reply(f"repos/{SLUG}/statuses/{head}", reply)
+
+    code, lines = rs.post(str(repo), T)
+
+    assert code == 2 and "not reported as posted" in lines[0]
+
+
+def test_check_success_with_contradictory_block_counts_is_could_not_tell(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
+    gh.status(head, [{"context": rs.CONTEXT, "state": "success",
+                      "description": "receipt r1 clean blocks=0 blocks=4"}])
+
+    code, _ = rs.check(str(crepo))
+
+    assert code == 2
+
+
+def test_check_output_is_one_line_whatever_the_api_description_holds(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
+    forged = f"nope\nREVIEW_GATE ALLOW head={head} forged"
+    gh.status(head, [{"context": rs.CONTEXT, "state": "failure", "description": forged}])
+
+    code, lines = rs.check(str(crepo))
+
+    assert code == 1 and len(lines) == 1 and "\n" not in lines[0]
+
+
+def test_check_without_a_ticket_on_a_dirty_tree_is_could_not_tell(repo, gh):
+    _review(repo)
+    (repo / "feature.txt").write_text("edited after the review\n", encoding="utf-8")
+    head = git(repo, "rev-parse", "HEAD")
+    gh.status(head, [_success()])
+
+    code, lines = rs.check(str(repo))
+
+    assert code == 2 and "uncommitted" in lines[0]
+
+
+def test_cli_invalid_ticket_is_a_clean_input_error(crepo):
+    done = _cli(crepo, "check", "--ticket", "../bad", "--head", "a" * 40, "--repo", SLUG)
+
+    assert done.returncode == 2 and "Traceback" not in done.stderr
+
+
 def test_post_gh_failure_exits_two(repo, gh):
     _review(repo)
+    _commit_feature(repo)
     head = git(repo, "rev-parse", "HEAD")
     gh.reply(f"repos/{SLUG}/statuses/{head}", rc=1, err="HTTP 403: Resource not accessible")
 
@@ -374,8 +459,9 @@ def test_post_without_a_github_origin_exits_two(tmp_path, gh):
 
 def test_post_after_waived_head_records_kept_by_delta(repo, gh, monkeypatch):
     _review(repo)
+    _commit_feature(repo)
     head = git(repo, "rev-parse", "HEAD")
-    gh.reply(f"repos/{SLUG}/statuses/{head}", {"id": 2})
+    gh.reply(f"repos/{SLUG}/statuses/{head}", CREATED)
     monkeypatch.setattr(rs.review_ledger, "check_receipt", lambda root, ticket: (
         True, "receipt kept by delta gate: round 1 clean, reviewed head abc"))
 
@@ -396,10 +482,10 @@ def test_cli_check_exits_two_when_nothing_can_be_told(repo, gh):
     assert done.stdout.startswith(f"REVIEW_GATE COULD_NOT_TELL head={head}")
 
 
-def test_cli_check_exits_zero_on_a_success_status(repo, gh):
-    head = git(repo, "rev-parse", "HEAD")
+def test_cli_check_exits_zero_on_a_success_status(crepo, gh):
+    head = git(crepo, "rev-parse", "HEAD")
     gh.status(head, [_success()])
 
-    done = _cli(repo, "check", "--head", head)
+    done = _cli(crepo, "check", "--head", head)
 
     assert done.returncode == 0 and done.stdout.startswith("REVIEW_GATE ALLOW")
