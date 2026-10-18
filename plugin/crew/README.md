@@ -1102,7 +1102,7 @@ With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-tex
 
 **Settings.** `route.enabled` in `.crew/config.json` or the machine-global file; only the JSON value `true` arms it (`"true"`, `1` and `yes` read as off, with a warning). `/crew:init` writes `false` into a new repo's file, and the repo value wins, so a machine-wide `true` needs the key removed or set `true` there too. A `route` block only in `.crew/crew.json` is reported, not read. Under Codex no line is emitted, and `memory.inject: false` silences it with the rest of the hook. `python3 crew_route.py settings --root .` shows what is in force; `python3 crew_route.py decide --root . --prompt "review it"` shows what a prompt would do. CONFIG.md §21 has the key.
 
-**`wave`** (T-0029; `hooks/scripts/crew_wave.py`). Design happens in the main session with the owner — `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket — and `crew_wave.py set --slug <s> --tickets <ids> [--deps <id>=<id>,<id>|none]` records the set in `.work/autopilot/<s>.json` (a set that was started is fixed: `set` refuses to rewrite it, and a second `start` relaunches only the lanes the first one launched, so a new ticket goes in a new set). Approval is the owner's own group approval (T-0024: `/crew:approve T-a T-b`, then `/crew:approve --confirm`). `crew_wave.py plan --set <s>` is read-only: per ticket `eligible` or `refused: <reason>` — no current approval, INDEX status `direction` or closed, a dependency not closed, dependencies `unknown` (no set-file deps and no parseable `(depends on ...)` in the INDEX row: never read as none), a Touch that overlaps another lane's, or more lanes than `autopilot.maxLanes` — then the wave, the later waves and a provisional landing order by crew version. `crew_wave.py start --set <s>` writes one lane file per lane under `.work/autopilot/<s>/lanes/` and prints one launch per lane: an `Agent` with `isolation: worktree`, never any other launch — the Step 1 spike measured that only an isolated lane's hook payload carries its own worktree as `cwd`, so only there does the scope guard judge its writes by its own ticket. Each lane first runs `crew_wave.py lane-init`, which refuses to run in the main checkout, outside `<main>/.claude/worktrees/`, in a worktree another lane names, or where the ticket branch is checked out elsewhere; it checks out or creates `<id>-wave`, copies the ticket folder and `.crew/config.json` in byte-identical, and requires `crew_ticket.accepted` to say `approved` and the scope guard to be at `block` there before it activates the ticket. The lane then implements, refreshes, reviews (reserving and recording rounds through `review_run.py`; a relaunch hands a reserved, unrecorded round back instead of reserving another) and runs `completion_audit.py --check`, and ends with exactly one `crew_wave.py lane-done --state clean|findings|question|failed`. `crew_wave.py collect --set <s>` prints one batch: each lane's state (a missing or unreadable lane file is `unknown`, never `clean`; an `owner-accepted` receipt written while the lane ran marks it `failed`), every open question with its recommendation first, the exact `/crew:approve` lines, the landing order of clean lanes and the later waves. It lands nothing — merging is T-0011's. `crew_wave.py cleanup --set <s>` removes a lane's worktree (`git worktree remove`, never `--force`) and branch (`git branch -d`, never `-D`) only when its branch is on origin's default branch after a fetch and the worktree is clean with nothing untracked; everything else, and anything it cannot tell, is kept and named. **The wave refuses to run unless `scope.mode` is `block` for every lane ticket** (`scope-not-enforcing`, naming the fix; the config is read where the scope guard reads it, so a linked worktree with no `.crew/config.json` of its own is judged by the main checkout's, and its own config, when present, wins whole), and a lane never accepts or rejects a review, approves a plan or merges. The lane prompt forbids it; `crew_ticket.py approve` is already refused by the scope guard, and the guard's subagent never-list refuses the rest from any subagent (a payload carrying a non-empty `agent_type`, as a lane's does): `review_ledger.py --accept|--reject` with every abbreviation argparse once expanded (`review_ledger.py` itself sets `allow_abbrev=False`), and `gh pr merge --admin` — "a lane may not accept, reject or admin-merge". The main session, which sends no `agent_type`, is unchanged. Settings (repo only): `autopilot.maxLanes` — lanes at once, default the resolved `pm.maxDispatches`, which it can only lower; `autopilot.reviewPolicy` — `stop` (default: the lane ends at the first verdict), `clean-only` (a CLEAN round goes on to the done checks) or `fix-and-rereview` (fix and re-review within the ledger's two rounds); anything else reads as `stop`, with a warning. The Workflow tool is not used: the spike could not measure whether crew's hooks fire inside it.
+**`wave`** (T-0029; `hooks/scripts/crew_wave.py`). Design happens in the main session with the owner — `/crew:brainstorm`, `/crew:spec`, `/crew:plan` per ticket — and `crew_wave.py set --slug <s> --tickets <ids> [--deps <id>=<id>,<id>|none]` records the set in `.work/autopilot/<s>.json` (a set that was started is fixed: `set` refuses to rewrite it, and a second `start` relaunches only the lanes the first one launched, so a new ticket goes in a new set). Approval is the owner's own group approval (T-0024: `/crew:approve T-a T-b`, then `/crew:approve --confirm`). `crew_wave.py plan --set <s>` is read-only: per ticket `eligible` or `refused: <reason>` — no current approval, INDEX status `direction` or closed, a dependency not closed, dependencies `unknown` (no set-file deps and no parseable `(depends on ...)` in the INDEX row: never read as none), a Touch that overlaps another lane's, or more lanes than `autopilot.maxLanes` — then the wave, the later waves and a provisional landing order by crew version. `crew_wave.py start --set <s>` writes one lane file per lane under `.work/autopilot/<s>/lanes/` and prints one launch per lane: an `Agent` with `isolation: worktree` (plus `model: <id>` when `dev.roles.developer` is a claude pin with a model, L-0799; unchanged otherwise), never any other launch — the Step 1 spike measured that only an isolated lane's hook payload carries its own worktree as `cwd`, so only there does the scope guard judge its writes by its own ticket. Each lane first runs `crew_wave.py lane-init`, which refuses to run in the main checkout, outside `<main>/.claude/worktrees/`, in a worktree another lane names, or where the ticket branch is checked out elsewhere; it checks out or creates `<id>-wave`, copies the ticket folder and `.crew/config.json` in byte-identical, and requires `crew_ticket.accepted` to say `approved` and the scope guard to be at `block` there before it activates the ticket. The lane then implements, refreshes, reviews (reserving and recording rounds through `review_run.py`; a relaunch hands a reserved, unrecorded round back instead of reserving another) and runs `completion_audit.py --check`, and ends with exactly one `crew_wave.py lane-done --state clean|findings|question|failed`. `crew_wave.py collect --set <s>` prints one batch: each lane's state (a missing or unreadable lane file is `unknown`, never `clean`; an `owner-accepted` receipt written while the lane ran marks it `failed`), every open question with its recommendation first, the exact `/crew:approve` lines, the landing order of clean lanes and the later waves. It lands nothing — merging is T-0011's. `crew_wave.py cleanup --set <s>` removes a lane's worktree (`git worktree remove`, never `--force`) and branch (`git branch -d`, never `-D`) only when its branch is on origin's default branch after a fetch and the worktree is clean with nothing untracked; everything else, and anything it cannot tell, is kept and named. **The wave refuses to run unless `scope.mode` is `block` for every lane ticket** (`scope-not-enforcing`, naming the fix; the config is read where the scope guard reads it, so a linked worktree with no `.crew/config.json` of its own is judged by the main checkout's, and its own config, when present, wins whole), and a lane never accepts or rejects a review, approves a plan or merges. The lane prompt forbids it; `crew_ticket.py approve` is already refused by the scope guard, and the guard's subagent never-list refuses the rest from any subagent (a payload carrying a non-empty `agent_type`, as a lane's does): `review_ledger.py --accept|--reject` with every abbreviation argparse once expanded (`review_ledger.py` itself sets `allow_abbrev=False`), and `gh pr merge --admin` — "a lane may not accept, reject or admin-merge". The main session, which sends no `agent_type`, is unchanged. Settings (repo only): `autopilot.maxLanes` — lanes at once, default the resolved `pm.maxDispatches`, which it can only lower; `autopilot.reviewPolicy` — `stop` (default: the lane ends at the first verdict), `clean-only` (a CLEAN round goes on to the done checks) or `fix-and-rereview` (fix and re-review within the ledger's two rounds); anything else reads as `stop`, with a warning. The Workflow tool is not used: the spike could not measure whether crew's hooks fire inside it.
 
 **Cross-session dependencies** (L-0633). A wave ticket may depend on a ticket another session works, written `<channel>:<id>` or `<channel>:<repo>:<id>` in the set file's `deps` (and `--deps`) or the INDEX row's `(depends on ...)`. The channel follows the channel-name rule, the repo is a derived repo key, the id is upper-cased as `crew_coord.py` does; anything else is a malformed set file or `dependencies unknown`. `plan` fetches `crew-coord/<channel>` from `coord.remote` (default `origin`) once per channel, writing objects and nothing else (no ref, no `FETCH_HEAD`), and counts the dependency closed only when exactly one claim for that id reads `done`. A `working` claim (stale or not, its age shown) and a `released` one are `not closed`; no claim, two repositories holding the id under the short form, a corrupt claim, an absent channel, a failed fetch or an unconfigured remote are `unknown`. Each refuses the ticket, and `start` launches no lane for it. Local dependencies are judged first, so a ticket refused on one fetches nothing. A peer's `done` is peer-written data that decides only whether this side may start, never an approval, and every line about it ends `[peer-written]`.
 
@@ -1482,7 +1482,10 @@ below govern something **only while `guards.cloudGuard` is `report` or
 - **`allow`** runs it, says so, and appends a row to `.crew/guard.log`. **Under
   `allow` nothing is silent.** The stderr line goes with the session; the row
   is the durable half, and it is written for every decision rather than only
-  the permissive ones.
+  the permissive ones. Since 1.2.35 a `crew_config.py --record` row holds the
+  time, guard, policy, decision and target, and `-` for the command; the
+  command line is written only with the opt-in `--record-command` (CONFIG.md,
+  "What a `--record` row holds").
 
 **The two production guards are `none` | `read` | `full`.** `none` refuses
 every command aimed at a declared target; `read` permits only what crew can
@@ -1591,12 +1594,35 @@ misread into an allow. Unusual quoting on a terraform line is asked about, not
 allowed; spell the line with plain words to have it judged. The rule is about
 the command being run: mentioning terraform in a commit message, a search or a
 file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
-`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
-`$(...)`) is could not tell only on a line that names terraform, `destroy`,
-`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
-notes.md` is not. Where crew cannot split a line with certainty — a `case`
-arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
-falls back to the older, wider rule: any word naming terraform.
+`vim terraform.tf`) is not gated. A command word made at run time (`$1`,
+`"$@"`, `$0`, `$SHELL`, `$(...)`, a variable crew cannot resolve) is judged as
+crew 1.2.35 judged it, whatever follows it. A line crew cannot split with
+certainty (a `case` arm, an array, `$((...))` with a `$` inside), or one whose
+only run-time word is an assignment (`W=$S/x`), is could not tell only when a
+COMMAND WORD on the line could run terraform, terragrunt or tofu (crew 1.2.36,
+SRL-2308): directly or by path, behind a wrapper (`env`, `npx`, `sudo`,
+`timeout`, `xargs`, ...), or as a variable whose value names one
+(`x=terraform; $x destroy` is refused). A variable is a program only when
+every way the line sets it is a plain `NAME=path` (or a `for NAME in` list of
+them) standing alone, run unconditionally before it is used, outside any
+block, subshell or pipeline, naming a program that runs nothing else; a bare
+name (`T=ls`, an inherited function may shadow it), `T=$X`, `T=$1`,
+`T=/opt/tf/t*`, `T+=x`, `read T`, `T=x cmd` or a `source` on the line leave it
+run-time, so `$T apply` is refused. Interpreter code (`python3 -c`, `node -e`,
+`perl -e`, a heredoc or here-string fed to one) that can start a process is
+refused when the line names terraform or the code builds its command
+(`"terra"+"form"`, `sys.argv`); so is an awk program that can start one
+(`system()`, `print | "cmd"`, `"cmd" | getline`, `|&`) and a sed script with
+the `e` command or the `s///e` flag. A program by path under a run-time
+directory (`$T/stub`) keeps its literal name only when no operand is a
+changing verb and the line writes nothing into that directory or at that
+name; otherwise 1.2.35's rule decides, so `T=$(mktemp -d); printf ... >
+"$T/stub"; "$T/stub" apply` is refused. A mere mention no longer counts there:
+`W=$S/wt; python3 - <<'EOF'` with "apply" in the Python, a `sed` range or
+`python3 -c` script on a line with a `$VAR`, a heredoc writing notes, and
+`$T/stub --check` all pass, and so does `$EDITOR notes.md`. A line that hands text to shell code (`bash`, `eval`, `ssh`,
+`source`, `parallel`, a function or alias definition) keeps the older, wider
+rule over the whole line: any word naming terraform.
 
 **A terraform command crew cannot follow is could not tell even in plain
 words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
@@ -1782,8 +1808,18 @@ started some other way. Each of these runs unjudged:
 - BusyBox applets: `busybox env terraform destroy -auto-approve`,
   `busybox timeout 60 terraform destroy -auto-approve`
 - git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
-- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
-- a script file: `bash deploy.sh`
+- an interpreter whose code names the tool only at run time or from a file:
+  `python3 -c "import os; os.system(os.environ['TF'] + ' destroy')"`,
+  `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
+  or fed by a heredoc or here-string, that names terraform and does more than
+  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`
+- awk and sed on a line crew reads cleanly: `awk 'BEGIN{system("terraform
+  destroy")}'`, `echo terraform destroy | sed e` (as in 1.2.35; on a line crew
+  cannot read, or after a run-time assignment, they are refused since crew
+  1.2.36), and a sed script made at run time whose value adds an `e` flag on
+  a line that does not name terraform
+- a script file: `bash deploy.sh`, or a literal path such as `/tmp/x/stub
+  destroy` on a line crew reads cleanly (as in 1.2.35)
 - a wrapper not in the list above: `strace -f terraform destroy`,
   `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
   `systemd-run terraform destroy`
@@ -2568,6 +2604,17 @@ bash, `FileMode::CreateNew` in PowerShell) because on Windows with Git Bash
 installed both flavours really do run on the same `Stop`, and a
 test-then-create lets both through.
 
+### The default is 0.4 (1.2.40), one key for both
+
+`context.warnAt` defaults to `0.4` (it was `0.5` from 0.19.52 to 1.2.39, `0.8` before). It is the single
+threshold for the handoff warning, auto wrap-up and auto-clear: `autoWrapUp` and `autoClear` change what
+happens when it fires, not when. A 1M window therefore warns at 400k.
+
+Only the unset default moved. A `warnAt` you set in `~/.claude/crew/config.json` or `.crew/config.json`
+keeps its value, and there is no auto-migration. A repo created while the default was `0.5` carries a literal
+`"warnAt": 0.5` copied from the template, so it stays at 50% until you edit that line (or delete it to take
+the new default).
+
 ### Two rules, and the later one wins
 
 `warnAt` alone was tuned when every window was 200k, where 0.8 leaves 40k — about
@@ -3117,7 +3164,7 @@ python3 hooks/scripts/crew_bridge.py receive --channel <c> --remote origin   # t
   if any line of the message equals it — a line equal to the terminator would
   end the heredoc early and run the rest as shell. Nothing checks that the session did so; a test checks only that
   `commands/autopilot.md` says it.
-- **The main session is the hub; lanes never ring a peer** (L-0637). A
+- **The main session is the hub; lanes never ring a peer** (L-0637; `session-relay`, L-0797, is the one transport the main session dispatches). A
   subagent's `SendMessage` goes out under its parent session's address and
   the reply lands in the parent's conversation, so a lane that messaged a
   peer would speak for the main session without it knowing, and never see
@@ -3582,7 +3629,14 @@ review of risky changes) and `researcher` (external sources only). The
 interactive session implements; nothing else is dispatched to write. Stack
 knowledge that used to be specialist agents loads on demand as the `stack-*`
 skills. There is no PM agent, no Stop pulse and no journal, and nothing grows
-or shrinks the roster: `/crew:status` reports it read-only.
+or shrinks the roster: `/crew:status` reports it read-only. The Haiku 5.5
+`session-relay` that carries messages between sessions is a transport agent,
+not a fifth role (see Agents).
+
+The coordinator is a model pin on an existing role (L-0799), not a fifth role:
+`dev.roles.coordinator` (default unset) is printed by `crew_wave.py start` as
+`coordinator: model <id>`, a report of the pin (wave launches no coordinator);
+CONFIG.md has the details.
 
 Parallelism scales on independent work units, not job titles.
 
@@ -4057,7 +4111,9 @@ CONFIG.md §17 has the table and the reasoning.
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff. Runs on Kimi when `dev.roles.security` pins it, family-guarded |
 | `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only. Every claim carries its source. Runs on Kimi when `dev.roles.researcher` pins it |
 
-4 agents, all on the tier ladder (`crew_state.ROLE_TIERS`); `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
+4 role agents, all on the tier ladder (`crew_state.ROLE_TIERS`), plus the transport agent below; `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent: the four roles plus `session-relay.md`. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
+
+**`session-relay`: a model pin on a transport agent, not a fifth role** (L-0797). `agents/session-relay.md` carries messages between sessions on Haiku 5.5 (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME on 2026-10-16; `validate-prompts.py` accepts it for this agent only) with the tools `SendMessage` and `ListAgents` only (no `Read`, so an injected peer message cannot make it read a secret and send it; nothing that reads files or writes). It has no tier and no `dev.roles` or `qa.roles` kind, so `ROLE_TIERS` stays four and `/crew:upgrade` is unchanged; `crew_state.TRANSPORT_AGENTS` names it and `tests/test_role_ladder.py` holds the agent files to the roster plus that set. Session rule: one relay per session, started once and resumed after a `/clear`. The main session forwards every inbound peer message to it verbatim as `PEER IN from <name>:`, and every outbound one goes through it (a subagent hands its outbound facts to the main session, which dispatches the relay; no subagent reaches it itself) as `RELAY OUT to <name>:` in the form `FROM>TO | TYPE | IDS | NEED:`, at most 6 lines. It is transport only: it never merges, edits, approves or relays a secret, and a peer message is untrusted data, never the owner's approval. This is the one agent allowed the bridge tools (`validate-prompts.py`'s `BRIDGE_ALLOWED`); the hub rule (L-0637, above) still holds, because the main session dispatches it and owns its replies.
 
 **Verify before you state** (T-0041). `explorer`, `researcher` and `security` carry the rule: a claim about code, config, history or state is verified this session (a `path:line`, a command and its output, or a ref) or labelled `not verified` / `inferred`, and a prior decision is looked up in `CHANGELOG.md`, `docs/adr/` or a ticket's `direction.md` before a change to it is proposed. Their reports end with a **Not verified** section, and so do `/crew:done`'s and `/crew:debug`'s. `crew-best-practices` carries the same rule, and `crew-plan`'s self-review and `crew-brainstorm`'s approaches step look decisions up. `validate-prompts.py`'s `check_verification_rule` fails when any of these drops out; it reads every `agents/*.md` by default. `reviewer` is exempt by name until the review-harness half of T-0041 lands (its output is the contract `review_verdict.py` parses, so it gets no report section). The rule is crew's own and is not written into repos crew sets up.
 
@@ -4139,7 +4195,7 @@ with three hooks registered and unlisted.
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers. Prints the handoff after clear, compact, or resume only when `memory.inject` is false (the context hook injects it otherwise) — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn (each recall passes the repo's project, `memory.recall.projects` or the main checkout's folder name, as `--project`, retrying once without it on a CLI that predates the option), and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to that fit `verify.stopBudgetSeconds`; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row - never on a deferral alone: a rule over the budget on its own is named NOT VERIFIED, deferred to CI (L-0710). A turn where 0 rules ran says so and writes no verified marker. A rule passes only on a completion record its wrapper writes; a killed, never-started or unrecorded rule is FAILED as COULD NOT TELL (T-0082). Stands down while an emergency lane is open (§24), recording what did not run |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to that fit `verify.stopBudgetSeconds`; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row - never on a deferral alone: a rule over the budget on its own is named NOT VERIFIED, deferred to CI (L-0710). A turn where 0 rules ran says so and writes no verified marker. A rule passes only on a completion record its wrapper writes; a killed, never-started or unrecorded rule is FAILED as COULD NOT TELL (T-0082). Stands down while an emergency lane is open (§24), recording what did not run. Since 1.2.39 (L-0796) the Stop path is quiet: one verdict line (`FAILED n cmd \| PASSED n cmd \| NOT VERIFIED n item(s) (...) \| credited n \| budget \| detail: .crew/.verify-gate.log`), then every failure verbatim, and the pricing, reach, deferral, tree-credit, env-pin and timing lines go to `.crew/.verify-gate.log`; a repeat of the same failure in the same session prints one `unchanged since last Stop` line naming the log (still exit 2). `--verbose` / `CREW_VERIFY_VERBOSE=1` restores the full text; `--ci`, `--all` and `--price` are always verbose |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on; with `context.autoClear.wrapUp` armed, sends the wrap-up procedure and feeds a refused wrap-up back once |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification` (`hook`) | Thin wrappers around `crew_notify.py`: a `question` ping for the permission and elicitation types only, never `idle_prompt`, one per waiting episode. `/crew:promote` calls `notify.sh deploy ... --outcome` itself. Outbound only; never reads. |

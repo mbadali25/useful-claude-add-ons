@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@09e31dba
+anchor: useful-claude-add-ons@304e58b11
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -101,13 +101,14 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 roster fact.** `role_write_guard.py` — the `PreToolUse` `Write|Edit` guard —
 still carries PM-specific logic and a docstring that names removed roles:
 
-- `_DENY_ROLES` (`plugin/crew/hooks/scripts/role_write_guard.py:231-236`) is
-  exactly the four shipped agents (`explorer`, `researcher`, `reviewer`,
-  `security`) — consistent with the roster above, each denied any write
-  because none grants `Write`/`Edit` in its `tools:` line.
-- `_UNRESTRICTED_ROLES` is `frozenset()` (`:242`) — empty since crew 1.0,
+- `_DENY_ROLES` (`plugin/crew/hooks/scripts/role_write_guard.py:232-238`) is
+  the four shipped agents (`explorer`, `researcher`, `reviewer`,
+  `security`) plus the transport agent `session-relay` (L-0797, listed at
+  `:237`, not a role) — each denied any write because none grants
+  `Write`/`Edit` in its `tools:` line.
+- `_UNRESTRICTED_ROLES` is `frozenset()` (`:244`) — empty since crew 1.0,
   because no shipped agent writes.
-- `_PM_ROLE = "pm"` (`:244`) and `_PM_ALLOWED_PATTERNS` (`:251-260`,
+- `_PM_ROLE = "pm"` (`:246`) and `_PM_ALLOWED_PATTERNS` (`:253-261`,
   `.crew/**`, `TODO.md`, `.work/**`, `docs/diagrams/**`) are still live code,
   and `classify` (`:540-593`) still special-cases `role == "pm"` at `:583-590`
   — but nothing in this checkout ever sets `agent_type` to `"pm"` any more:
@@ -400,9 +401,20 @@ environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger
 own bash reader, `_GateReader` (`:1251`), splits the raw text into argv lists, and `_argv_trigger`
 (`:1941`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
 a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreadable command word
-when the line names terraform, `destroy`, `apply` or `workspace`. Anything the reader does not
-read with certainty falls back to Step 8's any-word trigger, `crew_guards.names_terraform`
-(`:1194`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
+when a command word on the line could run one. That question, and the fallback for anything the
+reader does not read with certainty, is `crew_guards.command_word_names_tool` (SRL-2308, its own
+splitter `_CommandSplitter`, per command `_fallback_command`): a command word naming the tool
+directly, by path, behind a wrapper, or through a variable the line resolves to plain literal
+paths (`_resolved_vars`: set unconditionally, at the top level, before use, by nothing else;
+`_known_value`: a path to a program that runs nothing else); any other command word made at run
+time, decided by 1.2.35's `_verb_on_line` whatever follows it (`_made_at_run_time`, fail closed
+since review round 2); interpreter code (`python -c`, `node -e`, a heredoc into one) that can
+start a process and names the tool or builds its command (`_code_verdict`; `_interpreter_names`, which the precise
+path also asks through `_TerraformTool.interpreted`); awk and sed programs that can start a
+process (`_stream_editor_names`, fallback only, review round 3); a program by path under a
+run-time directory, trusted only without a changing verb and without a write into it on the line
+(`_path_program_trusted`, asked by `_fallback_command` and the hole's `_hole_known`); and Step 8's any-word trigger, `crew_guards.names_terraform`
+(`:1194`), only for a line that hands text to a shell or when the splitter itself gives up. PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
 (`:2380`, per command `_ps_argv_trigger` `:2294`), read with the lexer's `_lex_ps`: `&`, `.`,
 `terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression` (its
 parameters read by `ps_eval_script` `:2257`; a script that is not a literal string, or a
@@ -733,7 +745,7 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
 - DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
   (`crew_autocycle.py:101`) replaces the whole table, read only while CREW_AUTOCLEAR_INHIBIT is set
   (`_stubs_allowed`, `:409`, as is the window stub); the suite's fixtures are
-  `plugin/crew/tests/crew_fixtures.py:1327` (`write_session_record`), `:1334` (`proc_stub`) and
+  `plugin/crew/tests/crew_fixtures.py:1334` (`write_session_record`), `:1334` (`proc_stub`) and
   `:1357` (`bind_session`), which T-0017 builds on.
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
@@ -1146,7 +1158,7 @@ T-0053-build `4cdf076f`; the T-0053 citations above are T-0053's own).**
 into `none|valid|expired|untrusted`; `at`/`until` must be UTC-aware ISO and are compared in UTC
 (`to_utc`, `:163`, resolves a skipped spring-forward time forward; a naive record is untrusted, review N1); `next_edge` (`:154`) is the next time of
 day strictly after now, the current window's end inside it and the next window's end outside;
-`MANUAL_SLEEP_HOURS` (`:57`), `MANUAL_FILE` (`:54`), and the caps `MANUAL_MAX` (24 wall-clock hours, measured by `_wall`, `:174`) and `MANUAL_MAX_REAL` (25 real, `:61-62`). `resolve` (`:242`) takes the record and
+`MANUAL_SLEEP_HOURS` (`:57`), `MANUAL_FILE` (`:54`), and the caps `MANUAL_MAX` (24 wall-clock hours, measured by `_wall`, `:174`) and `MANUAL_MAX_REAL` (25 real, `:61-62`). `resolve` (`:244`) takes the record and
 `sleep_allowed`: untrusted is `unknown` (source manual), expired is the schedule with a warning, a
 manual asleep without the gate is `unknown`, a manual asleep outside the window and a manual awake
 over an asleep or unknown schedule carry `tightenOnly` (owner decision 2026-10-04, review B1: a
@@ -1518,14 +1530,14 @@ writable (`:1863-1870`), rather than falling back to the old pipe form.
 
 - **The captured output is capped at 1 MiB (1048576 bytes), read as the
   LAST N bytes (`tail -c`), not the first.** `RULE_OUT_CAP`
-  (`verify-gate.sh:1855`) defaults to 1048576 and is clamped into `[1,
+  (`verify-gate.sh:2148`) defaults to 1048576 and is clamped into `[1,
   1048576]` (`:1677-1683`); a rule that legitimately writes more than that
   before backgrounding something no longer turns a bounded gate into an
   unbounded read. `tail -c`, not `head -c` (`:1850-1860`): what a failing
   rule needs downstream is its actual error, which for noisy output sits at
   the end.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from
-  crew 1.0 entirely**, per the comment at `verify-gate.sh:1805-1816` and
+  crew 1.0 entirely**, per the comment at `verify-gate.sh:2092-2103` and
   CHANGELOG 1.0.21 (both cited in the file itself, `:600-601`): a signalled
   gate no longer TERM/KILLs whatever a rule's own escaped background work
   left running. What remains is only the isolation and prompt-signal
@@ -1587,7 +1599,7 @@ was discarded before the next call regardless.
 **The completion record (T-0082, H2a; DERIVED at the H2a branch head).** The
 same capture now carries a second temp file per rule, the completion record:
 the wrapper writes the rule's exit status there after the rule ends
-(`plugin/crew/hooks/scripts/verify-gate.sh:2101`), and a rule passes only when
+(`plugin/crew/hooks/scripts/verify-gate.sh:2394`), and a rule passes only when
 the wrapper ended 0 and the record says 0. Killed, never-started (`.ps1`) or
 unrecorded is FAILED as `COULD NOT TELL`, status `unknown`, never advancing the
 marker. The full decision table and both flavours' line references are in
@@ -2799,6 +2811,22 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 - JUDGEMENT: a peer's `done` decides only whether this side may start. Tests:
   `plugin/crew/tests/test_crew_wave_coord_deps.py`, under the wave rule of `.crew/verify.json`.
 
+## Wave model pins (L-0799)
+
+Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each name by content.
+
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:787` `role_model(top, role, cfg=None)` resolves
+  `dev.roles.<role>` through `crew_state.resolve_role` and returns a lowercased model only for a pin
+  whose provider is exactly `claude`, whose text matches `MODEL_ID` (`:781`) and whose family is a
+  claude one; a provider-less pin under a non-claude block, a miscased provider, a non-claude model on
+  a claude provider and a non-id model each return `(None, warning)`. `start` (`:878-880`) resolves
+  the config once for the `developer` warning and the `coordinator` pin, `_launch` (`:820-821`, which
+  asks `role_model` for `developer` itself) appends `, model: <id>` to the `Agent(...)` line, and the
+  `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
+  pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
+- JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
+  Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`).
+
 ## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
 
 - DERIVED: `verify_agents.check` (`plugin/crew/hooks/scripts/verify_agents.py:225`) resolves every
@@ -2824,9 +2852,9 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
   fallback). `plugin/crew/hooks/scripts/_test/run-tests.sh:39-41` keeps every fixture on
   `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:123`
   (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
-  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1297`). Tests:
+  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1304`). Tests:
   `plugin/crew/tests/test_tmp_hygiene.py`.
-- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:921`)
+- JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:1196`)
   is still removed only on the straight-line path (`:1613`), so a gate killed mid-run leaks it;
   `RULE_OUT_FILE` has since joined the gate's cleanup registry (`:1842-1849`). verify-gate.sh is a
   harness path (`scripts/check-tooling-pr.py`), so registering `CHANGED_FILE` is T-0065's harness
@@ -5413,3 +5441,5 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse now 10 entries, 36 in all). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
+
+**Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.

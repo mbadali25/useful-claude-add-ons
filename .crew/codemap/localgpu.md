@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@09e31dba
+anchor: useful-claude-add-ons@304e58b11
 verified: 2026-10-01
 
 # localgpu
@@ -534,7 +534,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `smoke-author`, `browser-tester`, `pm` - and **crew 1.0 (`6c497a14`) deleted
   every one of their agent definitions.** `git show --diff-filter=DR
   --name-status 6c497a14 -- plugin/crew/agents/` lists all eleven among fifty
-  `D` (deleted) files; `plugin/crew/agents/` now holds only four:
+  `D` (deleted) files; `plugin/crew/agents/` held only four at that commit (L-0797 later added a fifth file, the transport agent `session-relay.md`):
   `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` (`ls
   plugin/crew/agents/`), matching `.claude-plugin/marketplace.json`'s `crew`
   entry, which now describes "4 context-isolated agents (explorer, reviewer,
@@ -1890,3 +1890,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `adb3c2a7` -> `926f1277` on 2026-10-10 (L-0753 landing prep).** Per-path check `git diff --name-only adb3c2a7..926f1277`: besides the code maps, rules, diagrams and graph themselves, only the crew version lines (README.md, CHANGELOG.md, marketplace.json, PLUGINS.md, plugin.json; crew 1.2.20) and main's `plugin/crew/tests/test_promote_gate_review.py` (merged from `d8de3dafb`, PR #594) changed. No claim in this map moved.
 
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
+
+**Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.

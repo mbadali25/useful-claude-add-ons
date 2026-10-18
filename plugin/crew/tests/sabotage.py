@@ -2475,8 +2475,8 @@ MUTATIONS = (
         "the PowerShell gate stops rejecting a `run` entry it cannot "
         "represent",
         VERIFY_PS1,
-        "if ($null -ne $bad) {\n  [Console]::Error.WriteLine($bad)",
-        "if ($false) {\n  [Console]::Error.WriteLine($bad)",
+        "if ($null -ne $bad) {\n  Write-CrewErr($bad)",
+        "if ($false) {\n  Write-CrewErr($bad)",
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_powershell_gate_refuses_the_same_map_by_name"),
     ),
@@ -3080,7 +3080,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
               + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
-MUTATIONS += __import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS  # L-0733, kept to one line: max-module-lines
+MUTATIONS += __import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing

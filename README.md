@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.34**: A reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch. `crew` 1.2.34 lets the review harness rebuild a round's bundle after its reviewed head has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch itself, so `/crew:review` stops rather than reporting "nothing to review".
-- **crew 1.2.33**: The docs no longer say `/crew:review` cannot launch Kimi. The crew-providers skill and `kimi_probe.py` now say what has been true since L-0527: `/crew:review` launches Kimi as a reviewer.
+- **crew 1.2.43**: A reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch. `crew` 1.2.43 lets the review harness rebuild a round's bundle after its reviewed head has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch itself, so `/crew:review` stops rather than reporting "nothing to review".
+- **crew 1.2.42**: The wave sabotage table covers the lane launch model. `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -895,8 +895,8 @@ def low_context_note(state, payload, cfg):
     if not usage:
         return None
     used, window = usage
-    warn_at = context_cfg.get("warnAt", 0.5)
-    warn_at = warn_at if isinstance(warn_at, (int, float)) and 0 < warn_at < 1 else 0.5
+    warn_at = context_cfg.get("warnAt", 0.4)
+    warn_at = warn_at if isinstance(warn_at, (int, float)) and 0 < warn_at < 1 else 0.4
     reserve = context_cfg.get("reserveTokens", 100_000)
     reserve = reserve if isinstance(reserve, int) and reserve >= 0 else 100_000
     threshold = max(window * warn_at, window - reserve)

@@ -34,6 +34,7 @@ the guard only reads the command text.
 """
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -45,6 +46,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
 import cloud_guard  # noqa: E402  pylint: disable=wrong-import-position
+import crew_guards  # noqa: E402  pylint: disable=wrong-import-position
 import verify_record  # noqa: E402  pylint: disable=wrong-import-position
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -1426,3 +1428,826 @@ def test_the_guard_still_decides_inside_its_hook_timeout_with_a_lingering_python
     assert proc.returncode == 0
     doc = json.loads(proc.stdout.decode("utf-8"))
     assert doc["hookSpecificOutput"]["permissionDecision"] == "deny", doc
+
+
+# --- SRL-2308: the two fallbacks read command words, not mentions ------------
+#
+# When the trigger's reader gave up on a line, or read a command word made at
+# run time (a lone `W=$S/x` assignment is one), it used to gate on ANY word
+# naming terraform -- or, for the second, destroy/apply/workspace -- anywhere
+# on the line. Each SRL2308_NOT_GATED row was refused that way in real use (or
+# is the same shape with the unreadable fallback): a Python heredoc, a
+# send.md heredoc, a `sed`/`python3 -c` with a `$VAR`, an inline stub test,
+# a heredoc after `W=...`, a `.ps1` copied into `$W/amut`. Each is a FAILING
+# control on crew 1.2.35 (reverting either fallback turns it red), except the
+# two `-verbatim` rows, which 1.2.35 already allowed. SRL2308_STILL_GATED
+# pins that a real terraform/tofu invocation is still
+# refused, both on a plain line and through each fallback (`A=(1)` makes the
+# reader give up; `X=$W` makes a run-time command word).
+SRL2308_NOT_GATED = [
+    ("srl2308-a-python-heredoc", "Bash",
+     "W=$S/wt1863r8\ncd $W && python3 -I - <<'EOF'\nimport re\n"
+     "# apply the patch, then destroy the temp dir\nresult = apply(p)\n"
+     "print(result)\nEOF"),
+    ("srl2308-a-python-heredoc-unreadable", "Bash",
+     "A=(1 2); cd $W && python3 -I - <<'EOF'\n"
+     "print('terraform apply -auto-approve')\nEOF"),
+    ("srl2308-b-send-md-heredoc", "Bash",
+     "M=$W/send.md; cat > \"$M\" <<'EOF'\nReview round 2: apply the fixes, "
+     "then destroy the old worktree.\nEOF"),
+    ("srl2308-b-send-md-heredoc-unreadable", "Bash",
+     "cat > send.md <<'EOF'\nPlease run terraform apply in staging.\nEOF\n"
+     "echo $((n+$m))"),
+    ("srl2308-c-sed-range", "Bash",
+     "B=$W/plugin/crew/hooks/scripts/x.py; sed -n 1,30p $B | grep -n apply"),
+    ("srl2308-c-python-c-unreadable", "Bash",
+     "python3 -c \"print('terraform apply')\" $((1+$N))"),
+    # `srl2308-d-inline-stub` (a stub written into `$T`, then run with
+    # `apply`) moved to SRL2308_R4_REFUSE: r3-2's shape (review round 3).
+    ("srl2308-d-stub-heredoc", "Bash",
+     "S=$W/stub.sh; cat > $S <<EOF\necho \"apply \\$1\"\nEOF\nbash $S apply"),
+    # (e), (f): two more refused in real use (manager, 2026-10-15). Each as
+    # described -- allowed on 1.2.35 too, pinned so it stays allowed -- and
+    # with "apply" in it, which 1.2.35 refused.
+    ("srl2308-e-python-heredoc-verbatim", "Bash",
+     "W=$S/wt1863r8\ncd $W/plugin/crew && python3 -I - <<'EOF'\nimport json\n"
+     "print(json.load(open('../../.crew/verify.json'))['rules'][0])\nEOF"),
+    ("srl2308-e-python-heredoc-apply", "Bash",
+     "W=$S/wt1863r8\ncd $W/plugin/crew && python3 -I - <<'EOF'\n"
+     "# apply round 8, then check\nprint(open('README.md').read()[:80])\nEOF"),
+    ("srl2308-f-copy-ps1-verbatim", "Bash",
+     "W=$S/wt1863r8; mkdir -p $W/amut && "
+     "cp $W/plugin/crew/hooks/scripts/cloud-guard.ps1 $W/amut/"),
+    ("srl2308-f-copy-ps1-apply", "Bash",
+     "W=$S/wt1863r8; mkdir -p $W/amut && "
+     "cp $W/plugin/crew/hooks/scripts/cloud-guard.ps1 $W/amut/ && "
+     "ls $W/amut  # then apply the mutant"),
+    # The tool and one read-only subcommand, nothing after it; and a bare
+    # `apply`, which is a program of that name, not terraform.
+    ("srl2308-ro-h-version-only", "Bash", "$S/bin/terraform version"),
+    ("srl2308-ro-u-bare-apply", "Bash", "A=(1); terraform version; apply"),
+]
+
+_TF = "terraform apply"
+SRL2308_STILL_GATED = [
+    ("srl2308-tf-apply", "Bash", _TF),
+    ("srl2308-tofu-destroy", "Bash", "tofu destroy -auto-approve"),
+    ("srl2308-env", "Bash", "env TF_LOG=1 terraform apply"),
+    ("srl2308-abs-path", "Bash", "/usr/local/bin/terraform apply"),
+    ("srl2308-var", "Bash", "T=terraform; $T apply"),
+    ("srl2308-xargs", "Bash", "ls | xargs terraform apply"),
+    # The same through the unreadable-line fallback.
+    ("srl2308-u-tf-apply", "Bash", f"A=(1); {_TF}"),
+    ("srl2308-u-tofu-destroy", "Bash", "A=(1); tofu destroy -auto-approve"),
+    ("srl2308-u-env", "Bash", "A=(1); env TF_LOG=1 terraform apply"),
+    ("srl2308-u-abs-path", "Bash", "A=(1); /usr/local/bin/terraform apply"),
+    ("srl2308-u-npx", "Bash", "A=(1); npx terraform apply"),
+    ("srl2308-u-var", "Bash", "A=(1); T=terraform; $T apply"),
+    ("srl2308-u-xargs", "Bash", "A=(1); ls | xargs terraform apply"),
+    ("srl2308-u-unresolved-var", "Bash", "A=(1); $TF apply"),
+    ("srl2308-u-bash-c", "Bash", "A=(1); bash -c 'terraform apply'"),
+    ("srl2308-u-heredoc-to-bash", "Bash",
+     "A=(1); bash <<'EOF'\nterraform apply\nEOF"),
+    ("srl2308-u-subst", "Bash", "A=(1); echo $(terraform apply)"),
+    ("srl2308-u-backquote", "Bash", "A=(1); echo `terraform apply`"),
+    ("srl2308-u-heredoc-subst", "Bash",
+     "A=(1); cat <<EOF\n$(terraform apply)\nEOF"),
+    # The same through the run-time-command-word fallback.
+    ("srl2308-h-npx", "Bash", "X=$W; npx terraform apply"),
+    ("srl2308-h-var", "Bash", "X=$W; T=terraform; $T apply"),
+    ("srl2308-h-which", "Bash", "$(command -v terraform) apply"),
+    ("srl2308-h-unresolved-var", "Bash", "$TF apply"),
+    ("srl2308-h-sudo", "Bash", "X=$W; sudo -u ops terraform apply"),
+    # The read-only allowance (`<tool> version`, two words, nothing after)
+    # cannot be stretched into an apply: on an unreadable line and behind a
+    # run-time command word, any word after the subcommand, or a second
+    # command that runs terraform, keeps the line refused.
+    ("srl2308-ro-and-apply", "Bash", "terraform version && terraform apply"),
+    ("srl2308-ro-semi-apply", "Bash", "terraform version; terraform apply"),
+    ("srl2308-ro-u-and-apply", "Bash",
+     "A=(1); terraform version && terraform apply"),
+    ("srl2308-ro-u-semi-apply", "Bash",
+     "A=(1); terraform version; terraform apply"),
+    ("srl2308-ro-u-chdir-apply", "Bash",
+     "A=(1); terraform version -chdir=x apply"),
+    ("srl2308-ro-u-version-apply", "Bash", "A=(1); terraform version apply"),
+    ("srl2308-ro-u-version-flag", "Bash", "A=(1); terraform version -json"),
+    ("srl2308-ro-h-and-apply", "Bash",
+     "$S/bin/terraform version && $S/bin/terraform apply"),
+    ("srl2308-ro-h-semi-apply", "Bash",
+     "$S/bin/terraform version; $S/bin/terraform apply"),
+    ("srl2308-ro-h-chdir-apply", "Bash",
+     "$S/bin/terraform version -chdir=x apply"),
+    ("srl2308-ro-h-version-apply", "Bash", "$S/bin/terraform version apply"),
+    ("srl2308-ro-h-version-flag", "Bash", "$S/bin/terraform version -json"),
+    ("srl2308-ro-h-version-var", "Bash", "$S/bin/terraform version $X"),
+    # A wildcard command word is still a command word crew cannot name.
+    ("srl2308-glob-ext-command", "Bash", "X=$W; ./*.ps1 destroy"),
+    ("srl2308-glob-stem-command", "Bash", "./terr*.ps1 destroy"),
+]
+
+# Real refusals (fixtures/srl2308_refused_tf.json, sanitised; see its
+# `_about`): every `must_allow` row was refused by crew 1.2.30 and 1.2.35,
+# and every one runs no terraform but real-05's `version`. `must_refuse` is
+# real-24, a legitimate could-not-tell, and real-19, whose Python starts a
+# process with a command it builds (review round 2, fail closed; each `why`).
+_REAL = json.loads((pathlib.Path(__file__).parent / "fixtures"
+                    / "srl2308_refused_tf.json").read_text(encoding="utf-8"))
+SRL2308_REAL_ALLOW = [(r["id"], "Bash", r["command"])
+                      for r in _REAL["must_allow"]]
+SRL2308_REAL_REFUSE = [(r["id"], "Bash", r["command"])
+                       for r in _REAL["must_refuse"]]
+
+
+@pytest.mark.parametrize("case", SRL2308_NOT_GATED,
+                         ids=[c[0] for c in SRL2308_NOT_GATED])
+def test_srl2308_a_mention_is_not_a_terraform_command(tmp_path, case):
+    _allow("python", tmp_path, case)
+    assert cloud_guard._literal_gate("bash", case[2]) is None  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("case", SRL2308_STILL_GATED,
+                         ids=[c[0] for c in SRL2308_STILL_GATED])
+def test_srl2308_a_terraform_command_is_still_refused(tmp_path, case):
+    _block("python", tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("case", SRL2308_REAL_ALLOW,
+                         ids=[c[0] for c in SRL2308_REAL_ALLOW])
+def test_srl2308_a_real_refusal_that_runs_no_terraform_is_allowed(tmp_path,
+                                                                  case):
+    _allow("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", SRL2308_REAL_REFUSE,
+                         ids=[c[0] for c in SRL2308_REAL_REFUSE])
+def test_srl2308_a_real_could_not_tell_stays_refused(tmp_path, case):
+    _block("python", tmp_path, case + ("terraformApply",))
+
+
+def test_srl2308_the_real_rows_are_all_there():
+    """24 allowed, real-24 and real-19 refused: a row dropped from the
+    fixture would otherwise pass silently."""
+    assert len(SRL2308_REAL_ALLOW) == 24 and len(SRL2308_REAL_REFUSE) == 2
+
+
+@pytest.mark.parametrize("case", [c for c in SRL2308_STILL_GATED
+                                  if c[0].startswith(("srl2308-u-",
+                                                      "srl2308-ro-u-"))],
+                         ids=lambda c: c[0])
+def test_srl2308_the_unreadable_fallback_finds_the_command_word(case):
+    """Each `-u-` row is one the trigger's reader gives up on, so this pins
+    the unreadable-line fallback itself, not the lexer behind it."""
+    text = case[2]
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._GateReader(text, 0, []).read()  # pylint: disable=protected-access
+    assert crew_guards.command_trigger(
+        text, cloud_guard.GATE_HELPERS) is not None, text
+
+
+# --- SRL-2308 review round 1: lines that may run terraform, refused -------
+#
+# Codex r1 and the gate found the new fallback fail-open. Each row below is
+# a must-refuse control, run through BOTH the python entry point and the
+# real hook, `cloud-guard.sh` (block config). Every row marked `allowed@r1`
+# was ALLOWED by the reviewed head 3212cde1 (crew 1.2.36 r1) through
+# cloud-guard.sh; the r1-2/r1-3 rows were already refused end to end there
+# by another layer, and the splitter defect itself is pinned by
+# `test_srl2308_r2_the_splitter_gives_up_where_it_cannot_follow`.
+_OS_TF = "import os; os.system('terraform apply')"
+SRL2308_R2_REFUSE = [
+    # r1-1: a glob as a loop variable or an assigned value (allowed@r1).
+    ("r1-1-for-glob-exe", "Bash",
+     "for f in /opt/tf/*.exe; do $f apply; done"),
+    ("r1-1-for-glob-exe-quoted", "Bash",
+     "for f in *.exe; do \"$f\" destroy; done"),
+    ("r1-1-for-glob-ps1-pwsh", "Bash",
+     "W=$S/x; for f in $W/bin/*.ps1; do pwsh -File $f apply; done"),
+    ("r1-1-var-glob-exe", "Bash", "T=/opt/tf/*.exe; $T apply"),
+    ("r1-1-for-glob-cmd", "Bash",
+     "W=$S/x; for f in /opt/tf/*.cmd; do $f destroy -auto-approve; done"),
+    ("r1-1-for-glob-stem", "Bash", "for f in /opt/tf/t*; do $f apply; done"),
+    # The gate's worse case: a value that is not a literal word counted as
+    # "resolved, not terraform" (allowed@r1).
+    ("r1-v-from-var", "Bash", "T=$X; $T apply"),
+    ("r1-v-from-subst", "Bash", "T=$(cat /tmp/toolname); $T apply"),
+    ("r1-v-from-positional", "Bash", "T=$1; $T destroy -auto-approve"),
+    ("r1-v-assigned-glob", "Bash", "T=/opt/tf/t*; $T apply"),
+    # r1-4: interpreter code that runs terraform (allowed@r1; the plain
+    # `python3 -c` rows were allowed by 1.2.35 as well).
+    ("r1-4-python-c", "Bash", f"python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-c-u", "Bash", f"A=(1); python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-c-h", "Bash", f"W=$S/x; python3 -c \"{_OS_TF}\""),
+    ("r1-4-python-subprocess-h", "Bash",
+     "W=$S/x; python3 -c \"import subprocess; "
+     "subprocess.run(['terraform','apply'])\""),
+    ("r1-4-python-heredoc-h", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nimport os\n"
+     "os.system('terraform apply -auto-approve')\nEOF"),
+    ("r1-4-node-e-h", "Bash",
+     "W=$S/x; node -e \"require('child_process').execSync('terraform "
+     "apply')\""),
+    ("r1-4-perl-e-h", "Bash", "W=$S/x; perl -e 'system(\"terraform apply\")'"),
+    ("r1-4-ruby-e-h", "Bash", "W=$S/x; ruby -e 'system(\"terraform apply\")'"),
+    # r1-2 / r1-3, Codex's exact forms.
+    ("r1-2-arith-subst", "Bash", "A=(1); echo $(( $(terraform apply) + 1 ))"),
+    ("r1-2-param-subst", "Bash", "A=(1); echo ${X:-$(terraform apply)}"),
+    ("r1-3-mixed-delim", "Bash",
+     "A=(1); cat <<\"'END'\"\n'END'\nterraform apply\nEND"),
+    # Found while fixing round 1 (each allowed@r1 unless marked): how else a
+    # variable gets a value the line does not show...
+    ("r2-param-op", "Bash", "T=terrafxrm; ${T/x/o} apply"),
+    ("r2-append", "Bash", "T=terra; T+=form; $T apply"),
+    ("r2-conditional", "Bash", "false && T=echo; $T apply"),
+    ("r2-prefix-only", "Bash", "T=echo $T apply"),
+    ("r2-read", "Bash", "T=echo; read T; $T apply"),
+    ("r2-subshell", "Bash", "(T=echo); $T apply"),
+    ("r2-if-body", "Bash", "if false; then :; T=echo; fi; $T apply"),
+    ("r2-nameref", "Bash", "declare -n T=TF; $T apply"),
+    ("r2-printf-v", "Bash", "T=echo; printf -v T %s terraform; $T apply"),
+    ("r2-printf-v-attached", "Bash",
+     "T=echo; printf -vT %s terraform; $T apply"),
+    ("r2-default-assign", "Bash",
+     "T=echo; unset T; : ${T:=terraform}; $T apply"),
+    ("r2-pipeline", "Bash", "T=echo | true; $T apply"),
+    ("r2-background", "Bash", "T=echo & $T apply"),
+    ("r2-select", "Bash", "select T in echo; do $T apply; done"),
+    ("r2-mapfile", "Bash", "T=echo; mapfile -t T < /tmp/x; $T apply"),
+    ("r2-case-arm", "Bash", "case $X in a) T=echo;; esac; $T apply"),
+    ("r2-function-body", "Bash", "f() { T=echo; }; $T apply"),
+    ("r2-function-keyword", "Bash", "function g { T=echo; }; $T apply"),
+    ("r2-if-fi-as-word", "Bash",
+     "if false; then echo fi; T=echo; fi; $T apply"),
+    ("r2-for-empty-list", "Bash", "for f in; do :; done; $f apply"),
+    ("r2-use-before-assign", "Bash", "W=$S/x; $T apply; T=echo"),
+    ("r2-read-indirect", "Bash", "T=echo; read \"$N\" <<< terraform; $T apply"),
+    ("r2-ifs", "Bash", "IFS=x; T=terraformxapply; $T"),
+    ("r2-ifs-quoted", "Bash", "IFS=\" x\"; T=terraformxapply; $T"),
+    ("r2-subst-command-word", "Bash", "W=$S/x; $(cat /tmp/toolname) apply"),
+    # ...and code handed to an interpreter or a shell.
+    ("r2-python-plain-subprocess", "Bash",
+     "python3 -c \"import subprocess; subprocess.run(['terraform','apply'])\""),
+    ("r2-python-heredoc-plain", "Bash",
+     "python3 - <<'EOF'\nimport os\nos.system('terraform apply -auto-approve')"
+     "\nEOF"),
+    ("r2-python-herestring-h", "Bash", f"W=$S/x; python3 <<< \"{_OS_TF}\""),
+    ("r2-python-pipe-h", "Bash", f"W=$S/x; echo \"{_OS_TF}\" | python3"),
+    ("r2-heredoc-pipe-python", "Bash",
+     "cat <<'EOF' | python3\nimport os\nos.system('terraform apply')\nEOF"),
+    ("r2-php-r-h", "Bash", "W=$S/x; php -r 'system(\"terraform apply\");'"),
+    ("r2-perl-pipe-open-u", "Bash",
+     "A=(1); perl -e 'open(F, \"terraform apply |\"); print <F>'"),
+    ("r2-node-p-u", "Bash",
+     "A=(1); node -p \"require('child_process').execSync('terraform "
+     "apply').toString()\""),
+    ("r2-python-expansion-h", "Bash",
+     "T=terraform; W=$S/x; python3 -c \"import os; os.system('$T apply')\""),
+    ("r2-python-runtime-word-h", "Bash",
+     "W=$S/x; python3 -c 'import os; os.system(\"$TF apply\")'"),
+    ("r2-env-python-h", "Bash", f"W=$S/x; env FOO=1 python3 -c \"{_OS_TF}\""),
+    ("r2-python-Ic-h", "Bash", f"W=$S/x; python3 -Ic \"{_OS_TF}\""),
+    ("r2-python-W-value-h", "Bash",
+     f"W=$S/x; python3 -W ignore -c \"{_OS_TF}\""),
+    ("r2-xargs-python-c-h", "Bash",
+     f"W=$S/x; echo \"{_OS_TF}\" | xargs -0 python3 -c"),
+    ("r2-ruby-interpolation-h", "Bash",
+     "W=$S/x; ruby -e 'puts \"#{system(\"terraform apply\")}\"'"),
+    ("r2-python-fstring-h", "Bash",
+     "W=$S/x; python3 -c \"print(f'{__import__(\\\"os\\\").system("
+     "\\\"terraform apply\\\")}')\""),
+    ("r2-bash-file-glob-h", "Bash",
+     "W=$S/x; for f in /opt/tf/*.sh; do bash $f apply; done"),
+    ("r2-bash-c-runtime-word-u", "Bash", "A=(1); bash -c '$TF apply'"),
+    ("r2-heredoc-bash-runtime-word-u", "Bash",
+     "A=(1); bash <<'EOF'\n$TF destroy\nEOF"),
+    ("r2-node-precise", "Bash",
+     "node -e \"require('child_process').execSync('terraform apply')\""),
+    ("r2-perl-precise", "Bash", "perl -e 'system(\"terraform apply\")'"),
+    ("r2-sudo-python-precise", "Bash", f"sudo python3 -c \"{_OS_TF}\""),
+]
+
+# Shapes the stricter reading must still allow: a literal value, a value
+# whose program name is literal (`S=$W/stub.sh`), and interpreter code that
+# only prints, or names terraform only as a path.
+SRL2308_R2_ALLOW = [
+    ("r2-ok-path-var-script", "Bash", "S=$W/stub.sh; bash $S apply"),
+    ("r2-ok-python-print", "Bash", "python3 -c \"print('terraform apply')\""),
+    ("r2-ok-python-print-u", "Bash",
+     "A=(1); python3 -c \"print('terraform apply')\""),
+    ("r2-ok-python-heredoc-print-h", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nprint('terraform apply -auto-approve')"
+     "\nEOF"),
+    ("r2-ok-node-console-h", "Bash",
+     "W=$S/x; node -e \"console.log('terraform apply')\""),
+    ("r2-ok-perl-print-h", "Bash",
+     "W=$S/x; perl -e 'print \"terraform apply\\n\"'"),
+    ("r2-ok-python-path-h", "Bash",
+     "W=$S/x; python3 -c \"import json; "
+     "print(json.load(open('terraform/x.json')))\""),
+    ("r2-ok-arith-var-h", "Bash", "W=$S/x; echo $((n+$m)) apply"),
+    ("r2-ok-param-default-h", "Bash", "W=$S/x; echo ${X:-$HOME} apply"),
+    ("r2-ok-bash-c-literal-u", "Bash", "A=(1); bash -c 'echo apply'"),
+    ("r2-ok-python-script-h", "Bash", "W=$S/x; python3 $W/tool.py apply"),
+    ("r2-ok-ifs-read-h", "Bash",
+     "W=$S/x; while IFS= read -r l; do echo \"$l\"; done < terraform/x.tf"),
+]
+
+_R2_DRIVERS = [pytest.param("python", id="python"),
+               pytest.param("bash", id="bash", marks=needs_bash)]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R2_REFUSE,
+                         ids=[c[0] for c in SRL2308_R2_REFUSE])
+def test_srl2308_r2_a_line_that_may_run_terraform_is_refused(tmp_path, driver,
+                                                             case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R2_ALLOW,
+                         ids=[c[0] for c in SRL2308_R2_ALLOW])
+def test_srl2308_r2_a_line_that_cannot_run_terraform_is_allowed(tmp_path,
+                                                                driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@needs_bash
+@pytest.mark.parametrize("case", SRL2308_REAL_ALLOW + SRL2308_NOT_GATED,
+                         ids=[c[0] for c in SRL2308_REAL_ALLOW
+                              + SRL2308_NOT_GATED])
+def test_srl2308_r2_the_allowed_rows_hold_through_the_bash_hook(tmp_path,
+                                                                case):
+    _allow("bash", tmp_path, case)
+
+
+@needs_bash
+@pytest.mark.parametrize("case", SRL2308_REAL_REFUSE + SRL2308_STILL_GATED,
+                         ids=[c[0] for c in SRL2308_REAL_REFUSE
+                              + SRL2308_STILL_GATED])
+def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
+                                                                case):
+    _block("bash", tmp_path, case + ("terraformApply",))
+
+
+# --- SRL-2308 review round 2: fail closed ---------------------------------
+#
+# Codex r2 and the gate found the r1 head (3edc97bf) fail-open: a command
+# word made at run time was gated only before a literal changing verb, a
+# variable holding a bare name (`T=ls`) counted as that program, and
+# interpreter code that builds its command (`"terra"+"form"`, `sys.argv`)
+# passed. Every row below is a must-refuse control run through BOTH entry
+# points; each was ALLOWED by 3edc97bf through cloud-guard.sh (block), except
+# `r2-4-perl-pe-h`, Codex's exact r2-4 form, which another layer refused
+# there -- `r2-4-perl-lne` is its fail-open twin.
+_SET_TF = "set -- terraform apply; "
+SRL2308_R3_REFUSE = [
+    # Codex r2-1..r2-5.
+    ("r2-1-V-apply", "Bash", "V=apply; $TF $V"),
+    ("r2-2-argv-join", "Bash",
+     "W=$S/x; python3 -c 'import os,sys; os.system(\" \".join(sys.argv[1:]))'"
+     " terraform apply"),
+    ("r2-3-concat", "Bash",
+     "W=$S/x; python3 -c 'import os; os.system(\"terra\"+\"form apply\")'"),
+    ("r2-4-perl-pe-h", "Bash", "W=$S/x; perl -pe 'system(\"terraform apply\")'"),
+    ("r2-4-perl-lne", "Bash",
+     "perl -lne 'system(\"terraform apply\")' /dev/null"),
+    ("r2-5-T-ls", "Bash", "T=ls; $T apply"),
+    # The gate's fail-open class: any command word made at run time.
+    ("r3-set-1-2", "Bash", _SET_TF + "$1 $2"),
+    ("r3-set-at", "Bash", _SET_TF + "$@"),
+    ("r3-set-star", "Bash", _SET_TF + "$*"),
+    ("r3-set-quoted-at", "Bash", _SET_TF + "\"$@\""),
+    ("r3-set-at-h", "Bash", "W=$S/x; " + _SET_TF + "\"$@\""),
+    ("r3-set-destroy", "Bash",
+     "set -- terraform destroy -auto-approve; $1 $2 $3"),
+    ("r3-set-env-at", "Bash", _SET_TF + "env \"$@\""),
+    ("r3-set-timeout-env-at", "Bash", _SET_TF + "timeout 30 env \"$@\""),
+    ("r3-dollar0-c", "Bash", "$0 -c 'terraform apply'"),
+    ("r3-dollar0-c-h", "Bash", "W=$S/x; $0 -c 'terraform apply'"),
+    ("r3-bash-default-c", "Bash", "${BASH:-bash} -c 'terraform apply'"),
+    ("r3-shell-c", "Bash", "$SHELL -c 'terraform apply'"),
+    ("r3-subst-bash-c", "Bash", "$(command -v bash) -c 'terraform apply'"),
+    ("r3-unresolved-c", "Bash", "B=$X; $B -c 'terraform apply'"),
+    ("r3-shell-herestring", "Bash", "$SHELL <<< 'terraform apply'"),
+    ("r3-unresolved-heredoc", "Bash",
+     "B=$X; $B <<'EOF'\nterraform apply\nEOF"),
+    ("r3-set-bash-c", "Bash",
+     "set -- bash; $1 -c 'terraform destroy -auto-approve'"),
+    ("r3-unresolved-both", "Bash", "T=$X; V=$Y; $T $V # terraform"),
+    ("r3-T-ls-path", "Bash", "T=ls; PATH=/opt/tf-shim:$PATH; $T apply"),
+    ("r3-path-then-ls", "Bash", "PATH=/opt/tf-shim:$PATH; ls apply"),
+    # Interpreter code that builds its command.
+    ("r3-py-concat", "Bash",
+     "python3 -c 'import os; os.system(\"terra\"+\"form apply\")'"),
+    ("r3-py-adjacent", "Bash",
+     "python3 -c 'import os; print(os.system(\"terr\" \"aform apply\"))'"),
+    ("r3-py-argv", "Bash",
+     "python3 -c 'import os,sys; print(os.system(sys.argv[1]))' "
+     "'terraform apply'"),
+    ("r3-py-hex", "Bash",
+     "python3 -c 'import os; print(os.system(\"\\x74erraform apply\"))'"),
+    ("r3-py-comment-quote", "Bash",
+     "python3 - <<'EOF'\n# it's here\n"
+     "import os; os.system('terra' + 'form apply')\nEOF"),
+    # Allowed by round 1 as must-allow rows, refused now: a variable whose
+    # value is a bare name may be an inherited function (`T=echo`, as
+    # `T=ls`), and a value made at run time inside interpreter code is code
+    # (`print('$R')` with R=`'); os.system('...`). 1.2.35 refused all three.
+    ("r3-bare-name-var", "Bash", "T=echo; $T apply"),
+    ("r3-bare-name-for", "Bash", "for t in echo printf; do $t apply; done"),
+    ("r3-python-c-run-time-value", "Bash",
+     "R=$W; python3 -c \"import sys; print('apply'); print('$R')\""),
+]
+
+# Shapes the fail-closed reading must still allow: print-only code with a
+# comment (r2-6), a run-time argument of the literal program `timeout` runs,
+# the `[` builtin, and a placeholder string in Python that starts nothing.
+SRL2308_R3_ALLOW = [
+    ("r2-6-print-comment", "Bash",
+     "python3 -c 'print(\"terraform apply\") # note'"),
+    ("r3-ok-timeout-program", "Bash",
+     "W=$S/x; timeout 1500 codex exec --skip-git-repo-check "
+     "\"$(cat $W/prompt.txt)\" # apply"),
+    ("r3-ok-test-builtin", "Bash", "W=$S/x; [ -z \"$X\" ] && echo apply"),
+    ("r3-ok-py-placeholder", "Bash",
+     "W=$S/x; python3 - <<'PY'\n"
+     "s = open('a.md').read().replace('__COUNTS__', 'apply')\n"
+     "open('a.md', 'w').write(s)\nPY"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R3_REFUSE,
+                         ids=[c[0] for c in SRL2308_R3_REFUSE])
+def test_srl2308_r3_a_run_time_command_word_is_refused(tmp_path, driver,
+                                                       case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R3_ALLOW,
+                         ids=[c[0] for c in SRL2308_R3_ALLOW])
+def test_srl2308_r3_a_line_that_cannot_run_terraform_is_allowed(tmp_path,
+                                                                driver, case):
+    _allow(driver, tmp_path, case)
+
+
+# --- SRL-2308 review round 3: fail closed, cycle 4 --------------------------
+#
+# Codex r3 and the gate found the r3 head (533a9589) fail-open on the
+# fallback lines: an awk program's `system()` and sed's `e` (r3-1), a
+# program by path under a run-time directory (r3-2), and `read` behind
+# `command`/`builtin` (r3-3). Every row below was ALLOWED by 533a9589
+# through cloud-guard.sh (block) and is a must-refuse control through BOTH
+# entry points. The first seven are the review's own rows, verbatim.
+_AWK_TF = "awk 'BEGIN { system(\"terraform apply\") }'"
+SRL2308_R4_REFUSE = [
+    ("r3-1-awk-A", "Bash", "A=(1); " + _AWK_TF),
+    ("r3-1b-awk-W", "Bash", "W=$S/x; " + _AWK_TF),
+    ("r3-1c-sed-e-W", "Bash", "W=$S/x; echo x | sed 's/x/terraform apply/e'"),
+    ("r3-2-mktemp-stub", "Bash",
+     "T=$(mktemp -d); printf '#!/bin/sh\\nterraform \"$@\"\\n' > \"$T/stub\";"
+     " chmod +x \"$T/stub\"; \"$T/stub\" apply"),
+    ("r3-2b-W-stub", "Bash", "W=$S/x; \"$W/stub\" apply"),
+    ("r3-3-command-read", "Bash",
+     "A=(1); T=/bin/echo; command read \"$N\" <<< terraform; $T apply"),
+    ("r3-3b-builtin-read", "Bash",
+     "A=(1); T=/bin/echo; builtin read \"$N\" <<< terraform; $T apply"),
+    # r3-1's class: other awks, every way awk starts a process, sed's `e`.
+    ("r4-gawk-A", "Bash", "A=(1); g" + _AWK_TF),
+    ("r4-mawk-concat-A", "Bash",
+     "A=(1); mawk 'BEGIN { system(\"terra\" \"form apply\") }'"),
+    ("r4-nawk-W", "Bash", "W=$S/x; n" + _AWK_TF),
+    ("r4-busybox-awk-W", "Bash",
+     "W=$S/x; busybox awk 'BEGIN { system(\"terra\" \"form apply\") }'"),
+    ("r4-awk-in-bash-c-A", "Bash",
+     "A=(1); bash -c \"awk 'BEGIN { system(\\\"terra\\\" "
+     "\\\"form apply\\\") }'\""),
+    ("r4-awk-print-pipe-W", "Bash",
+     "W=$S/x; awk 'BEGIN { print \"apply\" | \"terraform\" }'"),
+    ("r4-awk-getline-W", "Bash",
+     "W=$S/x; awk 'BEGIN { \"terraform apply\" | getline x }'"),
+    ("r4-gawk-coprocess-A", "Bash",
+     "A=(1); gawk 'BEGIN { print \"\" |& \"terraform apply\" }'"),
+    ("r4-awk-v-value-W", "Bash",
+     "W=$S/x; awk -v c=\"terraform apply\" 'BEGIN { system(c) }'"),
+    ("r4-awk-f-file-W", "Bash", "W=$S/x; awk -f $W/x.awk # apply"),
+    ("r4-sed-e-command-A", "Bash", "A=(1); echo terraform apply | sed e"),
+    ("r4-sed-address-e-W", "Bash", "W=$S/x; echo terraform apply | sed '1e'"),
+    ("r4-sed-dash-e-flag-W", "Bash",
+     "W=$S/x; echo x | sed -n -e 's/x/terraform apply/ep'"),
+    ("r4-gsed-split-name-W", "Bash",
+     "W=$S/x; echo x | gsed 's|x|terra''form apply|e'"),
+    ("r4-sed-run-time-script-A", "Bash",
+     "A=(1); echo x | sed \"s/x/$C/\" # terraform"),
+    # r3-3's class: other setters behind a wrapper.
+    ("r4-command-mapfile", "Bash",
+     "A=(1); T=/bin/echo; command mapfile \"$N\" <<< terraform; $T apply"),
+    # r3-2's class: a changing verb, or the line writing the program.
+    ("r4-stub-destroy-W", "Bash", "W=$S/x; \"$W/stub\" destroy -auto-approve"),
+    ("r4-stub-literal-dir-var-A", "Bash", "A=(1); D=/opt/x; $D/stub apply"),
+    ("r4-stub-heredoc-write", "Bash",
+     "T=$(mktemp -d); cat > \"$T/stub\" <<'EOF'\nterraform \"$@\"\nEOF\n"
+     "chmod +x \"$T/stub\"; \"$T/stub\" plan # apply"),
+    ("r4-stub-cp-into-W", "Bash",
+     "W=$S/x; cp ./wrap.sh \"$W/stub\"; \"$W/stub\" fmt # apply"),
+    # A must-allow row until review round 3 (`srl2308-d-inline-stub`): the
+    # stub here echoes, but the line writes it into `$T` and runs it with
+    # `apply`, so what it runs is not known -- Codex r3-2 made the same
+    # line's stub delegate to terraform. 1.2.35 refused it too.
+    ("r4-was-ok-inline-stub", "Bash",
+     "T=$(mktemp -d); printf '#!/bin/sh\\necho apply\\n' > $T/stub; "
+     "chmod +x $T/stub; $T/stub apply"),
+]
+
+# What the cycle-4 reading must still allow: awk and sed that start no
+# process, a literal `read`, and a program by path under a run-time
+# directory run with no changing verb on a line that writes nothing into it.
+SRL2308_R4_ALLOW = [
+    ("r4-ok-awk-print-W", "Bash",
+     "W=$S/x; awk -F: '{print $1}' /etc/passwd # apply"),
+    ("r4-ok-awk-sum-A", "Bash",
+     "A=(1); git ls-files | awk '{s+=1} END{print s}' # apply"),
+    ("r4-ok-awk-regex-alternation-W", "Bash",
+     "W=$S/x; awk '/apply|destroy/ {n++} END{print n}' log.txt"),
+    ("r4-ok-sed-print-W", "Bash",
+     "W=$S/x; sed -n '1,/^cases=(/p' f | sed '$d' # apply"),
+    ("r4-ok-sed-substitute-A", "Bash", "A=(1); sed 's|.*/||; s/e/E/g' f # apply"),
+    ("r4-ok-sed-in-place-W", "Bash",
+     "W=$S/x; sed -i.bak -e 's/old/new/' $W/notes.txt # apply"),
+    ("r4-ok-command-read-literal", "Bash",
+     "A=(1); command read -r line < f; echo \"$line\" apply"),
+    ("r4-ok-stub-check-W", "Bash", "W=$S/x; \"$W/stub.sh\" --check"),
+    ("r4-ok-stub-status-A", "Bash", "A=(1); S=$W/tool.sh; $S status # apply"),
+    ("r4-ok-stub-other-write-W", "Bash",
+     "W=$S/x; echo hi > $HOME/log.txt; \"$W/tool.sh\" run-tests"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R4_REFUSE,
+                         ids=[c[0] for c in SRL2308_R4_REFUSE])
+def test_srl2308_r4_a_fallback_line_that_may_run_terraform_is_refused(
+        tmp_path, driver, case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R4_ALLOW,
+                         ids=[c[0] for c in SRL2308_R4_ALLOW])
+def test_srl2308_r4_a_fallback_line_that_cannot_run_terraform_is_allowed(
+        tmp_path, driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize(("script", "runs"), [
+    ("s/x/y/e", True), ("1e", True), ("e date", True), ("/a/{e\n}", True),
+    ("s/x/y/ge", True), ("$!N;e", True), ("\\%a%e", True),
+    ("s/x/y/g", False), ("1,/^cases=(/p", False), ("$d", False),
+    ("s|.*/||; s/e/E/g", False), ("/e/d", False), ("y/abe/xyz/", False),
+    ("a hello e", False), ("s/a/b/w out.e", False), ("0,/x/s//e e/", False),
+])
+def test_srl2308_r4_sed_e_is_read_as_a_command(script, runs):
+    """sed's `e` command and `s///e` flag start a process; an `e` in a
+    pattern, a replacement, text or a file name does not."""
+    assert crew_guards._sed_runs(script) is runs, script  # pylint: disable=protected-access
+
+
+# --- SRL-2308 review round 4: fail closed, cycle 5 --------------------------
+#
+# Codex r4 and the gate found the r4 head (5cd547d5) fail-open on two
+# fallback paths: a relative program run after the line changes directory
+# (r4-1) and an awk pipe split by a backslash-newline (r4-2). Every row in
+# SRL2308_R5_REFUSE was ALLOWED by 5cd547d5 through cloud-guard.sh (block)
+# and is a must-refuse control through BOTH entry points. The first four
+# are the review's own rows, verbatim (Codex r4-1, r4-2; gate g09, g10).
+_CD_STUB = "T=$(mktemp -d); "
+SRL2308_R5_REFUSE = [
+    ("r4-1-cd-relative-stub", "Bash",
+     _CD_STUB + "cd \"$T\"; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r4-2-awk-print-pipe-continuation", "Bash",
+     "A=(1); awk 'BEGIN { print \"terraform apply\" \\\n | \"sh\" }'"),
+    ("r4-g09-cd-and-stub", "Bash", _CD_STUB + "cd \"$T\" && ./stub apply"),
+    ("r4-g10-pushd-stub", "Bash",
+     _CD_STUB + "pushd \"$T\" >/dev/null; ./stub apply"),
+    # r4-1's class: every directory change, every relative spelling.
+    ("r5-builtin-cd-stub", "Bash", _CD_STUB + "builtin cd \"$T\"; ./stub apply"),
+    ("r5-command-cd-stub", "Bash", _CD_STUB + "command cd \"$T\"; ./stub apply"),
+    ("r5-popd-stub", "Bash", "A=(1); popd >/dev/null; ./stub apply"),
+    ("r5-cd-subshell-stub", "Bash", _CD_STUB + "(cd \"$T\" && ./stub apply)"),
+    ("r5-cd-parent-stub", "Bash", _CD_STUB + "cd \"$T\"; ../stub apply"),
+    ("r5-cd-sub-path-stub", "Bash", _CD_STUB + "cd \"$T\"; bin/stub apply"),
+    ("r5-cd-quoted-stub", "Bash", _CD_STUB + "cd \"$T\"; \"./stub\" apply"),
+    ("r5-cd-verb-elsewhere", "Bash", _CD_STUB + "cd \"$T\"; ./stub plan # apply"),
+    ("r5-cd-sudo-stub", "Bash", _CD_STUB + "cd \"$T\"; sudo ./stub apply"),
+    ("r5-env-chdir-long-stub", "Bash",
+     _CD_STUB + "env --chdir=\"$T\" ./stub apply"),
+    ("r5-env-chdir-attached-stub", "Bash",
+     _CD_STUB + "env -C\"$T\" ./stub plan # apply"),
+    # A literal absolute directory is placed, but the line writes the
+    # program there (rule (b)) or runs it with a changing verb (rule (a)).
+    ("r5-cd-literal-write-stub", "Bash",
+     "A=(1); cd /lit; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r5-cd-literal-write-stub-T", "Bash",
+     _CD_STUB + "cd /lit; printf '#!/bin/sh\\nterraform \"$@\"\\n' > stub;"
+     " chmod +x stub; ./stub apply"),
+    ("r5-cd-literal-cp-stub", "Bash",
+     "A=(1); cd /lit && cp x stub && ./stub apply"),
+    ("r5-cd-literal-write-plan", "Bash",
+     "A=(1); cd /lit && printf 'terraform \"$@\"' > bin/stub; bin/stub plan"
+     " # apply"),
+    ("r5-cd-literal-write-into-dir", "Bash",
+     "A=(1); cd /lit; cp ./w.sh /lit/sub/stub; sub/stub fmt # apply"),
+    ("r5-cd-literal-then-runtime", "Bash",
+     _CD_STUB + "cd /lit; cd \"$T\"; ./stub plan # apply"),
+    ("r5-cd-literal-then-popd", "Bash",
+     "A=(1); pushd /lit; popd; ./stub plan # apply"),
+    ("r5-cd-dash", "Bash", "A=(1); cd -; ./stub plan # apply"),
+    ("r5-cd-home", "Bash", "A=(1); cd; ./stub plan # apply"),
+    ("r5-eval-cd", "Bash", _CD_STUB + "eval 'cd \"$T\"'; ./stub plan # apply"),
+    # Only a quoted heredoc fed to a bare `cat` is data; its redirection
+    # still counts, and a body a shell runs is read as code.
+    ("r5-cd-literal-cat-heredoc-stub", "Bash",
+     "A=(1); cd /lit; cat > stub <<'EOF'\n#!/bin/sh\nterraform \"$@\"\nEOF\n"
+     "chmod +x stub; ./stub plan # apply"),
+    ("r5-cd-literal-source", "Bash",
+     "A=(1); cd /lit; source ./env.sh; ./stub plan # apply"),
+    ("r5-eval-run-time", "Bash",
+     "A=(1); X=$(cat f); eval \"$X\"; ./stub apply"),
+    # r4-2's class: awk code split by a continuation, and gawk's indirect
+    # call (`@f(...)` with `f = "system"`).
+    ("r5-awk-printf-pipe-continuation", "Bash",
+     "W=$S/x; awk 'BEGIN { printf \"terraform apply\\n\" \\\n | \"sh\" }'"),
+    ("r5-awk-system-continuation", "Bash",
+     "A=(1); awk 'BEGIN { system \\\n (\"terraform apply\") }'"),
+    ("r5-gawk-indirect-system", "Bash",
+     "A=(1); gawk 'BEGIN { f = \"system\"; @f(\"terraform apply\") }'"),
+]
+
+# Rows 5cd547d5 already refused, kept as controls on the new readers: a
+# division read as division (were it read as a regex, the code between the
+# two slashes would be hidden), an escaped quote, a regex bracket holding
+# `/`, continuations 5cd547d5's pattern happened to span, `env -C`, and the
+# gate's r4 probes that held.
+SRL2308_R5_HELD = [
+    ("r5-awk-getline-continuation", "Bash",
+     "A=(1); awk 'BEGIN { \"terraform apply\" \\\n | getline x }'"),
+    ("r5-awk-coprocess-continuation", "Bash",
+     "A=(1); gawk 'BEGIN { print \"\" \\\n |& \"terraform apply\" }'"),
+    ("r5-env-chdir-stub", "Bash", _CD_STUB + "env -C \"$T\" ./stub apply"),
+    ("r5-cd-literal-bash-heredoc-write", "Bash",
+     "A=(1); cd /lit; bash <<'EOF'\nprintf 'terraform \"$@\"' > stub\n"
+     "chmod +x stub\nEOF\n./stub plan # apply"),
+    ("r5-awk-postfix-division", "Bash",
+     "A=(1); awk 'BEGIN { i++ / 2; print \"terraform apply\" | \"sh\";"
+     " j++ / 3 }'"),
+    ("r5-awk-paren-division", "Bash",
+     "A=(1); awk 'BEGIN { x = (4) / 2; print \"terraform apply\" | \"sh\";"
+     " y = (6) / 3 }'"),
+    ("r5-awk-escaped-quote", "Bash",
+     "A=(1); awk 'BEGIN { print \"a\\\"b\" | \"terraform apply\" }'"),
+    ("r5-awk-bracket-slash", "Bash",
+     "A=(1); awk '/[/]/ { print | \"terraform apply\" }'"),
+    ("r4-g01-gawk-e", "Bash",
+     "A=(1); gawk -e 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g02-gawk-source", "Bash",
+     "A=(1); gawk --source 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g03-awk-environ", "Bash",
+     "A=(1); C='terraform apply' awk 'BEGIN { system(ENVIRON[\"C\"]) }'"),
+    ("r4-g04-awk-v-var", "Bash",
+     "W=$S/x; awk -v c='terraform apply' 'BEGIN { system(c) }'"),
+    ("r4-g05-gawk-include", "Bash",
+     "A=(1); gawk '@include \"/tmp/t.awk\"; BEGIN { f() }' # apply"),
+    ("r4-g06-sed-ew-file", "Bash",
+     "W=$S/x; echo x | sed 's/x/terraform apply/ew /dev/null'"),
+    ("r4-g07-sed-e-cmd", "Bash", "W=$S/x; echo 'terraform apply' | sed -e e"),
+    ("r4-g08-sed-expression-long", "Bash",
+     "W=$S/x; echo x | sed --expression='s/x/terraform apply/e'"),
+    ("r4-g11-install-stdin", "Bash",
+     _CD_STUB + "install -m755 /dev/stdin \"$T/s\" <<< 'terraform \"$@\"';"
+     " \"$T/s\" apply"),
+    ("r4-g12-install-stdin-plan", "Bash",
+     _CD_STUB + "install -m755 /dev/stdin \"$T/s\" <<< 'terraform \"$@\"';"
+     " \"$T/s\" plan # apply"),
+    ("r4-g13-command-mapfile", "Bash",
+     "A=(1); T=/bin/echo; command mapfile \"$N\" <<< terraform; $T apply"),
+    ("r4-g14-builtin-readarray", "Bash",
+     "A=(1); T=/bin/echo; builtin readarray \"$N\" <<< terraform; $T apply"),
+    ("r4-g15-command-p-read", "Bash",
+     "A=(1); T=/bin/echo; command -p read \"$N\" <<< terraform; $T apply"),
+    ("r4-g16-builtin-printf-v", "Bash",
+     "A=(1); T=/bin/echo; builtin printf -v \"$N\" terraform; $T apply"),
+    ("r4-g17-env-awk", "Bash",
+     "A=(1); env awk 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g18-xargs-gawk", "Bash",
+     "W=$S/x; echo | xargs gawk 'BEGIN { system(\"terraform apply\") }'"),
+    ("r4-g19-awk-getline-cmd", "Bash",
+     "A=(1); awk 'BEGIN { \"terraform apply\" | getline x }'"),
+    ("r4-g20-stub-quoted-verb", "Bash", "W=$S/x; \"$W/stub\" ap''ply"),
+    ("r4-g21-stub-dashdash-verb", "Bash", "W=$S/x; \"$W/stub\" -- apply"),
+]
+
+# What the cycle-5 reading must allow: Codex r4-3 (a string that only reads
+# like a process call), awk strings, regex constants and division holding
+# `|` or `/`, the gate's r4 must-allow rows, a relative program on a line
+# that changes directory but names no changing verb, and a relative program
+# on a line that changes no directory (1.2.36's reading, unchanged).
+SRL2308_R5_ALLOW = [
+    ("r4-3-awk-string-only", "Bash",
+     "A=(1); awk 'BEGIN { print \"system(terraform apply)\" }'"),
+    ("r5-ok-awk-string-pipe", "Bash", "A=(1); awk '{ print \"a|b\" }' f # apply"),
+    ("r5-ok-awk-class-alternation", "Bash",
+     "W=$S/x; awk '/^[[:space:]]*(apply|destroy)/ { n++ } END { print n }' f"),
+    ("r5-ok-awk-division", "Bash", "A=(1); awk '{ print $1 / 2 }' f # apply"),
+    ("r5-ok-awk-continuation", "Bash",
+     "A=(1); awk '{ print $1, \\\n $2 }' f # apply"),
+    ("r5-ok-awk-comment-pipe", "Bash",
+     "A=(1); awk '{ n++ } # a | b\nEND { print n }' f # apply"),
+    ("r4-a01-awk-print", "Bash", "A=(1); awk '{print $1}' f.txt"),
+    ("r4-a02-sed-print", "Bash", "W=$S/x; sed -n '1,5p' f.txt"),
+    ("r4-a03-stub-check", "Bash", "W=$S/x; \"$W/stub.sh\" --check"),
+    ("r4-a04-command-read-r", "Bash",
+     "W=$S/x; command read -r line < f.txt; echo \"$line\""),
+    ("r5-ok-cd-relative-no-verb", "Bash",
+     "W=$S/x; cd \"$W\" && ./run-tests.sh --fast"),
+    # real-25's shape: files written under another literal directory, then
+    # a relative program run, with no changing verb, after a `cd` to a
+    # literal absolute path, on a line whose heredoc text names terraform.
+    ("r5-ok-cd-literal-real-25-shape", "Bash",
+     "S=/tmp/sp/k; cat > $S/w.sh <<'EOF'\n#!/usr/bin/env bash\n"
+     "# wraps the reviewer; never runs terraform apply\nexec \"$@\"\nEOF\n"
+     "chmod +x $S/w.sh\ncd /tmp/sp/wt/k-1; H=$(gh pr view 1 --json headRefOid"
+     " -q .headRefOid); W=$S/w.sh tools/review.sh --spec $S/s.md --sha \"$H\""
+     " --dry-run 2>&1 | tail -8"),
+    ("r5-ok-pushd-literal", "Bash",
+     "A=(1); pushd /opt/repo >/dev/null; ./scripts/check.sh plan # apply"),
+    ("r5-ok-relative-no-cd", "Bash", "W=$S/x; ./scripts/check.sh plan # apply"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R5_REFUSE + SRL2308_R5_HELD,
+                         ids=[c[0] for c in SRL2308_R5_REFUSE
+                              + SRL2308_R5_HELD])
+def test_srl2308_r5_a_fallback_line_that_may_run_terraform_is_refused(
+        tmp_path, driver, case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", SRL2308_R5_ALLOW,
+                         ids=[c[0] for c in SRL2308_R5_ALLOW])
+def test_srl2308_r5_a_fallback_line_that_cannot_run_terraform_is_allowed(
+        tmp_path, driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize(("program", "spawns"), [
+    ("BEGIN { print \"x\" \\\n | \"sh\" }", True),
+    ("BEGIN { \"date\" | getline d }", True),
+    ("BEGIN { system(\"date\") }", True),
+    ("BEGIN { f = \"system\"; @f(\"date\") }", True),
+    ("BEGIN { i++ / 2; print | \"sh\"; j++ / 3 }", True),
+    ("/[/]/ { print \"a|b\" }", True),  # not read cleanly, holds a `|`
+    ("/[/]/ { print \"a\" }", False),   # not read cleanly, holds none
+    ("BEGIN { print \"system(x)\" }", False),
+    ("{ print \"a|b\" }", False),
+    ("/a|b/ { n++ }", False),
+    ("$1 ~ /^[[:alpha:]]+|x/ { n++ }", False),
+    ("{ print $1 / 2 }", False),
+    ("{ n++ } # x | y\nEND { print n }", False),
+    ("{ s = \"a\\\"|b\" }", False),
+])
+def test_srl2308_r5_awk_code_is_read_without_its_strings(program, spawns):
+    """`_awk_spawns` reads awk's code, not its strings, regex constants or
+    comments; backslash-newline joins a line; a program it cannot read
+    cleanly counts on any `|`, `@` or `system`."""
+    found = crew_guards._awk_spawns(program)  # pylint: disable=protected-access
+    assert (found is not None) is spawns, (program, found)
+
+
+@pytest.mark.parametrize("text", [
+    "A=(1); echo $(( $(terraform apply) + 1 ))",
+    "A=(1); echo ${X:-$(terraform apply)}",
+    "A=(1); echo ${X:-`terraform apply`}",
+    "A=(1); echo ${X:-${Y:-$(terraform apply)}}",
+    "A=(1); echo $(( `terraform apply` + 1 ))",
+    "W=$S/x; cat <<EOF\n$(( $(terraform apply) + 1 ))\nEOF",
+    "A=(1); cat <<\"'END'\"\n'END'\nterraform apply\nEND",
+])
+def test_srl2308_r2_the_splitter_gives_up_where_it_cannot_follow(text):
+    """r1-2 and r1-3 at the splitter itself: a substitution inside
+    `$((...))` or `${...}`, and a delimiter quoted both ways, make it give up
+    (`_Unsure`) instead of skipping text bash runs."""
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._CommandSplitter(text).split()  # pylint: disable=protected-access
+
+
+def test_srl2308_r2_the_precise_reader_gives_up_on_a_mixed_delimiter():
+    """r1-3 on the precise path: `<<"'END'"` ends at `'END'` in bash."""
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        crew_guards._GateReader(  # pylint: disable=protected-access
+            "cat <<\"'END'\"\n'END'\nterraform apply\nEND", 0, []).read()
