@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.45: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+### Fixed — crew 1.2.46: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
-- **Summary.** `crew` 1.2.45 lets the review harness rebuild a round's bundle after its reviewed head
+- **Summary.** `crew` 1.2.46 lets the review harness rebuild a round's bundle after its reviewed head
   has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
   `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
   itself, so `/crew:review` stops rather than reporting "nothing to review".
