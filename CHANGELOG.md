@@ -15,7 +15,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
   host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
 - **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
-  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (the sha asked, a complete
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (strict UTF-8 JSON with no duplicate key, at most 4 MiB; the sha asked, a complete
   list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
   unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
 - **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.

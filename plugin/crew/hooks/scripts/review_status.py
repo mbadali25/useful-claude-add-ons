@@ -16,7 +16,8 @@ GitHub, never from a checkout. The first stdout line is
 `REVIEW_GATE <VERDICT> head=<sha> <why>`; exit 0 ALLOW, 1 BLOCK, 2 COULD_NOT_TELL.
 
 The reply is parsed by allowlist; anything the allowlist does not name is
-COULD_NOT_TELL, and no branch defaults to ALLOW:
+COULD_NOT_TELL, and no branch defaults to ALLOW. gh's output must be strict UTF-8
+JSON of at most MAX_OUT bytes with no duplicate object key, NaN or Infinity:
   - the reply is an object whose `sha` is the sha asked and whose `statuses` is a
     list that is complete (`total_count` equals its length);
   - EVERY element of `statuses` is an object;
@@ -43,16 +44,20 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 
 CONTEXT = "crew/review"
 ALLOW, BLOCK, UNKNOWN = "ALLOW", "BLOCK", "COULD_NOT_TELL"
 EXIT = {ALLOW: 0, BLOCK: 1, UNKNOWN: 2}
 GH_TIMEOUT = 60
+MAX_OUT = 4 * 1024 * 1024
+MAX_ERR = 64 * 1024
 PER_PAGE = 100
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
 _PR_RE = re.compile(r"[1-9][0-9]{0,8}")
 SCHEMA = re.compile(
-    r"receipt r[0-9]+ (?:clean|owner-accepted|auto-accepted) \S+/\S+ "
+    r"receipt r[0-9]+ (?:clean|owner-accepted|auto-accepted) [!-~]+/[!-~]+ "
     r"blocks=(0|[1-9][0-9]*) fix=[0-9]+ nit=[0-9]+ bundle=[0-9a-f]{12}(?: kept-by-delta)?")
 _SLUG_RE = re.compile(r"(?:git@|ssh://git@|https://(?:[^@/\s]+@)?)github\.com[:/]+"
                       r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?")
@@ -60,47 +65,97 @@ _REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
 def _one_line(text, limit=300):
-    """`text` as a single printable line: every control character, including a
-    newline, becomes a space, so an API-supplied string can never forge a second
-    REVIEW_GATE line."""
-    return re.sub(r"[\x00-\x1f\x7f\u0085\u2028\u2029]+", " ", str(text)).strip()[:limit]
+    """`text` as a single printable ASCII line: every character outside space..~
+    (control characters, newlines, U+2028, a lone surrogate, anything a stdout
+    codec might refuse) becomes a space, so an API-supplied string can neither
+    forge a second REVIEW_GATE line nor crash the print."""
+    return re.sub(r"[^\x20-\x7e]+", " ", str(text)).strip()[:limit]
 
 
 def _kill_group(proc):
-    """Kill the process and, off Windows, its whole group: a child that inherited
-    stdout would otherwise hold the pipe open past the timeout."""
+    """Kill the process and its descendants: a child that inherited stdout would
+    otherwise hold the pipe open past the timeout. POSIX kills the process group
+    (the child leads its own session); Windows asks taskkill for the whole tree."""
     try:
         if os.name != "nt":
             os.killpg(proc.pid, 9)
         else:
-            proc.kill()
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False,
+                           capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        proc.kill()
     except OSError:
         pass
 
 
+def _drain(stream, limit, chunks, state, stop_at_limit):
+    """Read `stream` to EOF into `chunks`. Past `limit` bytes it sets state["over"]
+    and, when `stop_at_limit`, stops; otherwise it keeps reading and drops the rest
+    so the child never blocks on a full pipe."""
+    total = 0
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                return
+            total += len(chunk)
+            if total > limit:
+                state["over"] = True
+                if stop_at_limit:
+                    return
+                continue
+            chunks.append(chunk)
+    except (OSError, ValueError):
+        state["broken"] = True
+
+
 def _run(argv, cwd):
-    """(returncode, stdout, stderr); a missing or hung program is (127|124, "", why),
-    never an exception."""
-    exe = shutil.which(argv[0])
-    if exe is None:
+    """(returncode, stdout, stderr); a missing, hung, oversized or non-UTF-8 program
+    is (127|124|125|65, "", why), never an exception. stdout is capped at MAX_OUT
+    bytes and must be strict UTF-8; nothing is silently repaired or truncated."""
+    found = shutil.which(argv[0])
+    if found is None:
         return 127, "", f"{argv[0]} is not on PATH"
+    exe = os.path.abspath(found)
     try:
         proc = subprocess.Popen([exe, *argv[1:]], cwd=cwd, stdin=subprocess.DEVNULL,  # pylint: disable=consider-using-with
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                encoding="utf-8", errors="replace",
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 start_new_session=os.name != "nt")
     except OSError as exc:
         return 127, "", f"{argv[0]} could not run: {exc}"
-    try:
-        out, err = proc.communicate(timeout=GH_TIMEOUT)
-    except subprocess.TimeoutExpired:
+    out_chunks, err_chunks, out_state, err_state = [], [], {}, {}
+    readers = [threading.Thread(target=_drain, args=(proc.stdout, MAX_OUT, out_chunks, out_state, True), daemon=True),
+               threading.Thread(target=_drain, args=(proc.stderr, MAX_ERR, err_chunks, err_state, False), daemon=True)]
+    for reader in readers:
+        reader.start()
+    deadline = time.monotonic() + GH_TIMEOUT
+    failure = None
+    while failure is None:
+        if out_state.get("over"):
+            failure = (125, f"{argv[0]} output is over {MAX_OUT} bytes")
+        elif time.monotonic() > deadline:
+            failure = (124, f"{argv[0]} timed out after {GH_TIMEOUT}s")
+        elif proc.poll() is not None and not any(reader.is_alive() for reader in readers):
+            break
+        else:
+            time.sleep(0.02)
+    if failure is not None:
         _kill_group(proc)
-        try:
-            proc.communicate(timeout=5)
-        except (subprocess.TimeoutExpired, OSError, ValueError):
-            pass
-        return 124, "", f"{argv[0]} timed out after {GH_TIMEOUT}s"
-    return proc.returncode, out, err
+        proc.wait()
+        for reader in readers:
+            reader.join(timeout=5)
+        return failure[0], "", failure[1]
+    if out_state.get("over"):
+        return 125, "", f"{argv[0]} output is over {MAX_OUT} bytes"
+    if out_state.get("broken"):
+        return 125, "", f"{argv[0]} output could not be read"
+    try:
+        out = b"".join(out_chunks).decode("utf-8")
+    except UnicodeDecodeError:
+        return 65, "", f"{argv[0]} output is not valid UTF-8"
+    return proc.returncode, out, b"".join(err_chunks).decode("utf-8", errors="replace")
 
 
 def _valid_slug(slug):
@@ -125,10 +180,25 @@ def repo_slug(root, override=None):
     return f"{match.group(1)}/{match.group(2)}", ""
 
 
+def _no_duplicate_keys(pairs):
+    """json object hook: a key that appears twice is refused, never resolved to the
+    last one (a duplicate could hide a failure row behind a success row)."""
+    keys = [key for key, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise ValueError("duplicate key")
+    return dict(pairs)
+
+
+def _no_constant(name):
+    raise ValueError(f"{name} is not JSON")
+
+
 def _json(text):
-    """(value, ok): `text` parsed as JSON, or (None, False)."""
+    """(value, ok): `text` parsed as strict JSON (no duplicate key, no NaN or
+    Infinity), or (None, False)."""
     try:
-        return json.loads(text), True
+        return json.loads(text, object_pairs_hook=_no_duplicate_keys,
+                          parse_constant=_no_constant), True
     except (ValueError, RecursionError):
         return None, False
 

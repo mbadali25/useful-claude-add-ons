@@ -41,6 +41,10 @@ with open(os.path.join(stub, "responses.json"), encoding="utf-8") as fh:
     responses = json.load(fh)
 reply = responses.get(path, {"rc": 1, "err": "HTTP 404: Not Found"})
 sys.stdout.write(reply.get("out", ""))
+sys.stdout.flush()
+if "out_hex" in reply:
+    sys.stdout.buffer.write(bytes.fromhex(reply["out_hex"]))
+    sys.stdout.buffer.flush()
 sys.stderr.write(reply.get("err", ""))
 sys.exit(reply.get("rc", 0))
 '''
@@ -75,10 +79,12 @@ def _gh(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
 
     class Gh:
-        def reply(self, path, out="", rc=0, err=""):
+        def reply(self, path, out="", rc=0, err="", out_hex=None):
             data = json.loads((stub / "responses.json").read_text(encoding="utf-8"))
             data[path] = {"out": out if isinstance(out, str) else json.dumps(out),
                           "rc": rc, "err": err}
+            if out_hex is not None:
+                data[path]["out_hex"] = out_hex
             (stub / "responses.json").write_text(json.dumps(data), encoding="utf-8")
 
         def status(self, statuses, sha=HEAD):
@@ -219,6 +225,8 @@ def test_verdict_success_with_open_blocks_blocks(blocks):
     GOOD + " extra", GOOD + " kept-by-delta kept-by-delta", GOOD.replace("clean", "reviewed"),
     GOOD.replace("0123456789ab", "0123456789AB"), GOOD.replace("0123456789ab", "0123456789a"),
     GOOD.replace("codex/gpt", "codex"), GOOD.replace("r1", "rx"), None, 0, ["blocks=0"],
+    GOOD.replace("codex/gpt", "codex/gp" + chr(0xE9)), GOOD.replace("codex/gpt", "codex/gp" + chr(0xD800)),
+    GOOD.replace("codex/gpt", "codex/g pt"),
 ])
 def test_verdict_success_with_a_description_off_schema_is_could_not_tell(description):
     verdict, _ = rs.verdict(reply_for([row(description=description)]), HEAD)
@@ -328,6 +336,71 @@ def test_check_output_is_one_line_whatever_the_api_description_holds(elsewhere, 
 
     assert done.returncode == 1 and len(done.stdout.strip().splitlines()) == 1
     assert len(_gate_lines(done)) == 1 and "ALLOW" not in done.stdout.split("head=")[0]
+
+
+def _raw_reply(statuses_json, extra=""):
+    return '{"sha": "%s", "total_count": 1, %s"statuses": %s}' % (HEAD, extra, statuses_json)
+
+
+_FAILURE_ROW = '[{"context": "crew/review", "state": "failure", "description": "revoked"}]'
+_SUCCESS_ROW = '[{"context": "crew/review", "state": "success", "description": "%s"}]' % GOOD
+
+
+@pytest.mark.parametrize("raw", [
+    _raw_reply(_SUCCESS_ROW, '"statuses": ' + _FAILURE_ROW + ", "),
+    _raw_reply(_FAILURE_ROW, '"statuses": ' + _SUCCESS_ROW + ", "),
+    _raw_reply(f'[{{"context": "crew/review", "state": "failure", "state": "success", "description": "{GOOD}"}}]'),
+    _raw_reply(_SUCCESS_ROW, f'"sha": "{HEAD}", '),
+    _raw_reply(_SUCCESS_ROW).replace('"total_count": 1', '"total_count": NaN'),
+])
+def test_check_a_duplicate_key_or_nan_cannot_hide_a_failure(elsewhere, gh, raw):
+    gh.reply(status_path(HEAD), raw)
+
+    done = _cli(elsewhere, "--repo", SLUG, "--head", HEAD)
+
+    assert done.returncode == 2 and "ALLOW" not in done.stdout
+
+
+def test_check_invalid_utf8_beside_a_valid_success_is_could_not_tell(elsewhere, gh):
+    before, after = _raw_reply(_SUCCESS_ROW, '"note": "x", ').split('"x"')
+    payload = (before + '"x').encode() + b"\xff" + ('"' + after).encode()
+    gh.reply(status_path(HEAD), out_hex=payload.hex())
+
+    done = _cli(elsewhere, "--repo", SLUG, "--head", HEAD)
+
+    assert done.returncode == 2 and "not valid UTF-8" in done.stdout and "ALLOW" not in done.stdout
+
+
+def test_check_a_lone_surrogate_escape_prints_one_ascii_line_and_no_traceback(elsewhere, gh):
+    raw = _raw_reply('[{"context": "crew/review", "state": "failure", "description": "bad \\ud800 \\u00e9"}]')
+    gh.reply(status_path(HEAD), raw)
+
+    done = subprocess.run([sys.executable, _SCRIPT, "check", "--repo", SLUG, "--head", HEAD],
+                          cwd=str(elsewhere), capture_output=True, encoding="utf-8",
+                          stdin=subprocess.DEVNULL, check=False, env=dict(os.environ, PYTHONIOENCODING="ascii"))
+
+    assert done.returncode == 1 and "Traceback" not in done.stderr
+    assert len(done.stdout.strip().splitlines()) == 1 and done.stdout.isascii()
+
+
+def test_check_output_over_the_cap_is_could_not_tell(elsewhere, gh, monkeypatch):
+    gh.reply(status_path(HEAD), out="x" * 5000)
+    monkeypatch.setattr(rs, "MAX_OUT", 1000)
+
+    code, lines = rs.check(str(elsewhere), repo=SLUG, head=HEAD)
+
+    assert code == 2 and "output is over 1000 bytes" in lines[0]
+
+
+def test_check_finds_gh_through_a_relative_path_entry(tmp_path, elsewhere, gh):
+    gh.status([row()])
+
+    done = subprocess.run([sys.executable, _SCRIPT, "check", "--repo", SLUG, "--head", HEAD,
+                           "--root", str(elsewhere)], cwd=str(tmp_path), capture_output=True,
+                          text=True, encoding="utf-8", stdin=subprocess.DEVNULL, check=False,
+                          env=dict(os.environ, PATH="ghbin"))
+
+    assert done.returncode == 0, done.stdout
 
 
 @pytest.mark.parametrize("head", [
