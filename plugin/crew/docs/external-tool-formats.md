@@ -151,7 +151,7 @@ Probed: a `core.autocrlf=true` clone on the T-0087 host (Linux), 2026-09-29. Wit
 
 ## gh
 
-**What crew calls.** `plugin/crew/commands/review.md:514-518` posts the review
+**What crew calls.** `plugin/crew/commands/review.md` step 3.2 posts the review
 outcome with `gh pr review <PR> --request-changes --body-file <out.txt>` when
 there is any BLOCK, and with `gh pr review <PR> --approve --body "<reviewer>: CLEAN"`
 when there is none. `plugin/crew/skills/crew-providers/SKILL.md:195` reads

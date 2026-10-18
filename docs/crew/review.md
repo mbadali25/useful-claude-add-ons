@@ -1,0 +1,529 @@
+# /crew:review - the rationale
+
+`commands/review.md` is the part of a review that needs the model. Everything the
+model used to copy out of it as shell is `review_run.py` now: `--prepare` (ticket,
+scratch, specialists, base, dispatch staleness, eligible providers, bundle,
+changed files, landmines, prompt), `--probe`, `--resolve-run`, the reservation and
+the round, with one `next: <action>` line on every exit path (L-0726). This file
+keeps what the cut-down command no longer carries: why each rule exists, in the
+words it was written in. It is repo-only reference and the installed plugin does
+not ship it; nothing here is read at run time.
+
+Rules a test still pins as an instruction live in `commands/review.md`. Rules the
+scripts now enforce are tested as script behaviour (`tests/test_review_prepare.py`,
+`tests/test_review_*.py`). Where a section below says "Step N", it names the step
+of the command as it stood before the cut (crew 1.2.43); the labels the rest of
+the repo cites (2a to 2e, 2d, 3.3) still exist in the command.
+
+## What the script does that the snippets did not (L-0726)
+
+- `--prepare` stops with a `could not tell` line and exit 11 where the snippets
+  carried on: an unreadable `.work/INDEX.md`, review ledger, `.crew/verify.json`,
+  dispatch record, codemap note or models report, a failed `git log` of the base,
+  or a ticket contract that did not build. The snippets swallowed these (`2>/dev/null`,
+  `|| echo 0`) into "no record" or "no specialist", which strikes fewer families or
+  dispatches fewer agents: an unknown must not collapse into the safe-looking value.
+- Specialists are matched against the files the bundle carries (the manifest's
+  committed, staged, unstaged and untracked lists, the same list as `changed.txt`),
+  not against `git diff --name-only HEAD` plus untracked files, which listed nothing
+  for a change that was already committed.
+- Whether a named agent is installed is `verify_agents.py`'s answer (the same one
+  `/crew:status` shows); `unknown` is its own value beside `installed` and `MISSING`.
+- The live Codex probe stays a separate call (`--probe`). `--prepare` asks Codex
+  nothing, so it stays deterministic and reserves nothing; `--resolve-run
+  --probe-status <n>` turns the probe's exit code into FALLBACK / RUN_PROVIDER /
+  RUN_MODEL (review.md's old one-line `python3 -c`).
+- Every exit of `review_run.py` ends with exactly one `next: <action>` line, picked
+  by reason (`NEXT_REASONS` in `review_run.py`): exit 2 and exit 9 each have several
+  causes, so the action depends on what was said, not on the code.
+
+## Scratch directory and the ticket (was Step 0a)
+
+**Step 0a - claim a scratch directory.** A fixed `.work/review-*.txt` path
+collides: two concurrent reviews - a second ticket, or a second session on the
+same branch - clobber each other's diff and output mid-run. Claim one that is
+scoped to both:
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> `mkdir -p` first: `mktemp -d` creates the LEAF, never the parents, so without
+> this it fails with "No such file or directory" on any checkout where
+> `.work/review/` does not already exist - which is every fresh one.
+> no $1: exactly one active row, else empty - stop and ask, never guess
+
+**Review runs after tests and docs**, and has **two rounds per ticket in
+total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
+shared by every worktree). A round is reserved before the reviewer launches,
+so a crashed one still counts; a third is refused and the ticket becomes
+`NEEDS_REPLAN`. Step 3.3 says how round 2's FINDINGS close. No flag, variable or config key changes it.
+
+`mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
+branch name) and session-scoped (no other process can be handed the same
+path). Record the printed `SCRATCH` value and use that exact path everywhere
+`$SCRATCH` appears below - do not recompute it partway through, or step 3 will
+read a different review than the one that ran.
+
+## Which specialists does this diff require (was Step 0b)
+
+**Step 0b - which specialists does this diff require?** Read `.crew/verify.json`.
+For every rule whose `paths` match a changed file, collect its `agents` list.
+Those subagents review **in addition to** the general reviewer below, each in its
+own context, and each gets only the files its rule matched - not the whole diff.
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+A rule with `"agents": ["dba"]` on `sql/**` means a migration is never reviewed
+by the generalist alone. This is the only thing that reads `agents`: the `Stop`
+hook cannot spawn a subagent, so the key is deliberately a review-time concern
+rather than a gate-time one.
+
+**Three outcomes here, and you must say which one happened. They are not
+interchangeable.**
+
+| What you found | Say | Then |
+|---|---|---|
+| `.crew/verify.json` does not exist | `no verification map - run /crew:init; no specialist review was selected` | step 1 |
+| it exists, no rule matched a changed file | `verification map read; no rule matched, so no specialist is required` | step 1 |
+| it exists, a rule matched | name each agent and why | dispatch them |
+
+**The first row is the one that used to disappear.** `.crew/*` is ignored, and
+`!.crew/verify.json` is one of three named un-ignores, so in a repo that has
+adopted that list the map travels — but a repo that has not, or one where
+`/crew:init` has never run, still has **no map at all**. An absent map selects
+nobody, which is indistinguishable from "this diff needs no specialist" unless
+you distinguish it.
+Never let "I could not look" be reported as "I looked and found nothing": that
+is this repo's recurring bug, an unknown collapsing into the safe-looking value,
+sitting in the review path itself.
+
+**A rule may name any installed subagent, not only crew's own roles.** Resolve a
+bare name as crew's own role first (`security` → `crew:security`), then as any
+other installed agent of that name; a namespaced name (`voltagent:security-auditor`)
+is taken literally. This is how a path match pulls in a domain specialist —
+`powershell-security-hardening` on `**/*.ps1`, `security-auditor` on `iam/**` —
+from evidence rather than from someone remembering.
+
+**An agent a matched rule named but that is not installed here is a GAP, and you
+report it in step 3 alongside the ones you skipped.** Never drop it silently.
+The map was written against whatever was installed on the box that ran
+`/crew:verify` — a rule can name an agent that exists there and not here, and the
+review then covers strictly less while producing output indistinguishable from a
+full pass. Tracking the map makes this MORE likely, not less: a committed map
+reaches machines whose agent roster nobody checked. That is the same class of failure as a QA
+provider that authenticates and then returns nothing, and it gets the same
+treatment: say it out loud.
+
+(The reason here has been wrong in both directions — "the map travels" when it
+was ignored, then "it is ignored" after 2026-09-14 un-ignored it. The
+conclusion survived both: name what you could not look at. Cite the gitignore
+**stanza**, never a line number; line citations here moved when negations did.)
+
+## Who wrote this diff, and how do we know (was Step 1)
+
+**Step 1 — who wrote this diff, and how do we know?** Ask the thing that
+recorded the dispatch, rather than re-deriving the answer from config:
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+Its first line names the author family **and its source**, and you repeat that
+source everywhere you name the family — never the family alone:
+
+| First line says | What it means | You say |
+|---|---|---|
+| `author family: <f>  (recorded at dispatch)` | `.work/dispatch.json` holds the role, provider and model that actually ran, and the guard is judging what ran | `author: <f>, recorded dispatch <role>/<provider>/<model>` — the `last dev dispatch:` line printed right under it |
+| `author family: <f>  (READ FROM CONFIG - no dispatch recorded...)` | nothing was recorded in this checkout, so the report read `dev` out of the config | `author: <f>, READ FROM CONFIG - no dispatch recorded, so this is what the NEXT run would use and not who wrote this diff` |
+| `author family: <f or unknown>  (UNKNOWN - a dispatch on this branch has a family that cannot be determined, or something in .work/ would not parse...)` | either at least one dispatch's family cannot be determined -- an unpinned provider that hosts several families, so `family()` has nothing to answer with -- or a file in `.work/` exists and would not parse, so the store cannot say whether the dispatch that wrote this diff is among the ones it CAN read | `author: UNKNOWN - a dispatch on this branch has a family that cannot be determined, so no reviewer can be proven independent of it`. **This is not a pass.** Read the family line: if it names one, that family DID run and is struck, and the source is `unknown` because a second dispatch beside it could not be named; if it names none, nothing is struck and every candidate looks eligible. Either way the report sets `independentReviewer: false`. Say the review is not certified independent, and say that pinning `dev.<provider>.model` is what fixes it |
+
+A recorded fact and a config-derived guess look identical once both are just the
+word `claude`. The label is the only thing that separates them, so a review that
+prints the family and swallows the source has withheld the half that says how
+much to trust the bar it just applied.
+
+## Is that record about THIS diff (was Step 1a)
+
+**Step 1a — is that record about THIS diff?** Compute the diff's base here, in
+step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing it,
+for the same reason `$SCRATCH` is carried:
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> The ticket's START (`scope_base.py --record`): the bundle and its receipt diff from it but
+> leave out paths byte-identical to merged main (T-0100: manifest `merged_main`, stderr
+> `merged-main=`; could-not-tell leaves nothing out). With no usable record scope_base.py falls
+> back to the merge-base with tickets.baseBranch (default origin/HEAD) and says "(fallback)";
+> repeat it in the verdict. Exit 3 = could not tell: stop.
+> scope_base.py did not run at all (no python3). The stated fallback:
+> the merge-base. `... | sed ... || echo main` does NOT work: the || binds
+> to the whole pipeline and sed exits 0 even when symbolic-ref failed, so
+> the fallback never fires and merge-base is handed an empty string.
+> Branch on the ref itself.
+> The NEWEST of `.work/dispatch.json` and anything in `.work/dispatch.d/`.
+> Since 0.16.7 each dispatch writes its own file in that directory and the
+> shared `dispatch.json` slot is a best-effort convenience -- so a slot write
+> that lost a race, or failed outright, would report this branch as having no
+> record while the store holds several. Reading only the one file makes a
+> recorded dispatch look absent, which fails OPEN: the review falls back to
+> the config and clears whatever the config no longer names.
+> 
+> A missing python3 must not take the review down with it, hence the `|| echo 0`.
+> Carry the verdict forward as a FLAG, not as a note to yourself. Step 2 passes
+> it to crew_config.py so the resolved report strikes both families too; without
+> it the report says `dispatch` with one family in it while the table below tells
+> you to strike two, and the resolved data is what every later step reads.
+
+| Reading | Means | Do |
+|---|---|---|
+| `REC_AT` is `0` | no record anywhere -- neither `.work/dispatch.json` nor `.work/dispatch.d/` -- or no `python3` | source is `config`; announce it in those words |
+| `REC_AT >= BASE_AT` | the record is no older than the review base (the ticket's start, or the merge-base on fallback) | trust it |
+| `REC_AT < BASE_AT` | **STALE** — the record predates every commit under review, so it cannot describe any of them | fail closed, below |
+
+Compare against the **base**, never the tip. The normal sequence is implement,
+record, commit, review, so the record is routinely older than `HEAD` and a
+tip comparison would report STALE on every healthy review — which collapses the
+guard into a permanent "no independent reviewer" and teaches everyone to ignore
+it.
+
+**A stale record is fail-closed, not discarded.** Strike **both** the family the
+record names and the family the config names, and say you did both. Dropping the
+stale record and trusting config is the one direction that can under-bar: if
+codex wrote the commits and the config has since been changed to `claude`,
+discarding the record clears codex to review its own work. Over-barring costs a
+rung; under-barring costs the entire point of the guard. If striking both leaves
+no candidate, that is the same state as striking one and leaving none — no
+reviewer runs, and the round is recorded INCOMPLETE and refunded (below).
+
+**This test proves stale, and never proves fresh. Say so.** The dispatch record
+is one file per checkout with a single `dev` slot, and the record carries no
+branch and no ticket — so a dispatch made on another branch overwrites it and
+then reads as perfectly fresh here. Print the recorded `role`/`provider`/`model`
+next to the current branch and the ticket under review, so a human can see a
+mismatch this command cannot detect. **If the recorded role has nothing to do
+with the work you are reviewing, treat it as stale and fail closed.**
+
+## Strike the author's family, then pick (was Step 1b)
+
+**Step 1b — strike the author's family, then pick.** The report has already
+applied the guard to its own `qa` rows and printed the `qa.order` fall-through;
+apply the same strike to the provider you are about to run. When the source is
+`config` rather than a record, the family comes from `dev.provider`:
+
+| `dev.provider` | Struck from QA |
+|---|---|
+| `claude` (default) | `claude` — the `reviewer` fallback |
+| `codex` | `codex` |
+| `kimi` | `kimi`, and any Copilot pin to a `kimi-*` model |
+| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex, `kimi-*` strikes Kimi |
+
+A family reviewing its own output agrees with itself, and that is the exact
+failure this command exists to catch. Apply the strike at review time. Do not
+rely on `qa.order` having been edited to match; the two keys are set at different
+times by different people, and the ordering is a preference while this is a rule.
+
+If striking the author's family leaves **no** candidate, no reviewer runs (L-0712): say
+`NO INDEPENDENT REVIEWER` in the verdict and record it INCOMPLETE and refunded — no round, no budget:
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --no-reviewer --reason "<why>"`.
+Step 2c on the author's family runs only when I ask for that same-family read, with
+`SAME_FAMILY="<my reason>"`; its round, review.json and a CLEAN receipt are labelled `same_family`.
+
+What is forbidden is letting a same-family review be *recorded* as an independent
+one. Announce it, and never write it to `.crew/metrics.md` as though a different
+family had looked.
+
+Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
+and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
+not a cue to fall back (except a `review` role pinned to codex: it runs `$FALLBACK`, L-0712). If `qa.provider` is `auto`, walk `qa.order` and take the
+first surviving provider that passes its probe:
+
+| Provider | Probe | Runs |
+|---|---|---|
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed), 7 (unknown, timed out) or 5 (limited): skip Codex with `PROBE_DETAIL` quoted verbatim. A `review` role pinned to codex runs what `$FALLBACK` names (L-0712: the fallback on its family's provider, else the next cross-family `qa.order` provider; `INCOMPLETE` is `--no-reviewer`); otherwise take the next provider in `$ELIGIBLE`, none left being the no-candidate case above (`--no-reviewer`). A Claude read after a limit (the owner's 2026-09-28 practice) is now my explicit choice (L-0712): step 2c with `SAME_FAMILY="codex limit"`, announced `same-family (codex limit)`, not independent. The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
+| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does. Exit 8, the probe changed the tree or it could not be checked after the probe: stop | step 2e |
+| `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
+| `claude` | always passes (it is in `$ELIGIBLE` only when Claude is not the author) | step 2c |
+
+Announce which reviewer ran **and every provider you skipped, with the reason**. A
+skipped provider is the single most dangerous silent failure here: a QA gate that
+quietly finds nothing looks exactly like a clean diff.
+
+**Why `copilot` needs a model set to be eligible at all.** Copilot CLI defaults to
+`claude-sonnet-4.6` — the author's own family. An unpinned Copilot is therefore a
+*same-family* reviewer wearing the costume of an independent one, which is strictly
+worse than step 2c, since 2c at least announces its own weakness. Skip it and say
+`copilot skipped: qa.copilot.model not set`. If the configured model string starts
+with `claude-`, run it but say plainly that this review is same-family and does not
+count as independent.
+
+## Set up the run (was Step 2)
+
+**Step 2 — set up the run.** Extract the config values into the shell first, so the
+provider blocks below are literally runnable rather than prose about themselves:
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> Resolve through crew_config, NEVER by re-reading .crew/config.json. That file
+> is one layer of three, and it does not know about the `roles` table at all:
+> reading it directly made both `qa.roles.review` and every value set in
+> ~/.claude/crew/config.json invisible to the only command that actually runs a
+> review, so /crew:model would report the pinned reviewer while /crew:review ran
+> the block default. One resolver, or the report and the run describe different
+> machines.
+> What model would PROVIDER use for the `review` role? The role pin wins when it
+> names that provider; otherwise the provider's own block does. Absent stays
+> empty -- "pass no flag", never "crash" and never a literal "None" on the
+> command line.
+> The author families to strike, from the same report -- never re-derived from
+> dev.provider, which is a default a per-role pin may already have overridden.
+> This is a SET: a stale or branchless record strikes the recorded family AND
+> the configured one, because neither can be ruled out as the author.
+> Which candidates survive that strike, and can actually run. The report has
+> already applied the guard -- this is the list to pick from, in order, and an
+> empty one is the "no independent reviewer" state, not an error.
+> a provider review_run.py cannot launch: named on stderr, never tried
+
+**Use `$ELIGIBLE`, in that order, and say `$AUTHOR_SOURCE` out loud.** It is the
+report's own answer to "who may review this", with the family guard already
+applied and `qa.order` already walked. Re-deriving the choice from `qa.provider`
+here would be a second implementation of the rule that can disagree with the one
+`/crew:model` prints. An empty `$ELIGIBLE` is step 1b's no-candidate case: `--no-reviewer`,
+INCOMPLETE and refunded, and step 2c only on my `SAME_FAMILY`.
+
+`source=stale` means the recorded dispatch could not be tied to this diff -- a
+different branch, an unrecorded branch, or a record older than the review base --
+so **both** the recorded and the configured family were struck. Report that as
+the reason a rung was lost, rather than presenting the narrower candidate list
+as though it were a preference.
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
+> L-0712: the probe is resolve_role's `available` (a limit or no answer is all of codex, its gpt fallback too; a failure, that model): a failed codex pin falls back (stderr says how); run the provider FALLBACK names (`<provider> <model>`; its model is set in QA_MODEL / QA_KIMI_MODEL); INCOMPLETE = --no-reviewer. RUN_PROVIDER / RUN_MODEL are what step 2a launches: codex on a probe ok, the fallback's provider, else empty (step 2c, --no-reviewer, or a walk).
+
+## The bundle, the ticket contract, the landmines and the prompt (was the end of Step 2)
+
+# $BASE comes from step 1a. Reuse it; do not recompute it here. A second
+# derivation can disagree with the first, and then the staleness verdict was
+# about a different range than the diff the reviewer actually read.
+#
+# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and untracked
+# changes, never `.work/`, generated `graphify-out/` (`excluded`) or a path identical to
+# merged main (`merged_main`), with renames, modes, binaries and submodules in the manifest,
+# split into parts (never truncated) and hashed; committed text changes under `.work/` or `.crew/metrics.md` in $BASE..HEAD are appended (L-0739, `included_excluded`).
+# `git diff "$BASE"...HEAD` gave 0 bytes on a dirty tree (Codex, `docs/review/03-codex-review.md`). Real index unwritten.
+MANIFEST="$SCRATCH/manifest.json"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
+  --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
+PATCH_STATUS=$?
+if [ "$PATCH_STATUS" -eq 2 ]; then
+  echo "nothing to review since $BASE: review-patch's line above says why"
+  exit 0
+elif [ "$PATCH_STATUS" -ne 0 ]; then
+  echo "review-patch failed (exit $PATCH_STATUS) -- see stderr above. This is a defect in building the review input, not an empty diff to wave through."
+  exit "$PATCH_STATUS"
+fi
+
+# The ticket contract: bundle parts + READ acks, spec sections (Intent, Exclusions,
+# Evidence, Unknowns, Acceptance checks), plan, test receipts (or a CI receipt the gate accepted),
+# the standards checklist (never the self-check answers), the recurring-findings checklist, web tests.
+# Anything absent is written as MISSING, never left out.
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
+  --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
+
+# Gather this repo's own failure modes INTO the shared prompt, so every
+# provider gets them -- wiring them into reviewer.md alone reached only the
+# fallback. Byte-identical instructions across providers is this file's
+# invariant: never append for one provider.
+# The changed-file list MUST be built here, before the loop greps it (an
+# earlier draft grepped a changed.txt nothing wrote, and every review got an
+# empty landmine section), and from $MANIFEST, not a second `git diff` that
+# could disagree with what review_patch.py actually bundled.
+python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+files = set()
+for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
+    files.update(m.get(key) or [])
+sys.stdout.write("".join(f + "\n" for f in sorted(files)))
+' "$MANIFEST" > "$SCRATCH/changed.txt"
+
+: > "$SCRATCH/context.txt"
+for note in .crew/codemap/*.md; do
+  [ -e "$note" ] || continue
+  case "$note" in */INDEX.md) continue ;; esac
+  # Only notes whose cited paths intersect this diff. A reviewer handed every
+  # landmine in the repo reads none of them. `-F` because a path is a literal,
+  # not a pattern; an empty changed.txt matches nothing, which is correct.
+  if [ -s "$SCRATCH/changed.txt" ] && grep -qFf "$SCRATCH/changed.txt" "$note"; then
+    sed -n '/^## Landmines/,/^## /p' "$note" >> "$SCRATCH/context.txt"
+    sed -n '/^## Written by \/ Read by/,/^## /p' "$note" >> "$SCRATCH/context.txt"
+  fi
+done
+# KNOWN OVER-MATCH, stated rather than hidden: a widely-cited path
+# (`README.md`) matches almost every note (measured: 7 of 10 notes, 333 lines,
+# on a 13-file diff). Too much rather than too little, but not precision.
+#
+# So cap it, and make the cap ANNOUNCE itself. A prompt silently truncated
+# mid-landmine is worse than one that says it was cut: the reviewer cannot
+# tell a short landmine list from a truncated one.
+if [ "$(wc -l < "$SCRATCH/context.txt")" -gt 200 ]; then
+  head -200 "$SCRATCH/context.txt" > "$SCRATCH/context.trim" &&
+  printf '
+[TRUNCATED at 200 lines of %s. More landmines exist in .crew/codemap/ than fitted here.]
+'     "$(wc -l < "$SCRATCH/context.txt")" >> "$SCRATCH/context.trim" &&
+  mv "$SCRATCH/context.trim" "$SCRATCH/context.txt"
+fi
+
+# An empty context file is a real answer (no intersecting note, or no codemap)
+# and must SAY so rather than silently producing a prompt that looks complete.
+if [ ! -s "$SCRATCH/context.txt" ]; then
+  printf 'No codemap note intersects this diff, so no repo-specific landmines were supplied.
+' > "$SCRATCH/context.txt"
+fi
+
+# Write the prompt HERE, before any provider block reads it. All three reviewers
+# get byte-identical instructions, so a defect count that differs between them is
+# a fact about the model and not about how you worded it. Unquoted heredoc marker
+# so $SCRATCH becomes the real path - a reviewer handed the literal string
+# "$SCRATCH/diff.txt" opens nothing and reports CLEAN on a file it never read.
+cat > "$SCRATCH/prompt.txt" <<EOF
+Review the change in $SCRATCH/diff.txt, read as the parts listed below, as a
+hostile QA engineer, against the ticket's spec and plan below.
+Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
+SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
+error paths, boundary and empty-collection cases, concurrency, anything the
+change makes reachable that was not before, and every acceptance check.
+Output nothing but the READ lines and those lines - no code fences, no prose.
+If no defects, after the READ lines output exactly: CLEAN
+
+$(cat "$SCRATCH/contract.txt")
+
+This repository's own recorded failure modes follow. They come from its code
+map, where each line was written because it already cost someone real time
+here. Treat them as leads to check in the diff, not as findings to repeat: a
+landmine this change does not touch is not a defect, and reporting it as one
+trains the reader to skim your output.
+$(cat "$SCRATCH/context.txt")
+EOF
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+## Step 2a, 2b and 2e: the reviewer processes
+
+**Step 2a — Codex, 2b — Copilot, 2e — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
+Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths. The fingerprint hashes each file's contents and permission bits (a chmod counts under `core.filemode=false`), digests a symlink with its target and what it resolves to (a link to a directory outside the repository is could-not-tell), and records a FIFO, socket or device, never opened. A Kimi round is never reserved unprobed: when the ledger's status shows no round left, `review_run.py` exits 4 before the probe. For Kimi the probe also runs before the preflight questions (a CLEAN receipt, then the verify gate), as Codex's `--probe` runs before its round: a Kimi that is not `ok` exits 2 and is skipped even on a tree the gate has not passed, and an `ok` one on such a tree exits 9 with no round reserved. Set aside: `graph.out` (graphify's background rebuild) unless it is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than `graph.json` and `GRAPH_REPORT.md`, and, only while gitignored before and after, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers, which crew's own hooks or an IDE write mid-review. Tool caches such as `__pycache__` and the verify gate's `.crew/` files still count: a later run reads them back. Empty `QA_KIMI_MODEL` means the CLI's `default_model`. A Kimi round is not retried in-process (L-0514).
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> RUN_PROVIDER/RUN_MODEL come from Step 2's probe line (L-0712: a fallback on Kimi launches Kimi, never Codex); empty refuses (exit 2)
+> walking $ELIGIBLE instead: --provider copilot --model "$QA_COPILOT_MODEL", or --provider kimi --model "$QA_KIMI_MODEL"
+
+`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
+Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
+denied by policy settings` is org or enterprise policy — report that exact
+cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
+to the next eligible provider), or `review-run: self-check: ...` - the standards
+self-check is missing or stale for this bundle (every provider): answer
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. `the ledger changed since the gate decision` or `... gate could not run: ...` (L-0518) is exit 2 too: run again, or repair what it names. Exit 9 (`$REVIEW_STATUS`; 5 is only ever the probe's limit, L-0528), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. Exit 10 (`$REVIEW_STATUS`; 6 is only ever the probe's), only once the clone's merge train is armed (L-0526, `crew_train.py arm`): an overlapping ticket holds the train or queued first, the base moved in this ticket's Touch and must be merged first (`crew_train.py catch-up`), or the train could not be read - no round spent; stderr names the blocker and the colliding paths, `crew_train.py status` shows the queue, and the round runs once this ticket holds it. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else (a receipt the delta gate kept across a catch-up does so only once the verify gate is VERIFIED or NO_GATE on that tree); an unverified gate is refused with exit 9, then the merge train with exit 10, before the pre-review checks run; a pre-review refusal (exit 9) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips the train and both of those: the reservation refuses it (exit 4) and the train is never taken. A holder refused after taking the train (exit 9 or 2) keeps holding it: fix it and review again (the hold is re-confirmed), or free it with `crew_train.py release --ticket "$TICKET"`. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round takes the next `$ELIGIBLE` provider (else `--no-reviewer`); the round after it probes Codex live again. `review-run: same-family: ...` (exit 2, nothing reserved) is the L-0712 family guard: the reviewer is the author's family, or its family or the authors could not be told; walk on, or `--no-reviewer`. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+
+Exit 2 from `--provider kimi` can also be a kimi probe state other than `ok`, which the message names (`kimi probe: rate-limited - ...`): no round spent; announce it and walk to the next provider, unless `qa.provider` pins `kimi`, which hard-fails instead.
+Exit 8 means the Kimi probe changed the working tree; stop and report the named paths, do not walk to the next provider. A tree that cannot be fingerprinted after the probe, or a probe process that could not be stopped, exits 8 too (it may have changed, or still change): stop and report the reason. No round was spent, but the tree is no longer the one the bundle was built from.
+
+## Step 2c: the Claude reviewer
+
+**Step 2c — Claude reviewer** (cross-family, or same-family only on my `SAME_FAMILY`). Invoke the `crew:reviewer` subagent with the
+SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
+byte-identical instructions, per this file's own invariant — plus the concrete
+paths `$SCRATCH/diff.txt` and `$SCRATCH/manifest.json`. Tell it to review that
+patch only; it must not re-derive its own diff with `git diff` — that is the
+same committed-range-only mistake `review_patch.py` exists to fix (found by
+Codex, `docs/review/03-codex-review.md`), and a subagent computing its own
+`git diff` fresh can miss the staged, unstaged and untracked content the
+manifest already captured. It reviews in its own context so it has not seen
+your reasoning for writing the code. Reserve the round BEFORE dispatching it,
+then hand its output to the same verdict parser:
+
+*(the shell that stood here is `review_run.py --prepare` now; its comments, which carry the reasons, follow)*
+
+> ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
+
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 9 above - gate or pre-review checks -, exit 10 above - the merge train - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle (or kept by the delta gate on a gated tree). A round the second call reports as a refunded `tool` failure is re-dispatched once (reserve again, rerun this block); a second failure, or any other INCOMPLETE, stops (L-0514).
+
+The fallback is genuinely weaker than a different family: the same model family reviewing itself
+finds fewer defects. Tell me when it is what ran, so I review harder myself.
+
+**The shared prompt is written in step 2**, before any provider runs. Do not re-word it per
+provider: identical instructions are what make a differing defect count a fact about the model
+rather than about the prompt.
+
+## The verdict is the script's (was the end of Step 2c)
+
+Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0, every part acknowledged,
+no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
+it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
+a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; 2a/2b retry a refunded round once in-process (L-0514), never a usage limit or a timeout, and `review: retry:` / `review: options:` lines say what stopped it.
+
+## Step 2d: re-run the failing control
+
+**Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
+guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
+red. A pasted RED transcript is a claim about a mutation, not the mutation. Where the check is
+runnable here, run it yourself: revert the guard's condition (or delete the line it asserts on),
+run the check, confirm it fails with a message naming the thing under test, then restore. Report
+which controls you re-ran and which you could only take on the author's word. An unverified control
+is a BLOCK, not a NIT — a check that has never been shown to fail is the defect class this crew
+loses the most time to.
+
+## Step 3: act, in detail
+
+**Step 3 — act.**
+1. Report every BLOCK and FIX line verbatim; do not soften or argue first. If a `review: FINDINGS kept; ...` line
+   printed, also show every ignored line verbatim (`review.json` `ignored_text`, counted by `ignored_lines`): the script
+   ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not re-derived:
+   base, head, branch, dirty or not, and each changed file's category (committed / staged / unstaged / untracked).
+2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
+   counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
+   release: stop, say so, and replan the ticket; there is no third round.
+3. **Closure (L-0510).** `review: auto-accept: eligible` (a final round: FINDINGS, 0 BLOCK, no open healer skip, no verdict recovered from stray lines (`ignored_lines` 0 and readable), reviewed by Codex or Kimi) AND no BLOCK from step 0b's specialists or step 2d's controls, which the ledger never sees: mint the next free id as `/crew:brainstorm` step 1 does, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept --follow-up <id>`, then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py" create --root . --ticket <id> --title "<title>"` and write its `direction.md`: source ticket, round, bundle sha, then every line printed after the first, verbatim, one per line inside one fenced block, no `>` or list prefix (`--check-follow-up` matches whole lines verbatim, as many times as the receipt carries each). A same-family (Claude-fallback) round is never eligible: it is mine to accept. `tracker not updated: <reason>` stops for me.
+   Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round); under `/crew:autopilot` with `autopilot.maxAutoReplans` 1 or more, `crew_autopilot.py next` then names `auto-reject` for an out-of-rounds BLOCK round it may reject and replan itself, and this command still ends at its verdict. Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
+   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`; an ACCEPTED ticket only with `--reject --by "<who>" --supersede-accepted`, my call, which keeps the old receipt under `superseded`). A receipt naming the wrong accepter is mine to fix: `--correct-acceptance --by "<who>" --reason "<why>"` (rows kept in `acceptance_corrections`; never on a clean or auto-accepted receipt). `--by` is a recorded name, not an identity check.
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since - except where the delta gate (L-0522) proves the ticket's own delta byte-identical across a catch-up merge, a version bump or an anchor-only refresh (`receipt kept by delta gate: ...`, judged on HEAD's tree with a clean checkout, and only where this clone's merge train is armed); anything it cannot prove reads stale.
+4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
+   with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
+
+   ```bash
+   gh pr review <PR> --request-changes --body-file "$SCRATCH/out.txt"   # any BLOCK
+   gh pr review <PR> --approve        --body "<reviewer>: CLEAN"        # no BLOCK
+   ```
+
+   A verdict posted as `gh pr comment` is invisible to every mechanism that could act on it: nothing
+   distinguishes approved from blocked from never-reviewed without a human reading threads, and an
+   unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used.
+   If the repo has no PR yet, say that instead of silently skipping the step.
+5. If `notify.provider` is not `none`, send one line:
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
+   Counts only. Never the findings themselves — those stay in the repo.
+6. The metrics row is `review_run.py`'s, not yours (L-0578: hand rows were skipped for 118 of 162 rounds): it appends `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <n BLOCK> | <n FIX>`
+   to the MAIN checkout's `.crew/metrics.md` (also from a worktree) and prints `review: metrics row appended to <path>`. INCOMPLETE is written as INCOMPLETE, a Codex-limit fallback as `same-family: codex limit`.
+   **Never append a scored row by hand** - a second row for a round is a second divisor. If it printed `metrics row NOT written` or `PARTLY written`, append (or replace with) exactly the row it quoted.
+7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
+   then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
+   An INCOMPLETE round's `out.txt` is refused (exit 1, nothing written): report that, not "no findings".
+8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you
+   skipped, and every one that a matched rule named but that **is not installed on this machine**. A
+   review that quietly dropped the `dba` pass on a migration reads exactly like one that had nothing
+   to find, and a rule naming an agent this box does not have fails the same way while looking even
+   more normal — there is nothing to skip, so nothing feels skipped.
+
+   Record the not-installed ones too, as a `-`-count row in the file step 6's `review:` line named. `/crew:status` reads that file, and
+   "this rule has asked for `security-auditor` eleven times and never got it" is exactly the
+   evidence that should drive either installing it or deleting the rule.
+9. Name the author family **and its source** in the same breath as the reviewer: `recorded dispatch
+   <role>/<provider>/<model>`, `READ FROM CONFIG - no dispatch recorded`, or `STALE RECORD - both
+   families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the
+   probe's quoted `PROBE_DETAIL`. Which family was barred is only checkable by a reader who knows
+   whether the bar rests on a fact or on a guess, and that is the whole difference this record
+   exists to make visible.
+
+That metrics line is crew bookkeeping to the review bundle, the completion audit and the verify gate (`crew_ticket.CREW_BOOKKEEPING_PATHS`), so appending it never stales a receipt; it is not throwaway: `/crew:status` reads it to show whether this setup is actually catching anything.
