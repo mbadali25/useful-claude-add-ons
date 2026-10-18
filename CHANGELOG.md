@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.49: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+### Fixed — crew 1.2.50: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
 
-- **Summary.** `crew` 1.2.49 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+- **Summary.** `crew` 1.2.50 makes the Bash verify gate read `--all` from anywhere in its arguments, so
   `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
   Stop that defers the expensive rules.
 - **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
