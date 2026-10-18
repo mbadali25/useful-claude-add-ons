@@ -172,13 +172,12 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
   **Check:**
   ```bash
-  python3 "<crew>/hooks/scripts/review_status.py" check --root . --pr <PR>
+  python3 "<crew>/hooks/scripts/review_status.py" check --pr <PR>
   ```
-  `REVIEW_GATE ALLOW` (exit 0) means the authoring host published a `crew/review` success with `blocks=0` for
-  that exact head; `BLOCK` (1) and `COULD_NOT_TELL` (2) both refuse. On the authoring host, push, then
-  `review_status.py post --root . --ticket <id>`; it posts only from a clean tree when the receipt stands on HEAD at 0 BLOCK, and
-  again after a merge of main or a version bump (`kept-by-delta`). A status attests, it does not prove, and
-  `gh pr merge --admin` bypasses a required check.
+  `REVIEW_GATE ALLOW` (exit 0) means GitHub holds exactly one `crew/review` success with `blocks=0` for that
+  exact head; `BLOCK` (1) and `COULD_NOT_TELL` (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads `COULD_NOT_TELL`,
+  which is safe. A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
 
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**

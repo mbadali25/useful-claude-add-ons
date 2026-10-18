@@ -521,9 +521,17 @@ loses the most time to.
 
    A verdict posted as `gh pr comment` is invisible to every mechanism that could act on it: nothing
    distinguishes approved from blocked from never-reviewed without a human reading threads, and an
-   unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used. If the repo has no PR yet, say that instead of silently skipping the step.
-   **Publish an accepted receipt (L-0780).** Ledger and receipt are host-local, so another host sees none: absent is COULD NOT TELL, never "nothing to gate" (#599 merged with 4 open BLOCKs). Once the head is pushed and the receipt stands, and again after a merge of main or a version bump (`kept-by-delta`), run `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_status.py" post --root . --ticket "$TICKET"`: it posts the `crew/review` status on that exact sha only at 0 BLOCK (exit 1 nothing stands, 2 could not post). Before `gh pr merge` on any host, `review_status.py check --root . --pr <PR> [--ticket "$TICKET"]` (without `--ticket` a dirty tree is could-not-tell) prints `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>`; exit 1 and 2 both refuse. A status attests, it does not prove; `--admin` bypasses a required check.
-5. If `notify.provider` is not `none`, send one line: `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
+   unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used.
+   If the repo has no PR yet, say that instead of silently skipping the step.
+
+   **Before `gh pr merge` on any host (L-0780).** The ledger and receipt are host-local, so another host sees none: absent
+   is COULD NOT TELL, never "nothing to gate" (#599 merged with 4 open BLOCKs). Run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_status.py" check --pr <PR>`: it reads the published `crew/review`
+   status of that exact head and prints `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>`; exit 1 and 2 both refuse.
+   Nothing publishes that status yet (L-0821), so until then it reads COULD_NOT_TELL. A status attests, it does not
+   prove; `--admin` bypasses a required check.
+5. If `notify.provider` is not `none`, send one line:
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. The metrics row is `review_run.py`'s, not yours (L-0578: hand rows were skipped for 118 of 162 rounds): it appends `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <n BLOCK> | <n FIX>`
    to the MAIN checkout's `.crew/metrics.md` (also from a worktree) and prints `review: metrics row appended to <path>`. INCOMPLETE is written as INCOMPLETE, a Codex-limit fallback as `same-family: codex limit`.

@@ -337,13 +337,12 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   <strong>Check:</strong></p>
 </li>
 </ul>
-<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_status.py&quot; check --root . --pr &lt;PR&gt;
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_status.py&quot; check --pr &lt;PR&gt;
 </code></pre>
-<p><code>REVIEW_GATE ALLOW</code> (exit 0) means the authoring host published a <code>crew/review</code> success with <code>blocks=0</code> for
-  that exact head; <code>BLOCK</code> (1) and <code>COULD_NOT_TELL</code> (2) both refuse. On the authoring host, push, then
-  <code>review_status.py post --root . --ticket &lt;id&gt;</code>; it posts only from a clean tree when the receipt stands on HEAD at 0 BLOCK, and
-  again after a merge of main or a version bump (<code>kept-by-delta</code>). A status attests, it does not prove, and
-  <code>gh pr merge --admin</code> bypasses a required check.</p>
+<p><code>REVIEW_GATE ALLOW</code> (exit 0) means GitHub holds exactly one <code>crew/review</code> success with <code>blocks=0</code> for that
+  exact head; <code>BLOCK</code> (1) and <code>COULD_NOT_TELL</code> (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads <code>COULD_NOT_TELL</code>,
+  which is safe. A status attests, it does not prove, and <code>gh pr merge --admin</code> bypasses a required check.</p>
 <ul>
 <li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
   <strong>Check:</strong></li>

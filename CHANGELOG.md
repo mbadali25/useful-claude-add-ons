@@ -9,20 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.48: a missing review ledger is could-not-tell, and an accepted receipt is published as a commit status (L-0780)
+### Changed — crew 1.2.48: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
 
-- **Summary.** `crew` 1.2.48: a review receipt can now be published as the `crew/review` commit status on the exact head, and a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate".
+- **Summary.** `crew` 1.2.48: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
 - **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
   host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
-- **`review_status.py post`.** Publishes `success` on the pushed head only when `review_ledger.check_receipt` says the receipt
-  stands there and the round's BLOCK count is exactly 0; the description carries round, kind, reviewer, counts, bundle and
-  `kept-by-delta` for a waived head. Nothing stands, a dirty tree or a HEAD that moves mid-check posts nothing (exit 1); a gh failure, or a reply that is not the created status, is exit 2.
-- **`review_status.py check`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2): the local ledger decides when
-  it covers that head, else the published status for that exact sha. No status, `pending`, a reply for another sha, gh missing,
-  unauthenticated or rate-limited, an unparseable reply and a corrupt ledger are all COULD_NOT_TELL.
+- **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (the sha asked, a complete
+  list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
+  unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
 - **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
-- **Not done here.** Requiring `crew/review` in branch protection is the repository owner's setting; wiring `post` into the
-  ship path, `check` into `/crew:done` and `check-land`, and a guard on a raw `gh pr merge` are a follow-up feature ticket.
+- **Not done here.** Nothing publishes the status yet: the producer (`post`) moves to L-0821, rebuilt on one validated ledger
+  read, with wiring into `/crew:done`, `check-land` and autopilot ship and a guard on a raw `gh pr merge`. Until then every
+  head reads COULD_NOT_TELL, which is safe. Requiring `crew/review` in branch protection is the repository owner's setting.
   A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
 ### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
