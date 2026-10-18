@@ -580,6 +580,51 @@ def test_a_record_without_cwd_gives_no_worktree_evidence(repo, tmp_path):
     assert (used["files"], used["tokens"]) == (0, None)
 
 
+def test_a_valid_json_line_of_the_wrong_shape_makes_the_file_unreadable(repo):
+    path = _session(repo, "s1", [_user(1, "Ticket ID: L-9"),
+                                 _asst(3, "m1", cwd=repo, output_tokens=7)])
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("[]\n")
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["unreadable"], used["tokens"]) == (0, 1, None)
+
+
+def test_an_inconsistent_cache_creation_split_is_invalid_not_reallocated(tmp_path):
+    transcript = _transcript(tmp_path, [_asst(1, "m1", cache_creation_input_tokens=1000,
+                                              cache_creation={"ephemeral_5m_input_tokens": 100,
+                                                              "ephemeral_1h_input_tokens": 200})])
+
+    assert cm.transcript_token_kinds(transcript) == cm.UNKNOWN
+
+
+def test_a_record_of_another_type_outside_the_worktree_gives_no_worktree_evidence(repo, tmp_path):
+    tree = _worktree(repo, tmp_path, "L-9-feature")
+    elsewhere = {"type": "progress", "timestamp": "2026-01-01T00:00:03Z", "cwd": str(repo)}
+    _session(tree, "s1", [_asst(1, "m1", cwd=tree, output_tokens=7), elsewhere])
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["tokens"]) == (0, None)
+
+
+def test_a_directory_that_cannot_be_listed_is_counted_unreadable(repo, monkeypatch):
+    _session(repo, "s1", [_user(1, "Ticket ID: L-9"), _asst(2, "m1", cwd=repo, output_tokens=7)])
+    real = os.listdir
+
+    def refuse(path):
+        if "projects" in str(path):
+            raise PermissionError(13, "denied", str(path))
+        return real(path)
+
+    monkeypatch.setattr(cm.os, "listdir", refuse)
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["unreadable"], used["tokens"]) == (0, 1, None)
+
+
 def test_session_switching_tickets_is_unattributed_and_counted_conflicting(repo):
     _session(repo, "s1", [_user(1, "Ticket ID: L-9"), _user(2, "/crew:implement L-8"),
                           _asst(3, "m1", cwd=repo, output_tokens=7)])

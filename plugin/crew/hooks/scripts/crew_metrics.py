@@ -457,9 +457,9 @@ TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
 # published 1.25x (5-minute TTL) and 2x (1-hour TTL) of the input rate. A
 # cache-read rate the table states is used as stated (Fable 5.1 0.25, Fable 5
 # 1.00, Opus 5.5 0.20, Sonnet 0.20); where it states none the standard 0.1x of
-# input is ASSUMED (opus-5, opus-4.x, sonnet-4-6, haiku). Haiku 5.5's rate
-# above 100K prompt tokens ($0.50 in / $2.50 out) is NOT applied, so its cost
-# can only be low. A model with no entry makes cost UNKNOWN, never a partial sum.
+# input is ASSUMED (opus-5, opus-4.x, sonnet-4-6, haiku). Haiku 5.5 messages
+# with a prompt above 100K tokens use PRICES_LONG ($0.50 in / $2.50 out, cache
+# read ASSUMED 0.1x). A model with no entry makes cost UNKNOWN, never a partial sum.
 PRICES_AS_OF = "2026-10-06"
 PRICES_SOURCE = ("claude-api skill model table (cached 2026-10-06; "
                  "https://platform.claude.com/docs/en/about-claude/pricing); "
@@ -520,6 +520,8 @@ def _iter_jsonl(path, state):
                     continue
                 if isinstance(rec, dict):
                     yield number, rec
+                else:
+                    state["bad"] = True
     except (OSError, TypeError):
         state["bad"] = True
 
@@ -575,6 +577,9 @@ def _usage_of(rec, fields, validate, include_sidechain):
         if not isinstance(split, dict) or any(k in split and _bad_count(split[k])
                                               for k in _CREATION_SPLIT):
             raise ValueError("a cache creation count is not a non-negative integer")
+        if sum(split.get(k) or 0 for k in _CREATION_SPLIT) != (
+                usage.get("cache_creation_input_tokens") or 0):
+            raise ValueError("the cache creation split does not add up to its total")
     model = message.get("model")
     return usage, model if isinstance(model, str) and _MODEL_RE.match(model) else NO_MODEL
 
@@ -842,15 +847,17 @@ def _worktree_id(cwds, missing_cwd, trees, ticket):
     return None
 
 
-def _session_files(project_dir):
+def _session_files(project_dir, errors):
     """[(path, parent_session_path_or_None)]: the main `<session>.jsonl` files
     and every `*.jsonl` anywhere under `<session>/subagents/` (the direct
     `agent-*.jsonl` files and `workflows/wf_<id>/agent-*.jsonl`), regular files
-    only (opening a FIFO would block)."""
+    only (opening a FIFO would block). A directory that cannot be listed or
+    walked is appended to `errors`: an unreadable place is not an empty one."""
     files = []
     try:
         names = sorted(os.listdir(project_dir))
-    except OSError:
+    except OSError as exc:
+        errors.append(exc)
         return files
     for name in names:
         full = os.path.join(project_dir, name)
@@ -858,7 +865,8 @@ def _session_files(project_dir):
             files.append((full, None))
         elif os.path.isdir(os.path.join(full, "subagents")):
             parent = os.path.join(project_dir, name + ".jsonl")
-            for here, _dirs, found in os.walk(os.path.join(full, "subagents")):
+            for here, _dirs, found in os.walk(os.path.join(full, "subagents"),
+                                              onerror=errors.append):
                 for leaf in sorted(found):
                     if leaf.endswith(".jsonl") and os.path.isfile(os.path.join(here, leaf)):
                         files.append((os.path.join(here, leaf), parent))
@@ -879,12 +887,11 @@ def _scan_file(path):
         if text:
             for pattern in (_STAMP_LINE, _CREW_COMMAND, _COMMAND_TAGS):
                 ids.update(m.group(1) for m in pattern.finditer(text))
-        if rec.get("type") in ("user", "assistant"):
-            cwd = rec.get("cwd")
-            if isinstance(cwd, str) and cwd:
-                cwds.add(cwd)
-            else:
-                missing_cwd = True
+        cwd = rec.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            cwds.add(cwd)
+        elif rec.get("type") in ("user", "assistant") or "cwd" in rec:
+            missing_cwd = True
         try:
             got = _usage_of(rec, TOKEN_FIELDS, TOKEN_FIELDS, True)
         except ValueError:
@@ -907,20 +914,21 @@ def attributed_usage(root, ticket):
     count) is `unreadable`: the part that did parse could be hiding the id that
     would have made it conflicting, so it is attributed to nobody. Each message
     id counts once per scan; one seen under different owners counts for no
-    ticket. Returns {"files", "mainSessions", "subagents", "conflicting",
+    ticket. A directory that cannot be listed counts in `unreadable` too. Returns
+    {"files", "mainSessions", "subagents", "conflicting",
     "conflictingMessages", "unreadable", "tokens", "byModel"}; tokens and byModel
     are None when no file belongs to `ticket`. Only usage, ids, models, `cwd` and
     the matched ids are kept, one file at a time: no prompt text is stored or
     echoed."""
     check_ticket(ticket)
     trees = worktrees(root)
-    files = []
+    files, errors = [], []
     for project_dir in project_dirs(root):
-        files.extend(_session_files(project_dir))
+        files.extend(_session_files(project_dir, errors))
     files.sort(key=lambda item: item[1] is not None)  # main sessions first: a child reads its parent's owner
     owner, seen = {}, {}
     out = {"files": 0, "mainSessions": 0, "subagents": 0, "conflicting": 0,
-           "conflictingMessages": 0, "unreadable": 0, "tokens": None, "byModel": None}
+           "conflictingMessages": 0, "unreadable": len(errors), "tokens": None, "byModel": None}
     for path, parent in files:
         bad, ids, cwds, missing_cwd, messages = _scan_file(path)
         if bad:
@@ -978,7 +986,8 @@ def _measurement(root, ticket, transcript, scan):
         basis = "attributed lower bound"
         source = ("scan of the Claude Code transcripts of this repository's worktrees "
                   "(exclusive attribution)" if used["tokens"] is not None else
-                  "scan found no transcript tied to this ticket")
+                  "scan found no transcript tied to this ticket"
+                  + (f" ({used['unreadable']} unreadable)" if used["unreadable"] else ""))
     else:
         return UNKNOWN, UNKNOWN, "not measured (--no-scan)", UNKNOWN, "--no-scan"
     if kinds == UNKNOWN:
