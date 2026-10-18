@@ -676,3 +676,61 @@ def test_every_step_label_other_files_cite_is_in_review_md():
         autopilot = fh.read()
     assert "step 2d" in autopilot and "step 3.3" in autopilot
     assert "`review.md` step 3.5's notification" in autopilot
+
+
+# --- the inputs --prepare reads are shape-checked, and no wait is unbounded ------
+
+
+@pytest.mark.parametrize("report", [
+    {"authorFamilies": "claude"},
+    {"authorFamilies": [1]},
+    {"authorSource": 5},
+    {"qaFallThrough": [3]},
+    {"qa": ["x"]},
+    {"qaProviders": []},
+])
+def test_report_problem_names_a_misshaped_models_report(report):
+    assert review_run.report_problem(report)
+
+
+def test_report_problem_accepts_the_shape_crew_config_writes():
+    report = {"authorFamilies": ["claude"], "authorSource": "config",
+              "qa": [{"role": "review"}], "qaFallThrough": [{"provider": "codex"}],
+              "qaProviders": {"codex": {"model": None}}}
+
+    assert review_run.report_problem(report) is None
+
+
+def test_a_misshaped_models_report_is_could_not_tell_not_an_empty_list(tmp_path):
+    (tmp_path / "models.json").write_text('{"qaFallThrough": [3]}', encoding="utf-8")
+
+    report, problem = review_run.load_report(str(tmp_path))
+
+    assert report is None and "not a list of rows" in problem
+
+
+def test_a_sibling_tool_that_gives_no_answer_is_exit_124_never_a_pass(monkeypatch, capsys):
+    def hang(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("tool", 1)
+    monkeypatch.setattr(review_run.subprocess, "run", hang)
+
+    code, out = review_run._run_tool("review_patch.py")  # pylint: disable=protected-access
+
+    assert (code, out) == (124, b"")
+    assert "gave no answer within" in capsys.readouterr().err
+
+
+def test_a_scope_base_that_gives_no_answer_stops_the_review_base(monkeypatch):
+    monkeypatch.setattr(review_run, "_run_tool", lambda *a, **k: (124, b""))
+
+    base, refused = review_run.review_base(".", "/nowhere", "T1")
+
+    assert (base, refused) == (None, review_run.EXIT_UNKNOWN)
+
+
+def test_git_that_gives_no_answer_is_124(monkeypatch):
+    def hang(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("git", 1)
+    monkeypatch.setattr(review_run.subprocess, "run", hang)
+
+    assert review_run._git(".", "status") == (124, "")  # pylint: disable=protected-access

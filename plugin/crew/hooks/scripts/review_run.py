@@ -2110,6 +2110,9 @@ def probe(args):
 # mechanics are here now, and every exit path ends with one `next: <action>`
 # line, chosen by REASON (the same exit code means different things).
 EXIT_UNKNOWN = 11
+# A sibling hook script that has not answered in this long is could-not-tell,
+# never a pass (PYTHON-07); exit code 124, as timeout(1) uses.
+TOOL_TIMEOUT, EXIT_TOOL_TIMEOUT = 900, 124
 ACTIVE_STATUSES = ("open", "in-progress", "in progress", "review")
 SAID = []  # what this run printed, for the `next:` reasons (reset by main)
 
@@ -2124,8 +2127,13 @@ def _git(root, *argv):
     exe = review_checks.resolve_executable("git")
     if not exe:
         return 127, ""
-    done = subprocess.run([exe, *argv], cwd=root, stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, check=False)
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    try:
+        done = subprocess.run([exe, *argv], cwd=root, stdin=subprocess.DEVNULL, env=env,
+                              capture_output=True, text=True, check=False,
+                              timeout=SNAPSHOT_GIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return EXIT_TOOL_TIMEOUT, ""
     return done.returncode, done.stdout
 
 
@@ -2133,8 +2141,13 @@ def _run_tool(name, *argv):
     """(exit code, stdout bytes) of a sibling hook script. Its stderr goes
     through unchanged; its stdout is returned, never printed, so the KEY=VALUE
     contract on ours stays ours."""
-    done = subprocess.run([sys.executable, _script(name)] + list(argv),
-                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, check=False)
+    try:
+        done = subprocess.run([sys.executable, _script(name)] + list(argv),
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, check=False,
+                              timeout=TOOL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        _err(f"review-prepare: {name} gave no answer within {TOOL_TIMEOUT}s\n")
+        return EXIT_TOOL_TIMEOUT, b""
     return done.returncode, done.stdout
 
 
@@ -2149,14 +2162,15 @@ def active_ticket(root):
     (None, "none"|"many") otherwise; (None, reason) when it cannot be read.
     A row is `<id> | <status> | ...`; the awk this replaces took the first
     field of the one row whose second field was an active status."""
-    path = os.path.join(root, ".work", "INDEX.md")
+    base = os.path.join(root, ".work")
+    path = os.path.join(base, "INDEX.md")
     try:
-        text = review_checks.read_regular(path, os.path.join(root, ".work")).decode(
-            "utf-8", errors="replace")
+        raw = review_checks.read_regular(path, base)
     except FileNotFoundError:
         return None, "absent"
     except OSError as exc:
         return None, f"{path}: {exc.__class__.__name__}"
+    text = raw.decode("utf-8", errors="replace")
     found = []
     for line in text.split("\n"):
         fields = line.split("|")
@@ -2271,6 +2285,8 @@ def review_base(root_arg, root, ticket):
     if code == 3:
         _err("review base: could not tell - stopping (see scope-base line above)\n")
         return None, 3
+    if code == EXIT_TOOL_TIMEOUT:
+        return None, _unknown("the review base (scope_base.py gave no answer in time)")
     if base:
         return base, None
     code, branch = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
@@ -2294,6 +2310,29 @@ def qm(report, want, field="model"):
     return ((report.get("qaProviders") or {}).get(want) or {}).get(field) or ""
 
 
+def report_problem(report):
+    """None when `report` is shaped as `crew_config.py --models --json`
+    writes it, else why not (PYTHON-10: checked before anything is indexed)."""
+    def rows(key):
+        value = report.get(key)
+        return value is None or (isinstance(value, list) and all(isinstance(r, dict)
+                                                                 for r in value))
+    families = report.get("authorFamilies")
+    if not (families is None or (isinstance(families, list)
+                                 and all(isinstance(f, str) for f in families))):
+        return "`authorFamilies` is not a list of names"
+    if not isinstance(report.get("authorSource") or "", str):
+        return "`authorSource` is not a string"
+    if not (rows("qa") and rows("qaFallThrough")):
+        return "`qa` or `qaFallThrough` is not a list of rows"
+    providers = report.get("qaProviders")
+    if not (providers is None or (isinstance(providers, dict)
+                                  and all(isinstance(v, dict) or v is None
+                                          for v in providers.values()))):
+        return "`qaProviders` is not a map of blocks"
+    return None
+
+
 def eligible(report, warn=None):
     """The providers that may review, in `qa.order`, with the family guard
     already applied by the report: its `qaFallThrough` rows marked eligible,
@@ -2315,7 +2354,10 @@ def load_report(scratch):
         report = json.loads(review_checks.read_regular(path, scratch).decode("utf-8"))
     except (OSError, ValueError) as exc:
         return None, f"{path}: {exc.__class__.__name__}"
-    return (report, None) if isinstance(report, dict) else (None, f"{path} is not an object")
+    if not isinstance(report, dict):
+        return None, f"{path} is not an object"
+    problem = report_problem(report)
+    return (None, f"{path}: {problem}") if problem else (report, None)
 
 
 def _quote(*words):
