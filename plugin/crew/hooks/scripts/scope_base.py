@@ -420,14 +420,18 @@ def changed(root, base):
                    if line.strip()})
 
 
-def _branch_name(ref, remotes=("origin",)):
+def _branch_name(ref, remotes=("origin",), local=False):
     """`main` for `main`, `origin/main`, `refs/heads/main`,
     `refs/remotes/origin/main` or `upstream/main`: the base branch may be
     configured in any of those spellings (Codex L-0770 r1: `refs/heads/main`
     read as another branch; r2: so did a remote other than origin). A leading
-    `<remote>/` is stripped for each name in `remotes`."""
-    for prefix in ("refs/heads/", "refs/remotes/"):
-        ref = ref.removeprefix(prefix)
+    `<remote>/` is stripped for each name in `remotes`, except for a `local`
+    branch (HEAD's symbolic ref): a local ticket branch may itself be named
+    `origin/main` and is not the base branch (Codex L-0770 r3)."""
+    ref = ref.removeprefix("refs/heads/")
+    if local:
+        return ref
+    ref = ref.removeprefix("refs/remotes/")
     for remote in remotes:
         if ref.startswith(remote + "/"):
             return ref[len(remote) + 1:]
@@ -458,9 +462,9 @@ def _empty_range_on_the_base_branch(root, base, source):
                 f"branch is {ref} could not be checked (git gave no answer)")
     remotes = remotes.split()
     branch = crew_common.git_out(root, "symbolic-ref", "--quiet", "HEAD")
-    if branch and _branch_name(branch, remotes) != _branch_name(ref, remotes):
+    if branch and _branch_name(branch, remotes, local=True) != _branch_name(ref, remotes):
         return None
-    where = f"on {_branch_name(branch, remotes)}" if branch else "on a detached HEAD"
+    where = f"on {_branch_name(branch, remotes, local=True)}" if branch else "on a detached HEAD"
     return (f"could not tell: no start is recorded and HEAD is {where}, inside {ref}'s own "
             f"history, so the merge-base fallback is HEAD itself and which commits are the "
             f"ticket's cannot be told. Record the ticket's start on its branch (scope_base.py "

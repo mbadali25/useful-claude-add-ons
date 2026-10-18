@@ -585,6 +585,17 @@ def test_cli_base_reads_a_failed_probe_as_could_not_tell(repo, monkeypatch):
     assert reason and reason.startswith("could not tell")
 
 
+def test_cli_base_on_a_ticket_branch_named_like_the_remote_base_is_still_head(repo):
+    """Codex L-0770 r3: a local ticket branch named `origin/main` at its fork
+    point is a ticket branch, not the base branch: HEAD, exit 0."""
+    _git(repo, "remote", "add", "origin", str(repo))
+    _git(repo, "update-ref", "refs/remotes/origin/main", "main")
+    _git(repo, "checkout", "-q", "-b", "origin/main")
+    done = _cli(repo, "--base")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.strip() == _git(repo, "rev-parse", "HEAD").strip()
+
+
 def test_cli_base_on_a_base_branch_of_another_remote_is_could_not_tell(repo):
     """Codex L-0770 r2 (L-0775): a base branch configured on a remote other
     than origin, with local `main` at the same commit and no record, is the

@@ -128,6 +128,12 @@ def pinned(root, base_sha, commit, ref=None):
         return {"ref": ref, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: the pinned merged commit {commit!r} names no commit "
                           "here; nothing dropped"}
+    if not crew_common.git_out(root, "merge-base", full, str(base_sha)):
+        # A commit from unrelated history is no merge of the ticket's base
+        # branch; its paths must not be dropped (Codex L-0770 r3).
+        return {"ref": ref, "commit": None, "applies": False,
+                "reason": f"{UNKNOWN}: the pinned merged commit {full[:12]} shares no history "
+                          f"with the ticket start {str(base_sha)[:12]}; nothing dropped"}
     older = _is_ancestor(root, full, base_sha)
     if older is None:
         return {"ref": ref, "commit": None, "applies": False,

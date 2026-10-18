@@ -27,7 +27,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   (`upstream/main`) is now the base branch too, a failed `git remote` listing is could-not-tell, and
   the three controls the round named exist: a start recorded at the current HEAD still answers, a
   failed ancestry probe in `merged_main.pinned` is could-not-tell, and each has a sabotage entry run red.
+- **Round 3 FIXes closed here.** A local ticket branch named like the remote base (`origin/main`) at
+  its fork point is a ticket branch and still gets HEAD, and `merged_main.pinned` reads a commit that
+  shares no history with the ticket start as could-not-tell instead of an applied pin; each has a test
+  and a sabotage entry run red.
 - **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real
