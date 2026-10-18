@@ -51,7 +51,8 @@ module measured, an UNKNOWN is a count it could not):
                     scans the Claude Code transcripts of every worktree of
                     this repository, subagent files included, and counts the
                     files an exclusive rule ties to the ticket (a `Ticket ID:`
-                    line, a `/crew:<command> <id>`, or one linked worktree):
+                    line, a `/crew:<command> <id>`, or one linked worktree; a
+                    file it cannot read in full is counted `unreadable`):
                     an attributed LOWER BOUND, so the row says
                     `tokensBasis: attributed lower bound` and carries
                     `tokensAttribution`. UNKNOWN when nothing is tied to the
@@ -463,7 +464,8 @@ PRICES_AS_OF = "2026-10-06"
 PRICES_SOURCE = ("claude-api skill model table (cached 2026-10-06; "
                  "https://platform.claude.com/docs/en/about-claude/pricing); "
                  "cache write 1.25x (5m) / 2x (1h) of input; cache read as stated "
-                 "there, else assumed 0.1x of input; Haiku 5.5 >100K-prompt tier not applied")
+                 "there, else assumed 0.1x of input; Haiku 5.5 above a 100K prompt at "
+                 "$0.50 in / $2.50 out, its cache read assumed 0.1x")
 
 
 def _price(inp, out, cache_read=None):
@@ -490,36 +492,43 @@ PRICES = {
 }
 
 NO_MODEL = "(no model)"
+ATTRIBUTION_FIELDS = ("files", "mainSessions", "subagents", "conflicting",
+                      "conflictingMessages", "unreadable")
 # A model id from a transcript is hostile text (GEN-06): only this allowlist is kept
 # and echoed into a row; anything else reads as no model, hence unpriced.
 _MODEL_RE = re.compile(r"^[A-Za-z0-9<][A-Za-z0-9._:<>/-]{0,79}\Z")
 KIND_KEYS = ("input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h")
 
 
-def _read_jsonl(path):
-    """([(line_no, record)], had_unparseable_line): every line of `path` that
-    is a JSON object, with its 1-based line number. Never raises: an
-    unreadable or missing file yields ([], False)."""
+def _iter_jsonl(path, state):
+    """Yield (line_no, record) for every line of `path` that is a JSON object,
+    streaming (no record is kept by the reader). `state["bad"]` is set when a
+    line does not parse or the file cannot be read: a fragment of a corrupt
+    file is not a trustworthy measurement of it. Lines are the "\\n"-separated
+    ones (PYTHON-03): str.splitlines() also breaks on U+2028, which Claude Code
+    can write raw inside a JSON string."""
     try:
         with open(path, encoding="utf-8", errors="surrogateescape", newline="") as handle:
-            text = handle.read()
+            for number, line in enumerate(handle, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    state["bad"] = True
+                    continue
+                if isinstance(rec, dict):
+                    yield number, rec
     except (OSError, TypeError):
-        return [], False
-    records, bad = [], False
-    # Split on "\n" only (PYTHON-03): str.splitlines() also breaks on U+2028 and
-    # friends, which Claude Code can write raw inside a JSON string.
-    for number, line in enumerate(text.split("\n"), 1):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            bad = True
-            continue
-        if isinstance(rec, dict):
-            records.append((number, rec))
-    return records, bad
+        state["bad"] = True
+
+
+def _read_jsonl(path):
+    """([(line_no, record)], had_unreadable_or_unparseable_line)."""
+    state = {"bad": False}
+    records = list(_iter_jsonl(path, state))
+    return records, state["bad"]
 
 
 def _message_key(rec, scope, number):
@@ -540,29 +549,47 @@ def _bad_count(value):
     return isinstance(value, bool) or not isinstance(value, int) or value < 0
 
 
-def _messages(records, scope, fields, strict, include_sidechain):
+_CREATION_SPLIT = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+
+
+def _usage_of(rec, fields, validate, include_sidechain):
+    """(usage, model) of an assistant record that carries a `usage` object with
+    at least one of `fields`, else None. Every name in `validate` that is
+    present must be a non-negative integer (and so must the cache-creation
+    split when cache creation is validated), else ValueError: a bad count is
+    never read as 0."""
+    if rec.get("type") != "assistant" or not rec.get("timestamp"):
+        return None
+    if rec.get("isSidechain") is True and not include_sidechain:
+        return None
+    message = rec.get("message")
+    usage = message.get("usage") if isinstance(message, dict) else None
+    if not isinstance(usage, dict) or not any(k in usage for k in fields):
+        # A `usage` object carrying none of the fields this module
+        # recognizes is not a measurement.
+        return None
+    if any(k in usage and _bad_count(usage[k]) for k in validate):
+        raise ValueError("a usage count is not a non-negative integer")
+    split = usage.get("cache_creation")
+    if "cache_creation_input_tokens" in validate and split is not None:
+        if not isinstance(split, dict) or any(k in split and _bad_count(split[k])
+                                              for k in _CREATION_SPLIT):
+            raise ValueError("a cache creation count is not a non-negative integer")
+    model = message.get("model")
+    return usage, model if isinstance(model, str) and _MODEL_RE.match(model) else NO_MODEL
+
+
+def _messages(records, scope, fields, validate, include_sidechain):
     """{key: (usage, model)}: one entry per assistant message, the LAST record
     in file order being its canonical usage (Claude Code writes a message once
-    per content block and the usage repeats on every line). `strict` validates
-    every record's counts before the dedup, duplicates included, so a
-    malformed duplicate still raises ValueError."""
+    per content block and the usage repeats on every line). Every record's
+    counts are validated before the dedup, duplicates included, so a malformed
+    duplicate still raises ValueError."""
     messages = {}
     for number, rec in records:
-        if rec.get("type") != "assistant" or not rec.get("timestamp"):
-            continue
-        if rec.get("isSidechain") is True and not include_sidechain:
-            continue
-        message = rec.get("message")
-        usage = message.get("usage") if isinstance(message, dict) else None
-        if not isinstance(usage, dict) or not any(k in usage for k in fields):
-            # A `usage` object carrying none of the fields this module
-            # recognizes is not a measurement.
-            continue
-        if strict and any(k in usage and _bad_count(usage[k]) for k in fields):
-            raise ValueError("a usage count is not a non-negative integer")
-        model = message.get("model")
-        messages[_message_key(rec, scope, number)] = (
-            usage, model if isinstance(model, str) and _MODEL_RE.match(model) else NO_MODEL)
+        got = _usage_of(rec, fields, validate, include_sidechain)
+        if got is not None:
+            messages[_message_key(rec, scope, number)] = got
     return messages
 
 
@@ -572,15 +599,22 @@ def transcript_tokens(transcript, fields=TOKEN_FIELDS, strict=False):
     each message counted ONCE: Claude Code repeats a message's usage on every
     line it writes for it, so a per-line sum over-counts (about 1.8x on this
     project's transcripts). UNKNOWN when no assistant message carries a
-    `usage` object with at least one of `fields`, or when any line in the
-    transcript failed to parse. `strict` (the goal cap's): a present field
-    that is not a non-negative integer raises ValueError, so a negative count
-    can never lower the total."""
+    `usage` object with at least one of `fields`, when any line in the
+    transcript failed to parse, or when a count is not a non-negative integer.
+    `strict` (the goal cap's): a present `fields` count that is not a
+    non-negative integer raises ValueError instead, so a negative count can
+    never lower the total."""
     records, had_unparseable = _read_jsonl(transcript)
     if had_unparseable:
         return UNKNOWN
     token_fields = tuple(fields)
-    messages = _messages(records, transcript, token_fields, strict, False)
+    try:
+        messages = _messages(records, transcript, token_fields,
+                             token_fields if strict else TOKEN_FIELDS, False)
+    except ValueError:
+        if strict:
+            raise
+        return UNKNOWN
     if not messages:
         return UNKNOWN
     return sum(int(usage.get(k) or 0) for usage, _ in messages.values() for k in token_fields)
@@ -603,15 +637,36 @@ def _kinds(usage):
             "cacheWrite5m": c5, "cacheWrite1h": c1}
 
 
-def _fold_messages(messages):
-    """({model: kinds}, tokens) for a {key: (usage, model)} map, where tokens is
+def _kinds_tuple(usage):
+    kinds = _kinds(usage)
+    return tuple(kinds[k] for k in KIND_KEYS)
+
+
+# A model's higher rate above a prompt size: Haiku 5.5 charges $0.50 in / $2.50 out for a
+# prompt above 100K tokens. Such a message is priced under the model's key plus LONG_SUFFIX.
+LONG_PROMPT = (("claude-haiku-5-5", 100_000),)
+LONG_SUFFIX = ">100K"
+PRICES_LONG = {"claude-haiku-5-5": _price(0.50, 2.50)}
+
+
+def _tier(model, kinds):
+    """`model`, or `model` + LONG_SUFFIX for a message whose prompt (input plus
+    cache reads and writes) is over that model's long-prompt threshold."""
+    prompt = kinds[0] + kinds[2] + kinds[3] + kinds[4]
+    for prefix, threshold in LONG_PROMPT:
+        if model.startswith(prefix) and prompt > threshold:
+            return model + LONG_SUFFIX
+    return model
+
+
+def _fold_kinds(entries):
+    """({model: kinds}, tokens) for (kinds_tuple, model) entries, where tokens is
     {input, output, cacheRead, cacheCreation, total}."""
     by_model = {}
-    for usage, model in messages.values():
-        kinds = _kinds(usage)
-        into = by_model.setdefault(model, dict.fromkeys(KIND_KEYS, 0))
-        for key in KIND_KEYS:
-            into[key] += kinds[key]
+    for kinds, model in entries:
+        into = by_model.setdefault(_tier(model, kinds), dict.fromkeys(KIND_KEYS, 0))
+        for key, count in zip(KIND_KEYS, kinds):
+            into[key] += count
     return by_model, tokens_from_models(by_model)
 
 
@@ -633,19 +688,27 @@ def transcript_token_kinds(transcript):
     records, had_unparseable = _read_jsonl(transcript)
     if had_unparseable:
         return UNKNOWN
-    messages = _messages(records, transcript, TOKEN_FIELDS, False, False)
+    try:
+        messages = _messages(records, transcript, TOKEN_FIELDS, TOKEN_FIELDS, False)
+    except ValueError:
+        return UNKNOWN
     if not messages:
         return UNKNOWN
-    by_model, tokens = _fold_messages(messages)
+    by_model, tokens = _fold_kinds((_kinds_tuple(usage), model)
+                                   for usage, model in messages.values())
     return {"tokens": tokens, "byModel": by_model}
 
 
 def price_for(model, prices=None):
-    """The price row whose key is the longest prefix of `model`, else None."""
+    """The price row whose key is the longest prefix of `model`, else None. A
+    `model` carrying LONG_SUFFIX is looked up in the long-prompt table."""
     table = PRICES if prices is None else prices
+    if model.endswith(LONG_SUFFIX):
+        model = model[:-len(LONG_SUFFIX)]
+        table = PRICES_LONG if prices is None else {}
     best = None
     for key in table:
-        if isinstance(model, str) and model.startswith(key) and (best is None or len(key) > len(best)):
+        if model.startswith(key) and (best is None or len(key) > len(best)):
             best = key
     return table[best] if best else None
 
@@ -751,16 +814,6 @@ def _user_text(rec):
     return ""
 
 
-def _stamps(records):
-    found = set()
-    for _, rec in records:
-        text = _user_text(rec)
-        if text:
-            for pattern in (_STAMP_LINE, _CREW_COMMAND, _COMMAND_TAGS):
-                found.update(m.group(1) for m in pattern.finditer(text))
-    return found
-
-
 def _inside(path, root):
     """True when the canonical `path` is `root` or lies under it (PYTHON-13)."""
     left, right = os.path.normcase(path), os.path.normcase(root)
@@ -770,18 +823,18 @@ def _inside(path, root):
         return False
 
 
-def _worktree_id(records, trees, ticket):
-    """The ticket id a file's records place it in: X when every record that has
-    a `cwd` lies inside ONE linked worktree whose branch starts `X-`. The main
-    checkout's branch is never evidence."""
-    cwds = {os.path.realpath(rec["cwd"]) for _, rec in records
-            if isinstance(rec.get("cwd"), str) and rec["cwd"]}
-    if not cwds:
+def _worktree_id(cwds, missing_cwd, trees, ticket):
+    """The ticket id a file's records place it in: X when EVERY message-bearing
+    record has a `cwd` and all of them lie inside ONE linked worktree whose
+    branch starts `X-`. A record with no `cwd` is no evidence (could-not-tell),
+    and the main checkout's branch is never evidence."""
+    if missing_cwd or not cwds:
         return None
+    real = {os.path.realpath(cwd) for cwd in cwds}
     for tree in trees:
         if tree["main"] or not tree["branch"]:
             continue
-        if all(_inside(c, tree["path"]) for c in cwds):
+        if all(_inside(c, tree["path"]) for c in real):
             if tree["branch"].startswith(ticket + "-"):
                 return ticket
             match = _BRANCH_ID.match(tree["branch"])
@@ -792,7 +845,8 @@ def _worktree_id(records, trees, ticket):
 def _session_files(project_dir):
     """[(path, parent_session_path_or_None)]: the main `<session>.jsonl` files
     and every `*.jsonl` anywhere under `<session>/subagents/` (the direct
-    `agent-*.jsonl` files and `workflows/wf_<id>/agent-*.jsonl`)."""
+    `agent-*.jsonl` files and `workflows/wf_<id>/agent-*.jsonl`), regular files
+    only (opening a FIFO would block)."""
     files = []
     try:
         names = sorted(os.listdir(project_dir))
@@ -800,7 +854,7 @@ def _session_files(project_dir):
         return files
     for name in names:
         full = os.path.join(project_dir, name)
-        if name.endswith(".jsonl") and os.path.isfile(full):  # a regular file: never open a FIFO
+        if name.endswith(".jsonl") and os.path.isfile(full):
             files.append((full, None))
         elif os.path.isdir(os.path.join(full, "subagents")):
             parent = os.path.join(project_dir, name + ".jsonl")
@@ -811,6 +865,36 @@ def _session_files(project_dir):
     return files
 
 
+def _scan_file(path):
+    """One streaming pass over a transcript. Returns (bad, ids, cwds, missing_cwd,
+    messages): `bad` when a line does not parse, the file cannot be read or a
+    usage count is invalid (the file then yields nothing); `ids` the ticket ids
+    its user text names; `cwds` the working directories of its message-bearing
+    records and `missing_cwd` whether one had none; `messages`
+    {key: (kinds_tuple, model)}. No record is kept after its pass."""
+    state = {"bad": False}
+    ids, cwds, missing_cwd, messages = set(), set(), False, {}
+    for number, rec in _iter_jsonl(path, state):
+        text = _user_text(rec)
+        if text:
+            for pattern in (_STAMP_LINE, _CREW_COMMAND, _COMMAND_TAGS):
+                ids.update(m.group(1) for m in pattern.finditer(text))
+        if rec.get("type") in ("user", "assistant"):
+            cwd = rec.get("cwd")
+            if isinstance(cwd, str) and cwd:
+                cwds.add(cwd)
+            else:
+                missing_cwd = True
+        try:
+            got = _usage_of(rec, TOKEN_FIELDS, TOKEN_FIELDS, True)
+        except ValueError:
+            state["bad"] = True
+            continue
+        if got is not None:
+            messages[_message_key(rec, path, number)] = (_kinds_tuple(got[0]), got[1])
+    return state["bad"], ids, cwds, missing_cwd, messages
+
+
 def attributed_usage(root, ticket):
     """Token usage of the Claude Code transcripts that an exclusive rule ties to
     `ticket`, as an attributed LOWER BOUND. One decision per transcript file;
@@ -818,53 +902,60 @@ def attributed_usage(root, ticket):
     `/crew:<command> <id>` in its user messages plus the id of the one linked
     worktree all its records sit in. One id: the file belongs to it. Two or more:
     the file is conflicting and belongs to nobody. None: a subagent file takes
-    its parent session file's owner, a main file has none. Each message id counts
-    once per scan; one seen in files with different owners counts for no ticket.
-    Returns {"files", "mainSessions", "subagents", "conflicting",
-    "conflictingMessages", "tokens", "byModel"}; tokens and byModel are None when
-    no file belongs to `ticket`. Only usage, ids, models, `cwd` and the matched
-    ids are kept: no prompt text is stored or echoed."""
+    its parent session file's owner, a main file has none. A file that cannot be
+    read in full (a line that does not parse, an unreadable file, an invalid
+    count) is `unreadable`: the part that did parse could be hiding the id that
+    would have made it conflicting, so it is attributed to nobody. Each message
+    id counts once per scan; one seen under different owners counts for no
+    ticket. Returns {"files", "mainSessions", "subagents", "conflicting",
+    "conflictingMessages", "unreadable", "tokens", "byModel"}; tokens and byModel
+    are None when no file belongs to `ticket`. Only usage, ids, models, `cwd` and
+    the matched ids are kept, one file at a time: no prompt text is stored or
+    echoed."""
     check_ticket(ticket)
     trees = worktrees(root)
-    scanned = {}
+    files = []
     for project_dir in project_dirs(root):
-        for path, parent in _session_files(project_dir):
-            records, _bad = _read_jsonl(path)
-            ids = _stamps(records)
-            tree_id = _worktree_id(records, trees, ticket)
-            if tree_id:
-                ids.add(tree_id)
-            scanned[path] = {"parent": parent, "records": records, "ids": ids}
-    owner = {}
-    for path, info in scanned.items():
-        if info["parent"] is None:
-            owner[path] = next(iter(info["ids"])) if len(info["ids"]) == 1 else None
-    for path, info in scanned.items():
-        if info["parent"] is not None:
-            if len(info["ids"]) == 1:
-                owner[path] = next(iter(info["ids"]))
-            elif info["ids"]:
-                owner[path] = None
-            else:
-                owner[path] = owner.get(info["parent"])
-    seen = {}
-    for path, info in scanned.items():
-        for key, value in _messages(info["records"], path, TOKEN_FIELDS, False, True).items():
-            entry = seen.setdefault(key, {"owners": set(), "best": value})
-            entry["owners"].add(owner[path])
-            if sum(_kinds(value[0]).values()) > sum(_kinds(entry["best"][0]).values()):
-                entry["best"] = value
-    mine = {key: entry["best"] for key, entry in seen.items() if entry["owners"] == {ticket}}
-    clash = sum(1 for entry in seen.values() if ticket in entry["owners"] and len(entry["owners"]) > 1)
-    owned = [p for p in scanned if owner[p] == ticket]
-    out = {"files": len(owned),
-           "mainSessions": sum(1 for p in owned if scanned[p]["parent"] is None),
-           "subagents": sum(1 for p in owned if scanned[p]["parent"] is not None),
-           "conflicting": sum(1 for info in scanned.values()
-                              if len(info["ids"]) > 1 and ticket in info["ids"]),
-           "conflictingMessages": clash, "tokens": None, "byModel": None}
-    if owned and mine:
-        out["byModel"], out["tokens"] = _fold_messages(mine)
+        files.extend(_session_files(project_dir))
+    files.sort(key=lambda item: item[1] is not None)  # main sessions first: a child reads its parent's owner
+    owner, seen = {}, {}
+    out = {"files": 0, "mainSessions": 0, "subagents": 0, "conflicting": 0,
+           "conflictingMessages": 0, "unreadable": 0, "tokens": None, "byModel": None}
+    for path, parent in files:
+        bad, ids, cwds, missing_cwd, messages = _scan_file(path)
+        if bad:
+            owner[path] = None
+            out["unreadable"] += 1
+            continue
+        tree_id = _worktree_id(cwds, missing_cwd, trees, ticket)
+        if tree_id:
+            ids.add(tree_id)
+        if len(ids) == 1:
+            owner[path] = next(iter(ids))
+        elif ids:
+            owner[path] = None
+            if ticket in ids:
+                out["conflicting"] += 1
+        else:
+            owner[path] = owner.get(parent) if parent else None
+        if owner[path] == ticket:
+            out["files"] += 1
+            out["subagents" if parent else "mainSessions"] += 1
+        for key, (kinds, model) in messages.items():
+            entry = seen.get(key)
+            if entry is None:
+                seen[key] = [kinds, model, owner[path], False, owner[path] == ticket]
+                continue
+            if owner[path] != entry[2]:
+                entry[3] = True
+            if owner[path] == ticket:
+                entry[4] = True
+            if sum(kinds) > sum(entry[0]):
+                entry[0], entry[1] = kinds, model
+    mine = [(entry[0], entry[1]) for entry in seen.values() if not entry[3] and entry[2] == ticket]
+    out["conflictingMessages"] = sum(1 for entry in seen.values() if entry[3] and entry[4])
+    if out["files"] and mine:
+        out["byModel"], out["tokens"] = _fold_kinds(mine)
     return out
 
 
@@ -876,14 +967,12 @@ def _measurement(root, ticket, transcript, scan):
     group a row carries."""
     if transcript:
         kinds = transcript_token_kinds(transcript)
-        attribution = {"files": 1, "mainSessions": 1, "subagents": 0, "conflicting": 0,
-                       "conflictingMessages": 0}
+        attribution = dict(zip(ATTRIBUTION_FIELDS, (1, 1, 0, 0, 0, 0)))
         basis = "single transcript, main chain (--transcript)"
         source = transcript
     elif scan:
         used = attributed_usage(root, ticket)
-        attribution = {k: used[k] for k in ("files", "mainSessions", "subagents", "conflicting",
-                                            "conflictingMessages")}
+        attribution = {k: used[k] for k in ATTRIBUTION_FIELDS}
         kinds = UNKNOWN if used["tokens"] is None else {
             "tokens": used["tokens"], "byModel": used["byModel"]}
         basis = "attributed lower bound"

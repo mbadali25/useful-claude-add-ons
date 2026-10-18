@@ -5,44 +5,44 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 
 | Diagram | Readability |
 |---|---|
-| [Architecture](#architecture) | not rendered (run render.sh, then this again) |
-| [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | not rendered (run render.sh, then this again) |
-| [Data flow crew config menu](#data-flow-crew-config-menu) | not rendered (run render.sh, then this again) |
-| [Data flow crew config no python](#data-flow-crew-config-no-python) | not rendered (run render.sh, then this again) |
-| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | not rendered (run render.sh, then this again) |
-| [Data flow crew config read](#data-flow-crew-config-read) | not rendered (run render.sh, then this again) |
-| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | not rendered (run render.sh, then this again) |
-| [Data flow crew config split](#data-flow-crew-config-split) | not rendered (run render.sh, then this again) |
-| [Data flow crew config two files](#data-flow-crew-config-two-files) | not rendered (run render.sh, then this again) |
-| [Data flow crew config unattended](#data-flow-crew-config-unattended) | not rendered (run render.sh, then this again) |
-| [Data flow crew config write](#data-flow-crew-config-write) | not rendered (run render.sh, then this again) |
-| [Data flow crew config](#data-flow-crew-config) | not rendered (run render.sh, then this again) |
-| [Data flow search](#data-flow-search) | not rendered (run render.sh, then this again) |
-| [Data flow](#data-flow) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg check](#process-bitbucket-svg-check) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg collect](#process-bitbucket-svg-collect) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg publish](#process-bitbucket-svg-publish) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg render](#process-bitbucket-svg-render) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg resolve](#process-bitbucket-svg-resolve) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg up to date](#process-bitbucket-svg-up-to-date) | not rendered (run render.sh, then this again) |
-| [Process bitbucket svg](#process-bitbucket-svg) | not rendered (run render.sh, then this again) |
-| [Process crew brief crew context](#process-crew-brief-crew-context) | not rendered (run render.sh, then this again) |
-| [Process crew brief handoff read](#process-crew-brief-handoff-read) | not rendered (run render.sh, then this again) |
-| [Process crew brief platform sync](#process-crew-brief-platform-sync) | not rendered (run render.sh, then this again) |
-| [Process crew brief status](#process-crew-brief-status) | not rendered (run render.sh, then this again) |
-| [Process crew brief](#process-crew-brief) | not rendered (run render.sh, then this again) |
-| [Process crew kimi agent](#process-crew-kimi-agent) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle approve](#process-crew-lifecycle-approve) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle done](#process-crew-lifecycle-done) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle review](#process-crew-lifecycle-review) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | not rendered (run render.sh, then this again) |
-| [Process crew lifecycle](#process-crew-lifecycle) | not rendered (run render.sh, then this again) |
-| [Process qa audit](#process-qa-audit) | not rendered (run render.sh, then this again) |
-| [Process qa gates](#process-qa-gates) | not rendered (run render.sh, then this again) |
-| [Process qa ladder](#process-qa-ladder) | not rendered (run render.sh, then this again) |
-| [Process](#process) | not rendered (run render.sh, then this again) |
+| [Architecture](#architecture) | PASS |
+| [Data flow crew config autoclear](#data-flow-crew-config-autoclear) | PASS |
+| [Data flow crew config menu](#data-flow-crew-config-menu) | PASS |
+| [Data flow crew config no python](#data-flow-crew-config-no-python) | PASS |
+| [Data flow crew config ratchet](#data-flow-crew-config-ratchet) | PASS |
+| [Data flow crew config read](#data-flow-crew-config-read) | PASS |
+| [Data flow crew config shell route](#data-flow-crew-config-shell-route) | PASS |
+| [Data flow crew config split](#data-flow-crew-config-split) | PASS |
+| [Data flow crew config two files](#data-flow-crew-config-two-files) | PASS |
+| [Data flow crew config unattended](#data-flow-crew-config-unattended) | PASS |
+| [Data flow crew config write](#data-flow-crew-config-write) | PASS |
+| [Data flow crew config](#data-flow-crew-config) | PASS |
+| [Data flow search](#data-flow-search) | PASS |
+| [Data flow](#data-flow) | PASS |
+| [Process bitbucket svg check](#process-bitbucket-svg-check) | PASS |
+| [Process bitbucket svg collect](#process-bitbucket-svg-collect) | PASS |
+| [Process bitbucket svg publish](#process-bitbucket-svg-publish) | PASS |
+| [Process bitbucket svg render](#process-bitbucket-svg-render) | PASS |
+| [Process bitbucket svg resolve](#process-bitbucket-svg-resolve) | PASS |
+| [Process bitbucket svg up to date](#process-bitbucket-svg-up-to-date) | PASS |
+| [Process bitbucket svg](#process-bitbucket-svg) | PASS |
+| [Process crew brief crew context](#process-crew-brief-crew-context) | PASS |
+| [Process crew brief handoff read](#process-crew-brief-handoff-read) | PASS |
+| [Process crew brief platform sync](#process-crew-brief-platform-sync) | PASS |
+| [Process crew brief status](#process-crew-brief-status) | PASS |
+| [Process crew brief](#process-crew-brief) | PASS |
+| [Process crew kimi agent](#process-crew-kimi-agent) | PASS |
+| [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
+| [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
+| [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
+| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | FAIL |
+| [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
+| [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
+| [Process crew lifecycle](#process-crew-lifecycle) | PASS |
+| [Process qa audit](#process-qa-audit) | PASS |
+| [Process qa gates](#process-qa-gates) | PASS |
+| [Process qa ladder](#process-qa-ladder) | PASS |
+| [Process](#process) | PASS |
 
 ## Architecture
 
@@ -102,7 +102,7 @@ flowchart TB
 
 - **Source:** `architecture.mmd`
 - **Drawn from:** `plugin/localgpu/bootstrap.sh`, `plugin/localgpu/cli/anthropic_proxy.py`, `plugin/localgpu/cli/localgpu_cli.py`, `plugin/localgpu/commands/setup.md`, `plugin/localgpu/mcp/ollama.py`, `plugin/localgpu/mcp/server.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config autoclear
 
@@ -134,7 +134,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-autoclear.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_autocycle.py`, `plugin/crew/hooks/scripts/crew_autoclear_setup.py`, `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config menu
 
@@ -184,7 +184,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-menu.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config no python
 
@@ -232,7 +232,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/cloud-guard.sh`, `plugin/crew/hooks/scripts/env-guard.sh`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config ratchet
 
@@ -283,7 +283,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-ratchet.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/CONFIG.md`, `plugin/crew/tests/test_install_policy.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config read
 
@@ -346,7 +346,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 13 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config shell route
 
@@ -373,7 +373,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config-shell-route.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_shell.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config split
 
@@ -411,7 +411,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-split.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 7 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config two files
 
@@ -443,7 +443,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-two-files.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_migrate.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config unattended
 
@@ -469,7 +469,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config-unattended.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_unattended.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/cloud_guard.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config write
 
@@ -521,7 +521,7 @@ flowchart TB
 
 - **Source:** `data-flow-crew-config-write.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config
 
@@ -550,7 +550,7 @@ flowchart LR
 
 - **Source:** `data-flow-crew-config.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`, `plugin/crew/hooks/scripts/crew_config_files.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/crew_autoclear_setup.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Data flow search
 
@@ -591,7 +591,7 @@ flowchart TB
 
 - **Source:** `data-flow-search.mmd`
 - **Drawn from:** `plugin/localgpu/mcp/ollama.py`, `plugin/localgpu/mcp/server.py`, `plugin/localgpu/mcp/store.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Data flow
 
@@ -641,7 +641,7 @@ flowchart TB
 
 - **Source:** `data-flow.mmd`
 - **Drawn from:** `plugin/localgpu/mcp/config.py`, `plugin/localgpu/mcp/indexer.py`, `plugin/localgpu/mcp/ollama.py`, `plugin/localgpu/mcp/server.py`, `plugin/localgpu/mcp/store.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg check
 
@@ -682,7 +682,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-check.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg collect
 
@@ -718,7 +718,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-collect.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg publish
 
@@ -753,7 +753,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-publish.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg render
 
@@ -801,7 +801,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-render.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/assets/mermaid-config.json`, `skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg resolve
 
@@ -825,7 +825,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-resolve.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/assets/mermaid-config.json`, `skills/mermaid-svg-bitbucket/SKILL.md`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 3 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg up to date
 
@@ -871,7 +871,7 @@ flowchart TB
 
 - **Source:** `process-bitbucket-svg-up-to-date.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/assets/mermaid-config.json`, `skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 12 nodes, no crossings, nothing drawn through a node
 
 ## Process bitbucket svg
 
@@ -898,7 +898,7 @@ flowchart LR
 
 - **Source:** `process-bitbucket-svg.mmd`
 - **Drawn from:** `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py`, `skills/mermaid-svg-bitbucket/assets/mermaid-config.json`, `skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml`, `skills/mermaid-svg-bitbucket/SKILL.md`, `skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief crew context
 
@@ -940,7 +940,7 @@ flowchart TB
 
 - **Source:** `process-crew-brief-crew-context.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew-context.sh`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_state.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief handoff read
 
@@ -964,7 +964,7 @@ flowchart TB
 
 - **Source:** `process-crew-brief-handoff-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/handoff-read.sh`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief platform sync
 
@@ -983,7 +983,7 @@ flowchart TB
 
 - **Source:** `process-crew-brief-platform-sync.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/platform-sync.sh`, `plugin/crew/hooks/scripts/crew_platform.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief status
 
@@ -1004,7 +1004,7 @@ flowchart TB
 
 - **Source:** `process-crew-brief-status.mmd`
 - **Drawn from:** `plugin/crew/commands/status.md`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot_owner.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 4 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief
 
@@ -1028,7 +1028,7 @@ flowchart TB
 
 - **Source:** `process-crew-brief.mmd`
 - **Drawn from:** `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/handoff-read.sh`, `plugin/crew/hooks/scripts/platform-sync.sh`, `plugin/crew/hooks/scripts/crew-context.sh`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
 
 ## Process crew kimi agent
 
@@ -1065,7 +1065,7 @@ flowchart LR
 
 - **Source:** `process-crew-kimi-agent.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_kimi_agent.py`, `plugin/crew/agents/explorer.md`, `plugin/crew/hooks/scripts/crew_state.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle approve
 
@@ -1096,7 +1096,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-approve.mmd`
 - **Drawn from:** `plugin/crew/commands/approve.md`, `plugin/crew/commands/plan.md`, `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 7 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle brainstorm
 
@@ -1131,7 +1131,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-brainstorm.mmd`
 - **Drawn from:** `plugin/crew/commands/brainstorm.md`, `plugin/crew/commands/fix.md`, `plugin/crew/hooks/scripts/crew_tracker.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 10 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle done
 
@@ -1161,13 +1161,13 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `dn3` | (refresh artifacts: re-anchor or regeneration the change reaches) |
-| `dn4` | first a report, never a check (done.md:73-81): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record (schema 1.1 row, tokens and cost an attributed lower bound), then the report with its Not verified list (done.md:99-101) |
+| `dn4` | first a report, never a check (done.md:73-81): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record, then the report with its Not verified list (done.md:99-101) |
 | `ln1` | crew_train.py check-land: holds the train, merge-tree clean, base unmoved in Touch, receipt + gate |
 | `ln2` | --merge --match-head-commit sha |
 
 - **Source:** `process-crew-lifecycle-done.mmd`
 - **Drawn from:** `plugin/crew/commands/done.md`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/completion_audit.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_docs_check.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_train.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle implement
 
@@ -1207,7 +1207,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-implement.mmd`
 - **Drawn from:** `plugin/crew/commands/implement.md`, `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** FAIL: 1 label overlap(s)
 
 ## Process crew lifecycle review
 
@@ -1261,7 +1261,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-review.mmd`
 - **Drawn from:** `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/review_verdict.py`, `plugin/crew/hooks/scripts/crew_standards.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle spec plan
 
@@ -1295,7 +1295,7 @@ flowchart TB
 
 - **Source:** `process-crew-lifecycle-spec-plan.mmd`
 - **Drawn from:** `plugin/crew/commands/spec.md`, `plugin/crew/commands/plan.md`, `plugin/crew/hooks/scripts/crew_tracker.py`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle
 
@@ -1321,7 +1321,7 @@ flowchart LR
 
 - **Source:** `process-crew-lifecycle.mmd`
 - **Drawn from:** `plugin/crew/commands/brainstorm.md`, `plugin/crew/commands/spec.md`, `plugin/crew/commands/plan.md`, `plugin/crew/commands/approve.md`, `plugin/crew/commands/implement.md`, `plugin/crew/commands/review.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/fix.md`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 9 nodes, no crossings, nothing drawn through a node
 
 ## Process qa audit
 
@@ -1337,7 +1337,7 @@ flowchart LR
 
 - **Source:** `process-qa-audit.mmd`
 - **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-crew.yml`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Process qa gates
 
@@ -1357,7 +1357,7 @@ flowchart TD
 
 - **Source:** `process-qa-gates.mmd`
 - **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-crew.yml`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process qa ladder
 
@@ -1373,7 +1373,7 @@ flowchart LR
 
 - **Source:** `process-qa-ladder.mmd`
 - **Drawn from:** `.crew/verify.json`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 2 nodes, no crossings, nothing drawn through a node
 
 ## Process
 
@@ -1434,4 +1434,4 @@ flowchart TB
 
 - **Source:** `process.mmd`
 - **Drawn from:** `plugin/localgpu/bootstrap.ps1`, `plugin/localgpu/bootstrap.sh`, `plugin/localgpu/cli/localgpu_cli.py`, `plugin/localgpu/commands/setup.md`, `plugin/localgpu/mcp/requirements.txt`
-- **Readability:** not rendered (run render.sh, then this again)
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node

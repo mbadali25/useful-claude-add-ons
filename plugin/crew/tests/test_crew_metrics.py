@@ -345,6 +345,17 @@ def test_zero_token_synthetic_message_needs_no_price(tmp_path):
     assert (usd, unpriced) == (2.146, [])
 
 
+def test_haiku_5_5_over_a_100k_prompt_is_priced_at_the_long_tier(tmp_path):
+    transcript = _transcript(tmp_path, [
+        _asst(1, "m1", model="claude-haiku-5-5", input_tokens=100_000, output_tokens=1_000_000),
+        _asst(2, "m2", model="claude-haiku-5-5", input_tokens=100_001, output_tokens=1_000_000)])
+
+    usd, unpriced = cm.cost_usd(cm.transcript_token_kinds(transcript)["byModel"])
+
+    assert (usd, unpriced) == (round((100_000 * 0.10 + 1_000_000 * 0.50
+                                      + 100_001 * 0.50 + 1_000_000 * 2.50) / 1_000_000, 6), [])
+
+
 def test_cache_creation_without_breakdown_counts_as_five_minute(tmp_path):
     transcript = _transcript(tmp_path, [_asst(1, "m1", cache_creation_input_tokens=1000)])
 
@@ -457,7 +468,8 @@ def test_attribution_by_linked_worktree(repo, tmp_path):
 
 def test_worktree_and_stamp_disagree_is_conflicting(repo, tmp_path):
     tree = _worktree(repo, tmp_path, "L-9-feature")
-    _session(tree, "s1", [_user(1, "Ticket ID: L-8"), _asst(2, "m1", cwd=tree, output_tokens=7)])
+    _session(tree, "s1", [_user(1, "Ticket ID: L-8", cwd=tree),
+                          _asst(2, "m1", cwd=tree, output_tokens=7)])
 
     used = cm.attributed_usage(str(repo), "L-9")
 
@@ -528,6 +540,46 @@ def test_workflow_subagent_files_are_scanned(repo):
     assert (_total(used), used["subagents"]) == (10, 1)
 
 
+def test_a_file_with_a_malformed_line_is_unreadable_and_attributed_to_nobody(repo):
+    path = _session(repo, "s1", [_user(1, "Ticket ID: L-9"),
+                                 _asst(2, "m1", cwd=repo, output_tokens=7)])
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("{not json Ticket ID: L-8\n")
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["unreadable"], used["tokens"]) == (0, 1, None)
+
+
+@pytest.mark.parametrize("bad", [-1, "9", True, 1.5])
+def test_an_invalid_usage_count_is_never_read_as_zero(repo, bad):
+    _session(repo, "s1", [_user(1, "Ticket ID: L-9"),
+                          _asst(2, "m1", cwd=repo, output_tokens=bad)])
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["unreadable"], used["tokens"]) == (0, 1, None)
+
+
+def test_transcript_tokens_is_unknown_for_an_invalid_count_unless_strict(tmp_path):
+    transcript = _transcript(tmp_path, [_asst(1, "m1", output_tokens="x", input_tokens=2)])
+
+    assert cm.transcript_tokens(transcript) == cm.UNKNOWN
+    assert cm.transcript_token_kinds(transcript) == cm.UNKNOWN
+    with pytest.raises(ValueError):
+        cm.transcript_tokens(transcript, fields=("output_tokens",), strict=True)
+
+
+def test_a_record_without_cwd_gives_no_worktree_evidence(repo, tmp_path):
+    tree = _worktree(repo, tmp_path, "L-9-feature")
+    nowhere = _asst(2, "m2", output_tokens=5)
+    _session(tree, "s1", [_asst(1, "m1", cwd=tree, output_tokens=7), nowhere])
+
+    used = cm.attributed_usage(str(repo), "L-9")
+
+    assert (used["files"], used["tokens"]) == (0, None)
+
+
 def test_session_switching_tickets_is_unattributed_and_counted_conflicting(repo):
     _session(repo, "s1", [_user(1, "Ticket ID: L-9"), _user(2, "/crew:implement L-8"),
                           _asst(3, "m1", cwd=repo, output_tokens=7)])
@@ -557,7 +609,8 @@ def test_record_row_carries_the_measurement_group(repo):
     assert row["tokens"]["total"] == 313000
     assert row["cost"] == 2.146
     assert row["tokensAttribution"] == {"files": 1, "mainSessions": 1, "subagents": 0,
-                                        "conflicting": 0, "conflictingMessages": 0}
+                                        "conflicting": 0, "conflictingMessages": 0,
+                                        "unreadable": 0}
     assert (row["pricesAsOf"], row["source"]["cost"]) == (
         cm.PRICES_AS_OF, "computed from PRICES (list price)")
     assert row["pricesSource"] == cm.PRICES_SOURCE
