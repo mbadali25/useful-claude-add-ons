@@ -119,7 +119,7 @@ for the same reason `$SCRATCH` is carried:
 # leave out paths byte-identical to merged main (T-0100: manifest `merged_main`, stderr
 # `merged-main=`; could-not-tell leaves nothing out). With no usable record scope_base.py falls
 # back to the merge-base with tickets.baseBranch (default origin/HEAD) and says "(fallback)";
-# repeat it in the verdict. Exit 3 = could not tell: stop.
+# repeat it in the verdict. Exit 3 = could not tell (also: no record on the base branch): stop.
 BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET"); SB_RC=$?
 if [ "$SB_RC" -eq 3 ]; then echo "review base: could not tell - stopping (see scope-base line above)" >&2; exit 3; fi
 if [ -z "$BASE" ]; then
