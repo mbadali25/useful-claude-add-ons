@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@304e58b11
-verified: 2026-10-04
+anchor: useful-claude-add-ons@9a76b725d
+verified: 2026-10-18
 
 ## Re-derive provenance
 
