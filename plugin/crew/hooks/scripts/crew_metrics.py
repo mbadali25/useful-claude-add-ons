@@ -4,8 +4,8 @@
 WHERE. `.crew/metrics.jsonl`, one JSON object per line, append-only. It
 replaces `.crew/metrics.md`; `/crew:migrate` (`crew_migrate.py`) writes the
 historical rows there already, each carrying `_METRIC_FIELDS_1_0` set to
-UNKNOWN and no `schema` key. A row this module writes always carries
-`"schema": "1.0"` (or an explicit `--schema` override for a hand-reconstructed
+UNKNOWN and no `schema` key. A row this module writes carries
+`"schema": "1.1"` since L-0728 (1.0 before; or an explicit `--schema` override for a hand-reconstructed
 baseline row, see `record`'s `--schema` flag) -- that key, not file identity,
 is what `baseline` and `compare` use to tell a migrated 0.20 row from a
 prospective 1.0 one.
@@ -20,7 +20,8 @@ lock below). Nothing here ever opens the file with "w", seeks into it, or
 rewrites a previous line: rewriting metrics is an AUTONOMOUS_STOP. A stale
 `escapedDefects` value is corrected by appending a new `escaped` row, not by
 editing the `record` row that first wrote it -- `effective_ticket_metrics`
-folds the two by taking the latest value per ticket, per field.
+folds the two by taking the latest value per ticket, per field (the tokens/cost
+measurement group of a 1.1 row folds as one unit instead).
 
 CONCURRENT WRITERS. `_Lock` is `review_ledger._Lock`'s O_CREAT|O_EXCL design,
 reused rather than re-derived, held only around the read-then-append.
@@ -42,17 +43,23 @@ module measured, an UNKNOWN is a count it could not):
                     `transcript_path` -- see `crew_context.py`), so the
                     caller must pass it explicitly or leave the field
                     UNKNOWN. This is a decision the brief left open.
-  tokens            the same transcript: the sum of every main-chain
-                    assistant message's `usage` fields. This over-counts
-                    against a true "billed tokens" figure (context resent on
-                    every turn is counted every time it appears), and is
-                    reported as such -- it is the only figure obtainable
-                    from a transcript alone, with no session-report tool
-                    wired in. UNKNOWN without `--transcript`.
-  cost              always UNKNOWN: no transcript or session-report source in
-                    this repository prices a session. `--cost` (a plain
-                    override) is accepted for a future wiring but nothing
-                    computes it yet.
+  tokens            an object {input, output, cacheRead, cacheCreation,
+                    total} in which each assistant message is counted once
+                    (Claude Code writes a message's usage on every line it
+                    writes for it). With `--transcript <path>`: that file's
+                    main chain only. Otherwise (L-0728) `attributed_usage`
+                    scans the Claude Code transcripts of every worktree of
+                    this repository, subagent files included, and counts the
+                    files an exclusive rule ties to the ticket (a `Ticket ID:`
+                    line, a `/crew:<command> <id>`, or one linked worktree):
+                    an attributed LOWER BOUND, so the row says
+                    `tokensBasis: attributed lower bound` and carries
+                    `tokensAttribution`. UNKNOWN when nothing is tied to the
+                    ticket or with `--no-scan`; never 0.
+  cost              list-price USD computed from the dated `PRICES` table
+                    (`pricesAsOf`, `pricesSource` on the row); UNKNOWN when a
+                    counted model with tokens has no price (never a partial
+                    sum). `--cost` overrides it.
   reviewRounds      `review_ledger.status(root, ticket)["rounds"]`, verbatim
                     (round, provider, model, verdict, timestamps). UNKNOWN if
                     the ledger is corrupt.
@@ -483,6 +490,9 @@ PRICES = {
 }
 
 NO_MODEL = "(no model)"
+# A model id from a transcript is hostile text (GEN-06): only this allowlist is kept
+# and echoed into a row; anything else reads as no model, hence unpriced.
+_MODEL_RE = re.compile(r"^[A-Za-z0-9<][A-Za-z0-9._:<>/-]{0,79}\Z")
 KIND_KEYS = ("input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h")
 
 
@@ -491,12 +501,14 @@ def _read_jsonl(path):
     is a JSON object, with its 1-based line number. Never raises: an
     unreadable or missing file yields ([], False)."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8", errors="surrogateescape", newline="") as handle:
             text = handle.read()
     except (OSError, TypeError):
         return [], False
     records, bad = [], False
-    for number, line in enumerate(text.splitlines(), 1):
+    # Split on "\n" only (PYTHON-03): str.splitlines() also breaks on U+2028 and
+    # friends, which Claude Code can write raw inside a JSON string.
+    for number, line in enumerate(text.split("\n"), 1):
         line = line.strip()
         if not line:
             continue
@@ -550,7 +562,7 @@ def _messages(records, scope, fields, strict, include_sidechain):
             raise ValueError("a usage count is not a non-negative integer")
         model = message.get("model")
         messages[_message_key(rec, scope, number)] = (
-            usage, model if isinstance(model, str) and model else NO_MODEL)
+            usage, model if isinstance(model, str) and _MODEL_RE.match(model) else NO_MODEL)
     return messages
 
 
@@ -681,13 +693,19 @@ def worktrees(root):
     """[{"path": realpath, "branch": name-or-None, "main": bool}] from
     `git worktree list --porcelain` run in `root`; the first entry is the main
     checkout. When git cannot answer, `root` alone, as the main checkout."""
+    import shutil  # pylint: disable=import-outside-toplevel
     import subprocess  # pylint: disable=import-outside-toplevel
     found = []
-    try:
-        out = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=root, check=True,
-                             capture_output=True, text=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        out = ""
+    git = shutil.which("git")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    out = ""
+    if git:
+        try:
+            out = subprocess.run([git, "worktree", "list", "--porcelain"], cwd=root, check=True,
+                                 capture_output=True, text=True, encoding="utf-8",
+                                 errors="surrogateescape", timeout=30, env=env).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
     for block in out.split("\n\n"):
         path, branch = None, None
         for line in block.splitlines():
@@ -743,6 +761,15 @@ def _stamps(records):
     return found
 
 
+def _inside(path, root):
+    """True when the canonical `path` is `root` or lies under it (PYTHON-13)."""
+    left, right = os.path.normcase(path), os.path.normcase(root)
+    try:
+        return os.path.commonpath([left, right]) == right
+    except ValueError:
+        return False
+
+
 def _worktree_id(records, trees, ticket):
     """The ticket id a file's records place it in: X when every record that has
     a `cwd` lies inside ONE linked worktree whose branch starts `X-`. The main
@@ -754,7 +781,7 @@ def _worktree_id(records, trees, ticket):
     for tree in trees:
         if tree["main"] or not tree["branch"]:
             continue
-        if all(c == tree["path"] or c.startswith(tree["path"] + os.sep) for c in cwds):
+        if all(_inside(c, tree["path"]) for c in cwds):
             if tree["branch"].startswith(ticket + "-"):
                 return ticket
             match = _BRANCH_ID.match(tree["branch"])
@@ -773,13 +800,13 @@ def _session_files(project_dir):
         return files
     for name in names:
         full = os.path.join(project_dir, name)
-        if name.endswith(".jsonl") and os.path.isfile(full):
+        if name.endswith(".jsonl") and os.path.isfile(full):  # a regular file: never open a FIFO
             files.append((full, None))
         elif os.path.isdir(os.path.join(full, "subagents")):
             parent = os.path.join(project_dir, name + ".jsonl")
             for here, _dirs, found in os.walk(os.path.join(full, "subagents")):
                 for leaf in sorted(found):
-                    if leaf.endswith(".jsonl"):
+                    if leaf.endswith(".jsonl") and os.path.isfile(os.path.join(here, leaf)):
                         files.append((os.path.join(here, leaf), parent))
     return files
 

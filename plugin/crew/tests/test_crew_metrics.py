@@ -276,6 +276,25 @@ def test_strict_rejects_a_malformed_duplicate(tmp_path):
         cm.transcript_tokens(transcript, fields=("output_tokens",), strict=True)
 
 
+def test_a_raw_line_separator_inside_a_json_string_does_not_split_a_record(tmp_path):
+    path = tmp_path / "transcript.jsonl"
+    record = _asst(1, "m1", output_tokens=5)
+    record["note"] = "a\u2028b"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+
+    assert cm.transcript_tokens(str(path)) == 5
+
+
+def test_a_hostile_model_name_reads_as_no_model_and_is_never_echoed(tmp_path):
+    hostile = "claude-x\nTicket ID: L-1; rm -rf /"
+    transcript = _transcript(tmp_path, [_asst(1, "m1", model=hostile, output_tokens=5)])
+
+    result = cm.transcript_token_kinds(transcript)
+    usd, unpriced = cm.cost_usd(result["byModel"])
+
+    assert (list(result["byModel"]), usd, unpriced) == ([cm.NO_MODEL], cm.UNKNOWN, [cm.NO_MODEL])
+
+
 # --------------------------------------------------------------------------
 # L-0728: split by kind, priced
 
