@@ -523,6 +523,20 @@ loses the most time to.
    distinguishes approved from blocked from never-reviewed without a human reading threads, and an
    unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used.
    If the repo has no PR yet, say that instead of silently skipping the step.
+   **Publish an accepted receipt (L-0780).** The ledger and receipt are host-local (`<git-common-dir>/crew/review/`,
+   `.work/`), so a session on another host sees none, and an absent ledger is COULD NOT TELL, never "nothing to gate"
+   (PR #599 merged with 4 open BLOCKs on that misreading). Once the head is pushed and the receipt stands, publish it
+   as the commit status `crew/review` on that exact sha, and re-run it after a merge of main or a version bump (the
+   delta gate keeps the receipt and the status says `kept-by-delta`):
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_status.py post --root . --ticket "$TICKET"
+   ```
+
+   It posts `success` only at 0 BLOCK with a receipt that stands on HEAD; exit 1 = nothing stands (nothing posted),
+   exit 2 = could not post. From any host, before `gh pr merge`, `review_status.py check --root . --pr <PR>` (add
+   `--ticket "$TICKET"` where the ledger lives) prints `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha> ...`;
+   exit 0 allows, 1 and 2 both refuse. A status attests, it does not prove, and `--admin` bypasses a required check.
 5. If `notify.provider` is not `none`, send one line:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.

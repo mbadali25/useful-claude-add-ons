@@ -1156,6 +1156,17 @@ def _merged_note(merged, stale):
     return (f" ({count} path(s) identical to merged main left out)" if count else "") + fork
 
 
+def _head_note(root):
+    """HEAD's sha for a refusal message, or `unknown` when git cannot say."""
+    try:
+        done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    sha = done.stdout.strip()
+    return sha if done.returncode == 0 and sha else "unknown"
+
+
 def check_receipt(root, ticket, base_sha=None):
     """(ok, message). ok only when an accepted receipt exists, the excluded
     paths are unchanged (check E, `review_delta.excluded_check`), a pinned
@@ -1165,7 +1176,11 @@ def check_receipt(root, ticket, base_sha=None):
     integration commit; no caller passes it yet (L-0522 PR 3 wires check_land)."""
     data, state = _load(ledger_path(root, ticket))
     if state != "ok":
-        return False, f"no accepted review receipt for {ticket} (ledger {state})"
+        return False, (f"no accepted review receipt for {ticket} (ledger {state}); could not "
+                       f"tell whether head {_head_note(root)} was reviewed: a review ledger "
+                       "lives only on the host that ran the review, so absence is not "
+                       "\"nothing to gate\" (L-0780); review_status.py check --head <sha> "
+                       "reads the published crew/review status")
     receipt = data.get("receipt")
     if not isinstance(receipt, dict) or not receipt.get("bundle_sha256"):
         return False, f"no accepted review receipt for {ticket}"

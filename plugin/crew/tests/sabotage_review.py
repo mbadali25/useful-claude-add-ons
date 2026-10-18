@@ -26,6 +26,8 @@ _AP = "tests/test_crew_autopilot.py::"
 _PT = "tests/test_provider_table.py::"
 _SF = "tests/test_review_run_same_family.py::"
 _RL = "tests/test_review_ledger.py::"
+_RS = "tests/test_review_status.py::"
+REVIEW_STATUS = os.path.join(CREW, "hooks", "scripts", "review_status.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -1982,4 +1984,46 @@ REVIEW_FIX_MUTATIONS = (
      '            and e.get("refunded") is True for e in unreviewed):\n',
      '            isinstance(e, (dict, str)) for e in unreviewed):\n',
      _SF + "test_status_never_counts_a_malformed_no_reviewer_record_as_refunded"),
+    # L-0780: a missing ledger or status is could-not-tell, never "nothing to gate".
+    ("L-0780: no status on the head reads as allow", REVIEW_STATUS,
+     '        return UNKNOWN, (f"no {CONTEXT} status on {sha[:12]}: this head has no published "\n',
+     '        return ALLOW, (f"no {CONTEXT} status on {sha[:12]}: this head has no published "\n',
+     _RS + "test_check_no_ledger_no_status_is_could_not_tell"),
+    ("L-0780: a failed status lookup reads as allow", REVIEW_STATUS,
+     '        return UNKNOWN, f"could not read the status of {sha[:12]}: {(err or out).strip()[:200]}"\n',
+     '        return ALLOW, f"could not read the status of {sha[:12]}: {(err or out).strip()[:200]}"\n',
+     _RS + "test_check_lookup_failures_are_could_not_tell"),
+    ("L-0780: the status reply is not compared with the head asked about", REVIEW_STATUS,
+     '    if data.get("sha") != sha:\n',
+     '    if False:\n',
+     _RS + "test_check_status_reply_for_another_sha_is_could_not_tell"),
+    ("L-0780: a success status with open BLOCKs allows", REVIEW_STATUS,
+     '    if int(match.group(1)) != 0:\n',
+     '    if False:\n',
+     _RS + "test_check_success_with_open_blocks_blocks"),
+    ("L-0780: a pending status reads as allow", REVIEW_STATUS,
+     '    if state != "success":\n',
+     '    if state not in ("success", "pending"):\n',
+     _RS + "test_check_non_final_status_is_could_not_tell"),
+    ("L-0780: post publishes success past open BLOCKs", REVIEW_STATUS,
+     '    if counts[0] != 0:\n',
+     '    if False:\n',
+     _RS + "test_post_refuses_an_owner_accepted_receipt_with_blocks"),
+    ("L-0780: post treats unreadable counts as zero", REVIEW_STATUS,
+     '    if not isinstance(counts, dict):\n        return None\n',
+     '    if not isinstance(counts, dict):\n        return 0, 0, 0\n',
+     _RS + "test_counts_that_are_not_a_dict_are_unreadable_never_zero"),
+    ("L-0780: a stale local ledger yields to a published success", REVIEW_STATUS,
+     '        if state == "ok" and local == head:\n',
+     '        if False:\n',
+     _RS + "test_check_local_ledger_is_authoritative_for_its_head"),
+    ("L-0780: a corrupt local ledger falls through to the status", REVIEW_STATUS,
+     '        if state == "corrupt":\n',
+     '        if False:\n',
+     _RS + "test_check_corrupt_ledger_is_could_not_tell"),
+    ("L-0780: check_receipt drops the could-not-tell wording for a missing ledger", REVIEW_LEDGER,
+     '                       f"tell whether head {_head_note(root)} was reviewed: a review ledger "\n',
+     '                       f"tell whether head {_head_note(root)} was REVIEWED: a review ledger "\n',
+     "tests/test_review_receipt.py::"
+     "test_check_receipt_without_a_ledger_says_could_not_tell_and_names_head"),
 )
