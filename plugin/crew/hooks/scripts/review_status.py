@@ -56,7 +56,8 @@ EXIT_REFUSED, EXIT_POST_FAILED = 1, 2
 GH_TIMEOUT = 60
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _BLOCKS_RE = re.compile(r"(?<!\S)blocks=(\d+)(?!\S)")
-_SLUG_RE = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+_SLUG_RE = re.compile(r"^(?:git@|ssh://git@|https://(?:[^@/\s]+@)?)github\.com[:/]+"
+                      r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 DESCRIPTION_MAX = 140
 
@@ -108,7 +109,7 @@ def repo_slug(root, override=None):
     code, out, err = _run(["git", "remote", "get-url", "origin"], root)
     if code != 0:
         return None, f"could not read origin: {(err or out).strip()}"
-    match = _SLUG_RE.search(out.strip())
+    match = _SLUG_RE.match(out.strip())
     if not match:
         return None, f"origin {out.strip()!r} is not a github.com remote"
     return f"{match.group(1)}/{match.group(2)}", ""
@@ -188,9 +189,15 @@ def describe(root, ticket):
     ok, message = review_ledger.check_receipt(root, ticket)
     if not ok:
         return False, message
-    data, _ = review_ledger._load(review_ledger.ledger_path(root, ticket))  # pylint: disable=protected-access
-    receipt = data.get("receipt") or {}
-    latest = (data.get("rounds") or [{}])[-1]
+    data, state = review_ledger._load(review_ledger.ledger_path(root, ticket))  # pylint: disable=protected-access
+    receipt = data.get("receipt") if state == "ok" else None
+    rounds = data.get("rounds") if state == "ok" else None
+    if (not isinstance(receipt, dict) or not receipt.get("bundle_sha256")
+            or not isinstance(rounds, list) or not rounds or not isinstance(rounds[-1], dict)
+            or rounds[-1].get("round") != receipt.get("round")):
+        return False, ("the ledger changed or could not be read again after the receipt check: "
+                       "could not tell")
+    latest = rounds[-1]
     counts = _counts(latest)
     if counts is None:
         return False, f"round {latest.get('round')} has no readable counts: could not tell"
@@ -241,6 +248,29 @@ def post(root, ticket, repo=None):
     return 0, [f"{CONTEXT} success posted on {head} ({slug}): {text}"]
 
 
+def _local_tickets(root, head):
+    """(tickets, problem): every ticket whose local ledger names `head` in a
+    round. A ledger directory or file that cannot be read is a problem, never
+    "no ledger"."""
+    directory = os.path.dirname(review_ledger.ledger_path(root, "X"))
+    try:
+        names = sorted(os.listdir(directory))
+    except FileNotFoundError:
+        return [], ""
+    except OSError as exc:
+        return [], f"the ledger directory could not be read ({exc.__class__.__name__})"
+    found = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        data, state = review_ledger._load(os.path.join(directory, name))  # pylint: disable=protected-access
+        if state != "ok":
+            return [], f"the local ledger {name} is unreadable: could not rule it out"
+        if any(isinstance(r, dict) and r.get("head") == head for r in data.get("rounds") or []):
+            found.append(name[:-5])
+    return found, ""
+
+
 def verdict_for(root, head, ticket=None, repo=None):
     """(verdict, why) for `head`: the local ledger when it covers this head,
     else the published status. Every unknown stays COULD_NOT_TELL."""
@@ -250,12 +280,28 @@ def verdict_for(root, head, ticket=None, repo=None):
         local = head_of(root)
         if state == "corrupt":
             return UNKNOWN, f"the local review ledger for {ticket} is unreadable: could not tell"
+        if state == "ok" and local is None:
+            return UNKNOWN, "a local ledger exists but git could not read HEAD: could not tell"
         if state == "ok" and local == head:
             ok, text = describe(root, ticket)
             return (ALLOW, f"local receipt: {text}") if ok else (BLOCK, f"local ledger: {text}")
         note = ("no review ledger for " + ticket + " on this host (ledgers are host-local)"
                 if state == "absent" else
                 f"HEAD {str(local)[:12]} is not the head asked about")
+    if not ticket:
+        names, problem = _local_tickets(root, head)
+        if problem:
+            return UNKNOWN, problem
+        if names:
+            local = head_of(root)
+            if local != head:
+                return UNKNOWN, (f"a local ledger ({', '.join(names)}) names this head but HEAD is "
+                                 f"{str(local)[:12]}: run check --ticket there")
+            for name in names:
+                ok, text = describe(root, name)
+                if not ok:
+                    return BLOCK, f"local ledger {name}: {text}"
+            return ALLOW, f"local receipt {', '.join(names)}: {text}"
     if not ticket and head_of(root) == head and _tree_dirty(root) is not False:
         return UNKNOWN, ("no --ticket, and this working tree has uncommitted changes (or git could "
                          "not say): a published status covers the committed sha only, so a local "
@@ -296,6 +342,13 @@ def main(argv):
     target.add_argument("--pr", type=int)
     target.add_argument("--head")
     args = parser.parse_args(argv)
+    if args.head is not None and not _SHA_RE.match(args.head):
+        print("review_status: --head must be a full 40-hex commit sha", file=sys.stderr)
+        return 2
+    if args.action == "post" and (args.head is not None or args.pr is not None):
+        print("review_status: post publishes on HEAD only; --head and --pr are for check",
+              file=sys.stderr)
+        return 2
     if args.ticket:
         try:
             review_ledger.check_ticket(args.ticket)
