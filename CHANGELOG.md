@@ -9,6 +9,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.44: a missing review ledger is could-not-tell, and an accepted receipt is published as a commit status (L-0780)
+
+- **Summary.** `crew` 1.2.44: a review receipt can now be published as the `crew/review` commit status on the exact head, and a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate".
+- **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
+  host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
+- **`review_status.py post`.** Publishes `success` on the pushed head only when `review_ledger.check_receipt` says the receipt
+  stands there and the round's BLOCK count is exactly 0; the description carries round, kind, reviewer, counts, bundle and
+  `kept-by-delta` for a waived head. Nothing stands, nothing is posted (exit 1); a gh failure is exit 2.
+- **`review_status.py check`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2): the local ledger decides when
+  it covers that head, else the published status for that exact sha. No status, `pending`, a reply for another sha, gh missing,
+  unauthenticated or rate-limited, an unparseable reply and a corrupt ledger are all COULD_NOT_TELL.
+- **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
+- **Not done here.** Requiring `crew/review` in branch protection is the repository owner's setting; wiring `post` into the
+  ship path, `check` into `/crew:done` and `check-land`, and a guard on a raw `gh pr merge` are a follow-up feature ticket.
+  A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
+
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real
