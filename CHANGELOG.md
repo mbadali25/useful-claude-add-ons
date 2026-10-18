@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.42: the wave sabotage table covers the lane launch model (L-0802)
+
+- **Summary.** `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
+- **What.** One `WAVE_MUTATIONS` entry in `sabotage_wave.py`: the launch line drops the developer model, and `test_launch_line_carries_developer_model` must fail. No behaviour or documented surface moves.
+- **Tests.** The mutation was run red and green (restore). Review round 1 by Kimi: clean; round 2 re-reviewed the version bump; a narrow delta round covered the fixes and the 1.2.42 re-bump.
+- **Process.** The crew feature freeze was waived by the owner for this batch (L-0802 spec, Exclusions). Tooling PR, landing alone. NIT 1 and NIT 2 are split to a separate ticket (L-0810).
+
 ### Changed — crew 1.2.41: the Windows skips in test_verify_gate_quiet.py name their real reasons (L-0806)
 
 - **Summary.** `crew` 1.2.41 changes one test file only: the Windows skips now state why they skip, and the backgrounded-process timing test runs serially; the gate itself is unchanged.

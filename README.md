@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.42**: The wave sabotage table covers the lane launch model. `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
 - **crew 1.2.41**: The Windows skips in test_verify_gate_quiet.py name their real reasons. `crew` 1.2.41 changes one test file only: the Windows skips now state why they skip, and the backgrounded-process timing test runs serially; the gate itself is unchanged.
-- **crew 1.2.40**: Auto wrap-up and auto-clear fire at 40% of the context window. `crew` 1.2.40 moves the default context threshold from 50% to 40% of the window, so the handoff warning, auto wrap-up and auto-clear all start earlier; an explicit `context.warnAt` is untouched.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
