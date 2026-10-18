@@ -420,14 +420,18 @@ def changed(root, base):
                    if line.strip()})
 
 
-def _branch_name(ref):
-    """`main` for `main`, `origin/main`, `refs/heads/main` or
-    `refs/remotes/origin/main`: the base branch may be configured in any of
-    those spellings (Codex L-0770 r1: `refs/heads/main` read as another
-    branch). Only `origin` is stripped, as merged_main.resolve does."""
+def _branch_name(ref, remotes=("origin",)):
+    """`main` for `main`, `origin/main`, `refs/heads/main`,
+    `refs/remotes/origin/main` or `upstream/main`: the base branch may be
+    configured in any of those spellings (Codex L-0770 r1: `refs/heads/main`
+    read as another branch; r2: so did a remote other than origin). A leading
+    `<remote>/` is stripped for each name in `remotes`."""
     for prefix in ("refs/heads/", "refs/remotes/"):
         ref = ref.removeprefix(prefix)
-    return ref.removeprefix("origin/")
+    for remote in remotes:
+        if ref.startswith(remote + "/"):
+            return ref[len(remote) + 1:]
+    return ref
 
 
 def _empty_range_on_the_base_branch(root, base, source):
@@ -448,10 +452,15 @@ def _empty_range_on_the_base_branch(root, base, source):
                 "checked against HEAD and the base branch (git gave no answer)")
     if head != base:
         return None
+    remotes = crew_common.git_out(root, "remote")
+    if remotes is None:
+        return (f"could not tell: the remotes of {root} could not be listed, so whether HEAD's "
+                f"branch is {ref} could not be checked (git gave no answer)")
+    remotes = remotes.split()
     branch = crew_common.git_out(root, "symbolic-ref", "--quiet", "HEAD")
-    if branch and _branch_name(branch) != _branch_name(ref):
+    if branch and _branch_name(branch, remotes) != _branch_name(ref, remotes):
         return None
-    where = f"on {_branch_name(branch)}" if branch else "on a detached HEAD"
+    where = f"on {_branch_name(branch, remotes)}" if branch else "on a detached HEAD"
     return (f"could not tell: no start is recorded and HEAD is {where}, inside {ref}'s own "
             f"history, so the merge-base fallback is HEAD itself and which commits are the "
             f"ticket's cannot be told. Record the ticket's start on its branch (scope_base.py "

@@ -111,3 +111,14 @@ def test_a_pin_past_the_start_applies(tmp_path):
     main_moved = git(world.repo, "rev-parse", "main")
     pin = merged_main.pinned(str(world.repo), world.start, main_moved)
     assert pin["commit"] == main_moved and pin["applies"] is True
+
+
+def test_a_pin_whose_ancestry_git_cannot_answer_is_could_not_tell(tmp_path, monkeypatch):
+    """Codex L-0770 r2 (L-0775): a failed ancestry probe is could-not-tell,
+    never the applied pin (an unknown must not read as a merge past the start)."""
+    world = World(tmp_path, catch_up=True)
+    main_moved = git(world.repo, "rev-parse", "main")
+    monkeypatch.setattr(merged_main, "_is_ancestor", lambda root, older, newer: None)
+    pin = merged_main.pinned(str(world.repo), world.start, main_moved)
+    assert pin["commit"] is None and pin["applies"] is False
+    assert pin["reason"].startswith(merged_main.UNKNOWN)

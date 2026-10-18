@@ -23,6 +23,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Unchanged.** Every existing caller of `reviewed_bundle` and `_ticket_base_tree` (no `merged`), and
   `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
   its fork point still gets HEAD.
+- **Round 2 FIXes closed here (L-0775).** A base branch configured on a remote other than `origin`
+  (`upstream/main`) is now the base branch too, a failed `git remote` listing is could-not-tell, and
+  the three controls the round named exist: a start recorded at the current HEAD still answers, a
+  failed ancestry probe in `merged_main.pinned` is could-not-tell, and each has a sabotage entry run red.
 - **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
 
 ### Changed — crew 1.2.42: the wave sabotage table covers the lane launch model (L-0802)

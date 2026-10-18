@@ -583,3 +583,44 @@ def test_cli_base_reads_a_failed_probe_as_could_not_tell(repo, monkeypatch):
     reason = scope_base._empty_range_on_the_base_branch(  # pylint: disable=protected-access
         str(repo), _head(repo), "merge-base")
     assert reason and reason.startswith("could not tell")
+
+
+def test_cli_base_on_a_base_branch_of_another_remote_is_could_not_tell(repo):
+    """Codex L-0770 r2 (L-0775): a base branch configured on a remote other
+    than origin, with local `main` at the same commit and no record, is the
+    base branch itself: exit 3, never HEAD."""
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"tickets": {"baseBranch": "upstream/main"}}), encoding="utf-8")
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, "on-main.py")
+    _git(repo, "remote", "add", "upstream", str(repo))
+    _git(repo, "update-ref", "refs/remotes/upstream/main", "HEAD")
+    done = _cli(repo, "--base")
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert done.stdout == ""
+
+
+def test_cli_base_on_the_default_branch_with_a_record_at_head_is_the_record(repo):
+    """Codex L-0770 r2 (L-0775), MUST ALLOW: a start recorded at the current
+    HEAD of the base branch is a known start, not the merge-base fallback."""
+    _git(repo, "checkout", "-q", "main")
+    assert _cli(repo, "--record").returncode == 0
+    done = _cli(repo, "--base")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.strip() == _head(repo)
+
+
+def test_cli_base_reads_a_failed_remote_listing_as_could_not_tell(repo, monkeypatch):
+    """A remote listing git cannot answer is could-not-tell, never 'not the
+    base branch' (an unknown must not read as the safe value)."""
+    _git(repo, "checkout", "-q", "main")
+    real = scope_base.crew_common.git_out
+
+    def failing(root, *args, **kwargs):
+        return None if args == ("remote",) else real(root, *args, **kwargs)
+
+    monkeypatch.setattr(scope_base.crew_common, "git_out", failing)
+    reason = scope_base._empty_range_on_the_base_branch(  # pylint: disable=protected-access
+        str(repo), _head(repo), "merge-base")
+    assert reason and reason.startswith("could not tell")
