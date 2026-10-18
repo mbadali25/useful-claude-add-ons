@@ -1187,3 +1187,38 @@ def test_an_unlistable_folder_is_could_not_tell(tmp_path, monkeypatch, folder):
     lines = crew_status.collect(str(root))
 
     assert "could not tell whether /crew:migrate is needed" in lines[1]
+
+
+# --- L-0813: the codex-wrapper line -----------------------------------------------------
+
+def _wrapper_line(lines):
+    found = [line for line in lines if line.startswith("codex-wrapper ")]
+    assert len(found) == 1, lines
+    return found[0]
+
+
+def test_status_codex_wrapper_line_says_missing_never_ok(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CODEX_WRAPPER_FALLBACK", "")
+    monkeypatch.delenv("CODEX_WRAPPER", raising=False)
+    import crew_codex_wrapper  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_codex_wrapper.crew_common, "resolve_tool", lambda name: "/usr/bin/codex")
+
+    line = _wrapper_line(crew_status.collect(str(root)))
+
+    assert line.startswith("codex-wrapper MISSING: no wrapper found (looked in: ")
+
+
+def test_status_codex_wrapper_line_is_unknown_when_the_module_breaks(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    import crew_codex_wrapper  # pylint: disable=import-outside-toplevel
+
+    def boom():
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(crew_codex_wrapper, "summary", boom)
+
+    line = _wrapper_line(crew_status.collect(str(root)))
+
+    assert line == "codex-wrapper unknown (OSError: disk gone)"

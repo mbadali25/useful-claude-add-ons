@@ -269,6 +269,15 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
 
 - **QA:** if `codex` is present, make one real call to prove auth works. If it is
   absent, tell me what the fallback costs and let me decide whether to install it.
+- **Codex host wrapper:** if `codex` is present, run
+  `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_codex_wrapper.py check`. The wrapper is
+  `~/.claude/hooks/codex-review.sh`, which review harnesses outside crew (SRL, TSS) call
+  instead of `codex exec`; a rebuilt machine loses it silently and those harnesses then
+  review nothing. On `MISSING`, say what it is and offer
+  `... crew_codex_wrapper.py install`, recommended yes: it writes one file under the user's
+  config dir, so it runs only on a yes, never silently, and never with `--force` (a
+  different existing file is the user's). Report `present`, `direct`, `n/a` and `UNKNOWN`
+  as they are; do not call any of them ok.
 - **QA, second rung:** if `copilot` is present, make one real call too. A
   `Access denied by policy settings` error means CLI policy is off at the org or
   enterprise, not that I lack a seat — say so, rather than reporting it as absent.

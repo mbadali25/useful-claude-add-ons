@@ -166,6 +166,25 @@ a trusted directory" instead. `codex: ok` (exit 0) means the wiring works. If it
 reports `FAILED` (an auth error, a login prompt, a timeout), fix that now — a QA gate that silently fails is worse
 than no gate, because everything goes green.
 
+### The host wrapper (`codex-review.sh`)
+
+Crew's own review launches `codex` directly and never needs this. Review harnesses
+outside crew (the SRL and TSS repos) call `${CLAUDE_CONFIG_DIR:-~/.claude}/hooks/codex-review.sh
+<prompt_file> <out_file> [repo_dir]`, which closes stdin, adds `--skip-git-repo-check`, caps
+a run at 20 minutes and restarts once. It is a per-machine file that no repository
+versioned, so a rebuilt machine lost it and the harness exited 77 "NO REVIEW HAPPENED".
+Crew ships a reference copy (`templates/codex-review.sh`) and checks it:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_codex_wrapper.py check     # also on /crew:status
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_codex_wrapper.py install   # --force keeps a .bak
+```
+
+`check` has seven answers and never rounds one into another: `ok` (byte-identical to the
+shipped copy), `present` (a different file, left alone), `direct` (`CODEX_WRAPPER=none`),
+`n/a` (no wrapper and no `codex`), `MISSING`, `NOT-EXECUTABLE` and `UNKNOWN`. The shipped
+copy reports the model and effort only when `codex` printed them.
+
 ### Invocation
 
 `/crew:review` handles this. The pattern: write the diff to a file, have Codex

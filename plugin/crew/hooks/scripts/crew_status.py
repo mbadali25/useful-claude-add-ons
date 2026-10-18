@@ -411,6 +411,19 @@ def _gitignore_line(root):
         return "gitignore " + crew_gitignore.summary(root)
     except Exception as exc:  # pylint: disable=broad-except
         return f"gitignore unknown ({type(exc).__name__}: {exc})"[:120]
+def _codex_wrapper_line():
+    # L-0813. Imported here for the reason _gitignore_line is: a missing or
+    # broken module must still print the line, as unknown, never as ok.
+    try:
+        import crew_codex_wrapper  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except
+        return "codex-wrapper unknown (crew_codex_wrapper.py not importable)"
+    try:
+        return "codex-wrapper " + crew_codex_wrapper.summary()
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"codex-wrapper unknown ({type(exc).__name__}: {exc})"[:120]
+
+
 def _graph_ignore_line(root):
     """T-0064: whether a graph build would read a secrets-denylisted path.
     graphify's post-commit hook bypasses crew, so this line is the warning.
@@ -706,6 +719,7 @@ def collect(root, memory=False):
     lines.append(_agents_line(root))
     lines.append(_codemap_line(root, cfg))
     lines.append(_gitignore_line(root))
+    lines.append(_codex_wrapper_line())
     lines.append(_graph_ignore_line(root))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))
