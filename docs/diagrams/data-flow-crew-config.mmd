@@ -1,6 +1,15 @@
-%% Generated from useful-claude-add-ons@388ceff31 on 2026-10-04, re-anchored 2026-10-09 (L-0733 follow-up refresh; see the notes below the Purpose line). Verify before trusting.
+%% Generated from useful-claude-add-ons@a792ce66b on 2026-10-04, re-anchored 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Purpose: How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
+%% Re-anchored 0bf364417 -> a792ce66b (L-0789 refresh, 2026-10-18): of the Anchors paths three changed since the last note
+%%    (git diff --stat 0bf364417..a792ce66b). CONFIG.md: L-0805's context.warnAt 0.5 -> 0.4 (one table row and one subsection,
+%%    ### context.warnAt defaults to 0.4, in section 14); crew_context.py
+%%    and crew_state.py: the same default. CONFIG.md is cited here by section only and no section number moved. Before that,
+%%    L-0772 (f4d98abc, guards.envGuard) and SRL-2308 changed crew_guards.py and crew_config.py, inside the ratchet box
+%%    (data-flow-crew-config-ratchet.mmd, re-anchored in the same commit); no part was added and no flow between parts changed.
+%%    One comment corrected: the Other links line said thirteen exceptions; RATCHETED_KEYS is 15 by import at a792ce66b
+%%    (_RATCHETED 16). The verbatim edge block below is history and keeps its labels as written (resolve_ratcheted is now :1006
+%%    and resolve_guard :1375). No node or edge changed.
 %% Re-anchored a7fb104b -> 0bf364417 (L-0796, 2026-10-17): of the Anchors paths only CONFIG.md changed,
 %%    by one 44-line insertion and no heading: the verify-gate "Quiet Stop output" bullet (L-0796), outside
 %%    every config-resolution section this diagram draws. CONFIG.md is cited here by section only and no
@@ -17,7 +26,7 @@
 %%    two-files box), L-0703's review evidence in section 16 and L-0710's "Who settles what Stop did not check".
 %%    CONFIG.md is cited here by section only and no section number moved. The L-0712 note: crew_state.py changed
 %%    only in resolve_role's fallback (:1502-1720). No node or edge changed.
-%% Other links (not drawn; exact edges and wording in the block below): write -> menu (both writers go through the file layer's update_json), read -> menu (machine rows), read -> ratchet (both files feed layer_state; the resolved config -> the thirteen exceptions), autoclear -> write (the same atomic writer). The drawn menu -> write arrow also stands for the menu's probes, and write -> ratchet also for resolve_ratcheted / resolve_guard.
+%% Other links (not drawn; exact edges and wording in the block below): write -> menu (both writers go through the file layer's update_json), read -> menu (machine rows), read -> ratchet (both files feed layer_state; the resolved config -> the fifteen exceptions), autoclear -> write (the same atomic writer). The drawn menu -> write arrow also stands for the menu's probes, and write -> ratchet also for resolve_ratcheted / resolve_guard.
 %% How one config value reaches a run, and what may set it where.
 %% WHAT CREW 1.0 CHANGED IN THIS FLOW, in the order the sections below draw it:
 %% NOT re-verified this pass: no SVG/PNG was previously tracked for this

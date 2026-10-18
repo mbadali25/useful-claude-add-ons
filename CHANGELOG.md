@@ -9,6 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.48: the config ratchet diagram in crew's README cites the current line (L-0789)
+
+- **Summary.** `crew` 1.2.48 (L-0789, a refresh): the config ratchet diagram embedded in crew's README
+  cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No
+  behaviour changes.
+- **Diagrams re-anchored.** `docs/diagrams/data-flow-crew-config.mmd` and
+  `data-flow-crew-config-ratchet.mmd` are re-anchored to a792ce66b. Since their last anchor,
+  `CONFIG.md`, `crew_context.py` and `crew_state.py` changed for L-0805 (`context.warnAt` 0.4), and
+  L-0772 and SRL-2308 had moved the lines the ratchet part cites in `crew_guards.py` and
+  `crew_config.py`. The ratchet part's Note lines now carry the measured counts (12 guards, 15
+  read-side and 16 write-side ratchet keys) and current line numbers; no box or arrow was added or
+  removed.
+
 ### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
 - **Summary.** `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head

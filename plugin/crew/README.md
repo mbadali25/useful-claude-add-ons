@@ -4663,7 +4663,7 @@ flowchart TB
     subgraph Except["Fifteen keys do NOT follow the precedence above (read-side ratchet)"]
         direction TB
         E1["<b>15 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
-        E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :564"]
+        E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :594"]
         E3["Why: crew reads config<br/>out of CLONED repositories"]
         E4["Absent = the narrowest tier<br/>for TWELVE of the fifteen"]
         E5["<b>guards.roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
