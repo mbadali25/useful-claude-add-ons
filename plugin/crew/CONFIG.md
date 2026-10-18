@@ -886,6 +886,39 @@ The three numeric `pm.*` keys are coerced with `int_or` once, in
 hand-edited JSON file and an unguarded comparison against a string is a
 `TypeError` that takes out every session in the repo.
 
+### The session relay is pinned in its agent file, not in config
+
+`agents/session-relay.md` (L-0797) carries messages between sessions on Haiku 5.5. Its model is the
+frontmatter line `model: claude-haiku-5-5` (the full id, probed accepted in a scratch HOME on 2026-10-16), which plugin frontmatter fixes at ship
+time, so there is **no** `relay.model` key and nothing in `qa.roles` or `dev.roles` for it: it is not
+a role, and `/crew:model` reports roles only. To run a relay on another model, pass `model` when
+dispatching it. `tests/test_session_relay.py` pins the model, the two tools (no `Read`) and the transport-only
+rules.
+
+### The coordinator and lane model pins (L-0799)
+
+The coordinator is **a model pin on an existing role**, not a fifth role: `dev.roles.coordinator`
+(`{"provider": "claude", "model": "claude-opus-5-5"}`) in the open `dev.roles` table, default
+**unset**, so nothing changes for anyone who sets nothing. No agent file, persona or roster entry
+backs it, and `crew_config.py --models` / `/crew:model` list it as a `role-pin` row like any pin.
+`crew_wave.py start` prints `coordinator: model <id>` when the pin is a claude pin with a model;
+the dispatcher prints it as-is: wave launches no coordinator, so the line reports the pin and
+launches nothing. A plugin cannot change the session model, so where the main session itself
+coordinates, the pin has no effect unless the owner sets the session model.
+
+`dev.roles.developer` with `provider: claude` and a `model` is now used for wave lanes:
+`crew_wave.py start` writes `Agent(subagent_type: general-purpose, isolation: worktree, model: <id>)`.
+Only an explicit `dev.roles.<role>.model` counts: a `dev.claude.model` block default is not a pin and
+changes nothing. Unset, a non-claude provider, or a model that is not a claude id or alias (`gpt-6`
+under `provider: claude`) leaves the launch line byte-identical to 1.2.37. A role pin with a claude
+model but no `provider`, under a `dev.provider` that is not claude, prints a `warning:` naming the fix
+and pins nothing. The pinned text
+must look like a model id or alias (letters, digits, `.`, `_`, `-`, an optional `[1m]` suffix); anything
+else prints a `warning:` and pins nothing. The value is passed through verbatim, so an alias
+(`sonnet`, `opus`) works wherever an explicit id is refused. Probed 2026-10-16 in a scratch HOME:
+`claude -p --model` accepts `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` and `sonnet`,
+and refuses `no-such-model-xyz`. Whether the in-session `Agent` tool accepts explicit ids was not probed.
+
 ### The provider keys are also where `roles` pins live
 
 `qa.roles` and `dev.roles` are open tables, so
@@ -893,6 +926,18 @@ hand-edited JSON file and an unguarded comparison against a string is a
 crew enumerating role names. A role pin **wins over** the provider block for
 that role — `/crew:review` resolves `review`'s model that way
 (`skills/crew-review/SKILL.md`, the `qm()` helper).
+
+**The agent pins (L-0777).** `dev.roles.explorer`, `dev.roles.researcher` and
+`dev.roles.security` route those agents: a pin that resolves to `kimi` makes
+the agent hand its task to `hooks/scripts/crew_kimi_agent.py`, which runs the
+Kimi Code CLI read-only and falls back to Claude when Kimi cannot run. Nothing
+ships pinned, so every agent stays on Claude until you write one
+(`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`).
+`explorer` and `researcher` joined `crew_state.DEV_ROLE_KINDS` so `/crew:model`
+lists them. `security` is in `crew_state.REVIEWING_DEV_ROLES`: unlike every
+other `dev` role it is judged against the author families, so a pin in the
+family that wrote the change is BARRED, as a `qa` pin is. See the crew README,
+"Agents on Kimi".
 
 ### `qa.fallback` / `dev.fallback` run on their own family's provider (L-0712)
 
@@ -958,7 +1003,7 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.recall.projects` | repo | not validated - read by `hooks/scripts/crew_recall.py` (expects list of project names) | `[]` |
 | `verifyGate` | repo | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | `true` |
 | `context.enabled` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects boolean) | `true` |
-| `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.5` |
+| `context.warnAt` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects number) | `0.4` |
 | `context.budgetTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `null` |
 | `context.reserveTokens` | repo | not validated - read by `hooks/scripts/context-watch.sh` (expects integer or null) | `0` |
 | `context.handoffPath` | repo | not validated - read by `hooks/scripts/crew_autocycle.py` (expects path) | `".work/HANDOFF.md"` |
@@ -1133,6 +1178,18 @@ built-in behaviour fires whenever Claude Code itself decides to; nothing in
 this block, in `context-watch`, or in auto-clear influences when or whether
 it happens. This block only decides what happens *after* a handoff is
 written and verified — whether, and how, to act on it.
+
+### `context.warnAt` defaults to 0.4, and one key drives wrap-up and clear (crew 1.2.40)
+
+`context.warnAt` is the single threshold for the handoff warning,
+`context.autoWrapUp` and `context.autoClear`: the latter two change what
+happens when the hook fires, not when. The default is `0.4` (`0.5` from
+0.19.52 to 1.2.39, `0.8` before), in `crew_state.py`, the config template, both
+`context-watch` flavours and `low_context_note`. Only the unset default moved.
+A `warnAt` set in `~/.claude/crew/config.json` or `.crew/config.json` keeps
+its value and nothing rewrites it. A repo created while the default was `0.5`
+holds a literal `"warnAt": 0.5` copied from the template, so it keeps firing at
+50% until that line is edited or deleted.
 
 ### `context.autoClear` is machine-global by design, and reaches every crew repo
 
@@ -1840,10 +1897,22 @@ the resolver's `reason` field rather than restated in bash and PowerShell.
 **Under `allow` nothing is silent.** The stderr line goes with the session; the
 row in `.crew/guard.log` is the durable half, and it is written for every
 decision rather than only the permissive ones — a log recording half of what a
-guard did is a log you cannot reason from. Tabs and newlines in the command are
-normalised out before the row is written, the same way
-`_common.sh::crew_incident_log` does it, so a crafted command cannot
-forge a row.
+guard did is a log you cannot reason from.
+
+**What a `--record` row holds (crew 1.2.35).** Time, guard, policy, decision
+and target, then `-` where the command would go — the same value
+`env_guard.py` writes in that field. The command line itself is written only
+when the operator adds **`--record-command`** (`record_command=True` on
+`crew_config.guard_decision`), because a command can carry whatever was typed
+inline and `.crew/guard.log` is an ordinary file in the project tree.
+`--record-command` without `--record` exits 2 rather than doing nothing. The
+target field is still derived from the command (a push's branch, a matched
+production host or database), so it is not a redaction of everything the
+command contained. With `--record-command`, tabs and newlines in the command
+are normalised out before the row is written, the same way
+`_common.sh::crew_incident_log` does it, so a crafted command cannot forge a
+row. Rows written before 1.2.35 are not rewritten; review and delete an old
+`.crew/guard.log` if it may hold commands you would not keep.
 
 ### `block` did not preserve everything, and that is stated rather than implied
 
@@ -2996,6 +3065,58 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
   venv) are not in the key, as they are not in the fingerprint. Set
   `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
+- **Quiet Stop output** (L-0796, crew 1.2.39). The Stop gate prints one verdict
+  line first: `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach a,
+  over-budget b, dirty tree c, deferred d, skipped e, other f) | credited n |
+  budget Xs/Ys | detail: .crew/.verify-gate.log`. FAILED, PASSED and credited
+  count commands (`cmd`); NOT VERIFIED counts items (`item(s)`): one per rule for
+  reach, over-budget, dirty tree and other, one per deferred rule, and one per
+  command for skipped (exit 77) and for credits withdrawn because the tree moved
+  (counted under other). On a multi-command rule the item count can therefore exceed
+  the rule count. The two units are not added together. Then come the lines the gate cannot prove are informational, exactly
+  as before: every `VERIFY FAILED:` block with its last 25 lines, `COULD NOT
+  TELL`, a rc 77 SKIP, `UNMAPPED CHANGES`, a lock back-off, and any line the
+  gate does not recognise. What moves to `.crew/.verify-gate.log` is the text the
+  gate itself writes about a rule that did not fail: the pricing and
+  measurement lines, declared reach and clean-tree exclusions, `deferred to
+  /crew:verify`, the stop budget summary, `PASSED on this exact tree`, `COVERED
+  by`, `env pinned`, the per-rule seconds and the totals, and the record's
+  standing `NOT VERIFIED ON THIS TREE` lines (one line with their count stays).
+  The classification is by the site that wrote the line, so a failing rule's
+  own output is never classified: a test that prints `PASSED on this exact
+  tree` is still shown. An unknown never reads as a pass: a deferred, skipped,
+  reach-excluded or over-budget rule is counted under NOT VERIFIED, and a rule
+  the gate cannot classify counts as `other`. The log is rewritten every run
+  (temp file, then move) and holds the complete text of that run; if it cannot
+  be written the gate prints the full text on stderr and the verdict says
+  `detail: unavailable`, and a repeat Stop is never collapsed to the unchanged line while the log is unwritable. The Stop gate also remembers, per session, what it last
+  reported in `.crew/.verify-gate.last-stop` (`session_id`, a SHA-256 of the
+  failure text and the NOT VERIFIED counts): the same session still failing
+  the same way prints `verify-gate: unchanged since last Stop (N failing, M NOT
+  VERIFIED): <first failing command> | detail: .crew/.verify-gate.log |
+  /crew:verify --all runs every rule` and still exits 2; the log it names holds
+  that run's full failing output. A different session,
+  a changed failure, a payload with no `session_id`, or a missing, unreadable
+  or corrupt state file prints the full block; a passing Stop clears it. Run
+  with `--verbose` (`-Verbose` in the PowerShell flavour) or
+  `CREW_VERIFY_VERBOSE=1` to get the whole text on stderr as before;
+  `--ci`, `--all`/`-All` and `--price` are verbose with no flag, so the CI
+  receipt reader and `/crew:verify` see what they always did. Exit codes and
+  the `VERIFY GATE: BLOCKED (exit 2)` stdout line are unchanged. Both files are
+  dotted so the `.crew/.verify-gate.*` bookkeeping glob already covers them, and
+  both are named in the fingerprint's gate-owned list (`verify_fingerprint.py`),
+  so an untracked, unignored log never defeats the unchanged-tree skip. The
+  PowerShell flavour buffers in memory and flushes in a `finally`; the
+  `outside-scope:` line from its scope-report child is captured into the same
+  buffer. A run that backs off on the lock never writes the log or the state
+  file the lock holder owns, and a payload whose `session_id` is not a string
+  directly in the top-level object, or that carries it more than once, reads as
+  no session (full block). An exit-0 Stop clears the repeat state. If the
+  buffer cannot be split, the raw text prints whole and no log or state is
+  kept. The buffer, its two halves, the log and the state file are `mktemp`
+  files (mode 0600), never names derived from a process id. A reach-excluded `always` or `default`
+  command counts under reach, and the repeat check hashes which rules and
+  commands were not run, not only how many.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO

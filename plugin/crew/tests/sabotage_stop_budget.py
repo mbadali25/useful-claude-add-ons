@@ -20,12 +20,12 @@ _T = "tests/test_verify_gate_stop_fits_budget.py::"
 
 STOP_BUDGET_MUTATIONS = (
     ("a deferral at Stop exits 2 again (acceptance 6a)", SH,
-     "if [ -n \"$NOTICES\" ]; then\n  printf '%s\\n' \"$NOTICES\" >&2\nfi\n",
-     "if [ -n \"$NOTICES\" ]; then\n  printf '%s\\n' \"$NOTICES\" >&2\n  exit 2\nfi\n",
+     "      printf '%s\\n' \"$NOTICE_LINE\" >&2\n    fi\n  done <<< \"$NOTICES\"\nfi\n",
+     "      printf '%s\\n' \"$NOTICE_LINE\" >&2\n    fi\n  done <<< \"$NOTICES\"\n  exit 2\nfi\n",
      _T + "test_a_chronic_rule_is_named_as_ci_and_exits_0[sh]"),
     ("the PowerShell gate exits 2 on a deferral again", PS1,
-     "foreach ($n in $notices) { [Console]::Error.WriteLine($n) }\n",
-     "foreach ($n in $notices) { [Console]::Error.WriteLine($n) }\n"
+     "Write-CrewNotices $notices\n",
+     "Write-CrewNotices $notices\n"
      "if ($notices.Count -gt 0) { exit 2 }\n",
      _T + "test_a_chronic_rule_is_named_as_ci_and_exits_0[ps1]"),
     ("an empty changed set advances the verified marker again (acceptance 6b)", SH,

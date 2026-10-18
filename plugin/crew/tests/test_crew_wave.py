@@ -20,6 +20,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_config
 import crew_ticket
 import crew_wave
 import review_ledger
@@ -627,6 +628,102 @@ def test_start_prints_isolated_agent_launch_per_lane(tmp_path):
     assert (len(launches), all("isolation: worktree" in line for line in launches),
             out.count("isolation"), all("lane-prompt" in line for line in launches)) == (
         2, True, 2, True)
+
+
+def _start_with_roles(tmp_path, roles):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": roles}}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+_PLAIN = "Agent(subagent_type: general-purpose, isolation: worktree) prompt:"
+
+
+def test_launch_line_carries_developer_model(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "claude-sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(
+        "Agent(subagent_type: general-purpose, isolation: worktree, model: claude-sonnet-5-5) prompt:"
+        in line for line in launches)) == (2, True)
+
+
+def test_launch_line_unchanged_without_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            any("model" in line.split(" prompt:")[0] for line in lines)) == (2, True, False)
+
+
+@pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "k3"},
+                                 {"provider": "codex", "model": "gpt-6.1-sol"},
+                                 {"provider": "codex", "model": "claude-opus-5-5"},
+                                 {"provider": "claude"}])
+def test_launch_line_no_model_for_non_claude_pin(tmp_path, pin):
+    lines = _start_with_roles(tmp_path, {"developer": pin, "coordinator": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        2, True, [])
+
+
+def _start_with_config(tmp_path, cfg):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, **cfg}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+def test_block_default_model_is_not_a_pin(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"claude": {"model": "opus"}}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        True, [])
+
+
+def test_pin_without_provider_warns_when_block_provider_is_not_claude(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"provider": "codex", "roles": {
+        "coordinator": {"model": "claude-opus-5-5"}}}})
+
+    assert (any(line.startswith("warning: dev.roles.coordinator.model") for line in lines),
+            [line for line in lines if line.startswith("coordinator:")]) == (True, [])
+
+
+def test_launch_line_refuses_an_odd_model_text(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "x) rm -rf /"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            any(line.startswith("warning: dev.roles.developer.model") for line in lines)) == (
+        True, True)
+
+
+def test_start_reports_coordinator_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {"coordinator": {"provider": "claude",
+                                                         "model": "claude-opus-5-5"}})
+
+    assert "coordinator: model claude-opus-5-5" in lines
+
+
+@pytest.mark.parametrize("roles", [{}, {"coordinator": {"provider": "kimi",
+                                                         "model": "kimi-code/k3"}},
+                                   {"coordinator": {"provider": "claude"}}])
+def test_start_silent_without_coordinator_pin(tmp_path, roles):
+    lines = _start_with_roles(tmp_path, roles)
+
+    assert [line for line in lines if line.startswith("coordinator:")] == []
 
 
 def test_start_refuses_when_scope_not_enforcing(tmp_path):
@@ -1642,3 +1739,38 @@ def test_route_cli_prints_wave_fields(tmp_path):
                           stdin=subprocess.DEVNULL)
 
     assert done.stdout.strip() == "sub=wave stop=0 ticket= set= tickets=T-1,T-2 reason="
+
+
+def test_models_lists_coordinator_pin(tmp_path, capsys):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": {
+        "coordinator": {"provider": "claude", "model": "claude-opus-5-5"}}}}))
+
+    code = crew_config.main(["--root", str(root), "--global-path", str(tmp_path / "none.json"),
+                             "--models"])
+    rows = [line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("coordinator ")]
+
+    assert (code, len(rows), "role-pin" in rows[0], "claude-opus-5-5" in rows[0]) == (
+        0, 1, True, True)
+
+
+@pytest.mark.parametrize("pin,fragment", [
+    ({"provider": "claude", "model": "gpt-6"}, "is not a claude model"),
+    ({"provider": "Claude", "model": "claude-sonnet-5-5"}, "is not 'claude'")])
+def test_unusable_claude_pin_is_named(tmp_path, pin, fragment):
+    lines = _start_with_roles(tmp_path, {"developer": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+    warnings = [line for line in lines if line.startswith("warning:")]
+
+    assert (all(_PLAIN in line for line in launches), len(warnings),
+            fragment in warnings[0]) == (True, 1, True)
+
+
+def test_pinned_model_is_lowercased_on_the_launch_line(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "Claude-Sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert all("model: claude-sonnet-5-5)" in line for line in launches)

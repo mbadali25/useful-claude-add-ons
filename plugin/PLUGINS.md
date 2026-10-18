@@ -11,14 +11,14 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.1.8<!-- claim: plugin-version:ai-connect --> |
-| **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine) |
+| **Version** | 0.2.0<!-- claim: plugin-version:ai-connect --> |
+| **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
-| **Registers** | Hooks on 5 events: `mcp_tool` state hooks, and a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest |
+| **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
 | **Upstream** | [Peuqui/AI-Connect](https://github.com/Peuqui/AI-Connect) at `be1b7e093f69230f1bd9418dbbf4e7072fd73c55`, MIT. Attribution, the upstream licence and the list of changes are in [`ai-connect/NOTICE`](ai-connect/NOTICE) |
 | **Upstream guide** | [`ai-connect/README.md`](ai-connect/README.md) |
 
-Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Host:Project`), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
+Lets Claude Code sessions message each other across machines through one small self-hosted bridge. Three parts: the **bridge** (`server/`, a Python WebSocket server, run as a systemd unit or a Windows scheduled task by the installer on one machine), the **MCP client** (`client/server.py`, one STDIO process per session, joining as `Machine:Project` on the machine's one token, so every session on a machine is online at once), and the **hooks** below. There is no TLS of its own: run the bridge on a VPN address (Tailscale/WireGuard), which is what the installer's default loopback listener and VPN-scoped firewall rule are for.
 
 This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-256 (a token can register and watch only its own name), refuses a takeover of a live name, makes the observer token read-only, caps message size, rate and stored messages, frames every piece of peer text Claude sees as untrusted data with a random-id delimiter, confines `peer_send` / `peer_context` file paths to the project, and pins every dependency exactly. `installer.py claude` here only registers the MCP server; upstream's local-marketplace install of the plugin is gone, because this marketplace installs it.
 
@@ -26,14 +26,21 @@ This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-
 
 | Hook | Event | What it does |
 |---|---|---|
+| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
+
+The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1.
+
+**Until the installer has run, the plugin is silent.** With no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there), it exits 1 with a stderr line naming the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+
+**The installer writes four more hooks into your settings, outside this plugin.** `installer.py claude` (run by `install.sh` / `install.cmd`) registers the MCP server and, next to it, these `mcp_tool` hooks in `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set); `deploy peer` / `deploy join` write them only with both `--install-hooks` and `--register-mcp`, into the user's settings for `--scope user` and the project's `.claude/settings.local.json` for `--scope project`. They are not in `hooks/hooks.json` because an `mcp_tool` hook has no quiet mode: where its server is not registered it is an error on every event, which is what 0.1.8 did on a machine that had only installed the plugin.
+
+| Hook | Event | What it does |
+|---|---|---|
 | `mcp_tool` → `peer_set_state` | `UserPromptSubmit`, `PostToolUse` | Sets this session's state to `busy` on the bridge. Sends the state word only, never the prompt or tool text |
 | `mcp_tool` → `peer_set_state` | `Notification` (`permission_prompt`) | Sets `waiting`. The permission-prompt text is deliberately not sent |
 | `mcp_tool` → `peer_set_state` | `Stop` | Sets `idle`, so `peer_notify_when_idle` can tell another session this one finished |
-| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
 
-The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1. The `mcp_tool` hooks run no shell, so they are registered once.
-
-**Until the installer has run, the hooks have nothing to talk to.** The state hooks name an MCP server called `ai-connect` that only `installer.py claude` registers, and the watcher exits 1 with a stderr line naming the missing venv. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+Writing them is idempotent, keeps every other hook and key in the file, refuses a file that is not valid JSON without touching it, and goes through a temp file and a rename. `installer.py unregister` and `deploy uninstall` remove exactly these (type `mcp_tool`, server `ai-connect`, tool `peer_set_state`) and nothing else. With the venv lost to a plugin update they keep failing with `MCP server 'ai-connect' not connected` until the installer is re-run, alongside the watcher's own error. **Updating from 0.1.8 or earlier, re-run the installer once:** the plugin no longer carries these hooks, so until then the session reports no state.
 
 **Never run a woken session in bypass or auto-approve mode.** A peer message resumes the session's turn; with confirmations off, whatever the message asks would run. The untrusted framing and the bundled behaviour rules (`integrations/claude-code/CLAUDE.md`, which you `@`-import into your own `CLAUDE.md`) tell the model to show peer requests to you and confirm before acting — that is a prompt, not an enforcement mechanism.
 
@@ -56,15 +63,88 @@ claude plugin uninstall ai-connect@useful-claude-add-ons
 
 ---
 
+## `angular-lsp` — Angular template language server
+
+| | |
+|---|---|
+| **Source** | [`angular-lsp/`](angular-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:angular-lsp --> |
+| **Install** | `claude plugin install angular-lsp@useful-claude-add-ons`, plus `npm install -g @angular/language-server` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`angular`, for `.html`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`angular-lsp/README.md`](angular-lsp/README.md) |
+
+Starts the Angular team's own language server, `@angular/language-server`, for
+Angular HTML templates. Anthropic's official marketplace has no Angular entry.
+
+**It runs a launcher, not `ngserver` directly.** `ngserver --stdio` exits before
+reading a request unless `--tsProbeLocations` and `--ngProbeLocations` name a
+directory holding `typescript` and `@angular/language-service`. The server
+bundles both, but a global npm package lives somewhere different on every
+machine, so the path cannot be written into the config.
+`scripts/ngserver-launch.js` finds the package at start-up (an
+`ANGULAR_LANGUAGE_SERVER_DIR` override, then the `ngserver` shim on `PATH`, then
+`npm root -g`) and passes the project directory followed by the bundled copies.
+
+**Only `.html` is mapped.** Claude Code gives an extension to one server and
+`typescript-lsp` owns `.ts`. Inline templates inside a component's `.ts` file
+therefore get no Angular analysis; templates in their own `.html` files do. The
+server also starts for `.html` files in projects with no Angular in them, where
+it has nothing to say.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall angular-lsp@useful-claude-add-ons`.
+
+Not verified: Windows and macOS, and a Claude Code session against a real
+Angular project. The README lists what was measured.
+
+---
+
+## `bash-lsp` — Bash language server
+
+| | |
+|---|---|
+| **Source** | [`bash-lsp/`](bash-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:bash-lsp --> |
+| **Install** | `claude plugin install bash-lsp@useful-claude-add-ons`, plus `npm install -g bash-language-server` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`bash`, for `.sh` and `.bash`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`bash-lsp/README.md`](bash-lsp/README.md) |
+
+Starts `bash-language-server start`, from the npm package
+[`bash-language-server`](https://www.npmjs.com/package/bash-language-server),
+with `.sh` and `.bash` both sent as language `shellscript`. Anthropic's official
+marketplace has no Bash entry.
+
+**Diagnostics come from `shellcheck`.** The server runs it on each file when it
+is on `PATH` and works without it, minus the lint findings. `.zsh` and `.ksh`
+are deliberately not mapped: the server parses Bash, and `shellcheck` does not
+support zsh. A script with no extension is not covered, because Claude Code
+picks a server by extension only.
+
+The package needs Node.js 20 or newer. The install scripts refuse on an older
+one instead of installing a server that cannot start.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall bash-lsp@useful-claude-add-ons`.
+
+Not verified: any request beyond `initialize` and `shutdown`, Windows and macOS,
+and a Claude Code session against a real script. The README lists what was
+measured.
+
+---
+
 ## `crew` — virtual dev team for multi-repo legacy work
 
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.32<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.43<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -237,10 +317,10 @@ the crew up or down.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only + Bash (the Kimi dispatch only) | `opus` | 0 | Maps code, returns summaries not contents |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
-| `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
+| `researcher` | read-only + web + Bash (the Kimi dispatch only) | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
 
 All four are read-only — a restricted tool set is one of the three things that
 earns a role its place. `reviewer` runs on `opus` because it shares a model
@@ -249,6 +329,15 @@ tier is the only compensation left. `explorer` also runs on `opus` (owner
 decision, 2026-09-24): it maps unfamiliar code for every other role, and with
 the `localgpu` semantic index disabled or unavailable it has only
 Read/Grep/Glob, so a wrong map is inherited by everything built on it.
+
+**On Kimi (since L-0777).** Claude Code's subagent `model` field takes Claude
+models only, so `explorer`, `researcher` and `security` are thin dispatchers:
+when `dev.roles.<agent>` pins `kimi`, one Bash call hands the task to
+`hooks/scripts/crew_kimi_agent.py`, which runs the Kimi Code CLI read-only (a
+per-role allowlist with no Bash, Write or Edit, and the working tree checked
+before and after) and falls back to the Claude model above when Kimi cannot
+run. Nothing ships pinned. `security` is family-guarded: a Kimi pin is barred
+on Kimi-authored work.
 
 ### Bundled skills — 29
 
@@ -415,7 +504,9 @@ Per phase, what it produces and what going wrong looks like:
   appended to — never regenerated), and the context/handoff settings. **Gated
   by a script:** `claude-md-audit.sh` compares the repo's `CLAUDE.md` against
   the template section by section, and the phase does not close while it still
-  reports a missing section or an unfilled placeholder. Wrong
+  reports a missing section or an unfilled placeholder. A placeholder is one of
+  the template's own blanks, read from the template on each run; a metavariable
+  in a command the repo documents (`git checkout -- <path>`) is not one. Wrong
   looks like a repo ending up crew-managed with no promotion discipline and
   no stop-and-ask list because missing `CLAUDE.md` sections were silently
   skipped, or `pm.authority` resolving to something other than what was just
@@ -504,6 +595,42 @@ claude plugin uninstall crew@useful-claude-add-ons
 ```
 
 The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`.
+
+---
+
+## `css-lsp` — CSS, SCSS and Less language server
+
+| | |
+|---|---|
+| **Source** | [`css-lsp/`](css-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:css-lsp --> |
+| **Install** | `claude plugin install css-lsp@useful-claude-add-ons`, plus `npm install -g vscode-langservers-extracted` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server |
+| **Registers** | 1 LSP server (`css`, for `.css`, `.scss` and `.less`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`css-lsp/README.md`](css-lsp/README.md) |
+
+Starts `vscode-css-language-server --stdio`, the CSS server from Visual Studio
+Code as repackaged in the npm package
+[`vscode-langservers-extracted`](https://www.npmjs.com/package/vscode-langservers-extracted),
+with `.css` sent as language `css`, `.scss` as `scss` and `.less` as `less`.
+Anthropic's official marketplace has no CSS entry.
+
+**`--stdio` is required.** Run bare, the server throws
+`Connection input stream is not set` and never reads a request. `.sass`, the
+indented syntax, is deliberately not mapped: the server parses SCSS, not
+indented Sass.
+
+The npm package is a community repackaging rather than a Microsoft release, and
+it also puts the HTML, JSON, Markdown and ESLint servers from the same source on
+`PATH`. This plugin starts the CSS one only.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with `claude plugin uninstall css-lsp@useful-claude-add-ons`.
+
+Not verified: any request beyond `initialize` and `shutdown`, Windows and macOS,
+and a Claude Code session against a real stylesheet. The README lists what was
+measured.
 
 ---
 
@@ -664,7 +791,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.5.0<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.5.1<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
@@ -791,6 +918,94 @@ claude plugin uninstall obsidian-vault@useful-claude-add-ons
 The hooks go with it. `~/.claude/obsidian/config.json` is left in place;
 delete it by hand for no trace.
 
+---
+
+## `powershell-lsp` — PowerShell language server in Windows PowerShell 5.1
+
+| | |
+|---|---|
+| **Source** | [`powershell-lsp/`](powershell-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:powershell-lsp --> |
+| **Install** | `claude plugin install powershell-lsp@useful-claude-add-ons`, plus an unzipped PowerShell Editor Services release. **Windows only, and never together with `pwsh-lsp`** |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. Ticked there, it is still installed only on Windows without `pwsh`. The `lsp-plugins` row picks between it and `pwsh-lsp` and installs Editor Services |
+| **Registers** | 1 LSP server (`powershell`, for `.ps1`, `.psm1` and `.psd1`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`powershell-lsp/README.md`](powershell-lsp/README.md) |
+
+Starts [PowerShell Editor Services](https://github.com/PowerShell/PowerShellEditorServices)
+inside Windows PowerShell 5.1 (`powershell.exe`), for Windows machines that do
+not have PowerShell 7. Upstream supports 5.1 on a best-effort basis; where
+`pwsh` exists, `pwsh-lsp` is the one to install.
+
+**It serves the same three extensions as `pwsh-lsp`, and Claude Code runs one
+server per extension**, so the two must never both be installed. The install
+scripts enforce that: `powershell-lsp` goes in only on Windows, only where
+`pwsh` does not resolve, and only where `pwsh-lsp` is not already there.
+
+**It starts its server process with `-ExecutionPolicy RemoteSigned`.** Windows
+PowerShell's default policy on a client, `Restricted`, runs no script at all.
+The flag covers that one process and changes no machine or user setting; a
+policy set by Group Policy still wins. The README sets this out.
+
+The launcher, `scripts/pses-launch.ps1`, is the same file `pwsh-lsp` ships. It
+finds Editor Services under `PSES_BUNDLE_PATH` or
+`%LOCALAPPDATA%\powershell-editor-services`, and writes nothing to stdout.
+
+**Nothing runs unless a matching file is opened.** Editor Services is not
+installed by the plugin. Uninstall with
+`claude plugin uninstall powershell-lsp@useful-claude-add-ons`; the unzipped
+release stays where it is until you delete it.
+
+**Not verified: that it starts at all.** No Windows machine was available, so
+this plugin has never been run. The README lists exactly what was and was not
+measured.
+
+---
+
+## `pwsh-lsp` — PowerShell language server in PowerShell 7
+
+| | |
+|---|---|
+| **Source** | [`pwsh-lsp/`](pwsh-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:pwsh-lsp --> |
+| **Install** | `claude plugin install pwsh-lsp@useful-claude-add-ons`, plus `pwsh` on `PATH` and an unzipped PowerShell Editor Services release. **Never together with `powershell-lsp`** |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. Ticked there, it is installed only where `pwsh` resolves. The `lsp-plugins` row picks between it and `powershell-lsp` and installs Editor Services |
+| **Registers** | 1 LSP server (`powershell`, for `.ps1`, `.psm1` and `.psd1`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`pwsh-lsp/README.md`](pwsh-lsp/README.md) |
+
+Starts [PowerShell Editor Services](https://github.com/PowerShell/PowerShellEditorServices)
+inside PowerShell 7 (`pwsh`), on Windows, Linux and macOS, with all three
+extensions sent as language `powershell`. Anthropic's official marketplace has
+no PowerShell entry.
+
+**It serves the same three extensions as `powershell-lsp`, and Claude Code runs
+one server per extension**, so the two must never both be installed. The install
+scripts enforce that in both rows that can install them.
+
+**It ships a launcher**, `scripts/pses-launch.ps1`, for three reasons. Editor
+Services is an unzipped release, not a command, so its location is resolved at
+start-up: `PSES_BUNDLE_PATH`, then `~/.local/share/powershell-editor-services`
+(Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services` (Windows).
+Started bare, Editor Services writes `PowerShellEditorServices.json` into the
+current directory, which is the project; the launcher sends that file to the
+temp directory and removes it on exit. And stdout is the LSP stream, so the
+launcher writes nothing to it: a missing release is one line on stderr and
+exit code 1.
+
+**The install scripts download Editor Services, pinned.** One release zip,
+v4.7.0, checked against a sha256 written in both scripts; a mismatch is refused
+and nothing is unpacked. They do not install PowerShell 7 itself.
+
+**Nothing runs unless a matching file is opened.** Neither `pwsh` nor Editor
+Services is installed by the plugin. Uninstall with
+`claude plugin uninstall pwsh-lsp@useful-claude-add-ons`; the unzipped release
+stays where it is until you delete it.
+
+Not verified: Windows and macOS, any request beyond `initialize` and
+`shutdown`, and a Claude Code session against a real script. The README lists
+what was measured.
+
+---
+
 ## `rule-of-two` — two adversarial reviewers from different model families
 
 | | |
@@ -851,3 +1066,70 @@ claude plugin uninstall rule-of-two@useful-claude-add-ons
 
 Nothing outside the plugin directory is written, so there is nothing to clean
 up.
+
+---
+
+## `sql-lsp` — SQL language server (sqls), with no connection shipped
+
+| | |
+|---|---|
+| **Source** | [`sql-lsp/`](sql-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:sql-lsp --> |
+| **Install** | `claude plugin install sql-lsp@useful-claude-add-ons`, plus the `sqls` binary on `PATH` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server when Go is present |
+| **Registers** | 1 LSP server (`sqls`, for `.sql`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`sql-lsp/README.md`](sql-lsp/README.md) |
+
+Starts [`sqls`](https://github.com/sqls-server/sqls) for `.sql` files.
+
+**It ships no database connection, DSN, host or credential.** Without one,
+`sqls` gives keyword completion and formatting and nothing schema-aware. It
+does not publish diagnostics, document symbols or references in either mode, so
+with no connection the gain for Claude Code is small. That is stated here so
+nobody installs it expecting more.
+
+**Connecting it is the user's decision.** Schema-aware completion, hover and
+go-to-definition need a `sqls` config the user writes
+(`~/.config/sqls/config.yml`); the README gives a placeholder-only example.
+`sqls` opens a live connection with whatever account it is given and can
+execute queries as that account, so the README says plainly to use a read-only
+account, to keep the file out of every repository, and that pointing it at a
+production database is a choice to make on purpose.
+
+**Nothing runs unless a `.sql` file is opened**, and nothing is written outside
+the plugin directory. Uninstall with
+`claude plugin uninstall sql-lsp@useful-claude-add-ons`; a `sqls` config the
+user created is theirs and is left alone.
+
+Not verified: anything with a database connected, the `go install` route,
+Windows and macOS. The README lists what was measured.
+
+---
+
+## `terraform-lsp` — Terraform language server (terraform-ls)
+
+| | |
+|---|---|
+| **Source** | [`terraform-lsp/`](terraform-lsp) |
+| **Version** | 0.1.0<!-- claim: plugin-version:terraform-lsp --> |
+| **Install** | `claude plugin install terraform-lsp@useful-claude-add-ons`, plus the `terraform-ls` binary on `PATH` |
+| **Menu item** | `repo-plugins` — **off by default**, like every plugin in that group. The `lsp-plugins` row installs it together with the language server where Homebrew or `winget` is present |
+| **Registers** | 1 LSP server (`terraform`, for `.tf` and `.tfvars`). **No hooks, no commands, no agents, no skills** |
+| **Guide** | [`terraform-lsp/README.md`](terraform-lsp/README.md) |
+
+Starts HashiCorp's [`terraform-ls`](https://github.com/hashicorp/terraform-ls)
+as `terraform-ls serve`, with `.tf` sent as language `terraform` and `.tfvars`
+as `terraform-vars`, the IDs the server's own usage guide requires. `.tf.json`,
+`.tfvars.json` and the `*.hcl` family are deliberately not mapped.
+
+Provider-aware answers need the provider schemas, which the server reads from a
+working directory where `terraform init` has run. The server never runs `init`,
+`plan` or `apply`, and the plugin passes it no credentials.
+
+**Nothing runs unless a matching file is opened**, and nothing is written
+outside the plugin directory. The language server itself is not installed by
+the plugin. Uninstall with
+`claude plugin uninstall terraform-lsp@useful-claude-add-ons`.
+
+Not verified: Windows and macOS, and a Claude Code session against a real
+Terraform module. The README lists what was measured.

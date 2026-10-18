@@ -1,0 +1,29 @@
+{
+  "name": "powershell-lsp",
+  "version": "0.1.0",
+  "description": "PowerShell language server (PowerShell Editor Services) hosted in Windows PowerShell 5.1 (powershell.exe) for code intelligence in .ps1, .psm1 and .psd1 files, for Windows machines without PowerShell 7. Windows only, and Editor Services supports 5.1 on a best-effort basis. Registers an LSP server only: no hooks, commands, agents or skills. Maps the same extensions as pwsh-lsp, so install one of the two, never both. Needs an unzipped PowerShell Editor Services release; the plugin does not install it.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "license": "GPL-2.0-only",
+  "lspServers": {
+    "powershell": {
+      "command": "powershell",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "RemoteSigned",
+        "-File",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/pses-launch.ps1"
+      ],
+      "extensionToLanguage": {
+        ".ps1": "powershell",
+        ".psm1": "powershell",
+        ".psd1": "powershell"
+      },
+      "startupTimeout": 60000
+    }
+  }
+}

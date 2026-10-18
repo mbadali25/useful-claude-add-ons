@@ -1,0 +1,31 @@
+%% Generated from useful-claude-add-ons@388ceff31 on 2026-10-11; citations re-derived after L-0777 review round 3. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_kimi_agent.py, plugin/crew/agents/explorer.md, plugin/crew/hooks/scripts/crew_state.py
+%% Purpose: L-0777: how a crew explorer, researcher or security dispatch runs on Kimi K3 read-only, and the three outcomes the dispatcher agent acts on (relay, fall back to Claude, stop).
+%% Note ROUTE: crew_kimi_agent.route() plugin/crew/hooks/scripts/crew_kimi_agent.py:214 resolves the role through
+%%    crew_state.resolve_role; security is in REVIEWING_DEV_ROLES (crew_state.py:1198), so a pin in the author's
+%%    family is barred and an empty author set is author-unknown, never no conflict
+%% Note FP: review_run.tree_fingerprint before the probe, after it and, after a SETTLE_S wait (_settled_problem :253),
+%%    after the run or a failed probe (crew_kimi_agent.py:304-362);
+%%    a change is exit 8, a tree that cannot be read after the run is exit 8 (KIMI TREE UNKNOWN)
+%% Note LAUNCH: kimi -p with a per-role agent file (ROLE_TOOLS :91, Write/Edit/Bash disallowed), an empty
+%%    skills dir, kimi_env(), stdin closed, its own process group, the timeout (DEFAULT_TIMEOUT :68)
+flowchart LR
+    AGENT["<b>crew:explorer / researcher / security</b><br/>Claude dispatcher, one Bash call"]
+    ROUTE{"<b>route()</b><br/>role pinned to kimi,<br/>family not the author's?"}
+    PROBE{"<b>kimi_probe.probe</b><br/>tree unchanged<br/>and state ok?"}
+    LAUNCH["<b>kimi -p</b> read-only<br/>per-role allowlist,<br/>no Bash, Write or Edit"]
+    FP{"tree fingerprint<br/>after the run"}
+    OK(["<b>exit 0</b> KIMI OK<br/>answer relayed, redacted"])
+    UNAV(["<b>exit 3</b> KIMI UNAVAILABLE<br/>agent runs on Claude,<br/>says so on line 1"])
+    TREE(["<b>exit 8</b> KIMI CHANGED THE TREE<br/>or TREE UNKNOWN: agent stops"])
+
+    AGENT --> ROUTE
+    ROUTE -->|not-routed, barred,<br/>author-unknown| UNAV
+    ROUTE -->|routed| PROBE
+    PROBE -->|not ok| UNAV
+    PROBE -->|ok| LAUNCH
+    LAUNCH --> FP
+    FP -->|timed out, failed,<br/>no final message| UNAV
+    FP -->|clean| OK
+    FP -->|changed or unreadable| TREE
+    PROBE -->|probe wrote| TREE

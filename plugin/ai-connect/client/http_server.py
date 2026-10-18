@@ -22,7 +22,10 @@ from mcp_app import create_app  # pylint: disable=import-error
 setup_logging("mcp-http.log", logging.StreamHandler())
 
 config = load_config()
-mcp = create_app(os.environ.get("AI_CONNECT_PEER_NAME") or client_settings(config).name or socket.gethostname())
+# One service for every project: client.name_mode per-project does not apply here
+_name = os.environ.get("AI_CONNECT_PEER_NAME") or client_settings(config, name="").name
+_settings = client_settings(config, name=_name)
+mcp = create_app(_name or socket.gethostname(), _settings)
 
 
 def main() -> None:

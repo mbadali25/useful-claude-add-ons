@@ -175,6 +175,25 @@ as_root() {
   fi
 }
 
+# 'npm install -g', run as whoever can actually write npm's global prefix. A
+# distribution's own nodejs (apt on Debian/Ubuntu, dnf on Fedora) keeps that prefix at
+# /usr/local, which only root can write, so the bare command dies there for anyone else:
+#     npm ERR! Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/pyright'
+# The Claude Code CLI install always elevated for this. The language servers and
+# skillui did not, so on a stock Ubuntu Server (26.04 is where it was reported) the CLI
+# went in and every global package after it failed. One helper, so that a new call site
+# cannot forget again. A prefix the user owns (nvm, fnm, 'npm config set prefix') is
+# writable and is never elevated: root-owned files in there break the next plain install.
+npm_install_global() {
+  local npm_prefix
+  npm_prefix="$(npm config get prefix)"
+  if [ -w "$npm_prefix" ]; then
+    npm install -g "$@"
+  else
+    as_root npm install -g "$@"
+  fi
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- uv, under PEP 668 --------------------------------------------------------
@@ -1233,14 +1252,14 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)"
+  "This repo's plugins: ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
-  "LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm"
+  "LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, bash, css, powershell, sql, terraform (this repo), with their language servers"
   "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
 )
 
@@ -1386,27 +1405,48 @@ unset _i
 # Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
 PLUGIN_KEYS=(
   "ai-connect"
+  "angular-lsp"
+  "bash-lsp"
   "crew"
+  "css-lsp"
   "gizmoduck"
   "localgpu"
   "obsidian-vault"
+  "powershell-lsp"
+  "pwsh-lsp"
   "rule-of-two"
+  "sql-lsp"
+  "terraform-lsp"
 )
 PLUGIN_NAME=(
   "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
-  "crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks"
+  "angular-lsp             - Angular template language server (ngserver). LSP only, no hooks"
+  "bash-lsp                - Bash language server (bash-language-server). LSP only, no hooks"
+  "crew                    - Virtual dev team: 5 agents, 38 commands, safety hooks"
+  "css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
+  "powershell-lsp          - PowerShell LSP in Windows PowerShell 5.1. Windows only; not with pwsh-lsp"
+  "pwsh-lsp                - PowerShell LSP (Editor Services) in PowerShell 7. Not with powershell-lsp"
   "rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks"
+  "sql-lsp                 - SQL language server (sqls); no DB connection shipped. No hooks"
+  "terraform-lsp           - Terraform language server (terraform-ls). LSP only, no hooks"
 )
 PLUGIN_SPEC=(
   "ai-connect@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "angular-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "bash-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "css-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "powershell-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "pwsh-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "rule-of-two@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "sql-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "terraform-lsp@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
 for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
@@ -1497,7 +1537,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (ai-connect, crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
+  "This repo's plugins: %s of %s (ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
@@ -1631,6 +1671,66 @@ group_noun_for() {
   printf 'item'
 }
 
+is_windows_shell() {
+  # Git Bash, MSYS and Cygwin: bash syntax, on Windows.
+  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac
+  return 1
+}
+
+lsp_plugin_conflict() {
+  # Claude Code starts ONE language server per file extension: the first plugin
+  # registered wins and the other gets a warning. Two of this repo's plugins
+  # serve the same extensions, so installing both is never right:
+  #   pwsh-lsp        .ps1 .psm1 .psd1 PowerShell 7 (pwsh), any OS
+  #   powershell-lsp  the same three   Windows PowerShell 5.1, Windows only
+  # $1 is a bare plugin name. Prints why it must not be installed on this machine
+  # and returns 0; returns 1 (and prints nothing) when it may be. A plugin that is
+  # ALREADY installed is never blocked - the choice was made, and blocking it here
+  # would only stop its updates.
+  # Every install path asks this: install_group (the repo-plugins row, where
+  # both are ticked by default) and the lsp-plugins row. That is what picks one
+  # PowerShell plugin per machine: pwsh-lsp where pwsh resolves, powershell-lsp on
+  # Windows where it does not.
+  local name="$1"
+  plugin_version "$name" >/dev/null 2>&1 && return 1
+  case "$name" in
+    pwsh-lsp)
+      if plugin_version "powershell-lsp" >/dev/null 2>&1; then
+        printf '%s' "powershell-lsp is already installed and serves .ps1/.psm1/.psd1; Claude Code runs one server per extension. To switch to PowerShell 7, run 'claude plugin uninstall powershell-lsp@useful-claude-add-ons' and re-run."
+        return 0
+      fi
+      if ! have pwsh; then
+        printf '%s' "pwsh (PowerShell 7) is not on PATH, and this plugin starts it. Install PowerShell 7 (https://aka.ms/powershell) and re-run."
+        return 0
+      fi ;;
+    powershell-lsp)
+      if ! is_windows_shell; then
+        printf '%s' "it hosts the server in Windows PowerShell 5.1 (powershell.exe), which exists on Windows only. pwsh-lsp is the one for this machine."
+        return 0
+      fi
+      if have pwsh; then
+        printf '%s' "PowerShell 7 (pwsh) is on PATH, so pwsh-lsp is the one for this machine; the two serve the same extensions and must not both be installed."
+        return 0
+      fi
+      if plugin_version "pwsh-lsp" >/dev/null 2>&1; then
+        printf '%s' "pwsh-lsp is already installed and serves .ps1/.psm1/.psd1; Claude Code runs one server per extension."
+        return 0
+      fi ;;
+  esac
+  return 1
+}
+
+install_plugin_unless_conflict() {
+  # $1 is 'name@marketplace'. Not installing a plugin whose extensions another
+  # plugin already serves is the correct outcome, not a failed step.
+  local spec="$1" reason
+  if reason="$(lsp_plugin_conflict "${spec%%@*}")"; then
+    warn "not installing '$spec': $reason"
+    return 0
+  fi
+  install_plugin "$spec"
+}
+
 install_group() {
   # Install a group's ticked entries. Every sub-picker group goes through here, so the
   # catalog really is the single source it claims to be: the menu label, the picker,
@@ -1660,7 +1760,7 @@ install_group() {
     spec="$(group_spec "$prefix" "$i")"
     [ -n "$spec" ] || continue
     plugin="${spec%%|*}"
-    run_step "Plugin: $plugin" install_plugin "$plugin"
+    run_step "Plugin: $plugin" install_plugin_unless_conflict "$plugin"
   done
 }
 
@@ -2225,6 +2325,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+# 'sudo bash install-prerequisites.sh' looks like the obvious way to satisfy "needs root
+# or sudo" on the first menu row, and it is the one way to get nothing: sudo points HOME
+# at root's, so every marketplace, plugin, skill and uv tool below lands in /root and
+# the account that typed the command finds Claude Code empty, after a run that reported
+# success. 'sudo -E' used to be the workaround; sudo-rs (Ubuntu 25.10+) ignores it:
+#     sudo: preserving the entire environment is not supported, '-E' is ignored
+# Said before the first install and again in the summary, because between the two sit
+# several thousand lines of package-manager output. A warning, not a refusal: installing
+# for root on purpose is legitimate, and only the person at the keyboard knows which.
+sudo_home_warning() {
+  [ "$(id -u 2>/dev/null || true)" = "0" ] || return 0
+  [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] || return 0
+  warn "running as root through sudo: plugins, marketplaces, skills and per-user tools are being installed for root (HOME=$HOME), NOT for '$SUDO_USER'. To install them for '$SUDO_USER', run this script as that user without sudo - it elevates the individual commands that need it."
+}
+sudo_home_warning
+
 SKILLUI_GUIDE="$(select_skillui_guide)"
 NOTIFY_SETUP="$(select_notify_setup)"
 
@@ -2343,13 +2459,7 @@ update_claude_cli() {
     return 0
   fi
   step "Claude Code $local_ver -> $latest available"
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  else
-    as_root npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
-  fi
+  npm_install_global @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
   COUNT_UPDATED=$((COUNT_UPDATED+1))
   ok "Claude Code updated $local_ver -> $(claude_local_version)"
 }
@@ -2363,13 +2473,7 @@ install_claude_cli() {
     update_claude_cli
     return 0
   fi
-  local npm_prefix
-  npm_prefix="$(npm config get prefix)"
-  if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code
-  else
-    as_root npm install -g @anthropic-ai/claude-code
-  fi
+  npm_install_global @anthropic-ai/claude-code
   local rc=$?
   [ $rc -eq 0 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   return $rc
@@ -2575,7 +2679,12 @@ install_find_skills() {
     skip "find-skills already installed at $dir (--no-update set)"
     return 0
   fi
-  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
+  # --global --yes: without them the skills CLI stops on a terminal to ask "Installation
+  # scope: Project / Global" and then "Proceed with installation?". Project is its
+  # default, which is not where the check below looks unless the run started in $HOME,
+  # and a Ctrl-C at that unexplained prompt ends the whole run before the community
+  # plugins, this repo's plugins and the language servers were reached.
+  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes || return 1
   if ! user_skill_installed "find-skills"; then
     warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
     return 1
@@ -2966,11 +3075,11 @@ install_skillui() {
   if have skillui && [ "$NO_UPDATE" -eq 1 ]; then
     skip "skillui already installed ($(command -v skillui); --no-update set)"
   else
-    npm install -g skillui || return 1
+    npm_install_global skillui || return 1
     COUNT_INSTALLED=$((COUNT_INSTALLED+1))
     ok "skillui installed"
   fi
-  npm install -g playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
+  npm_install_global playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
   # Downloads the browser binary itself; skipping it leaves skillui able to start and
   # unable to render anything.
   npx -y playwright install chromium || warn "'npx playwright install chromium' failed - run it by hand before using skillui."
@@ -3286,6 +3395,39 @@ fi
 # lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
 # 'angular' entry - so Angular's language server goes in as a plain npm package
 # instead, the same way skillui's Playwright/Chromium install is above.
+#
+# Six more plugins come from THIS repo's marketplace rather than Anthropic's:
+# angular-lsp (the Angular gap above, closed here), bash-lsp, css-lsp,
+# terraform-lsp, sql-lsp, and ONE of pwsh-lsp / powershell-lsp.
+# css-lsp's server is the npm package vscode-langservers-extracted and
+# bash-lsp's is bash-language-server, installed the same way as the other npm
+# servers here. Python stays on the official pyright-lsp.
+#
+# PowerShell is one plugin per machine, because Claude Code runs one server per
+# file extension and both plugins serve .ps1/.psm1/.psd1: pwsh-lsp where
+# 'pwsh' resolves, powershell-lsp on Windows where only 5.1 exists
+# (lsp_plugin_conflict, next to install_group). This script
+# does NOT install PowerShell 7 itself - like install_psscriptanalyzer in step
+# 23 it stops and says so. Both plugins start PowerShell Editor Services, which
+# is not on the PowerShell Gallery or in any package manager here: install_pses
+# downloads ONE release zip, pinned by version and sha256 (PSES_VERSION /
+# PSES_SHA256, the digest GitHub publishes for that asset), refuses anything
+# that does not match, and unzips it into the directory both plugins' launcher
+# reads (pses_dir - keep it equal to scripts/pses-launch.ps1's default).
+# Each registers an LSP server and nothing else, and none of them installs its
+# language server either. Two of those servers have no package this step will
+# fetch unverified, following install_tflint's precedent in step 23:
+#   terraform-ls - Homebrew (hashicorp/tap) or winget (Hashicorp.TerraformLanguageServer,
+#                  present in microsoft/winget-pkgs on 2026-10-12). No Chocolatey
+#                  package exists. Otherwise: stop and name the manual route.
+#   sqls         - not in Homebrew core, Chocolatey or winget on 2026-10-12. With Go
+#                  on PATH it is a version-pinned 'go install', which Go verifies
+#                  against its checksum database. Otherwise: stop and name the
+#                  manual route.
+# Neither of those two functions downloads a release archive itself: that would
+# be this script choosing and trusting a binary on the user's behalf with no
+# pinned checksum. install_pses does download one, and pins it.
+# SQLS_VERSION is the one place the sqls pin lives; bumping it is a reviewed edit.
 install_lsp_binary() {
   # $1 label (for messages), $2 the command Claude Code will actually run, the
   # rest is the install command's own argv - run directly, never eval'd.
@@ -3335,18 +3477,116 @@ install_pyright_binary() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
     return 1
   fi
-  install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
+  install_lsp_binary "pyright-langserver" "pyright-langserver" npm_install_global pyright
+}
+# typescript-language-server is a front end for tsserver and ships no TypeScript of its
+# own (its package.json declares no dependencies), so outside a project that has a local
+# 'typescript' it falls back to whatever Node resolves from its own install directory:
+# a 'typescript' nested inside it, else the global one beside it. What it needs from
+# that package is lib/tsserver.js - and that file is the invariant here, not a version
+# number. TypeScript 7 (the native compiler) ships lib/tsc.js alone, so the unpinned
+# 'npm install -g typescript' this step used to run started producing a server that
+# answers every 'initialize' with:
+#     Could not find a valid TypeScript installation. Please ensure that the
+#     "typescript" dependency is installed in the workspace or that a valid
+#     `tsserver.path` is specified. Exiting.
+# ngserver dies on the same global package for the same reason when it is told to
+# probe npm's global root: it wants lib/tsserverlibrary.js, minimum version 5.0.
+#
+# Measured against the registry on 2026-10-12 by unpacking each tarball: 5.9.3, 6.0.2
+# and 6.0.3 carry lib/tsserver.js and lib/tsserverlibrary.js, 7.0.2 carries neither,
+# and @angular/language-server 22.2.2 itself depends on exactly 6.0.3. So the spec
+# below is the 6.x line - the newest that still ships a tsserver. Move it only to a
+# release that has been unpacked and seen to contain lib/tsserver.js. The spec is
+# deliberately a bare major rather than '<7': a '<' reaches cmd.exe through npm.cmd
+# on the Windows half of this pair, and the two halves install the same text.
+TYPESCRIPT_LSP_SPEC="typescript@6"
+typescript_lsp_tsserver_state() {
+  # What would the typescript-language-server under npm's global root fall back to?
+  # Prints one of:
+  #   ok           a typescript with lib/tsserver.js
+  #   no-tsserver  a typescript WITHOUT it (7 or later) - the broken combination
+  #   absent       no typescript at all
+  #   unknown      could not tell: no npm, or the server is not under npm's global
+  #                root (pnpm, volta, a distribution package). Never folded into
+  #                'ok' or 'no-tsserver' - the caller says so and leaves it alone.
+  # A copy nested inside the server's own directory wins over the global one, in
+  # Node's resolution order, so it is the one judged when it exists.
+  local root tls
+  root="$(npm root -g 2>/dev/null)" || root=""
+  tls="$root/typescript-language-server"
+  if [ -z "$root" ] || [ ! -d "$tls" ]; then
+    echo unknown
+  elif [ -d "$tls/node_modules/typescript" ]; then
+    if [ -f "$tls/node_modules/typescript/lib/tsserver.js" ]; then echo ok; else echo no-tsserver; fi
+  elif [ -f "$root/typescript/lib/tsserver.js" ]; then
+    echo ok
+  elif [ -d "$root/typescript" ]; then
+    echo no-tsserver
+  else
+    echo absent
+  fi
 }
 install_typescript_lsp_binary() {
+  local state="" had_server=0
   if have typescript-language-server; then
-    skip "typescript-language-server already installed ($(command -v typescript-language-server))"
-    return 0
+    had_server=1
+    state="$(typescript_lsp_tsserver_state)"
+    # The binary being on PATH is not "already installed": with a typescript that has
+    # no tsserver it starts and then refuses every request. Only 'ok' and 'unknown'
+    # stop here; the other two states fall through to be repaired or reported.
+    case "$state" in
+      ok)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        return 0
+        ;;
+      unknown)
+        skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+        warn "could not check which TypeScript it falls back to (it is not under npm's global root, or npm is missing) - it needs one that ships lib/tsserver.js, i.e. $TYPESCRIPT_LSP_SPEC, not 7 or later."
+        return 0
+        ;;
+    esac
   fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
+  if [ "$had_server" -eq 0 ]; then
+    install_lsp_binary "typescript-language-server" "typescript-language-server" npm_install_global typescript-language-server || return 1
+    state="$(typescript_lsp_tsserver_state)"
+  fi
+  case "$state" in
+    ok) return 0 ;;
+    absent)
+      # Nothing global to replace, so nobody's 'tsc' changes under them.
+      if ! npm_install_global "$TYPESCRIPT_LSP_SPEC"; then
+        warn "'npm install -g $TYPESCRIPT_LSP_SPEC' failed - typescript-language-server has no TypeScript to run. Install it by hand, then re-run."
+        return 1
+      fi
+      state="$(typescript_lsp_tsserver_state)"
+      if [ "$state" != "ok" ]; then
+        warn "$TYPESCRIPT_LSP_SPEC installed but lib/tsserver.js is still not where typescript-language-server looks (state: $state)."
+        return 1
+      fi
+      [ "$had_server" -eq 1 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "$TYPESCRIPT_LSP_SPEC installed for typescript-language-server (it ships lib/tsserver.js)"
+      ;;
+    no-tsserver)
+      # A global typescript is already there and it is 7 or later. Whether this
+      # script's own earlier unpinned install put it there or its owner wants the
+      # native 'tsc' cannot be told apart from here, and replacing it changes what
+      # every global 'tsc' call on this machine compiles with - so it is reported,
+      # with the one command that fixes it, and never done silently. The step fails
+      # on purpose: "already installed" is the wrong thing to say about a server
+      # that cannot start.
+      warn "typescript-language-server cannot start: the global 'typescript' has no lib/tsserver.js (TypeScript 7 and later ship only the native compiler)."
+      warn "Not replacing it for you - that would change your global 'tsc'. To fix it: npm install -g $TYPESCRIPT_LSP_SPEC (with sudo if npm's global prefix is root-owned), then re-run. A project with its own local typescript 5 or 6 is unaffected either way."
+      return 1
+      ;;
+    *)
+      warn "typescript-language-server installed, but could not check which TypeScript it falls back to - it needs one that ships lib/tsserver.js ($TYPESCRIPT_LSP_SPEC)."
+      ;;
+  esac
 }
 install_angular_language_server() {
   if have ngserver; then
@@ -3357,7 +3597,186 @@ install_angular_language_server() {
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
+  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm_install_global @angular/language-server
+}
+install_css_language_server() {
+  if have vscode-css-language-server; then
+    skip "CSS language server (vscode-css-language-server) already installed ($(command -v vscode-css-language-server))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "CSS language server (vscode-css-language-server)" "vscode-css-language-server" npm_install_global vscode-langservers-extracted
+}
+install_bash_language_server() {
+  if have bash-language-server; then
+    skip "bash-language-server already installed ($(command -v bash-language-server))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  # bash-language-server 5.x declares engines.node >= 20. npm only warns about
+  # that and installs anyway, leaving a server that dies on start-up. A version
+  # that cannot be read is left to npm rather than guessed at.
+  local node_major
+  node_major="$(node -v 2>/dev/null)"; node_major="${node_major#v}"; node_major="${node_major%%.*}"
+  case "$node_major" in
+    ''|*[!0-9]*) ;;
+    *)
+      if [ "$node_major" -lt 20 ]; then
+        warn "node $(node -v 2>/dev/null) found, but bash-language-server needs Node.js 20 or newer. Install a newer Node yourself and re-run."
+        return 1
+      fi ;;
+  esac
+  install_lsp_binary "bash-language-server" "bash-language-server" npm_install_global bash-language-server
+}
+install_powershell_lsp_plugin() {
+  # Exactly one of the two, chosen by what this machine can run. The conflict
+  # check still applies: a machine that already has the other one keeps it.
+  if have pwsh; then
+    install_plugin_unless_conflict "pwsh-lsp@useful-claude-add-ons"
+  elif is_windows_shell; then
+    install_plugin_unless_conflict "powershell-lsp@useful-claude-add-ons"
+  else
+    warn "pwsh (PowerShell 7) not found on PATH - pwsh-lsp starts it, and powershell-lsp is for Windows PowerShell 5.1 only. Install PowerShell 7 (https://aka.ms/powershell; on Ubuntu 'sudo snap install powershell --classic') and re-run. This script does not install it."
+    return 1
+  fi
+}
+PSES_VERSION="v4.7.0"
+PSES_SHA256="5084f0326cc88539e9d880b08f6c52ce5be4672bb8ecee8921e35f8895a6b9d7"
+pses_url() { printf 'https://github.com/PowerShell/PowerShellEditorServices/releases/download/%s/PowerShellEditorServices.zip' "$PSES_VERSION"; }
+pses_dir() {
+  # The one directory both plugins' launcher (scripts/pses-launch.ps1) reads.
+  # Same three rules, same order: PSES_BUNDLE_PATH when set; on Windows
+  # %LOCALAPPDATA%\powershell-editor-services, the per-user data directory
+  # there; otherwise ~/.local/share/powershell-editor-services. Under Git Bash
+  # LOCALAPPDATA is a Windows path, so it is converted for the tools here.
+  local base
+  if [ -n "${PSES_BUNDLE_PATH:-}" ]; then
+    printf '%s' "$PSES_BUNDLE_PATH"
+  elif is_windows_shell && [ -n "${LOCALAPPDATA:-}" ]; then
+    if have cygpath; then base="$(cygpath -u "$LOCALAPPDATA")"; else base="${LOCALAPPDATA//\\//}"; fi
+    printf '%s/powershell-editor-services' "$base"
+  else
+    printf '%s' "$HOME/.local/share/powershell-editor-services"
+  fi
+}
+pses_fetch() {
+  # $1 url, $2 output file. 2 means "no downloader at all", which the caller
+  # reports differently from a download that was tried and failed.
+  if   have curl; then curl -fsSL -o "$2" "$1"
+  elif have wget; then wget -q -O "$2" "$1"
+  else return 2
+  fi
+}
+install_pses() {
+  local dir start parent tmp zip got want="${PSES_SHA256,,}" rc
+  dir="$(pses_dir)"
+  start="$dir/PowerShellEditorServices/Start-EditorServices.ps1"
+  if [ -f "$start" ]; then
+    skip "PowerShell Editor Services already installed ($dir)"
+    return 0
+  fi
+  if ! have pwsh && ! is_windows_shell; then
+    warn "not installing PowerShell Editor Services: no PowerShell on this machine to host it (pwsh not found on PATH). Install PowerShell 7 (https://aka.ms/powershell) and re-run."
+    return 1
+  fi
+  if [ -e "$dir" ]; then
+    warn "'$dir' exists but holds no PowerShellEditorServices/Start-EditorServices.ps1 - not overwriting it. Move it aside and re-run."
+    return 1
+  fi
+  if ! have unzip; then
+    warn "unzip not found on PATH - PowerShell Editor Services ships as a zip. Install unzip and re-run."
+    return 1
+  fi
+  parent="$(dirname "$dir")"
+  mkdir -p "$parent" || return 1
+  # Unpacked beside the destination, then renamed into place: a download or
+  # unzip that dies half-way never leaves a directory the check above would
+  # later report as "already installed".
+  tmp="$(mktemp -d "$parent/.pses-install.XXXXXX")" || return 1
+  zip="$tmp/PowerShellEditorServices.zip"
+  pses_fetch "$(pses_url)" "$zip"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -eq 2 ]; then
+      warn "neither curl nor wget found on PATH - cannot download PowerShell Editor Services. Install one and re-run."
+    else
+      warn "downloading $(pses_url) failed."
+    fi
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! got="$(uv_sha256_of "$zip")"; then
+    warn "cannot verify PowerShell Editor Services $PSES_VERSION: none of sha256sum, shasum or openssl is on PATH. Refusing to install an archive whose digest could not be checked."
+    rm -rf "$tmp"
+    return 1
+  fi
+  if [ "$got" != "$want" ]; then
+    warn "sha256 MISMATCH on PowerShell Editor Services $PSES_VERSION - refusing to install it. Expected $want, got $got. Either the pin in this script is stale or what $(pses_url) served is not what was pinned."
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! mkdir "$tmp/bundle" || ! unzip -q "$zip" -d "$tmp/bundle"; then
+    warn "unzipping PowerShell Editor Services failed."
+    rm -rf "$tmp"
+    return 1
+  fi
+  if [ ! -f "$tmp/bundle/PowerShellEditorServices/Start-EditorServices.ps1" ]; then
+    warn "the PowerShell Editor Services archive holds no PowerShellEditorServices/Start-EditorServices.ps1 - not installing it."
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! mv "$tmp/bundle" "$dir"; then
+    warn "could not move PowerShell Editor Services into '$dir'."
+    rm -rf "$tmp"
+    return 1
+  fi
+  rm -rf "$tmp"
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "PowerShell Editor Services $PSES_VERSION installed at $dir (sha256 verified)"
+}
+install_terraform_ls() {
+  if have terraform-ls; then
+    skip "terraform-ls already installed ($(command -v terraform-ls))"
+    return 0
+  fi
+  if have brew; then
+    brew install hashicorp/tap/terraform-ls || return 1
+  else
+    warn "terraform-ls has no unpinned auto-install path here (no brew on PATH) - download a release from https://releases.hashicorp.com/terraform-ls/ (verify it against the SHA256SUMS file published beside it, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  if ! have terraform-ls; then
+    warn "terraform-ls installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "terraform-ls installed at $(command -v terraform-ls)"
+}
+SQLS_VERSION="v0.2.48"
+install_sqls() {
+  if have sqls; then
+    skip "sqls already installed ($(command -v sqls))"
+    return 0
+  fi
+  if ! have go; then
+    warn "sqls has no unpinned auto-install path here (no go on PATH) - install Go and re-run, or download a release from https://github.com/sqls-server/sqls/releases (verify its SHA-256 against the digest GitHub shows for that asset, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  # 'go install' writes into GOBIN, or GOPATH/bin when GOBIN is unset, and adds
+  # neither to PATH - export it for this session before the shared helper's
+  # post-install probe runs, the same reason install_csharp_ls_binary does.
+  local gobin
+  gobin="$(go env GOBIN 2>/dev/null)"
+  [ -n "$gobin" ] || gobin="$(go env GOPATH 2>/dev/null)/bin"
+  export PATH="$gobin:$PATH"
+  install_lsp_binary "sqls" "sqls" go install "github.com/sqls-server/sqls@${SQLS_VERSION}" || return 1
+  warn "sqls is on PATH for this session only - add $gobin to your shell profile to keep it there in new shells."
+  warn "sqls ships with no database connection, and this script configures none. Schema-aware completion needs your own ~/.config/sqls/config.yml - see plugin/sql-lsp/README.md before pointing it at any database."
 }
 if is_selected "lsp-plugins"; then
   run_step "Marketplace: anthropics/claude-plugins-official" \
@@ -3368,7 +3787,20 @@ if is_selected "lsp-plugins"; then
   run_step "pyright-langserver (npm)" install_pyright_binary
   run_step "Plugin: typescript-lsp@claude-plugins-official" install_plugin "typescript-lsp@claude-plugins-official"
   run_step "typescript-language-server (npm)" install_typescript_lsp_binary
-  run_step "Angular language server (npm; no official Claude plugin)" install_angular_language_server
+  run_step "Marketplace: mbadali25/useful-claude-add-ons" \
+    add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
+  run_step "Plugin: angular-lsp@useful-claude-add-ons" install_plugin "angular-lsp@useful-claude-add-ons"
+  run_step "Angular language server (npm)" install_angular_language_server
+  run_step "Plugin: bash-lsp@useful-claude-add-ons" install_plugin "bash-lsp@useful-claude-add-ons"
+  run_step "bash-language-server (npm)" install_bash_language_server
+  run_step "Plugin: css-lsp@useful-claude-add-ons" install_plugin "css-lsp@useful-claude-add-ons"
+  run_step "CSS language server (npm)" install_css_language_server
+  run_step "Plugin: pwsh-lsp or powershell-lsp (one per machine)" install_powershell_lsp_plugin
+  run_step "PowerShell Editor Services (pinned release zip)" install_pses
+  run_step "Plugin: terraform-lsp@useful-claude-add-ons" install_plugin "terraform-lsp@useful-claude-add-ons"
+  run_step "terraform-ls (HashiCorp)" install_terraform_ls
+  run_step "Plugin: sql-lsp@useful-claude-add-ons" install_plugin "sql-lsp@useful-claude-add-ons"
+  run_step "sqls (pinned go install)" install_sqls
 fi
 
 # --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer --
@@ -3529,3 +3961,4 @@ else
   for s in "${FAILED_STEPS[@]}"; do echo "  - $s"; done
   printf '\033[33mRe-run this script after resolving the above; earlier successful steps are safe to repeat.\033[0m\n'
 fi
+sudo_home_warning

@@ -10,9 +10,8 @@ a logged-out or out-of-quota CLI resolves on PATH and then fails at the first
 call. `review_run.py` reserves a review round BEFORE it launches the reviewer,
 so a quota wall hit after reservation spends a round for nothing -- which is
 how a Codex quota error burned one. This probe is built to run BEFORE the round
-is reserved, and only `ok` may launch. `review_run.py` does not launch Kimi yet:
-that wiring is the review harness's, and lands as L-0527 (tooling only).
-Until then the probe runs from `providers.sh --probe-kimi` or directly.
+is reserved, and only `ok` may launch. `review_run.py` runs it before reserving
+a Kimi round (L-0527); it also runs from `providers.sh --probe-kimi` or directly.
 
 THE STATES, each its own value:
 
@@ -211,21 +210,39 @@ def kimi_env(base=None):
     return env
 
 
-def write_agent_file(directory):
+READ_ONLY_TOOLS = ("Read", "Grep", "Glob")
+DISALLOWED_TOOLS = ("Write", "Edit", "Bash")
+
+
+def write_agent_file(directory, tools=READ_ONLY_TOOLS, disallowed=DISALLOWED_TOOLS,
+                     name="crew-reviewer", filename=AGENT_FILE,
+                     description="Read-only code reviewer for crew's review round.",
+                     body=("You are a read-only code reviewer. Follow the user's message "
+                           "exactly; never modify files.")):
     """Write the read-only agent definition `kimi --agent-file` loads, and the
     empty directory passed as `--skills-dir`, into `directory`; return the
     agent file's path. The body is one fixed line: the review instructions
-    travel in `-p` exactly as they do for codex and copilot, never in here."""
+    travel in `-p` exactly as they do for codex and copilot, never in here.
+
+    The defaults are the review round's file, byte for byte. `tools`,
+    `disallowed`, `name`, `filename` and `description` exist for
+    `crew_kimi_agent.py` (L-0777), which writes one file per crew role with
+    that role's allowlist; every role it writes still disallows Write, Edit
+    and Bash."""
     os.makedirs(os.path.join(directory, NO_SKILLS), exist_ok=True)
-    path = os.path.join(directory, AGENT_FILE)
+    path = os.path.join(directory, filename)
+    tools_line = f"tools: [{', '.join(tools)}]\n"
+    if tuple(tools) == READ_ONLY_TOOLS:
+        # The review round's line, kept literal: sabotage_kimi.py anchors on it.
+        tools_line = (
+            "tools: [Read, Grep, Glob]\n")
     text = ("---\n"
-            "name: crew-reviewer\n"
-            "description: Read-only code reviewer for crew's review round.\n"
-            "tools: [Read, Grep, Glob]\n"
-            "disallowedTools: [Write, Edit, Bash]\n"
+            f"name: {name}\n"
+            f"description: {description}\n"
+            f"{tools_line}"
+            f"disallowedTools: [{', '.join(disallowed)}]\n"
             "---\n"
-            "You are a read-only code reviewer. Follow the user's message "
-            "exactly; never modify files.\n")
+            f"{body}\n")
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -233,11 +250,12 @@ def write_agent_file(directory):
     return path
 
 
-def read_only_flags(directory):
+def read_only_flags(directory, **agent):
     """`--agent-file <dir>/kimi-reviewer.md --skills-dir <dir>/kimi-no-skills`,
     written into `directory` first. Every `kimi` launch crew makes carries
-    these: the probe and the review alike."""
-    return ["--agent-file", write_agent_file(directory),
+    these: the probe and the review alike. `agent` passes through to
+    `write_agent_file` (a crew role's allowlist, L-0777)."""
+    return ["--agent-file", write_agent_file(directory, **agent),
             "--skills-dir", os.path.join(directory, NO_SKILLS)]
 
 

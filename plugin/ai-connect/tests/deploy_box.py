@@ -45,7 +45,7 @@ MUTATING = {("tee",), ("rm",), ("systemctl", "enable"), ("systemctl", "restart")
             ("install",), ("apt-get",)}
 
 PWSH_CANDIDATES = [r"C:\Program Files\PowerShell\7\pwsh.exe", "/usr/bin/pwsh", "/usr/local/bin/pwsh",
-                   "/opt/homebrew/bin/pwsh"]
+                   "/opt/homebrew/bin/pwsh", "/snap/bin/pwsh"]
 PWSH = next((p for p in PWSH_CANDIDATES if os.path.isfile(p)), None)
 GIT_BASH = r"C:\Program Files\Git\bin\bash.exe"
 BASH = (GIT_BASH if os.path.isfile(GIT_BASH) else None) if os.name == "nt" else shutil.which("bash")
@@ -106,6 +106,10 @@ class Box:
         self.home.mkdir()
         self.systemd = tmp_path / "systemd"
         self.systemd.mkdir()
+        # The directory deploy is run in: --scope project registers the MCP server and writes the
+        # peer-state hooks for "this project", which must never be the checkout the suite runs from
+        self.project = tmp_path / "project"
+        self.project.mkdir()
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
         self.state_file = tmp_path / "fake-state.json"
@@ -116,9 +120,12 @@ class Box:
             self.add_tool(name)
         pydir = str(Path(sys.executable).parent)
         sysdirs = [r"C:\Windows\System32", r"C:\Windows"] if os.name == "nt" else ["/usr/bin", "/bin"]
+        # No XDG_* of the caller's, and no DOTNET_BUNDLE_EXTRACT_BASE_DIR: pwsh and Python write under those. The
+        # four XDG base directories are set inside the box below, so no lookup falls back to a real default
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("TS_AUTHKEY", "TS_AUTHKEY_FILE", "AI_CONNECT_BRIDGE_HOST", "AI_CONNECT_PEER_TOKEN",
-                                 "AI_CONNECT_INSTALLER", "PYTHONPATH")}
+                                 "AI_CONNECT_INSTALLER", "PYTHONPATH", "DOTNET_BUNDLE_EXTRACT_BASE_DIR")
+                    and not k.startswith("XDG_")}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home),
                         PATH=os.pathsep.join([str(self.bin), pydir, *sysdirs]),
                         FAKE_DEPLOY_STATE=str(self.state_file), FAKE_DEPLOY_LOG=str(self.log),
@@ -126,15 +133,21 @@ class Box:
                         AI_CONNECT_TS_STATE_DIR=str(tmp_path / "ts-state"), AI_CONNECT_DEPLOY_OS=target,
                         AI_CONNECT_DEPLOY_HEALTH_WAIT="3", AI_CONNECT_DEPLOY_STOP_WAIT="1",
                         AI_CONNECT_TSD_WAIT="0",
-                        XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), PYTHONIOENCODING="utf-8",
+                        XDG_CACHE_HOME=str(tmp_path / "xdg-cache"), XDG_CONFIG_HOME=str(tmp_path / "xdg-config"),
+                        XDG_DATA_HOME=str(tmp_path / "xdg-data"), XDG_STATE_HOME=str(tmp_path / "xdg-state"),
+                        PYTHONIOENCODING="utf-8",
                         # No real Tailscale install dir, credential store or OAuth file is ever looked at
                         FAKE_DEPLOY_BIN=str(self.bin), AI_CONNECT_TAILSCALE_DIRS=str(tmp_path / "no-tailscale"),
                         AI_CONNECT_OS_RELEASE=str(tmp_path / "os-release"),
+                        # Never this host's /etc/ufw/ufw.conf: absent unless a test writes it
+                        AI_CONNECT_UFW_CONF=str(tmp_path / "ufw.conf"),
                         PYTHONPATH=os.pathsep.join([str(FAKE_KEYRING), str(NETGUARD)]),
                         FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME"):
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME",
+                     # Claude Code's settings are then the fake HOME's, never the real ones of whoever runs this
+                     "CLAUDE_CONFIG_DIR"):
             self.env.pop(name, None)
         # Never the real Tailscale API: a closed loopback port unless a test passes its fake's address
         self.env["TS_API_BASE"] = "http://127.0.0.1:9/api/v2"
@@ -182,6 +195,16 @@ class Box:
         self.log.write_text("", encoding="utf-8")
 
     @property
+    def user_settings(self) -> Path:
+        """Claude Code's user settings on the fake machine."""
+        return self.home / ".claude" / "settings.json"
+
+    @property
+    def project_settings(self) -> Path:
+        """The settings of the project deploy is run in that are this machine's alone."""
+        return self.project / ".claude" / "settings.local.json"
+
+    @property
     def config_file(self) -> Path:
         return self.home / ".config" / "ai-connect" / "config.yaml"
 
@@ -190,11 +213,13 @@ class Box:
 
     def deploy(self, *args: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(DEPLOY), *args], capture_output=True, text=True, check=False,
-                              stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180)
+                              stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180,
+                              cwd=self.project)
 
     def snapshot(self) -> dict:
-        """Every file under the fake machine's HOME and systemd dir, with its bytes."""
-        return {str(p): p.read_bytes() for root in (self.home, self.systemd) for p in sorted(root.rglob("*"))
+        """Every file under the fake machine's HOME, systemd dir and project, with its bytes."""
+        return {str(p): p.read_bytes() for root in (self.home, self.systemd, self.project)
+                for p in sorted(root.rglob("*"))
                 if p.is_file()}
 
 

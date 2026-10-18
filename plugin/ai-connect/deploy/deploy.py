@@ -34,6 +34,7 @@ import base64
 import binascii
 import getpass
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -46,6 +47,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import firewall_state  # pylint: disable=import-error
 import smoke_test  # pylint: disable=import-error
 import tailnet_setup  # pylint: disable=import-error
 import ts_install  # pylint: disable=import-error
@@ -53,6 +55,20 @@ from deploy_core import (APP, APP_HOME, CONFIG_DIR, CONFIG_FILE, DEFAULT_PORT, E
                          EXIT_OK, EXIT_USAGE, IS_ROOT, PLUGIN, VENV, Failure, Run, backend_state, config_tool,
                          has_terminal, interactive, mask, must, no_tools, out, privileged, run, tailscale_ip, tool,
                          ts_prefs, ts_self, tsadmin, venv_python)
+
+
+
+def _plugin_module(name: str):
+    """A module from the plugin's root, loaded by path: the root is not on sys.path here, and putting it
+    there would let its `server` and `client` packages shadow whatever else is imported."""
+    spec = importlib.util.spec_from_file_location(f"ai_connect_{name}", PLUGIN / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The peer-state hooks in a Claude Code settings file; installer.py writes the same ones
+state_hooks = _plugin_module("state_hooks")
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -377,11 +393,37 @@ def netsh_rule() -> str | None:
 UFW_RULE_RE = re.compile(rf"^\s*(\d+)/tcp\s+ALLOW(?:\s+IN)?\s+(\S+)\s+#\s*{re.escape(RULE)}\s*$")
 
 
-def ufw_rules() -> list[tuple[str, str]]:
-    """(port, source) of every inbound TCP allow rule that carries this deployment's comment."""
+def ufw_probe() -> tuple[str, list[tuple[str, str]]]:
+    """Whether ufw is on (firewall_state), and (port, source) of every inbound TCP allow rule that carries
+    this deployment's comment."""
     # A status that fails says nothing about the rules: it is not "no rule"
     res = must(run(privileged("ufw") + ["status"], timeout=30), "ufw status")
-    return [(m.group(1), m.group(2)) for line in res.stdout.splitlines() if (m := UFW_RULE_RE.match(line))]
+    state = firewall_state.ufw_state(res.stdout, firewall_state.read_ufw_conf())
+    if state == firewall_state.ACTIVE:
+        return state, [(m.group(1), m.group(2)) for line in res.stdout.splitlines() if (m := UFW_RULE_RE.match(line))]
+    # An inactive ufw shows "Status: inactive" and not one rule, though it keeps them: read as "no rule",
+    # every run added the rule again and called that done. `ufw show added` lists what is stored
+    added = must(run(privileged("ufw") + ["show", "added"], timeout=30), "ufw show added")
+    return state, firewall_state.ufw_added(added.stdout, RULE)
+
+
+def ufw_rules() -> list[tuple[str, str]]:
+    return ufw_probe()[1]
+
+
+def firewall_enforcing(kind: str) -> str:
+    """firewall_state.ACTIVE, INACTIVE or UNKNOWN: whether the firewall of this kind filters anything.
+    A rule in a firewall that is off is stored and does nothing."""
+    if kind == "ufw":
+        return ufw_probe()[0]
+    if kind == "firewall-cmd":
+        res = run(privileged("firewall-cmd") + ["--state"], timeout=30)
+        if res.returncode == 0 and res.stdout.strip() == "running":
+            return firewall_state.ACTIVE
+        return firewall_state.INACTIVE if res.returncode == 252 else firewall_state.UNKNOWN  # 252: NOT_RUNNING
+    res = run([tool("powershell"), "-NoProfile", "-NonInteractive", "-Command", firewall_state.PROFILE_QUERY],
+              timeout=60)
+    return firewall_state.windows_state(res.stdout) if res.returncode == 0 else firewall_state.UNKNOWN
 
 
 def firewalld_has(subnet: str, port: int, *, permanent: bool) -> bool:
@@ -411,18 +453,44 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
     if kind is None:
         out(f"  neither ufw nor firewalld found; allow port {port} only from {subnet} yourself, e.g.")
         out(f"    sudo ufw allow from {subnet} to any port {port} proto tcp")
+        firewall_state.remember(None, None, subnet, port)
         return
     if r.dry_run:  # reading ufw or firewalld needs root: a dry run asks neither
         r.change(f"{kind}: allow port {port} from {subnet} only, and delete any other rule of ours, unless "
                  "that is already so", lambda: None)
+        # ufw.conf is a file anyone may read: a dry run can already say the rule would do nothing
+        state = firewall_state.ufw_state(None, firewall_state.read_ufw_conf()) if kind == "ufw" else None
+        state = state if state == firewall_state.INACTIVE else None
+        firewall_state.remember(kind, state, subnet, port)
+        if state:
+            out(firewall_state.note(kind, state, subnet, port))
+        else:
+            out(f"  would: check that {kind} is on, and say so plainly when it is not (a rule in a firewall "
+                "that is off filters nothing)")
         return
+    state, rules = ufw_probe() if kind == "ufw" else (firewall_enforcing(kind), [])
+    firewall_state.remember(kind, state, subnet, port)
+    if kind == "firewall-cmd" and state == firewall_state.INACTIVE:
+        # No daemon to hand the rule to; asking it anyway fails the whole deploy before the health check
+        r.record("warning", f"firewalld is not running: no rule for {subnet} on port {port}")
+        out(firewall_state.note(kind, state, subnet, port))
+        return
+    _firewall_rule(r, kind, subnet, port, rules, stored=state != firewall_state.ACTIVE)
+    warning = firewall_state.note(kind, state, subnet, port)
+    if warning:
+        r.record("warning", warning.strip())
+        out(warning)
+
+
+def _firewall_rule(r: Run, kind: str, subnet: str, port: int, rules: list[tuple[str, str]], *, stored: bool) -> None:
+    """The rule itself. stored: the firewall is not known to be on, so no line here may read as "enforced"."""
+    there = " is stored" if stored else ""
     if kind == "ufw":
-        rules = ufw_rules()
         # Ours by its comment, for another subnet or port: left in place it would keep that one open,
         # also beside the rule that is wanted
         stale = [rule for rule in rules if rule != (str(port), subnet)]
         if rules and not stale:
-            r.already(f"{kind} rule for {subnet} on port {port}")
+            r.already(f"{kind} rule for {subnet} on port {port}{there}")
             return
         for old_port, old_subnet in stale:
             drop = privileged("ufw") + ["delete", "allow", "from", old_subnet, "to", "any", "port", old_port,
@@ -448,7 +516,7 @@ def step_firewall(r: Run, subnet: str, port: int) -> None:
                  lambda: must(run(privileged("firewall-cmd") + ["--reload"]), "firewall-cmd --reload"))
         return
     if firewall_present(kind, subnet, port):
-        r.already(f"{kind} rule for {subnet} on port {port}")
+        r.already(f"{kind} rule for {subnet} on port {port}{there}")
         return
     if netsh_rule() is not None:
         # Same name, another subnet or port: left in place it would keep that one open
@@ -528,8 +596,26 @@ def mcp_registered(claude: str, scope: str, python: Path) -> bool:
 
 
 HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
-                 "here (SessionStart, Stop, the peer-state hooks). A session in bypass-permissions mode then acts on "
+                 "here (the watcher at SessionStart and Stop; with --register-mcp also the peer-state hooks, where "
+                 "the MCP server is registered). A session in bypass-permissions mode then acts on "
                  "what another peer sends with no prompt in between. Leave it off on a shared machine.")
+STATE_HOOKS_NOTE = ("  note: the peer-state hooks (busy / idle / waiting) call the MCP server, so they are written "
+                    "only with --register-mcp as well. Without it this machine reports no state.")
+
+
+def state_settings(scope: str) -> Path:
+    """Where the peer-state hooks go: beside the MCP server they call. A user-scope server is in every
+    project, so the user's settings; a project-scope one only in this project's .mcp.json, so this project's
+    own settings. In the user's settings they would fail in every other project, which has no such server."""
+    return state_hooks.user_settings_path() if scope == "user" else state_hooks.project_settings_path(Path.cwd())
+
+
+def state_step(step, path: Path):
+    """One state_hooks call; a settings file it will not touch stops the run with its reason."""
+    try:
+        return step(path)
+    except state_hooks.SettingsError as error:
+        raise Failure(str(error)) from error
 MCP_WARNING = ("  WARNING: --register-mcp gives Claude Code sessions ({where}) the ai-connect tools. What other peers "
                "send is untrusted input; in a bypass-permissions session nothing asks before the model acts on it.")
 
@@ -555,6 +641,8 @@ def step_claude(r: Run, args) -> None:
             r.change(f"claude plugin install {PLUGIN_ID}",
                      lambda: must(run([claude, "plugin", "install", PLUGIN_ID]), "claude plugin install"))
     if not args.register_mcp:
+        if args.install_hooks:
+            out(STATE_HOOKS_NOTE)
         return
     where = ("scope user: every project of this user" if args.scope == "user"
              else f"scope project: sessions started in {Path.cwd()}, through its .mcp.json")
@@ -562,30 +650,64 @@ def step_claude(r: Run, args) -> None:
     step_app(r, restart_on_change=False)
     python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
+    # Hooks only when hooks were asked for; --register-mcp alone stays the MCP server and nothing else
+    settings = state_settings(args.scope) if args.install_hooks else None
     if r.dry_run:
         r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
+        if settings:
+            r.change(f"write the peer-state hooks to {settings}, unless they are there", lambda: None)
         return
-    if mcp_registered(claude, args.scope, python):
-        r.already(f"MCP server '{MCP_SERVER}' registered ({where})")
-        return
+    if settings:
+        # Read first: settings this cannot read stop the step before anything is registered, not halfway
+        state_step(state_hooks.read, settings)
 
     def register() -> None:
         # A registration in this scope that points elsewhere (another venv, another checkout) is replaced
         run([claude, "mcp", "remove", "-s", args.scope, MCP_SERVER], timeout=60)
         must(run(argv, timeout=60), "claude mcp add")
-    r.change(f"register MCP server '{MCP_SERVER}' ({where})", register)
+    if mcp_registered(claude, args.scope, python):
+        r.already(f"MCP server '{MCP_SERVER}' registered ({where})")
+    else:
+        r.change(f"register MCP server '{MCP_SERVER}' ({where})", register)
+    if not settings:
+        return
+    if state_step(state_hooks.present, settings):
+        r.already(f"peer-state hooks in {settings}")
+    else:
+        r.change(f"write the peer-state hooks to {settings}", lambda: state_step(state_hooks.add, settings))
 
 
 def remove_claude(r: Run) -> None:
     r.step("Claude Code plugin and MCP server")
-    claude = claude_bin()
-    if claude is None:
-        r.already("Claude Code not found, nothing registered there")
-        return
+    # The peer-state hooks are in files, so they go whether or not the CLI is found: wherever step_claude
+    # may have put them for a run from this directory
+    settings = [state_settings("user"), state_settings("project")]
     if r.dry_run:
         r.change(f"remove MCP server '{MCP_SERVER}' and plugin {PLUGIN_ID} from Claude Code, if registered",
                  lambda: None)
+        r.change(f"remove the peer-state hooks from {' and '.join(map(str, settings))}, if they are there",
+                 lambda: None)
         return
+    # A settings file this cannot read holds up nothing here: the service and the firewall rule are
+    # already gone, and stopping now would leave the MCP server and the plugin behind as well
+    holding = []
+    for path in settings:
+        try:
+            if state_hooks.holds_any(path):
+                holding.append(path)
+        except state_hooks.SettingsError as error:
+            out(f"  WARNING: {str(error).splitlines()[0]} Any peer-state hooks in it are still there: "
+                f"remove them by hand.")
+    claude = claude_bin()
+    if claude is None:
+        r.already("Claude Code not found, nothing registered there")
+    else:
+        remove_registrations(r, claude)
+    for path in holding:
+        r.change(f"remove the peer-state hooks from {path}", lambda path=path: state_step(state_hooks.remove, path))
+
+
+def remove_registrations(r: Run, claude: str) -> None:
     if run([claude, "mcp", "get", MCP_SERVER], timeout=60).returncode == 0:
         r.change(f"remove MCP server '{MCP_SERVER}'",
                  lambda: must(run([claude, "mcp", "remove", MCP_SERVER]), "claude mcp remove"))
@@ -1264,6 +1386,10 @@ def cmd_status(args) -> int:
         try:
             present = kind is not None and firewall_present(kind, args.vpn_subnet, port)
             found = f"rule present for {args.vpn_subnet} on port {port}" if present else "no rule"
+            state = firewall_enforcing(kind) if present else firewall_state.ACTIVE
+            if state != firewall_state.ACTIVE:  # a rule in a firewall that is off is not protection
+                found += (" - NOT ENFORCED: the firewall is off" if state == firewall_state.INACTIVE
+                          else " - NOT VERIFIED: could not tell whether the firewall is on")
             out(f"  firewall: {found if kind else 'no ufw/firewalld'}")
         except Failure as err:
             out(f"  firewall: unknown ({err})")

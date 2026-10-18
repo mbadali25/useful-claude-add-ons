@@ -84,7 +84,7 @@ def cmd_inspect(_args) -> dict:
     token = client.get("token") or ""
     peers = (config.get("auth") or {}).get("peers") or {}
     return {"exists": True, "host": server.get("host"), "port": server.get("port"),
-            "name": client.get("name"), "bridge_url": client.get("bridge_url"),
+            "name": client.get("name"), "name_mode": client.get("name_mode"), "bridge_url": client.get("bridge_url"),
             # Hashes, as config.yaml itself holds them: not secrets
             "peers": sorted(peers), "peer_sha256": {str(name): str(digest) for name, digest in peers.items()},
             "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
