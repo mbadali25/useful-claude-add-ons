@@ -54,7 +54,7 @@ ALLOW, BLOCK, UNKNOWN = "ALLOW", "BLOCK", "COULD_NOT_TELL"
 EXIT = {ALLOW: 0, BLOCK: 1, UNKNOWN: 2}
 EXIT_REFUSED, EXIT_POST_FAILED = 1, 2
 GH_TIMEOUT = 60
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
 _BLOCKS_RE = re.compile(r"(?<!\S)blocks=(\d+)(?!\S)")
 _SLUG_RE = re.compile(r"^(?:git@|ssh://git@|https://(?:[^@/\s]+@)?)github\.com[:/]+"
                       r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
@@ -78,6 +78,18 @@ def _tree_dirty(root):
     return bool(out.strip())
 
 
+def _kill_group(proc):
+    """Kill the process and, off Windows, its whole group: a child that inherited
+    stdout would otherwise hold the pipe open past the timeout."""
+    try:
+        if os.name != "nt":
+            os.killpg(proc.pid, 9)
+        else:
+            proc.kill()
+    except OSError:
+        pass
+
+
 def _run(argv, cwd):
     """(returncode, stdout, stderr); a missing or hung program is (127|124, "", why),
     never an exception."""
@@ -85,21 +97,29 @@ def _run(argv, cwd):
     if exe is None:
         return 127, "", f"{argv[0]} is not on PATH"
     try:
-        done = subprocess.run([exe, *argv[1:]], cwd=cwd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
-                              timeout=GH_TIMEOUT, check=False)
-    except subprocess.TimeoutExpired:
-        return 124, "", f"{argv[0]} timed out after {GH_TIMEOUT}s"
+        proc = subprocess.Popen([exe, *argv[1:]], cwd=cwd, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                encoding="utf-8", errors="replace",
+                                start_new_session=os.name != "nt")
     except OSError as exc:
         return 127, "", f"{argv[0]} could not run: {exc}"
-    return done.returncode, done.stdout, done.stderr
+    try:
+        out, err = proc.communicate(timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        try:
+            proc.communicate(timeout=5)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        return 124, "", f"{argv[0]} timed out after {GH_TIMEOUT}s"
+    return proc.returncode, out, err
 
 
 def head_of(root):
     """The checked-out commit, or None."""
     code, out, _ = _run(["git", "rev-parse", "HEAD"], root)
     sha = out.strip()
-    return sha if code == 0 and _SHA_RE.match(sha) else None
+    return sha if code == 0 and _SHA_RE.fullmatch(sha) else None
 
 
 def repo_slug(root, override=None):
@@ -124,14 +144,14 @@ def pr_head(root, repo, number):
         sha = json.loads(out)["head"]["sha"]
     except (ValueError, KeyError, TypeError):
         return None, f"PR #{number}: gh returned no readable head sha"
-    if not isinstance(sha, str) or not _SHA_RE.match(sha):
+    if not isinstance(sha, str) or not _SHA_RE.fullmatch(sha):
         return None, f"PR #{number}: head sha {sha!r} is not a 40-hex commit"
     return sha, ""
 
 
 def lookup(root, repo, sha):
     """(verdict, why) from the published `crew/review` status of `sha`."""
-    if not _SHA_RE.match(sha or ""):
+    if not _SHA_RE.fullmatch(sha or ""):
         return UNKNOWN, f"{sha!r} is not a full 40-hex commit sha"
     code, out, err = _run(["gh", "api", f"repos/{repo}/commits/{sha}/status"], root)
     if code != 0:
@@ -170,10 +190,10 @@ def _counts(latest):
     if not isinstance(latest, dict):
         return None
     counts = latest.get("counts")
-    if latest.get("verdict") == "CLEAN" and not counts:
-        return 0, 0, 0
     if not isinstance(counts, dict):
         return None
+    if latest.get("verdict") == "CLEAN" and not counts:
+        return 0, 0, 0
     out = []
     for key in ("BLOCK", "FIX", "NIT"):
         value = counts.get(key)
@@ -241,8 +261,10 @@ def post(root, ticket, repo=None):
         reply = json.loads(out)
     except ValueError:
         reply = None
+    url = reply.get("url") if isinstance(reply, dict) else None
     if (not isinstance(reply, dict) or reply.get("state") != "success"
-            or reply.get("context") != CONTEXT):
+            or reply.get("context") != CONTEXT
+            or not isinstance(url, str) or not url.endswith(f"/statuses/{head}")):
         return EXIT_POST_FAILED, [f"{CONTEXT} post for {head[:12]} exited 0 but GitHub did not "
                                   "return the created success status; not reported as posted"]
     return 0, [f"{CONTEXT} success posted on {head} ({slug}): {text}"]
@@ -266,7 +288,14 @@ def _local_tickets(root, head):
         data, state = review_ledger._load(os.path.join(directory, name))  # pylint: disable=protected-access
         if state != "ok":
             return [], f"the local ledger {name} is unreadable: could not rule it out"
-        if any(isinstance(r, dict) and r.get("head") == head for r in data.get("rounds") or []):
+        rounds = data.get("rounds")
+        if not isinstance(rounds, list):
+            return [], f"the local ledger {name} has no readable rounds: could not rule it out"
+        for row in rounds:
+            if not isinstance(row, dict) or not isinstance(row.get("head"), str):
+                return [], (f"the local ledger {name} has a round with no readable head: "
+                            "could not rule it out")
+        if any(row["head"] == head for row in rounds):
             found.append(name[:-5])
     return found, ""
 
@@ -342,7 +371,7 @@ def main(argv):
     target.add_argument("--pr", type=int)
     target.add_argument("--head")
     args = parser.parse_args(argv)
-    if args.head is not None and not _SHA_RE.match(args.head):
+    if args.head is not None and not _SHA_RE.fullmatch(args.head):
         print("review_status: --head must be a full 40-hex commit sha", file=sys.stderr)
         return 2
     if args.action == "post" and (args.head is not None or args.pr is not None):

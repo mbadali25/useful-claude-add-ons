@@ -127,6 +127,10 @@ def _commit_feature(repo):
 CREATED = {"state": "success", "context": "crew/review"}
 
 
+def created(head):
+    return {**CREATED, "url": f"https://api.github.com/repos/{SLUG}/statuses/{head}"}
+
+
 def _success(blocks=0):
     return {"context": rs.CONTEXT, "state": "success",
             "description": f"receipt r1 clean codex/gpt blocks={blocks} fix=0 nit=0 bundle=abc"}
@@ -317,7 +321,7 @@ def test_post_publishes_success_for_an_accepted_clean_receipt(repo, gh):
     _review(repo)
     _commit_feature(repo)
     head = git(repo, "rev-parse", "HEAD")
-    gh.reply(f"repos/{SLUG}/statuses/{head}", CREATED)
+    gh.reply(f"repos/{SLUG}/statuses/{head}", created(head))
 
     code, lines = rs.post(str(repo), T)
 
@@ -476,7 +480,7 @@ def test_check_a_failed_head_probe_with_a_local_ledger_is_could_not_tell(repo, g
 def test_post_refuses_when_the_ledger_loses_its_receipt_after_the_check(repo, gh, monkeypatch):
     _review(repo)
     head = _commit_feature(repo)
-    gh.reply(f"repos/{SLUG}/statuses/{head}", CREATED)
+    gh.reply(f"repos/{SLUG}/statuses/{head}", created(head))
     with open(rl.ledger_path(str(repo), T), encoding="utf-8") as fh:
         data = json.load(fh)
     data["receipt"] = None
@@ -553,7 +557,7 @@ def test_post_after_waived_head_records_kept_by_delta(repo, gh, monkeypatch):
     _review(repo)
     _commit_feature(repo)
     head = git(repo, "rev-parse", "HEAD")
-    gh.reply(f"repos/{SLUG}/statuses/{head}", CREATED)
+    gh.reply(f"repos/{SLUG}/statuses/{head}", created(head))
     monkeypatch.setattr(rs.review_ledger, "check_receipt", lambda root, ticket: (
         True, "receipt kept by delta gate: round 1 clean, reviewed head abc"))
 
@@ -581,3 +585,55 @@ def test_cli_check_exits_zero_on_a_success_status(crepo, gh):
     done = _cli(crepo, "check", "--head", head)
 
     assert done.returncode == 0 and done.stdout.startswith("REVIEW_GATE ALLOW")
+
+
+@pytest.mark.parametrize("counts", [None, [], "x"])
+def test_counts_of_a_clean_round_that_are_not_a_dict_are_unreadable(counts):
+    assert rs._counts({"verdict": "CLEAN", "counts": counts}) is None  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("mutate", [lambda row: row.pop("head"), lambda row: row.update(head=None)])
+def test_check_without_a_ticket_a_round_with_no_head_is_could_not_tell(crepo, gh, mutate):
+    _review(crepo)
+    head = git(crepo, "rev-parse", "HEAD")
+    gh.status(head, [_success()])
+    path = rl.ledger_path(str(crepo), T)
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    mutate(data["rounds"][-1])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+
+    code, lines = rs.check(str(crepo))
+
+    assert code == 2 and "no readable head" in lines[0]
+
+
+def test_post_requires_the_created_status_to_belong_to_the_head(repo, gh):
+    _review(repo)
+    head = _commit_feature(repo)
+    gh.reply(f"repos/{SLUG}/statuses/{head}", created("e" * 40))
+
+    code, lines = rs.post(str(repo), T)
+
+    assert code == 2 and "not reported as posted" in lines[0]
+
+
+def test_main_rejects_a_head_with_a_trailing_newline(crepo, capsys):
+    code = rs.main(["check", "--root", str(crepo), "--head", "a" * 40 + "\n"])
+
+    assert code == 2
+    assert "REVIEW_GATE" not in capsys.readouterr().out
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+def test_run_returns_when_a_child_holds_stdout_past_the_timeout(tmp_path, monkeypatch):
+    script = tmp_path / "slow"
+    script.write_text("#!/bin/sh\nsleep 30 &\nsleep 30\n", encoding="utf-8", newline="\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(rs, "GH_TIMEOUT", 1)
+
+    code, _, err = rs._run(["slow"], str(tmp_path))  # pylint: disable=protected-access
+
+    assert code == 124 and "timed out" in err
