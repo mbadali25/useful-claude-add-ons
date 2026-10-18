@@ -1159,8 +1159,9 @@ def _merged_note(merged, stale):
 def _head_note(root):
     """HEAD's sha for a refusal message, or `unknown` when git cannot say."""
     try:
-        done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-                              text=True, stdin=subprocess.DEVNULL, timeout=30, check=False)
+        done = subprocess.run([crew_common.require_tool("git"), "rev-parse", "HEAD"], cwd=root,
+                              capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                              timeout=30, check=False)
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     sha = done.stdout.strip()
