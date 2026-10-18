@@ -119,7 +119,11 @@ back conflicted, named as forgotten, for you to resolve by hand.
 review receipt rebuilds clean, the verify gate is clean, and the completion
 audit (the whole tree diffed against the scope base, not counting a file that
 is byte-identical to main as last merged) finds nothing outside scope. Any one failing refuses the close and names what to fix. On success it
-appends a metrics row, marks the ticket done, and clears a stale handoff.
+appends a metrics row, marks the ticket done, and clears a stale handoff. The metrics row (schema 1.1)
+carries tokens split by kind, each assistant message counted once, and a list-price cost. They are an
+attributed lower bound: only the Claude Code transcripts tied to the ticket by a `Ticket ID: <id>` line, a
+`/crew:<command> <id>` or its own worktree count (a dispatch prompt's `Ticket ID:` line ties a subagent), and
+when none can be tied both read `UNKNOWN`, never `0`.
 
 With the train armed, landing is part of done: `crew_train.py check-land --ticket T-0091 --pr
 <n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base

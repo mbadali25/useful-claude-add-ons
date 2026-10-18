@@ -88,7 +88,11 @@ never rewrites the commits — a rewrite is the owner's decision, and it stales 
    Print its lines verbatim; on exit 3 run the command it printed (Jira, SDP);
    on exit 1 tell me `tracker not updated: <reason>` — done still stands.
 2. Append this ticket's row to `.crew/metrics.jsonl` with the metrics
-   harness. Anything it cannot measure is written `UNKNOWN`, never `0`:
+   harness. Anything it cannot measure is written `UNKNOWN`, never `0`. The
+   row is schema 1.1: split token counts (each assistant message once),
+   a list-price cost, `tokensBasis: attributed lower bound` and the
+   attribution counts. Nothing tied to the ticket is `UNKNOWN`, not `0`; a
+   dispatch prompt's `Ticket ID: <id>` line ties a subagent to it:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
