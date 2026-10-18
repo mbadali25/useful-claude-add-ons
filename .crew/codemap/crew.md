@@ -154,7 +154,7 @@ draws it:
 — confirmed by reading both files in full, not merely their frontmatter.
 
 `review.md` dispatches `crew:reviewer` at this anchor
-(`plugin/crew/commands/review.md:451,467`), **not** the pre-1.0
+(`plugin/crew/commands/review.md` step 2c since L-0726; was `:451,467`), **not** the pre-1.0
 `qa-reviewer` — `TODO.md`'s "T2 (lane D) deferred items" entry recorded this
 as an open item ("`review.md` still dispatches `qa-reviewer`; switch to
 `reviewer` in T4") but the code at `6c497a14` shows it already done; a
@@ -2438,7 +2438,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `reviewer_changes` splits the changed paths from those set aside (graph.out, and ignored
   IDE_DIRS / CREW_LOGS / CREW_MARKERS); the stream is read by `kimi_probe.final_message`, the one
   parser. A Kimi round returns before L-0514's retry loop, so it is never retried in-process.
-  `commands/review.md` carries the Kimi probe row, step 2e and exits 2/8; `test_review_run_kimi.py`
+  `commands/review.md` carries step 2e and exit 8 (the Kimi probe row and the exit-2 prose moved into `review_run.py`'s `next:` table and `docs/crew/review.md` with L-0726); `test_review_run_kimi.py`
   and `sabotage_kimi.py` (registered in `sabotage.py`) hold the cases and mutations.
 
 ## The agents on Kimi (L-0777)
@@ -3120,8 +3120,8 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:569`), a
   `review: FINDINGS kept; ...` line (`:622`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:394`; null when review.json's value is missing or not a non-negative int, never 0).
-  `/crew:review` states the same verdict rule (`plugin/crew/commands/review.md:482-486`) and, in
-  step 3.1, shows every ignored line verbatim beside the BLOCK/FIX lines (`:498-500`); CLEAN is
+  `/crew:review` states the same verdict rule (`plugin/crew/commands/review.md`, "The verdict is the script's", since L-0726) and, in
+  step 3.1, shows every ignored line verbatim beside the BLOCK/FIX lines; CLEAN is
   exact, so a stray line beside it is still INCOMPLETE (`review_verdict.py:207-209`).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by
   `review_verdict.failure_class` (`plugin/crew/hooks/scripts/review_verdict.py:240`):
