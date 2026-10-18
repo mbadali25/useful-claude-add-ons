@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.45: per-ticket token and cost telemetry, and a goal cap that counts each message once (L-0728, slice 1)
+
+- **Summary.** `crew` 1.2.45: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
+- **B1, the row.** `crew_metrics.py record` writes schema `1.1` rows: `tokens` is an object `{input, output, cacheRead, cacheCreation, total}` (it was an integer), plus `tokensBasis`, `tokensAttribution {files, mainSessions, subagents, conflicting, conflictingMessages, unreadable}`, `pricesAsOf` and `pricesSource`. Old rows still read.
+- **B2, each message once.** `transcript_tokens` counts each assistant message once (keyed by `message.id`, else `uuid`, else file and line): Claude Code repeats a message's usage on every line it writes for it. `autopilot.maxTokensPerSession` therefore stops a goal run later than before for the same work (the stop is still `tokens > limit`); its description, CONFIG.md, the README and the guide say so.
+- **B3, the scan.** With no `--transcript`, `record` reads the transcripts under `CLAUDE_CONFIG_DIR` (or `~/.claude`) for every worktree of the repository, subagent files included, and ties a file to a ticket only by an exclusive rule: a `Ticket ID: <id>` line or `/crew:<command> <id>` in its user messages, or one linked worktree whose branch starts `<id>-`; a file that names two tickets, or cannot be read in full, belongs to none and is counted (`conflicting`, `unreadable`). It stores ids, usage and models only, never prompt text. `--no-scan` restores the old behaviour; `--transcript` with `--no-scan` exits 2.
+- **B4, cost.** `cost` is computed from a built-in dated price table (`PRICES`, list prices; Haiku 5.5 over a 100K prompt at its higher tier); an unpriced model with tokens makes it `UNKNOWN`, never a partial sum. `--cost` still overrides.
+- **B5, the fold.** `effective_ticket_metrics` folds `tokens`, `cost`, their basis, attribution and price fields as one unit: the latest 1.1 row replaces the group, `UNKNOWN` included; an `escaped` row leaves it alone.
+- **B6, compare.** `compare` selects schema 1.0 and 1.1 `record` rows.
+- **Docs.** `done.md` step 2, the README metrics table, the daily-workflow guide, the done diagram and the code map describe the 1.1 row. No hook, config key, command name or plugin path changes.
+
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real

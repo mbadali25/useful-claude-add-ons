@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.45**: Per-ticket token and cost telemetry, and a goal cap that counts each message once. `crew` 1.2.45: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
 - **crew 1.2.43**: Every crew test runs under a home of its own. `crew` 1.2.43: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
-- **crew 1.2.42**: The wave sabotage table covers the lane launch model. `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
