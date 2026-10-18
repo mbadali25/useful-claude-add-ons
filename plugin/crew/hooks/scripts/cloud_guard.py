@@ -1169,7 +1169,7 @@ def _replace_strings(head, args):
             found.append(arg.partition("=")[2] or "{}")
         elif arg[:2] in ("-I", "-i", "-J") and len(arg) > 2:
             found.append(arg[2:])
-        index += 1
+        index += 2 if arg in takes else 1
     return tuple(p for p in found if p)
 
 
