@@ -765,8 +765,8 @@ TOOLING_MUTATIONS += (
         # --ci diffs against a base like Stop: a committed file is invisible.
         "--ci: the scope narrows to the changed files",
         GATE_SH,
-        'if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then\n',
-        'if [ "${1:-}" = "--all" ]; then\n',
+        'if [ "$CI_ALL_SEEN" -eq 1 ] || [ "$CI_MODE" -eq 1 ]; then\n',
+        'if [ "$CI_ALL_SEEN" -eq 1 ]; then\n',
         _CI + "test_a_rule_on_a_file_the_branch_never_changed_still_runs[sh]",
     ),
     (
