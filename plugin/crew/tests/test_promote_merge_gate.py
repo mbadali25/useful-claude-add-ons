@@ -37,6 +37,9 @@ import crew_fixtures
 _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
 _PROMOTE = os.path.join(_PLUGIN, "commands", "promote.md")
 _CONFIG_MD = os.path.join(_PLUGIN, "CONFIG.md")
+# "What is enforced, and what is not" moved out of the command (L-0726, BC6);
+# the repo-only rationale file is where that claim is read now.
+_PROMOTE_RATIONALE = os.path.join(_PLUGIN, os.pardir, os.pardir, "docs", "crew", "promote.md")
 
 # Outside the crew plugin on purpose, exactly as `test_docs_routing.py` reaches
 # into doc-builder. The claim under test is "crew's prose describes another
@@ -296,7 +299,7 @@ def test_the_merge_gate_is_listed_as_not_enforced():
     """No hook fires on `merge_gate.sh`, and `promote-gate.sh` does not read
     `bitbucket.mergeGate` at all. A section that reads like a gate while
     nothing enforces it is the gap that part of promote.md exists to state."""
-    not_enforced = _read(_PROMOTE).split("**NOT enforced", 1)
+    not_enforced = _read(_PROMOTE_RATIONALE).split("**NOT enforced", 1)
     assert len(not_enforced) == 2
 
     tail = _flat(not_enforced[1])

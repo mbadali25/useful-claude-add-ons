@@ -25,7 +25,7 @@ Build `.crew/verify.json` — the map from changed paths to the checks they requ
    confirm red, revert. An unverified mapping is a guess written in JSON.
    Report any pairing that stayed green — that is a coverage hole worth knowing.
 6. Time each check. Anything over ~3 minutes belongs in CI, not the local gate.
-7. Write the map with a `why` on every rule and `"unmapped": "fail"`. Then, from the repo root, run
+7. Write the map with a `why` and a unique `id` on every rule and `"unmapped": "fail"`. Then, from the repo root, run
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" agents --root .`. Unless it
    printed `hand-written, left alone` or a rule already runs `agents --check`, add the rule that the
    same script's `agents-rule` prints to `rules`, then run the `agents` command again.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@983cbc8ec
+anchor: useful-claude-add-ons@a2755ab5a
 verified: 2026-10-19
 
 ## Re-derive provenance
@@ -5452,3 +5452,14 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 **L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse now 10 entries, 36 in all). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+## Re-anchor provenance (L-0726 slice 2)
+
+Re-anchored 983cbc8ec -> a2755ab5a (sha and this note only). The slice cut `plugin/crew/README.md` to an
+entry point (its reference sections are now under `docs/crew/reference/`, with a "Moved sections" index),
+`commands/promote.md` to 96 lines (rationale in `docs/crew/promote.md`), and gave every `.crew/verify.json`
+rule an `id` (each insertion adds one line, so a `.crew/verify.json:<line>` citation in this file is off
+by up to the rule's index; several were already inexact on main before the slice and are historical
+provenance, not current claims; re-derive them with `/crew:onboard --refresh crew`, tracked under
+L-0837/L-0764). The `plugin/crew/README.md:<line>` citations are the same: historical provenance of
+past commits, not claims about the present file. No behaviour documented here changed.

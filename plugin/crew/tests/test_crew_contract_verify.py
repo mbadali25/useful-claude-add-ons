@@ -331,7 +331,8 @@ def test_no_bindings_means_no_fetch(capsys, root, calls):
 
 def test_readme_and_docstring_state_verify_options():
     """Review round 1: the docs said every command takes --channel."""
-    readme = os.path.join(os.path.dirname(os.path.abspath(context.__file__)), os.pardir, "README.md")
+    readme = os.path.join(os.path.dirname(os.path.abspath(context.__file__)), os.pardir, os.pardir,
+                          os.pardir, "docs", "crew", "reference", "16-context-handoff.md")
     with open(readme, encoding="utf-8") as handle:
         text = " ".join(handle.read().split())
     assert "`--channel` (not on `verify`, which reads each binding's channel from the binding)" in text

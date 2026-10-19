@@ -362,7 +362,7 @@ Deeper: [Memory and Obsidian](memory-and-obsidian.md).
 ## Multi-session work
 
 Source: `plugin/crew/hooks/scripts/crew_train.py` and
-`plugin/crew/README.md`, section 10.
+`docs/crew/reference/10-the-daily-loop.md` (moved out of the crew README's section 10).
 
 Several sessions can work one repository at once, each in its own git
 worktree:
@@ -445,7 +445,7 @@ Cause: a corrupt `StartupProfileData-NonInteractive` file in
 write: several pwsh processes (a snap install, here) rewriting that one file
 at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
 own test suites now give every pwsh they spawn a throwaway `XDG_CACHE_HOME`,
-so they cannot corrupt it (`plugin/crew/README.md`, section 25). Ticket
+so they cannot corrupt it (`docs/crew/reference/25-command-and-agent-reference.md`, moved out of the crew README's section 25). Ticket
 T-0506 tracks the cause.
 
 **`--accept` refuses: "the tree has changed since that review".**

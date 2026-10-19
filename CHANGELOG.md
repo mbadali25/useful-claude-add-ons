@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.55: the instruction surface is capped: README, promote.md and verify.json rationale move out of the plugin (L-0726, slice 2)
+
+- **Summary.** `crew` 1.2.55: `plugin/crew/README.md` is an entry point of at most 800 lines, `commands/promote.md` is at most 120 lines and 12,288 bytes, and the rationale that was in them (and in `.crew/verify.json`'s `why` text) now lives under `docs/crew/`, with new gates that stop it growing back.
+- **BC1.** `plugin/crew/README.md` is rebuilt as an entry point; its reference sections moved verbatim to `docs/crew/reference/` and the README carries a "Moved sections" index (old title, new path). Section numbers and anchors of moved sections no longer resolve in the README; in-repo pointers are repointed.
+- **BC4.** In this repo every `.crew/verify.json` rule has a unique kebab-case `id` and a `why` of at most 300 characters; the full text is in `docs/crew/verify-rationale.md`, one `## <id>` section per rule. In other repos `id` stays optional and `why` uncapped.
+- **BC5.** `scripts/check_instructions.py` fails any command file over 12,288 bytes that is not in `.budget-allowance.json`, and a README over 800 lines; `review.md` and `promote.md` lose their allowances, and a listed file may not grow in bytes.
+- **BC6.** `commands/promote.md`'s rationale ("What is enforced, and what is not", "What not to do", the merge-gate background) moved to `docs/crew/promote.md`.
+- **BC7.** Rationale moved to `docs/crew/` and `docs/crew/reference/` is repo-only: a marketplace install of crew no longer carries it in `plugin/crew/`.
+- **Docs.** ADR 0006, the guides, `plugin/PLUGINS.md`, `BUDGETS.md`, the code map and the diagrams' Embed headers follow. No config key, command, skill, agent or hook changes.
+
 ### Changed — crew 1.2.54: per-ticket token and cost telemetry, and a goal cap that counts each message once (L-0728, slice 1)
 
 - **Summary.** `crew` 1.2.54: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.

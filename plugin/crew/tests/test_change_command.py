@@ -30,6 +30,9 @@ import crew_upgrade
 _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
 _CHANGE = os.path.join(_PLUGIN, "commands", "change.md")
 _PROMOTE = os.path.join(_PLUGIN, "commands", "promote.md")
+# The "What is enforced, and what is not" rationale moved out of the command
+# (L-0726, BC6); it is repo-only, so these assertions read it from docs/.
+_PROMOTE_RATIONALE = os.path.join(_PLUGIN, os.pardir, os.pardir, "docs", "crew", "promote.md")
 _SKILL = os.path.join(_PLUGIN, "skills", "crew-change", "SKILL.md")
 _CONFIG_MD = os.path.join(_PLUGIN, "CONFIG.md")
 _SCRIPT = os.path.join(_PLUGIN, "hooks", "scripts", "crew_change.py")
@@ -178,11 +181,12 @@ def test_promote_says_the_default_changes_nothing_and_that_this_is_prose():
     what stops the section reading as enforced when no hook fires on any of
     it."""
     flat = _flat(_read(_PROMOTE))
+    rationale = _flat(_read(_PROMOTE_RATIONALE))
 
     assert "`false` is the shipped default and means this section does not " \
            "exist" in flat
-    assert "The change-request section is prose in exactly the same way" in flat
-    assert "promote-gate.sh` does not read `change.requireForProduction`" in flat
+    assert "The change-request section is prose in exactly the same way" in rationale
+    assert "promote-gate.sh` does not read `change.requireForProduction`" in rationale
 
 
 # ---- the skill holds the wording -------------------------------------------
