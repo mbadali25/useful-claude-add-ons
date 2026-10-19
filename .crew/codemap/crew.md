@@ -2930,7 +2930,14 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   — 10 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing
   the pre-1.0 `.crew/metrics.md` (`crew_metrics.py`'s module docstring,
-  **not otherwise read**). Still machine-local: the `.gitignore` un-ignore
+  **not otherwise read**). DERIVED (L-0728): `crew_metrics.record` (`plugin/crew/hooks/scripts/crew_metrics.py:999`)
+  now writes schema `1.1` rows: `tokens` an object of split counts with each assistant message
+  counted once (`_messages` `:587`), `cost` from the dated `PRICES` table (`:477`, `cost_usd` `:721`;
+  UNKNOWN when a counted model has no price), and `tokensBasis: attributed lower bound` with
+  `tokensAttribution` from `attributed_usage` (`:905`), which reads the Claude Code transcripts of
+  every worktree (main sessions and `subagents/` files, sidechain records included) and ties a file to
+  a ticket only by an exclusive `Ticket ID:` line, `/crew:<command> <id>` or one linked worktree; a file it cannot read in full is `unreadable` and belongs to nobody.
+  `effective_ticket_metrics` (`:1084`) folds the measurement group as one unit. Still machine-local: the `.gitignore` un-ignore
   list at this anchor is exactly four paths — `!.crew/codemap/`,
   `!.crew/endpoints.json`, `!.crew/verify.json` and, since T-0085, `!.crew/standards.md`
   — confirmed by reading `.gitignore:279-337` directly; `metrics.jsonl` is not among them.
@@ -5293,7 +5300,7 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `goal_lock` (`:100`). `next_goal_ticket` (`:152`) reads `ticket_state` (`:124`; `CLOSED`
   `:65`); `goal_run` (`:342`) asks `resume_target(goal=)` and holds `maxTicketsPerRun` and
   `maxTokensPerSession` (`caps` `:84`, `transcript_for` `:310`, `session_tokens` `:325`,
-  `crew_metrics.transcript_tokens(fields=)` `plugin/crew/hooks/scripts/crew_metrics.py:440`);
+  `crew_metrics.transcript_tokens(fields=)` `plugin/crew/hooks/scripts/crew_metrics.py:601`, which counts each assistant message once, L-0728);
   `ticket_approve` (`:418`) wraps T-0010's `approve` for one minted ticket.
 - DERIVED. Call sites in `plugin/crew/hooks/scripts/crew_autopilot.py`: `backlog` arms in
   `_settings_at` (`:1814`); `resume_target(goal=)` (`:1624`) and the handoff's goal branch

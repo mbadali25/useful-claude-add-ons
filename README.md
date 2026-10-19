@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.54**: Per-ticket token and cost telemetry, and a goal cap that counts each message once. `crew` 1.2.54: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
 - **crew 1.2.53**: The config ratchet diagram in crew's README cites the current line. `crew` 1.2.53 (L-0789, a refresh): the config ratchet diagram embedded in crew's README cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No behaviour changes.
-- **crew 1.2.52**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

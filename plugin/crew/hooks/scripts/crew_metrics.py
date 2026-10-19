@@ -958,6 +958,7 @@ def attributed_usage(root, ticket):
                 entry[3] = True
             if owner[path] == ticket:
                 entry[4] = True
+            # across files there is no file order to call "last": keep the fullest snapshot (largest total) of a repeated message
             if sum(kinds) > sum(entry[0]):
                 entry[0], entry[1] = kinds, model
     mine = [(entry[0], entry[1]) for entry in seen.values() if not entry[3] and entry[2] == ticket]
