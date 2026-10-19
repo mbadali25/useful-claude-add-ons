@@ -237,6 +237,21 @@ def test_ci_all_price_stay_verbose(tmp_path, flag):
     assert not (root / ".crew" / ".verify-gate.log").exists()
 
 
+@pytest.mark.parametrize("flags", [("--all", "--verbose"), ("--verbose", "--all")])
+def test_all_runs_every_rule_whichever_order_verbose_comes_in(tmp_path, flags):
+    big = {"paths": ["a.py"], "seconds": 90, "reach": "local", "run": ["touch ran-over-budget"], "why": "over budget"}
+    root = _repo(tmp_path, _map_with(big, base=False))
+    subprocess.run(("git", "add", "a.py"), cwd=root, check=True, capture_output=True, text=True, timeout=_T)
+    subprocess.run(("git", "commit", "-q", "-m", "track a.py"), cwd=root, check=True,
+                   capture_output=True, text=True, timeout=_T)
+
+    result = _run(root, *flags)
+
+    assert result.returncode == 0
+    assert (root / "ran-over-budget").exists()
+    assert "stop budget" not in result.stderr
+
+
 def test_unchanged_same_session_prints_one_line_exit_2(tmp_path):
     root = _repo(tmp_path, _map_with(_fail_rule("echo boom; exit 1")))
 

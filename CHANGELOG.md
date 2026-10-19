@@ -9,14 +9,25 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.51: /crew:review is a script, not 230 lines of shell (L-0726, slice 1)
+### Changed — crew 1.2.52: /crew:review is a script, not 230 lines of shell (L-0726, slice 1)
 
-- **Summary.** `crew` 1.2.51: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **Summary.** `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
 - **`review_run.py --prepare`.** Does what the snippets did before a reviewer runs, in the same order: the ticket (the one active `.work/INDEX.md` row, else stop), a claimed scratch directory, the review base (`scope_base.py --base`), dispatch staleness against that base, `crew_config.py --models --json`, the author families and `ELIGIBLE`, the bundle, `changed.txt`, the codemap landmines (capped at 200 lines), and `prompt.txt`. It reserves no round and launches no reviewer, and it reproduces `changed.txt`, the bundle, `context.txt` and `prompt.txt` byte for byte on seven fixture scenarios captured from the old snippets (`golden/prepare/`). It prints `KEY=VALUE` lines, then one `next:`.
 - **`--resolve-run --probe-status <n>`.** The live Codex probe stays `--probe`; this turns its exit code into `FALLBACK` / `RUN_PROVIDER` / `RUN_MODEL` (the one-line `python3 -c` review.md carried) and the command to run.
 - **BC2 `review.md` no longer carries shell or its variables.** `$SCRATCH`, `$ELIGIBLE`, `$AUTHORS`, `$STALE_FLAG`, `$FALLBACK`, `$RUN_PROVIDER`, `$RUN_MODEL`, `$PROBE_STATUS` and `qm()` are gone from it: anything outside crew that copied them (lane briefs, prompts, handoff recipes) calls `review_run.py --prepare` instead. Steps 2a-2e, 2d and 3.1-3.9 keep their labels; the rationale moved to `docs/crew/review.md`, which the installed plugin does not ship.
 - **BC3 Every `review_run.py` exit ends with one `next: <action>` line**, picked by reason (exit 2 and exit 9 each have several causes): `--prepare`, `--probe` (5, 6, 7), `--reserve-only`, `--round`, the run (0, 1, 2, 3, 4, 8, 9, 10) and argparse errors. A caller that parses its stdout by exact line count or by its last line sees a new last line. Exit codes are unchanged; `--ticket`, `--scratch` and `--provider` are now required by the code (with the same argparse message) rather than by argparse, so `--prepare` can omit them.
 - **BC8 An unreadable input is a stop, not a guess.** `--prepare` prints a `could not tell` line and exits 11 where the snippets carried on: an unreadable `.work/INDEX.md`, review ledger, `.crew/verify.json`, dispatch record or codemap note, a failed `git log` of the base, a failed models report or a ticket contract that did not build. A `.crew/verify.json` that is absent, empty, or has no matching rule are three different outputs. Specialists are now matched against the files the bundle carries (committed, staged, unstaged and untracked), where the old step 0b listed only `git diff --name-only HEAD` and untracked files and so found none for a change that was already committed; an agent that is not installed is `MISSING`, one that could not be checked is `unknown` (`verify_agents.py`'s answer).
+### Fixed — crew 1.2.51: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+
+- **Summary.** `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+  `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
+  Stop that defers the expensive rules.
+- **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
+  before `--all`, while three later checks read only the first argument: the diff-baseline read, the
+  whole-tree scope and the budget flag. The PowerShell gate has switch parameters and never had the
+  problem, so the two flavours disagreed.
+- **Unchanged.** `--all` and `--ci` alone, `--all --verbose`, and the PowerShell flavour.
+
 ### Changed — crew 1.2.50: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
 
 - **Summary.** `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
