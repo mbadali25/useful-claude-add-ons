@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.53**: The config ratchet diagram in crew's README cites the current line. `crew` 1.2.53 (L-0789, a refresh): the config ratchet diagram embedded in crew's README cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No behaviour changes.
 - **crew 1.2.52**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
-- **crew 1.2.51**: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does. `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted Stop that defers the expensive rules.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
