@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.50**: A missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status. `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
 - **crew 1.2.49**: Migrate backup messages name `.crew/backups` the same on Windows. `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
-- **crew 1.2.48**: /crew:status no longer crashes on a file in .crew/backups. `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
