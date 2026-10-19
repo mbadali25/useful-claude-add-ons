@@ -1029,6 +1029,19 @@ def main() -> int:
           "orphan heading 'gone-rule'")
     check("a rule with no rationale heading is red",
           run_verify_rationale(good_rules, "## alpha-rule\n"), True, "no '## beta' heading")
+    check("a rule with no why is red",
+          run_verify_rationale(_verify_rules({"id": "alpha"}), "## alpha\n"), True, "has no why")
+    check("a rule with a null why is red",
+          run_verify_rationale(_verify_rules({"id": "alpha", "why": None}), "## alpha\n"),
+          True, "has no why")
+    check("a rule with an empty why is red",
+          run_verify_rationale(_verify_rules({"id": "alpha", "why": ""}), "## alpha\n"),
+          True, "has no why")
+    check("a heading inside a longer fence is not a rationale heading",
+          run_verify_rationale(good_rules, good_doc + "\n````\n```\n## fenced-example\n````\n"), False)
+    check("a heading after a longer fence closes is real, so an orphan is red",
+          run_verify_rationale(good_rules, good_doc + "\n````\n```\n````\n## real-orphan\n"), True,
+          "orphan heading 'real-orphan'")
     check("a rule with no id is red",
           run_verify_rationale(_verify_rules({"why": "a"}), ""), True, "has no id")
     check("a non-kebab-case id is red",

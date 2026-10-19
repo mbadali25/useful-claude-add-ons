@@ -609,7 +609,7 @@ under `terraformApply: allow` these now ask (and are denied unattended) where
 they used to run; approve one command with the marker the refusal names.
 `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`, nor
 its review-evidence check (L-0703).
-Details: [CONFIG.md §16](CONFIG.md), `environments.*`.
+Details: [CONFIG.md §16](../../../plugin/crew/CONFIG.md), `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
 Azure subscriptions this checkout may act as. A command resolving to anything
@@ -942,7 +942,7 @@ entire point is that a repo cannot widen it must not have two implementations.
 Any failure of that resolver is `block`, with the reason on stderr: "could not
 check" never becomes "checked, and fine".
 
-The full key reference is **[`CONFIG.md`](CONFIG.md)** — every key in both
+The full key reference is **[`CONFIG.md`](../../../plugin/crew/CONFIG.md)** — every key in both
 layers with its type, its default, which layer may set it, and a `path:line`
 for the code that reads it. It is derived by executing `default_config()` and
 `default_global_config()` rather than by reading comments, and it marks the

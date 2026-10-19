@@ -776,15 +776,21 @@ def check_readme_ceiling(fail) -> None:
         fail(f"{README_REL}: {lines} lines, ceiling {README_MAX_LINES}")
 
 
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+
+
 def _fence_free_lines(text: str) -> list[tuple[int, str]]:
     """(1-based line number, line) outside fenced code blocks."""
     out = []
-    fenced = False
+    opener = ""  # the open fence: its character repeated as often as it opened
     for number, line in enumerate(text.splitlines(), start=1):
-        if line.lstrip().startswith(("```", "~~~")):
-            fenced = not fenced
-            continue
-        if not fenced:
+        match = FENCE_RE.match(line)
+        if match and not opener:
+            opener = match.group(1)
+        elif (match and opener and match.group(1)[0] == opener[0]
+              and len(match.group(1)) >= len(opener) and not match.group(2).strip()):
+            opener = ""
+        elif not opener:
             out.append((number, line))
     return out
 
@@ -824,7 +830,9 @@ def check_verify_rationale(fail) -> None:
             seen.add(rule_id)
             ids.append(rule_id)
         why = rule.get("why")
-        if isinstance(why, str) and len(why) > VERIFY_WHY_MAX:
+        if not isinstance(why, str) or not why.strip():
+            fail(f"{VERIFY_JSON_REL}: rules[{index}] has no why (a non-empty string is required here)")
+        elif len(why) > VERIFY_WHY_MAX:
             fail(f"{VERIFY_JSON_REL}: rules[{index}] why is {len(why)} chars, "
                  f"cap {VERIFY_WHY_MAX} - move the rest to {VERIFY_RATIONALE_REL}")
     doc = os.path.join(ROOT, *VERIFY_RATIONALE_REL.split("/"))

@@ -22,7 +22,7 @@ shell a given machine has, so one flavour failing is expected rather than a
 fault. Only the `PreToolUse` guards branch, and they branch on which **tool** the
 command came from rather than on the OS, so a `Bash` call is judged by bash rules
 even on Windows. See
-[How the Windows half works](#how-the-windows-half-works).
+[How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
 
 **If WSL is available, run Claude Code inside it.** One shell, one code path, and
 the harness matches CI. Native Windows works but doubles the surface area for no

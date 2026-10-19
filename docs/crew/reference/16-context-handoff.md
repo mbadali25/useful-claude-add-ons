@@ -172,7 +172,7 @@ every repo. The other keys layer normally, repo over machine.
    the handoff and its `resume:` line and saying the process that started it
    must start a new one. A session that cannot be identified, or whose
    entrypoint was never measured, types nothing either (`auto` falls back to
-   plain `notify`). [CONFIG.md §14](CONFIG.md) has every rule.
+   plain `notify`). [CONFIG.md §14](../../../plugin/crew/CONFIG.md) has every rule.
 6. The target window is identified uniquely (the table above), walking up
    from that process: through another Claude Code session, past a chain that
    could not be read, or into a window that hosts another terminal, it
