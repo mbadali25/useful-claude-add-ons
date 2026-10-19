@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@304e58b11
+anchor: useful-claude-add-ons@48db91a13
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -372,7 +372,7 @@ Notable rules, re-read directly:
   `scope_base.py`, `review_patch.py`, `review_verdict.py`, `crew_incident.py`,
   `crew_migrate.py`, `crew_metrics.py` and `crew_ticket.py` (the modules the stamp, the gate,
   `proposals` and the metric read), and since L-0522 `review_delta.py`, `review_ledger.py` and
-  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries at the end of
+  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries near the end of
   `REVIEW_FIX_MUTATIONS` in `plugin/crew/tests/sabotage_review.py`) → `python3 -m pytest` over the five test files plus
   `test_review_run_launch.py`, `test_review_ledger.py`, `test_lifecycle_commands.py` and (L-0522)
   `test_review_delta.py`,
