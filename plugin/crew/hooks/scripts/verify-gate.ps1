@@ -179,7 +179,6 @@ function Get-CrewTopLevelSession([string]$Json) {
   $bare = [regex]::Replace([regex]::Replace($prefix, '\\.', ''), '"[^"]*"', '')
   $braces = [regex]::Matches($bare, '\{').Count - [regex]::Matches($bare, '\}').Count
   $brackets = [regex]::Matches($bare, '\[').Count - [regex]::Matches($bare, '\]').Count
-  if ($braces -ne 1 -or $brackets -ne 0) { return "" }
   return $value.Groups[1].Value
 }
 function Get-CrewSha256([string]$Text) {

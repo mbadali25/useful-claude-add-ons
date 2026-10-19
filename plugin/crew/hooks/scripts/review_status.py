@@ -47,6 +47,8 @@ import sys
 import threading
 import time
 
+import crew_common
+
 CONTEXT = "crew/review"
 ALLOW, BLOCK, UNKNOWN = "ALLOW", "BLOCK", "COULD_NOT_TELL"
 EXIT = {ALLOW: 0, BLOCK: 1, UNKNOWN: 2}
@@ -80,7 +82,7 @@ def _kill_group(proc):
         if os.name != "nt":
             os.killpg(proc.pid, 9)
         else:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False,
+            subprocess.run([crew_common.require_tool("taskkill"), "/T", "/F", "/PID", str(proc.pid)], check=False,
                            capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
     except (OSError, subprocess.SubprocessError):
         pass
