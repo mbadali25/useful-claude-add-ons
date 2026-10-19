@@ -20,6 +20,99 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **B6, compare.** `compare` selects schema 1.0 and 1.1 `record` rows.
 - **Docs.** `done.md` step 2, the README metrics table, the daily-workflow guide, the done diagram and the code map describe the 1.1 row. No hook, config key, command name or plugin path changes.
 
+### Changed — crew 1.2.53: the config ratchet diagram in crew's README cites the current line (L-0789)
+
+- **Summary.** `crew` 1.2.53 (L-0789, a refresh): the config ratchet diagram embedded in crew's README
+  cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No
+  behaviour changes.
+- **Diagrams re-anchored.** `docs/diagrams/data-flow-crew-config.mmd` and
+  `data-flow-crew-config-ratchet.mmd` are re-anchored to 7c9e13349 (crew 1.2.52); since a792ce66b only `crew_migrate.py` (L-0782) changed among their anchors, and the main diagram already carried that note. Since their last anchor,
+  `CONFIG.md`, `crew_context.py` and `crew_state.py` changed for L-0805 (`context.warnAt` 0.4), and
+  L-0772 and SRL-2308 had moved the lines the ratchet part cites in `crew_guards.py` and
+  `crew_config.py`. The ratchet part's Note lines now carry the measured counts (12 guards, 15
+  read-side and 16 write-side ratchet keys) and current line numbers; no box or arrow was added or
+  removed.
+
+### Changed — crew 1.2.52: /crew:review is a script, not 230 lines of shell (L-0726, slice 1)
+
+- **Summary.** `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **`review_run.py --prepare`.** Does what the snippets did before a reviewer runs, in the same order: the ticket (the one active `.work/INDEX.md` row, else stop), a claimed scratch directory, the review base (`scope_base.py --base`), dispatch staleness against that base, `crew_config.py --models --json`, the author families and `ELIGIBLE`, the bundle, `changed.txt`, the codemap landmines (capped at 200 lines), and `prompt.txt`. It reserves no round and launches no reviewer, and it reproduces `changed.txt`, the bundle, `context.txt` and `prompt.txt` byte for byte on seven fixture scenarios captured from the old snippets (`golden/prepare/`). It prints `KEY=VALUE` lines, then one `next:`.
+- **`--resolve-run --probe-status <n>`.** The live Codex probe stays `--probe`; this turns its exit code into `FALLBACK` / `RUN_PROVIDER` / `RUN_MODEL` (the one-line `python3 -c` review.md carried) and the command to run.
+- **BC2 `review.md` no longer carries shell or its variables.** `$SCRATCH`, `$ELIGIBLE`, `$AUTHORS`, `$STALE_FLAG`, `$FALLBACK`, `$RUN_PROVIDER`, `$RUN_MODEL`, `$PROBE_STATUS` and `qm()` are gone from it: anything outside crew that copied them (lane briefs, prompts, handoff recipes) calls `review_run.py --prepare` instead. Steps 2a-2e, 2d and 3.1-3.9 keep their labels; the rationale moved to `docs/crew/review.md`, which the installed plugin does not ship.
+- **BC3 Every `review_run.py` exit ends with one `next: <action>` line**, picked by reason (exit 2 and exit 9 each have several causes): `--prepare`, `--probe` (5, 6, 7), `--reserve-only`, `--round`, the run (0, 1, 2, 3, 4, 8, 9, 10) and argparse errors. A caller that parses its stdout by exact line count or by its last line sees a new last line. Exit codes are unchanged; `--ticket`, `--scratch` and `--provider` are now required by the code (with the same argparse message) rather than by argparse, so `--prepare` can omit them.
+- **BC8 An unreadable input is a stop, not a guess.** `--prepare` prints a `could not tell` line and exits 11 where the snippets carried on: an unreadable `.work/INDEX.md`, review ledger, `.crew/verify.json`, dispatch record or codemap note, a failed `git log` of the base, a failed models report or a ticket contract that did not build. A `.crew/verify.json` that is absent, empty, or has no matching rule are three different outputs. Specialists are now matched against the files the bundle carries (committed, staged, unstaged and untracked), where the old step 0b listed only `git diff --name-only HEAD` and untracked files and so found none for a change that was already committed; an agent that is not installed is `MISSING`, one that could not be checked is `unknown` (`verify_agents.py`'s answer).
+### Fixed — crew 1.2.51: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+
+- **Summary.** `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+  `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
+  Stop that defers the expensive rules.
+- **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
+  before `--all`, while three later checks read only the first argument: the diff-baseline read, the
+  whole-tree scope and the budget flag. The PowerShell gate has switch parameters and never had the
+  problem, so the two flavours disagreed.
+- **Unchanged.** `--all` and `--ci` alone, `--all --verbose`, and the PowerShell flavour.
+
+### Changed — crew 1.2.50: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
+
+- **Summary.** `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
+- **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
+  host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
+- **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (strict UTF-8 JSON with no duplicate key, at most 4 MiB; the sha asked, a complete
+  list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
+  unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
+- **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
+- **Not done here.** Nothing publishes the status yet: the producer (`post`) moves to L-0821, rebuilt on one validated ledger
+  read, with wiring into `/crew:done`, `check-land` and autopilot ship and a guard on a raw `gh pr merge`. Until then every
+  head reads COULD_NOT_TELL, which is safe. Requiring `crew/review` in branch protection is the repository owner's setting.
+  A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
+
+### Fixed — crew 1.2.49: migrate backup messages name `.crew/backups` the same on Windows (L-0782)
+
+- **Summary.** `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
+- **Cause.** `scan_backups` and `--rollback` interpolated `BACKUP_DIR` (`.crew\backups` on Windows) into messages while every other path went through `_rel`; and Windows raises `WinError 267` rather than `FileNotFoundError` for a dangling link, so the "link to a missing target" wording was never reached.
+- **Fix.** Messages use `BACKUP_DIR_SHOWN` (`.crew/backups`); the dangling-link check runs before the generic `OSError` wording. Three tests simulate the backslash constant and the `WinError` on Linux.
+- **Docs.** none - no document quotes the changed wording.
+
+### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
+
+- **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
+  file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
+- **Cause.** `crew_migrate.find_interrupted` opened `<entry>/manifest.json` for every name in
+  `.crew/backups/`; for a regular file that raised `NotADirectoryError`, which nothing caught, and it
+  also returned "nothing interrupted" on any listing error. `/crew:migrate --rollback <file>` crashed the same way.
+- **Fix.** `crew_migrate.scan_backups(root)` replaces it and sorts each entry into three outcomes: not a
+  backup (a file, or a folder with no manifest: skipped), an interrupted or unparseable backup (reported
+  as before), or could not tell (a symlinked or unreadable manifest, an unlistable `.crew/backups`: named
+  with the reason). Only an absent `.crew/backups/` means clean. `/crew:status` prints
+  `migrate  could not tell - <path>: <why>` and carries on; the migrate preview lists a conflict;
+  `--rollback` of a non-directory is refused in one line. Nothing `/crew:migrate --apply` writes changes.
+- **Docs.** `status.md` migrate row and note, the quickstart troubleshooting row, the status diagram's line anchors.
+
+### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+
+- **Summary.** `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head
+  has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
+  `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
+  itself, so `/crew:review` stops rather than reporting "nothing to review".
+- **Why.** The harness half of L-0765 (TSS-win report: a main-tip release can never pass promote-gate).
+  Once a reviewed head is in main, `merge-base <head> main` is the head, so the rebuild dropped every
+  path and no accepted round could be checked again; release mode (L-0765) needs that check. And on the
+  base branch with no record, the merge-base fallback is HEAD itself: an unknown start read as an empty
+  change.
+- **Unchanged.** Every existing caller of `reviewed_bundle` and `_ticket_base_tree` (no `merged`), and
+  `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
+  its fork point still gets HEAD.
+- **Round 2 FIXes closed here (L-0775).** A base branch configured on a remote other than `origin`
+  (`upstream/main`) is now the base branch too, a failed `git remote` listing is could-not-tell, and
+  the three controls the round named exist: a start recorded at the current HEAD still answers, a
+  failed ancestry probe in `merged_main.pinned` is could-not-tell, and each has a sabotage entry run red.
+- **Round 3 FIXes closed here.** A local ticket branch named like the remote base (`origin/main`) at
+  its fork point is a ticket branch and still gets HEAD, and `merged_main.pinned` reads a commit that
+  shares no history with the ticket start as could-not-tell instead of an applied pin; each has a test
+  and a sabotage entry run red.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real

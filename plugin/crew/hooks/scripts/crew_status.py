@@ -710,9 +710,12 @@ def collect(root, memory=False):
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))
     lines.append("handoff  " + ("pending (.work/HANDOFF.md)" if handoff else "none"))
-    interrupted = crew_migrate.find_interrupted(root)
+    interrupted, unknown = crew_migrate.scan_backups(root)
     if interrupted:
         lines.append(f"migrate  INTERRUPTED apply at {interrupted} - /crew:migrate --rollback it")
+    if unknown:
+        more = f" (+{len(unknown) - 1} more)" if len(unknown) > 1 else ""
+        lines.append(f"migrate  could not tell - {unknown[0]}{more}")
     if memory:
         lines += _memory_lines(root, MAX_LINES - len(lines))
     if len(lines) > MAX_LINES:
