@@ -5076,16 +5076,16 @@ flowchart TB
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-47"}
         dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:49-61"}
         dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:63-71"}
-        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
+        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-100"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
         dn6 -- "MISSING / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:103-106"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:108-113"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :113-114"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:115-120" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:102-105"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:107-112"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :112-113"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:114-119" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
