@@ -40,7 +40,7 @@ summary above or below it, and do not pad it with advice.
 | `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix (which never overrides a `!` line of yours: it names the line instead) | git missing, a settings file that will not parse, a nested `.graphifyignore`, an unexcluded nested repository, a symlink leaving the repo, a deny-all `Read` rule |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` - in a linked worktree, the main checkout's `.crew/`, named by its path; this worktree's own copies, if any, are named on the same line as `not counted` | `could not tell (...)` when git cannot name the main checkout; nothing is read, and the worktree's own copy is never the fallback |
 | `handoff` | `.work/HANDOFF.md` present | - |
-| `migrate` | a backup under `.crew/backups/` whose apply never finished | - |
+| `migrate` | a backup under `.crew/backups/` whose apply never finished. A stray file there, or a folder with no manifest, is not a backup and is skipped | `could not tell - <path>: <why>` for an entry it cannot read (a symlinked or unreadable manifest, `.crew/backups` itself unlistable); the rest of the report still prints |
 | `memory` | `crew_context.py --stats`, only with `--memory` | hook not installed |
 
 ## `--memory`
@@ -78,6 +78,7 @@ The report is facts, not instructions. When a line points somewhere:
 - `run /crew:migrate` - `.crew/config.json` still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md` files, a PM journal). A config `/crew:init` wrote shows `config   .crew/config.json schema 7`, no prompt.
 - `run /crew:init` - no crew config at all.
 - `INTERRUPTED apply` - run `/crew:migrate --rollback <dir>` before anything else.
+- `migrate  could not tell` - fix or remove the named entry; `/crew:migrate` lists it as a conflict until you do.
 - `gitignore N missing` - `crew_gitignore.py apply --root .` outside a ticket, or the next `/crew:onboard`.
   `owner:` - a secret is committed: rotation and history are the owner's call, never an ignore line.
 - `behind: <subsystem>` - `/crew:onboard --refresh <subsystem>` when the

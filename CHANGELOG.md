@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.50: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+### Fixed — crew 1.2.51: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
 
-- **Summary.** `crew` 1.2.50 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+- **Summary.** `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so
   `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
   Stop that defers the expensive rules.
 - **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
@@ -19,6 +19,43 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   whole-tree scope and the budget flag. The PowerShell gate has switch parameters and never had the
   problem, so the two flavours disagreed.
 - **Unchanged.** `--all` and `--ci` alone, `--all --verbose`, and the PowerShell flavour.
+
+### Changed — crew 1.2.50: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
+
+- **Summary.** `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
+- **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
+  host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
+- **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (strict UTF-8 JSON with no duplicate key, at most 4 MiB; the sha asked, a complete
+  list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
+  unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
+- **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
+- **Not done here.** Nothing publishes the status yet: the producer (`post`) moves to L-0821, rebuilt on one validated ledger
+  read, with wiring into `/crew:done`, `check-land` and autopilot ship and a guard on a raw `gh pr merge`. Until then every
+  head reads COULD_NOT_TELL, which is safe. Requiring `crew/review` in branch protection is the repository owner's setting.
+  A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
+
+### Fixed — crew 1.2.49: migrate backup messages name `.crew/backups` the same on Windows (L-0782)
+
+- **Summary.** `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
+- **Cause.** `scan_backups` and `--rollback` interpolated `BACKUP_DIR` (`.crew\backups` on Windows) into messages while every other path went through `_rel`; and Windows raises `WinError 267` rather than `FileNotFoundError` for a dangling link, so the "link to a missing target" wording was never reached.
+- **Fix.** Messages use `BACKUP_DIR_SHOWN` (`.crew/backups`); the dangling-link check runs before the generic `OSError` wording. Three tests simulate the backslash constant and the `WinError` on Linux.
+- **Docs.** none - no document quotes the changed wording.
+
+### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
+
+- **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
+  file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
+- **Cause.** `crew_migrate.find_interrupted` opened `<entry>/manifest.json` for every name in
+  `.crew/backups/`; for a regular file that raised `NotADirectoryError`, which nothing caught, and it
+  also returned "nothing interrupted" on any listing error. `/crew:migrate --rollback <file>` crashed the same way.
+- **Fix.** `crew_migrate.scan_backups(root)` replaces it and sorts each entry into three outcomes: not a
+  backup (a file, or a folder with no manifest: skipped), an interrupted or unparseable backup (reported
+  as before), or could not tell (a symlinked or unreadable manifest, an unlistable `.crew/backups`: named
+  with the reason). Only an absent `.crew/backups/` means clean. `/crew:status` prints
+  `migrate  could not tell - <path>: <why>` and carries on; the migrate preview lists a conflict;
+  `--rollback` of a non-directory is refused in one line. Nothing `/crew:migrate --apply` writes changes.
+- **Docs.** `status.md` migrate row and note, the quickstart troubleshooting row, the status diagram's line anchors.
 
 ### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
 
