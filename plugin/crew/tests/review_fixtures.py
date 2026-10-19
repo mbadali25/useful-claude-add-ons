@@ -391,8 +391,6 @@ def prepare_env(directory, home):
 def normalise_root(text, root):
     """`root` -> `<ROOT>`, with a Windows path's separators made `/` inside
     each token that starts with it."""
-    escaped = str(root).replace("\\", "\\\\")  # the same path inside a JSON string
-    for form in sorted({str(root), root.as_posix(), escaped}, key=len, reverse=True):
+    for form in sorted({str(root), root.as_posix()}, key=len, reverse=True):
         text = text.replace(form, "<ROOT>")
-    return re.sub(r'<ROOT>[^\s"]*', lambda m: m.group(0).replace("\\\\", "/").replace("\\", "/"),
-                  text)
+    return re.sub(r"<ROOT>\S*", lambda m: m.group(0).replace("\\", "/"), text)
