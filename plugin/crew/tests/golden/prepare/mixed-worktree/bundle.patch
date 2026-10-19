@@ -1,0 +1,32 @@
+diff --git a/seed.txt b/seed.txt
+index 8b23aa834ea931237f969f8e64b3c5b547084652..3d02a7638a22db880bc4cee1c396282fe7bcd1cd 100644
+--- a/seed.txt
++++ b/seed.txt
+@@ -1,2 +1,2 @@
+ seed line one
+-seed line two
++seed line two changed
+diff --git a/src/a.py b/src/a.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1bfde2df873c68eb18a9b0954aaf23f71e981f2
+--- /dev/null
++++ b/src/a.py
+@@ -0,0 +1,2 @@
++def a():
++    return 1
+diff --git a/src/b.py b/src/b.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91db9cba2679e7de9a4bc3616ae1b187339370bc
+--- /dev/null
++++ b/src/b.py
+@@ -0,0 +1,2 @@
++def b():
++    return 2
+diff --git a/src/c.py b/src/c.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..49552de5697a481391cd2d511716ac9142f7af8e
+--- /dev/null
++++ b/src/c.py
+@@ -0,0 +1,2 @@
++def c():
++    return 3

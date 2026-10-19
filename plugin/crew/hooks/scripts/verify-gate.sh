@@ -690,7 +690,7 @@ fi
 # would hide every commit since it (review round 2). --all and --ci do not
 # diff from a base, so they never read it.
 if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
-   && [ "${1:-}" != "--all" ] && [ "$CI_MODE" -eq 0 ]; then
+   && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
   # Read only a regular file (a link to one counts): `head` on a FIFO waits
   # for a writer forever and hangs Stop (review round 3); a FIFO, socket,
   # device or directory is refused below like an unreadable file.
@@ -729,7 +729,7 @@ fi
 # the matcher and the scope report read the same list.
 # --ci takes this branch too: its scope is the whole tree, for the same reason
 # --all's is, and a fresh CI checkout has no marker to diff from anyway.
-if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then
+if [ "$CI_ALL_SEEN" -eq 1 ] || [ "$CI_MODE" -eq 1 ]; then
   # --all does not diff against ANY commit. A commit-range diff, however
   # wide, is still bounded by SOME ancestor, and on a single-branch repo
   # (or one sitting ON its own default branch) merge-base(HEAD, main) IS
@@ -876,7 +876,7 @@ fi
 # for the full verification that would let the record clear a reach-excluded
 # rule it did not run.
 BUDGET_FLAG=""
-[ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+[ "$CI_ALL_SEEN" -eq 1 ] && BUDGET_FLAG="--all"
 [ "$CI_MODE" -eq 1 ] && BUDGET_FLAG="--ci"
 
 # --- CLAUDE_PLUGIN_ROOT for the rule commands ------------------------------

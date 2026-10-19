@@ -15,6 +15,7 @@ STATE = os.path.join(SCRIPTS, "crew_state.py")
 CONFIG = os.path.join(SCRIPTS, "crew_config.py")
 PROVIDERS_SH = os.path.join(CREW, "skills", "crew-setup", "scripts", "providers.sh")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
+REVIEW_DOC = os.path.join(os.path.dirname(os.path.dirname(CREW)), "docs", "crew", "review.md")
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 _P = "tests/test_kimi_probe.py::"
 _R = "tests/test_review_run_kimi.py::"
@@ -412,14 +413,14 @@ KIMI_MUTATIONS = (
      _D + "test_every_kimi_file_reaches_a_rule_that_runs_its_tests"),
     ("review.md: Kimi is labelled 2d beside the failing-control Step 2d again",
      REVIEW_MD,
-     "**Step 2a — Codex, 2b — Copilot, 2e — Kimi.**",
-     "**Step 2a — Codex, 2b — Copilot, 2d — Kimi.**",
+     "**Step 2e - Kimi.**",
+     "**Step 2d - Kimi.**",
      _D + "test_review_kimi_step_label_names_one_step"),
-    ("review.md: the Kimi prose says only graph.out is set aside again",
-     REVIEW_MD,
-     "`.crew/guard.log`, `.crew/.autoclear.log`",
-     "`.crew/.autoclear.log`",
-     _D + "test_review_kimi_paragraph_names_what_is_set_aside"),
+    ("review_run: .crew/guard.log is not set aside, so crew's own hook log reads as a reviewer write",
+     RUN,
+     'CREW_LOGS = (".crew/guard.log", ".crew/.autoclear.log")',
+     'CREW_LOGS = (".crew/.autoclear.log",)',
+     _R + "test_set_aside_names_are_the_fixed_tuples"),
     # --- round 1 FIX kimi_probe.py:219: the probe is read-only and watched ---
     ("kimi probe: launched without the read-only agent file again",
      PROBE,
@@ -480,10 +481,10 @@ KIMI_MUTATIONS = (
      '  probe="$(dirname "$0")/../../../hooks/scripts/kimi_probe.py"\n'
      '  python3 "$probe" >/dev/null 2>&1\n',
      _D + "test_providers_sh_reports_kimi_and_probes_only_on_request"),
-    ("review.md: step 1b has no kimi strike row again",
-     REVIEW_MD,
-     "| `kimi` | `kimi`, and any Copilot pin to a `kimi-*` model |\n",
-     "",
+    ("crew_state.family: the kimi provider is not its own family again (the strike rule)",
+     STATE,
+     '    if provider == "kimi":\n        return "kimi"\n',
+     '    if provider == "kimi":\n        return None\n',
      _D + "test_review_step_1b_strikes_kimi_for_a_kimi_author"),
     ("verify.json: crew_state.py's rule stops running test_provider_table.py",
      VERIFY,
@@ -528,8 +529,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_a_crew_graph_out_with_nothing_tracked_in_it_sets_nothing_aside"),
     ("review.md: exit 8 is not named, so it reads as not run (round 4 FIX 7)",
      REVIEW_MD,
-     "Exit 8 means the Kimi probe changed the working tree; stop and report the named paths",
-     "Exit 8 means the Kimi probe changed the working tree; report the named paths",
+     "Exit 8, the probe changed the tree: stop and report the named paths;",
+     "Exit 8, the probe changed the tree: report the named paths;",
      _D + "test_review_md_names_the_probe_changed_exit_code"),
     ("review_run: graph.out may contain a .crew again (round 4 FIX 1)",
      RUN,
@@ -670,8 +671,8 @@ KIMI_MUTATIONS = (
     # --- review round 5 (T-0028): one entry per FIX -----------------------------
     ("review.md: a failed Kimi probe always skips, even when pinned (round 5 FIX 1)",
      REVIEW_MD,
-     "skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does.",
-     "skip.",
+     "skip it, or hard-fail if `qa.provider` pins `kimi`.",
+     "skip it.",
      _D + "test_review_md_a_pinned_kimi_hard_fails_on_a_failed_probe"),
     ("kimi probe: an unreadable credentials directory is no credential (round 5 FIX 2)",
      PROBE,

@@ -671,7 +671,7 @@ def _step3_closure_lines():
     path = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
-    start = text.index("3. **Closure (L-0510).**")
+    start = text.index("**3.3 Closure (L-0510).**")
     block = text[start:text.index("\n4. ", start)]
     return [line for line in block.split("\n") if "CLAUDE_PLUGIN_ROOT" in line]
 
@@ -680,7 +680,7 @@ def test_step3_closure_commands_quote_the_plugin_root():
     lines = _step3_closure_lines()
     unquoted = [line for line in lines if re.search(r'(?<!")\$\{CLAUDE_PLUGIN_ROOT\}', line)]
 
-    assert (len(lines) >= 2, unquoted) == (True, []), lines
+    assert (len(lines) >= 1, unquoted) == (True, []), lines
 
 
 # --- review round 6 FIX 4: only "\n" separates direction.md lines -------------

@@ -8,7 +8,7 @@ checked.
 ## Plugin Markdown total
 
 <!-- claim: crew-markdown-lines -->
-`git ls-files 'plugin/crew/*.md'` currently totals 28,103 lines across 142 files (including this
+`git ls-files 'plugin/crew/*.md'` currently totals 27,605 lines across 140 files (including this
 file). Target: ≤6,000 lines (`docs/review/04-redesign.md`). This number moves every time a tracked
 `plugin/crew/*.md` file is added, removed or resized — including this one — so re-measure rather
 than trusting it; the marker above is what keeps that honest.
@@ -16,12 +16,14 @@ than trusting it; the marker above is what keeps that honest.
 The crew 1.0 T2 deletions (the PM, pulse, journal and 51 retired agents) landed the "held" half of
 this gap: 58 files and roughly 11,400 lines, as T8 estimated. What remains:
 
-- **To trim** (`.budget-allowance.json`, reason `T8: to trim`): 7 command files still over the
-  120-line command budget that T8 judged too large or too test-coupled to safely rewrite in
-  this pass — `review.md` (551 lines, the brief's own example) foremost among them, since nine
-  test files assert specific sentences inside it and moving that prose to a reference doc means
-  updating every one of those assertions, not just the command file. Trimming all seven to exactly
-  120 would save about 1,211 more lines. (`work.md` left the list in T2: it is a removal stub now.)
+- **To trim** (`.budget-allowance.json`, reason `T8: to trim`): 7 command files still listed over the
+  120-line command budget. `review.md` is no longer one of the debts: L-0726 cut it from 551 lines
+  to 46 (9,484 bytes), moved its rationale to `docs/crew/review.md` and its shell to
+  `review_run.py --prepare`, and repointed the tests that asserted its sentences. It keeps its
+  `551` entry until the next L-0726 slice removes the entry and adds the byte ceiling, so until
+  then only `test_review_prepare.py::test_review_md_holds_no_transcribed_shell` (120 lines,
+  12,288 bytes, no long fence) stops it growing back. Trimming the other six to exactly 120
+  would save about 744 more lines. (`work.md` left the list in T2: it is a removal stub now.)
 
 That still stays nowhere near 6,000. The rest of the reduction is guide and skill work assigned
 to later tickets (T12-trim in `TODO.md`), not deletions a lane can make unilaterally.

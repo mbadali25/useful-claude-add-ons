@@ -275,13 +275,13 @@ def test_review_md_legacy_ping_stays_retired(tmp_path, fake):
     data["notify"]["events"] = ["blocker", "deploy", "question"]
     config.write_text(json.dumps(data), encoding="utf-8")
     line = next(line for line in _read(COMMANDS / "review.md").splitlines()
-                if "notify.sh review" in line)
+                if re.search(r'notify\.sh"? review', line))
 
     done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "review", "0 BLOCK, 1 FIX (x)"],
                           cwd=str(root), env=_env(root, fake, False), capture_output=True,
                           stdin=subprocess.DEVNULL, check=False, timeout=60, text=True)
 
-    assert ("notify.sh review" in line, done.returncode, _Fake.texts, done.stdout.strip(),
+    assert (bool(re.search(r'notify\.sh"? review', line)), done.returncode, _Fake.texts, done.stdout.strip(),
             "legacy 'review'" in done.stderr, "retired" in done.stderr) == (
                 True, 0, [], "filtered", True, True)
 

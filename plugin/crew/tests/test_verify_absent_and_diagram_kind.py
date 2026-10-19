@@ -36,6 +36,14 @@ def _review_text():
         return handle.read().replace("\r\n", "\n")
 
 
+def _rationale_text():
+    """docs/crew/review.md: where the reasons moved when review.md was cut (L-0726)."""
+    path = os.path.join(os.path.dirname(_REVIEW_MD), os.pardir, os.pardir, os.pardir,
+                        "docs", "crew", "review.md")
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().replace("\r\n", "\n")
+
+
 def _diagrams(tmp_path, names):
     """A repo whose diagrams dir holds exactly `names`."""
     root = crew_fixtures.make_repo(tmp_path)
@@ -153,8 +161,9 @@ def test_review_states_the_gap_without_resting_it_on_trackedness():
     travels. A map that travels makes a named-but-missing agent more likely, not
     less, because it reaches machines whose roster nobody checked.
     """
-    text = _review_text()
+    text = _rationale_text()
     assert "machine-local, so it was written against whatever was installed" not in text
+    assert "machine-local, so it was written against whatever was installed" not in _review_text()
     assert "Tracking the map makes this MORE likely" in text
 
 
@@ -224,6 +233,6 @@ def test_review_no_longer_pins_a_number_to_the_roster():
     """`crew's eleven` was written when `agents/` held 11 files. The roster is
     a moving number that nothing checks, so the fix removes the count rather
     than correcting it -- the shape `plugin/PLUGINS.md` already uses."""
-    text = _review_text()
+    text = _review_text() + _rationale_text()
     assert "crew's eleven" not in text
-    assert "crew's own roles" in text
+    assert "crew's own role" in text

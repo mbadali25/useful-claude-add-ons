@@ -181,6 +181,7 @@ Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing 
 | `/crew:status` is not a known command | `claude plugin update crew@useful-claude-add-ons`, then restart `claude` |
 | `migrate` reports a `CONFLICT` | read the path it names; apply refuses until it is resolved |
 | `migrate` reports an interrupted apply | `/crew:migrate --rollback <dir>` first |
+| `migrate  could not tell - <path>: <why>` | fix or remove the named entry under `.crew/backups/`; the rest of the report is unaffected |
 | a crew command cannot find Python | install Python 3; on Windows make `python` or `py -3` work |
 
 See [Troubleshooting](troubleshooting.md) for the rest.

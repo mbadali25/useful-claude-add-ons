@@ -329,9 +329,23 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (reviewer).</p>
 </li>
 <li>
-<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+<p><strong>Symptom: <code>--check-receipt</code> says <code>no accepted review receipt ... (ledger absent); could not tell whether head
+  &lt;sha&gt; was reviewed</code>, or another host merged a PR whose review you cannot see.</strong>
+  <strong>Cause:</strong> the review ledger and receipt are host-local (<code>&lt;git-common-dir&gt;/crew/review/</code>, <code>.work/</code>), so a
+  session on a host that did not run the review has none. That is could-not-tell, not "nothing to gate"
+  (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
   <strong>Check:</strong></p>
 </li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_status.py&quot; check --pr &lt;PR&gt;
+</code></pre>
+<p><code>REVIEW_GATE ALLOW</code> (exit 0) means GitHub holds exactly one <code>crew/review</code> success with <code>blocks=0</code> for that
+  exact head; <code>BLOCK</code> (1) and <code>COULD_NOT_TELL</code> (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads <code>COULD_NOT_TELL</code>,
+  which is safe. A status attests, it does not prove, and <code>gh pr merge --admin</code> bypasses a required check.</p>
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
