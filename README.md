@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.56**: A hook-script child that ignores its kill can no longer hold a review step open. `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
 - **crew 1.2.55**: The instruction surface is capped: README, promote.md and verify.json rationale move out of the plugin. `crew` 1.2.55: `plugin/crew/README.md` is an entry point of at most 800 lines, `commands/promote.md` is at most 120 lines and 12,288 bytes, and the rationale that was in them (and in `.crew/verify.json`'s `why` text) now lives under `docs/crew/`, with new gates that stop it growing back.
-- **crew 1.2.54**: Per-ticket token and cost telemetry, and a goal cap that counts each message once. `crew` 1.2.54: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

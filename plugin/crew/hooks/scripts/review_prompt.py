@@ -534,8 +534,7 @@ def gather_landmines(root, changed):
         if (not name.endswith(".md") or name.startswith(".") or name == "INDEX.md"
                 or not os.path.exists(note)):
             continue
-        with open(note, "rb") as handle:
-            data = handle.read()
+        data = review_checks.read_regular(note, root)
         if needles and any(needle in data for needle in needles):
             lines = _lines(data)
             for start, end in CODEMAP_SECTIONS:

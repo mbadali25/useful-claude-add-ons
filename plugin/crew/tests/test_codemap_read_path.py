@@ -180,6 +180,22 @@ def test_gather_landmines_refuses_a_note_it_cannot_read(tmp_path):
         review_prompt.gather_landmines(str(tmp_path), ["src/a.py"])
 
 
+def test_gather_landmines_refuses_a_note_that_is_a_symlink(tmp_path):
+    import pytest
+    import review_prompt
+    notes = tmp_path / ".crew" / "codemap"
+    notes.mkdir(parents=True)
+    target = tmp_path / "elsewhere.md"
+    target.write_text("## Landmines\n- src/a.py\n", encoding="utf-8")
+    try:
+        (notes / "link.md").symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+
+    with pytest.raises(OSError):
+        review_prompt.gather_landmines(str(tmp_path), ["src/a.py"])
+
+
 def test_review_keeps_the_byte_identical_prompt_invariant(tmp_path):
     """All three providers must receive the same bytes.
 

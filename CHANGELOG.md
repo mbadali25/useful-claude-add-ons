@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.56: a hook-script child that ignores its kill can no longer hold a review step open (L-0836)
+
+- **Summary.** `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
+- `review_run._bounded` no longer uses a `with Popen` block, whose `__exit__` waits for the child with no timeout; `_end_child` kills it (Windows: `taskkill /T` first), waits at most `POST_KILL_TIMEOUT` and survives a kill that raises `OSError`.
+- `review_prompt.gather_landmines` reads codemap notes through `review_checks.read_regular`, so a symlinked note is could-not-tell.
+- The descendant-holds-the-pipe test now runs on Windows too, and a failed-kill test and sabotage entry were added.
+
 ### Changed — crew 1.2.55: the instruction surface is capped: README, promote.md and verify.json rationale move out of the plugin (L-0726, slice 2)
 
 - **Summary.** `crew` 1.2.55: `plugin/crew/README.md` is an entry point of at most 800 lines, `commands/promote.md` is at most 120 lines and 12,288 bytes, and the rationale that was in them (and in `.crew/verify.json`'s `why` text) now lives under `docs/crew/`, with new gates that stop it growing back.
