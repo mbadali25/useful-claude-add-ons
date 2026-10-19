@@ -1187,3 +1187,132 @@ def test_an_unlistable_folder_is_could_not_tell(tmp_path, monkeypatch, folder):
     lines = crew_status.collect(str(root))
 
     assert "could not tell whether /crew:migrate is needed" in lines[1]
+
+
+STRAY = "config.json.20260926-224458.bak"
+
+
+def _backups_repo(tmp_path, stray=True, state=None, backups_is_file=False):
+    root = make_repo(tmp_path, config={"schema": 7, "tracker": "files", "roles": ["explorer"]})
+    backups = root / ".crew" / "backups"
+    if backups_is_file:
+        backups.write_text("not a directory\n", encoding="utf-8")
+        return root
+    backups.mkdir()
+    if stray:
+        (backups / STRAY).write_text("{}\n", encoding="utf-8")
+    if state is not None:
+        folder = backups / "migrate-20260925T101700Z"
+        folder.mkdir()
+        (folder / "manifest.json").write_text(json.dumps({"state": state}), encoding="utf-8")
+    return root
+
+
+def _migrate_lines(done):
+    return [line for line in done.stdout.splitlines() if line.startswith("migrate")]
+
+
+def test_status_ignores_a_stray_file_in_backups(tmp_path):
+    root = _backups_repo(tmp_path, state="applied")
+
+    done = _run(root)
+
+    assert (done.returncode, _migrate_lines(done), "NotADirectoryError" in done.stderr) == (0, [], False)
+
+
+def test_status_skips_a_backup_dir_without_a_manifest(tmp_path):
+    root = _backups_repo(tmp_path, stray=False)
+    (root / ".crew" / "backups" / "migrate-20260925T101700Z").mkdir()
+
+    done = _run(root)
+
+    assert (done.returncode, _migrate_lines(done)) == (0, [])
+
+
+def test_a_stray_file_never_masks_an_interrupted_backup(tmp_path):
+    root = _backups_repo(tmp_path, state="applying")
+
+    done = _run(root)
+
+    assert (done.returncode, _migrate_lines(done)) == (0, [
+        "migrate  INTERRUPTED apply at .crew/backups/migrate-20260925T101700Z"
+        " - /crew:migrate --rollback it"])
+
+
+def test_unparseable_manifest_is_interrupted(tmp_path):
+    root = _backups_repo(tmp_path, stray=False, state="applied")
+    (root / ".crew" / "backups" / "migrate-20260925T101700Z" / "manifest.json").write_text(
+        "{not json", encoding="utf-8")
+
+    done = _run(root)
+
+    assert _migrate_lines(done) == [
+        "migrate  INTERRUPTED apply at .crew/backups/migrate-20260925T101700Z"
+        " - /crew:migrate --rollback it"]
+
+
+def _symlinked_manifest(root):
+    folder = root / ".crew" / "backups" / "migrate-20260925T101700Z"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = root / "real-manifest.json"
+    target.write_text(json.dumps({"state": "applied"}), encoding="utf-8")
+    try:
+        os.symlink(target, folder / "manifest.json")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+
+
+def test_status_says_could_not_tell_for_an_unreadable_manifest(tmp_path):
+    root = _backups_repo(tmp_path, stray=False)
+    _symlinked_manifest(root)
+
+    done = _run(root)
+
+    lines = _migrate_lines(done)
+    assert done.returncode == 0
+    assert len(lines) == 1
+    assert lines[0].startswith("migrate  could not tell - .crew/backups/migrate-20260925T101700Z")
+    assert "handoff" in done.stdout
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="mode 000 does not stop root or Windows; the symlink case covers the branch")
+def test_status_says_could_not_tell_for_a_mode_000_manifest(tmp_path):
+    root = _backups_repo(tmp_path, stray=False, state="applied")
+    manifest = root / ".crew" / "backups" / "migrate-20260925T101700Z" / "manifest.json"
+    manifest.chmod(0)
+
+    done = _run(root)
+    manifest.chmod(0o644)
+
+    assert _migrate_lines(done)[0].startswith("migrate  could not tell - ")
+
+
+def test_status_says_could_not_tell_for_an_unlistable_backups_dir(tmp_path):
+    root = _backups_repo(tmp_path, backups_is_file=True)
+
+    done = _run(root)
+
+    lines = _migrate_lines(done)
+    assert done.returncode == 0
+    assert len(lines) == 1
+    assert lines[0].startswith("migrate  could not tell - .crew/backups: ")
+
+
+def test_both_lines_when_both_exist(tmp_path):
+    root = _backups_repo(tmp_path, state="applying")
+    other = root / ".crew" / "backups" / "migrate-20260926T101700Z"
+    other.mkdir()
+    target = root / "real-manifest.json"
+    target.write_text("{}", encoding="utf-8")
+    try:
+        os.symlink(target, other / "manifest.json")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+
+    done = _run(root)
+
+    lines = _migrate_lines(done)
+    assert len(lines) == 2
+    assert lines[0].startswith("migrate  INTERRUPTED apply at ")
+    assert lines[1].startswith("migrate  could not tell - ")

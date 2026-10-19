@@ -191,7 +191,9 @@ phase then names <code>/crew:promote &lt;env&gt;</code> for the first GitHub env
 refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 <code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
-passed is the tree that lands. After the review, a re-anchor changes only the
+passed is the tree that lands. From a host that did not run the review, <code>review_status.py check --pr &lt;PR&gt;</code>
+reads the published <code>crew/review</code> status of that head; no status is could-not-tell and refuses, and
+nothing publishes one until L-0821 (L-0780). After the review, a re-anchor changes only the
 <code>anchor:</code> sha and regenerates the rules; its provenance goes in the ticket's <code>notes.md</code>. After the
 merge, <code>crew_train.py release --ticket T-0091 --merged &lt;merge sha&gt;</code> frees the train and tells every
 overlapping lane to merge the base now.</p>

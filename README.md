@@ -235,7 +235,9 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.48**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.48: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **crew 1.2.51**: /crew:review is a script, not 230 lines of shell. `crew` 1.2.51: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **crew 1.2.50**: A missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status. `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
+- **crew 1.2.49**: Migrate backup messages name `.crew/backups` the same on Windows. `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
 - **crew 1.2.47**: A reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch. `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch itself, so `/crew:review` stops rather than reporting "nothing to review".
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
