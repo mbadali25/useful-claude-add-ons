@@ -1,0 +1,9 @@
+## Landmines
+- src/a.py truncates on CRLF
+- src/a.py is read twice
+
+## Written by / Read by
+## Written by / Read by
+- src/a.py is written by build, read by deploy
+
+## Other

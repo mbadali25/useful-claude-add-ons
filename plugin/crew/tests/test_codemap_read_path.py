@@ -113,79 +113,94 @@ def test_onboard_writes_the_schema_note_and_refuses_to_invent_one():
     )
 
 
-def test_review_injects_repo_landmines_into_the_shared_prompt():
+def _prepared(tmp_path, scenario):
+    """`review_run.py --prepare` run in a deterministic fixture repo; returns
+    (repo root, scratch directory)."""
+    import os
+    import subprocess
+    import sys
+    import review_fixtures as fx
+    root = fx.build_prepare_repo(tmp_path / "repo", scenario)
+    env = fx.prepare_env(tmp_path / "fakes", tmp_path / "home")
+    done = subprocess.run(
+        [sys.executable, os.path.join(str(PLUGIN), "hooks", "scripts", "review_run.py"),
+         "--root", ".", "--prepare", "--scratch", fx.PREPARE_SCRATCH], cwd=root, env=env,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+    assert done.returncode == 0, done.stderr
+    return root, root / fx.PREPARE_SCRATCH
+
+
+def test_review_injects_repo_landmines_into_the_shared_prompt(tmp_path):
     """0.19.61 wired the FALLBACK reviewer and nobody else.
 
     /crew:review tries Codex then Copilot before falling back to the in-session
     qa-reviewer, and all three read one prompt.txt that had no codemap content.
     So on any machine with Codex installed, the reviewer that actually ran
     never saw the landmines. Wiring an agent file is not wiring the reviewer.
+    Since L-0726 `review_run.py --prepare` gathers them (review.md's shell loop
+    is gone), so the proof is the prompt it writes.
     """
-    body = _command("review")
-    body_raw = _command_raw("review")
-    assert "context.txt" in body, (
-        "review.md no longer gathers repo landmines, so the provider path "
-        "reviews with no knowledge of what breaks in this repository"
-    )
-    assert "## Landmines" in body and "Written by" in body
-    # changed.txt is built from review_patch.py's manifest now, not from a
-    # second `git diff` -- dirty and untracked files never showed up in the
-    # old committed-range-only form. review_patch.py must be invoked with a
-    # manifest before anything can be derived from one.
-    assert '--manifest "$MANIFEST"' in body_raw, (
-        "review.md no longer invokes review_patch.py with a manifest, so "
-        "changed.txt has nothing to be derived from"
-    )
-    # review.md must BUILD the changed-file list it filters on. An earlier
-    # draft grepped a changed.txt nothing wrote; the failure went to
-    # /dev/null, no note ever matched, and the step reported itself done.
-    # The write must be the manifest redirected into changed.txt, not a
-    # second, independent derivation that could disagree with what
-    # review_patch.py actually diffed.
-    write_marker = '"$MANIFEST" > "$SCRATCH/changed.txt"'
-    assert write_marker in body_raw, (
-        "review.md must BUILD the changed-file list it filters on, from the "
-        "same manifest review_patch.py wrote, not a changed.txt nothing "
-        "writes into or a second independent derivation"
-    )
-    loop_marker = "for note in .crew/codemap/*.md"
-    assert loop_marker in body_raw, (
-        "review.md no longer loops over the codemap notes to grep changed.txt"
-    )
-    write_index = body_raw.index(write_marker)
-    loop_index = body_raw.index(loop_marker)
-    assert write_index < loop_index, (
-        "changed.txt is written AFTER the codemap loop that greps it -- the "
-        "same failure mode as never writing it at all, since the loop reads "
-        "it before the write has landed"
-    )
+    _, scratch = _prepared(tmp_path, "codemap-landmines")
+
+    prompt = (scratch / "prompt.txt").read_text(encoding="utf-8")
+    changed = (scratch / "changed.txt").read_text(encoding="utf-8")
+
+    assert "src/a.py truncates on CRLF" in prompt
+    assert "src/a.py is written by build, read by deploy" in prompt
+    assert "## Landmines" in prompt and "## Written by / Read by" in prompt
+    assert "src/zzz.py is not in this diff" not in prompt
+    # changed.txt is the manifest's list (dirty and untracked files included), and
+    # the landmines were chosen by it, not by a second `git diff`.
+    assert changed == "src/a.py\n"
 
 
-def test_review_keeps_the_byte_identical_prompt_invariant():
+def test_gather_landmines_caps_announces_and_says_when_empty(tmp_path):
+    import review_prompt
+    notes = tmp_path / ".crew" / "codemap"
+    notes.mkdir(parents=True)
+    (notes / "big.md").write_text("## Landmines\n" + "- src/a.py\n" * 300, encoding="utf-8")
+
+    capped = review_prompt.gather_landmines(str(tmp_path), ["src/a.py"]).decode("utf-8")
+    nothing = review_prompt.gather_landmines(str(tmp_path), ["other.py"])
+    no_changes = review_prompt.gather_landmines(str(tmp_path), [])
+
+    assert capped.count("\n") == 202 and "[TRUNCATED at 200 lines of 301." in capped
+    assert nothing == no_changes == review_prompt.NO_LANDMINES
+    assert nothing.startswith(b"No codemap note intersects this diff")
+
+
+def test_gather_landmines_refuses_a_note_it_cannot_read(tmp_path):
+    import pytest
+    import review_prompt
+    notes = tmp_path / ".crew" / "codemap"
+    notes.mkdir(parents=True)
+    (notes / "dir.md").mkdir()
+
+    with pytest.raises(OSError):
+        review_prompt.gather_landmines(str(tmp_path), ["src/a.py"])
+
+
+def test_review_keeps_the_byte_identical_prompt_invariant(tmp_path):
     """All three providers must receive the same bytes.
 
-    review.md states this as its reason for building the prompt in one place:
-    'a defect count that differs between them is a fact about the model and
-    not about how you worded it'. Injecting landmines for one provider would
-    destroy exactly that. So the injection must land INSIDE the single
-    heredoc, and no provider block may append to prompt.txt afterwards.
+    The prompt's reason for being built in one place: 'a defect count that
+    differs between them is a fact about the model and not about how you
+    worded it'. Injecting landmines for one provider would destroy exactly
+    that. Since L-0726 one function (`review_prompt.prompt_text`) writes the
+    one prompt.txt, `--prepare` calls it once, and nothing else in
+    review_run.py or review.md writes or appends to it.
     """
-    body = _command_raw("review")
-    assert body.count('cat > "$SCRATCH/prompt.txt"') == 1, (
-        "prompt.txt is written in more than one place, so providers can now "
-        "receive different bytes and cross-provider counts stop comparing"
-    )
-    assert '>> "$SCRATCH/prompt.txt"' not in body, (
-        "something appends to prompt.txt after it is built, which is how one "
-        "provider ends up with context another does not have"
-    )
-    _, _, tail = body.partition('cat > "$SCRATCH/prompt.txt"')
-    # Split on the heredoc TERMINATOR (EOF at line start), not on the string
-    # "EOF" -- that also matches the `<<EOF` marker three characters along, so
-    # the body under test comes back as " <<" and the assertion passes or
-    # fails for reasons having nothing to do with the prompt.
-    heredoc = tail.split("\nEOF")[0]
-    assert 'context.txt' in heredoc, (
-        "the landmine injection is not inside the shared heredoc, so it is "
-        "not part of what every provider reads"
-    )
+    import review_prompt
+    _, scratch = _prepared(tmp_path, "codemap-landmines")
+    run_source = (PLUGIN / "hooks" / "scripts" / "review_run.py").read_text(encoding="utf-8")
+
+    prompt = (scratch / "prompt.txt").read_bytes()
+    expected = review_prompt.prompt_text(
+        ".work/review/golden", (scratch / "contract.txt").read_bytes(),
+        (scratch / "context.txt").read_bytes())
+
+    assert prompt == expected
+    assert run_source.count('_write_bytes(os.path.join(args.scratch, "prompt.txt")') == 1
+    assert run_source.count("review_prompt.prompt_text(") == 1
+    assert '>> "$SCRATCH/prompt.txt"' not in _command_raw("review")
+    assert "prompt.txt" in _command_raw("review")
